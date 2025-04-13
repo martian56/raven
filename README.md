@@ -81,8 +81,7 @@ For now, feel free to ⭐ star the project and follow progress.
 ## 📬 Contact
 
 - GitHub: [martian58](https://github.com/martian58)
-- Twitter (optional)
-- LinkedIn (optional)
+- LinkedIn [martian58](www.linkedin.com/in/martian58)
 - Issues or suggestions? Feel free to open one!
 
 ---
