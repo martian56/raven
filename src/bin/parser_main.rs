@@ -44,6 +44,8 @@ fn main() {
 
     // Initialize the lexer
     let mut lexer = Lexer::new(source_code);
+    let mut parser = Parser::new(lexer.clone());
+    
     let mut token_count = 0;
 
     // Lex the source code, but only for parsing
@@ -66,7 +68,6 @@ fn main() {
     }
 
     // Initialize the parser with the lexer, not the tokens
-    let mut parser = Parser::new(lexer);
 
     // Parse the tokens and build the AST
     match parser.parse() {
