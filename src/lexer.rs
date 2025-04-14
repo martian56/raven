@@ -39,6 +39,14 @@ pub enum TokenType {
     LeftBrace,   // {
     RightBrace,  // }
     Arrow,       // ->
+    Ampersand,   // &
+    Bang,        // !
+    Question,    // ?
+    Tilde,       // ~
+    Backslash,   // \
+    At,          // @
+    Dollar,      // $
+    Hash,        // #
 
     // Operators
     Plus,        // +
@@ -67,7 +75,7 @@ pub enum TokenType {
     Illegal(char),
 }
 
-
+#[derive(Debug, Clone)]
 pub struct Lexer {
     input: Vec<char>,
     position: usize,
@@ -235,6 +243,26 @@ impl Lexer {
                     ')' => { self.advance(); TokenType::RightParen }
                     '{' => { self.advance(); TokenType::LeftBrace }
                     '}' => { self.advance(); TokenType::RightBrace }
+                    '&' => {
+                        if self.peek() == Some('&') {
+                            self.advance();
+                            self.advance();
+                            TokenType::And
+                        } else {
+                            self.advance();
+                            TokenType::Ampersand
+                        }
+                    }
+                    '|' => {
+                        if self.peek() == Some('|') {
+                            self.advance();
+                            self.advance();
+                            TokenType::Or
+                        } else {
+                            self.advance();
+                            TokenType::Illegal('|') // or define a single '|' token if needed
+                        }
+                    }
                     '.' => {
                         if self.peek() == Some('.') {
                             self.advance();
