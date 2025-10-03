@@ -1,0 +1,30 @@
+let isReady: bool = true;
+let hasPermission: bool = false;
+
+if (isReady && hasPermission) {
+    print("Go ahead");
+} else {
+    print("Wait");
+}
+
+let x: int = 10;
+let y: int = 20;
+
+if (x < y) {
+    print("x is less than y");
+}
+
+let cond1: bool = x == 10;
+let cond2: bool = y == 20;
+
+if (cond1 && cond2) {
+    print("Both conditions are true");
+}
+
+let a: bool = true;
+let b: bool = false;
+
+if (a || b) {
+    print("At least one is true");
+}
+
