@@ -1,0 +1,18 @@
+let x: int = 10;
+let y: int = 5;
+
+let sum: int = x + y;
+let diff: int = x - y;
+let prod: int = x * y;
+let quot: int = x / y;
+
+print(sum);
+print(diff);
+print(prod);
+print(quot);
+
+let a: float = 3.14;
+let b: float = 2.0;
+let result: float = a * b;
+print(result);
+

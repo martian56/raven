@@ -1,0 +1,291 @@
+print("=== MEGA MATHEMATICAL CALCULATOR ===");
+print("");
+
+let numberA: int = 42;
+let numberB: int = 7;
+let numberC: int = 3;
+
+print("Input values:");
+print("A =");
+print(numberA);
+print("B =");
+print(numberB);
+print("C =");
+print(numberC);
+print("");
+
+print("=== BASIC OPERATIONS ===");
+
+let sum: int = numberA + numberB;
+print("A + B =");
+print(sum);
+
+let difference: int = numberA - numberB;
+print("A - B =");
+print(difference);
+
+let product: int = numberA * numberB;
+print("A * B =");
+print(product);
+
+let quotient: int = numberA / numberB;
+print("A / B =");
+print(quotient);
+
+print("");
+print("=== COMPLEX OPERATIONS ===");
+
+let temp1: int = numberA * numberB;
+let complexResult1: int = temp1 + numberC;
+print("A * B + C =");
+print(complexResult1);
+
+let temp2: int = numberA + numberB;
+let complexResult2: int = temp2 * numberC;
+print("(A + B) * C =");
+print(complexResult2);
+
+let temp3: int = numberB - numberC;
+let complexResult3: int = numberA * temp3;
+print("A * (B - C) =");
+print(complexResult3);
+
+print("");
+print("=== POWER CALCULATIONS ===");
+
+let squareA: int = numberA * numberA;
+print("A² =");
+print(squareA);
+
+let squareB: int = numberB * numberB;
+print("B² =");
+print(squareB);
+
+let cubeC: int = numberC * numberC * numberC;
+print("C³ =");
+print(cubeC);
+
+print("");
+print("=== FACTORIAL CALCULATIONS ===");
+
+let factorialInput: int = 5;
+print("Calculating factorial of:");
+print(factorialInput);
+
+let factorial: int = 1;
+let i: int = 1;
+
+while (i <= factorialInput) {
+    factorial = factorial * i;
+    i = i + 1;
+}
+
+print("5! =");
+print(factorial);
+
+let factorial6: int = 1;
+for (let j: int = 1; j <= 6; j = j + 1) {
+    factorial6 = factorial6 * j;
+}
+print("6! =");
+print(factorial6);
+
+let factorial7: int = 1;
+for (let k: int = 1; k <= 7; k = k + 1) {
+    factorial7 = factorial7 * k;
+}
+print("7! =");
+print(factorial7);
+
+print("");
+print("=== FIBONACCI SEQUENCE ===");
+
+print("First 15 Fibonacci numbers:");
+
+let fib1: int = 0;
+let fib2: int = 1;
+let fibCount: int = 0;
+
+print(fib1);
+print(fib2);
+
+while (fibCount < 13) {
+    let fibNext: int = fib1 + fib2;
+    print(fibNext);
+    fib1 = fib2;
+    fib2 = fibNext;
+    fibCount = fibCount + 1;
+}
+
+print("");
+print("=== SUMMATION SERIES ===");
+
+print("Sum of integers 1 to 20:");
+let seriesSum: int = 0;
+for (let n: int = 1; n <= 20; n = n + 1) {
+    seriesSum = seriesSum + n;
+}
+print(seriesSum);
+
+print("Sum of integers 1 to 50:");
+let seriesSum2: int = 0;
+let m: int = 1;
+while (m <= 50) {
+    seriesSum2 = seriesSum2 + m;
+    m = m + 1;
+}
+print(seriesSum2);
+
+print("Sum of even numbers 2 to 30:");
+let evenSum: int = 0;
+let current: int = 2;
+while (current <= 30) {
+    evenSum = evenSum + current;
+    current = current + 2;
+}
+print(evenSum);
+
+print("Sum of odd numbers 1 to 29:");
+let oddSum: int = 0;
+let oddCurrent: int = 1;
+while (oddCurrent <= 29) {
+    oddSum = oddSum + oddCurrent;
+    oddCurrent = oddCurrent + 2;
+}
+print(oddSum);
+
+print("");
+print("=== DIVISIBILITY ANALYSIS ===");
+
+let testNumber: int = 24;
+print("Finding divisors of:");
+print(testNumber);
+
+let divisorCount: int = 0;
+let divisorSum: int = 0;
+let divisor: int = 1;
+
+while (divisor <= testNumber) {
+    let q: int = testNumber / divisor;
+    let p: int = q * divisor;
+    let remainder: int = testNumber - p;
+    
+    if (remainder == 0) {
+        print("Divisor:");
+        print(divisor);
+        divisorCount = divisorCount + 1;
+        divisorSum = divisorSum + divisor;
+    }
+    
+    divisor = divisor + 1;
+}
+
+print("Total divisors:");
+print(divisorCount);
+
+print("Sum of divisors:");
+print(divisorSum);
+
+print("");
+print("=== COLLATZ CONJECTURE ===");
+
+let collatzStart: int = 10;
+print("Starting value:");
+print(collatzStart);
+
+let collatzSteps: int = 0;
+let collatzValue: int = collatzStart;
+let maxSteps: int = 50;
+
+print("Sequence:");
+
+let shouldContinue: bool = true;
+while (shouldContinue) {
+    print(collatzValue);
+    
+    let half: int = collatzValue / 2;
+    let doubled: int = half * 2;
+    let isEven: bool = doubled == collatzValue;
+    
+    if (isEven) {
+        collatzValue = half;
+    } else {
+        let tripled: int = collatzValue * 3;
+        collatzValue = tripled + 1;
+    }
+    
+    collatzSteps = collatzSteps + 1;
+    
+    let reachedOne: bool = collatzValue == 1;
+    let exceededSteps: bool = collatzSteps > maxSteps;
+    
+    if (reachedOne) {
+        shouldContinue = false;
+    }
+    
+    if (exceededSteps) {
+        print("Stopped at 50 steps");
+        shouldContinue = false;
+    }
+}
+
+if (collatzValue == 1) {
+    print(1);
+    print("Steps to reach 1:");
+    print(collatzSteps);
+}
+
+print("");
+print("=== TRIANGULAR NUMBERS ===");
+
+print("First 10 triangular numbers:");
+let triangular: int = 0;
+for (let t: int = 1; t <= 10; t = t + 1) {
+    triangular = triangular + t;
+    print(triangular);
+}
+
+print("");
+print("=== PYTHAGOREAN TRIPLES ===");
+
+print("Finding Pythagorean triples (a,b,c) where a²+b²=c²:");
+
+let a: int = 3;
+let b: int = 4;
+let c: int = 5;
+
+let aSquared: int = a * a;
+let bSquared: int = b * b;
+let cSquared: int = c * c;
+let sumSquares: int = aSquared + bSquared;
+
+print("Testing:");
+print(a);
+print(b);
+print(c);
+
+if (sumSquares == cSquared) {
+    print("YES! This is a Pythagorean triple!");
+}
+
+let a2: int = 5;
+let b2: int = 12;
+let c2: int = 13;
+
+let a2Squared: int = a2 * a2;
+let b2Squared: int = b2 * b2;
+let c2Squared: int = c2 * c2;
+let sum2Squares: int = a2Squared + b2Squared;
+
+print("Testing:");
+print(a2);
+print(b2);
+print(c2);
+
+if (sum2Squares == c2Squared) {
+    print("YES! This is a Pythagorean triple!");
+}
+
+print("");
+print("=== CALCULATION COMPLETE ===");
+

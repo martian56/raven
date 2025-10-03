@@ -1,0 +1,48 @@
+let name: String = "Raven";
+let version: float = 0.1;
+
+print(name);
+print(version);
+
+let x: int = 10;
+let y: int = 20;
+
+if (x < y) {
+    print("x is less than y");
+}
+
+let i: int = 0;
+while (i < 3) {
+    print(i);
+    i = i + 1;
+}
+
+for (let j: int = 0; j < 3; j = j + 1) {
+    let temp: int = j * 2;
+    print(temp);
+}
+
+fun multiply(a: int, b: int) -> int {
+    return a * b;
+}
+
+let result: int = 42;
+print(result);
+
+let isActive: bool = true;
+let hasAccess: bool = true;
+
+if (isActive && hasAccess) {
+    print("Access granted");
+}
+
+let sum: int = 5 + 10;
+let diff: int = 20 - 8;
+let prod: int = 6 * 7;
+let quot: int = 100 / 4;
+
+print(sum);
+print(diff);
+print(prod);
+print(quot);
+

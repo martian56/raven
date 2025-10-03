@@ -1,0 +1,21 @@
+fun fibonacci(n: int) -> int {
+    if (n <= 1) {
+        return n;
+    }
+    let a: int = 0;
+    let b: int = 1;
+    let i: int = 2;
+    
+    while (i <= n) {
+        let temp: int = a + b;
+        a = b;
+        b = temp;
+        i = i + 1;
+    }
+    
+    return b;
+}
+
+let result: int = 10;
+print(result);
+

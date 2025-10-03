@@ -1,0 +1,22 @@
+let age: int = 25;
+
+if (age < 18) {
+    print("Too young");
+} elseif (age < 30) {
+    print("Young adult");
+} else {
+    print("Mature");
+}
+
+let score: int = 85;
+
+if (score >= 90) {
+    print("Grade: A");
+} elseif (score >= 80) {
+    print("Grade: B");
+} elseif (score >= 70) {
+    print("Grade: C");
+} else {
+    print("Grade: F");
+}
+

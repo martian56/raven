@@ -2,8 +2,8 @@
 pub enum ASTNode {
     VariableDecl(String, Box<Expression>),                    // old style: let x = 5;
     VariableDeclTyped(String, String, Box<Expression>),       // new style: let x: int = 5;
-    FunctionDecl(String, Vec<Parameter>, Box<Expression>),
-    ForLoop(Box<Expression>, Box<Expression>, Box<Expression>, Box<ASTNode>),
+    FunctionDecl(String, String, Vec<Parameter>, Box<ASTNode>), // name, return_type, params, body
+    ForLoop(Box<ASTNode>, Box<Expression>, Box<ASTNode>, Box<ASTNode>), // init, condition, increment, body
     WhileLoop(Box<Expression>, Box<ASTNode>),
     Assignment(String, Box<Expression>),
     IfStatement(
@@ -13,8 +13,8 @@ pub enum ASTNode {
         Option<Box<ASTNode>>,  // The 'else' (optional)
     ),
     Block(Vec<ASTNode>),
-    Print(Box<Expression>), // 👈 Add this if it's missing
-
+    Print(Box<Expression>),
+    Return(Box<Expression>),
 }
 
 

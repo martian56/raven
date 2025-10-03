@@ -28,13 +28,16 @@ impl Parser {
                 TokenType::Let => self.parse_variable_declaration()?,
                 TokenType::Identifier(_) => self.parse_assignment()?,
                 TokenType::If => self.parse_if_statement()?,
+                TokenType::While => self.parse_while_loop()?,
+                TokenType::For => self.parse_for_loop()?,
+                TokenType::Fun => self.parse_function_declaration()?,
+                TokenType::Return => self.parse_return_statement()?,
                 TokenType::Print => self.parse_print_statement()?,
                 TokenType::EOF => break,
                 _ => return Err(format!("Unexpected token: {:?}", token)),
             };
     
             statements.push(stmt);
-            // self.advance(); ❌ remove this!
         }
     
         Ok(ASTNode::Block(statements))
@@ -201,6 +204,9 @@ impl Parser {
                 TokenType::Let => self.parse_variable_declaration()?,
                 TokenType::Identifier(_) => self.parse_assignment()?,
                 TokenType::If => self.parse_if_statement()?,
+                TokenType::While => self.parse_while_loop()?,
+                TokenType::For => self.parse_for_loop()?,
+                TokenType::Return => self.parse_return_statement()?,
                 TokenType::Print => self.parse_print_statement()?,
                 _ => return Err(format!("Unexpected token in block: {:?}", token)),
             };
@@ -297,6 +303,251 @@ impl Parser {
         }
     
         Err("Expected '(' after 'print'.".to_string())
+    }
+
+    fn parse_function_declaration(&mut self) -> Result<ASTNode, String> {
+        self.advance(); // Skip 'fun'
+    
+        // Parse function name
+        let func_name = if let Some(TokenType::Identifier(name)) = &self.current_token {
+            let name_clone = name.clone();
+            self.advance();
+            name_clone
+        } else {
+            return Err("Expected function name after 'fun'.".to_string());
+        };
+    
+        // Expect '('
+        if let Some(TokenType::LeftParen) = &self.current_token {
+            self.advance();
+        } else {
+            return Err("Expected '(' after function name.".to_string());
+        }
+    
+        // Parse parameters
+        let mut parameters = Vec::new();
+        while let Some(token) = &self.current_token {
+            if let TokenType::RightParen = token {
+                break;
+            }
+    
+            // Parse parameter name
+            let param_name = if let Some(TokenType::Identifier(name)) = &self.current_token {
+                let name_clone = name.clone();
+                self.advance();
+                name_clone
+            } else {
+                return Err("Expected parameter name.".to_string());
+            };
+    
+            // Expect ':'
+            if let Some(TokenType::Colon) = &self.current_token {
+                self.advance();
+            } else {
+                return Err("Expected ':' after parameter name.".to_string());
+            }
+    
+            // Parse parameter type
+            let param_type = match &self.current_token {
+                Some(TokenType::IntType) => {
+                    self.advance();
+                    "int".to_string()
+                }
+                Some(TokenType::FloatType) => {
+                    self.advance();
+                    "float".to_string()
+                }
+                Some(TokenType::BoolType) => {
+                    self.advance();
+                    "bool".to_string()
+                }
+                Some(TokenType::StringType) => {
+                    self.advance();
+                    "string".to_string()
+                }
+                other => return Err(format!("Expected type for parameter, got {:?}", other)),
+            };
+    
+            parameters.push(crate::ast::Parameter {
+                name: param_name,
+                param_type,
+            });
+    
+            // Check for comma or end of parameters
+            if let Some(TokenType::Comma) = &self.current_token {
+                self.advance();
+            }
+        }
+    
+        // Expect ')'
+        if let Some(TokenType::RightParen) = &self.current_token {
+            self.advance();
+        } else {
+            return Err("Expected ')' after parameters.".to_string());
+        }
+    
+        // Parse return type
+        let return_type = if let Some(TokenType::Arrow) = &self.current_token {
+            self.advance();
+            match &self.current_token {
+                Some(TokenType::IntType) => {
+                    self.advance();
+                    "int".to_string()
+                }
+                Some(TokenType::FloatType) => {
+                    self.advance();
+                    "float".to_string()
+                }
+                Some(TokenType::BoolType) => {
+                    self.advance();
+                    "bool".to_string()
+                }
+                Some(TokenType::StringType) => {
+                    self.advance();
+                    "string".to_string()
+                }
+                Some(TokenType::VoidType) => {
+                    self.advance();
+                    "void".to_string()
+                }
+                other => return Err(format!("Expected return type, got {:?}", other)),
+            }
+        } else {
+            "void".to_string()
+        };
+    
+        // Parse function body
+        if let Some(TokenType::LeftBrace) = &self.current_token {
+            self.advance();
+            let body = self.parse_block()?;
+            
+            if let Some(TokenType::RightBrace) = &self.current_token {
+                self.advance();
+            } else {
+                return Err("Expected '}' to close function body.".to_string());
+            }
+    
+            Ok(ASTNode::FunctionDecl(func_name, return_type, parameters, Box::new(body)))
+        } else {
+            Err("Expected '{' to start function body.".to_string())
+        }
+    }
+
+    fn parse_while_loop(&mut self) -> Result<ASTNode, String> {
+        self.advance(); // Skip 'while'
+    
+        // Expect '('
+        if let Some(TokenType::LeftParen) = &self.current_token {
+            self.advance();
+        } else {
+            return Err("Expected '(' after 'while'.".to_string());
+        }
+    
+        // Parse condition
+        let condition = self.parse_expression();
+    
+        // Expect ')'
+        if let Some(TokenType::RightParen) = &self.current_token {
+            self.advance();
+        } else {
+            return Err("Expected ')' after while condition.".to_string());
+        }
+    
+        // Parse body
+        if let Some(TokenType::LeftBrace) = &self.current_token {
+            self.advance();
+            let body = self.parse_block()?;
+            
+            if let Some(TokenType::RightBrace) = &self.current_token {
+                self.advance();
+            } else {
+                return Err("Expected '}' to close while body.".to_string());
+            }
+    
+            Ok(ASTNode::WhileLoop(Box::new(condition), Box::new(body)))
+        } else {
+            Err("Expected '{' to start while body.".to_string())
+        }
+    }
+
+    fn parse_for_loop(&mut self) -> Result<ASTNode, String> {
+        self.advance(); // Skip 'for'
+    
+        // Expect '('
+        if let Some(TokenType::LeftParen) = &self.current_token {
+            self.advance();
+        } else {
+            return Err("Expected '(' after 'for'.".to_string());
+        }
+    
+        // Parse initialization (e.g., let i = 0)
+        let init = if let Some(TokenType::Let) = &self.current_token {
+            self.parse_variable_declaration()?
+        } else {
+            return Err("Expected variable declaration in for loop initialization.".to_string());
+        };
+    
+        // Parse condition (e.g., i < 10)
+        let condition = self.parse_expression();
+    
+        // Expect ';'
+        if let Some(TokenType::Semicolon) = &self.current_token {
+            self.advance();
+        } else {
+            return Err("Expected ';' after for loop condition.".to_string());
+        }
+    
+        // Parse increment (e.g., i = i + 1) - without semicolon
+        let increment = if let Some(TokenType::Identifier(name)) = &self.current_token {
+            let name_clone = name.clone();
+            self.advance();
+            
+            if let Some(TokenType::Assign) = &self.current_token {
+                self.advance();
+                let expr = self.parse_expression();
+                ASTNode::Assignment(name_clone, Box::new(expr))
+            } else {
+                return Err("Expected '=' in for loop increment.".to_string());
+            }
+        } else {
+            return Err("Expected assignment in for loop increment.".to_string());
+        };
+    
+        // Expect ')'
+        if let Some(TokenType::RightParen) = &self.current_token {
+            self.advance();
+        } else {
+            return Err("Expected ')' after for loop header.".to_string());
+        }
+    
+        // Parse body
+        if let Some(TokenType::LeftBrace) = &self.current_token {
+            self.advance();
+            let body = self.parse_block()?;
+            
+            if let Some(TokenType::RightBrace) = &self.current_token {
+                self.advance();
+            } else {
+                return Err("Expected '}' to close for body.".to_string());
+            }
+    
+            Ok(ASTNode::ForLoop(Box::new(init), Box::new(condition), Box::new(increment), Box::new(body)))
+        } else {
+            Err("Expected '{' to start for body.".to_string())
+        }
+    }
+
+    fn parse_return_statement(&mut self) -> Result<ASTNode, String> {
+        self.advance(); // Skip 'return'
+    
+        let expr = self.parse_expression();
+    
+        if let Some(TokenType::Semicolon) = &self.current_token {
+            self.advance();
+            Ok(ASTNode::Return(Box::new(expr)))
+        } else {
+            Err("Expected ';' after return statement.".to_string())
+        }
     }
     
     
