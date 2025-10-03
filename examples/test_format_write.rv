@@ -1,0 +1,6 @@
+let account_name: String = "Test Account";
+let balance: float = 1000.0;
+let account_data: String = format("Account: {}\nBalance: ${}\nCreated: 2024-01-01\n", account_name, balance);
+let filename: String = format("{}.txt", account_name.replace(" ", "_"));
+write_file(filename, account_data);
+print("Account created successfully");

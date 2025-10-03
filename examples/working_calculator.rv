@@ -1,0 +1,94 @@
+print("=== SIMPLE CALCULATOR ===");
+print("Built with Raven v1.0");
+
+let user_name: String = input("Enter your name: ");
+print(format("Welcome, {}!", user_name));
+
+print("\nMAIN MENU:");
+print("1. Calculator");
+print("2. Text Processor");
+print("3. Number Analysis");
+print("0. Exit");
+
+let choice: String = input("Select an option (0-3): ");
+
+if (choice == "1") {
+    print("\n=== CALCULATOR ===");
+    let num1_str: String = input("Enter first number: ");
+    let num1: float = 10.0;
+    let num2_str: String = input("Enter second number: ");
+    let num2: float = 5.0;
+    let operation: String = input("Enter operation (+, -, *, /): ");
+    
+    let result: float = 0.0;
+    if (operation == "+") {
+        result = num1 + num2;
+    } else {
+        if (operation == "-") {
+            result = num1 - num2;
+        } else {
+            if (operation == "*") {
+                result = num1 * num2;
+            } else {
+                if (operation == "/") {
+                    result = num1 / num2;
+                }
+            }
+        }
+    }
+    
+    print(format("Result: {} {} {} = {}", num1, operation, num2, result));
+    
+} else {
+    if (choice == "2") {
+        print("\n=== TEXT PROCESSOR ===");
+        let text: String = input("Enter some text: ");
+        
+        let length: int = len(text);
+        print(format("Text length: {}", length));
+        
+        let upper_text: String = text.replace("a", "A");
+        let processed_text: String = upper_text.replace("e", "E");
+        print(format("Processed text: {}", processed_text));
+        
+        let words: String[] = text.split(" ");
+        let word_count: int = len(words);
+        print(format("Word count: {}", word_count));
+        
+    } else {
+        if (choice == "3") {
+            print("\n=== NUMBER ANALYSIS ===");
+            let number_str: String = input("Enter a number: ");
+            let number: int = 15;
+            
+            print(format("Number: {}", number));
+            print(format("Double: {}", number * 2));
+            print(format("Square: {}", number * number));
+            print(format("Half: {}", number / 2));
+            
+            if (number > 10) {
+                print("Number is greater than 10");
+            } else {
+                print("Number is 10 or less");
+            }
+            
+            let half: int = number / 2;
+            let double_half: int = half * 2;
+            let remainder: int = number - double_half;
+            if (remainder == 0) {
+                print("Number is even");
+            } else {
+                print("Number is odd");
+            }
+            
+        } else {
+            if (choice == "0") {
+                print(format("\nThank you for using Simple Calculator, {}!", user_name));
+                print("Goodbye!");
+                
+            } else {
+                print("Invalid option. Please select 0-3.");
+            }
+        }
+    }
+}

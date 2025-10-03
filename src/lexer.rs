@@ -11,6 +11,8 @@ pub enum TokenType {
     While,
     For,
     Import,
+    Export,
+    From,
     Struct,
     Print,
 
@@ -20,6 +22,10 @@ pub enum TokenType {
     BoolType,
     StringType,
     VoidType,
+    
+    // Array tokens
+    LeftBracket,  // [
+    RightBracket, // ]
 
     // Identifiers and literals
     Integer(i64),
@@ -34,6 +40,7 @@ pub enum TokenType {
     Colon,       // :
     Semicolon,   // ;
     Comma,       // ,
+    Dot,         // .
     LeftParen,   // (
     RightParen,  // )
     LeftBrace,   // {
@@ -75,11 +82,16 @@ pub enum TokenType {
     Illegal(char),
 }
 
+use crate::span::Span;
+
 #[derive(Debug, Clone)]
 pub struct Lexer {
     input: Vec<char>,
-    position: usize,
+    pub position: usize,
     current_char: Option<char>,
+    pub line: usize,
+    pub column: usize,
+    line_start: usize,  // Offset where current line starts
 }
 
 impl Lexer {
@@ -90,11 +102,39 @@ impl Lexer {
             input: chars,
             position: 0,
             current_char: first_char,
+            line: 0,
+            column: 0,
+            line_start: 0,
         }
+    }
+    
+    /// Get current span for a token starting at current position
+    fn current_span(&self, length: usize) -> Span {
+        Span::new(self.line, self.column, self.position, length)
+    }
+    
+    /// Mark the start of a token
+    fn mark_start(&self) -> (usize, usize, usize) {
+        (self.position, self.line, self.column)
+    }
+    
+    /// Create span from marked start to current position
+    fn span_from(&self, start: (usize, usize, usize)) -> Span {
+        let (start_pos, start_line, start_col) = start;
+        Span::new(start_line, start_col, start_pos, self.position - start_pos)
     }
 
     /// Moves to the next character in input
     pub fn advance(&mut self) {
+        // Check if current character is newline before moving
+        if let Some('\n') = self.current_char {
+            self.line += 1;
+            self.column = 0;
+            self.line_start = self.position + 1;
+        } else {
+            self.column += 1;
+        }
+        
         self.position += 1;
         if self.position >= self.input.len() {
             self.current_char = None;
@@ -110,6 +150,19 @@ impl Lexer {
         } else {
             Some(self.input[self.position + 1])
         }
+    }
+    
+    pub fn peek_token(&self) -> Option<TokenType> {
+        // Create a temporary lexer to peek at the next token
+        let mut temp_lexer = self.clone();
+        temp_lexer.position = self.position;
+        temp_lexer.current_char = self.current_char;
+        temp_lexer.line = self.line;
+        temp_lexer.column = self.column;
+        temp_lexer.line_start = self.line_start;
+        
+        // Get the next token without advancing the main lexer
+        Some(temp_lexer.next_token())
     }
 
     /// Skips whitespace (spaces, tabs, newlines)
@@ -175,8 +228,57 @@ impl Lexer {
         result
     }
 
+    /// Skips a single-line comment (//)
+    fn skip_single_line_comment(&mut self) {
+        // Skip the two slashes
+        self.advance(); // Skip first '/'
+        self.advance(); // Skip second '/'
+        
+        // Skip until end of line
+        while let Some(ch) = self.current_char {
+            if ch == '\n' {
+                self.advance(); // Skip the newline
+                break;
+            }
+            self.advance();
+        }
+    }
+
+    /// Skips a multi-line comment (/* */)
+    fn skip_multi_line_comment(&mut self) {
+        // Skip the opening /*
+        self.advance(); // Skip '/'
+        self.advance(); // Skip '*'
+        
+        // Skip until closing */
+        while let Some(ch) = self.current_char {
+            if ch == '*' {
+                self.advance(); // Skip '*'
+                if let Some('/') = self.current_char {
+                    self.advance(); // Skip '/'
+                    break;
+                }
+            } else {
+                self.advance();
+            }
+        }
+    }
+
     pub fn next_token(&mut self) -> TokenType {
         self.skip_whitespace();
+
+        // Handle comments
+        if let Some('/') = self.current_char {
+            if let Some('/') = self.peek() {
+                // Single-line comment: //
+                self.skip_single_line_comment();
+                return self.next_token(); // Recursively get next token
+            } else if let Some('*') = self.peek() {
+                // Multi-line comment: /*
+                self.skip_multi_line_comment();
+                return self.next_token(); // Recursively get next token
+            }
+        }
 
         match self.current_char {
             Some(ch) => {
@@ -243,6 +345,8 @@ impl Lexer {
                     ')' => { self.advance(); TokenType::RightParen }
                     '{' => { self.advance(); TokenType::LeftBrace }
                     '}' => { self.advance(); TokenType::RightBrace }
+                    '[' => { self.advance(); TokenType::LeftBracket }
+                    ']' => { self.advance(); TokenType::RightBracket }
                     '&' => {
                         if self.peek() == Some('&') {
                             self.advance();
@@ -270,7 +374,7 @@ impl Lexer {
                             TokenType::DotDot
                         } else {
                             self.advance();
-                            TokenType::Illegal('.')
+                            TokenType::Dot
                         }
                     }
                     '"' => {
@@ -312,6 +416,8 @@ impl Lexer {
             "while" => TokenType::While,
             "for" => TokenType::For,
             "import" => TokenType::Import,
+            "export" => TokenType::Export,
+            "from" => TokenType::From,
             "struct" => TokenType::Struct,
             "print" => TokenType::Print,
             "and" => TokenType::And,

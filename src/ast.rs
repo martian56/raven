@@ -14,7 +14,12 @@ pub enum ASTNode {
     ),
     Block(Vec<ASTNode>),
     Print(Box<Expression>),
+    FunctionCall(String, Vec<Expression>), // function_name, arguments (as statement)
+    MethodCall(Box<Expression>, String, Vec<Expression>), // object.method(args) (as statement)
     Return(Box<Expression>),
+    Import(String, Option<String>), // module_name, optional alias
+    ImportSelective(String, Vec<String>), // module_name, selected_items
+    Export(Box<ASTNode>), // export any AST node
 }
 
 
@@ -26,7 +31,10 @@ pub enum Expression {
     StringLiteral(String),
     Identifier(String),
     BinaryOp(Box<Expression>, Operator, Box<Expression>),
-    // etc.
+    FunctionCall(String, Vec<Expression>), // function_name, arguments
+    ArrayLiteral(Vec<Expression>), // [1, 2, 3]
+    ArrayIndex(Box<Expression>, Box<Expression>), // array[index]
+    MethodCall(Box<Expression>, String, Vec<Expression>), // object.method(args)
 }
 
 
@@ -52,4 +60,14 @@ pub enum Operator {
 pub struct Parameter {
     pub name: String,
     pub param_type: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum Type {
+    Int,
+    Float,
+    Bool,
+    String,
+    Void,
+    Array(Box<Type>), // int[] -> Array(Box::new(Type::Int))
 }

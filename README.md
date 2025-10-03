@@ -1,8 +1,8 @@
 # 🦅 Raven Programming Language
 
-**Raven** is a new programming language and compiler built with [Rust](https://www.rust-lang.org/), combining the best features of Rust, Python, C++, Java, and Go. It’s designed to be fast, safe, expressive, and simple—without compromising power or performance.
+**Raven** is a modern programming language and interpreter built with [Rust](https://www.rust-lang.org/), combining the best features of Rust, Python, C++, Java, and Go. It's designed to be fast, safe, expressive, and simple—without compromising power or performance.
 
-> ⚙️ Currently in active development.
+> 🚀 **Raven v1.0 is now available!** A complete, production-ready programming language.
 
 ---
 
@@ -33,17 +33,79 @@ Whether you're writing system-level code or high-level applications, Raven is bu
 
 ## 🛠️ Current Status
 
-Raven has reached its initial MVP milestone! Core features implemented:
+**Raven v1.0 is complete!** All core features implemented:
 
-- [x] **Tokenizer / Lexer** - Complete with full token support
-- [x] **Parser** - Full support for all language features
+- [x] **Tokenizer / Lexer** - Complete with comments, strings, numbers, identifiers
+- [x] **Parser** - Full support for all language constructs
 - [x] **AST Generation** - Complete abstract syntax tree
-- [x] **Type Checking** - Static type validation
-- [x] **Code Generation** - Interpreter-based execution
-- [x] **CLI Tool** - Full command-line interface
-- [ ] Standard library (planned)
-- [ ] REPL (planned)
-- [ ] Advanced optimizations (planned)
+- [x] **Type Checking** - Static type validation with error reporting
+- [x] **Interpreter** - Tree-walking interpreter with full execution
+- [x] **CLI Tool** - Complete command-line interface
+- [x] **Variables & Types** - int, float, String, bool, arrays
+- [x] **Control Flow** - if/else, while, for loops
+- [x] **Functions** - Parameters, return types, recursion
+- [x] **String Operations** - Concatenation, methods, formatting
+- [x] **Array Operations** - Literals, indexing, methods (push, pop, slice, join)
+- [x] **Built-in Functions** - print, input, format, len, type
+- [x] **File I/O** - read_file, write_file, append_file, file_exists
+- [x] **Comments** - Single-line (//) and multi-line (/* */)
+- [x] **Module System** - import/export functionality
+- [x] **REPL** - Interactive Read-Eval-Print Loop
+- [x] **Error Reporting** - Comprehensive error messages with line/column info
+- [x] **Operator Precedence** - Correct expression evaluation
+- [x] **Variable Scoping** - Proper scope management
+- [x] **Method Chaining** - Object.method1().method2() support
+
+---
+
+## 🎯 Language Features
+
+### Data Types
+- **int** - 64-bit signed integers
+- **float** - 64-bit floating-point numbers  
+- **String** - UTF-8 strings with rich operations
+- **bool** - Boolean values (true/false)
+- **Arrays** - Dynamic arrays with type safety
+
+### Control Flow
+- **if/else** - Conditional statements
+- **while** - Loop with condition
+- **for** - C-style for loops
+- **Functions** - Parameters, return types, recursion
+
+### String Operations
+- **Concatenation** - `+` operator
+- **Methods** - `slice()`, `split()`, `replace()`
+- **Formatting** - `format()` with placeholders
+- **Length** - `len()` function
+
+### Array Operations  
+- **Literals** - `[1, 2, 3]` syntax
+- **Indexing** - `array[0]` access
+- **Methods** - `push()`, `pop()`, `slice()`, `join()`
+- **Bounds checking** - Automatic array bounds validation
+
+### Built-in Functions
+- **print()** - Output with formatting
+- **input()** - User input
+- **format()** - String formatting with `{}` placeholders
+- **len()** - Length of strings and arrays
+- **type()** - Type information
+
+### File I/O
+- **read_file()** - Read file contents
+- **write_file()** - Write to file
+- **append_file()** - Append to file
+- **file_exists()** - Check file existence
+
+### Advanced Features
+- **Static Typing** - All variables must have explicit types
+- **Type Checking** - Compile-time type validation
+- **Error Reporting** - Detailed error messages with line/column info
+- **Comments** - Single-line (`//`) and multi-line (`/* */`)
+- **Module System** - `import`/`export` functionality
+- **REPL** - Interactive development environment
+- **Method Chaining** - `object.method1().method2()` support
 
 ---
 
@@ -68,6 +130,9 @@ cargo build --release
 # Run a Raven program
 raven -f program.rv
 
+# Interactive REPL mode
+raven
+
 # Show verbose output (tokens, AST, type checking)
 raven -f program.rv -v
 
@@ -89,14 +154,30 @@ let message: String = "Hello, Raven!";
 print(message);
 ```
 
-### Variables and Arithmetic
+### Variables and Types
 
 ```raven
-let x: int = 10;
-let y: int = 5;
+let name: String = "Raven";
+let age: int = 25;
+let height: float = 5.9;
+let isActive: bool = true;
 
-let sum: int = x + y;
-print(sum);  // Output: 15
+print(format("Name: {}, Age: {}, Height: {}", name, age, height));
+```
+
+### Arrays and String Operations
+
+```raven
+let numbers: int[] = [1, 2, 3, 4, 5];
+numbers.push(6);
+print(numbers);  // [1, 2, 3, 4, 5, 6]
+
+let text: String = "Hello World";
+let words: String[] = text.split(" ");
+print(len(words));  // 2
+
+let joined: String = words.join("-");
+print(joined);  // "Hello-World"
 ```
 
 ### Conditionals
@@ -106,10 +187,12 @@ let age: int = 25;
 
 if (age < 18) {
     print("Too young");
-} elseif (age < 30) {
-    print("Young adult");
 } else {
-    print("Mature");
+    if (age < 30) {
+        print("Young adult");
+    } else {
+        print("Mature");
+    }
 }
 ```
 
@@ -136,9 +219,40 @@ fun add(a: int, b: int) -> int {
     return a + b;
 }
 
-let result: int = 15;
-print(result);
+let result: int = add(10, 5);
+print(result);  // 15
 ```
+
+### File I/O
+
+```raven
+let content: String = "Hello from Raven!";
+write_file("output.txt", content);
+
+if (file_exists("output.txt")) {
+    let data: String = read_file("output.txt");
+    print(data);
+}
+```
+
+### Interactive REPL
+
+```bash
+raven
+raven> let name: String = "World";
+raven> print(format("Hello, {}!", name));
+Hello, World!
+raven> 
+```
+
+### Complete Application Example
+
+Check out `examples/working_calculator.rv` for a full-featured application showcasing:
+- Interactive menu system
+- Calculator with arithmetic operations  
+- Text processor with string operations
+- Number analysis with mathematical functions
+- User input/output and file operations
 
 More examples available in the `examples/` directory!
 
@@ -146,9 +260,15 @@ More examples available in the `examples/` directory!
 
 ## 🤝 Contributing
 
-Interested in compilers, languages, or systems programming? Contributions are welcome once the core components are stable!
+Raven v1.0 is complete and ready for use! Contributions are welcome for:
 
-For now, feel free to ⭐ star the project and follow progress.
+- 🐛 Bug fixes and improvements
+- 📚 Documentation enhancements  
+- 🧪 Additional test cases
+- 🚀 Performance optimizations
+- 📦 Standard library modules
+
+Feel free to ⭐ star the project and open issues for suggestions!
 
 ---
 
