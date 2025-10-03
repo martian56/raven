@@ -1,4 +1,60 @@
-/target
-/running
-COMPLETION_SUMMARY.md
-docs/compilation_guide.md
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+wix/
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows
+*.lnk
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Test output files
+test_*.txt
+*.txt
+!README.txt
+!LICENSE.txt
+
+# Build artifacts (keep release builds for installer)
+target/debug/
+target/incremental/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# WiX build artifacts
+*.wixpdb
+*.wixobj
+
+# Documentation build artifacts
+docs/build/
+
+# Temporary Raven files
+running
+
+# Example output files
+examples/output/
+examples/*.txt
+
+# Module files (these are examples)
+math.rv
+utils.rv
