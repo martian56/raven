@@ -43,8 +43,8 @@ fn main() {
     }
 
     // Initialize the lexer
-    let mut lexer = Lexer::new(source_code);
-    let mut parser = Parser::new(lexer.clone());
+    let mut lexer = Lexer::new(source_code.clone());
+    let mut parser = Parser::new(lexer.clone(), source_code);
     
     let mut token_count = 0;
 
