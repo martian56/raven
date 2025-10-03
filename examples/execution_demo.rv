@@ -1,0 +1,10 @@
+let x: int = 5;
+print(x);
+
+let y: int = x + 10;
+print(y);
+
+if (y > 10) {
+    print(100);
+}
+

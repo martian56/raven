@@ -1,0 +1,214 @@
+print("=== ADVANCED PRIME NUMBER ANALYZER ===");
+print("");
+
+let rangeStart: int = 2;
+let rangeEnd: int = 30;
+
+print("Analyzing range:");
+print(rangeStart);
+print("to");
+print(rangeEnd);
+print("");
+
+let totalNumbers: int = rangeEnd - rangeStart + 1;
+let primeCount: int = 0;
+let compositeCount: int = 0;
+let sumOfPrimes: int = 0;
+let sumOfComposites: int = 0;
+
+let currentNumber: int = rangeStart;
+
+while (currentNumber <= rangeEnd) {
+    let isPrime: bool = true;
+    
+    if (currentNumber < 2) {
+        isPrime = false;
+    }
+    
+    if (currentNumber == 2) {
+        isPrime = true;
+    }
+    
+    if (currentNumber > 2) {
+        let divisor: int = 2;
+        let checkLimit: int = currentNumber / 2;
+        let continueChecking: bool = true;
+        
+        while (continueChecking) {
+            let quotient: int = currentNumber / divisor;
+            let product: int = quotient * divisor;
+            let remainder: int = currentNumber - product;
+            
+            if (remainder == 0) {
+                isPrime = false;
+            }
+            
+            divisor = divisor + 1;
+            
+            let withinLimit: bool = divisor <= checkLimit;
+            continueChecking = withinLimit && isPrime;
+        }
+    }
+    
+    let isValidNumber: bool = currentNumber >= 2;
+    let isActuallyPrime: bool = isPrime && isValidNumber;
+    
+    if (isActuallyPrime) {
+        print("PRIME:");
+        print(currentNumber);
+        primeCount = primeCount + 1;
+        sumOfPrimes = sumOfPrimes + currentNumber;
+    } else {
+        if (currentNumber > 1) {
+            compositeCount = compositeCount + 1;
+            sumOfComposites = sumOfComposites + currentNumber;
+        }
+    }
+    
+    currentNumber = currentNumber + 1;
+}
+
+print("");
+print("=== ANALYSIS RESULTS ===");
+print("");
+
+print("Total numbers analyzed:");
+print(totalNumbers);
+
+print("Prime numbers found:");
+print(primeCount);
+
+print("Composite numbers found:");
+print(compositeCount);
+
+print("");
+print("=== STATISTICAL ANALYSIS ===");
+
+print("Sum of all primes:");
+print(sumOfPrimes);
+
+print("Sum of composites:");
+print(sumOfComposites);
+
+if (primeCount > 0) {
+    let averagePrime: int = sumOfPrimes / primeCount;
+    print("Average prime value:");
+    print(averagePrime);
+}
+
+if (compositeCount > 0) {
+    let averageComposite: int = sumOfComposites / compositeCount;
+    print("Average composite value:");
+    print(averageComposite);
+}
+
+let totalSum: int = sumOfPrimes + sumOfComposites;
+print("Total sum of all numbers:");
+print(totalSum);
+
+print("");
+print("=== DISTRIBUTION ANALYSIS ===");
+
+let primePercentage: int = primeCount * 100 / totalNumbers;
+print("Prime percentage:");
+print(primePercentage);
+
+let compositePercentage: int = compositeCount * 100 / totalNumbers;
+print("Composite percentage:");
+print(compositePercentage);
+
+print("");
+print("=== DENSITY ANALYSIS ===");
+
+if (primePercentage > 30) {
+    print("Classification: HIGH prime density region!");
+} elseif (primePercentage > 20) {
+    print("Classification: MODERATE prime density.");
+} else {
+    print("Classification: LOW prime density region.");
+}
+
+let primeToCompositeRatio: int = 0;
+if (compositeCount > 0) {
+    primeToCompositeRatio = primeCount * 10 / compositeCount;
+}
+
+print("Prime-to-composite ratio (x10):");
+print(primeToCompositeRatio);
+
+print("");
+print("=== QUALITY METRICS ===");
+
+if (sumOfPrimes > sumOfComposites) {
+    print("Primes have HIGHER total value!");
+    let valueDifference: int = sumOfPrimes - sumOfComposites;
+    print("Value difference:");
+    print(valueDifference);
+} elseif (sumOfComposites > sumOfPrimes) {
+    print("Composites have HIGHER total value.");
+    let valueDifference: int = sumOfComposites - sumOfPrimes;
+    print("Value difference:");
+    print(valueDifference);
+} else {
+    print("Perfect BALANCE between primes and composites!");
+}
+
+print("");
+print("=== SPECIAL NUMBER DETECTION ===");
+
+let twinPrimes: int = 0;
+let testNum: int = rangeStart;
+
+while (testNum <= rangeEnd - 2) {
+    let num1IsPrime: bool = false;
+    let num2IsPrime: bool = false;
+    
+    let div1: int = 2;
+    let isPrime1: bool = true;
+    if (testNum >= 2) {
+        let continue1: bool = true;
+        while (continue1) {
+            let q1: int = testNum / div1;
+            let p1: int = q1 * div1;
+            let r1: int = testNum - p1;
+            if (r1 == 0) {
+                isPrime1 = false;
+            }
+            div1 = div1 + 1;
+            let limit1: bool = div1 <= testNum / 2;
+            continue1 = limit1 && isPrime1;
+        }
+        num1IsPrime = isPrime1;
+    }
+    
+    let testNum2: int = testNum + 2;
+    let div2: int = 2;
+    let isPrime2: bool = true;
+    if (testNum2 >= 2) {
+        let continue2: bool = true;
+        while (continue2) {
+            let q2: int = testNum2 / div2;
+            let p2: int = q2 * div2;
+            let r2: int = testNum2 - p2;
+            if (r2 == 0) {
+                isPrime2 = false;
+            }
+            div2 = div2 + 1;
+            let limit2: bool = div2 <= testNum2 / 2;
+            continue2 = limit2 && isPrime2;
+        }
+        num2IsPrime = isPrime2;
+    }
+    
+    if (num1IsPrime && num2IsPrime) {
+        twinPrimes = twinPrimes + 1;
+    }
+    
+    testNum = testNum + 1;
+}
+
+print("Twin prime pairs found:");
+print(twinPrimes);
+
+print("");
+print("=== ANALYSIS COMPLETE ===");
