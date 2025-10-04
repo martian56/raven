@@ -1,0 +1,14 @@
+{
+  "name": "Raven",
+  "type": "programming",
+  "color": "#1a1a2e",
+  "extensions": [
+    ".rv"
+  ],
+  "aliases": [
+    "raven"
+  ],
+  "tm_scope": "source.raven",
+  "ace_mode": "text",
+  "language_id": 1000001
+}
