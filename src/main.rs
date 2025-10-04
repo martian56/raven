@@ -3,30 +3,19 @@ use raven::code_gen::Interpreter;
 use raven::lexer::Lexer;
 use raven::parser::Parser;
 use raven::type_checker::TypeChecker;
-use raven::error::RavenError;
-use raven::span::Span;
 use std::fs;
 use std::process;
 
 fn main() {
     let matches = Command::new("Raven Programming Language")
-        .version("0.1.0")
+        .version("1.1.0")
         .author("martian56 <https://github.com/martian56>")
         .about("Raven compiler and interpreter - fast, safe, and expressive")
         .arg(
             Arg::new("file")
-                .short('f')
-                .long("file")
-                .value_name("FILE")
-                .help("The Raven source file to compile/run")
+                .help("The Raven source file to execute")
                 .required(false)
-                .num_args(1),
-        )
-        .arg(
-            Arg::new("repl")
-                .long("repl")
-                .help("Start interactive REPL mode")
-                .action(clap::ArgAction::SetTrue),
+                .num_args(0..=1),
         )
         .arg(
             Arg::new("verbose")
@@ -53,21 +42,18 @@ fn main() {
     let verbose = matches.get_flag("verbose");
     let check_only = matches.get_flag("check");
     let show_ast = matches.get_flag("ast");
-    let repl_mode = matches.get_flag("repl");
 
-    // Check if we should start REPL mode
-    if repl_mode {
+    // Check if a file was provided
+    if let Some(file_name) = matches.get_one::<String>("file") {
+        // Execute the file
+        execute_file(file_name, verbose, check_only, show_ast);
+    } else {
+        // No file provided, start REPL
         start_repl(verbose);
-        return;
     }
+}
 
-    // Get file path (required if not in REPL mode)
-    let file_name = matches.get_one::<String>("file").unwrap_or_else(|| {
-        eprintln!("❌ Error: Either --file or --repl must be specified");
-        eprintln!("Use --help for more information");
-        process::exit(1);
-    });
-
+fn execute_file(file_name: &str, verbose: bool, check_only: bool, show_ast: bool) {
     // Read source code
     let source_code = fs::read_to_string(file_name).unwrap_or_else(|err| {
         eprintln!("❌ Failed to read file '{}': {}", file_name, err);
@@ -106,25 +92,15 @@ fn main() {
     }
 
     let mut parser = Parser::new(lexer, source_code.clone());
-    let ast = match parser.parse() {
-        Ok(ast) => {
-            if verbose {
-                println!("   ✅ Parsing successful!");
-            }
-            ast
-        }
-        Err(e) => {
-            // Use our beautiful error formatting!
-            let error_with_file = e.with_filename(file_name.clone());
-            eprint!("{}", error_with_file.format());
-            process::exit(1);
-        }
-    };
+    let ast = parser.parse().unwrap_or_else(|e| {
+        eprintln!("\n❌ Parse error: {}", e.format());
+        process::exit(1);
+    });
 
-    // Show AST if requested
-    if show_ast || verbose {
+    if verbose {
+        println!("   ✅ Parsing successful!");
         println!("\n📜 Abstract Syntax Tree:");
-        println!("{:#?}", ast);
+        println!("{:?}", ast);
     }
 
     // === TYPE CHECKING ===
@@ -133,21 +109,26 @@ fn main() {
     }
 
     let mut type_checker = TypeChecker::new();
-    match type_checker.check(&ast) {
-        Ok(_) => {
-            if verbose {
-                println!("   ✅ Type checking passed!");
-            }
-        }
-        Err(e) => {
-            eprintln!("❌ Type error: {}", e);
-            process::exit(1);
-        }
+    type_checker.check(&ast).unwrap_or_else(|e| {
+        eprintln!("\n❌ Type error: {}", e);
+        process::exit(1);
+    });
+
+    if verbose {
+        println!("   ✅ Type checking passed!");
     }
 
-    // If only checking, exit here
     if check_only {
-        println!("✅ All checks passed!");
+        if verbose {
+            println!("\n─────────────────────────────────────────");
+            println!("✅ Syntax and type checking completed successfully!");
+        }
+        return;
+    }
+
+    if show_ast {
+        println!("\n📜 Abstract Syntax Tree:");
+        println!("{:#?}", ast);
         return;
     }
 
@@ -155,8 +136,6 @@ fn main() {
     if verbose {
         println!("\n🚀 EXECUTING...");
         println!("─────────────────────────────────────────");
-    } else {
-        println!("🚀 Running Raven program...\n");
     }
 
     let mut interpreter = Interpreter::new();
@@ -193,28 +172,21 @@ fn start_repl(verbose: bool) {
             Ok(_) => {
                 let input = input.trim();
                 
-                // Handle special commands
-                match input {
-                    "exit" | "quit" => {
-                        println!("👋 Goodbye!");
-                        break;
-                    }
-                    "help" => {
-                        println!("Available commands:");
-                        println!("  exit/quit - Exit the REPL");
-                        println!("  help      - Show this help");
-                        println!("  clear     - Clear the interpreter state");
-                        println!("  Any valid Raven expression or statement");
-                        continue;
-                    }
-                    "clear" => {
-                        interpreter = Interpreter::new();
-                        type_checker = TypeChecker::new();
-                        println!("✅ Interpreter state cleared");
-                        continue;
-                    }
-                    "" => continue, // Empty input
-                    _ => {} // Process as Raven code
+                if input.is_empty() {
+                    continue;
+                }
+                
+                if input == "exit" || input == "quit" {
+                    println!("Goodbye!");
+                    break;
+                }
+                
+                if input == "help" {
+                    println!("Available commands:");
+                    println!("  exit, quit - Exit the REPL");
+                    println!("  help - Show this help message");
+                    println!("  Any Raven code - Execute the code");
+                    continue;
                 }
                 
                 // Process Raven code

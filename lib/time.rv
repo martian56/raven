@@ -1,0 +1,353 @@
+// lib/time.rv - Time and Date Library
+
+// Simple time representation
+struct Time {
+    hour: int,
+    minute: int,
+    second: int
+}
+
+struct Date {
+    year: int,
+    month: int,
+    day: int
+}
+
+struct DateTime {
+    date: Date,
+    time: Time
+}
+
+// Time functions
+export fun new_time(hour: int, minute: int, second: int) -> Time {
+    let time: Time = Time { hour: hour, minute: minute, second: second };
+    return time;
+}
+
+export fun time_to_string(time: Time) -> String {
+    let hour_str: String = time.hour as String;
+    let minute_str: String = time.minute as String;
+    let second_str: String = time.second as String;
+    
+    // Pad with zeros if needed
+    if (len(hour_str) == 1) {
+        hour_str = "0" + hour_str;
+    }
+    if (len(minute_str) == 1) {
+        minute_str = "0" + minute_str;
+    }
+    if (len(second_str) == 1) {
+        second_str = "0" + second_str;
+    }
+    
+    return hour_str + ":" + minute_str + ":" + second_str;
+}
+
+export fun time_from_string(time_str: String) -> Time {
+    let parts: String[] = time_str.split(":");
+    if (len(parts) != 3) {
+        return new_time(0, 0, 0);
+    }
+    
+    let hour: int = parts[0] as int;
+    let minute: int = parts[1] as int;
+    let second: int = parts[2] as int;
+    
+    return new_time(hour, minute, second);
+}
+
+export fun time_add_seconds(time: Time, seconds: int) -> Time {
+    let total_seconds: int = time.hour * 3600 + time.minute * 60 + time.second + seconds;
+    
+    let new_hour: int = total_seconds / 3600;
+    let remaining: int = total_seconds % 3600;
+    let new_minute: int = remaining / 60;
+    let new_second: int = remaining % 60;
+    
+    // Handle day overflow
+    new_hour = new_hour % 24;
+    
+    return new_time(new_hour, new_minute, new_second);
+}
+
+export fun time_add_minutes(time: Time, minutes: int) -> Time {
+    return time_add_seconds(time, minutes * 60);
+}
+
+export fun time_add_hours(time: Time, hours: int) -> Time {
+    return time_add_seconds(time, hours * 3600);
+}
+
+export fun time_difference(time1: Time, time2: Time) -> int {
+    let seconds1: int = time1.hour * 3600 + time1.minute * 60 + time1.second;
+    let seconds2: int = time2.hour * 3600 + time2.minute * 60 + time2.second;
+    return seconds1 - seconds2;
+}
+
+// Date functions
+export fun new_date(year: int, month: int, day: int) -> Date {
+    let date: Date = Date { year: year, month: month, day: day };
+    return date;
+}
+
+export fun date_to_string(date: Date) -> String {
+    let year_str: String = date.year as String;
+    let month_str: String = date.month as String;
+    let day_str: String = date.day as String;
+    
+    // Pad with zeros if needed
+    if (len(month_str) == 1) {
+        month_str = "0" + month_str;
+    }
+    if (len(day_str) == 1) {
+        day_str = "0" + day_str;
+    }
+    
+    return year_str + "-" + month_str + "-" + day_str;
+}
+
+export fun date_from_string(date_str: String) -> Date {
+    let parts: String[] = date_str.split("-");
+    if (len(parts) != 3) {
+        return new_date(2000, 1, 1);
+    }
+    
+    let year: int = parts[0] as int;
+    let month: int = parts[1] as int;
+    let day: int = parts[2] as int;
+    
+    return new_date(year, month, day);
+}
+
+export fun is_leap_year(year: int) -> bool {
+    return (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+}
+
+export fun days_in_month(year: int, month: int) -> int {
+    if (month == 2) {
+        if (is_leap_year(year)) {
+            return 29;
+        } else {
+            return 28;
+        }
+    } else if (month == 4 || month == 6 || month == 9 || month == 11) {
+        return 30;
+    } else {
+        return 31;
+    }
+}
+
+export fun date_add_days(date: Date, days: int) -> Date {
+    let year: int = date.year;
+    let month: int = date.month;
+    let day: int = date.day + days;
+    
+    while (day > days_in_month(year, month)) {
+        day = day - days_in_month(year, month);
+        month = month + 1;
+        if (month > 12) {
+            month = 1;
+            year = year + 1;
+        }
+    }
+    
+    while (day < 1) {
+        month = month - 1;
+        if (month < 1) {
+            month = 12;
+            year = year - 1;
+        }
+        day = day + days_in_month(year, month);
+    }
+    
+    return new_date(year, month, day);
+}
+
+export fun date_add_months(date: Date, months: int) -> Date {
+    let year: int = date.year;
+    let month: int = date.month + months;
+    let day: int = date.day;
+    
+    while (month > 12) {
+        month = month - 12;
+        year = year + 1;
+    }
+    
+    while (month < 1) {
+        month = month + 12;
+        year = year - 1;
+    }
+    
+    // Adjust day if it's invalid for the new month
+    let max_day: int = days_in_month(year, month);
+    if (day > max_day) {
+        day = max_day;
+    }
+    
+    return new_date(year, month, day);
+}
+
+export fun date_add_years(date: Date, years: int) -> Date {
+    let year: int = date.year + years;
+    let month: int = date.month;
+    let day: int = date.day;
+    
+    // Adjust day for leap year changes
+    if (month == 2 && day == 29 && !is_leap_year(year)) {
+        day = 28;
+    }
+    
+    return new_date(year, month, day);
+}
+
+export fun date_difference(date1: Date, date2: Date) -> int {
+    // Simple implementation - returns approximate days
+    let days1: int = date1.year * 365 + date1.month * 30 + date1.day;
+    let days2: int = date2.year * 365 + date2.month * 30 + date2.day;
+    return days1 - days2;
+}
+
+export fun day_of_week(year: int, month: int, day: int) -> int {
+    // Zeller's congruence algorithm
+    if (month < 3) {
+        month = month + 12;
+        year = year - 1;
+    }
+    
+    let k: int = year % 100;
+    let j: int = year / 100;
+    
+    let day_of_week: int = (day + (13 * (month + 1)) / 5 + k + k / 4 + j / 4 + 5 * j) % 7;
+    
+    // Convert to 0=Sunday, 1=Monday, etc.
+    return (day_of_week + 5) % 7;
+}
+
+export fun day_name(day_num: int) -> String {
+    let names: String[] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    if (day_num >= 0 && day_num < 7) {
+        return names[day_num];
+    } else {
+        return "Unknown";
+    }
+}
+
+export fun month_name(month_num: int) -> String {
+    let names: String[] = ["", "January", "February", "March", "April", "May", "June", 
+                          "July", "August", "September", "October", "November", "December"];
+    if (month_num >= 1 && month_num <= 12) {
+        return names[month_num];
+    } else {
+        return "Unknown";
+    }
+}
+
+// DateTime functions
+export fun new_datetime(date: Date, time: Time) -> DateTime {
+    let datetime: DateTime = DateTime { date: date, time: time };
+    return datetime;
+}
+
+export fun datetime_to_string(datetime: DateTime) -> String {
+    return date_to_string(datetime.date) + " " + time_to_string(datetime.time);
+}
+
+export fun datetime_from_string(datetime_str: String) -> DateTime {
+    let parts: String[] = datetime_str.split(" ");
+    if (len(parts) != 2) {
+        return new_datetime(new_date(2000, 1, 1), new_time(0, 0, 0));
+    }
+    
+    let date: Date = date_from_string(parts[0]);
+    let time: Time = time_from_string(parts[1]);
+    
+    return new_datetime(date, time);
+}
+
+export fun datetime_add_seconds(datetime: DateTime, seconds: int) -> DateTime {
+    let new_time: Time = time_add_seconds(datetime.time, seconds);
+    let new_date: Date = datetime.date;
+    
+    // Handle day overflow
+    let total_seconds: int = datetime.time.hour * 3600 + datetime.time.minute * 60 + datetime.time.second + seconds;
+    let days_to_add: int = total_seconds / 86400;
+    
+    if (days_to_add > 0) {
+        new_date = date_add_days(new_date, days_to_add);
+    }
+    
+    return new_datetime(new_date, new_time);
+}
+
+export fun datetime_add_minutes(datetime: DateTime, minutes: int) -> DateTime {
+    return datetime_add_seconds(datetime, minutes * 60);
+}
+
+export fun datetime_add_hours(datetime: DateTime, hours: int) -> DateTime {
+    return datetime_add_seconds(datetime, hours * 3600);
+}
+
+export fun datetime_add_days(datetime: DateTime, days: int) -> DateTime {
+    let new_date: Date = date_add_days(datetime.date, days);
+    return new_datetime(new_date, datetime.time);
+}
+
+// Utility functions
+export fun current_time() -> String {
+    // This would normally get the current system time
+    // For now, return a placeholder
+    return "12:00:00";
+}
+
+export fun current_date() -> String {
+    // This would normally get the current system date
+    // For now, return a placeholder
+    return "2024-01-01";
+}
+
+export fun current_datetime() -> String {
+    return current_date() + " " + current_time();
+}
+
+export fun format_time(time: Time, format: String) -> String {
+    // Simple format implementation
+    if (format == "HH:mm:ss") {
+        return time_to_string(time);
+    } else if (format == "HH:mm") {
+        let hour_str: String = time.hour as String;
+        let minute_str: String = time.minute as String;
+        
+        if (len(hour_str) == 1) {
+            hour_str = "0" + hour_str;
+        }
+        if (len(minute_str) == 1) {
+            minute_str = "0" + minute_str;
+        }
+        
+        return hour_str + ":" + minute_str;
+    } else {
+        return time_to_string(time);
+    }
+}
+
+export fun format_date(date: Date, format: String) -> String {
+    // Simple format implementation
+    if (format == "YYYY-MM-DD") {
+        return date_to_string(date);
+    } else if (format == "MM/DD/YYYY") {
+        let month_str: String = date.month as String;
+        let day_str: String = date.day as String;
+        let year_str: String = date.year as String;
+        
+        if (len(month_str) == 1) {
+            month_str = "0" + month_str;
+        }
+        if (len(day_str) == 1) {
+            day_str = "0" + day_str;
+        }
+        
+        return month_str + "/" + day_str + "/" + year_str;
+    } else {
+        return date_to_string(date);
+    }
+}

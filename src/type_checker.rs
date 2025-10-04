@@ -10,6 +10,8 @@ pub enum Type {
     String,
     Void,
     Array(Box<Type>), // Add array type support
+    Struct(String), // Struct type
+    Enum(String), // Enum type
     Module, // Module type
     Unknown,
 }
@@ -26,7 +28,31 @@ impl Type {
             "float[]" => Type::Array(Box::new(Type::Float)),
             "bool[]" => Type::Array(Box::new(Type::Bool)),
             "String[]" => Type::Array(Box::new(Type::String)),
-            _ => Type::Unknown,
+            _ => Type::Struct(s.to_string()), // Custom type (struct or enum - will be resolved later)
+        }
+    }
+    
+    pub fn from_string_with_context(s: &str, enums: &HashMap<String, EnumInfo>, structs: &HashMap<String, StructInfo>) -> Type {
+        match s {
+            "int" => Type::Int,
+            "float" => Type::Float,
+            "bool" => Type::Bool,
+            "string" => Type::String,
+            "void" => Type::Void,
+            "int[]" => Type::Array(Box::new(Type::Int)),
+            "float[]" => Type::Array(Box::new(Type::Float)),
+            "bool[]" => Type::Array(Box::new(Type::Bool)),
+            "String[]" => Type::Array(Box::new(Type::String)),
+            _ => {
+                // Check if it's an enum first, then struct
+                if enums.contains_key(s) {
+                    Type::Enum(s.to_string())
+                } else if structs.contains_key(s) {
+                    Type::Struct(s.to_string())
+                } else {
+                    Type::Struct(s.to_string()) // Default to struct for backward compatibility
+                }
+            }
         }
     }
 }
@@ -36,6 +62,10 @@ pub struct TypeChecker {
     variables: HashMap<String, Type>,
     // Function table: function_name -> (return_type, param_types)
     functions: HashMap<String, (Type, Vec<Type>)>,
+    // Struct table: struct_name -> StructInfo
+    structs: HashMap<String, StructInfo>,
+    // Enum table: enum_name -> EnumInfo
+    enums: HashMap<String, EnumInfo>,
     // Module table: module_name -> ModuleInfo
     modules: HashMap<String, ModuleInfo>,
 }
@@ -46,11 +76,22 @@ pub struct ModuleInfo {
     pub functions: HashMap<String, (Type, Vec<Type>)>,
 }
 
+#[derive(Debug, Clone)]
+pub struct StructInfo {
+    pub fields: HashMap<String, Type>,
+}
+
+pub struct EnumInfo {
+    pub variants: Vec<String>,
+}
+
 impl TypeChecker {
     pub fn new() -> Self {
         TypeChecker {
             variables: HashMap::new(),
             functions: HashMap::new(),
+            structs: HashMap::new(),
+            enums: HashMap::new(),
             modules: HashMap::new(),
         }
     }
@@ -64,8 +105,8 @@ impl TypeChecker {
             }
 
             ASTNode::VariableDeclTyped(name, type_str, expr) => {
-                let declared_type = Type::from_string(type_str);
-                let expr_type = self.check_expression(expr)?;
+                let declared_type = Type::from_string_with_context(type_str, &self.enums, &self.structs);
+                let expr_type = self.check_expression_with_expected_type(expr, Some(&declared_type))?;
 
                 if declared_type != expr_type {
                     return Err(format!(
@@ -78,29 +119,65 @@ impl TypeChecker {
                 Ok(Type::Void)
             }
 
-            ASTNode::Assignment(name, expr) => {
+            ASTNode::Assignment(target, expr) => {
                 let expr_type = self.check_expression(expr)?;
-
-                if let Some(var_type) = self.variables.get(name) {
-                    if var_type != &expr_type {
-                        return Err(format!(
-                            "Type mismatch in assignment to '{}': expected {:?}, got {:?}",
-                            name, var_type, expr_type
-                        ));
+                
+                // Check the assignment target
+                match target.as_ref() {
+                    Expression::Identifier(name) => {
+                        // Simple variable assignment
+                        if let Some(var_type) = self.variables.get(name) {
+                            if var_type != &expr_type {
+                                return Err(format!(
+                                    "Type mismatch in assignment to '{}': expected {:?}, got {:?}",
+                                    name, var_type, expr_type
+                                ));
+                            }
+                            Ok(Type::Void)
+                        } else {
+                            Err(format!("Variable '{}' not declared", name))
+                        }
                     }
-                    Ok(Type::Void)
-                } else {
-                    Err(format!("Variable '{}' not declared", name))
+                    Expression::FieldAccess(object, _field_name) => {
+                        // Field access assignment: object.field = value
+                        let _object_type = self.check_expression(object)?;
+                        
+                        // For now, we'll allow field assignments without strict type checking
+                        // This is a simplified implementation
+                        Ok(Type::Void)
+                    }
+                    Expression::ArrayIndex(array_expr, index_expr) => {
+                        // Array indexing assignment: array[index] = value
+                        let _array_type = self.check_expression(array_expr)?;
+                        let index_type = self.check_expression(index_expr)?;
+                        
+                        // Check that index is an integer
+                        if index_type != Type::Int {
+                            return Err(format!(
+                                "Array index must be an integer, got {:?}",
+                                index_type
+                            ));
+                        }
+                        
+                        // For now, we'll allow array assignments without strict type checking
+                        // This is a simplified implementation
+                        Ok(Type::Void)
+                    }
+                    _ => {
+                        // Other complex assignment targets
+                        // For now, we'll allow them without strict type checking
+                        Ok(Type::Void)
+                    }
                 }
             }
 
             ASTNode::FunctionDecl(name, return_type_str, params, body) => {
-                let return_type = Type::from_string(return_type_str);
+                let return_type = Type::from_string_with_context(return_type_str, &self.enums, &self.structs);
                 
                 // Store parameter types in local scope
                 let param_types: Vec<Type> = params
                     .iter()
-                    .map(|p| Type::from_string(&p.param_type))
+                    .map(|p| Type::from_string_with_context(&p.param_type, &self.enums, &self.structs))
                     .collect();
 
                 // Add parameters to variables table
@@ -114,6 +191,34 @@ impl TypeChecker {
                 // Check function body
                 self.check(body)?;
 
+                Ok(Type::Void)
+            }
+
+            ASTNode::StructDecl(name, fields) => {
+                let mut struct_info = StructInfo {
+                    fields: HashMap::new(),
+                };
+                
+                // Process each field
+                for field in fields {
+                    let field_type = Type::from_string_with_context(&field.field_type, &self.enums, &self.structs);
+                    struct_info.fields.insert(field.name.clone(), field_type);
+                }
+                
+                // Register the struct
+                self.structs.insert(name.clone(), struct_info);
+                
+                Ok(Type::Void)
+            }
+
+            ASTNode::EnumDecl(name, variants) => {
+                // Register the enum with its variants
+                let enum_info = EnumInfo {
+                    variants: variants.clone(),
+                };
+                
+                self.enums.insert(name.clone(), enum_info);
+                
                 Ok(Type::Void)
             }
 
@@ -198,6 +303,12 @@ impl TypeChecker {
                 Ok(Type::Void)
             }
             
+            ASTNode::ExpressionStatement(expr) => {
+                // Type check standalone expressions
+                self.check_expression(expr)?;
+                Ok(Type::Void)
+            }
+            
             ASTNode::Import(module_name, alias) => {
                 // Load the module during type checking
                 self.load_module_for_type_checking(module_name)?;
@@ -240,6 +351,10 @@ impl TypeChecker {
     }
 
     fn check_expression(&mut self, expr: &Expression) -> Result<Type, String> {
+        self.check_expression_with_expected_type(expr, None)
+    }
+    
+    fn check_expression_with_expected_type(&mut self, expr: &Expression, expected_type: Option<&Type>) -> Result<Type, String> {
         match expr {
             Expression::Integer(_) => Ok(Type::Int),
             Expression::Float(_) => Ok(Type::Float),
@@ -254,12 +369,33 @@ impl TypeChecker {
                 }
             }
 
+            Expression::UnaryOp(op, expr) => {
+                let expr_type = self.check_expression(expr)?;
+                
+                match op {
+                    Operator::UnaryMinus => {
+                        match expr_type {
+                            Type::Int | Type::Float => Ok(expr_type),
+                            _ => Err(format!("Cannot apply unary minus to {:?}", expr_type)),
+                        }
+                    }
+                    Operator::Not => {
+                        if expr_type == Type::Bool {
+                            Ok(Type::Bool)
+                        } else {
+                            Err(format!("Cannot apply logical not to {:?}", expr_type))
+                        }
+                    }
+                    _ => Err(format!("Unknown unary operator: {:?}", op)),
+                }
+            }
+
             Expression::BinaryOp(left, op, right) => {
                 let left_type = self.check_expression(left)?;
                 let right_type = self.check_expression(right)?;
 
                 match op {
-                    Operator::Add | Operator::Subtract | Operator::Multiply | Operator::Divide => {
+                    Operator::Add | Operator::Subtract | Operator::Multiply | Operator::Divide | Operator::Modulo => {
                         if left_type == Type::Int && right_type == Type::Int {
                             Ok(Type::Int)
                         } else if (left_type == Type::Float || left_type == Type::Int)
@@ -276,6 +412,10 @@ impl TypeChecker {
                                 left_type, op, right_type
                             ))
                         }
+                    }
+                    Operator::UnaryMinus | Operator::Not => {
+                        // These should not appear in binary operations
+                        Err(format!("Unary operator {:?} used in binary context", op))
                     }
 
                     Operator::Equal
@@ -346,14 +486,19 @@ impl TypeChecker {
 
             Expression::ArrayLiteral(elements) => {
                 if elements.is_empty() {
-                    // Empty array - we can't infer the type
+                    // Empty array - use expected type if available
+                    if let Some(expected) = expected_type {
+                        if let Type::Array(element_type) = expected {
+                            return Ok(Type::Array(element_type.clone()));
+                        }
+                    }
                     return Err("Cannot infer type of empty array".to_string());
                 }
                 
                 // Check that all elements have the same type
-                let first_type = self.check_expression(&elements[0])?;
+                let first_type = self.check_expression_with_expected_type(&elements[0], None)?;
                 for element in elements.iter().skip(1) {
-                    let element_type = self.check_expression(element)?;
+                    let element_type = self.check_expression_with_expected_type(element, None)?;
                     if element_type != first_type {
                         return Err(format!(
                             "Array elements must have the same type, got {:?} and {:?}",
@@ -475,6 +620,84 @@ impl TypeChecker {
                     }
                 } else {
                     Err(format!("Cannot call methods on non-array, non-module, or non-string value of type {:?}", object_type))
+                }
+            }
+            
+            Expression::StructInstantiation(struct_name, fields) => {
+                // Check if struct is defined
+                if let Some(struct_info) = self.structs.get(struct_name) {
+                    // Clone the struct info to avoid borrowing conflicts
+                    let struct_info_clone = struct_info.clone();
+                    
+                    // Check that all fields are provided and have correct types
+                    for (field_name, field_value) in fields {
+                        if let Some(expected_type) = struct_info_clone.fields.get(field_name) {
+                            let actual_type = self.check_expression_with_expected_type(field_value, Some(expected_type))?;
+                            if actual_type != *expected_type {
+                                return Err(format!(
+                                    "Field '{}' in struct '{}' expects {:?}, got {:?}",
+                                    field_name, struct_name, expected_type, actual_type
+                                ));
+                            }
+                        } else {
+                            return Err(format!(
+                                "Field '{}' not found in struct '{}'",
+                                field_name, struct_name
+                            ));
+                        }
+                    }
+                    
+                    // Check that all required fields are provided
+                    for (field_name, _) in &struct_info_clone.fields {
+                        if !fields.iter().any(|(name, _)| name == field_name) {
+                            return Err(format!(
+                                "Missing required field '{}' in struct '{}'",
+                                field_name, struct_name
+                            ));
+                        }
+                    }
+                    
+                    Ok(Type::Struct(struct_name.clone()))
+                } else {
+                    Err(format!("Struct '{}' not declared", struct_name))
+                }
+            }
+            
+            Expression::FieldAccess(object_expr, field_name) => {
+                let object_type = self.check_expression(object_expr)?;
+                
+                if let Type::Struct(struct_name) = object_type {
+                    if let Some(struct_info) = self.structs.get(&struct_name) {
+                        if let Some(field_type) = struct_info.fields.get(field_name) {
+                            Ok(field_type.clone())
+                        } else {
+                            Err(format!(
+                                "Field '{}' not found in struct '{}'",
+                                field_name, struct_name
+                            ))
+                        }
+                    } else {
+                        Err(format!("Struct '{}' not found", struct_name))
+                    }
+                } else {
+                    Err(format!("Cannot access field on non-struct value of type {:?}", object_type))
+                }
+            }
+
+            Expression::EnumVariant(enum_name, variant_name) => {
+                // Check if the enum exists
+                if let Some(enum_info) = self.enums.get(enum_name) {
+                    // Check if the variant exists in this enum
+                    if enum_info.variants.contains(variant_name) {
+                        Ok(Type::Enum(enum_name.clone()))
+                    } else {
+                        Err(format!(
+                            "Variant '{}' not found in enum '{}'", 
+                            variant_name, enum_name
+                        ))
+                    }
+                } else {
+                    Err(format!("Enum '{}' not found", enum_name))
                 }
             }
         }
@@ -611,6 +834,34 @@ impl TypeChecker {
                 Ok(Some(Type::String))
             }
             
+            "enum_from_string" => {
+                if args.len() != 2 {
+                    return Err(format!("enum_from_string() expects 2 arguments, got {}", args.len()));
+                }
+                
+                let enum_name_type = self.check_expression(&args[0])?;
+                let variant_name_type = self.check_expression(&args[1])?;
+                
+                if enum_name_type != Type::String {
+                    return Err("enum_from_string() first argument must be a string".to_string());
+                }
+                
+                if variant_name_type != Type::String {
+                    return Err("enum_from_string() second argument must be a string".to_string());
+                }
+                
+                // Try to determine the enum type from the first argument if it's a string literal
+                if let Expression::StringLiteral(enum_name) = &args[0] {
+                    if self.enums.contains_key(enum_name) {
+                        return Ok(Some(Type::Enum(enum_name.clone())));
+                    }
+                }
+                
+                // If we can't determine the specific enum type, return a generic enum
+                // This allows the function to work with dynamic string values
+                Ok(Some(Type::Enum("Unknown".to_string())))
+            }
+            
             _ => Ok(None), // Not a built-in function
         }
     }
@@ -625,7 +876,13 @@ impl TypeChecker {
         let module_path = if module_name.ends_with(".rv") {
             module_name.to_string()
         } else {
-            format!("{}.rv", module_name)
+            // First try in lib/ directory for standard library modules
+            let lib_path = format!("lib/{}.rv", module_name);
+            if std::path::Path::new(&lib_path).exists() {
+                lib_path
+            } else {
+                format!("{}.rv", module_name)
+            }
         };
         
         let content = fs::read_to_string(&module_path)
@@ -646,8 +903,18 @@ impl TypeChecker {
         // Extract module information
         let module_info = ModuleInfo {
             variables: module_checker.variables,
-            functions: module_checker.functions,
+            functions: module_checker.functions.clone(),
         };
+        
+        // Merge functions from the module into the global scope
+        for (name, (return_type, param_types)) in &module_checker.functions {
+            self.functions.insert(name.clone(), (return_type.clone(), param_types.clone()));
+        }
+        
+        // Merge structs from the module into the global scope
+        for (name, struct_info) in &module_checker.structs {
+            self.structs.insert(name.clone(), struct_info.clone());
+        }
         
         // Store the module
         self.modules.insert(module_name.to_string(), module_info);

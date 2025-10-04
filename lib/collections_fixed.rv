@@ -1,0 +1,89 @@
+// lib/collections_fixed.rv - Working Collections Library
+
+// Generic Map implementation using arrays
+struct Map {
+    keys: String[],
+    values: String[]
+}
+
+fun new_map() -> Map {
+    let map: Map = Map { keys: [], values: [] };
+    return map;
+}
+
+fun map_set(map: Map, key: String, value: String) -> Map {
+    let i: int = 0;
+    let found: bool = false;
+    while (i < len(map.keys) && !found) {
+        if (map.keys[i] == key) {
+            found = true;
+        } else {
+            i = i + 1;
+        }
+    }
+    
+    if (found) {
+        // Update existing key
+        let new_keys: String[] = [];
+        let new_values: String[] = [];
+        let j: int = 0;
+        while (j < len(map.keys)) {
+            if (j == i) {
+                new_keys.push(key);
+                new_values.push(value);
+            } else {
+                new_keys.push(map.keys[j]);
+                new_values.push(map.values[j]);
+            }
+            j = j + 1;
+        }
+        return Map { keys: new_keys, values: new_values };
+    } else {
+        // Add new key
+        let new_keys: String[] = [];
+        let new_values: String[] = [];
+        let j: int = 0;
+        while (j < len(map.keys)) {
+            new_keys.push(map.keys[j]);
+            new_values.push(map.values[j]);
+            j = j + 1;
+        }
+        new_keys.push(key);
+        new_values.push(value);
+        return Map { keys: new_keys, values: new_values };
+    }
+}
+
+fun map_get(map: Map, key: String) -> String {
+    let i: int = 0;
+    while (i < len(map.keys)) {
+        if (map.keys[i] == key) {
+            return map.values[i];
+        }
+        i = i + 1;
+    }
+    return ""; // Return empty string if key not found
+}
+
+fun map_has(map: Map, key: String) -> bool {
+    let i: int = 0;
+    while (i < len(map.keys)) {
+        if (map.keys[i] == key) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fun map_len(map: Map) -> int {
+    return len(map.keys);
+}
+
+fun map_keys(map: Map) -> String[] {
+    return map.keys;
+}
+
+fun map_values(map: Map) -> String[] {
+    return map.values;
+}

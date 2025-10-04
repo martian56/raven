@@ -1,0 +1,188 @@
+// examples/standard_library_demo.rv - Demonstrates standard library usage
+
+import math;
+import collections;
+import string;
+import time;
+import filesystem;
+import network;
+import testing;
+
+// Math library demo
+fun demo_math() -> void {
+    print("=== Math Library Demo ===");
+    
+    let a: int = -10;
+    let b: int = 15;
+    
+    print(format("abs({}) = {}", a, math.abs(a)));
+    print(format("max({}, {}) = {}", a, b, math.max(a, b)));
+    print(format("min({}, {}) = {}", a, b, math.min(a, b)));
+    
+    let float_val: float = 3.7;
+    print(format("floor({}) = {}", float_val, math.floor(float_val)));
+    print(format("ceil({}) = {}", float_val, math.ceil(float_val)));
+    print(format("round({}) = {}", float_val, math.round(float_val)));
+}
+
+// Collections library demo
+fun demo_collections() -> void {
+    print("\n=== Collections Library Demo ===");
+    
+    // HashMap demo
+    let map: HashMap = collections.HashMap.new();
+    map.set("name", "John Doe");
+    map.set("age", "30");
+    map.set("city", "New York");
+    
+    print(format("Name: {}", map.get("name")));
+    print(format("Age: {}", map.get("age")));
+    print(format("City: {}", map.get("city")));
+    print(format("Map size: {}", map.len()));
+    
+    // Set demo
+    let set: Set = collections.Set.new();
+    set.add("apple");
+    set.add("banana");
+    set.add("apple"); // Duplicate
+    set.add("orange");
+    
+    print(format("Set contains 'apple': {}", set.contains("apple")));
+    print(format("Set contains 'grape': {}", set.contains("grape")));
+    print(format("Set size: {}", set.len()));
+}
+
+// String utilities demo
+fun demo_string() -> void {
+    print("\n=== String Utilities Demo ===");
+    
+    let text: String = "  hello world  ";
+    print(format("Original: '{}'", text));
+    print(format("Trimmed: '{}'", string.trim(text)));
+    print(format("Capitalized: '{}'", string.capitalize(string.trim(text))));
+    print(format("Starts with 'he': {}", string.starts_with(text, "he")));
+    print(format("Ends with 'ld': {}", string.ends_with(text, "ld")));
+}
+
+// Time library demo
+fun demo_time() -> void {
+    print("\n=== Time Library Demo ===");
+    
+    let now: DateTime = time.now();
+    print(format("Current time: {}", time.format_datetime(now, "YYYY-MM-DD HH:mm:ss")));
+    
+    let future: DateTime = DateTime { 
+        year: 2025, 
+        month: 1, 
+        day: 1, 
+        hour: 0, 
+        minute: 0, 
+        second: 0 
+    };
+    
+    print(format("Days until 2025: {}", time.days_between(now, future)));
+}
+
+// File system demo
+fun demo_filesystem() -> void {
+    print("\n=== File System Demo ===");
+    
+    let test_file: String = "test_demo.txt";
+    let content: String = "Hello from Raven!\nThis is a test file.\nLine 3";
+    
+    // Write test file
+    filesystem.write_lines(test_file, content.split("\n"));
+    print(format("Created file: {}", test_file));
+    
+    // Read file info
+    let info: FileInfo = filesystem.get_file_info(test_file);
+    print(format("File name: {}", info.name));
+    print(format("File size: {} bytes", info.size));
+    print(format("Is file: {}", info.is_file));
+    
+    // Read file content
+    let lines: String[] = filesystem.read_lines(test_file);
+    print(format("File has {} lines", len(lines)));
+    
+    // Path manipulation
+    let path: String = filesystem.join_path(["dir", "subdir", "file.txt"]);
+    print(format("Joined path: {}", path));
+    print(format("Directory: {}", filesystem.dirname(path)));
+    print(format("Filename: {}", filesystem.basename(path)));
+    print(format("Extension: {}", filesystem.extension(path)));
+    
+    // Clean up
+    filesystem.remove_file(test_file);
+    print("Cleaned up test file");
+}
+
+// Network library demo
+fun demo_network() -> void {
+    print("\n=== Network Library Demo ===");
+    
+    // URL parsing
+    let url: String = "https://api.example.com:8080/data?param=value#section";
+    let parsed: Url = network.parse_url(url);
+    print(format("Protocol: {}", parsed.protocol));
+    print(format("Host: {}", parsed.host));
+    print(format("Port: {}", parsed.port));
+    print(format("Path: {}", parsed.path));
+    
+    // HTTP request simulation
+    let response: HttpResponse = network.GET("https://httpbin.org/get");
+    print(format("Status: {} {}", response.status_code, response.status_text));
+    print(format("Response body: {}", response.body));
+    
+    // URL validation
+    print(format("Is valid URL: {}", network.is_valid_url(url)));
+    print(format("Is valid email: {}", network.is_valid_email("test@example.com")));
+}
+
+// Testing library demo
+fun demo_testing() -> void {
+    print("\n=== Testing Library Demo ===");
+    
+    // Create test suite
+    let tests: String[] = ["test_math", "test_string", "test_collections"];
+    let suite: TestSuite = testing.run_test_suite("Standard Library Tests", tests);
+    
+    // Print results
+    testing.print_test_results(suite);
+    
+    // Generate report
+    let report: String = testing.generate_test_report(suite);
+    print("\nTest Report:");
+    print(report);
+    
+    // Mock object demo
+    let mock: MockObject = testing.create_mock("Calculator");
+    let result1: String = testing.mock_call(mock, "add", ["2", "3"]);
+    let result2: String = testing.mock_call(mock, "multiply", ["4", "5"]);
+    
+    print(format("Mock call 1: {}", result1));
+    print(format("Mock call 2: {}", result2));
+    
+    // Test data generation
+    let random_str: String = testing.generate_random_string(10);
+    let random_int: int = testing.generate_random_int(1, 100);
+    
+    print(format("Random string: {}", random_str));
+    print(format("Random int: {}", random_int));
+}
+
+// Main function
+fun main() -> void {
+    print("Raven Standard Library Demonstration");
+    print("====================================");
+    
+    demo_math();
+    demo_collections();
+    demo_string();
+    demo_time();
+    demo_filesystem();
+    demo_network();
+    demo_testing();
+    
+    print("\n=== Demo Complete ===");
+    print("All standard library modules demonstrated successfully!");
+}

@@ -9,7 +9,7 @@ wix/
 *.swp
 *.swo
 *~
-
+tests/
 # OS generated files
 .DS_Store
 .DS_Store?
@@ -55,6 +55,6 @@ running
 examples/output/
 examples/*.txt
 
-# Module files (these are examples)
-math.rv
-utils.rv
+GITHUB_RELEASE.md
+RELEASE_NOTES.md
+RELEASE_NOTES_v1.1.0.md

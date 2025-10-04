@@ -1,0 +1,55 @@
+// Comprehensive Enum Example
+// Demonstrates enum declaration, variant creation, and string-to-enum conversion
+
+enum HttpStatus {
+    OK,
+    NotFound,
+    InternalError,
+    BadRequest
+}
+
+enum UserRole {
+    Admin,
+    User,
+    Guest
+}
+
+fun main() -> void {
+    print("=== Raven Enum Demo ===");
+    
+    // 1. Direct enum variant creation
+    let status: HttpStatus = HttpStatus::OK;
+    let role: UserRole = UserRole::Admin;
+    
+    print(format("Direct enum creation:"));
+    print(format("  Status: {}", status));
+    print(format("  Role: {}", role));
+    
+    // 2. String-to-enum conversion (useful for JSON parsing)
+    let status_from_string: HttpStatus = enum_from_string("HttpStatus", "NotFound");
+    let role_from_string: UserRole = enum_from_string("UserRole", "User");
+    
+    print(format("String-to-enum conversion:"));
+    print(format("  Status: {}", status_from_string));
+    print(format("  Role: {}", role_from_string));
+    
+    // 3. Simulating JSON data processing
+    let json_status: String = "InternalError";
+    let json_role: String = "Guest";
+    
+    let parsed_status: HttpStatus = enum_from_string("HttpStatus", json_status);
+    let parsed_role: UserRole = enum_from_string("UserRole", json_role);
+    
+    print(format("JSON-like data processing:"));
+    print(format("  Parsed Status: {}", parsed_status));
+    print(format("  Parsed Role: {}", parsed_role));
+    
+    // 4. Type checking
+    print(format("Type information:"));
+    print(format("  Status type: {}", type(status)));
+    print(format("  Role type: {}", type(role)));
+    
+    print("=== Demo Complete ===");
+}
+
+main();

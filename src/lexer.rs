@@ -14,6 +14,7 @@ pub enum TokenType {
     Export,
     From,
     Struct,
+    Enum,
     Print,
 
     // Types
@@ -82,7 +83,6 @@ pub enum TokenType {
     Illegal(char),
 }
 
-use crate::span::Span;
 
 #[derive(Debug, Clone)]
 pub struct Lexer {
@@ -108,22 +108,6 @@ impl Lexer {
         }
     }
     
-    /// Get current span for a token starting at current position
-    fn current_span(&self, length: usize) -> Span {
-        Span::new(self.line, self.column, self.position, length)
-    }
-    
-    /// Mark the start of a token
-    fn mark_start(&self) -> (usize, usize, usize) {
-        (self.position, self.line, self.column)
-    }
-    
-    /// Create span from marked start to current position
-    fn span_from(&self, start: (usize, usize, usize)) -> Span {
-        let (start_pos, start_line, start_col) = start;
-        Span::new(start_line, start_col, start_pos, self.position - start_pos)
-    }
-
     /// Moves to the next character in input
     pub fn advance(&mut self) {
         // Check if current character is newline before moving
@@ -419,6 +403,7 @@ impl Lexer {
             "export" => TokenType::Export,
             "from" => TokenType::From,
             "struct" => TokenType::Struct,
+            "enum" => TokenType::Enum,
             "print" => TokenType::Print,
             "and" => TokenType::And,
             "or" => TokenType::Or,

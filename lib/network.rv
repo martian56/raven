@@ -1,0 +1,394 @@
+// lib/network.rv - Network Library
+
+// HTTP request structure
+struct HttpRequest {
+    method: String,
+    url: String,
+    headers: String[],
+    body: String
+}
+
+// HTTP response structure
+struct HttpResponse {
+    status_code: int,
+    status_text: String,
+    headers: String[],
+    body: String
+}
+
+// HTTP methods
+export fun GET(url: String) -> HttpResponse {
+    let request: HttpRequest = HttpRequest { 
+        method: "GET", 
+        url: url, 
+        headers: [], 
+        body: "" 
+    };
+    return send_request(request);
+}
+
+export fun POST(url: String, body: String) -> HttpResponse {
+    let request: HttpRequest = HttpRequest { 
+        method: "POST", 
+        url: url, 
+        headers: ["Content-Type: application/json"], 
+        body: body 
+    };
+    return send_request(request);
+}
+
+export fun PUT(url: String, body: String) -> HttpResponse {
+    let request: HttpRequest = HttpRequest { 
+        method: "PUT", 
+        url: url, 
+        headers: ["Content-Type: application/json"], 
+        body: body 
+    };
+    return send_request(request);
+}
+
+export fun DELETE(url: String) -> HttpResponse {
+    let request: HttpRequest = HttpRequest { 
+        method: "DELETE", 
+        url: url, 
+        headers: [], 
+        body: "" 
+    };
+    return send_request(request);
+}
+
+// Core HTTP function (placeholder implementation)
+export fun send_request(request: HttpRequest) -> HttpResponse {
+    // This would normally make an actual HTTP request
+    // For now, return a mock response
+    let response: HttpResponse = HttpResponse {
+        status_code: 200,
+        status_text: "OK",
+        headers: ["Content-Type: application/json"],
+        body: format("{{\"message\": \"Mock response for {} {}\"}}", request.method, request.url)
+    };
+    return response;
+}
+
+// URL parsing
+struct Url {
+    protocol: String,
+    host: String,
+    port: int,
+    path: String,
+    query: String,
+    fragment: String
+}
+
+export fun parse_url(url_string: String) -> Url {
+    let url: Url = Url {
+        protocol: "",
+        host: "",
+        port: 80,
+        path: "/",
+        query: "",
+        fragment: ""
+    };
+    
+    // Simple URL parsing
+    let protocol_end: int = url_string.index_of("://");
+    if (protocol_end != -1) {
+        url.protocol = url_string.slice(0, protocol_end);
+        let rest: String = url_string.slice(protocol_end + 3, len(url_string));
+        
+        let path_start: int = rest.index_of("/");
+        if (path_start != -1) {
+            url.host = rest.slice(0, path_start);
+            url.path = rest.slice(path_start, len(rest));
+        } else {
+            url.host = rest;
+        }
+        
+        // Check for port
+        let port_start: int = url.host.index_of(":");
+        if (port_start != -1) {
+            let port_str: String = url.host.slice(port_start + 1, len(url.host));
+            url.port = port_str as int;
+            url.host = url.host.slice(0, port_start);
+        }
+    }
+    
+    return url;
+}
+
+export fun build_url(protocol: String, host: String, port: int, path: String) -> String {
+    let url: String = protocol + "://" + host;
+    
+    if (port != 80 && port != 443) {
+        url = url + ":" + port as String;
+    }
+    
+    if (!path.starts_with("/")) {
+        url = url + "/";
+    }
+    
+    url = url + path;
+    return url;
+}
+
+// Query string handling
+export fun parse_query_string(query: String) -> String[] {
+    if (len(query) == 0) {
+        return [];
+    }
+    
+    return query.split("&");
+}
+
+export fun build_query_string(params: String[]) -> String {
+    if (len(params) == 0) {
+        return "";
+    }
+    
+    return params.join("&");
+}
+
+export fun get_query_param(query: String, param_name: String) -> String {
+    let params: String[] = parse_query_string(query);
+    
+    let i: int = 0;
+    while (i < len(params)) {
+        let param: String = params[i];
+        let equal_pos: int = param.index_of("=");
+        
+        if (equal_pos != -1) {
+            let name: String = param.slice(0, equal_pos);
+            let value: String = param.slice(equal_pos + 1, len(param));
+            
+            if (name == param_name) {
+                return value;
+            }
+        }
+        
+        i = i + 1;
+    }
+    
+    return "";
+}
+
+// HTTP headers
+export fun set_header(headers: String[], name: String, value: String) -> String[] {
+    let new_headers: String[] = [];
+    let found: bool = false;
+    
+    let i: int = 0;
+    while (i < len(headers)) {
+        let header: String = headers[i];
+        let colon_pos: int = header.index_of(":");
+        
+        if (colon_pos != -1) {
+            let header_name: String = header.slice(0, colon_pos).trim();
+            
+            if (header_name == name) {
+                new_headers.push(name + ": " + value);
+                found = true;
+            } else {
+                new_headers.push(header);
+            }
+        } else {
+            new_headers.push(header);
+        }
+        
+        i = i + 1;
+    }
+    
+    if (!found) {
+        new_headers.push(name + ": " + value);
+    }
+    
+    return new_headers;
+}
+
+export fun get_header(headers: String[], name: String) -> String {
+    let i: int = 0;
+    while (i < len(headers)) {
+        let header: String = headers[i];
+        let colon_pos: int = header.index_of(":");
+        
+        if (colon_pos != -1) {
+            let header_name: String = header.slice(0, colon_pos).trim();
+            let header_value: String = header.slice(colon_pos + 1, len(header)).trim();
+            
+            if (header_name == name) {
+                return header_value;
+            }
+        }
+        
+        i = i + 1;
+    }
+    
+    return "";
+}
+
+export fun remove_header(headers: String[], name: String) -> String[] {
+    let new_headers: String[] = [];
+    
+    let i: int = 0;
+    while (i < len(headers)) {
+        let header: String = headers[i];
+        let colon_pos: int = header.index_of(":");
+        
+        if (colon_pos != -1) {
+            let header_name: String = header.slice(0, colon_pos).trim();
+            
+            if (header_name != name) {
+                new_headers.push(header);
+            }
+        } else {
+            new_headers.push(header);
+        }
+        
+        i = i + 1;
+    }
+    
+    return new_headers;
+}
+
+// Response helpers
+export fun is_success(response: HttpResponse) -> bool {
+    return response.status_code >= 200 && response.status_code < 300;
+}
+
+export fun is_redirect(response: HttpResponse) -> bool {
+    return response.status_code >= 300 && response.status_code < 400;
+}
+
+export fun is_client_error(response: HttpResponse) -> bool {
+    return response.status_code >= 400 && response.status_code < 500;
+}
+
+export fun is_server_error(response: HttpResponse) -> bool {
+    return response.status_code >= 500 && response.status_code < 600;
+}
+
+export fun get_status_text(status_code: int) -> String {
+    if (status_code == 200) { return "OK"; }
+    if (status_code == 201) { return "Created"; }
+    if (status_code == 204) { return "No Content"; }
+    if (status_code == 400) { return "Bad Request"; }
+    if (status_code == 401) { return "Unauthorized"; }
+    if (status_code == 403) { return "Forbidden"; }
+    if (status_code == 404) { return "Not Found"; }
+    if (status_code == 500) { return "Internal Server Error"; }
+    if (status_code == 502) { return "Bad Gateway"; }
+    if (status_code == 503) { return "Service Unavailable"; }
+    return "Unknown";
+}
+
+// JSON helpers (simplified)
+export fun json_encode(obj: String) -> String {
+    // Simple JSON encoding - just wrap in quotes
+    return "\"" + obj + "\"";
+}
+
+export fun json_decode(json: String) -> String {
+    // Simple JSON decoding - remove quotes
+    if (json.starts_with("\"") && json.ends_with("\"")) {
+        return json.slice(1, len(json) - 1);
+    }
+    return json;
+}
+
+// File download
+export fun download_file(url: String, filename: String) -> bool {
+    let response: HttpResponse = GET(url);
+    
+    if (!is_success(response)) {
+        return false;
+    }
+    
+    write_file(filename, response.body);
+    return true;
+}
+
+// Simple HTTP server (placeholder)
+struct HttpServer {
+    port: int,
+    routes: String[]
+}
+
+export fun create_server(port: int) -> HttpServer {
+    let server: HttpServer = HttpServer {
+        port: port,
+        routes: []
+    };
+    return server;
+}
+
+export fun add_route(server: HttpServer, method: String, path: String, handler: String) -> HttpServer {
+    let route: String = method + " " + path + " -> " + handler;
+    server.routes.push(route);
+    return server;
+}
+
+export fun start_server(server: HttpServer) -> bool {
+    // This would normally start an HTTP server
+    // For now, just return true as a placeholder
+    print(format("Starting HTTP server on port {}", server.port));
+    return true;
+}
+
+// WebSocket (placeholder)
+struct WebSocket {
+    url: String,
+    connected: bool
+}
+
+export fun connect_websocket(url: String) -> WebSocket {
+    let ws: WebSocket = WebSocket {
+        url: url,
+        connected: true
+    };
+    return ws;
+}
+
+export fun send_message(ws: WebSocket, message: String) -> bool {
+    if (!ws.connected) {
+        return false;
+    }
+    
+    // This would normally send a WebSocket message
+    print(format("Sending message to {}: {}", ws.url, message));
+    return true;
+}
+
+export fun close_websocket(ws: WebSocket) -> bool {
+    ws.connected = false;
+    return true;
+}
+
+// Network utilities
+export fun ping(host: String) -> bool {
+    // This would normally ping a host
+    // For now, return true as a placeholder
+    return true;
+}
+
+export fun resolve_dns(hostname: String) -> String {
+    // This would normally resolve DNS
+    // For now, return the hostname as a placeholder
+    return hostname;
+}
+
+export fun is_valid_url(url: String) -> bool {
+    return url.starts_with("http://") || url.starts_with("https://");
+}
+
+export fun is_valid_email(email: String) -> bool {
+    let at_pos: int = email.index_of("@");
+    if (at_pos == -1) {
+        return false;
+    }
+    
+    let dot_pos: int = email.index_of(".", at_pos);
+    if (dot_pos == -1) {
+        return false;
+    }
+    
+    return true;
+}

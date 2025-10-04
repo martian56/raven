@@ -1,0 +1,243 @@
+// lib/collections.rv - Collections Library
+
+// Generic Map implementation using arrays
+struct Map {
+    keys: String[],
+    values: String[]
+}
+
+fun new_map() -> Map {
+    let map: Map = Map { keys: [], values: [] };
+    return map;
+}
+
+fun map_set(map: Map, key: String, value: String) -> Map {
+    let i: int = 0;
+    while (i < len(map.keys)) {
+        if (map.keys[i] == key) {
+            map.values[i] = value;
+            return map;
+        }
+        i = i + 1;
+    }
+    
+    map.keys.push(key);
+    map.values.push(value);
+    return map;
+}
+
+fun map_get(map: Map, key: String) -> String {
+    let i: int = 0;
+    while (i < len(map.keys)) {
+        if (map.keys[i] == key) {
+            return map.values[i];
+        }
+        i = i + 1;
+    }
+    return ""; // Return empty string if key not found
+}
+
+fun map_has(map: Map, key: String) -> bool {
+    let i: int = 0;
+    while (i < len(map.keys)) {
+        if (map.keys[i] == key) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fun map_remove(map: Map, key: String) -> Map {
+    let i: int = 0;
+    while (i < len(map.keys)) {
+        if (map.keys[i] == key) {
+            let new_keys: String[] = [];
+            let new_values: String[] = [];
+            let j: int = 0;
+            while (j < len(map.keys)) {
+                if (j != i) {
+                    new_keys.push(map.keys[j]);
+                    new_values.push(map.values[j]);
+                }
+                j = j + 1;
+            }
+            map.keys = new_keys;
+            map.values = new_values;
+            return map;
+        }
+        i = i + 1;
+    }
+    return map;
+}
+
+fun map_len(map: Map) -> int {
+    return len(map.keys);
+}
+
+fun map_keys(map: Map) -> String[] {
+    return map.keys;
+}
+
+fun map_values(map: Map) -> String[] {
+    return map.values;
+}
+
+// Generic Set implementation using arrays
+struct Set {
+    items: String[]
+}
+
+fun new_set() -> Set {
+    let set: Set = Set { items: [] };
+    return set;
+}
+
+fun set_contains(set: Set, item: String) -> bool {
+    let i: int = 0;
+    while (i < len(set.items)) {
+        if (set.items[i] == item) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fun set_add(set: Set, item: String) -> Set {
+    if (!set_contains(set, item)) {
+        set.items.push(item);
+    }
+    return set;
+}
+
+fun set_remove(set: Set, item: String) -> Set {
+    let i: int = 0;
+    while (i < len(set.items)) {
+        if (set.items[i] == item) {
+            let new_items: String[] = [];
+            let j: int = 0;
+            while (j < len(set.items)) {
+                if (j != i) {
+                    new_items.push(set.items[j]);
+                }
+                j = j + 1;
+            }
+            set.items = new_items;
+            return set;
+        }
+        i = i + 1;
+    }
+    return set;
+}
+
+fun set_len(set: Set) -> int {
+    return len(set.items);
+}
+
+fun set_union(set1: Set, set2: Set) -> Set {
+    let result: Set = new_set();
+    let i: int = 0;
+    while (i < len(set1.items)) {
+        result = set_add(result, set1.items[i]);
+        i = i + 1;
+    }
+    i = 0;
+    while (i < len(set2.items)) {
+        result = set_add(result, set2.items[i]);
+        i = i + 1;
+    }
+    return result;
+}
+
+fun set_intersection(set1: Set, set2: Set) -> Set {
+    let result: Set = new_set();
+    let i: int = 0;
+    while (i < len(set1.items)) {
+        if (set_contains(set2, set1.items[i])) {
+            result = set_add(result, set1.items[i]);
+        }
+        i = i + 1;
+    }
+    return result;
+}
+
+// Stack implementation
+struct Stack {
+    items: String[]
+}
+
+fun new_stack() -> Stack {
+    let stack: Stack = Stack { items: [] };
+    return stack;
+}
+
+fun stack_push(stack: Stack, item: String) -> Stack {
+    stack.items.push(item);
+    return stack;
+}
+
+fun stack_pop(stack: Stack) -> String {
+    if (len(stack.items) == 0) {
+        return "";
+    }
+    let item: String = stack.items[len(stack.items) - 1];
+    let new_items: String[] = stack.items.slice(0, len(stack.items) - 1);
+    stack.items = new_items;
+    return item;
+}
+
+fun stack_peek(stack: Stack) -> String {
+    if (len(stack.items) == 0) {
+        return "";
+    }
+    return stack.items[len(stack.items) - 1];
+}
+
+fun stack_is_empty(stack: Stack) -> bool {
+    return len(stack.items) == 0;
+}
+
+fun stack_len(stack: Stack) -> int {
+    return len(stack.items);
+}
+
+// Queue implementation
+struct Queue {
+    items: String[]
+}
+
+fun new_queue() -> Queue {
+    let queue: Queue = Queue { items: [] };
+    return queue;
+}
+
+fun queue_enqueue(queue: Queue, item: String) -> Queue {
+    queue.items.push(item);
+    return queue;
+}
+
+fun queue_dequeue(queue: Queue) -> String {
+    if (len(queue.items) == 0) {
+        return "";
+    }
+    let item: String = queue.items[0];
+    let new_items: String[] = queue.items.slice(1, len(queue.items));
+    queue.items = new_items;
+    return item;
+}
+
+fun queue_peek(queue: Queue) -> String {
+    if (len(queue.items) == 0) {
+        return "";
+    }
+    return queue.items[0];
+}
+
+fun queue_is_empty(queue: Queue) -> bool {
+    return len(queue.items) == 0;
+}
+
+fun queue_len(queue: Queue) -> int {
+    return len(queue.items);
+}

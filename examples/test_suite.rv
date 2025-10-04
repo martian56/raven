@@ -1,0 +1,166 @@
+// examples/test_suite.rv - Simple test suite using the testing library
+
+import testing;
+import math;
+import string;
+import collections;
+
+// Test math functions
+fun test_math_abs() -> void {
+    testing.assert_equals(math.abs(-5) as String, "5", "abs(-5) should be 5");
+    testing.assert_equals(math.abs(5) as String, "5", "abs(5) should be 5");
+    testing.assert_equals(math.abs(0) as String, "0", "abs(0) should be 0");
+}
+
+fun test_math_max_min() -> void {
+    testing.assert_equals(math.max(10, 20) as String, "20", "max(10, 20) should be 20");
+    testing.assert_equals(math.min(10, 20) as String, "10", "min(10, 20) should be 10");
+    testing.assert_equals(math.max(-5, -10) as String, "-5", "max(-5, -10) should be -5");
+}
+
+fun test_math_rounding() -> void {
+    testing.assert_equals(math.floor(3.7) as String, "3", "floor(3.7) should be 3");
+    testing.assert_equals(math.ceil(3.2) as String, "4", "ceil(3.2) should be 4");
+    testing.assert_equals(math.round(3.5) as String, "4", "round(3.5) should be 4");
+}
+
+// Test string functions
+fun test_string_trim() -> void {
+    let trimmed: String = string.trim("  hello  ");
+    testing.assert_equals(trimmed, "hello", "trim should remove spaces");
+    
+    let empty: String = string.trim("");
+    testing.assert_equals(empty, "", "trim of empty string should be empty");
+}
+
+fun test_string_starts_ends_with() -> void {
+    let text: String = "hello world";
+    
+    testing.assert_true(string.starts_with(text, "hello"), "should start with 'hello'");
+    testing.assert_false(string.starts_with(text, "world"), "should not start with 'world'");
+    
+    testing.assert_true(string.ends_with(text, "world"), "should end with 'world'");
+    testing.assert_false(string.ends_with(text, "hello"), "should not end with 'hello'");
+}
+
+fun test_string_capitalize() -> void {
+    let result: String = string.capitalize("hello");
+    testing.assert_equals(result, "Hello", "capitalize should work");
+    
+    let empty: String = string.capitalize("");
+    testing.assert_equals(empty, "", "capitalize of empty should be empty");
+}
+
+// Test collections
+fun test_hashmap_basic() -> void {
+    let map: HashMap = collections.HashMap.new();
+    
+    testing.assert_equals(map.len() as String, "0", "new HashMap should be empty");
+    
+    map.set("key1", "value1");
+    testing.assert_equals(map.len() as String, "1", "HashMap should have 1 item");
+    
+    testing.assert_equals(map.get("key1"), "value1", "should get correct value");
+    testing.assert_true(map.contains_key("key1"), "should contain key");
+    testing.assert_false(map.contains_key("key2"), "should not contain non-existent key");
+}
+
+fun test_hashmap_operations() -> void {
+    let map: HashMap = collections.HashMap.new();
+    
+    map.set("name", "John");
+    map.set("age", "30");
+    map.set("city", "NYC");
+    
+    testing.assert_equals(map.len() as String, "3", "should have 3 items");
+    
+    map.remove("age");
+    testing.assert_equals(map.len() as String, "2", "should have 2 items after removal");
+    testing.assert_false(map.contains_key("age"), "should not contain removed key");
+}
+
+fun test_set_basic() -> void {
+    let set: Set = collections.Set.new();
+    
+    testing.assert_equals(set.len() as String, "0", "new Set should be empty");
+    
+    set.add("apple");
+    testing.assert_equals(set.len() as String, "1", "Set should have 1 item");
+    
+    testing.assert_true(set.contains("apple"), "should contain added item");
+    testing.assert_false(set.contains("banana"), "should not contain non-existent item");
+}
+
+fun test_set_duplicates() -> void {
+    let set: Set = collections.Set.new();
+    
+    set.add("apple");
+    set.add("apple"); // Duplicate
+    set.add("banana");
+    
+    testing.assert_equals(set.len() as String, "2", "Set should not allow duplicates");
+    testing.assert_true(set.contains("apple"), "should still contain apple");
+    testing.assert_true(set.contains("banana"), "should contain banana");
+}
+
+// Test utilities
+fun test_random_generation() -> void {
+    let str1: String = testing.generate_random_string(5);
+    let str2: String = testing.generate_random_string(5);
+    
+    testing.assert_equals(len(str1) as String, "5", "random string should have correct length");
+    testing.assert_equals(len(str2) as String, "5", "random string should have correct length");
+    
+    let int1: int = testing.generate_random_int(1, 10);
+    let int2: int = testing.generate_random_int(1, 10);
+    
+    testing.assert_true(int1 >= 1 && int1 <= 10, "random int should be in range");
+    testing.assert_true(int2 >= 1 && int2 <= 10, "random int should be in range");
+}
+
+// Performance test
+fun test_performance() -> void {
+    let result: TestResult = testing.performance_test("math_operations", 1.0);
+    
+    if (result.passed) {
+        print(format("Performance test passed: {}ms", result.execution_time));
+    } else {
+        print(format("Performance test failed: {}", result.error_message));
+    }
+}
+
+// Main test runner
+fun main() -> void {
+    print("Raven Standard Library Test Suite");
+    print("=================================");
+    
+    let all_tests: String[] = [
+        "test_math_abs",
+        "test_math_max_min", 
+        "test_math_rounding",
+        "test_string_trim",
+        "test_string_starts_ends_with",
+        "test_string_capitalize",
+        "test_hashmap_basic",
+        "test_hashmap_operations",
+        "test_set_basic",
+        "test_set_duplicates",
+        "test_random_generation",
+        "test_performance"
+    ];
+    
+    let suite: TestSuite = testing.run_test_suite("Standard Library Tests", all_tests);
+    
+    print("\nTest Results:");
+    testing.print_test_results(suite);
+    
+    let report: String = testing.generate_test_report(suite);
+    print("\nDetailed Report:");
+    print(report);
+    
+    if (suite.failed_tests == 0) {
+        print("\n✅ All tests passed!");
+    } else {
+        print(format("\n❌ {} tests failed", suite.failed_tests));
+    }
+}
