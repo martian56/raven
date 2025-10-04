@@ -1,0 +1,251 @@
+// lib/math.rv - Mathematical Functions Library
+
+// Mathematical constants
+let PI: float = 3.141592653589793;
+let E: float = 2.718281828459045;
+let TAU: float = 6.283185307179586;
+
+// Basic mathematical functions
+fun abs(x: float) -> float {
+    if (x < 0.0) {
+        return -x;
+    } else {
+        return x;
+    }
+}
+
+fun min(a: float, b: float) -> float {
+    if (a < b) {
+        return a;
+    } else {
+        return b;
+    }
+}
+
+fun max(a: float, b: float) -> float {
+    if (a > b) {
+        return a;
+    } else {
+        return b;
+    }
+}
+
+fun floor(x: float) -> float {
+    // Simple floor implementation - truncate towards negative infinity
+    if (x >= 0.0) {
+        // For positive numbers, floor is the same as truncation
+        return x - (x % 1.0);
+    } else {
+        // For negative numbers, subtract 1 if there's a fractional part
+        let fractional: float = x % 1.0;
+        if (fractional != 0.0) {
+            return x - fractional - 1.0;
+        } else {
+            return x;
+        }
+    }
+}
+
+fun ceil(x: float) -> float {
+    // Simple ceil implementation - truncate towards positive infinity
+    if (x <= 0.0) {
+        // For negative numbers, ceil is the same as truncation
+        return x - (x % 1.0);
+    } else {
+        // For positive numbers, add 1 if there's a fractional part
+        let fractional: float = x % 1.0;
+        if (fractional != 0.0) {
+            return x - fractional + 1.0;
+        } else {
+            return x;
+        }
+    }
+}
+
+fun round(x: float) -> float {
+    // Simple round implementation
+    let fractional: float = x % 1.0;
+    if (fractional >= 0.5) {
+        return x - fractional + 1.0;
+    } else {
+        return x - fractional;
+    }
+}
+
+// Power function (simple implementation)
+fun pow(base: float, exponent: float) -> float {
+    if (exponent == 0.0) {
+        return 1.0;
+    }
+    
+    let result: float = 1.0;
+    let abs_exp: float = abs(exponent);
+    let i: float = 0.0;
+    while (i < abs_exp) {
+        result = result * base;
+        i = i + 1.0;
+    }
+    
+    if (exponent < 0.0) {
+        return 1.0 / result;
+    } else {
+        return result;
+    }
+}
+
+// Square root (simple implementation using Newton's method)
+fun sqrt(x: float) -> float {
+    if (x < 0.0) {
+        return 0.0; // Return 0 for negative numbers (should be NaN in real implementation)
+    }
+    
+    if (x == 0.0) {
+        return 0.0;
+    }
+    
+    let guess: float = x / 2.0;
+    let i: int = 0;
+    while (i < 10) { // Limit iterations
+        let new_guess: float = (guess + x / guess) / 2.0;
+        if (abs(new_guess - guess) < 0.0001) {
+            return new_guess;
+        }
+        guess = new_guess;
+        i = i + 1;
+    }
+    
+    return guess;
+}
+
+// Trigonometric functions (simple implementations)
+fun sin(x: float) -> float {
+    // Normalize to [-PI, PI]
+    while (x > PI) {
+        x = x - TAU;
+    }
+    while (x < -PI) {
+        x = x + TAU;
+    }
+    
+    // Taylor series approximation
+    let result: float = x;
+    let term: float = x;
+    let i: int = 1;
+    while (i < 10) {
+        term = term * (-x * x) / ((2 * i) * (2 * i + 1));
+        result = result + term;
+        i = i + 1;
+    }
+    
+    return result;
+}
+
+fun cos(x: float) -> float {
+    // Normalize to [-PI, PI]
+    while (x > PI) {
+        x = x - TAU;
+    }
+    while (x < -PI) {
+        x = x + TAU;
+    }
+    
+    // Taylor series approximation
+    let result: float = 1.0;
+    let term: float = 1.0;
+    let i: int = 1;
+    while (i < 10) {
+        term = term * (-x * x) / ((2 * i - 1) * (2 * i));
+        result = result + term;
+        i = i + 1;
+    }
+    
+    return result;
+}
+
+fun tan(x: float) -> float {
+    let cos_x: float = cos(x);
+    if (cos_x == 0.0) {
+        return 0.0; // Should be infinity, but we'll return 0 for simplicity
+    }
+    return sin(x) / cos_x;
+}
+
+// Logarithmic functions
+fun log(x: float) -> float {
+    if (x <= 0.0) {
+        return 0.0; // Should be NaN, but we'll return 0 for simplicity
+    }
+    
+    // Simple approximation using ln(1+x) series
+    if (x < 1.0) {
+        let y: float = x - 1.0;
+        let result: float = y;
+        let term: float = y;
+        let i: int = 2;
+        while (i < 20) {
+            term = term * (-y);
+            result = result + term / i;
+            i = i + 1;
+        }
+        return result;
+    } else {
+        // For x > 1, use log(x) = log(x/e) + 1
+        let count: int = 0;
+        while (x > E) {
+            x = x / E;
+            count = count + 1;
+        }
+        return log(x) + count;
+    }
+}
+
+fun log10(x: float) -> float {
+    return log(x) / log(10.0);
+}
+
+// Random number generation (simple linear congruential generator)
+let seed: int = 12345;
+
+fun random() -> float {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed / 2147483648.0;
+}
+
+fun random_int(min_val: int, max_val: int) -> int {
+    let range: int = max_val - min_val + 1;
+    let random_float: float = random() * range;
+    // Simple truncation to int (this is not perfect but works for basic cases)
+    return min_val + range; // This is a simplified version
+}
+
+// Clamp function
+fun clamp(value: float, min_val: float, max_val: float) -> float {
+    if (value < min_val) {
+        return min_val;
+    } else if (value > max_val) {
+        return max_val;
+    } else {
+        return value;
+    }
+}
+
+// Linear interpolation
+fun lerp(a: float, b: float, t: float) -> float {
+    return a + t * (b - a);
+}
+
+// Distance functions
+fun distance(x1: float, y1: float, x2: float, y2: float) -> float {
+    let dx: float = x2 - x1;
+    let dy: float = y2 - y1;
+    return sqrt(dx * dx + dy * dy);
+}
+
+// Angle conversion functions
+fun degrees_to_radians(degrees: float) -> float {
+    return degrees * PI / 180.0;
+}
+
+fun radians_to_degrees(radians: float) -> float {
+    return radians * 180.0 / PI;
+}

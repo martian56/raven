@@ -1,5 +1,5 @@
 use crate::lexer::{Lexer, TokenType};
-use crate::ast::{ASTNode, Expression, Operator, Type};
+use crate::ast::{ASTNode, Expression, Operator};
 use crate::error::{RavenError, parse_error};
 use crate::span::Span;
 
@@ -29,56 +29,42 @@ impl Parser {
         while let Some(token) = &self.current_token {
             let stmt: ASTNode = match token {
                 TokenType::Let => self.parse_variable_declaration()?,
+                TokenType::Struct => self.parse_struct_declaration()?,
+                TokenType::Enum => self.parse_enum_declaration()?,
                 TokenType::Identifier(_) => {
-                    // Check if this is a function call or method call statement
-                    // We need to peek ahead to see what comes after the identifier
-                    let next_token = self.lexer.peek_token();
+                    // Parse the expression first to see what we're dealing with
+                    let expr = self.parse_expression();
                     
-                    if let Some(TokenType::LeftParen) = next_token {
-                        // It's a function call statement
-                        let expr = self.parse_expression();
+                    // Check if this is an assignment (has '=' after the expression)
+                    if let Some(TokenType::Assign) = &self.current_token {
+                        // It's an assignment: expr = value
+                        self.advance(); // Skip '='
+                        let value_expr = self.parse_expression();
+                        
                         // Expect semicolon
                         if let Some(TokenType::Semicolon) = &self.current_token {
                             self.advance(); // Skip ';'
                         } else {
                             let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
                             return Err(
-                                parse_error("Expected ';' after function call", span)
+                                parse_error("Expected ';' after assignment", span)
                                     .with_source(self.source_code.clone())
                                     .with_hint("Add ';' at the end".to_string())
                             );
                         }
-                        // Extract function call from expression
-                        if let Expression::FunctionCall(name, args) = expr {
-                            ASTNode::FunctionCall(name, args)
-                        } else {
-                            return Err(parse_error("Expected function call", Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1))
-                                .with_source(self.source_code.clone()));
-                        }
-                    } else if let Some(TokenType::Dot) = next_token {
-                        // It's a method call statement
-                        let expr = self.parse_expression();
-                        // Expect semicolon
-                        if let Some(TokenType::Semicolon) = &self.current_token {
-                            self.advance(); // Skip ';'
-                        } else {
-                            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
-                            return Err(
-                                parse_error("Expected ';' after method call", span)
-                                    .with_source(self.source_code.clone())
-                                    .with_hint("Add ';' at the end".to_string())
-                            );
-                        }
-                        // Extract method call from expression
-                        if let Expression::MethodCall(object, method, args) = expr {
-                            ASTNode::MethodCall(object, method, args)
-                        } else {
-                            return Err(parse_error("Expected method call", Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1))
-                                .with_source(self.source_code.clone()));
-                        }
+                        
+                        ASTNode::Assignment(Box::new(expr), Box::new(value_expr))
+                    } else if let Some(TokenType::Semicolon) = &self.current_token {
+                        // It's a standalone expression statement (like a method call)
+                        self.advance(); // Skip ';'
+                        ASTNode::ExpressionStatement(expr)
                     } else {
-                        // It's an assignment
-                        self.parse_assignment()?
+                        let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                        return Err(
+                            parse_error("Expected ';' or '=' after expression", span)
+                                .with_source(self.source_code.clone())
+                                .with_hint("Add ';' for expression statement or '=' for assignment".to_string())
+                        );
                     }
                 },
                 TokenType::If => self.parse_if_statement()?,
@@ -205,6 +191,11 @@ impl Parser {
                 self.advance();
                 "void".to_string()
             }
+            Some(TokenType::Identifier(type_name)) => {
+                let type_name_clone = type_name.clone();
+                self.advance();
+                type_name_clone
+            }
             other => {
                 let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
                 return Err(parse_error(&format!("Expected type after ':', got {:?}", other), span)
@@ -212,153 +203,75 @@ impl Parser {
             }
         };
     
-        // Step 4: Expect '='
+        // Step 4: Check for optional '=' and initial value
         if let Some(TokenType::Assign) = &self.current_token {
             self.advance(); // Skip '='
-        } else {
-            return Err("Expected '=' after variable type.".to_string().into());
-        }
-    
-        // Step 5: Parse the expression (track position before for error reporting)
-        let expr_start_line = self.lexer.line;
-        let expr = self.parse_expression();
-    
-        // Step 6: Expect semicolon
-        if let Some(TokenType::Semicolon) = &self.current_token {
-            self.advance(); // Skip ';'
-        } else {
-            // If we're on a different line, the semicolon should be at end of previous line
-            let error_line = if self.lexer.line > expr_start_line {
-                // We're on a new line, so point to end of previous line
-                expr_start_line
+            
+            // Parse the expression
+            let expr_start_line = self.lexer.line;
+            let expr = self.parse_expression();
+            
+            // Expect semicolon
+            if let Some(TokenType::Semicolon) = &self.current_token {
+                self.advance(); // Skip ';'
             } else {
-                // Same line, point to current position
-                self.lexer.line
-            };
-            
-            // For better UX, find the end of the previous line
-            let lines: Vec<&str> = self.source_code.lines().collect();
-            let error_column = if error_line < lines.len() {
-                lines[error_line].len()
-            } else {
-                self.lexer.column
-            };
-            
-            let span = Span::new(error_line, error_column, self.lexer.position, 1);
-            return Err(
-                parse_error("Expected ';' after variable declaration", span)
-                    .with_source(self.source_code.clone())
-                    .with_hint("Add ';' at the end of the statement".to_string())
-            );
-        }
-    
-        Ok(ASTNode::VariableDeclTyped(var_name, var_type, Box::new(expr)))
-    }
-    
-
-    fn parse_function_call_statement(&mut self) -> Result<ASTNode, RavenError> {
-        // Parse function name
-        let name = if let Some(TokenType::Identifier(n)) = &self.current_token {
-            n.clone()
-        } else {
-            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
-            return Err(parse_error("Expected function name", span)
-                .with_source(self.source_code.clone()));
-        };
-        self.advance(); // Consume the identifier
-        
-        // Expect '('
-        if let Some(TokenType::LeftParen) = &self.current_token {
-            self.advance(); // Skip '('
-        } else {
-            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
-            return Err(parse_error("Expected '(' after function name", span)
-                .with_source(self.source_code.clone()));
-        }
-        
-        // Parse arguments
-        let mut arguments = Vec::new();
-        
-        // Check for empty argument list
-        if let Some(TokenType::RightParen) = &self.current_token {
-            self.advance(); // Skip ')'
-        } else {
-            // Parse first argument
-            arguments.push(self.parse_expression());
-            
-            // Parse remaining arguments
-            while let Some(TokenType::Comma) = &self.current_token {
-                self.advance(); // Skip ','
-                arguments.push(self.parse_expression());
-            }
-            
-            // Expect ')'
-            if let Some(TokenType::RightParen) = &self.current_token {
-                self.advance(); // Skip ')'
-            } else {
-                let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
-                return Err(parse_error("Expected ')' after function arguments", span)
-                    .with_source(self.source_code.clone())
-                    .with_hint("Close the function call with ')'".to_string()));
-            }
-        }
-        
-        // Expect semicolon
-        if let Some(TokenType::Semicolon) = &self.current_token {
-            self.advance(); // Skip ';'
-        } else {
-            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
-            return Err(parse_error("Expected ';' after function call", span)
-                .with_source(self.source_code.clone())
-                .with_hint("Add ';' at the end".to_string()));
-        }
-        
-        Ok(ASTNode::FunctionCall(name, arguments))
-    }
-
-    fn parse_assignment(&mut self) -> Result<ASTNode, RavenError> {
-        if let Some(TokenType::Identifier(name)) = &self.current_token {
-            let name_clone: String = name.clone();
-            let name_line = self.lexer.line;
-            self.advance(); // Skip identifier
-
-            if let Some(TokenType::Assign) = &self.current_token {
-                self.advance(); // Skip '='
-                let expr_start_line = self.lexer.line;
-                let expr: Expression = self.parse_expression();
-
-                if let Some(TokenType::Semicolon) = &self.current_token {
-                    self.advance(); // Skip ';'
-                    return Ok(ASTNode::Assignment(name_clone, Box::new(expr)));
+                // If we're on a different line, the semicolon should be at end of previous line
+                let error_line = if self.lexer.line > expr_start_line {
+                    // We're on a new line, so point to end of previous line
+                    expr_start_line
                 } else {
-                    // Same logic as variable declaration - point to correct line
-                    let error_line = if self.lexer.line > expr_start_line {
-                        expr_start_line
-                    } else {
-                        self.lexer.line
-                    };
-                    
-                    let lines: Vec<&str> = self.source_code.lines().collect();
-                    let error_column = if error_line < lines.len() {
-                        lines[error_line].len()
-                    } else {
-                        self.lexer.column
-                    };
-                    
-                    let span = Span::new(error_line, error_column, self.lexer.position, 1);
-                    return Err(
-                        parse_error("Expected ';' after assignment", span)
-                            .with_source(self.source_code.clone())
-                            .with_hint("Add ';' at the end of the statement".to_string())
-                    );
-                }
+                    // Same line, point to current position
+                    self.lexer.line
+                };
+                
+                // For better UX, find the end of the previous line
+                let lines: Vec<&str> = self.source_code.lines().collect();
+                let error_column = if error_line < lines.len() {
+                    lines[error_line].len()
+                } else {
+                    self.lexer.column
+                };
+                
+                let span = Span::new(error_line, error_column, self.lexer.position, 1);
+                return Err(
+                    parse_error("Expected ';' after variable declaration", span)
+                        .with_source(self.source_code.clone())
+                        .with_hint("Add ';' at the end of the statement".to_string())
+                );
             }
+            
+            Ok(ASTNode::VariableDeclTyped(var_name, var_type, Box::new(expr)))
+        } else if let Some(TokenType::Semicolon) = &self.current_token {
+            // No initial value, just declaration
+            self.advance(); // Skip ';'
+            
+            // Create a default value based on the type
+            let default_expr = match var_type.as_str() {
+                "int" => Expression::Integer(0),
+                "float" => Expression::Float(0.0),
+                "bool" => Expression::Boolean(false),
+                "string" => Expression::StringLiteral("".to_string()),
+                "String" => Expression::StringLiteral("".to_string()),
+                _ if var_type.ends_with("[]") => Expression::ArrayLiteral(vec![]),
+                _ => {
+                    // For custom types (like structs), we'll need to handle this differently
+                    // For now, return an error
+                    let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                    return Err(parse_error(&format!("Cannot declare uninitialized variable of type '{}'", var_type), span)
+                        .with_source(self.source_code.clone())
+                        .with_hint("Provide an initial value or use a supported type".to_string()));
+                }
+            };
+            
+            Ok(ASTNode::VariableDeclTyped(var_name, var_type, Box::new(default_expr)))
+        } else {
+            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+            return Err(parse_error("Expected '=' or ';' after variable type", span)
+                .with_source(self.source_code.clone())
+                .with_hint("Add '=' with initial value or ';' for declaration only".to_string()));
         }
-
-        let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
-        Err(parse_error("Invalid assignment", span)
-            .with_source(self.source_code.clone()))
     }
+    
 
     fn parse_if_statement(&mut self) -> Result<ASTNode, RavenError> {
         self.parse_if_like_statement(true)
@@ -451,7 +364,42 @@ impl Parser {
     
             let stmt = match token {
                 TokenType::Let => self.parse_variable_declaration()?,
-                TokenType::Identifier(_) => self.parse_assignment()?,
+                TokenType::Identifier(_) => {
+                    // Parse the expression first to see what we're dealing with
+                    let expr = self.parse_expression();
+                    
+                    // Check if this is an assignment (has '=' after the expression)
+                    if let Some(TokenType::Assign) = &self.current_token {
+                        // It's an assignment: expr = value
+                        self.advance(); // Skip '='
+                        let value_expr = self.parse_expression();
+                        
+                        // Expect semicolon
+                        if let Some(TokenType::Semicolon) = &self.current_token {
+                            self.advance(); // Skip ';'
+                        } else {
+                            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                            return Err(
+                                parse_error("Expected ';' after assignment", span)
+                                    .with_source(self.source_code.clone())
+                                    .with_hint("Add ';' at the end".to_string())
+                            );
+                        }
+                        
+                        ASTNode::Assignment(Box::new(expr), Box::new(value_expr))
+                    } else if let Some(TokenType::Semicolon) = &self.current_token {
+                        // It's a standalone expression statement (like a method call)
+                        self.advance(); // Skip ';'
+                        ASTNode::ExpressionStatement(expr)
+                    } else {
+                        let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                        return Err(
+                            parse_error("Expected ';' or '=' after expression", span)
+                                .with_source(self.source_code.clone())
+                                .with_hint("Add ';' for expression statement or '=' for assignment".to_string())
+                        );
+                    }
+                },
                 TokenType::If => self.parse_if_statement()?,
                 TokenType::While => self.parse_while_loop()?,
                 TokenType::For => self.parse_for_loop()?,
@@ -503,7 +451,8 @@ impl Parser {
             Operator::LessThan | Operator::GreaterThan 
             | Operator::LessEqual | Operator::GreaterEqual => 4,
             Operator::Add | Operator::Subtract => 5,
-            Operator::Multiply | Operator::Divide => 6,           // Highest
+            Operator::Multiply | Operator::Divide | Operator::Modulo => 6,           // Highest
+            Operator::UnaryMinus | Operator::Not => 7,           // Unary operators have highest precedence
         }
     }
 
@@ -513,6 +462,7 @@ impl Parser {
             Some(TokenType::Minus) => Some(Operator::Subtract),
             Some(TokenType::Star) => Some(Operator::Multiply),
             Some(TokenType::Slash) => Some(Operator::Divide),
+            Some(TokenType::Percent) => Some(Operator::Modulo),
             Some(TokenType::EqualEqual) => Some(Operator::Equal),
             Some(TokenType::Less) => Some(Operator::LessThan),
             Some(TokenType::Greater) => Some(Operator::GreaterThan),
@@ -528,6 +478,16 @@ impl Parser {
 
     fn parse_term(&mut self) -> Expression {
         match &self.current_token {
+            Some(TokenType::Minus) => {
+                self.advance(); // Skip '-'
+                let expr = self.parse_term();
+                Expression::UnaryOp(Operator::UnaryMinus, Box::new(expr))
+            }
+            Some(TokenType::Not) => {
+                self.advance(); // Skip '!'
+                let expr = self.parse_term();
+                Expression::UnaryOp(Operator::Not, Box::new(expr))
+            }
             Some(TokenType::IntLiteral(value)) => {
                 let val = *value;
                 self.advance();
@@ -586,6 +546,70 @@ impl Parser {
                     }
                     
                     Expression::FunctionCall(name_clone, arguments)
+                } else if let Some(TokenType::LeftBrace) = &self.current_token {
+                    // Struct instantiation: StructName { field1: value1, field2: value2 }
+                    self.advance(); // Skip '{'
+                    
+                    let mut fields = Vec::new();
+                    
+                    // Check for empty field list
+                    if let Some(TokenType::RightBrace) = &self.current_token {
+                        self.advance(); // Skip '}'
+                        return Expression::StructInstantiation(name_clone, fields);
+                    }
+                    
+                    // Parse first field
+                    let field_name = if let Some(TokenType::Identifier(field)) = &self.current_token {
+                        let field_clone = field.clone();
+                        self.advance();
+                        field_clone
+                    } else {
+                        panic!("Expected field name in struct instantiation");
+                    };
+                    
+                    // Expect ':'
+                    if let Some(TokenType::Colon) = &self.current_token {
+                        self.advance();
+                    } else {
+                        panic!("Expected ':' after field name");
+                    }
+                    
+                    // Parse field value
+                    let field_value = self.parse_expression();
+                    fields.push((field_name, field_value));
+                    
+                    // Parse remaining fields
+                    while let Some(TokenType::Comma) = &self.current_token {
+                        self.advance(); // Skip ','
+                        
+                        let field_name = if let Some(TokenType::Identifier(field)) = &self.current_token {
+                            let field_clone = field.clone();
+                            self.advance();
+                            field_clone
+                        } else {
+                            panic!("Expected field name in struct instantiation");
+                        };
+                        
+                        // Expect ':'
+                        if let Some(TokenType::Colon) = &self.current_token {
+                            self.advance();
+                        } else {
+                            panic!("Expected ':' after field name");
+                        }
+                        
+                        // Parse field value
+                        let field_value = self.parse_expression();
+                        fields.push((field_name, field_value));
+                    }
+                    
+                    // Expect '}'
+                    if let Some(TokenType::RightBrace) = &self.current_token {
+                        self.advance(); // Skip '}'
+                    } else {
+                        panic!("Expected '}}' after struct fields");
+                    }
+                    
+                    Expression::StructInstantiation(name_clone, fields)
                 } else {
                     // Check if this is array indexing: array[index]
                     if let Some(TokenType::LeftBracket) = &self.current_token {
@@ -601,15 +625,38 @@ impl Parser {
                         
                         Expression::ArrayIndex(Box::new(Expression::Identifier(name_clone)), Box::new(index))
                     } else {
-                        // Check if this is a method call: object.method(args)
-                        if let Some(TokenType::Dot) = &self.current_token {
-                            // Parse the initial identifier as the object
-                            let object = Expression::Identifier(name_clone);
-                            // Use the chained method call parser
-                            self.parse_method_call_chain(object)
+                        // Check if this is an enum variant: EnumName::VariantName
+                        if let Some(TokenType::Colon) = &self.current_token {
+                            // Check if there's another colon (::)
+                            if let Some(TokenType::Colon) = self.lexer.peek_token() {
+                                self.advance(); // Skip first ':'
+                                self.advance(); // Skip second ':'
+                                
+                                // Parse variant name
+                                let variant_name = if let Some(TokenType::Identifier(variant)) = &self.current_token {
+                                    let variant_clone = variant.clone();
+                                    self.advance();
+                                    variant_clone
+                                } else {
+                                    panic!("Expected variant name after '::'");
+                                };
+                                
+                                Expression::EnumVariant(name_clone, variant_name)
+                            } else {
+                                // Just a variable reference
+                                Expression::Identifier(name_clone)
+                            }
                         } else {
-                            // Just a variable reference
-                            Expression::Identifier(name_clone)
+                            // Check if this is a method call: object.method(args)
+                            if let Some(TokenType::Dot) = &self.current_token {
+                                // Parse the initial identifier as the object
+                                let object = Expression::Identifier(name_clone);
+                                // Use the chained method call parser
+                                self.parse_method_call_chain(object)
+                            } else {
+                                // Just a variable reference
+                                Expression::Identifier(name_clone)
+                            }
                         }
                     }
                 }
@@ -618,23 +665,23 @@ impl Parser {
         }
     }
 
-    /// Parse chained method calls: object.method1().method2().method3()
+    /// Parse chained method calls, field access, and array indexing: object.method1().field[index].method2()
     fn parse_method_call_chain(&mut self, object: Expression) -> Expression {
         let mut current_object = object;
         
         while let Some(TokenType::Dot) = &self.current_token {
             self.advance(); // Skip '.'
             
-            // Expect method name
-            let method_name = if let Some(TokenType::Identifier(method)) = &self.current_token {
-                let method_clone = method.clone();
+            // Expect method/field name
+            let name = if let Some(TokenType::Identifier(n)) = &self.current_token {
+                let name_clone = n.clone();
                 self.advance();
-                method_clone
+                name_clone
             } else {
-                panic!("Expected method name after '.'");
+                panic!("Expected method or field name after '.'");
             };
             
-            // Expect '(' for method call
+            // Check if this is a method call (has '(') or field access
             if let Some(TokenType::LeftParen) = &self.current_token {
                 self.advance(); // Skip '('
                 
@@ -646,7 +693,7 @@ impl Parser {
                     self.advance(); // Skip ')'
                     current_object = Expression::MethodCall(
                         Box::new(current_object), 
-                        method_name, 
+                        name, 
                         arguments
                     );
                     continue;
@@ -670,11 +717,30 @@ impl Parser {
                 
                 current_object = Expression::MethodCall(
                     Box::new(current_object), 
-                    method_name, 
+                    name, 
                     arguments
                 );
             } else {
-                panic!("Expected '(' after method name");
+                // This is field access, not a method call
+                current_object = Expression::FieldAccess(
+                    Box::new(current_object), 
+                    name
+                );
+            }
+            
+            // After field access or method call, check for array indexing
+            while let Some(TokenType::LeftBracket) = &self.current_token {
+                self.advance(); // Skip '['
+                let index = self.parse_expression();
+                
+                // Expect ']'
+                if let Some(TokenType::RightBracket) = &self.current_token {
+                    self.advance(); // Skip ']'
+                } else {
+                    panic!("Expected ']' after array index");
+                }
+                
+                current_object = Expression::ArrayIndex(Box::new(current_object), Box::new(index));
             }
         }
         
@@ -831,26 +897,96 @@ impl Parser {
             let param_type = match &self.current_token {
                 Some(TokenType::IntType) => {
                     self.advance();
-                    "int".to_string()
+                    
+                    // Check if this is an array type: int[]
+                    if let Some(TokenType::LeftBracket) = &self.current_token {
+                        self.advance(); // Skip '['
+                        
+                        // Expect ']'
+                        if let Some(TokenType::RightBracket) = &self.current_token {
+                            self.advance(); // Skip ']'
+                            "int[]".to_string()
+                        } else {
+                            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                            return Err(parse_error("Expected ']' after array type", span)
+                                .with_source(self.source_code.clone()));
+                        }
+                    } else {
+                        "int".to_string()
+                    }
                 }
                 Some(TokenType::FloatType) => {
                     self.advance();
-                    "float".to_string()
+                    
+                    // Check if this is an array type: float[]
+                    if let Some(TokenType::LeftBracket) = &self.current_token {
+                        self.advance(); // Skip '['
+                        
+                        // Expect ']'
+                        if let Some(TokenType::RightBracket) = &self.current_token {
+                            self.advance(); // Skip ']'
+                            "float[]".to_string()
+                        } else {
+                            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                            return Err(parse_error("Expected ']' after array type", span)
+                                .with_source(self.source_code.clone()));
+                        }
+                    } else {
+                        "float".to_string()
+                    }
                 }
                 Some(TokenType::BoolType) => {
                     self.advance();
-                    "bool".to_string()
+                    
+                    // Check if this is an array type: bool[]
+                    if let Some(TokenType::LeftBracket) = &self.current_token {
+                        self.advance(); // Skip '['
+                        
+                        // Expect ']'
+                        if let Some(TokenType::RightBracket) = &self.current_token {
+                            self.advance(); // Skip ']'
+                            "bool[]".to_string()
+                        } else {
+                            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                            return Err(parse_error("Expected ']' after array type", span)
+                                .with_source(self.source_code.clone()));
+                        }
+                    } else {
+                        "bool".to_string()
+                    }
                 }
                 Some(TokenType::StringType) => {
                     self.advance();
-                    "string".to_string()
+                    
+                    // Check if this is an array type: String[]
+                    if let Some(TokenType::LeftBracket) = &self.current_token {
+                        self.advance(); // Skip '['
+                        
+                        // Expect ']'
+                        if let Some(TokenType::RightBracket) = &self.current_token {
+                            self.advance(); // Skip ']'
+                            "String[]".to_string()
+                        } else {
+                            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                            return Err(parse_error("Expected ']' after array type", span)
+                                .with_source(self.source_code.clone()));
+                        }
+                    } else {
+                        "string".to_string()
+                    }
+                }
+                Some(TokenType::Identifier(type_name)) => {
+                    // Allow custom types (structs) as parameter types
+                    let type_name_clone = type_name.clone();
+                    self.advance();
+                    type_name_clone
                 }
                 _ => {
                     let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
                     return Err(
                         parse_error("Expected type for parameter", span)
                             .with_source(self.source_code.clone())
-                            .with_hint("Use: int, float, bool, or string".to_string())
+                            .with_hint("Use: int, float, bool, string, or custom type".to_string())
                     );
                 }
             };
@@ -884,30 +1020,100 @@ impl Parser {
             match &self.current_token {
                 Some(TokenType::IntType) => {
                     self.advance();
-                    "int".to_string()
+                    
+                    // Check if this is an array type: int[]
+                    if let Some(TokenType::LeftBracket) = &self.current_token {
+                        self.advance(); // Skip '['
+                        
+                        // Expect ']'
+                        if let Some(TokenType::RightBracket) = &self.current_token {
+                            self.advance(); // Skip ']'
+                            "int[]".to_string()
+                        } else {
+                            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                            return Err(parse_error("Expected ']' after array type", span)
+                                .with_source(self.source_code.clone()));
+                        }
+                    } else {
+                        "int".to_string()
+                    }
                 }
                 Some(TokenType::FloatType) => {
                     self.advance();
-                    "float".to_string()
+                    
+                    // Check if this is an array type: float[]
+                    if let Some(TokenType::LeftBracket) = &self.current_token {
+                        self.advance(); // Skip '['
+                        
+                        // Expect ']'
+                        if let Some(TokenType::RightBracket) = &self.current_token {
+                            self.advance(); // Skip ']'
+                            "float[]".to_string()
+                        } else {
+                            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                            return Err(parse_error("Expected ']' after array type", span)
+                                .with_source(self.source_code.clone()));
+                        }
+                    } else {
+                        "float".to_string()
+                    }
                 }
                 Some(TokenType::BoolType) => {
                     self.advance();
-                    "bool".to_string()
+                    
+                    // Check if this is an array type: bool[]
+                    if let Some(TokenType::LeftBracket) = &self.current_token {
+                        self.advance(); // Skip '['
+                        
+                        // Expect ']'
+                        if let Some(TokenType::RightBracket) = &self.current_token {
+                            self.advance(); // Skip ']'
+                            "bool[]".to_string()
+                        } else {
+                            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                            return Err(parse_error("Expected ']' after array type", span)
+                                .with_source(self.source_code.clone()));
+                        }
+                    } else {
+                        "bool".to_string()
+                    }
                 }
                 Some(TokenType::StringType) => {
                     self.advance();
-                    "string".to_string()
+                    
+                    // Check if this is an array type: String[]
+                    if let Some(TokenType::LeftBracket) = &self.current_token {
+                        self.advance(); // Skip '['
+                        
+                        // Expect ']'
+                        if let Some(TokenType::RightBracket) = &self.current_token {
+                            self.advance(); // Skip ']'
+                            "String[]".to_string()
+                        } else {
+                            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                            return Err(parse_error("Expected ']' after array type", span)
+                                .with_source(self.source_code.clone()));
+                        }
+                    } else {
+                        "string".to_string()
+                    }
                 }
                 Some(TokenType::VoidType) => {
                     self.advance();
                     "void".to_string()
+                }
+                Some(TokenType::Identifier(type_name)) => {
+                    // Allow custom types (structs) as return types
+                    let type_name_clone = type_name.clone();
+                    self.advance();
+                    type_name_clone
                 }
                 _ => {
                     let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
                     return Err(
                         parse_error("Expected return type", span)
                             .with_source(self.source_code.clone())
-                            .with_hint("Use: int, float, bool, string, or void".to_string())
+                            .with_hint("Use: int, float, bool, string, void, or custom type".to_string())
                     );
                 }
             }
@@ -940,6 +1146,191 @@ impl Parser {
                     .with_hint("Add '{' to start the function body".to_string())
             )
         }
+    }
+
+    fn parse_struct_declaration(&mut self) -> Result<ASTNode, RavenError> {
+        self.advance(); // Skip 'struct'
+    
+        // Parse struct name
+        let struct_name = if let Some(TokenType::Identifier(name)) = &self.current_token {
+            let name_clone = name.clone();
+            self.advance();
+            name_clone
+        } else {
+            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+            return Err(
+                parse_error("Expected struct name after 'struct'", span)
+                    .with_source(self.source_code.clone())
+                    .with_hint("Provide a struct name".to_string())
+            );
+        };
+    
+        // Expect '{'
+        if let Some(TokenType::LeftBrace) = &self.current_token {
+            self.advance();
+        } else {
+            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+            return Err(
+                parse_error("Expected '{' after struct name", span)
+                    .with_source(self.source_code.clone())
+                    .with_hint("Add '{' to start struct body".to_string())
+            );
+        }
+    
+        // Parse struct fields
+        let mut fields = Vec::new();
+        while let Some(token) = &self.current_token {
+            if let TokenType::RightBrace = token {
+                break;
+            }
+    
+            // Parse field name
+            let field_name = if let Some(TokenType::Identifier(name)) = &self.current_token {
+                let name_clone = name.clone();
+                self.advance();
+                name_clone
+            } else {
+                let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                return Err(
+                    parse_error("Expected field name", span)
+                        .with_source(self.source_code.clone())
+                        .with_hint("Provide a field name".to_string())
+                );
+            };
+    
+            // Expect ':'
+            if let Some(TokenType::Colon) = &self.current_token {
+                self.advance();
+            } else {
+                let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                return Err(
+                    parse_error("Expected ':' after field name", span)
+                        .with_source(self.source_code.clone())
+                        .with_hint("Add ':' followed by the field type".to_string())
+                );
+            }
+    
+            // Parse field type
+            let field_type = match &self.current_token {
+                Some(TokenType::IntType) => {
+                    self.advance();
+                    
+                    // Check if this is an array type: int[]
+                    if let Some(TokenType::LeftBracket) = &self.current_token {
+                        self.advance(); // Skip '['
+                        
+                        // Expect ']'
+                        if let Some(TokenType::RightBracket) = &self.current_token {
+                            self.advance(); // Skip ']'
+                            "int[]".to_string()
+                        } else {
+                            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                            return Err(parse_error("Expected ']' after array type", span)
+                                .with_source(self.source_code.clone()));
+                        }
+                    } else {
+                        "int".to_string()
+                    }
+                }
+                Some(TokenType::FloatType) => {
+                    self.advance();
+                    
+                    // Check if this is an array type: float[]
+                    if let Some(TokenType::LeftBracket) = &self.current_token {
+                        self.advance(); // Skip '['
+                        
+                        // Expect ']'
+                        if let Some(TokenType::RightBracket) = &self.current_token {
+                            self.advance(); // Skip ']'
+                            "float[]".to_string()
+                        } else {
+                            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                            return Err(parse_error("Expected ']' after array type", span)
+                                .with_source(self.source_code.clone()));
+                        }
+                    } else {
+                        "float".to_string()
+                    }
+                }
+                Some(TokenType::BoolType) => {
+                    self.advance();
+                    
+                    // Check if this is an array type: bool[]
+                    if let Some(TokenType::LeftBracket) = &self.current_token {
+                        self.advance(); // Skip '['
+                        
+                        // Expect ']'
+                        if let Some(TokenType::RightBracket) = &self.current_token {
+                            self.advance(); // Skip ']'
+                            "bool[]".to_string()
+                        } else {
+                            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                            return Err(parse_error("Expected ']' after array type", span)
+                                .with_source(self.source_code.clone()));
+                        }
+                    } else {
+                        "bool".to_string()
+                    }
+                }
+                Some(TokenType::StringType) => {
+                    self.advance();
+                    
+                    // Check if this is an array type: String[]
+                    if let Some(TokenType::LeftBracket) = &self.current_token {
+                        self.advance(); // Skip '['
+                        
+                        // Expect ']'
+                        if let Some(TokenType::RightBracket) = &self.current_token {
+                            self.advance(); // Skip ']'
+                            "String[]".to_string()
+                        } else {
+                            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                            return Err(parse_error("Expected ']' after array type", span)
+                                .with_source(self.source_code.clone()));
+                        }
+                    } else {
+                        "string".to_string()
+                    }
+                }
+                Some(TokenType::Identifier(type_name)) => {
+                    let type_name_clone = type_name.clone();
+                    self.advance();
+                    type_name_clone
+                }
+                _ => {
+                    let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                    return Err(
+                        parse_error("Expected type for field", span)
+                            .with_source(self.source_code.clone())
+                            .with_hint("Use: int, float, bool, string, or custom type".to_string())
+                    );
+                }
+            };
+    
+            fields.push(crate::ast::StructField {
+                name: field_name,
+                field_type,
+            });
+    
+            // Check for comma or end of fields
+            if let Some(TokenType::Comma) = &self.current_token {
+                self.advance();
+            }
+        }
+    
+        // Expect '}'
+        if let Some(TokenType::RightBrace) = &self.current_token {
+            self.advance();
+        } else {
+            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+            return Err(
+                parse_error("Expected '}' to close struct body", span)
+                    .with_source(self.source_code.clone())
+                    .with_hint("Add '}' to close the struct body".to_string())
+            );
+        }
+    
+        Ok(ASTNode::StructDecl(struct_name, fields))
     }
 
     fn parse_while_loop(&mut self) -> Result<ASTNode, RavenError> {
@@ -1049,7 +1440,7 @@ impl Parser {
             if let Some(TokenType::Assign) = &self.current_token {
                 self.advance();
                 let expr = self.parse_expression();
-                ASTNode::Assignment(name_clone, Box::new(expr))
+                ASTNode::Assignment(Box::new(Expression::Identifier(name_clone)), Box::new(expr))
             } else {
                 let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
                 return Err(
@@ -1296,6 +1687,89 @@ impl Parser {
         };
         
         Ok(ASTNode::Export(Box::new(stmt)))
+    }
+    
+    fn parse_enum_declaration(&mut self) -> Result<ASTNode, RavenError> {
+        self.advance(); // Skip 'enum'
+    
+        // Parse enum name
+        let enum_name = if let Some(TokenType::Identifier(name)) = &self.current_token {
+            let name_clone = name.clone();
+            self.advance();
+            name_clone
+        } else {
+            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+            return Err(
+                parse_error("Expected enum name after 'enum'", span)
+                    .with_source(self.source_code.clone())
+                    .with_hint("Provide an enum name".to_string())
+            );
+        };
+    
+        // Expect '{'
+        if let Some(TokenType::LeftBrace) = &self.current_token {
+            self.advance();
+        } else {
+            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+            return Err(
+                parse_error("Expected '{' after enum name", span)
+                    .with_source(self.source_code.clone())
+                    .with_hint("Add '{' to start enum body".to_string())
+            );
+        }
+    
+        // Parse enum variants
+        let mut variants = Vec::new();
+        while let Some(token) = &self.current_token {
+            if let TokenType::RightBrace = token {
+                break;
+            }
+    
+            // Parse variant name
+            let variant_name = if let Some(TokenType::Identifier(name)) = &self.current_token {
+                let name_clone = name.clone();
+                self.advance();
+                name_clone
+            } else {
+                let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                return Err(
+                    parse_error("Expected variant name", span)
+                        .with_source(self.source_code.clone())
+                        .with_hint("Provide a variant name".to_string())
+                );
+            };
+    
+            variants.push(variant_name);
+    
+            // Check for comma separator
+            if let Some(TokenType::Comma) = &self.current_token {
+                self.advance(); // Skip ','
+            } else if let Some(TokenType::RightBrace) = &self.current_token {
+                // No comma, but we're at the end - this is fine
+                break;
+            } else {
+                let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                return Err(
+                    parse_error("Expected ',' or '}' after variant", span)
+                        .with_source(self.source_code.clone())
+                        .with_hint("Add ',' to separate variants or '}' to end enum".to_string())
+                );
+            }
+        }
+    
+        // Expect '}'
+        if let Some(TokenType::RightBrace) = &self.current_token {
+            self.advance();
+        } else {
+            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+            return Err(
+                parse_error("Expected '}' to close enum", span)
+                    .with_source(self.source_code.clone())
+                    .with_hint("Add '}' to close the enum".to_string())
+            );
+        }
+    
+        Ok(ASTNode::EnumDecl(enum_name, variants))
     }
     
     

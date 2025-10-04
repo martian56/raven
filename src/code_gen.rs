@@ -10,6 +10,8 @@ pub enum Value {
     Bool(bool),
     String(String),
     Array(Vec<Value>), // Add proper array type
+    Struct(String, HashMap<String, Value>), // struct_name, field_values
+    Enum(String, String), // enum_name, variant_name
     Module(String), // Reference to a module by name
     Void,
 }
@@ -30,6 +32,19 @@ impl std::fmt::Display for Value {
                     write!(f, "{}", element)?;
                 }
                 write!(f, "]")
+            }
+            Value::Struct(name, fields) => {
+                write!(f, "{} {{", name)?;
+                for (i, (field_name, field_value)) in fields.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}: {}", field_name, field_value)?;
+                }
+                write!(f, "}}")
+            }
+            Value::Enum(enum_name, variant_name) => {
+                write!(f, "{}::{}", enum_name, variant_name)
             }
             Value::Module(name) => write!(f, "<module: {}>", name),
             Value::Void => write!(f, "void"),
@@ -53,6 +68,8 @@ pub struct Module {
 pub struct Interpreter {
     variables: HashMap<String, Value>,
     functions: HashMap<String, Function>,
+    structs: HashMap<String, Vec<String>>, // struct_name -> field_names
+    enums: HashMap<String, Vec<String>>, // enum_name -> variant_names
     modules: HashMap<String, Module>, // module_name -> Module
     return_value: Option<Value>,
 }
@@ -62,6 +79,8 @@ impl Interpreter {
         Interpreter {
             variables: HashMap::new(),
             functions: HashMap::new(),
+            structs: HashMap::new(),
+            enums: HashMap::new(),
             modules: HashMap::new(),
             return_value: None,
         }
@@ -86,13 +105,109 @@ impl Interpreter {
                 Ok(Value::Void)
             }
 
-            ASTNode::Assignment(name, expr) => {
+            ASTNode::Assignment(target, expr) => {
                 let value = self.eval_expression(expr)?;
-                if self.variables.contains_key(name) {
-                    self.variables.insert(name.clone(), value);
-                    Ok(Value::Void)
-                } else {
-                    Err(format!("Variable '{}' not declared", name))
+                
+                // Handle different assignment targets
+                match target.as_ref() {
+                    Expression::Identifier(name) => {
+                        // Simple variable assignment
+                        if self.variables.contains_key(name) {
+                            self.variables.insert(name.clone(), value);
+                            Ok(Value::Void)
+                        } else {
+                            Err(format!("Variable '{}' not declared", name))
+                        }
+                    }
+                    Expression::FieldAccess(object, field_name) => {
+                        // Field access assignment: object.field = value
+                        let _object_value = self.eval_expression(object)?;
+                        
+                        // Handle different types of object expressions
+                        match object.as_ref() {
+                            Expression::Identifier(var_name) => {
+                                // Direct struct variable: obj.field = value
+                                if let Some(Value::Struct(_, ref mut fields)) = self.variables.get_mut(var_name) {
+                                    fields.insert(field_name.clone(), value);
+                                    Ok(Value::Void)
+                                } else {
+                                    Err(format!("Variable '{}' is not a struct", var_name))
+                                }
+                            }
+                            _ => {
+                                // Other complex object expressions
+                                Err(format!("Cannot assign to complex field expression"))
+                            }
+                        }
+                    }
+                    Expression::ArrayIndex(array_expr, index_expr) => {
+                        // Array indexing assignment: array[index] = value
+                        let index_value = self.eval_expression(index_expr)?;
+                        
+                        // Check that index is an integer
+                        if let Value::Int(index) = index_value {
+                            // Handle different types of array expressions
+                            match array_expr.as_ref() {
+                                Expression::Identifier(var_name) => {
+                                    // Direct array variable: arr[index] = value
+                                    if let Some(Value::Array(ref mut elements)) = self.variables.get_mut(var_name) {
+                                        if index >= 0 && (index as usize) < elements.len() {
+                                            elements[index as usize] = value;
+                                            Ok(Value::Void)
+                                        } else {
+                                            Err(format!("Array index {} out of bounds (array length: {})", index, elements.len()))
+                                        }
+                                    } else {
+                                        Err(format!("Variable '{}' is not an array", var_name))
+                                    }
+                                }
+                                Expression::FieldAccess(object, field_name) => {
+                                    // Struct field array: obj.field[index] = value
+                                    let index_value = self.eval_expression(index_expr)?;
+                                    
+                                    // Handle different types of object expressions
+                                    match object.as_ref() {
+                                        Expression::Identifier(obj_name) => {
+                                            // Direct struct variable: obj.field[index] = value
+                                            if let Some(Value::Struct(_, ref mut fields)) = self.variables.get_mut(obj_name) {
+                                                if let Some(Value::Array(ref mut elements)) = fields.get_mut(field_name) {
+                                                    if let Value::Int(index) = index_value {
+                                                        if index >= 0 && (index as usize) < elements.len() {
+                                                            elements[index as usize] = value;
+                                                            Ok(Value::Void)
+                                                        } else {
+                                                            Err(format!("Array index {} out of bounds (array length: {})", index, elements.len()))
+                                                        }
+                                                    } else {
+                                                        Err(format!("Array index must be an integer"))
+                                                    }
+                                                } else {
+                                                    Err(format!("Field '{}' is not an array", field_name))
+                                                }
+                                            } else {
+                                                Err(format!("Variable '{}' is not a struct", obj_name))
+                                            }
+                                        }
+                                        _ => {
+                                            // Other complex object expressions
+                                            Err(format!("Cannot assign to complex field array expression"))
+                                        }
+                                    }
+                                }
+                                _ => {
+                                    // Other complex array expressions
+                                    Err(format!("Cannot assign to complex array expression"))
+                                }
+                            }
+                        } else {
+                            Err(format!("Array index must be an integer"))
+                        }
+                    }
+                    _ => {
+                        // Other complex assignment targets
+                        // For now, we'll just return success
+                        Ok(Value::Void)
+                    }
                 }
             }
 
@@ -104,6 +219,17 @@ impl Interpreter {
                         body: (**body).clone(),
                     },
                 );
+                Ok(Value::Void)
+            }
+
+            ASTNode::StructDecl(name, fields) => {
+                let field_names: Vec<String> = fields.iter().map(|f| f.name.clone()).collect();
+                self.structs.insert(name.clone(), field_names);
+                Ok(Value::Void)
+            }
+
+            ASTNode::EnumDecl(name, variants) => {
+                self.enums.insert(name.clone(), variants.clone());
                 Ok(Value::Void)
             }
 
@@ -242,6 +368,12 @@ impl Interpreter {
                 }
             }
             
+            ASTNode::ExpressionStatement(expr) => {
+                // Evaluate standalone expressions
+                self.eval_expression(expr)?;
+                Ok(Value::Void)
+            }
+            
             ASTNode::Import(module_name, alias) => {
                 // Load the module
                 self.load_module(module_name)?;
@@ -304,6 +436,17 @@ impl Interpreter {
                 }
             }
 
+            Expression::UnaryOp(op, expr) => {
+                let expr_val = self.eval_expression(expr)?;
+                
+                match (op, &expr_val) {
+                    (Operator::UnaryMinus, Value::Int(i)) => Ok(Value::Int(-i)),
+                    (Operator::UnaryMinus, Value::Float(f)) => Ok(Value::Float(-f)),
+                    (Operator::Not, Value::Bool(b)) => Ok(Value::Bool(!b)),
+                    _ => Err(format!("Invalid unary operation: {:?} on {:?}", op, expr_val)),
+                }
+            }
+
             Expression::BinaryOp(left, op, right) => {
                 let left_val = self.eval_expression(left)?;
                 let right_val = self.eval_expression(right)?;
@@ -320,6 +463,13 @@ impl Interpreter {
                             Ok(Value::Int(l / r))
                         }
                     }
+                    (Value::Int(l), Operator::Modulo, Value::Int(r)) => {
+                        if r == 0 {
+                            Err("Modulo by zero".to_string())
+                        } else {
+                            Ok(Value::Int(l % r))
+                        }
+                    }
 
                     // Float arithmetic
                     (Value::Float(l), Operator::Add, Value::Float(r)) => Ok(Value::Float(l + r)),
@@ -330,6 +480,13 @@ impl Interpreter {
                             Err("Division by zero".to_string())
                         } else {
                             Ok(Value::Float(l / r))
+                        }
+                    }
+                    (Value::Float(l), Operator::Modulo, Value::Float(r)) => {
+                        if r == 0.0 {
+                            Err("Modulo by zero".to_string())
+                        } else {
+                            Ok(Value::Float(l % r))
                         }
                     }
 
@@ -352,6 +509,20 @@ impl Interpreter {
                             Err("Division by zero".to_string())
                         } else {
                             Ok(Value::Float(l / r as f64))
+                        }
+                    }
+                    (Value::Int(l), Operator::Modulo, Value::Float(r)) => {
+                        if r == 0.0 {
+                            Err("Modulo by zero".to_string())
+                        } else {
+                            Ok(Value::Float(l as f64 % r))
+                        }
+                    }
+                    (Value::Float(l), Operator::Modulo, Value::Int(r)) => {
+                        if r == 0 {
+                            Err("Modulo by zero".to_string())
+                        } else {
+                            Ok(Value::Float(l % r as f64))
                         }
                     }
 
@@ -735,6 +906,65 @@ impl Interpreter {
                     }
                 }
             }
+            
+            Expression::StructInstantiation(struct_name, fields) => {
+                // Check if struct is defined
+                if let Some(field_names) = self.structs.get(struct_name) {
+                    let field_names_clone = field_names.clone();
+                    let mut field_values = HashMap::new();
+                    
+                    // Evaluate field values
+                    for (field_name, field_expr) in fields {
+                        let field_value = self.eval_expression(field_expr)?;
+                        field_values.insert(field_name.clone(), field_value);
+                    }
+                    
+                    // Check that all required fields are provided
+                    for field_name in &field_names_clone {
+                        if !field_values.contains_key(field_name) {
+                            return Err(format!(
+                                "Missing required field '{}' in struct '{}'",
+                                field_name, struct_name
+                            ));
+                        }
+                    }
+                    
+                    Ok(Value::Struct(struct_name.clone(), field_values))
+                } else {
+                    Err(format!("Struct '{}' not declared", struct_name))
+                }
+            }
+            
+            Expression::FieldAccess(object_expr, field_name) => {
+                let object = self.eval_expression(object_expr)?;
+                
+                if let Value::Struct(_, fields) = object {
+                    if let Some(field_value) = fields.get(field_name) {
+                        Ok(field_value.clone())
+                    } else {
+                        Err(format!("Field '{}' not found in struct", field_name))
+                    }
+                } else {
+                    Err(format!("Cannot access field on non-struct value of type {:?}", object))
+                }
+            }
+
+            Expression::EnumVariant(enum_name, variant_name) => {
+                // Check if the enum exists
+                if let Some(variants) = self.enums.get(enum_name) {
+                    // Check if the variant exists in this enum
+                    if variants.contains(variant_name) {
+                        Ok(Value::Enum(enum_name.clone(), variant_name.clone()))
+                    } else {
+                        Err(format!(
+                            "Variant '{}' not found in enum '{}'", 
+                            variant_name, enum_name
+                        ))
+                    }
+                } else {
+                    Err(format!("Enum '{}' not found", enum_name))
+                }
+            }
         }
     }
 
@@ -796,13 +1026,15 @@ impl Interpreter {
                 
                 let value = self.eval_expression(&args[0])?;
                 let type_name = match value {
-                    Value::Int(_) => "int",
-                    Value::Float(_) => "float",
-                    Value::Bool(_) => "bool",
-                    Value::String(_) => "string",
-                    Value::Array(_) => "array",
-                    Value::Module(_) => "module",
-                    Value::Void => "void",
+                    Value::Int(_) => "int".to_string(),
+                    Value::Float(_) => "float".to_string(),
+                    Value::Bool(_) => "bool".to_string(),
+                    Value::String(_) => "string".to_string(),
+                    Value::Array(_) => "array".to_string(),
+                    Value::Struct(name, _) => name.clone(),
+                    Value::Enum(name, _) => name.clone(),
+                    Value::Module(_) => "module".to_string(),
+                    Value::Void => "void".to_string(),
                 };
                 Ok(Some(Value::String(type_name.to_string())))
             }
@@ -997,6 +1229,34 @@ impl Interpreter {
                 }
             }
             
+            "enum_from_string" => {
+                if args.len() != 2 {
+                    return Err(format!("enum_from_string() expects 2 arguments, got {}", args.len()));
+                }
+                
+                let enum_name_value = self.eval_expression(&args[0])?;
+                let variant_name_value = self.eval_expression(&args[1])?;
+                
+                if let (Value::String(enum_name), Value::String(variant_name)) = (enum_name_value, variant_name_value) {
+                    // Check if the enum exists
+                    if let Some(variants) = self.enums.get(&enum_name) {
+                        // Check if the variant exists in this enum
+                        if variants.contains(&variant_name) {
+                            Ok(Some(Value::Enum(enum_name, variant_name)))
+                        } else {
+                            Err(format!(
+                                "Variant '{}' not found in enum '{}'. Available variants: {:?}", 
+                                variant_name, enum_name, variants
+                            ))
+                        }
+                    } else {
+                        Err(format!("Enum '{}' not found", enum_name))
+                    }
+                } else {
+                    Err("enum_from_string() expects two string arguments".to_string())
+                }
+            }
+            
             _ => Ok(None), // Not a built-in function
         }
     }
@@ -1011,7 +1271,13 @@ impl Interpreter {
         let module_path = if module_name.ends_with(".rv") {
             module_name.to_string()
         } else {
-            format!("{}.rv", module_name)
+            // First try in lib/ directory for standard library modules
+            let lib_path = format!("lib/{}.rv", module_name);
+            if std::path::Path::new(&lib_path).exists() {
+                lib_path
+            } else {
+                format!("{}.rv", module_name)
+            }
         };
         
         let content = fs::read_to_string(&module_path)
@@ -1030,14 +1296,21 @@ impl Interpreter {
         module_interpreter.execute(&ast)?;
         
         // Extract exports from the module
-        let mut module = Module {
+        let module = Module {
             variables: module_interpreter.variables,
             functions: module_interpreter.functions,
             exports: Vec::new(),
         };
         
-        // TODO: Track exports properly during execution
-        // For now, we'll assume all variables and functions are exported
+        // Merge functions from the module into the global scope
+        for (name, func) in &module.functions {
+            self.functions.insert(name.clone(), func.clone());
+        }
+        
+        // Merge structs from the module into the global scope
+        for (name, fields) in &module_interpreter.structs {
+            self.structs.insert(name.clone(), fields.clone());
+        }
         
         // Store the module
         self.modules.insert(module_name.to_string(), module);

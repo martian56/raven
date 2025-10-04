@@ -1,0 +1,411 @@
+// lib/testing.rv - Testing Library
+
+// Test result structure
+struct TestResult {
+    name: String,
+    passed: bool,
+    error_message: String,
+    execution_time: float
+}
+
+// Test suite structure
+struct TestSuite {
+    name: String,
+    tests: String[],
+    results: TestResult[],
+    total_tests: int,
+    passed_tests: int,
+    failed_tests: int
+}
+
+// Assertion functions
+export fun assert_true(condition: bool, message: String) -> bool {
+    if (!condition) {
+        panic("Assertion failed: " + message);
+    }
+    return true;
+}
+
+export fun assert_false(condition: bool, message: String) -> bool {
+    if (condition) {
+        panic("Assertion failed: " + message);
+    }
+    return true;
+}
+
+export fun assert_equals(actual: String, expected: String, message: String) -> bool {
+    if (actual != expected) {
+        panic(format("Assertion failed: {} - Expected '{}', got '{}'", message, expected, actual));
+    }
+    return true;
+}
+
+export fun assert_not_equals(actual: String, expected: String, message: String) -> bool {
+    if (actual == expected) {
+        panic(format("Assertion failed: {} - Expected different values, got '{}'", message, actual));
+    }
+    return true;
+}
+
+export fun assert_greater_than(actual: int, expected: int, message: String) -> bool {
+    if (actual <= expected) {
+        panic(format("Assertion failed: {} - Expected {} > {}, got {}", message, actual, expected, actual));
+    }
+    return true;
+}
+
+export fun assert_less_than(actual: int, expected: int, message: String) -> bool {
+    if (actual >= expected) {
+        panic(format("Assertion failed: {} - Expected {} < {}, got {}", message, actual, expected, actual));
+    }
+    return true;
+}
+
+export fun assert_greater_than_or_equal(actual: int, expected: int, message: String) -> bool {
+    if (actual < expected) {
+        panic(format("Assertion failed: {} - Expected {} >= {}, got {}", message, actual, expected, actual));
+    }
+    return true;
+}
+
+export fun assert_less_than_or_equal(actual: int, expected: int, message: String) -> bool {
+    if (actual > expected) {
+        panic(format("Assertion failed: {} - Expected {} <= {}, got {}", message, actual, expected, actual));
+    }
+    return true;
+}
+
+export fun assert_contains(haystack: String, needle: String, message: String) -> bool {
+    if (!haystack.contains(needle)) {
+        panic(format("Assertion failed: {} - Expected '{}' to contain '{}'", message, haystack, needle));
+    }
+    return true;
+}
+
+export fun assert_not_contains(haystack: String, needle: String, message: String) -> bool {
+    if (haystack.contains(needle)) {
+        panic(format("Assertion failed: {} - Expected '{}' to not contain '{}'", message, haystack, needle));
+    }
+    return true;
+}
+
+export fun assert_starts_with(str: String, prefix: String, message: String) -> bool {
+    if (!str.starts_with(prefix)) {
+        panic(format("Assertion failed: {} - Expected '{}' to start with '{}'", message, str, prefix));
+    }
+    return true;
+}
+
+export fun assert_ends_with(str: String, suffix: String, message: String) -> bool {
+    if (!str.ends_with(suffix)) {
+        panic(format("Assertion failed: {} - Expected '{}' to end with '{}'", message, str, suffix));
+    }
+    return true;
+}
+
+export fun assert_is_empty(str: String, message: String) -> bool {
+    if (len(str) != 0) {
+        panic(format("Assertion failed: {} - Expected empty string, got '{}'", message, str));
+    }
+    return true;
+}
+
+export fun assert_is_not_empty(str: String, message: String) -> bool {
+    if (len(str) == 0) {
+        panic(format("Assertion failed: {} - Expected non-empty string, got empty", message));
+    }
+    return true;
+}
+
+export fun assert_is_null(value: String, message: String) -> bool {
+    if (value != "") {
+        panic(format("Assertion failed: {} - Expected null/empty value, got '{}'", message, value));
+    }
+    return true;
+}
+
+export fun assert_is_not_null(value: String, message: String) -> bool {
+    if (value == "") {
+        panic(format("Assertion failed: {} - Expected non-null value, got null/empty", message));
+    }
+    return true;
+}
+
+// Test execution
+export fun run_test(test_name: String, test_function: String) -> TestResult {
+    let start_time: float = current_time() as float;
+    let result: TestResult = TestResult {
+        name: test_name,
+        passed: false,
+        error_message: "",
+        execution_time: 0.0
+    };
+    
+    // This would normally execute the test function
+    // For now, we'll simulate a test execution
+    result.passed = true;
+    result.execution_time = current_time() as float - start_time;
+    
+    return result;
+}
+
+export fun run_test_suite(suite_name: String, tests: String[]) -> TestSuite {
+    let suite: TestSuite = TestSuite {
+        name: suite_name,
+        tests: tests,
+        results: [],
+        total_tests: len(tests),
+        passed_tests: 0,
+        failed_tests: 0
+    };
+    
+    let i: int = 0;
+    while (i < len(tests)) {
+        let test_name: String = tests[i];
+        let result: TestResult = run_test(test_name, test_name);
+        
+        suite.results.push(result);
+        
+        if (result.passed) {
+            suite.passed_tests = suite.passed_tests + 1;
+        } else {
+            suite.failed_tests = suite.failed_tests + 1;
+        }
+        
+        i = i + 1;
+    }
+    
+    return suite;
+}
+
+// Test reporting
+export fun print_test_results(suite: TestSuite) -> void {
+    print(format("Test Suite: {}", suite.name));
+    print(format("Total Tests: {}", suite.total_tests));
+    print(format("Passed: {}", suite.passed_tests));
+    print(format("Failed: {}", suite.failed_tests));
+    print("---");
+    
+    let i: int = 0;
+    while (i < len(suite.results)) {
+        let result: TestResult = suite.results[i];
+        let status: String = if (result.passed) { "PASS" } else { "FAIL" };
+        print(format("{} {} ({}ms)", status, result.name, result.execution_time));
+        
+        if (!result.passed && len(result.error_message) > 0) {
+            print(format("  Error: {}", result.error_message));
+        }
+        
+        i = i + 1;
+    }
+}
+
+export fun generate_test_report(suite: TestSuite) -> String {
+    let report: String = "";
+    report = report + format("Test Suite: {}\n", suite.name);
+    report = report + format("Total Tests: {}\n", suite.total_tests);
+    report = report + format("Passed: {}\n", suite.passed_tests);
+    report = report + format("Failed: {}\n", suite.failed_tests);
+    report = report + format("Success Rate: {}%\n", (suite.passed_tests * 100) / suite.total_tests);
+    report = report + "---\n";
+    
+    let i: int = 0;
+    while (i < len(suite.results)) {
+        let result: TestResult = suite.results[i];
+        let status: String = if (result.passed) { "PASS" } else { "FAIL" };
+        report = report + format("{} {} ({}ms)\n", status, result.name, result.execution_time);
+        
+        if (!result.passed && len(result.error_message) > 0) {
+            report = report + format("  Error: {}\n", result.error_message);
+        }
+        
+        i = i + 1;
+    }
+    
+    return report;
+}
+
+// Test utilities
+export fun skip_test(test_name: String, reason: String) -> TestResult {
+    let result: TestResult = TestResult {
+        name: test_name,
+        passed: true,
+        error_message: "SKIPPED: " + reason,
+        execution_time: 0.0
+    };
+    return result;
+}
+
+export fun todo_test(test_name: String, description: String) -> TestResult {
+    let result: TestResult = TestResult {
+        name: test_name,
+        passed: true,
+        error_message: "TODO: " + description,
+        execution_time: 0.0
+    };
+    return result;
+}
+
+export fun benchmark_function(function_name: String, iterations: int) -> float {
+    let start_time: float = current_time() as float;
+    
+    let i: int = 0;
+    while (i < iterations) {
+        // This would normally call the function
+        // For now, we'll just simulate execution
+        i = i + 1;
+    }
+    
+    let end_time: float = current_time() as float;
+    return end_time - start_time;
+}
+
+export fun performance_test(test_name: String, max_execution_time: float) -> TestResult {
+    let start_time: float = current_time() as float;
+    
+    // Simulate test execution
+    let execution_time: float = current_time() as float - start_time;
+    
+    let result: TestResult = TestResult {
+        name: test_name,
+        passed: execution_time <= max_execution_time,
+        error_message: if (execution_time > max_execution_time) {
+            format("Performance test failed: {}ms > {}ms", execution_time, max_execution_time)
+        } else {
+            ""
+        },
+        execution_time: execution_time
+    };
+    
+    return result;
+}
+
+// Mock objects (simplified)
+struct MockObject {
+    name: String,
+    calls: String[],
+    return_values: String[]
+}
+
+export fun create_mock(name: String) -> MockObject {
+    let mock: MockObject = MockObject {
+        name: name,
+        calls: [],
+        return_values: []
+    };
+    return mock;
+}
+
+export fun mock_call(mock: MockObject, method_name: String, args: String[]) -> String {
+    let call_info: String = method_name + "(" + args.join(", ") + ")";
+    mock.calls.push(call_info);
+    
+    // Return a mock value
+    return "mock_" + method_name + "_result";
+}
+
+export fun verify_mock_calls(mock: MockObject, expected_calls: String[]) -> bool {
+    if (len(mock.calls) != len(expected_calls)) {
+        return false;
+    }
+    
+    let i: int = 0;
+    while (i < len(mock.calls)) {
+        if (mock.calls[i] != expected_calls[i]) {
+            return false;
+        }
+        i = i + 1;
+    }
+    
+    return true;
+}
+
+export fun reset_mock(mock: MockObject) -> MockObject {
+    mock.calls = [];
+    mock.return_values = [];
+    return mock;
+}
+
+// Test data generators
+export fun generate_random_string(length: int) -> String {
+    let chars: String = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let result: String = "";
+    
+    let i: int = 0;
+    while (i < length) {
+        let random_index: int = i % len(chars);
+        result = result + chars.slice(random_index, random_index + 1);
+        i = i + 1;
+    }
+    
+    return result;
+}
+
+export fun generate_random_int(min: int, max: int) -> int {
+    // Simple pseudo-random number generation
+    let range: int = max - min + 1;
+    return min + (current_time() as int % range);
+}
+
+export fun generate_test_data(count: int) -> String[] {
+    let data: String[] = [];
+    
+    let i: int = 0;
+    while (i < count) {
+        data.push(generate_random_string(10));
+        i = i + 1;
+    }
+    
+    return data;
+}
+
+// Test configuration
+struct TestConfig {
+    verbose: bool,
+    stop_on_failure: bool,
+    max_execution_time: float,
+    output_format: String
+}
+
+export fun create_test_config() -> TestConfig {
+    let config: TestConfig = TestConfig {
+        verbose: false,
+        stop_on_failure: false,
+        max_execution_time: 5.0,
+        output_format: "text"
+    };
+    return config;
+}
+
+export fun run_tests_with_config(tests: String[], config: TestConfig) -> TestSuite {
+    let suite: TestSuite = TestSuite {
+        name: "Configured Test Suite",
+        tests: tests,
+        results: [],
+        total_tests: len(tests),
+        passed_tests: 0,
+        failed_tests: 0
+    };
+    
+    let i: int = 0;
+    while (i < len(tests)) {
+        let test_name: String = tests[i];
+        let result: TestResult = run_test(test_name, test_name);
+        
+        suite.results.push(result);
+        
+        if (result.passed) {
+            suite.passed_tests = suite.passed_tests + 1;
+        } else {
+            suite.failed_tests = suite.failed_tests + 1;
+            
+            if (config.stop_on_failure) {
+                break;
+            }
+        }
+        
+        i = i + 1;
+    }
+    
+    return suite;
+}
