@@ -1,0 +1,110 @@
+site_name: Raven Programming Language
+site_description: Modern programming language built with Rust - fast, safe, and expressive
+site_author: martian56
+site_url: https://martian56.github.io/raven
+
+repo_name: martian56/raven
+repo_url: https://github.com/martian56/raven
+
+theme:
+  name: material
+  palette:
+    # Palette toggle for automatic mode
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.path
+    - navigation.top
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: raven
+          class: raven
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets
+  - pymdownx.arithmatex
+  - pymdownx.mark
+  - pymdownx.caret
+  - pymdownx.tilde
+  - pymdownx.keys
+  - pymdownx.details
+  - pymdownx.superfences
+  - admonition
+  - pymdownx.tabbed
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+plugins:
+  - search:
+      lang: en
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quick-start.md
+  - Language Reference:
+    - Syntax: syntax.md
+    - Data Types: language-reference/data-types.md
+  - Standard Library:
+    - Overview: standard-library/overview.md
+  - Examples:
+    - Basic Examples: examples/basic.md
+  - Development:
+    - Contributing: development/contributing.md
+    - Roadmap: PRODUCTION_ROADMAP.md
+    - Standard Library Spec: STDLIB_SPEC.md
+  - Resources:
+    - VS Code Extension: resources/vscode-extension.md
+    - GitHub Repository: https://github.com/martian56/raven
+    - VS Code Marketplace: https://marketplace.visualstudio.com/items?itemName=martian56.raven-language
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/martian56
+    - icon: fontawesome/brands/linkedin
+      link: https://linkedin.com/in/martian56
+
+copyright: Copyright &copy; 2025 Raven Programming Language
