@@ -1,0 +1,35 @@
+struct Person {
+    name: String,
+    age: int,
+    isActive: bool
+}
+
+enum HttpStatus {
+    OK,
+    NotFound,
+    InternalError
+}
+
+// Sample Raven program for testing VS Code extension
+fun main() -> void {
+    print("Hello from Raven VS Code Extension!");
+    
+    let name: String = input("Enter your name: ");
+    print(format("Hello, {}!", name));
+    
+    let numbers: int[] = [1, 2, 3, 4, 5];
+    numbers.push(6);
+    print(format("Numbers: {}", numbers));
+    
+    let person: Person = Person { 
+        name: "Alice", 
+        age: 25, 
+        isActive: true 
+    };
+    
+    print(format("Person: {}, Age: {}", person.name, person.age));
+    
+    let status: HttpStatus = HttpStatus::OK;
+    print(format("Status: {}", status));
+}
+main();
