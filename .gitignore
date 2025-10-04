@@ -55,6 +55,4 @@ running
 examples/output/
 examples/*.txt
 
-GITHUB_RELEASE.md
-RELEASE_NOTES.md
-RELEASE_NOTES_v1.1.0.md
+site/

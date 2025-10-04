@@ -1,5 +1,5 @@
 print("=== SIMPLE CALCULATOR ===");
-print("Built with Raven v1.0");
+print("Built with Raven v1.1.0");
 
 let user_name: String = input("Enter your name: ");
 print(format("Welcome, {}!", user_name));
