@@ -1,5 +1,5 @@
 # Raven Language Recognition
-*.rv linguist-language=Raven
+*.rv linguist-language=Rust
 *.rv linguist-detectable=true
 
 # Documentation
