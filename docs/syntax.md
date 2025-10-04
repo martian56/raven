@@ -1,4 +1,4 @@
-# Raven Language Specification (v1.0)
+# Raven Language Specification (v1.1.0)
 
 Raven is a modern programming language with advanced features including static typing, modules, arrays, string operations, and more.
 
@@ -51,6 +51,62 @@ let greaterEqual = 6 >= 4;  // Greater than or equal
 let greeting = "Hello, " + "World!";  // String concatenation
 let mixed = "Number: " + 42;          // String + number concatenation
 ```
+
+---
+
+## 🏗️ Structs
+
+```raven
+struct Person {
+    name: String,
+    age: int,
+    isActive: bool
+}
+
+// Struct instantiation
+let person: Person = Person { 
+    name: "Alice", 
+    age: 25, 
+    isActive: true 
+};
+
+// Field access
+print(person.name);  // "Alice"
+person.age = 26;     // Field modification
+```
+
+- Structs define custom data types with named fields
+- Fields are separated by commas (not semicolons)
+- All fields must be provided during instantiation
+- Fields can be accessed and modified using dot notation
+
+---
+
+## 🎯 Enums
+
+```raven
+enum HttpStatus {
+    OK,
+    NotFound,
+    InternalError,
+    BadRequest
+}
+
+// Enum variant creation
+let status: HttpStatus = HttpStatus::OK;
+
+// String to enum conversion (useful for JSON parsing)
+let jsonStatus: String = "NotFound";
+let parsedStatus: HttpStatus = enum_from_string("HttpStatus", jsonStatus);
+
+// Type checking
+print(type(status));  // "HttpStatus"
+```
+
+- Enums define custom types with named variants
+- Variants are accessed using `EnumName::VariantName` syntax
+- Use `enum_from_string()` to convert strings to enum variants
+- Perfect for API responses, configuration values, and state management
 
 ---
 
@@ -283,8 +339,8 @@ for (let i = 0; i < 5; i = i + 1) {
 ## 🚀 Getting Started
 
 1. **Install Raven**: Download the Windows installer from GitHub releases
-2. **Run Programs**: `raven -f program.rv`
-3. **Interactive Mode**: `raven --repl`
+2. **Run Programs**: `raven program.rv` (Python-style interface)
+3. **Interactive Mode**: `raven` (no flags needed)
 4. **Examples**: Check the `examples/` directory for sample programs
 
 ---
@@ -302,5 +358,8 @@ for (let i = 0; i < 5; i = i + 1) {
 - ✅ **Error Handling**: Comprehensive error messages
 - ✅ **REPL**: Interactive development environment
 - ✅ **File I/O**: Read, write, append, and file existence checking
+- ✅ **Structs**: User-defined data structures with fields
+- ✅ **Enums**: User-defined types with variants and string conversion
+- ✅ **Professional CLI**: Python-style interface (raven file.rv, raven)
 
-Raven v1.0 is a complete, production-ready programming language!
+Raven v1.1.0 is a complete, production-ready programming language!

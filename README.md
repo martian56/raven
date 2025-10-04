@@ -2,7 +2,7 @@
 
 **Raven** is a modern programming language and interpreter built with [Rust](https://www.rust-lang.org/), combining the best features of Rust, Python, C++, Java, and Go. It's designed to be fast, safe, expressive, and simple—without compromising power or performance.
 
-> 🚀 **Raven v1.0 is now available!** A complete, production-ready programming language.
+> 🚀 **Raven v1.1.0 is now available!** A complete, production-ready programming language with professional CLI interface.
 
 ---
 
@@ -33,7 +33,7 @@ Whether you're writing system-level code or high-level applications, Raven is bu
 
 ## 🛠️ Current Status
 
-**Raven v1.0 is complete!** All core features implemented:
+**Raven v1.1.0 is complete!** All core features implemented:
 
 - [x] **Tokenizer / Lexer** - Complete with comments, strings, numbers, identifiers
 - [x] **Parser** - Full support for all language constructs
@@ -55,6 +55,10 @@ Whether you're writing system-level code or high-level applications, Raven is bu
 - [x] **Operator Precedence** - Correct expression evaluation
 - [x] **Variable Scoping** - Proper scope management
 - [x] **Method Chaining** - Object.method1().method2() support
+- [x] **Structs** - User-defined data structures with fields
+- [x] **Enums** - User-defined types with variants and string conversion
+- [x] **Complex Assignments** - object.field[index] = value support
+- [x] **Professional CLI** - Python-style interface (raven file.rv, raven)
 
 ---
 
@@ -66,6 +70,8 @@ Whether you're writing system-level code or high-level applications, Raven is bu
 - **String** - UTF-8 strings with rich operations
 - **bool** - Boolean values (true/false)
 - **Arrays** - Dynamic arrays with type safety
+- **Structs** - User-defined data structures with named fields
+- **Enums** - User-defined types with named variants
 
 ### Control Flow
 - **if/else** - Conditional statements
@@ -115,7 +121,7 @@ Whether you're writing system-level code or high-level applications, Raven is bu
 
 ```bash
 # Clone the repository
-git clone https://github.com/martian58/raven.git
+git clone https://github.com/martian56/raven.git
 cd raven
 
 # Build the project
@@ -127,20 +133,20 @@ cargo build --release
 ### Running Raven Programs
 
 ```bash
-# Run a Raven program
-raven -f program.rv
+# Run a Raven program (Python-style interface)
+raven program.rv
 
 # Interactive REPL mode
 raven
 
 # Show verbose output (tokens, AST, type checking)
-raven -f program.rv -v
+raven program.rv -v
 
 # Only check syntax and types (don't execute)
-raven -f program.rv -c
+raven program.rv -c
 
 # Show the Abstract Syntax Tree
-raven -f program.rv --show-ast
+raven program.rv --show-ast
 ```
 
 ---
@@ -223,6 +229,34 @@ let result: int = add(10, 5);
 print(result);  // 15
 ```
 
+### Structs and Enums
+
+```raven
+// Struct definition
+struct Person {
+    name: String,
+    age: int,
+    isActive: bool
+}
+
+// Enum definition
+enum HttpStatus {
+    OK,
+    NotFound,
+    InternalError
+}
+
+// Usage
+let person: Person = Person { name: "Alice", age: 25, isActive: true };
+let status: HttpStatus = HttpStatus::OK;
+
+// String to enum conversion (useful for JSON parsing)
+let jsonStatus: String = "NotFound";
+let parsedStatus: HttpStatus = enum_from_string("HttpStatus", jsonStatus);
+
+print(format("Person: {}, Status: {}", person.name, status));
+```
+
 ### File I/O
 
 ```raven
@@ -260,7 +294,7 @@ More examples available in the `examples/` directory!
 
 ## 🤝 Contributing
 
-Raven v1.0 is complete and ready for use! Contributions are welcome for:
+Raven v1.1.0 is complete and ready for use! Contributions are welcome for:
 
 - 🐛 Bug fixes and improvements
 - 📚 Documentation enhancements  
