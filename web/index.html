@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raven - Modern Programming Language</title>
+    <meta name="description" content="Raven is a modern programming language built with Rust, combining the best features of Rust, Python, C++, Java, and Go. Fast, safe, expressive, and simple.">
+    <meta name="keywords" content="raven, programming language, rust, compiler, interpreter, modern language">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-logo">
+                <div class="logo-icon">🦅</div>
+                <span class="logo-text">Raven</span>
+            </div>
+            <div class="nav-links">
+                <a href="#features" class="nav-link">Features</a>
+                <a href="#examples" class="nav-link">Examples</a>
+                <a href="#download" class="nav-link">Download</a>
+                <a href="#docs" class="nav-link">Documentation</a>
+                <a href="https://github.com/martian56/raven" class="nav-link github-link" target="_blank">GitHub</a>
+            </div>
+            <div class="nav-toggle">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-container">
+            <div class="hero-content">
+                <h1 class="hero-title">
+                    <span class="title-main">Raven</span>
+                    <span class="title-subtitle">Modern Programming Language</span>
+                </h1>
+                <p class="hero-description">
+                    A fast, safe, and expressive programming language built with Rust. 
+                    Combining the best features of modern languages while maintaining simplicity and power.
+                </p>
+                <div class="hero-buttons">
+                    <a href="#download" class="btn btn-primary">Get Started</a>
+                    <a href="#examples" class="btn btn-secondary">View Examples</a>
+                </div>
+                <div class="hero-stats">
+                    <div class="stat">
+                        <span class="stat-number">v1.1.0</span>
+                        <span class="stat-label">Latest Release</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-number">100%</span>
+                        <span class="stat-label">Rust Built</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-number">Fast</span>
+                        <span class="stat-label">Performance</span>
+                    </div>
+                </div>
+            </div>
+            <div class="hero-code">
+                <div class="code-block">
+                    <div class="code-header">
+                        <div class="code-dots">
+                            <span class="dot red"></span>
+                            <span class="dot yellow"></span>
+                            <span class="dot green"></span>
+                        </div>
+                        <span class="code-title">hello.rv</span>
+                    </div>
+                    <div class="code-content">
+                        <pre><code><span class="keyword">fun</span> <span class="function">main</span>() <span class="operator">-></span> <span class="type">void</span> {
+    <span class="function">print</span>(<span class="string">"Hello, Raven!"</span>);
+    
+    <span class="keyword">let</span> <span class="variable">name</span>: <span class="type">String</span> <span class="operator">=</span> <span class="function">input</span>(<span class="string">"Enter your name: "</span>);
+    <span class="function">print</span>(<span class="function">format</span>(<span class="string">"Welcome, {}!"</span>, <span class="variable">name</span>));
+}</code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features">
+        <div class="container">
+            <h2 class="section-title">Why Choose Raven?</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3 class="feature-title">Fast Performance</h3>
+                    <p class="feature-description">
+                        Built with Rust for maximum performance. Tree-walking interpreter with optimized execution.
+                    </p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🛡️</div>
+                    <h3 class="feature-title">Memory Safe</h3>
+                    <p class="feature-description">
+                        Rust's memory safety guarantees without garbage collection overhead.
+                    </p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎯</div>
+                    <h3 class="feature-title">Simple Syntax</h3>
+                    <p class="feature-description">
+                        Clean, readable syntax inspired by Python with static typing for reliability.
+                    </p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔧</div>
+                    <h3 class="feature-title">Rich Features</h3>
+                    <p class="feature-description">
+                        Structs, enums, modules, file I/O, and comprehensive standard library.
+                    </p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">💻</div>
+                    <h3 class="feature-title">VS Code Support</h3>
+                    <p class="feature-description">
+                        Full syntax highlighting, snippets, and IntelliSense support in VS Code.
+                    </p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📦</div>
+                    <h3 class="feature-title">Easy Installation</h3>
+                    <p class="feature-description">
+                        Windows installer available. Python-style CLI interface for familiar workflow.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Examples Section -->
+    <section id="examples" class="examples">
+        <div class="container">
+            <h2 class="section-title">Code Examples</h2>
+            <div class="examples-tabs">
+                <button class="tab-btn active" data-tab="basic">Basic Syntax</button>
+                <button class="tab-btn" data-tab="structs">Structs & Enums</button>
+                <button class="tab-btn" data-tab="modules">Modules</button>
+            </div>
+            <div class="examples-content">
+                <div class="tab-content active" id="basic">
+                    <div class="code-example">
+                        <pre><code><span class="comment">// Variables and types</span>
+<span class="keyword">let</span> <span class="variable">name</span>: <span class="type">String</span> <span class="operator">=</span> <span class="string">"Raven"</span>;
+<span class="keyword">let</span> <span class="variable">version</span>: <span class="type">int</span> <span class="operator">=</span> <span class="number">1</span>;
+<span class="keyword">let</span> <span class="variable">isActive</span>: <span class="type">bool</span> <span class="operator">=</span> <span class="keyword">true</span>;
+
+<span class="comment">// Arrays</span>
+<span class="keyword">let</span> <span class="variable">numbers</span>: <span class="type">int[]</span> <span class="operator">=</span> [<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>];
+<span class="variable">numbers</span>.<span class="function">push</span>(<span class="number">6</span>);
+
+<span class="comment">// Control flow</span>
+<span class="keyword">if</span> (<span class="variable">version</span> <span class="operator">></span> <span class="number">0</span>) {
+    <span class="function">print</span>(<span class="function">format</span>(<span class="string">"Raven v{} is ready!"</span>, <span class="variable">version</span>));
+}</code></pre>
+                    </div>
+                </div>
+                <div class="tab-content" id="structs">
+                    <div class="code-example">
+                        <pre><code><span class="comment">// Struct definition</span>
+<span class="keyword">struct</span> <span class="type">Person</span> {
+    <span class="variable">name</span>: <span class="type">String</span>,
+    <span class="variable">age</span>: <span class="type">int</span>,
+    <span class="variable">isActive</span>: <span class="type">bool</span>
+}
+
+<span class="comment">// Enum definition</span>
+<span class="keyword">enum</span> <span class="type">HttpStatus</span> {
+    <span class="variable">OK</span>,
+    <span class="variable">NotFound</span>,
+    <span class="variable">InternalError</span>
+}
+
+<span class="comment">// Usage</span>
+<span class="keyword">let</span> <span class="variable">person</span>: <span class="type">Person</span> <span class="operator">=</span> <span class="type">Person</span> { 
+    <span class="variable">name</span>: <span class="string">"Alice"</span>, 
+    <span class="variable">age</span>: <span class="number">25</span>, 
+    <span class="variable">isActive</span>: <span class="keyword">true</span> 
+};
+
+<span class="keyword">let</span> <span class="variable">status</span>: <span class="type">HttpStatus</span> <span class="operator">=</span> <span class="type">HttpStatus</span>::<span class="variable">OK</span>;</code></pre>
+                    </div>
+                </div>
+                <div class="tab-content" id="modules">
+                    <div class="code-example">
+                        <pre><code><span class="comment">// math.rv</span>
+<span class="keyword">export</span> <span class="keyword">fun</span> <span class="function">add</span>(<span class="variable">a</span>: <span class="type">int</span>, <span class="variable">b</span>: <span class="type">int</span>) <span class="operator">-></span> <span class="type">int</span> {
+    <span class="keyword">return</span> <span class="variable">a</span> <span class="operator">+</span> <span class="variable">b</span>;
+}
+
+<span class="keyword">export</span> <span class="keyword">fun</span> <span class="function">multiply</span>(<span class="variable">a</span>: <span class="type">int</span>, <span class="variable">b</span>: <span class="type">int</span>) <span class="operator">-></span> <span class="type">int</span> {
+    <span class="keyword">return</span> <span class="variable">a</span> <span class="operator">*</span> <span class="variable">b</span>;
+}
+
+<span class="comment">// main.rv</span>
+<span class="keyword">import</span> <span class="string">"math"</span>;
+
+<span class="keyword">fun</span> <span class="function">main</span>() <span class="operator">-></span> <span class="type">void</span> {
+    <span class="keyword">let</span> <span class="variable">result</span>: <span class="type">int</span> <span class="operator">=</span> <span class="function">add</span>(<span class="number">5</span>, <span class="number">3</span>);
+    <span class="function">print</span>(<span class="function">format</span>(<span class="string">"5 + 3 = {}"</span>, <span class="variable">result</span>));
+}</code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Download Section -->
+    <section id="download" class="download">
+        <div class="container">
+            <h2 class="section-title">Get Raven</h2>
+            <div class="download-grid">
+                <div class="download-card">
+                    <div class="download-icon">🪟</div>
+                    <h3 class="download-title">Windows Installer</h3>
+                    <p class="download-description">Professional MSI installer with complete package</p>
+                    <a href="https://github.com/martian56/raven/releases/tag/v1.1.0" class="btn btn-primary" target="_blank">Download MSI</a>
+                    <span class="download-size">401KB</span>
+                </div>
+                <div class="download-card">
+                    <div class="download-icon">📦</div>
+                    <h3 class="download-title">Source Code</h3>
+                    <p class="download-description">Build from source with Rust toolchain</p>
+                    <a href="https://github.com/martian56/raven" class="btn btn-secondary" target="_blank">View on GitHub</a>
+                    <span class="download-size">Build Required</span>
+                </div>
+                <div class="download-card">
+                    <div class="download-icon">🔌</div>
+                    <h3 class="download-title">VS Code Extension</h3>
+                    <p class="download-description">Syntax highlighting and IntelliSense</p>
+                    <a href="https://marketplace.visualstudio.com/items?itemName=martian56.raven-language" class="btn btn-secondary" target="_blank">Install Extension</a>
+                    <span class="download-size">15.65KB</span>
+                </div>
+            </div>
+            <div class="install-instructions">
+                <h3>Quick Start</h3>
+                <div class="install-code">
+                    <pre><code><span class="comment"># Run a Raven program</span>
+raven hello.rv
+
+<span class="comment"># Start interactive REPL</span>
+raven
+
+<span class="comment"># Check syntax only</span>
+raven hello.rv -c</code></pre>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Documentation Section -->
+    <section id="docs" class="documentation">
+        <div class="container">
+            <h2 class="section-title">Documentation</h2>
+            <div class="docs-grid">
+                <div class="doc-card">
+                    <h3>Language Reference</h3>
+                    <p>Complete syntax guide and language features</p>
+                    <a href="#" class="doc-link">Read Docs →</a>
+                </div>
+                <div class="doc-card">
+                    <h3>Standard Library</h3>
+                    <p>Built-in functions and modules reference</p>
+                    <a href="#" class="doc-link">Browse API →</a>
+                </div>
+                <div class="doc-card">
+                    <h3>Examples</h3>
+                    <p>Sample programs and tutorials</p>
+                    <a href="#" class="doc-link">View Examples →</a>
+                </div>
+                <div class="doc-card">
+                    <h3>VS Code Extension</h3>
+                    <p>Installation and usage guide</p>
+                    <a href="#" class="doc-link">Extension Docs →</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <div class="footer-logo">
+                        <div class="logo-icon">🦅</div>
+                        <span class="logo-text">Raven</span>
+                    </div>
+                    <p class="footer-description">
+                        Modern programming language built with Rust for developers who value performance, safety, and expressiveness.
+                    </p>
+                </div>
+                <div class="footer-links">
+                    <div class="footer-column">
+                        <h4>Language</h4>
+                        <a href="#features">Features</a>
+                        <a href="#examples">Examples</a>
+                        <a href="#download">Download</a>
+                        <a href="#docs">Documentation</a>
+                    </div>
+                    <div class="footer-column">
+                        <h4>Community</h4>
+                        <a href="https://github.com/martian56/raven" target="_blank">GitHub</a>
+                        <a href="https://github.com/martian56/raven/issues" target="_blank">Issues</a>
+                        <a href="https://github.com/martian56/raven/discussions" target="_blank">Discussions</a>
+                    </div>
+                    <div class="footer-column">
+                        <h4>Resources</h4>
+                        <a href="#">Release Notes</a>
+                        <a href="#">Changelog</a>
+                        <a href="#">Contributing</a>
+                        <a href="#">License</a>
+                    </div>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2025 Raven Programming Language. Made with ❤️ and Rust.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

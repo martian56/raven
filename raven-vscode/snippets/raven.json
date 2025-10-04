@@ -1,0 +1,164 @@
+{
+  "Variable Declaration": {
+    "prefix": "let",
+    "body": [
+      "let ${1:name}: ${2:type} = ${3:value};"
+    ],
+    "description": "Declare a variable with type annotation"
+  },
+  "Function Declaration": {
+    "prefix": "fun",
+    "body": [
+      "fun ${1:name}(${2:params}) -> ${3:returnType} {",
+      "\t${4:body}",
+      "}"
+    ],
+    "description": "Declare a function with parameters and return type"
+  },
+  "If Statement": {
+    "prefix": "if",
+    "body": [
+      "if (${1:condition}) {",
+      "\t${2:body}",
+      "}"
+    ],
+    "description": "If conditional statement"
+  },
+  "If-Else Statement": {
+    "prefix": "ifelse",
+    "body": [
+      "if (${1:condition}) {",
+      "\t${2:body}",
+      "} else {",
+      "\t${3:elseBody}",
+      "}"
+    ],
+    "description": "If-else conditional statement"
+  },
+  "While Loop": {
+    "prefix": "while",
+    "body": [
+      "while (${1:condition}) {",
+      "\t${2:body}",
+      "}"
+    ],
+    "description": "While loop"
+  },
+  "For Loop": {
+    "prefix": "for",
+    "body": [
+      "for (let ${1:i}: int = ${2:0}; ${1:i} < ${3:limit}; ${1:i} = ${1:i} + 1) {",
+      "\t${4:body}",
+      "}"
+    ],
+    "description": "For loop"
+  },
+  "Print Statement": {
+    "prefix": "print",
+    "body": [
+      "print(${1:message});"
+    ],
+    "description": "Print statement"
+  },
+  "Print Format": {
+    "prefix": "printf",
+    "body": [
+      "print(format(\"${1:message}\", ${2:args}));"
+    ],
+    "description": "Print with format"
+  },
+  "Struct Definition": {
+    "prefix": "struct",
+    "body": [
+      "struct ${1:Name} {",
+      "\t${2:field}: ${3:type},",
+      "\t${4:field2}: ${5:type}",
+      "}"
+    ],
+    "description": "Define a struct"
+  },
+  "Enum Definition": {
+    "prefix": "enum",
+    "body": [
+      "enum ${1:Name} {",
+      "\t${2:Variant1},",
+      "\t${3:Variant2}",
+      "}"
+    ],
+    "description": "Define an enum"
+  },
+  "Array Declaration": {
+    "prefix": "array",
+    "body": [
+      "let ${1:name}: ${2:type}[] = [${3:values}];"
+    ],
+    "description": "Declare an array"
+  },
+  "Function Call": {
+    "prefix": "call",
+    "body": [
+      "${1:functionName}(${2:args});"
+    ],
+    "description": "Function call"
+  },
+  "Import Statement": {
+    "prefix": "import",
+    "body": [
+      "import ${1:moduleName};"
+    ],
+    "description": "Import a module"
+  },
+  "Export Function": {
+    "prefix": "export",
+    "body": [
+      "export fun ${1:name}(${2:params}) -> ${3:returnType} {",
+      "\t${4:body}",
+      "}"
+    ],
+    "description": "Export a function"
+  },
+  "Main Function": {
+    "prefix": "main",
+    "body": [
+      "fun main() -> void {",
+      "\t${1:body}",
+      "}"
+    ],
+    "description": "Main function"
+  },
+  "File I/O Read": {
+    "prefix": "read",
+    "body": [
+      "let ${1:content}: String = read_file(\"${2:filename}\");"
+    ],
+    "description": "Read file contents"
+  },
+  "File I/O Write": {
+    "prefix": "write",
+    "body": [
+      "write_file(\"${1:filename}\", ${2:content});"
+    ],
+    "description": "Write to file"
+  },
+  "String Format": {
+    "prefix": "format",
+    "body": [
+      "format(\"${1:template}\", ${2:args})"
+    ],
+    "description": "String formatting"
+  },
+  "Enum Variant": {
+    "prefix": "enumvar",
+    "body": [
+      "${1:EnumName}::${2:VariantName}"
+    ],
+    "description": "Enum variant"
+  },
+  "Enum From String": {
+    "prefix": "enumfromstr",
+    "body": [
+      "enum_from_string(\"${1:EnumName}\", \"${2:VariantName}\")"
+    ],
+    "description": "Convert string to enum"
+  }
+}
