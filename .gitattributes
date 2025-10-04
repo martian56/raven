@@ -1,0 +1,16 @@
+# Raven Language Recognition
+*.rv linguist-language=Raven
+*.rv linguist-detectable=true
+
+# Documentation
+docs/* linguist-documentation
+README.md linguist-documentation
+*.md linguist-documentation
+
+# Generated files
+target/* linguist-vendored
+node_modules/* linguist-vendored
+*.vsix linguist-generated
+
+# Examples
+examples/* linguist-detectable=true
