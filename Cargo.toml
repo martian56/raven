@@ -10,6 +10,33 @@ homepage = "https://github.com/martian56/raven"
 keywords = ["programming", "language", "compiler", "interpreter"]
 categories = ["development-tools", "command-line-utilities"]
 
+# Debian package configuration
+[package.metadata.deb]
+maintainer = "martian56"
+copyright = "2024 martian56"
+license-file = ["LICENSE"]
+depends = "$auto"
+section = "devel"
+priority = "optional"
+assets = [
+    ["target/release/raven", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/raven/", "644"],
+    ["docs/syntax.md", "usr/share/doc/raven/", "644"],
+]
+
+# RPM package configuration
+[package.metadata.rpm]
+license = "MIT"
+group = "Development/Tools"
+requires = []
+[package.metadata.rpm.targets.x86_64-unknown-linux-gnu]
+path = "target/release/raven"
+assets = [
+    ["target/release/raven", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/raven/", "644"],
+    ["docs/syntax.md", "usr/share/doc/raven/", "644"],
+]
+
 [dependencies]
 clap = "4.1"
 
