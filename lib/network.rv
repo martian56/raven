@@ -1,5 +1,7 @@
 // lib/network.rv - Network Library
 
+import string;
+
 // HTTP request structure
 struct HttpRequest {
     method: String,
@@ -91,12 +93,12 @@ export fun parse_url(url_string: String) -> Url {
     };
     
     // Simple URL parsing
-    let protocol_end: int = url_string.index_of("://");
+    let protocol_end: int = string.index_of(url_string, "://");
     if (protocol_end != -1) {
         url.protocol = url_string.slice(0, protocol_end);
         let rest: String = url_string.slice(protocol_end + 3, len(url_string));
         
-        let path_start: int = rest.index_of("/");
+        let path_start: int = string.index_of(rest, "/");
         if (path_start != -1) {
             url.host = rest.slice(0, path_start);
             url.path = rest.slice(path_start, len(rest));
@@ -105,10 +107,10 @@ export fun parse_url(url_string: String) -> Url {
         }
         
         // Check for port
-        let port_start: int = url.host.index_of(":");
+        let port_start: int = string.index_of(url.host, ":");
         if (port_start != -1) {
             let port_str: String = url.host.slice(port_start + 1, len(url.host));
-            url.port = port_str as int;
+            url.port = parse_int(port_str);
             url.host = url.host.slice(0, port_start);
         }
     }
@@ -120,7 +122,7 @@ export fun build_url(protocol: String, host: String, port: int, path: String) ->
     let url: String = protocol + "://" + host;
     
     if (port != 80 && port != 443) {
-        url = url + ":" + port as String;
+        url = url + ":" + format("{}", port);
     }
     
     if (!path.starts_with("/")) {
@@ -154,7 +156,7 @@ export fun get_query_param(query: String, param_name: String) -> String {
     let i: int = 0;
     while (i < len(params)) {
         let param: String = params[i];
-        let equal_pos: int = param.index_of("=");
+        let equal_pos: int = string.index_of(param, "=");
         
         if (equal_pos != -1) {
             let name: String = param.slice(0, equal_pos);
@@ -179,10 +181,10 @@ export fun set_header(headers: String[], name: String, value: String) -> String[
     let i: int = 0;
     while (i < len(headers)) {
         let header: String = headers[i];
-        let colon_pos: int = header.index_of(":");
+        let colon_pos: int = string.index_of(header, ":");
         
         if (colon_pos != -1) {
-            let header_name: String = header.slice(0, colon_pos).trim();
+            let header_name: String = string.trim(header.slice(0, colon_pos));
             
             if (header_name == name) {
                 new_headers.push(name + ": " + value);
@@ -208,11 +210,11 @@ export fun get_header(headers: String[], name: String) -> String {
     let i: int = 0;
     while (i < len(headers)) {
         let header: String = headers[i];
-        let colon_pos: int = header.index_of(":");
+        let colon_pos: int = string.index_of(header, ":");
         
         if (colon_pos != -1) {
-            let header_name: String = header.slice(0, colon_pos).trim();
-            let header_value: String = header.slice(colon_pos + 1, len(header)).trim();
+            let header_name: String = string.trim(header.slice(0, colon_pos));
+            let header_value: String = string.trim(header.slice(colon_pos + 1, len(header)));
             
             if (header_name == name) {
                 return header_value;
@@ -231,10 +233,10 @@ export fun remove_header(headers: String[], name: String) -> String[] {
     let i: int = 0;
     while (i < len(headers)) {
         let header: String = headers[i];
-        let colon_pos: int = header.index_of(":");
+        let colon_pos: int = string.index_of(header, ":");
         
         if (colon_pos != -1) {
-            let header_name: String = header.slice(0, colon_pos).trim();
+            let header_name: String = string.trim(header.slice(0, colon_pos));
             
             if (header_name != name) {
                 new_headers.push(header);
@@ -288,7 +290,7 @@ export fun json_encode(obj: String) -> String {
 
 export fun json_decode(json: String) -> String {
     // Simple JSON decoding - remove quotes
-    if (json.starts_with("\"") && json.ends_with("\"")) {
+    if (string.starts_with(json, "\"") && string.ends_with(json, "\"")) {
         return json.slice(1, len(json) - 1);
     }
     return json;
@@ -376,16 +378,17 @@ export fun resolve_dns(hostname: String) -> String {
 }
 
 export fun is_valid_url(url: String) -> bool {
-    return url.starts_with("http://") || url.starts_with("https://");
+    return string.starts_with(url, "http://") || string.starts_with(url, "https://");
 }
 
 export fun is_valid_email(email: String) -> bool {
-    let at_pos: int = email.index_of("@");
+    let at_pos: int = string.index_of(email, "@");
     if (at_pos == -1) {
         return false;
     }
     
-    let dot_pos: int = email.index_of(".", at_pos);
+    let after_at: String = email.slice(at_pos + 1, len(email));
+    let dot_pos: int = string.index_of(after_at, ".");
     if (dot_pos == -1) {
         return false;
     }

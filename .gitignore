@@ -2,7 +2,6 @@
 /target/
 **/*.rs.bk
 *.pdb
-wix/
 # IDE and editor files
 .vscode/
 .idea/
@@ -56,3 +55,6 @@ examples/output/
 examples/*.txt
 
 site/
+.cursor/
+testing/
+tmp_rvpm_test/

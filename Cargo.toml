@@ -1,6 +1,6 @@
 [package]
 name = "raven"
-version = "1.1.0"
+version = "1.2.2"
 edition = "2021"
 authors = ["martian56"]
 description = "A modern programming language with advanced features"
@@ -20,25 +20,43 @@ section = "devel"
 priority = "optional"
 assets = [
     ["target/release/raven", "usr/bin/", "755"],
+    ["target/release/rvpm", "usr/bin/", "755"],
     ["README.md", "usr/share/doc/raven/", "644"],
     ["docs/syntax.md", "usr/share/doc/raven/", "644"],
+    ["lib/math.rv", "usr/share/raven/lib/", "644"],
+    ["lib/collections.rv", "usr/share/raven/lib/", "644"],
+    ["lib/string.rv", "usr/share/raven/lib/", "644"],
+    ["lib/time.rv", "usr/share/raven/lib/", "644"],
+    ["lib/filesystem.rv", "usr/share/raven/lib/", "644"],
+    ["lib/network.rv", "usr/share/raven/lib/", "644"],
+    ["lib/testing.rv", "usr/share/raven/lib/", "644"],
 ]
+extended-description = """\
+Raven is a modern programming language with advanced features.
+Includes the standard library and rvpm package manager.
+"""
 
-# RPM package configuration
-[package.metadata.rpm]
+# RPM package configuration (cargo-generate-rpm)
+[package.metadata.generate-rpm]
 license = "MIT"
-group = "Development/Tools"
-requires = []
-[package.metadata.rpm.targets.x86_64-unknown-linux-gnu]
-path = "target/release/raven"
+summary = "A modern programming language with advanced features"
 assets = [
-    ["target/release/raven", "usr/bin/", "755"],
-    ["README.md", "usr/share/doc/raven/", "644"],
-    ["docs/syntax.md", "usr/share/doc/raven/", "644"],
+    { source = "target/release/raven", dest = "/usr/bin/raven", mode = "755" },
+    { source = "target/release/rvpm", dest = "/usr/bin/rvpm", mode = "755" },
+    { source = "README.md", dest = "/usr/share/doc/raven/", mode = "644", doc = true },
+    { source = "docs/syntax.md", dest = "/usr/share/doc/raven/", mode = "644", doc = true },
+    { source = "lib/math.rv", dest = "/usr/share/raven/lib/", mode = "644" },
+    { source = "lib/collections.rv", dest = "/usr/share/raven/lib/", mode = "644" },
+    { source = "lib/string.rv", dest = "/usr/share/raven/lib/", mode = "644" },
+    { source = "lib/time.rv", dest = "/usr/share/raven/lib/", mode = "644" },
+    { source = "lib/filesystem.rv", dest = "/usr/share/raven/lib/", mode = "644" },
+    { source = "lib/network.rv", dest = "/usr/share/raven/lib/", mode = "644" },
+    { source = "lib/testing.rv", dest = "/usr/share/raven/lib/", mode = "644" },
 ]
 
 [dependencies]
 clap = "4.1"
+chrono = "0.4"
 
 [profile.release]
 opt-level = 1

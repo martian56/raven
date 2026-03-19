@@ -8,7 +8,7 @@ use std::process;
 
 fn main() {
     let matches = Command::new("Raven Programming Language")
-        .version("1.1.0")
+        .version("1.2.2")
         .author("martian56 <https://github.com/martian56>")
         .about("Raven compiler and interpreter - fast, safe, and expressive")
         .arg(
@@ -93,7 +93,10 @@ fn execute_file(file_name: &str, verbose: bool, check_only: bool, show_ast: bool
 
     let mut parser = Parser::new(lexer, source_code.clone());
     let ast = parser.parse().unwrap_or_else(|e| {
-        eprintln!("\n❌ Parse error: {}", e.format());
+        eprintln!(
+            "\n❌ Parse error: {}",
+            e.with_filename(file_name.to_string()).format()
+        );
         process::exit(1);
     });
 
@@ -110,7 +113,7 @@ fn execute_file(file_name: &str, verbose: bool, check_only: bool, show_ast: bool
 
     let mut type_checker = TypeChecker::new();
     type_checker.check(&ast).unwrap_or_else(|e| {
-        eprintln!("\n❌ Type error: {}", e);
+        eprintln!("\n❌ Type error (in {}):\n{}", file_name, e);
         process::exit(1);
     });
 
@@ -155,32 +158,32 @@ fn execute_file(file_name: &str, verbose: bool, check_only: bool, show_ast: bool
 
 fn start_repl(verbose: bool) {
     use std::io::{self, Write};
-    
+
     println!("🐦 Welcome to Raven REPL!");
     println!("Type 'exit' or 'quit' to exit, 'help' for help");
     println!("─────────────────────────────────────────");
-    
+
     let mut interpreter = Interpreter::new();
     let mut type_checker = TypeChecker::new();
-    
+
     loop {
         print!("raven> ");
         io::stdout().flush().unwrap();
-        
+
         let mut input = String::new();
         match io::stdin().read_line(&mut input) {
             Ok(_) => {
                 let input = input.trim();
-                
+
                 if input.is_empty() {
                     continue;
                 }
-                
+
                 if input == "exit" || input == "quit" {
                     println!("Goodbye!");
                     break;
                 }
-                
+
                 if input == "help" {
                     println!("Available commands:");
                     println!("  exit, quit - Exit the REPL");
@@ -188,7 +191,7 @@ fn start_repl(verbose: bool) {
                     println!("  Any Raven code - Execute the code");
                     continue;
                 }
-                
+
                 // Process Raven code
                 match process_repl_input(input, &mut interpreter, &mut type_checker, verbose) {
                     Ok(_) => {}
@@ -205,29 +208,36 @@ fn start_repl(verbose: bool) {
     }
 }
 
-fn process_repl_input(input: &str, interpreter: &mut Interpreter, type_checker: &mut TypeChecker, verbose: bool) -> Result<(), String> {
+fn process_repl_input(
+    input: &str,
+    interpreter: &mut Interpreter,
+    type_checker: &mut TypeChecker,
+    verbose: bool,
+) -> Result<(), String> {
     // Create lexer
     let lexer = Lexer::new(input.to_string());
-    
+
     if verbose {
         println!("🔍 Input: {}", input);
     }
-    
+
     // Create parser
     let mut parser = Parser::new(lexer, input.to_string());
-    let ast = parser.parse().map_err(|e| e.format())?;
-    
+    let ast = parser
+        .parse()
+        .map_err(|e| e.with_filename("<repl>".to_string()).format())?;
+
     if verbose {
         println!("🌳 AST: {:?}", ast);
     }
-    
+
     // Type check with persistent type checker
-    type_checker.check(&ast).map_err(|e| e)?;
-    
+    type_checker.check(&ast)?;
+
     if verbose {
         println!("✅ Type check passed");
     }
-    
+
     // Execute
     match interpreter.execute(&ast) {
         Ok(value) => {
@@ -239,6 +249,6 @@ fn process_repl_input(input: &str, interpreter: &mut Interpreter, type_checker: 
         }
         Err(e) => return Err(e),
     }
-    
+
     Ok(())
 }

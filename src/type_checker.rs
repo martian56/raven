@@ -9,14 +9,29 @@ pub enum Type {
     Bool,
     String,
     Void,
-    Array(Box<Type>), // Add array type support
-    Struct(String), // Struct type
-    Enum(String), // Enum type
-    Module, // Module type
+    Array(Box<Type>),
+    Struct(String),
+    Enum(String),
+    Module,
     Unknown,
 }
 
 impl Type {
+    pub fn fmt_for_user(&self) -> String {
+        match self {
+            Type::Int => "int".to_string(),
+            Type::Float => "float".to_string(),
+            Type::Bool => "bool".to_string(),
+            Type::String => "string".to_string(),
+            Type::Void => "void".to_string(),
+            Type::Array(inner) => format!("{}[]", inner.fmt_for_user()),
+            Type::Struct(s) => s.clone(),
+            Type::Enum(s) => s.clone(),
+            Type::Module => "module".to_string(),
+            Type::Unknown => "unknown".to_string(),
+        }
+    }
+
     pub fn from_string(s: &str) -> Type {
         match s {
             "int" => Type::Int,
@@ -28,11 +43,15 @@ impl Type {
             "float[]" => Type::Array(Box::new(Type::Float)),
             "bool[]" => Type::Array(Box::new(Type::Bool)),
             "String[]" => Type::Array(Box::new(Type::String)),
-            _ => Type::Struct(s.to_string()), // Custom type (struct or enum - will be resolved later)
+            _ => Type::Struct(s.to_string()),
         }
     }
-    
-    pub fn from_string_with_context(s: &str, enums: &HashMap<String, EnumInfo>, structs: &HashMap<String, StructInfo>) -> Type {
+
+    pub fn from_string_with_context(
+        s: &str,
+        enums: &HashMap<String, EnumInfo>,
+        _structs: &HashMap<String, StructInfo>,
+    ) -> Type {
         match s {
             "int" => Type::Int,
             "float" => Type::Float,
@@ -44,13 +63,10 @@ impl Type {
             "bool[]" => Type::Array(Box::new(Type::Bool)),
             "String[]" => Type::Array(Box::new(Type::String)),
             _ => {
-                // Check if it's an enum first, then struct
                 if enums.contains_key(s) {
                     Type::Enum(s.to_string())
-                } else if structs.contains_key(s) {
-                    Type::Struct(s.to_string())
                 } else {
-                    Type::Struct(s.to_string()) // Default to struct for backward compatibility
+                    Type::Struct(s.to_string())
                 }
             }
         }
@@ -58,15 +74,11 @@ impl Type {
 }
 
 pub struct TypeChecker {
-    // Symbol table: variable_name -> type
     variables: HashMap<String, Type>,
-    // Function table: function_name -> (return_type, param_types)
     functions: HashMap<String, (Type, Vec<Type>)>,
-    // Struct table: struct_name -> StructInfo
     structs: HashMap<String, StructInfo>,
-    // Enum table: enum_name -> EnumInfo
+    struct_methods: HashMap<String, HashMap<String, (Type, Vec<Type>)>>,
     enums: HashMap<String, EnumInfo>,
-    // Module table: module_name -> ModuleInfo
     modules: HashMap<String, ModuleInfo>,
 }
 
@@ -85,12 +97,19 @@ pub struct EnumInfo {
     pub variants: Vec<String>,
 }
 
+impl Default for TypeChecker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TypeChecker {
     pub fn new() -> Self {
         TypeChecker {
             variables: HashMap::new(),
             functions: HashMap::new(),
             structs: HashMap::new(),
+            struct_methods: HashMap::new(),
             enums: HashMap::new(),
             modules: HashMap::new(),
         }
@@ -105,13 +124,17 @@ impl TypeChecker {
             }
 
             ASTNode::VariableDeclTyped(name, type_str, expr) => {
-                let declared_type = Type::from_string_with_context(type_str, &self.enums, &self.structs);
-                let expr_type = self.check_expression_with_expected_type(expr, Some(&declared_type))?;
+                let declared_type =
+                    Type::from_string_with_context(type_str, &self.enums, &self.structs);
+                let expr_type =
+                    self.check_expression_with_expected_type(expr, Some(&declared_type))?;
 
                 if declared_type != expr_type {
+                    let expected = declared_type.fmt_for_user();
+                    let got = expr_type.fmt_for_user();
                     return Err(format!(
-                        "Type mismatch in variable '{}': expected {:?}, got {:?}",
-                        name, declared_type, expr_type
+                        "Type mismatch in variable '{}': expected {}, got {}\n   = help: Change the expression to match type '{}', or change the variable's declared type to '{}'.",
+                        name, expected, got, expected, got
                     ));
                 }
 
@@ -121,74 +144,67 @@ impl TypeChecker {
 
             ASTNode::Assignment(target, expr) => {
                 let expr_type = self.check_expression(expr)?;
-                
-                // Check the assignment target
+
                 match target.as_ref() {
                     Expression::Identifier(name) => {
-                        // Simple variable assignment
                         if let Some(var_type) = self.variables.get(name) {
                             if var_type != &expr_type {
+                                let expected = var_type.fmt_for_user();
+                                let got = expr_type.fmt_for_user();
                                 return Err(format!(
-                                    "Type mismatch in assignment to '{}': expected {:?}, got {:?}",
-                                    name, var_type, expr_type
+                                    "Type mismatch in assignment to '{}': expected {}, got {}\n   = help: The value must match the variable's type '{}'. Consider converting or changing the expression.",
+                                    name, expected, got, expected
                                 ));
                             }
                             Ok(Type::Void)
                         } else {
-                            Err(format!("Variable '{}' not declared", name))
+                            Err(format!(
+                                "Variable '{}' not declared\n   = help: Declare the variable with 'let {}: type = value;' before using it.",
+                                name, name
+                            ))
                         }
                     }
                     Expression::FieldAccess(object, _field_name) => {
-                        // Field access assignment: object.field = value
                         let _object_type = self.check_expression(object)?;
-                        
-                        // For now, we'll allow field assignments without strict type checking
-                        // This is a simplified implementation
+
                         Ok(Type::Void)
                     }
                     Expression::ArrayIndex(array_expr, index_expr) => {
-                        // Array indexing assignment: array[index] = value
                         let _array_type = self.check_expression(array_expr)?;
                         let index_type = self.check_expression(index_expr)?;
-                        
-                        // Check that index is an integer
+
                         if index_type != Type::Int {
                             return Err(format!(
-                                "Array index must be an integer, got {:?}",
-                                index_type
+                                "Array index must be an integer, got {}\n   = help: Use an int variable or expression, e.g. arr[i] or arr[i + 1] where i is int.",
+                                index_type.fmt_for_user()
                             ));
                         }
-                        
-                        // For now, we'll allow array assignments without strict type checking
-                        // This is a simplified implementation
+
                         Ok(Type::Void)
                     }
-                    _ => {
-                        // Other complex assignment targets
-                        // For now, we'll allow them without strict type checking
-                        Ok(Type::Void)
-                    }
+                    _ => Ok(Type::Void),
                 }
             }
 
             ASTNode::FunctionDecl(name, return_type_str, params, body) => {
-                let return_type = Type::from_string_with_context(return_type_str, &self.enums, &self.structs);
-                
-                // Store parameter types in local scope
+                let return_type =
+                    Type::from_string_with_context(return_type_str, &self.enums, &self.structs);
+
                 let param_types: Vec<Type> = params
                     .iter()
-                    .map(|p| Type::from_string_with_context(&p.param_type, &self.enums, &self.structs))
+                    .map(|p| {
+                        Type::from_string_with_context(&p.param_type, &self.enums, &self.structs)
+                    })
                     .collect();
 
-                // Add parameters to variables table
                 for (i, param) in params.iter().enumerate() {
-                    self.variables.insert(param.name.clone(), param_types[i].clone());
+                    self.variables
+                        .insert(param.name.clone(), param_types[i].clone());
                 }
 
-                // Register the function
-                self.functions.insert(name.clone(), (return_type.clone(), param_types));
+                self.functions
+                    .insert(name.clone(), (return_type.clone(), param_types));
 
-                // Check function body
                 self.check(body)?;
 
                 Ok(Type::Void)
@@ -198,27 +214,79 @@ impl TypeChecker {
                 let mut struct_info = StructInfo {
                     fields: HashMap::new(),
                 };
-                
-                // Process each field
+
                 for field in fields {
-                    let field_type = Type::from_string_with_context(&field.field_type, &self.enums, &self.structs);
+                    let field_type = Type::from_string_with_context(
+                        &field.field_type,
+                        &self.enums,
+                        &self.structs,
+                    );
                     struct_info.fields.insert(field.name.clone(), field_type);
                 }
-                
-                // Register the struct
+
                 self.structs.insert(name.clone(), struct_info);
-                
+
+                Ok(Type::Void)
+            }
+
+            ASTNode::ImplBlock(struct_name, methods) => {
+                if !self.structs.contains_key(struct_name) {
+                    return Err(format!(
+                        "Cannot impl for '{}': struct not found\n   = help: Define the struct first with 'struct {} {{ ... }}'",
+                        struct_name, struct_name
+                    ));
+                }
+
+                for (method_name, return_type_str, params, body) in methods {
+                    let return_type =
+                        Type::from_string_with_context(return_type_str, &self.enums, &self.structs);
+                    let param_types: Vec<Type> = params
+                        .iter()
+                        .map(|p| {
+                            Type::from_string_with_context(
+                                &p.param_type,
+                                &self.enums,
+                                &self.structs,
+                            )
+                        })
+                        .collect();
+
+                    self.struct_methods
+                        .entry(struct_name.clone())
+                        .or_default()
+                        .insert(
+                            method_name.clone(),
+                            (return_type.clone(), param_types.clone()),
+                        );
+
+                    let self_type = Type::Struct(struct_name.clone());
+                    self.variables.insert("self".to_string(), self_type.clone());
+
+                    for (i, param) in params.iter().skip(1).enumerate() {
+                        if i + 1 < param_types.len() {
+                            self.variables
+                                .insert(param.name.clone(), param_types[i + 1].clone());
+                        }
+                    }
+
+                    self.check(body)?;
+
+                    self.variables.remove("self");
+                    for param in params.iter().skip(1) {
+                        self.variables.remove(&param.name);
+                    }
+                }
+
                 Ok(Type::Void)
             }
 
             ASTNode::EnumDecl(name, variants) => {
-                // Register the enum with its variants
                 let enum_info = EnumInfo {
                     variants: variants.clone(),
                 };
-                
+
                 self.enums.insert(name.clone(), enum_info);
-                
+
                 Ok(Type::Void)
             }
 
@@ -226,8 +294,8 @@ impl TypeChecker {
                 let cond_type = self.check_expression(condition)?;
                 if cond_type != Type::Bool {
                     return Err(format!(
-                        "Condition in if statement must be boolean, got {:?}",
-                        cond_type
+                        "Condition in if statement must be boolean, got {}\n   = help: Use a comparison (e.g. x == 0, a < b) or a boolean variable. Example: if (x > 0) {{ ... }}",
+                        cond_type.fmt_for_user()
                     ));
                 }
 
@@ -248,8 +316,8 @@ impl TypeChecker {
                 let cond_type = self.check_expression(condition)?;
                 if cond_type != Type::Bool {
                     return Err(format!(
-                        "Condition in while loop must be boolean, got {:?}",
-                        cond_type
+                        "Condition in while loop must be boolean, got {}\n   = help: Use a comparison (e.g. i < 10) or boolean. Example: while (i < 10) {{ ... }}",
+                        cond_type.fmt_for_user()
                     ));
                 }
 
@@ -263,8 +331,8 @@ impl TypeChecker {
                 let cond_type = self.check_expression(condition)?;
                 if cond_type != Type::Bool {
                     return Err(format!(
-                        "Condition in for loop must be boolean, got {:?}",
-                        cond_type
+                        "Condition in for loop must be boolean, got {}\n   = help: The condition (middle part) must be a comparison. Example: for (let i: int = 0; i < 10; i = i + 1) {{ ... }}",
+                        cond_type.fmt_for_user()
                     ));
                 }
 
@@ -292,48 +360,48 @@ impl TypeChecker {
             }
 
             ASTNode::FunctionCall(name, args) => {
-                // Check function exists and validate arguments
                 self.check_expression(&Expression::FunctionCall(name.clone(), args.clone()))?;
                 Ok(Type::Void)
             }
-            
+
             ASTNode::MethodCall(object, method_name, args) => {
-                // Check method call and validate arguments
-                self.check_expression(&Expression::MethodCall(object.clone(), method_name.clone(), args.clone()))?;
+                self.check_expression(&Expression::MethodCall(
+                    object.clone(),
+                    method_name.clone(),
+                    args.clone(),
+                ))?;
                 Ok(Type::Void)
             }
-            
+
             ASTNode::ExpressionStatement(expr) => {
-                // Type check standalone expressions
                 self.check_expression(expr)?;
                 Ok(Type::Void)
             }
-            
+
             ASTNode::Import(module_name, alias) => {
-                // Load the module during type checking
                 self.load_module_for_type_checking(module_name)?;
-                
-                // If there's an alias, add it to variables
-                if let Some(alias_name) = alias {
-                    self.variables.insert(alias_name.clone(), Type::Module);
-                }
+
+                let var_name = alias.as_ref().unwrap_or(module_name);
+                self.variables.insert(var_name.clone(), Type::Module);
                 Ok(Type::Void)
             }
-            
+
             ASTNode::ImportSelective(module_name, items) => {
-                // Load the module during type checking
                 self.load_module_for_type_checking(module_name)?;
-                
-                // Import specific items from the module
+
                 if let Some(module) = self.modules.get(module_name) {
                     for item in items {
                         if let Some(var_type) = module.variables.get(item) {
                             self.variables.insert(item.clone(), var_type.clone());
-                        } else if let Some((return_type, param_types)) = module.functions.get(item) {
-                            // Import the function with its parameter types
-                            self.functions.insert(item.clone(), (return_type.clone(), param_types.clone()));
+                        } else if let Some((return_type, param_types)) = module.functions.get(item)
+                        {
+                            self.functions
+                                .insert(item.clone(), (return_type.clone(), param_types.clone()));
                         } else {
-                            return Err(format!("Item '{}' not found in module '{}'", item, module_name));
+                            return Err(format!(
+                                "Item '{}' not found in module '{}'",
+                                item, module_name
+                            ));
                         }
                     }
                 } else {
@@ -341,9 +409,8 @@ impl TypeChecker {
                 }
                 Ok(Type::Void)
             }
-            
+
             ASTNode::Export(stmt) => {
-                // Check the exported statement
                 self.check(stmt)?;
                 Ok(Type::Void)
             }
@@ -353,8 +420,12 @@ impl TypeChecker {
     fn check_expression(&mut self, expr: &Expression) -> Result<Type, String> {
         self.check_expression_with_expected_type(expr, None)
     }
-    
-    fn check_expression_with_expected_type(&mut self, expr: &Expression, expected_type: Option<&Type>) -> Result<Type, String> {
+
+    fn check_expression_with_expected_type(
+        &mut self,
+        expr: &Expression,
+        expected_type: Option<&Type>,
+    ) -> Result<Type, String> {
         match expr {
             Expression::Integer(_) => Ok(Type::Int),
             Expression::Float(_) => Ok(Type::Float),
@@ -365,20 +436,21 @@ impl TypeChecker {
                 if let Some(var_type) = self.variables.get(name) {
                     Ok(var_type.clone())
                 } else {
-                    Err(format!("Variable '{}' not declared", name))
+                    Err(format!(
+                        "Variable '{}' not declared\n   = help: Declare it with 'let {}: type = value;' before using it.",
+                        name, name
+                    ))
                 }
             }
 
             Expression::UnaryOp(op, expr) => {
                 let expr_type = self.check_expression(expr)?;
-                
+
                 match op {
-                    Operator::UnaryMinus => {
-                        match expr_type {
-                            Type::Int | Type::Float => Ok(expr_type),
-                            _ => Err(format!("Cannot apply unary minus to {:?}", expr_type)),
-                        }
-                    }
+                    Operator::UnaryMinus => match expr_type {
+                        Type::Int | Type::Float => Ok(expr_type),
+                        _ => Err(format!("Cannot apply unary minus to {:?}", expr_type)),
+                    },
                     Operator::Not => {
                         if expr_type == Type::Bool {
                             Ok(Type::Bool)
@@ -395,17 +467,19 @@ impl TypeChecker {
                 let right_type = self.check_expression(right)?;
 
                 match op {
-                    Operator::Add | Operator::Subtract | Operator::Multiply | Operator::Divide | Operator::Modulo => {
+                    Operator::Add
+                    | Operator::Subtract
+                    | Operator::Multiply
+                    | Operator::Divide
+                    | Operator::Modulo => {
                         if left_type == Type::Int && right_type == Type::Int {
                             Ok(Type::Int)
                         } else if (left_type == Type::Float || left_type == Type::Int)
                             && (right_type == Type::Float || right_type == Type::Int)
                         {
                             Ok(Type::Float)
-                        } else if left_type == Type::String && right_type == Type::String {
-                            Ok(Type::String) // String concatenation
                         } else if left_type == Type::String || right_type == Type::String {
-                            Ok(Type::String) // String + number or number + string
+                            Ok(Type::String)
                         } else {
                             Err(format!(
                                 "Type mismatch in arithmetic operation: {:?} {:?} {:?}",
@@ -414,7 +488,6 @@ impl TypeChecker {
                         }
                     }
                     Operator::UnaryMinus | Operator::Not => {
-                        // These should not appear in binary operations
                         Err(format!("Unary operator {:?} used in binary context", op))
                     }
 
@@ -446,68 +519,74 @@ impl TypeChecker {
             }
 
             Expression::FunctionCall(name, args) => {
-                // Check if this is a built-in function first
                 if let Some(return_type) = self.check_builtin_function(name, args)? {
                     return Ok(return_type);
                 }
-                
-                // Otherwise, check regular function
-                // Look up the function and clone to avoid borrow issues
+
                 if let Some((return_type, param_types)) = self.functions.get(name).cloned() {
-                    // Check argument count
                     if args.len() != param_types.len() {
+                        let sig: String = param_types
+                            .iter()
+                            .map(|t| t.fmt_for_user())
+                            .collect::<Vec<_>>()
+                            .join(", ");
                         return Err(format!(
-                            "Function '{}' expects {} arguments, got {}",
+                            "Function '{}' expects {} arguments, got {}\n   = help: Expected signature: {}({})",
                             name,
                             param_types.len(),
-                            args.len()
+                            args.len(),
+                            name,
+                            sig
                         ));
                     }
 
-                    // Check argument types
                     for (i, arg) in args.iter().enumerate() {
                         let arg_type = self.check_expression(arg)?;
                         if arg_type != param_types[i] {
+                            let expected = param_types[i].fmt_for_user();
+                            let got = arg_type.fmt_for_user();
                             return Err(format!(
-                                "Function '{}' parameter {} expects {:?}, got {:?}",
+                                "Function '{}' parameter {} expects {}, got {}\n   = help: Pass a value of type '{}' for this parameter.",
                                 name,
                                 i + 1,
-                                param_types[i],
-                                arg_type
+                                expected,
+                                got,
+                                expected
                             ));
                         }
                     }
 
                     Ok(return_type)
                 } else {
-                    Err(format!("Function '{}' not declared", name))
+                    Err(format!(
+                        "Function '{}' not declared\n   = help: Define the function with 'fun {} (...) -> returnType {{ ... }}' or check the name.",
+                        name, name
+                    ))
                 }
             }
 
             Expression::ArrayLiteral(elements) => {
                 if elements.is_empty() {
-                    // Empty array - use expected type if available
-                    if let Some(expected) = expected_type {
-                        if let Type::Array(element_type) = expected {
-                            return Ok(Type::Array(element_type.clone()));
-                        }
+                    if let Some(Type::Array(element_type)) = expected_type {
+                        return Ok(Type::Array(element_type.clone()));
                     }
-                    return Err("Cannot infer type of empty array".to_string());
+                    return Err(
+                        "Cannot infer type of empty array\n   = help: Give the array an explicit type, e.g. let arr: int[] = []; or add at least one element.".to_string(),
+                    );
                 }
-                
-                // Check that all elements have the same type
+
                 let first_type = self.check_expression_with_expected_type(&elements[0], None)?;
                 for element in elements.iter().skip(1) {
                     let element_type = self.check_expression_with_expected_type(element, None)?;
                     if element_type != first_type {
                         return Err(format!(
-                            "Array elements must have the same type, got {:?} and {:?}",
-                            first_type, element_type
+                            "Array elements must have the same type, got {} and {}\n   = help: All elements in [a, b, c, ...] must be the same type. Use separate arrays or convert values.",
+                            first_type.fmt_for_user(),
+                            element_type.fmt_for_user()
                         ));
                     }
                 }
-                
-                // Return array type
+
                 Ok(Type::Array(Box::new(first_type)))
             }
 
@@ -515,28 +594,30 @@ impl TypeChecker {
                 let index_type = self.check_expression(index_expr)?;
                 if index_type != Type::Int {
                     return Err(format!(
-                        "Array index must be integer, got {:?}",
-                        index_type
+                        "Array index must be integer, got {}\n   = help: Use an int expression, e.g. arr[i] where i is int.",
+                        index_type.fmt_for_user()
                     ));
                 }
-                
+
                 let array_type = self.check_expression(array_expr)?;
                 match array_type {
                     Type::Array(element_type) => Ok(*element_type),
-                    Type::String => Ok(Type::String), // String indexing returns String (single character)
+                    Type::String => Ok(Type::String),
                     _ => Err("Cannot index non-array or non-string value".to_string()),
                 }
             }
-            
+
             Expression::MethodCall(object_expr, method_name, args) => {
                 let object_type = self.check_expression(object_expr)?;
-                
-                // Check array methods
+
                 if let Type::Array(element_type) = object_type {
                     match method_name.as_str() {
                         "push" => {
                             if args.len() != 1 {
-                                return Err(format!("push() expects 1 argument, got {}", args.len()));
+                                return Err(format!(
+                                    "push() expects 1 argument, got {}",
+                                    args.len()
+                                ));
                             }
                             let arg_type = self.check_expression(&args[0])?;
                             if arg_type != *element_type {
@@ -549,376 +630,580 @@ impl TypeChecker {
                         }
                         "pop" => {
                             if !args.is_empty() {
-                                return Err(format!("pop() expects 0 arguments, got {}", args.len()));
+                                return Err(format!(
+                                    "pop() expects 0 arguments, got {}",
+                                    args.len()
+                                ));
                             }
-                            Ok(*element_type) // pop() returns the element type
+                            Ok(*element_type)
                         }
                         "slice" => {
                             if args.len() != 2 {
-                                return Err(format!("slice() expects 2 arguments, got {}", args.len()));
+                                return Err(format!(
+                                    "slice() expects 2 arguments, got {}",
+                                    args.len()
+                                ));
                             }
                             let start_type = self.check_expression(&args[0])?;
                             let end_type = self.check_expression(&args[1])?;
                             if start_type != Type::Int || end_type != Type::Int {
                                 return Err("slice() arguments must be integers".to_string());
                             }
-                            Ok(Type::Array(element_type)) // slice() returns array of same type
+                            Ok(Type::Array(element_type))
                         }
                         "join" => {
                             if args.len() != 1 {
-                                return Err(format!("join() expects 1 argument, got {}", args.len()));
+                                return Err(format!(
+                                    "join() expects 1 argument, got {}",
+                                    args.len()
+                                ));
                             }
                             let delimiter_type = self.check_expression(&args[0])?;
                             if delimiter_type != Type::String {
                                 return Err("join() delimiter must be string".to_string());
                             }
-                            Ok(Type::String) // join() returns string
+                            Ok(Type::String)
                         }
                         _ => Err(format!("Unknown method '{}' for array", method_name)),
                     }
                 } else if let Type::Module = object_type {
-                    // Handle module method calls
-                    // For now, we'll assume module methods can return any type
-                    // TODO: Implement proper module method type checking
                     Ok(Type::Unknown)
                 } else if let Type::String = object_type {
-                    // Handle string method calls
                     match method_name.as_str() {
                         "slice" => {
                             if args.len() != 2 {
-                                return Err(format!("slice() expects 2 arguments, got {}", args.len()));
+                                return Err(format!(
+                                    "slice() expects 2 arguments, got {}",
+                                    args.len()
+                                ));
                             }
                             let start_type = self.check_expression(&args[0])?;
                             let end_type = self.check_expression(&args[1])?;
                             if start_type != Type::Int || end_type != Type::Int {
                                 return Err("slice() arguments must be integers".to_string());
                             }
-                            Ok(Type::String) // slice() returns string
+                            Ok(Type::String)
                         }
                         "split" => {
                             if args.len() != 1 {
-                                return Err(format!("split() expects 1 argument, got {}", args.len()));
+                                return Err(format!(
+                                    "split() expects 1 argument, got {}",
+                                    args.len()
+                                ));
                             }
                             let delimiter_type = self.check_expression(&args[0])?;
                             if delimiter_type != Type::String {
                                 return Err("split() delimiter must be string".to_string());
                             }
-                            Ok(Type::Array(Box::new(Type::String))) // split() returns array of strings
+                            Ok(Type::Array(Box::new(Type::String)))
                         }
                         "replace" => {
                             if args.len() != 2 {
-                                return Err(format!("replace() expects 2 arguments, got {}", args.len()));
+                                return Err(format!(
+                                    "replace() expects 2 arguments, got {}",
+                                    args.len()
+                                ));
                             }
                             let from_type = self.check_expression(&args[0])?;
                             let to_type = self.check_expression(&args[1])?;
                             if from_type != Type::String || to_type != Type::String {
                                 return Err("replace() arguments must be strings".to_string());
                             }
-                            Ok(Type::String) // replace() returns string
+                            Ok(Type::String)
                         }
                         _ => Err(format!("Unknown method '{}' for string", method_name)),
                     }
-                } else {
-                    Err(format!("Cannot call methods on non-array, non-module, or non-string value of type {:?}", object_type))
-                }
-            }
-            
-            Expression::StructInstantiation(struct_name, fields) => {
-                // Check if struct is defined
-                if let Some(struct_info) = self.structs.get(struct_name) {
-                    // Clone the struct info to avoid borrowing conflicts
-                    let struct_info_clone = struct_info.clone();
-                    
-                    // Check that all fields are provided and have correct types
-                    for (field_name, field_value) in fields {
-                        if let Some(expected_type) = struct_info_clone.fields.get(field_name) {
-                            let actual_type = self.check_expression_with_expected_type(field_value, Some(expected_type))?;
-                            if actual_type != *expected_type {
+                } else if let Type::Struct(struct_name) = object_type {
+                    let (return_type, param_types) = match self.struct_methods.get(&struct_name) {
+                        Some(methods) => match methods.get(method_name) {
+                            Some((ret, params)) => (ret.clone(), params.clone()),
+                            None => {
+                                let available: Vec<String> = methods.keys().cloned().collect();
                                 return Err(format!(
-                                    "Field '{}' in struct '{}' expects {:?}, got {:?}",
-                                    field_name, struct_name, expected_type, actual_type
+                                    "Method '{}' not found on struct '{}'\n   = help: Available methods: {}",
+                                    method_name,
+                                    struct_name,
+                                    available.join(", ")
                                 ));
                             }
-                        } else {
+                        },
+                        None => {
                             return Err(format!(
-                                "Field '{}' not found in struct '{}'",
-                                field_name, struct_name
+                                "Struct '{}' has no methods defined\n   = help: Add methods with 'impl {} {{ fun method(self, ...) {{ ... }} }}'",
+                                struct_name, struct_name
+                            ));
+                        }
+                    };
+                    if args.len() + 1 != param_types.len() {
+                        return Err(format!(
+                            "Method '{}' on '{}' expects {} arguments (including self), got {}\n   = help: Expected signature: {}({})",
+                            method_name,
+                            struct_name,
+                            param_types.len() - 1,
+                            args.len(),
+                            method_name,
+                            param_types
+                                .iter()
+                                .skip(1)
+                                .map(|t| t.fmt_for_user())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ));
+                    }
+                    for (i, arg) in args.iter().enumerate() {
+                        let arg_type = self.check_expression(arg)?;
+                        let expected = &param_types[i + 1];
+                        if arg_type != *expected {
+                            return Err(format!(
+                                "Method '{}' argument {} expects {}, got {}",
+                                method_name,
+                                i + 1,
+                                expected.fmt_for_user(),
+                                arg_type.fmt_for_user()
                             ));
                         }
                     }
-                    
-                    // Check that all required fields are provided
-                    for (field_name, _) in &struct_info_clone.fields {
-                        if !fields.iter().any(|(name, _)| name == field_name) {
-                            return Err(format!(
-                                "Missing required field '{}' in struct '{}'",
-                                field_name, struct_name
-                            ));
-                        }
-                    }
-                    
-                    Ok(Type::Struct(struct_name.clone()))
+                    Ok(return_type)
                 } else {
-                    Err(format!("Struct '{}' not declared", struct_name))
+                    Err(format!(
+                        "Cannot call method on value of type '{}'\n   = help: Methods work on arrays, strings, modules, and structs with impl blocks.",
+                        object_type.fmt_for_user()
+                    ))
                 }
             }
-            
+
+            Expression::StructInstantiation(struct_name, fields) => {
+                let struct_info_clone = match self.structs.get(struct_name) {
+                    Some(s) => s.clone(),
+                    None => {
+                        return Err(format!(
+                            "Struct '{}' not found\n   = help: Define it with 'struct {} {{ field: type, ... }}' or check the name.",
+                            struct_name, struct_name
+                        ))
+                    }
+                };
+
+                for (field_name, field_value) in fields {
+                    if let Some(expected_type) = struct_info_clone.fields.get(field_name) {
+                        let actual_type = self.check_expression_with_expected_type(
+                            field_value,
+                            Some(expected_type),
+                        )?;
+                        if actual_type != *expected_type {
+                            return Err(format!(
+                                    "Field '{}' in struct '{}' expects {}, got {}\n   = help: Use a value of type '{}' for this field.",
+                                    field_name,
+                                    struct_name,
+                                    expected_type.fmt_for_user(),
+                                    actual_type.fmt_for_user(),
+                                    expected_type.fmt_for_user()
+                                ));
+                        }
+                    } else {
+                        let available: Vec<&str> = struct_info_clone
+                            .fields
+                            .keys()
+                            .map(String::as_str)
+                            .collect();
+                        return Err(format!(
+                            "Field '{}' not found in struct '{}'\n   = help: Available fields: {}",
+                            field_name,
+                            struct_name,
+                            available.join(", ")
+                        ));
+                    }
+                }
+
+                for field_name in struct_info_clone.fields.keys() {
+                    if !fields.iter().any(|(name, _)| name == field_name) {
+                        return Err(format!(
+                            "Missing required field '{}' in struct '{}'",
+                            field_name, struct_name
+                        ));
+                    }
+                }
+
+                Ok(Type::Struct(struct_name.clone()))
+            }
+
             Expression::FieldAccess(object_expr, field_name) => {
                 let object_type = self.check_expression(object_expr)?;
-                
+
                 if let Type::Struct(struct_name) = object_type {
                     if let Some(struct_info) = self.structs.get(&struct_name) {
                         if let Some(field_type) = struct_info.fields.get(field_name) {
                             Ok(field_type.clone())
                         } else {
+                            let available: Vec<&str> =
+                                struct_info.fields.keys().map(String::as_str).collect();
                             Err(format!(
-                                "Field '{}' not found in struct '{}'",
-                                field_name, struct_name
+                                "Field '{}' not found in struct '{}'\n   = help: Available fields: {}",
+                                field_name,
+                                struct_name,
+                                available.join(", ")
                             ))
                         }
                     } else {
-                        Err(format!("Struct '{}' not found", struct_name))
+                        Err(format!(
+                                "Struct '{}' not found\n   = help: Define it with 'struct {} {{ field: type, ... }}' or check the name.",
+                                struct_name, struct_name
+                            ))
                     }
                 } else {
-                    Err(format!("Cannot access field on non-struct value of type {:?}", object_type))
+                    Err(format!(
+                        "Cannot access field on non-struct value of type '{}'\n   = help: Only struct values have fields.",
+                        object_type.fmt_for_user()
+                    ))
                 }
             }
 
             Expression::EnumVariant(enum_name, variant_name) => {
-                // Check if the enum exists
                 if let Some(enum_info) = self.enums.get(enum_name) {
-                    // Check if the variant exists in this enum
                     if enum_info.variants.contains(variant_name) {
                         Ok(Type::Enum(enum_name.clone()))
                     } else {
+                        let available = enum_info.variants.join(", ");
                         Err(format!(
-                            "Variant '{}' not found in enum '{}'", 
-                            variant_name, enum_name
+                            "Variant '{}' not found in enum '{}'\n   = help: Available variants: {}",
+                            variant_name, enum_name, available
                         ))
                     }
                 } else {
-                    Err(format!("Enum '{}' not found", enum_name))
+                    Err(format!(
+                        "Enum '{}' not found\n   = help: Define it with 'enum {} {{ Variant1, Variant2, ... }}' or check the name.",
+                        enum_name, enum_name
+                    ))
                 }
             }
         }
     }
 
-    fn check_builtin_function(&mut self, name: &str, args: &[Expression]) -> Result<Option<Type>, String> {
+    fn check_builtin_function(
+        &mut self,
+        name: &str,
+        args: &[Expression],
+    ) -> Result<Option<Type>, String> {
         match name {
             "len" => {
                 if args.len() != 1 {
                     return Err(format!("len() expects 1 argument, got {}", args.len()));
                 }
-                
+
                 let arg_type = self.check_expression(&args[0])?;
                 match arg_type {
                     Type::Array(_) | Type::String => Ok(Some(Type::Int)),
-                    _ => Err(format!("len() expects array or string, got {:?}", arg_type)),
+                    _ => Err(format!("len() expects array or string, got '{}'\n   = help: len() works on arrays and strings only.", arg_type.fmt_for_user())),
                 }
             }
-            
+
             "type" => {
                 if args.len() != 1 {
                     return Err(format!("type() expects 1 argument, got {}", args.len()));
                 }
-                
-                // type() can accept any type and always returns string
+
                 self.check_expression(&args[0])?;
                 Ok(Some(Type::String))
             }
-            
+
             "print" => {
                 if args.is_empty() {
                     return Err("print() expects at least 1 argument".to_string());
                 }
-                
-                // Check all arguments are valid expressions
+
                 for arg in args {
                     self.check_expression(arg)?;
                 }
-                
-                // print() always returns void
+
                 Ok(Some(Type::Void))
             }
-            
+
             "input" => {
                 if args.len() > 1 {
-                    return Err(format!("input() expects 0 or 1 argument, got {}", args.len()));
+                    return Err(format!(
+                        "input() expects 0 or 1 argument, got {}",
+                        args.len()
+                    ));
                 }
-                
-                // Check prompt argument if provided
+
                 if args.len() == 1 {
                     let prompt_type = self.check_expression(&args[0])?;
                     if prompt_type != Type::String {
                         return Err("input() prompt must be a string".to_string());
                     }
                 }
-                
-                // input() always returns string
+
                 Ok(Some(Type::String))
             }
-            
+
             "read_file" => {
                 if args.len() != 1 {
-                    return Err(format!("read_file() expects 1 argument, got {}", args.len()));
+                    return Err(format!(
+                        "read_file() expects 1 argument, got {}",
+                        args.len()
+                    ));
                 }
-                
+
                 let filename_type = self.check_expression(&args[0])?;
                 if filename_type != Type::String {
                     return Err("read_file() filename must be a string".to_string());
                 }
-                
-                // read_file() always returns string
+
                 Ok(Some(Type::String))
             }
-            
+
             "write_file" => {
                 if args.len() != 2 {
-                    return Err(format!("write_file() expects 2 arguments, got {}", args.len()));
+                    return Err(format!(
+                        "write_file() expects 2 arguments, got {}",
+                        args.len()
+                    ));
                 }
-                
+
                 let filename_type = self.check_expression(&args[0])?;
                 if filename_type != Type::String {
                     return Err("write_file() filename must be a string".to_string());
                 }
-                
-                // Content can be any type (will be converted to string)
+
                 self.check_expression(&args[1])?;
-                
-                // write_file() always returns void
+
                 Ok(Some(Type::Void))
             }
-            
+
             "append_file" => {
                 if args.len() != 2 {
-                    return Err(format!("append_file() expects 2 arguments, got {}", args.len()));
+                    return Err(format!(
+                        "append_file() expects 2 arguments, got {}",
+                        args.len()
+                    ));
                 }
-                
+
                 let filename_type = self.check_expression(&args[0])?;
                 if filename_type != Type::String {
                     return Err("append_file() filename must be a string".to_string());
                 }
-                
-                // Content can be any type (will be converted to string)
+
                 self.check_expression(&args[1])?;
-                
-                // append_file() always returns void
+
                 Ok(Some(Type::Void))
             }
-            
+
             "file_exists" => {
                 if args.len() != 1 {
-                    return Err(format!("file_exists() expects 1 argument, got {}", args.len()));
+                    return Err(format!(
+                        "file_exists() expects 1 argument, got {}",
+                        args.len()
+                    ));
                 }
-                
+
                 let filename_type = self.check_expression(&args[0])?;
                 if filename_type != Type::String {
                     return Err("file_exists() filename must be a string".to_string());
                 }
-                
-                // file_exists() always returns bool
+
                 Ok(Some(Type::Bool))
             }
-            
-            "format" => {
-                if args.len() < 1 {
-                    return Err(format!("format() expects at least 1 argument, got {}", args.len()));
+
+            "list_directory" => {
+                if args.len() != 1 {
+                    return Err(format!(
+                        "list_directory() expects 1 argument, got {}",
+                        args.len()
+                    ));
                 }
-                
+
+                let path_type = self.check_expression(&args[0])?;
+                if path_type != Type::String {
+                    return Err("list_directory() path must be a string".to_string());
+                }
+
+                Ok(Some(Type::Array(Box::new(Type::String))))
+            }
+
+            "create_directory" | "remove_file" | "remove_directory" => {
+                if args.len() != 1 {
+                    return Err(format!("{}() expects 1 argument, got {}", name, args.len()));
+                }
+
+                let path_type = self.check_expression(&args[0])?;
+                if path_type != Type::String {
+                    return Err(format!("{}() path must be a string", name));
+                }
+
+                Ok(Some(Type::Bool))
+            }
+
+            "get_file_size" => {
+                if args.len() != 1 {
+                    return Err(format!(
+                        "get_file_size() expects 1 argument, got {}",
+                        args.len()
+                    ));
+                }
+
+                let path_type = self.check_expression(&args[0])?;
+                if path_type != Type::String {
+                    return Err("get_file_size() path must be a string".to_string());
+                }
+
+                Ok(Some(Type::Int))
+            }
+
+            "is_dir" => {
+                if args.len() != 1 {
+                    return Err(format!("is_dir() expects 1 argument, got {}", args.len()));
+                }
+
+                let path_type = self.check_expression(&args[0])?;
+                if path_type != Type::String {
+                    return Err("is_dir() path must be a string".to_string());
+                }
+
+                Ok(Some(Type::Bool))
+            }
+
+            "sys_time" | "sys_date" => {
+                if !args.is_empty() {
+                    return Err(format!(
+                        "{}() expects 0 arguments, got {}",
+                        name,
+                        args.len()
+                    ));
+                }
+
+                Ok(Some(Type::String))
+            }
+
+            "parse_int" => {
+                if args.len() != 1 {
+                    return Err(format!(
+                        "parse_int() expects 1 argument, got {}",
+                        args.len()
+                    ));
+                }
+
+                let arg_type = self.check_expression(&args[0])?;
+                if arg_type != Type::String {
+                    return Err("parse_int() expects a string argument".to_string());
+                }
+
+                Ok(Some(Type::Int))
+            }
+
+            "char_code" => {
+                if args.len() != 1 {
+                    return Err(format!(
+                        "char_code() expects 1 argument, got {}",
+                        args.len()
+                    ));
+                }
+
+                let arg_type = self.check_expression(&args[0])?;
+                if arg_type != Type::String {
+                    return Err("char_code() expects a string argument".to_string());
+                }
+
+                Ok(Some(Type::Int))
+            }
+
+            "sys_timestamp" => {
+                if !args.is_empty() {
+                    return Err(format!(
+                        "sys_timestamp() expects 0 arguments, got {}",
+                        args.len()
+                    ));
+                }
+
+                Ok(Some(Type::Float))
+            }
+
+            "format" => {
+                if args.is_empty() {
+                    return Err(format!(
+                        "format() expects at least 1 argument, got {}",
+                        args.len()
+                    ));
+                }
+
                 let template_type = self.check_expression(&args[0])?;
                 if template_type != Type::String {
                     return Err("format() template must be a string".to_string());
                 }
-                
-                // format() always returns string
+
                 Ok(Some(Type::String))
             }
-            
+
             "enum_from_string" => {
                 if args.len() != 2 {
-                    return Err(format!("enum_from_string() expects 2 arguments, got {}", args.len()));
+                    return Err(format!(
+                        "enum_from_string() expects 2 arguments, got {}",
+                        args.len()
+                    ));
                 }
-                
+
                 let enum_name_type = self.check_expression(&args[0])?;
                 let variant_name_type = self.check_expression(&args[1])?;
-                
+
                 if enum_name_type != Type::String {
                     return Err("enum_from_string() first argument must be a string".to_string());
                 }
-                
+
                 if variant_name_type != Type::String {
                     return Err("enum_from_string() second argument must be a string".to_string());
                 }
-                
-                // Try to determine the enum type from the first argument if it's a string literal
+
                 if let Expression::StringLiteral(enum_name) = &args[0] {
                     if self.enums.contains_key(enum_name) {
                         return Ok(Some(Type::Enum(enum_name.clone())));
                     }
                 }
-                
-                // If we can't determine the specific enum type, return a generic enum
-                // This allows the function to work with dynamic string values
+
                 Ok(Some(Type::Enum("Unknown".to_string())))
             }
-            
-            _ => Ok(None), // Not a built-in function
+
+            _ => Ok(None),
         }
     }
-    
+
     fn load_module_for_type_checking(&mut self, module_name: &str) -> Result<(), String> {
-        // Check if module is already loaded
         if self.modules.contains_key(module_name) {
             return Ok(());
         }
-        
-        // Load module file
-        let module_path = if module_name.ends_with(".rv") {
-            module_name.to_string()
-        } else {
-            // First try in lib/ directory for standard library modules
-            let lib_path = format!("lib/{}.rv", module_name);
-            if std::path::Path::new(&lib_path).exists() {
-                lib_path
-            } else {
-                format!("{}.rv", module_name)
-            }
-        };
-        
+
+        let module_path = crate::paths::resolve_module_path(module_name);
+
         let content = fs::read_to_string(&module_path)
             .map_err(|e| format!("Failed to load module '{}': {}", module_path, e))?;
-        
-        // Parse the module
+
         let lexer = crate::lexer::Lexer::new(content.clone());
         let mut parser = crate::parser::Parser::new(lexer, content);
-        let ast = parser.parse()
-            .map_err(|e| format!("Failed to parse module '{}': {}", module_path, e.format()))?;
-        
-        // Create a new type checker for the module
+        let ast = parser.parse().map_err(|e| {
+            format!(
+                "Failed to parse module '{}': {}",
+                module_path,
+                e.with_filename(module_path.clone()).format()
+            )
+        })?;
+
         let mut module_checker = TypeChecker::new();
-        
-        // Analyze the module to extract type information
+
         module_checker.check(&ast)?;
-        
-        // Extract module information
+
         let module_info = ModuleInfo {
             variables: module_checker.variables,
             functions: module_checker.functions.clone(),
         };
-        
-        // Merge functions from the module into the global scope
+
         for (name, (return_type, param_types)) in &module_checker.functions {
-            self.functions.insert(name.clone(), (return_type.clone(), param_types.clone()));
+            self.functions
+                .insert(name.clone(), (return_type.clone(), param_types.clone()));
         }
-        
-        // Merge structs from the module into the global scope
+
         for (name, struct_info) in &module_checker.structs {
             self.structs.insert(name.clone(), struct_info.clone());
         }
-        
-        // Store the module
+
         self.modules.insert(module_name.to_string(), module_info);
-        
+
         Ok(())
     }
 }
@@ -926,7 +1211,7 @@ impl TypeChecker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Expression, ASTNode};
+    use crate::ast::{ASTNode, Expression};
 
     #[test]
     fn test_variable_declaration() {
@@ -960,4 +1245,3 @@ mod tests {
         assert!(checker.check_expression(&expr).is_err());
     }
 }
-
