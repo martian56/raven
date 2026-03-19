@@ -1716,6 +1716,15 @@ impl Interpreter {
             self.structs.insert(name.clone(), fields.clone());
         }
 
+        for (struct_name, methods) in &module_interpreter.struct_methods {
+            for (method_name, func) in methods {
+                self.struct_methods
+                    .entry(struct_name.clone())
+                    .or_default()
+                    .insert(method_name.clone(), func.clone());
+            }
+        }
+
         self.modules.insert(module_name.to_string(), module);
 
         Ok(())
