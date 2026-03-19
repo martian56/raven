@@ -1,0 +1,23 @@
+<?xml version='1.0' encoding='windows-1252'?>
+<!--
+  WiX Burn bundle - creates raven-setup.exe bootstrapper that installs the MSI.
+  Build with: candle -dMsiPath=<path-to-msi> -dVersion=<version> wix\bundle.wxs
+             light -ext WixBalExtension bundle.wixobj -o target\wix\raven-setup.exe
+-->
+<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'
+     xmlns:bal='http://schemas.microsoft.com/wix/BalExtension'>
+  <Bundle Name='Raven'
+          Version='$(var.Version)'
+          Manufacturer='martian56'
+          UpgradeCode='A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5E'>
+    <BootstrapperApplicationRef Id='WixStandardBootstrapperApplication.HyperlinkLicense'>
+      <bal:WixStandardBootstrapperApplication LicenseUrl='https://github.com/martian56/raven/blob/main/LICENSE'/>
+    </BootstrapperApplicationRef>
+    <Chain>
+      <MsiPackage Id='RavenMsi'
+                  SourceFile='$(var.MsiPath)'
+                  Vital='yes'
+                  DisplayInternalUI='no'/>
+    </Chain>
+  </Bundle>
+</Wix>

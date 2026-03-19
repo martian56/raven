@@ -13,9 +13,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Install cargo-deb
-        run: cargo install cargo-deb
+      - name: Install packaging tools
+        run: |
+          cargo install cargo-deb
+          cargo install cargo-generate-rpm
 
       - name: Build release
         run: cargo build --release
@@ -23,16 +27,23 @@ jobs:
       - name: Create .deb package
         run: cargo deb --no-strip
 
-      - name: Upload .deb to release
+      - name: Create .rpm package
+        run: cargo generate-rpm
+
+      - name: Upload Linux artifacts to release
         uses: softprops/action-gh-release@v2
         with:
           name: Raven ${{ github.ref_name }}
-          files: target/debian/*.deb
+          generate_release_notes: true
+          files: |
+            target/debian/*.deb
+            target/generate-rpm/*.rpm
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   release-windows:
+    needs: release-linux
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,6 +57,14 @@ jobs:
           $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
           cargo install cargo-wix
           cargo wix --no-build -o target/wix/
+
+      - name: Create .exe bootstrapper (setup installer)
+        run: |
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          $msi = (Get-ChildItem target\wix\*.msi)[0]
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          candle -dMsiPath="$($msi.FullName)" -dVersion="$version" wix\bundle.wxs
+          light -ext WixBalExtension bundle.wixobj -o target\wix\raven-setup.exe
 
       - name: Create portable .zip
         run: |
@@ -64,6 +83,7 @@ jobs:
           name: Raven ${{ github.ref_name }}
           files: |
             target/wix/*.msi
+            target/wix/*.exe
             raven-${{ github.ref_name }}-x86_64-pc-windows-msvc.zip
           fail_on_unmatched_files: true
         env:
