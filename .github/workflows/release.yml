@@ -63,7 +63,7 @@ jobs:
           $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
           $msi = (Get-ChildItem target\wix\*.msi)[0]
           $version = "${{ github.ref_name }}".TrimStart('v')
-          candle -dMsiPath="$($msi.FullName)" -dVersion="$version" wix\bundle.wxs
+          candle -dMsiPath="$($msi.FullName)" -dVersion="$version" bundle.wxs
           light -ext WixBalExtension bundle.wixobj -o target\wix\raven-setup.exe
 
       - name: Create portable .zip
