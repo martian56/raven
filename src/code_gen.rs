@@ -1,8 +1,8 @@
 use crate::ast::{ASTNode, Expression, Operator, Parameter};
+use chrono::Local;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use chrono::Local;
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -1434,7 +1434,7 @@ impl Interpreter {
                             let names: Vec<Value> = entries
                                 .filter_map(|e| e.ok())
                                 .filter_map(|e| e.file_name().into_string().ok())
-                                .map(|s| Value::String(s))
+                                .map(Value::String)
                                 .collect();
                             Ok(Some(Value::Array(names)))
                         }
@@ -1523,10 +1523,7 @@ impl Interpreter {
 
             "is_dir" => {
                 if args.len() != 1 {
-                    return Err(format!(
-                        "is_dir() expects 1 argument, got {}",
-                        args.len()
-                    ));
+                    return Err(format!("is_dir() expects 1 argument, got {}", args.len()));
                 }
 
                 let path_val = self.eval_expression(&args[0])?;
@@ -1607,7 +1604,9 @@ impl Interpreter {
                 }
 
                 let now = Local::now();
-                Ok(Some(Value::Float(now.timestamp() as f64 + now.timestamp_subsec_millis() as f64 / 1000.0)))
+                Ok(Some(Value::Float(
+                    now.timestamp() as f64 + now.timestamp_subsec_millis() as f64 / 1000.0,
+                )))
             }
 
             "format" => {

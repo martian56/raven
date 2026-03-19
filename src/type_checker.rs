@@ -1021,11 +1021,7 @@ impl TypeChecker {
 
             "create_directory" | "remove_file" | "remove_directory" => {
                 if args.len() != 1 {
-                    return Err(format!(
-                        "{}() expects 1 argument, got {}",
-                        name,
-                        args.len()
-                    ));
+                    return Err(format!("{}() expects 1 argument, got {}", name, args.len()));
                 }
 
                 let path_type = self.check_expression(&args[0])?;
@@ -1054,10 +1050,7 @@ impl TypeChecker {
 
             "is_dir" => {
                 if args.len() != 1 {
-                    return Err(format!(
-                        "is_dir() expects 1 argument, got {}",
-                        args.len()
-                    ));
+                    return Err(format!("is_dir() expects 1 argument, got {}", args.len()));
                 }
 
                 let path_type = self.check_expression(&args[0])?;
