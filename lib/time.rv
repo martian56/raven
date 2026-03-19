@@ -25,9 +25,9 @@ export fun new_time(hour: int, minute: int, second: int) -> Time {
 }
 
 export fun time_to_string(time: Time) -> String {
-    let hour_str: String = time.hour as String;
-    let minute_str: String = time.minute as String;
-    let second_str: String = time.second as String;
+    let hour_str: String = format("{}", time.hour);
+    let minute_str: String = format("{}", time.minute);
+    let second_str: String = format("{}", time.second);
     
     // Pad with zeros if needed
     if (len(hour_str) == 1) {
@@ -49,9 +49,9 @@ export fun time_from_string(time_str: String) -> Time {
         return new_time(0, 0, 0);
     }
     
-    let hour: int = parts[0] as int;
-    let minute: int = parts[1] as int;
-    let second: int = parts[2] as int;
+    let hour: int = parse_int(parts[0]);
+    let minute: int = parse_int(parts[1]);
+    let second: int = parse_int(parts[2]);
     
     return new_time(hour, minute, second);
 }
@@ -91,9 +91,9 @@ export fun new_date(year: int, month: int, day: int) -> Date {
 }
 
 export fun date_to_string(date: Date) -> String {
-    let year_str: String = date.year as String;
-    let month_str: String = date.month as String;
-    let day_str: String = date.day as String;
+    let year_str: String = format("{}", date.year);
+    let month_str: String = format("{}", date.month);
+    let day_str: String = format("{}", date.day);
     
     // Pad with zeros if needed
     if (len(month_str) == 1) {
@@ -112,9 +112,9 @@ export fun date_from_string(date_str: String) -> Date {
         return new_date(2000, 1, 1);
     }
     
-    let year: int = parts[0] as int;
-    let month: int = parts[1] as int;
-    let day: int = parts[2] as int;
+    let year: int = parse_int(parts[0]);
+    let month: int = parse_int(parts[1]);
+    let day: int = parse_int(parts[2]);
     
     return new_date(year, month, day);
 }
@@ -130,7 +130,7 @@ export fun days_in_month(year: int, month: int) -> int {
         } else {
             return 28;
         }
-    } else if (month == 4 || month == 6 || month == 9 || month == 11) {
+    } elseif (month == 4 || month == 6 || month == 9 || month == 11) {
         return 30;
     } else {
         return 31;
@@ -294,28 +294,24 @@ export fun datetime_add_days(datetime: DateTime, days: int) -> DateTime {
 
 // Utility functions
 export fun current_time() -> String {
-    // This would normally get the current system time
-    // For now, return a placeholder
-    return "12:00:00";
+    return sys_time();
 }
 
 export fun current_date() -> String {
-    // This would normally get the current system date
-    // For now, return a placeholder
-    return "2024-01-01";
+    return sys_date();
 }
 
 export fun current_datetime() -> String {
-    return current_date() + " " + current_time();
+    return sys_date() + " " + sys_time();
 }
 
 export fun format_time(time: Time, format: String) -> String {
     // Simple format implementation
     if (format == "HH:mm:ss") {
         return time_to_string(time);
-    } else if (format == "HH:mm") {
-        let hour_str: String = time.hour as String;
-        let minute_str: String = time.minute as String;
+    } elseif (format == "HH:mm") {
+        let hour_str: String = format("{}", time.hour);
+        let minute_str: String = format("{}", time.minute);
         
         if (len(hour_str) == 1) {
             hour_str = "0" + hour_str;
@@ -334,10 +330,10 @@ export fun format_date(date: Date, format: String) -> String {
     // Simple format implementation
     if (format == "YYYY-MM-DD") {
         return date_to_string(date);
-    } else if (format == "MM/DD/YYYY") {
-        let month_str: String = date.month as String;
-        let day_str: String = date.day as String;
-        let year_str: String = date.year as String;
+    } elseif (format == "MM/DD/YYYY") {
+        let month_str: String = format("{}", date.month);
+        let day_str: String = format("{}", date.day);
+        let year_str: String = format("{}", date.year);
         
         if (len(month_str) == 1) {
             month_str = "0" + month_str;

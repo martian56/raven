@@ -56,6 +56,7 @@ Whether you're writing system-level code or high-level applications, Raven is bu
 - [x] **Variable Scoping** - Proper scope management
 - [x] **Method Chaining** - Object.method1().method2() support
 - [x] **Structs** - User-defined data structures with fields
+- [x] **Struct Methods** - OOP-style `impl` blocks with `self` and in-place mutation
 - [x] **Enums** - User-defined types with variants and string conversion
 - [x] **Complex Assignments** - object.field[index] = value support
 - [x] **Professional CLI** - Python-style interface (raven file.rv, raven)
@@ -71,6 +72,7 @@ Whether you're writing system-level code or high-level applications, Raven is bu
 - **bool** - Boolean values (true/false)
 - **Arrays** - Dynamic arrays with type safety
 - **Structs** - User-defined data structures with named fields
+- **Struct Methods** - Methods on structs via `impl` blocks (OOP)
 - **Enums** - User-defined types with named variants
 
 ### Control Flow

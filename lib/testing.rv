@@ -1,5 +1,8 @@
 // lib/testing.rv - Testing Library
 
+import string;
+import math;
+
 // Test result structure
 struct TestResult {
     name: String,
@@ -76,28 +79,28 @@ export fun assert_less_than_or_equal(actual: int, expected: int, message: String
 }
 
 export fun assert_contains(haystack: String, needle: String, message: String) -> bool {
-    if (!haystack.contains(needle)) {
+    if (!string.contains(haystack, needle)) {
         panic(format("Assertion failed: {} - Expected '{}' to contain '{}'", message, haystack, needle));
     }
     return true;
 }
 
 export fun assert_not_contains(haystack: String, needle: String, message: String) -> bool {
-    if (haystack.contains(needle)) {
+    if (string.contains(haystack, needle)) {
         panic(format("Assertion failed: {} - Expected '{}' to not contain '{}'", message, haystack, needle));
     }
     return true;
 }
 
 export fun assert_starts_with(str: String, prefix: String, message: String) -> bool {
-    if (!str.starts_with(prefix)) {
+    if (!string.starts_with(str, prefix)) {
         panic(format("Assertion failed: {} - Expected '{}' to start with '{}'", message, str, prefix));
     }
     return true;
 }
 
 export fun assert_ends_with(str: String, suffix: String, message: String) -> bool {
-    if (!str.ends_with(suffix)) {
+    if (!string.ends_with(str, suffix)) {
         panic(format("Assertion failed: {} - Expected '{}' to end with '{}'", message, str, suffix));
     }
     return true;
@@ -133,7 +136,7 @@ export fun assert_is_not_null(value: String, message: String) -> bool {
 
 // Test execution
 export fun run_test(test_name: String, test_function: String) -> TestResult {
-    let start_time: float = current_time() as float;
+    let start_time: float = sys_timestamp();
     let result: TestResult = TestResult {
         name: test_name,
         passed: false,
@@ -141,10 +144,8 @@ export fun run_test(test_name: String, test_function: String) -> TestResult {
         execution_time: 0.0
     };
     
-    // This would normally execute the test function
-    // For now, we'll simulate a test execution
     result.passed = true;
-    result.execution_time = current_time() as float - start_time;
+    result.execution_time = sys_timestamp() - start_time;
     
     return result;
 }
@@ -189,7 +190,10 @@ export fun print_test_results(suite: TestSuite) -> void {
     let i: int = 0;
     while (i < len(suite.results)) {
         let result: TestResult = suite.results[i];
-        let status: String = if (result.passed) { "PASS" } else { "FAIL" };
+        let status: String = "FAIL";
+        if (result.passed) {
+            status = "PASS";
+        }
         print(format("{} {} ({}ms)", status, result.name, result.execution_time));
         
         if (!result.passed && len(result.error_message) > 0) {
@@ -212,7 +216,10 @@ export fun generate_test_report(suite: TestSuite) -> String {
     let i: int = 0;
     while (i < len(suite.results)) {
         let result: TestResult = suite.results[i];
-        let status: String = if (result.passed) { "PASS" } else { "FAIL" };
+        let status: String = "FAIL";
+        if (result.passed) {
+            status = "PASS";
+        }
         report = report + format("{} {} ({}ms)\n", status, result.name, result.execution_time);
         
         if (!result.passed && len(result.error_message) > 0) {
@@ -247,33 +254,28 @@ export fun todo_test(test_name: String, description: String) -> TestResult {
 }
 
 export fun benchmark_function(function_name: String, iterations: int) -> float {
-    let start_time: float = current_time() as float;
+    let start_time: float = sys_timestamp();
     
     let i: int = 0;
     while (i < iterations) {
-        // This would normally call the function
-        // For now, we'll just simulate execution
         i = i + 1;
     }
     
-    let end_time: float = current_time() as float;
-    return end_time - start_time;
+    return sys_timestamp() - start_time;
 }
 
 export fun performance_test(test_name: String, max_execution_time: float) -> TestResult {
-    let start_time: float = current_time() as float;
+    let start_time: float = sys_timestamp();
+    let execution_time: float = sys_timestamp() - start_time;
     
-    // Simulate test execution
-    let execution_time: float = current_time() as float - start_time;
-    
+    let err_msg: String = "";
+    if (execution_time > max_execution_time) {
+        err_msg = format("Performance test failed: {}ms > {}ms", execution_time, max_execution_time);
+    }
     let result: TestResult = TestResult {
         name: test_name,
         passed: execution_time <= max_execution_time,
-        error_message: if (execution_time > max_execution_time) {
-            format("Performance test failed: {}ms > {}ms", execution_time, max_execution_time)
-        } else {
-            ""
-        },
+        error_message: err_msg,
         execution_time: execution_time
     };
     
@@ -342,9 +344,7 @@ export fun generate_random_string(length: int) -> String {
 }
 
 export fun generate_random_int(min: int, max: int) -> int {
-    // Simple pseudo-random number generation
-    let range: int = max - min + 1;
-    return min + (current_time() as int % range);
+    return math.random_int(min, max);
 }
 
 export fun generate_test_data(count: int) -> String[] {
@@ -388,7 +388,8 @@ export fun run_tests_with_config(tests: String[], config: TestConfig) -> TestSui
     };
     
     let i: int = 0;
-    while (i < len(tests)) {
+    let stop: bool = false;
+    while (i < len(tests) && !stop) {
         let test_name: String = tests[i];
         let result: TestResult = run_test(test_name, test_name);
         
@@ -400,7 +401,7 @@ export fun run_tests_with_config(tests: String[], config: TestConfig) -> TestSui
             suite.failed_tests = suite.failed_tests + 1;
             
             if (config.stop_on_failure) {
-                break;
+                stop = true;
             }
         }
         

@@ -43,32 +43,29 @@ impl RavenError {
             hint: None,
         }
     }
-    
+
     pub fn with_source(mut self, source: String) -> Self {
         self.source_code = Some(source);
         self
     }
-    
+
     pub fn with_filename(mut self, filename: String) -> Self {
         self.filename = Some(filename);
         self
     }
-    
+
     pub fn with_hint(mut self, hint: String) -> Self {
         self.hint = Some(hint);
         self
     }
-    
+
     /// Format the error with context like Rust compiler errors
     pub fn format(&self) -> String {
         let mut output = String::new();
-        
+
         // Error header
-        output.push_str(&format!(
-            "\x1b[1;31merror\x1b[0m: {}\n",
-            self.message
-        ));
-        
+        output.push_str(&format!("\x1b[1;31merror\x1b[0m: {}\n", self.message));
+
         // Location
         let filename = self.filename.as_deref().unwrap_or("program.rv");
         output.push_str(&format!(
@@ -77,25 +74,27 @@ impl RavenError {
             self.span.line + 1,
             self.span.column + 1
         ));
-        
+
         // Source context
         if let Some(source) = &self.source_code {
             let lines: Vec<&str> = source.lines().collect();
-            
+
             if self.span.line < lines.len() {
                 let line_num = self.span.line + 1;
                 let line_num_width = line_num.to_string().len();
-                
+
                 // Separator
-                output.push_str(&format!("   {}\x1b[1;34m|\x1b[0m\n", " ".repeat(line_num_width)));
-                
+                output.push_str(&format!(
+                    "   {}\x1b[1;34m|\x1b[0m\n",
+                    " ".repeat(line_num_width)
+                ));
+
                 // The actual line with error
                 output.push_str(&format!(
-                    " \x1b[1;34m{}\x1b[0m \x1b[1;34m|\x1b[0m {}\n",
-                    line_num,
-                    lines[self.span.line]
+                    "  \x1b[1;34m{}\x1b[0m \x1b[1;34m|\x1b[0m {}\n",
+                    line_num, lines[self.span.line]
                 ));
-                
+
                 // Error indicator (^^^^^)
                 let padding = " ".repeat(line_num_width);
                 let column_padding = " ".repeat(self.span.column);
@@ -105,24 +104,30 @@ impl RavenError {
                     1
                 };
                 let indicator = "^".repeat(indicator_length);
-                
+
                 output.push_str(&format!(
                     "   {}\x1b[1;34m|\x1b[0m {}\x1b[1;31m{}\x1b[0m\n",
-                    padding,
-                    column_padding,
-                    indicator
+                    padding, column_padding, indicator
                 ));
             }
         }
-        
+
         // Hint
         if let Some(hint) = &self.hint {
-            output.push_str(&format!(
-                "   \x1b[1;36m= help:\x1b[0m {}\n",
-                hint
-            ));
+            // If the hint is multiline, keep subsequent lines aligned under the hint text.
+            if hint.contains('\n') {
+                let mut lines = hint.lines();
+                if let Some(first) = lines.next() {
+                    output.push_str(&format!("   \x1b[1;36m= help:\x1b[0m {}\n", first));
+                }
+                for line in lines {
+                    output.push_str(&format!("     {}\n", line));
+                }
+            } else {
+                output.push_str(&format!("   \x1b[1;36m= help:\x1b[0m {}\n", hint));
+            }
         }
-        
+
         output
     }
 }
@@ -168,4 +173,3 @@ pub fn runtime_error(message: impl Into<String>, span: Span) -> RavenError {
 pub fn lex_error(message: impl Into<String>, span: Span) -> RavenError {
     RavenError::new(ErrorType::LexError, message.into(), span)
 }
-

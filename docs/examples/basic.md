@@ -173,6 +173,34 @@ fun main() -> void {
 main();
 ```
 
+### Struct Methods (OOP)
+
+```raven
+struct Person {
+    name: String,
+    age: int
+}
+
+impl Person {
+    fun greet(self) -> string {
+        return format("Hello, I'm {} and I'm {} years old", self.name, self.age);
+    }
+
+    fun have_birthday(self) -> void {
+        self.age = self.age + 1;
+    }
+}
+
+fun main() -> void {
+    let p: Person = Person { name: "Alice", age: 30 };
+    print(p.greet());
+    p.have_birthday();
+    print(p.greet());
+}
+
+main();
+```
+
 ## Enums
 
 ```raven

@@ -5,12 +5,10 @@ import { exec } from 'child_process';
 export function activate(context: vscode.ExtensionContext) {
     console.log('Raven Language Extension is now active!');
 
-    // Register command to run Raven files
     let runFileCommand = vscode.commands.registerCommand('raven.runFile', (uri: vscode.Uri) => {
         if (uri) {
             runRavenFile(uri.fsPath);
         } else {
-            // If no URI provided, try to run the currently active file
             const activeEditor = vscode.window.activeTextEditor;
             if (activeEditor && activeEditor.document.languageId === 'raven') {
                 runRavenFile(activeEditor.document.fileName);
@@ -22,7 +20,6 @@ export function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(runFileCommand);
 
-    // Register hover provider for built-in functions
     let hoverProvider = vscode.languages.registerHoverProvider('raven', {
         provideHover(document, position, token) {
             const range = document.getWordRangeAtPosition(position);
@@ -61,7 +58,7 @@ export function activate(context: vscode.ExtensionContext) {
 
             const keywords = [
                 'let', 'fun', 'if', 'else', 'while', 'for', 'return',
-                'import', 'export', 'struct', 'enum', 'true', 'false', 'void'
+                'import', 'export', 'struct', 'impl', 'enum', 'true', 'false', 'void'
             ];
 
             const types = [
@@ -70,21 +67,18 @@ export function activate(context: vscode.ExtensionContext) {
 
             const completions: vscode.CompletionItem[] = [];
 
-            // Add built-in functions
             builtinFunctions.forEach(func => {
                 const item = new vscode.CompletionItem(func, vscode.CompletionItemKind.Function);
                 item.detail = 'Built-in function';
                 completions.push(item);
             });
 
-            // Add keywords
             keywords.forEach(keyword => {
                 const item = new vscode.CompletionItem(keyword, vscode.CompletionItemKind.Keyword);
                 item.detail = 'Keyword';
                 completions.push(item);
             });
 
-            // Add types
             types.forEach(type => {
                 const item = new vscode.CompletionItem(type, vscode.CompletionItemKind.TypeParameter);
                 item.detail = 'Type';

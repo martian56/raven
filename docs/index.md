@@ -27,6 +27,7 @@ raven hello.rv -c
 ### **Modern Language Features**
 - **Static Typing** - Type safety without complexity
 - **Structs & Enums** - User-defined data structures
+- **Struct Methods** - OOP-style methods via `impl` blocks
 - **Modules** - Import/export system
 - **Standard Library** - Comprehensive built-in functions
 - **VS Code Support** - Full syntax highlighting and IntelliSense

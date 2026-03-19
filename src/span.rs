@@ -16,7 +16,7 @@ impl Span {
             length,
         }
     }
-    
+
     pub fn dummy() -> Self {
         Span {
             line: 0,
@@ -25,12 +25,12 @@ impl Span {
             length: 0,
         }
     }
-    
+
     /// Combine two spans into one spanning both
     pub fn merge(&self, other: &Span) -> Span {
         let start = self.offset.min(other.offset);
         let end = (self.offset + self.length).max(other.offset + other.length);
-        
+
         Span {
             line: self.line.min(other.line),
             column: if self.line == other.line {
@@ -62,4 +62,3 @@ impl<T> Spanned<T> {
         Spanned { value, span }
     }
 }
-

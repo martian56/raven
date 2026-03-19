@@ -77,6 +77,17 @@
     ],
     "description": "Define a struct"
   },
+  "Impl Block": {
+    "prefix": "impl",
+    "body": [
+      "impl ${1:StructName} {",
+      "\tfun ${2:method}(self) -> ${3:void} {",
+      "\t\t${4:body}",
+      "\t}",
+      "}"
+    ],
+    "description": "Define struct methods"
+  },
   "Enum Definition": {
     "prefix": "enum",
     "body": [

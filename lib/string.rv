@@ -38,16 +38,51 @@ fun trim_right(s: String) -> String {
     return s.slice(0, end + 1);
 }
 
+fun find_char_in(str: String, ch: String) -> int {
+    let i: int = 0;
+    while (i < len(str)) {
+        if (str[i] == ch) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
 fun to_upper(s: String) -> String {
-    // Simplified implementation - just return the string as-is
-    // In a real implementation, this would convert lowercase to uppercase
-    return s;
+    let lower: String = "abcdefghijklmnopqrstuvwxyz";
+    let upper: String = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    let result: String = "";
+    let i: int = 0;
+    while (i < len(s)) {
+        let c: String = s[i];
+        let idx: int = find_char_in(lower, c);
+        if (idx >= 0) {
+            result = result + upper[idx];
+        } else {
+            result = result + c;
+        }
+        i = i + 1;
+    }
+    return result;
 }
 
 fun to_lower(s: String) -> String {
-    // Simplified implementation - just return the string as-is
-    // In a real implementation, this would convert uppercase to lowercase
-    return s;
+    let lower: String = "abcdefghijklmnopqrstuvwxyz";
+    let upper: String = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    let result: String = "";
+    let i: int = 0;
+    while (i < len(s)) {
+        let c: String = s[i];
+        let idx: int = find_char_in(upper, c);
+        if (idx >= 0) {
+            result = result + lower[idx];
+        } else {
+            result = result + c;
+        }
+        i = i + 1;
+    }
+    return result;
 }
 
 fun starts_with(s: String, prefix: String) -> bool {
@@ -93,7 +128,7 @@ fun contains(s: String, substring: String) -> bool {
         while (j < len(substring)) {
             if (s[i + j] != substring[j]) {
                 found = false;
-                break;
+                j = len(substring);
             }
             j = j + 1;
         }
@@ -117,7 +152,7 @@ fun index_of(s: String, substring: String) -> int {
         while (j < len(substring)) {
             if (s[i + j] != substring[j]) {
                 found = false;
-                break;
+                j = len(substring);
             }
             j = j + 1;
         }
@@ -141,7 +176,7 @@ fun last_index_of(s: String, substring: String) -> int {
         while (j < len(substring)) {
             if (s[i + j] != substring[j]) {
                 found = false;
-                break;
+                j = len(substring);
             }
             j = j + 1;
         }
@@ -334,7 +369,12 @@ fun is_alphanumeric(s: String) -> bool {
 
 // String comparison functions
 fun compare(a: String, b: String) -> int {
-    let min_len: int = min(len(a), len(b));
+    let len_a: int = len(a);
+    let len_b: int = len(b);
+    let min_len: int = len_a;
+    if (len_b < len_a) {
+        min_len = len_b;
+    }
     let i: int = 0;
     while (i < min_len) {
         if (a[i] < b[i]) {

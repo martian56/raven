@@ -83,6 +83,30 @@ fun map_values(map: Map) -> String[] {
     return map.values;
 }
 
+impl Map {
+    fun set(self, key: String, value: String) -> Map {
+        return map_set(self, key, value);
+    }
+    fun get(self, key: String) -> String {
+        return map_get(self, key);
+    }
+    fun has(self, key: String) -> bool {
+        return map_has(self, key);
+    }
+    fun remove(self, key: String) -> Map {
+        return map_remove(self, key);
+    }
+    fun len(self) -> int {
+        return map_len(self);
+    }
+    fun keys(self) -> String[] {
+        return map_keys(self);
+    }
+    fun values(self) -> String[] {
+        return map_values(self);
+    }
+}
+
 // Generic Set implementation using arrays
 struct Set {
     items: String[]
@@ -160,6 +184,21 @@ fun set_intersection(set1: Set, set2: Set) -> Set {
         i = i + 1;
     }
     return result;
+}
+
+impl Set {
+    fun contains(self, item: String) -> bool {
+        return set_contains(self, item);
+    }
+    fun add(self, item: String) -> Set {
+        return set_add(self, item);
+    }
+    fun remove(self, item: String) -> Set {
+        return set_remove(self, item);
+    }
+    fun len(self) -> int {
+        return set_len(self);
+    }
 }
 
 // Stack implementation
@@ -240,4 +279,22 @@ fun queue_is_empty(queue: Queue) -> bool {
 
 fun queue_len(queue: Queue) -> int {
     return len(queue.items);
+}
+
+impl Queue {
+    fun enqueue(self, item: String) -> Queue {
+        return queue_enqueue(self, item);
+    }
+    fun dequeue(self) -> String {
+        return queue_dequeue(self);
+    }
+    fun peek(self) -> String {
+        return queue_peek(self);
+    }
+    fun is_empty(self) -> bool {
+        return queue_is_empty(self);
+    }
+    fun len(self) -> int {
+        return queue_len(self);
+    }
 }

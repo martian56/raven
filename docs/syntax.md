@@ -80,6 +80,38 @@ person.age = 26;     // Field modification
 - All fields must be provided during instantiation
 - Fields can be accessed and modified using dot notation
 
+### Struct Methods (`impl`)
+
+Structs can have methods defined via `impl` blocks:
+
+```raven
+struct Person {
+    name: String,
+    age: int
+}
+
+impl Person {
+    fun greet(self) -> string {
+        return format("Hello, I'm {} and I'm {} years old", self.name, self.age);
+    }
+
+    fun have_birthday(self) -> void {
+        self.age = self.age + 1;  // Mutates the struct in place
+    }
+}
+
+// Usage
+let p: Person = Person { name: "Alice", age: 30 };
+print(p.greet());      // "Hello, I'm Alice and I'm 30 years old"
+p.have_birthday();     // Mutates p
+print(p.greet());      // "Hello, I'm Alice and I'm 31 years old"
+```
+
+- Use `impl StructName { ... }` to define methods on a struct
+- Every method must have `self` as the first parameter (the receiver)
+- Methods can read and mutate `self`; mutations persist when called on a variable
+- Methods are called with `value.method(args)` syntax
+
 ---
 
 ## 🎯 Enums
@@ -359,6 +391,7 @@ for (let i = 0; i < 5; i = i + 1) {
 - ✅ **REPL**: Interactive development environment
 - ✅ **File I/O**: Read, write, append, and file existence checking
 - ✅ **Structs**: User-defined data structures with fields
+- ✅ **Struct Methods**: OOP-style methods via `impl` blocks with `self`
 - ✅ **Enums**: User-defined types with variants and string conversion
 - ✅ **Professional CLI**: Python-style interface (raven file.rv, raven)
 

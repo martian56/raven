@@ -28,6 +28,7 @@ Type these prefixes and press Tab to expand:
 - `while` - While loop
 - `for` - For loop
 - `struct` - Struct definition
+- `impl` - Struct methods (impl block)
 - `enum` - Enum definition
 - `print` - Print statement
 - `printf` - Print with format

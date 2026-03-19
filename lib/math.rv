@@ -213,16 +213,24 @@ fun random() -> float {
 
 fun random_int(min_val: int, max_val: int) -> int {
     let range: int = max_val - min_val + 1;
+    if (range <= 0) {
+        return min_val;
+    }
     let random_float: float = random() * range;
-    // Simple truncation to int (this is not perfect but works for basic cases)
-    return min_val + range; // This is a simplified version
+    let count: int = 0;
+    let r: float = random_float;
+    while (r > 0.0) {
+        r = r - 1.0;
+        count = count + 1;
+    }
+    return min_val + count - 1;
 }
 
 // Clamp function
 fun clamp(value: float, min_val: float, max_val: float) -> float {
     if (value < min_val) {
         return min_val;
-    } else if (value > max_val) {
+    } elseif (value > max_val) {
         return max_val;
     } else {
         return value;

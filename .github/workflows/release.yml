@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  release-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Create .deb package
+        run: cargo deb --no-strip
+
+      - name: Upload .deb to release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Raven ${{ github.ref_name }}
+          files: target/debian/*.deb
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Install WiX and create .msi installer
+        run: |
+          choco install wixtoolset --version 3.14.0 --allow-downgrade --yes
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          cargo install cargo-wix
+          cargo wix --no-build -o target/wix/
+
+      - name: Create portable .zip
+        run: |
+          New-Item -ItemType Directory -Force -Path release
+          Copy-Item target/release/raven.exe release/
+          Copy-Item target/release/rvpm.exe release/
+          New-Item -ItemType Directory -Force -Path release/lib
+          Copy-Item lib/*.rv release/lib/
+          Push-Location release
+          Compress-Archive -Path * -DestinationPath ../raven-${{ github.ref_name }}-x86_64-pc-windows-msvc.zip -Force
+          Pop-Location
+
+      - name: Upload Windows artifacts to release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Raven ${{ github.ref_name }}
+          files: |
+            target/wix/*.msi
+            raven-${{ github.ref_name }}-x86_64-pc-windows-msvc.zip
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

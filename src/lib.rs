@@ -1,7 +1,8 @@
-pub mod lexer;
 pub mod ast;
-pub mod parser;
-pub mod type_checker;
 pub mod code_gen;
-pub mod span;
+pub mod paths;
 pub mod error;
+pub mod lexer;
+pub mod parser;
+pub mod span;
+pub mod type_checker;

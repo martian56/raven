@@ -90,6 +90,34 @@ let person: Person = Person {
 let point: Point = Point { x: 10.5, y: 20.0 };
 ```
 
+### Struct Methods
+Structs can have methods defined with `impl` blocks. Each method receives `self` as the first parameter.
+
+```raven
+struct Person {
+    name: String,
+    age: int
+}
+
+impl Person {
+    fun greet(self) -> string {
+        return format("Hello, {}!", self.name);
+    }
+
+    fun have_birthday(self) -> void {
+        self.age = self.age + 1;
+    }
+}
+
+let p: Person = Person { name: "Alice", age: 30 };
+print(p.greet());      // "Hello, Alice!"
+p.have_birthday();     // Mutates p in place
+```
+
+- Methods must have `self` as the first parameter
+- `self` refers to the struct value the method is called on
+- Mutations to `self` persist when the receiver is a variable
+
 ### Enums
 Custom types with a set of named variants.
 

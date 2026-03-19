@@ -68,7 +68,7 @@
       "patterns": [
         {
           "name": "keyword.control.raven",
-          "match": "\\b(let|fun|if|else|while|for|return|import|export|struct|enum)\\b"
+          "match": "\\b(let|fun|if|else|while|for|return|import|export|struct|impl|enum)\\b"
         },
         {
           "name": "keyword.operator.raven",
