@@ -8,7 +8,7 @@ use std::process;
 
 fn main() {
     let matches = Command::new("Raven Programming Language")
-        .version("1.2.2")
+        .version("1.3.0")
         .author("martian56 <https://github.com/martian56>")
         .about("Raven compiler and interpreter - fast, safe, and expressive")
         .arg(
