@@ -1202,6 +1202,18 @@ impl TypeChecker {
             self.structs.insert(name.clone(), struct_info.clone());
         }
 
+        for (struct_name, methods) in &module_checker.struct_methods {
+            for (method_name, (return_type, param_types)) in methods {
+                self.struct_methods
+                    .entry(struct_name.clone())
+                    .or_default()
+                    .insert(
+                        method_name.clone(),
+                        (return_type.clone(), param_types.clone()),
+                    );
+            }
+        }
+
         self.modules.insert(module_name.to_string(), module_info);
 
         Ok(())

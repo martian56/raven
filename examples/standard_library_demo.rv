@@ -71,15 +71,9 @@ fun demo_time() -> void {
     let now: DateTime = time.now();
     print(format("Current time: {}", time.format_datetime(now, "YYYY-MM-DD HH:mm:ss")));
     
-    let future: DateTime = DateTime { 
-        year: 2025, 
-        month: 1, 
-        day: 1, 
-        hour: 0, 
-        minute: 0, 
-        second: 0 
-    };
-    
+    let future_date: Date = time.new_date(2025, 1, 1);
+    let future_time: Time = time.new_time(0, 0, 0);
+    let future: DateTime = time.new_datetime(future_date, future_time);
     print(format("Days until 2025: {}", time.days_between(now, future)));
 }
 

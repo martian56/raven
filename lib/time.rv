@@ -1,6 +1,5 @@
 // lib/time.rv - Time and Date Library
 
-// Simple time representation
 struct Time {
     hour: int,
     minute: int,
@@ -18,114 +17,22 @@ struct DateTime {
     time: Time
 }
 
-// Time functions
-export fun new_time(hour: int, minute: int, second: int) -> Time {
-    let time: Time = Time { hour: hour, minute: minute, second: second };
-    return time;
-}
-
-export fun time_to_string(time: Time) -> String {
-    let hour_str: String = format("{}", time.hour);
-    let minute_str: String = format("{}", time.minute);
-    let second_str: String = format("{}", time.second);
-    
-    // Pad with zeros if needed
-    if (len(hour_str) == 1) {
-        hour_str = "0" + hour_str;
+// --- Internal helpers (not exported) ---
+fun pad_two(n: int) -> String {
+    let s: String = format("{}", n);
+    if (len(s) == 1) {
+        return "0" + s;
     }
-    if (len(minute_str) == 1) {
-        minute_str = "0" + minute_str;
-    }
-    if (len(second_str) == 1) {
-        second_str = "0" + second_str;
-    }
-    
-    return hour_str + ":" + minute_str + ":" + second_str;
+    return s;
 }
 
-export fun time_from_string(time_str: String) -> Time {
-    let parts: String[] = time_str.split(":");
-    if (len(parts) != 3) {
-        return new_time(0, 0, 0);
-    }
-    
-    let hour: int = parse_int(parts[0]);
-    let minute: int = parse_int(parts[1]);
-    let second: int = parse_int(parts[2]);
-    
-    return new_time(hour, minute, second);
-}
-
-export fun time_add_seconds(time: Time, seconds: int) -> Time {
-    let total_seconds: int = time.hour * 3600 + time.minute * 60 + time.second + seconds;
-    
-    let new_hour: int = total_seconds / 3600;
-    let remaining: int = total_seconds % 3600;
-    let new_minute: int = remaining / 60;
-    let new_second: int = remaining % 60;
-    
-    // Handle day overflow
-    new_hour = new_hour % 24;
-    
-    return new_time(new_hour, new_minute, new_second);
-}
-
-export fun time_add_minutes(time: Time, minutes: int) -> Time {
-    return time_add_seconds(time, minutes * 60);
-}
-
-export fun time_add_hours(time: Time, hours: int) -> Time {
-    return time_add_seconds(time, hours * 3600);
-}
-
-export fun time_difference(time1: Time, time2: Time) -> int {
-    let seconds1: int = time1.hour * 3600 + time1.minute * 60 + time1.second;
-    let seconds2: int = time2.hour * 3600 + time2.minute * 60 + time2.second;
-    return seconds1 - seconds2;
-}
-
-// Date functions
-export fun new_date(year: int, month: int, day: int) -> Date {
-    let date: Date = Date { year: year, month: month, day: day };
-    return date;
-}
-
-export fun date_to_string(date: Date) -> String {
-    let year_str: String = format("{}", date.year);
-    let month_str: String = format("{}", date.month);
-    let day_str: String = format("{}", date.day);
-    
-    // Pad with zeros if needed
-    if (len(month_str) == 1) {
-        month_str = "0" + month_str;
-    }
-    if (len(day_str) == 1) {
-        day_str = "0" + day_str;
-    }
-    
-    return year_str + "-" + month_str + "-" + day_str;
-}
-
-export fun date_from_string(date_str: String) -> Date {
-    let parts: String[] = date_str.split("-");
-    if (len(parts) != 3) {
-        return new_date(2000, 1, 1);
-    }
-    
-    let year: int = parse_int(parts[0]);
-    let month: int = parse_int(parts[1]);
-    let day: int = parse_int(parts[2]);
-    
-    return new_date(year, month, day);
-}
-
-export fun is_leap_year(year: int) -> bool {
+fun _is_leap_year(year: int) -> bool {
     return (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
 }
 
-export fun days_in_month(year: int, month: int) -> int {
+fun _days_in_month(year: int, month: int) -> int {
     if (month == 2) {
-        if (is_leap_year(year)) {
+        if (_is_leap_year(year)) {
             return 29;
         } else {
             return 28;
@@ -137,162 +44,365 @@ export fun days_in_month(year: int, month: int) -> int {
     }
 }
 
-export fun date_add_days(date: Date, days: int) -> Date {
-    let year: int = date.year;
-    let month: int = date.month;
-    let day: int = date.day + days;
-    
-    while (day > days_in_month(year, month)) {
-        day = day - days_in_month(year, month);
-        month = month + 1;
-        if (month > 12) {
-            month = 1;
+// --- Time impl ---
+impl Time {
+    fun to_string(self) -> String {
+        return pad_two(self.hour) + ":" + pad_two(self.minute) + ":" + pad_two(self.second);
+    }
+
+    fun from_string(self, time_str: String) -> Time {
+        let parts: String[] = time_str.split(":");
+        if (len(parts) != 3) {
+            return Time { hour: 0, minute: 0, second: 0 };
+        }
+        let hour: int = parse_int(parts[0]);
+        let minute: int = parse_int(parts[1]);
+        let second: int = parse_int(parts[2]);
+        return Time { hour: hour, minute: minute, second: second };
+    }
+
+    fun add_seconds(self, seconds: int) -> Time {
+        let total_seconds: int = self.hour * 3600 + self.minute * 60 + self.second + seconds;
+        let new_hour: int = total_seconds / 3600;
+        let remaining: int = total_seconds % 3600;
+        let new_minute: int = remaining / 60;
+        let new_second: int = remaining % 60;
+        new_hour = new_hour % 24;
+        return Time { hour: new_hour, minute: new_minute, second: new_second };
+    }
+
+    fun add_minutes(self, minutes: int) -> Time {
+        return self.add_seconds(minutes * 60);
+    }
+
+    fun add_hours(self, hours: int) -> Time {
+        return self.add_seconds(hours * 3600);
+    }
+
+    fun difference(self, other: Time) -> int {
+        let seconds1: int = self.hour * 3600 + self.minute * 60 + self.second;
+        let seconds2: int = other.hour * 3600 + other.minute * 60 + other.second;
+        return seconds1 - seconds2;
+    }
+
+    fun format(self, fmt: String) -> String {
+        if (fmt == "HH:mm:ss") {
+            return self.to_string();
+        } elseif (fmt == "HH:mm") {
+            return pad_two(self.hour) + ":" + pad_two(self.minute);
+        } else {
+            return self.to_string();
+        }
+    }
+}
+
+// --- Date impl ---
+impl Date {
+    fun to_string(self) -> String {
+        return format("{}", self.year) + "-" + pad_two(self.month) + "-" + pad_two(self.day);
+    }
+
+    fun from_string(self, date_str: String) -> Date {
+        let parts: String[] = date_str.split("-");
+        if (len(parts) != 3) {
+            return Date { year: 2000, month: 1, day: 1 };
+        }
+        let year: int = parse_int(parts[0]);
+        let month: int = parse_int(parts[1]);
+        let day: int = parse_int(parts[2]);
+        return Date { year: year, month: month, day: day };
+    }
+
+    fun is_leap_year(self) -> bool {
+        return _is_leap_year(self.year);
+    }
+
+    fun days_in_month(self) -> int {
+        return _days_in_month(self.year, self.month);
+    }
+
+    fun add_days(self, days: int) -> Date {
+        let year: int = self.year;
+        let month: int = self.month;
+        let day: int = self.day + days;
+
+        while (day > _days_in_month(year, month)) {
+            day = day - _days_in_month(year, month);
+            month = month + 1;
+            if (month > 12) {
+                month = 1;
+                year = year + 1;
+            }
+        }
+
+        while (day < 1) {
+            month = month - 1;
+            if (month < 1) {
+                month = 12;
+                year = year - 1;
+            }
+            day = day + _days_in_month(year, month);
+        }
+
+        return Date { year: year, month: month, day: day };
+    }
+
+    fun add_months(self, months: int) -> Date {
+        let year: int = self.year;
+        let month: int = self.month + months;
+        let day: int = self.day;
+
+        while (month > 12) {
+            month = month - 12;
             year = year + 1;
         }
-    }
-    
-    while (day < 1) {
-        month = month - 1;
-        if (month < 1) {
-            month = 12;
+
+        while (month < 1) {
+            month = month + 12;
             year = year - 1;
         }
-        day = day + days_in_month(year, month);
+
+        let max_day: int = _days_in_month(year, month);
+        if (day > max_day) {
+            day = max_day;
+        }
+
+        return Date { year: year, month: month, day: day };
     }
-    
-    return new_date(year, month, day);
+
+    fun add_years(self, years: int) -> Date {
+        let year: int = self.year + years;
+        let month: int = self.month;
+        let day: int = self.day;
+        if (month == 2 && day == 29 && !_is_leap_year(year)) {
+            day = 28;
+        }
+        return Date { year: year, month: month, day: day };
+    }
+
+    fun difference(self, other: Date) -> int {
+        let days1: int = self.year * 365 + self.month * 30 + self.day;
+        let days2: int = other.year * 365 + other.month * 30 + other.day;
+        return days1 - days2;
+    }
+
+    fun day_of_week(self) -> int {
+        let y: int = self.year;
+        let m: int = self.month;
+        let d: int = self.day;
+        if (m < 3) {
+            m = m + 12;
+            y = y - 1;
+        }
+        let k: int = y % 100;
+        let j: int = y / 100;
+        let dow: int = (d + (13 * (m + 1)) / 5 + k + k / 4 + j / 4 + 5 * j) % 7;
+        return (dow + 5) % 7;
+    }
+
+    fun day_name(self) -> String {
+        let names: String[] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        let dow: int = self.day_of_week();
+        if (dow >= 0 && dow < 7) {
+            return names[dow];
+        }
+        return "Unknown";
+    }
+
+    fun month_name(self) -> String {
+        let names: String[] = ["", "January", "February", "March", "April", "May", "June",
+                              "July", "August", "September", "October", "November", "December"];
+        if (self.month >= 1 && self.month <= 12) {
+            return names[self.month];
+        }
+        return "Unknown";
+    }
+
+    fun format(self, fmt: String) -> String {
+        if (fmt == "YYYY-MM-DD") {
+            return self.to_string();
+        } elseif (fmt == "MM/DD/YYYY") {
+            return pad_two(self.month) + "/" + pad_two(self.day) + "/" + format("{}", self.year);
+        } else {
+            return self.to_string();
+        }
+    }
+}
+
+// --- DateTime impl ---
+impl DateTime {
+    fun to_string(self) -> String {
+        return self.date.to_string() + " " + self.time.to_string();
+    }
+
+    fun from_string(self, datetime_str: String) -> DateTime {
+        let parts: String[] = datetime_str.split(" ");
+        if (len(parts) != 2) {
+            return DateTime { date: Date { year: 2000, month: 1, day: 1 }, time: Time { hour: 0, minute: 0, second: 0 } };
+        }
+        let date: Date = Date { year: 2000, month: 1, day: 1 };
+        date = date.from_string(parts[0]);
+        let time: Time = Time { hour: 0, minute: 0, second: 0 };
+        time = time.from_string(parts[1]);
+        return DateTime { date: date, time: time };
+    }
+
+    fun add_seconds(self, seconds: int) -> DateTime {
+        let new_time: Time = self.time.add_seconds(seconds);
+        let new_date: Date = self.date;
+        let total_seconds: int = self.time.hour * 3600 + self.time.minute * 60 + self.time.second + seconds;
+        let days_to_add: int = total_seconds / 86400;
+        if (days_to_add > 0) {
+            new_date = self.date.add_days(days_to_add);
+        }
+        return DateTime { date: new_date, time: new_time };
+    }
+
+    fun add_minutes(self, minutes: int) -> DateTime {
+        return self.add_seconds(minutes * 60);
+    }
+
+    fun add_hours(self, hours: int) -> DateTime {
+        return self.add_seconds(hours * 3600);
+    }
+
+    fun add_days(self, days: int) -> DateTime {
+        let new_date: Date = self.date.add_days(days);
+        return DateTime { date: new_date, time: self.time };
+    }
+
+    fun format(self, fmt: String) -> String {
+        if (fmt == "YYYY-MM-DD HH:mm:ss" || fmt == "YYYY-MM-DD") {
+            return self.to_string();
+        } elseif (fmt == "HH:mm") {
+            return self.time.format("HH:mm");
+        } else {
+            return self.to_string();
+        }
+    }
+}
+
+// --- Module-level exports ---
+
+// Backward-compatible exports (delegate to constructors/methods)
+export fun new_time(hour: int, minute: int, second: int) -> Time {
+    let t: Time = Time { hour: 0, minute: 0, second: 0 };
+    return Time { hour: hour, minute: minute, second: second };
+}
+
+export fun time_to_string(time: Time) -> String {
+    return time.to_string();
+}
+
+export fun time_from_string(time_str: String) -> Time {
+    let t: Time = Time { hour: 0, minute: 0, second: 0 };
+    return t.from_string(time_str);
+}
+
+export fun time_add_seconds(time: Time, seconds: int) -> Time {
+    return time.add_seconds(seconds);
+}
+
+export fun time_add_minutes(time: Time, minutes: int) -> Time {
+    return time.add_minutes(minutes);
+}
+
+export fun time_add_hours(time: Time, hours: int) -> Time {
+    return time.add_hours(hours);
+}
+
+export fun time_difference(time1: Time, time2: Time) -> int {
+    return time1.difference(time2);
+}
+
+export fun new_date(year: int, month: int, day: int) -> Date {
+    return Date { year: year, month: month, day: day };
+}
+
+export fun date_to_string(date: Date) -> String {
+    return date.to_string();
+}
+
+export fun date_from_string(date_str: String) -> Date {
+    let d: Date = Date { year: 2000, month: 1, day: 1 };
+    return d.from_string(date_str);
+}
+
+export fun is_leap_year(year: int) -> bool {
+    return _is_leap_year(year);
+}
+
+export fun days_in_month(year: int, month: int) -> int {
+    return _days_in_month(year, month);
+}
+
+export fun date_add_days(date: Date, days: int) -> Date {
+    return date.add_days(days);
 }
 
 export fun date_add_months(date: Date, months: int) -> Date {
-    let year: int = date.year;
-    let month: int = date.month + months;
-    let day: int = date.day;
-    
-    while (month > 12) {
-        month = month - 12;
-        year = year + 1;
-    }
-    
-    while (month < 1) {
-        month = month + 12;
-        year = year - 1;
-    }
-    
-    // Adjust day if it's invalid for the new month
-    let max_day: int = days_in_month(year, month);
-    if (day > max_day) {
-        day = max_day;
-    }
-    
-    return new_date(year, month, day);
+    return date.add_months(months);
 }
 
 export fun date_add_years(date: Date, years: int) -> Date {
-    let year: int = date.year + years;
-    let month: int = date.month;
-    let day: int = date.day;
-    
-    // Adjust day for leap year changes
-    if (month == 2 && day == 29 && !is_leap_year(year)) {
-        day = 28;
-    }
-    
-    return new_date(year, month, day);
+    return date.add_years(years);
 }
 
 export fun date_difference(date1: Date, date2: Date) -> int {
-    // Simple implementation - returns approximate days
-    let days1: int = date1.year * 365 + date1.month * 30 + date1.day;
-    let days2: int = date2.year * 365 + date2.month * 30 + date2.day;
-    return days1 - days2;
+    return date1.difference(date2);
 }
 
 export fun day_of_week(year: int, month: int, day: int) -> int {
-    // Zeller's congruence algorithm
-    if (month < 3) {
-        month = month + 12;
-        year = year - 1;
-    }
-    
-    let k: int = year % 100;
-    let j: int = year / 100;
-    
-    let day_of_week: int = (day + (13 * (month + 1)) / 5 + k + k / 4 + j / 4 + 5 * j) % 7;
-    
-    // Convert to 0=Sunday, 1=Monday, etc.
-    return (day_of_week + 5) % 7;
+    let d: Date = Date { year: year, month: month, day: day };
+    return d.day_of_week();
 }
 
 export fun day_name(day_num: int) -> String {
     let names: String[] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     if (day_num >= 0 && day_num < 7) {
         return names[day_num];
-    } else {
-        return "Unknown";
     }
+    return "Unknown";
 }
 
 export fun month_name(month_num: int) -> String {
-    let names: String[] = ["", "January", "February", "March", "April", "May", "June", 
+    let names: String[] = ["", "January", "February", "March", "April", "May", "June",
                           "July", "August", "September", "October", "November", "December"];
     if (month_num >= 1 && month_num <= 12) {
         return names[month_num];
-    } else {
-        return "Unknown";
     }
+    return "Unknown";
 }
 
-// DateTime functions
 export fun new_datetime(date: Date, time: Time) -> DateTime {
-    let datetime: DateTime = DateTime { date: date, time: time };
-    return datetime;
+    return DateTime { date: date, time: time };
 }
 
 export fun datetime_to_string(datetime: DateTime) -> String {
-    return date_to_string(datetime.date) + " " + time_to_string(datetime.time);
+    return datetime.to_string();
 }
 
 export fun datetime_from_string(datetime_str: String) -> DateTime {
-    let parts: String[] = datetime_str.split(" ");
-    if (len(parts) != 2) {
-        return new_datetime(new_date(2000, 1, 1), new_time(0, 0, 0));
-    }
-    
-    let date: Date = date_from_string(parts[0]);
-    let time: Time = time_from_string(parts[1]);
-    
-    return new_datetime(date, time);
+    let dt: DateTime = DateTime { date: Date { year: 2000, month: 1, day: 1 }, time: Time { hour: 0, minute: 0, second: 0 } };
+    return dt.from_string(datetime_str);
 }
 
 export fun datetime_add_seconds(datetime: DateTime, seconds: int) -> DateTime {
-    let new_time: Time = time_add_seconds(datetime.time, seconds);
-    let new_date: Date = datetime.date;
-    
-    // Handle day overflow
-    let total_seconds: int = datetime.time.hour * 3600 + datetime.time.minute * 60 + datetime.time.second + seconds;
-    let days_to_add: int = total_seconds / 86400;
-    
-    if (days_to_add > 0) {
-        new_date = date_add_days(new_date, days_to_add);
-    }
-    
-    return new_datetime(new_date, new_time);
+    return datetime.add_seconds(seconds);
 }
 
 export fun datetime_add_minutes(datetime: DateTime, minutes: int) -> DateTime {
-    return datetime_add_seconds(datetime, minutes * 60);
+    return datetime.add_minutes(minutes);
 }
 
 export fun datetime_add_hours(datetime: DateTime, hours: int) -> DateTime {
-    return datetime_add_seconds(datetime, hours * 3600);
+    return datetime.add_hours(hours);
 }
 
 export fun datetime_add_days(datetime: DateTime, days: int) -> DateTime {
-    let new_date: Date = date_add_days(datetime.date, days);
-    return new_datetime(new_date, datetime.time);
+    return datetime.add_days(days);
 }
 
-// Utility functions
 export fun current_time() -> String {
     return sys_time();
 }
@@ -306,44 +416,26 @@ export fun current_datetime() -> String {
 }
 
 export fun format_time(time: Time, format: String) -> String {
-    // Simple format implementation
-    if (format == "HH:mm:ss") {
-        return time_to_string(time);
-    } elseif (format == "HH:mm") {
-        let hour_str: String = format("{}", time.hour);
-        let minute_str: String = format("{}", time.minute);
-        
-        if (len(hour_str) == 1) {
-            hour_str = "0" + hour_str;
-        }
-        if (len(minute_str) == 1) {
-            minute_str = "0" + minute_str;
-        }
-        
-        return hour_str + ":" + minute_str;
-    } else {
-        return time_to_string(time);
-    }
+    return time.format(format);
 }
 
 export fun format_date(date: Date, format: String) -> String {
-    // Simple format implementation
-    if (format == "YYYY-MM-DD") {
-        return date_to_string(date);
-    } elseif (format == "MM/DD/YYYY") {
-        let month_str: String = format("{}", date.month);
-        let day_str: String = format("{}", date.day);
-        let year_str: String = format("{}", date.year);
-        
-        if (len(month_str) == 1) {
-            month_str = "0" + month_str;
-        }
-        if (len(day_str) == 1) {
-            day_str = "0" + day_str;
-        }
-        
-        return month_str + "/" + day_str + "/" + year_str;
-    } else {
-        return date_to_string(date);
-    }
+    return date.format(format);
+}
+
+export fun format_datetime(datetime: DateTime, format: String) -> String {
+    return datetime.format(format);
+}
+
+export fun days_between(dt1: DateTime, dt2: DateTime) -> int {
+    return dt1.date.difference(dt2.date);
+}
+
+// now() returns current DateTime from system clock
+export fun now() -> DateTime {
+    let date_str: String = sys_date();
+    let time_str: String = sys_time();
+    let date: Date = date_from_string(date_str);
+    let time: Time = time_from_string(time_str);
+    return DateTime { date: date, time: time };
 }
