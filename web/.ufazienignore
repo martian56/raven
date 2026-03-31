@@ -1,0 +1,33 @@
+# Files and directories to exclude from deployment
+.git/
+.gitignore
+.ufazien.json
+ufazien.py
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+ENV/
+
+# For build projects (Vite/React/etc.):
+# Uncomment the line below and add your source folders to deploy only the build output
+# src/
+# public/
+# package.json
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+# tsconfig.json
+# vite.config.js
+# vite.config.ts

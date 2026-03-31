@@ -1,0 +1,30 @@
+# Environment variables
+.env
+# .ufazien.json
+
+# Ufazien CLI
+ufazien.py
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# Temporary files
+*.tmp
+*.log
+*.cache
+
+# Build files
+dist/
+build/
+*.min.js
+*.min.css

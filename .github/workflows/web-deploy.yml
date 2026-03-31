@@ -1,0 +1,31 @@
+name: Deploy to Ufazien
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install ufazien package
+        run: |
+          pip install ufazien-cli
+      
+      - name: Deploy to Ufazien
+        env:
+          UFAZIEN_HOSTING_EMAIL: ${{ secrets.UFAZIEN_HOSTING_EMAIL }}
+          UFAZIEN_HOSTING_PASSWORD: ${{ secrets.UFAZIEN_HOSTING_PASSWORD }}
+        working-directory: web
+        run: |
+          python deploy.py
