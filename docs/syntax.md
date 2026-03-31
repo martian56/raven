@@ -386,4 +386,4 @@ expr              = … precedence climbing / unary / primaries …
 
 ## Version
 
-This syntax reference is aligned with the Raven toolchain version **1.3.0** (see `src/main.rs` and `Cargo.toml`). Minor implementation details may evolve; when in doubt, refer to the parser and lexer sources under `src/`.
+This syntax reference is aligned with the Raven toolchain version **1.4.0** (see `src/main.rs` and `Cargo.toml`). Minor implementation details may evolve; when in doubt, refer to the parser and lexer sources under `src/`.
