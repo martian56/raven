@@ -4,23 +4,23 @@ import string;
 
 // File information structure
 struct FileInfo {
-    name: String,
+    name: string,
     size: int,
     is_directory: bool,
     is_file: bool
 }
 
 // Directory listing (uses built-in list_directory)
-export fun list_directory(path: String) -> String[] {
+export fun list_directory(path: string) -> string[] {
     return list_directory(path);
 }
 
-export fun list_files(path: String) -> String[] {
-    let all_items: String[] = list_directory(path);
-    let files: String[] = [];
+export fun list_files(path: string) -> string[] {
+    let all_items: string[] = list_directory(path);
+    let files: string[] = [];
     let i: int = 0;
     while (i < len(all_items)) {
-        let item_path: String = path + "/" + all_items[i];
+        let item_path: string = path + "/" + all_items[i];
         if (!is_dir(item_path)) {
             files.push(all_items[i]);
         }
@@ -29,12 +29,12 @@ export fun list_files(path: String) -> String[] {
     return files;
 }
 
-export fun list_directories(path: String) -> String[] {
-    let all_items: String[] = list_directory(path);
-    let dirs: String[] = [];
+export fun list_directories(path: string) -> string[] {
+    let all_items: string[] = list_directory(path);
+    let dirs: string[] = [];
     let i: int = 0;
     while (i < len(all_items)) {
-        let item_path: String = path + "/" + all_items[i];
+        let item_path: string = path + "/" + all_items[i];
         if (is_dir(item_path)) {
             dirs.push(all_items[i]);
         }
@@ -44,12 +44,12 @@ export fun list_directories(path: String) -> String[] {
 }
 
 // Path manipulation
-export fun join_path(parts: String[]) -> String {
+export fun join_path(parts: string[]) -> string {
     if (len(parts) == 0) {
         return "";
     }
     
-    let result: String = parts[0];
+    let result: string = parts[0];
     let i: int = 1;
     while (i < len(parts)) {
         if (!string.ends_with(result, "/") && !string.starts_with(parts[i], "/")) {
@@ -61,17 +61,17 @@ export fun join_path(parts: String[]) -> String {
     return result;
 }
 
-export fun split_path(path: String) -> String[] {
+export fun split_path(path: string) -> string[] {
     return path.split("/");
 }
 
-export fun dirname(path: String) -> String {
-    let parts: String[] = split_path(path);
+export fun dirname(path: string) -> string {
+    let parts: string[] = split_path(path);
     if (len(parts) <= 1) {
         return ".";
     }
     
-    let result: String[] = [];
+    let result: string[] = [];
     let i: int = 0;
     while (i < len(parts) - 1) {
         result.push(parts[i]);
@@ -81,16 +81,16 @@ export fun dirname(path: String) -> String {
     return join_path(result);
 }
 
-export fun basename(path: String) -> String {
-    let parts: String[] = split_path(path);
+export fun basename(path: string) -> string {
+    let parts: string[] = split_path(path);
     if (len(parts) == 0) {
         return "";
     }
     return parts[len(parts) - 1];
 }
 
-export fun extension(path: String) -> String {
-    let filename: String = basename(path);
+export fun extension(path: string) -> string {
+    let filename: string = basename(path);
     let last_dot: int = filename.last_index_of(".");
     
     if (last_dot == -1) {
@@ -100,16 +100,16 @@ export fun extension(path: String) -> String {
     return filename.slice(last_dot + 1, len(filename));
 }
 
-export fun remove_extension(path: String) -> String {
-    let filename: String = basename(path);
+export fun remove_extension(path: string) -> string {
+    let filename: string = basename(path);
     let last_dot: int = string.last_index_of(filename, ".");
     
     if (last_dot == -1) {
         return path;
     }
     
-    let dir: String = dirname(path);
-    let name_without_ext: String = filename.slice(0, last_dot);
+    let dir: string = dirname(path);
+    let name_without_ext: string = filename.slice(0, last_dot);
     
     if (dir == ".") {
         return name_without_ext;
@@ -119,12 +119,12 @@ export fun remove_extension(path: String) -> String {
 }
 
 // File operations
-export fun copy_file(source: String, destination: String) -> bool {
+export fun copy_file(source: string, destination: string) -> bool {
     if (!file_exists(source)) {
         return false;
     }
     
-    let content: String = read_file(source);
+    let content: string = read_file(source);
     if (len(content) == 0) {
         return false;
     }
@@ -133,28 +133,28 @@ export fun copy_file(source: String, destination: String) -> bool {
     return true;
 }
 
-export fun move_file(source: String, destination: String) -> bool {
+export fun move_file(source: string, destination: string) -> bool {
     if (!copy_file(source, destination)) {
         return false;
     }
     return remove_file(source);
 }
 
-export fun create_directory(path: String) -> bool {
+export fun create_directory(path: string) -> bool {
     return create_directory(path);
 }
 
-export fun remove_directory(path: String) -> bool {
+export fun remove_directory(path: string) -> bool {
     return remove_directory(path);
 }
 
-export fun remove_file(path: String) -> bool {
+export fun remove_file(path: string) -> bool {
     return remove_file(path);
 }
 
 // File information
-export fun get_file_info(path: String) -> FileInfo {
-    let name: String = basename(path);
+export fun get_file_info(path: string) -> FileInfo {
+    let name: string = basename(path);
     let size: int = get_file_size(path);
     let is_dir: bool = is_dir(path);
     let is_file: bool = file_exists(path) && !is_dir;
@@ -168,21 +168,21 @@ export fun get_file_info(path: String) -> FileInfo {
     return info;
 }
 
-export fun get_file_size(path: String) -> int {
+export fun get_file_size(path: string) -> int {
     return get_file_size(path);
 }
 
-export fun is_directory(path: String) -> bool {
+export fun is_directory(path: string) -> bool {
     return is_dir(path);
 }
 
-export fun is_file(path: String) -> bool {
+export fun is_file(path: string) -> bool {
     return file_exists(path) && !is_dir(path);
 }
 
 // File reading utilities
-export fun read_lines(path: String) -> String[] {
-    let content: String = read_file(path);
+export fun read_lines(path: string) -> string[] {
+    let content: string = read_file(path);
     if (len(content) == 0) {
         return [];
     }
@@ -190,23 +190,23 @@ export fun read_lines(path: String) -> String[] {
     return content.split("\n");
 }
 
-export fun write_lines(path: String, lines: String[]) -> bool {
-    let content: String = lines.join("\n");
+export fun write_lines(path: string, lines: string[]) -> bool {
+    let content: string = lines.join("\n");
     write_file(path, content);
     return true;
 }
 
-export fun append_line(path: String, line: String) -> bool {
-    let content: String = read_file(path);
-    let new_content: String = content + "\n" + line;
+export fun append_line(path: string, line: string) -> bool {
+    let content: string = read_file(path);
+    let new_content: string = content + "\n" + line;
     write_file(path, new_content);
     return true;
 }
 
 // File searching
-export fun find_files(directory: String, pattern: String) -> String[] {
-    let all_files: String[] = list_files(directory);
-    let matching_files: String[] = [];
+export fun find_files(directory: string, pattern: string) -> string[] {
+    let all_files: string[] = list_files(directory);
+    let matching_files: string[] = [];
     let i: int = 0;
     while (i < len(all_files)) {
         if (string.contains(all_files[i], pattern)) {
@@ -217,9 +217,9 @@ export fun find_files(directory: String, pattern: String) -> String[] {
     return matching_files;
 }
 
-export fun find_files_by_extension(directory: String, ext: String) -> String[] {
-    let all_files: String[] = list_files(directory);
-    let matching_files: String[] = [];
+export fun find_files_by_extension(directory: string, ext: string) -> string[] {
+    let all_files: string[] = list_files(directory);
+    let matching_files: string[] = [];
     
     let i: int = 0;
     while (i < len(all_files)) {
@@ -233,8 +233,8 @@ export fun find_files_by_extension(directory: String, ext: String) -> String[] {
 }
 
 // File validation
-export fun is_valid_filename(filename: String) -> bool {
-    let invalid_chars: String[] = ["<", ">", ":", "\"", "|", "?", "*"];
+export fun is_valid_filename(filename: string) -> bool {
+    let invalid_chars: string[] = ["<", ">", ":", "\"", "|", "?", "*"];
     let i: int = 0;
     while (i < len(invalid_chars)) {
         if (string.contains(filename, invalid_chars[i])) {
@@ -243,8 +243,8 @@ export fun is_valid_filename(filename: String) -> bool {
         i = i + 1;
     }
     
-    let reserved_names: String[] = ["CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"];
-    let upper_filename: String = string.to_upper(filename);
+    let reserved_names: string[] = ["CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"];
+    let upper_filename: string = string.to_upper(filename);
     i = 0;
     while (i < len(reserved_names)) {
         if (upper_filename == reserved_names[i]) {
@@ -255,10 +255,10 @@ export fun is_valid_filename(filename: String) -> bool {
     return true;
 }
 
-export fun sanitize_filename(filename: String) -> String {
-    let invalid_chars: String[] = ["<", ">", ":", "\"", "|", "?", "*"];
-    let replacement: String = "_";
-    let result: String = filename;
+export fun sanitize_filename(filename: string) -> string {
+    let invalid_chars: string[] = ["<", ">", ":", "\"", "|", "?", "*"];
+    let replacement: string = "_";
+    let result: string = filename;
     let i: int = 0;
     while (i < len(invalid_chars)) {
         result = result.replace(invalid_chars[i], replacement);
@@ -268,20 +268,20 @@ export fun sanitize_filename(filename: String) -> String {
 }
 
 // File comparison
-export fun files_are_equal(path1: String, path2: String) -> bool {
+export fun files_are_equal(path1: string, path2: string) -> bool {
     if (!file_exists(path1) || !file_exists(path2)) {
         return false;
     }
     
-    let content1: String = read_file(path1);
-    let content2: String = read_file(path2);
+    let content1: string = read_file(path1);
+    let content2: string = read_file(path2);
     
     return content1 == content2;
 }
 
-export fun get_file_hash(path: String) -> String {
+export fun get_file_hash(path: string) -> string {
     // Simple hash implementation
-    let content: String = read_file(path);
+    let content: string = read_file(path);
     let hash: int = 0;
     
     let i: int = 0;
@@ -296,15 +296,15 @@ export fun get_file_hash(path: String) -> String {
 }
 
 // Temporary files
-export fun create_temp_file(content: String) -> String {
-    let time_str: String = sys_time();
-    let date_str: String = sys_date();
-    let temp_name: String = "temp_" + date_str + "_" + time_str.replace(":", "") + ".tmp";
+export fun create_temp_file(content: string) -> string {
+    let time_str: string = sys_time();
+    let date_str: string = sys_date();
+    let temp_name: string = "temp_" + date_str + "_" + time_str.replace(":", "") + ".tmp";
     write_file(temp_name, content);
     return temp_name;
 }
 
-export fun cleanup_temp_file(path: String) -> bool {
+export fun cleanup_temp_file(path: string) -> bool {
     if (string.starts_with(path, "temp_") && string.ends_with(path, ".tmp")) {
         return remove_file(path);
     }

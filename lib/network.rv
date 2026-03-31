@@ -4,22 +4,22 @@ import string;
 
 // HTTP request structure
 struct HttpRequest {
-    method: String,
-    url: String,
-    headers: String[],
-    body: String
+    method: string,
+    url: string,
+    headers: string[],
+    body: string
 }
 
 // HTTP response structure
 struct HttpResponse {
     status_code: int,
-    status_text: String,
-    headers: String[],
-    body: String
+    status_text: string,
+    headers: string[],
+    body: string
 }
 
 // HTTP methods
-export fun GET(url: String) -> HttpResponse {
+export fun GET(url: string) -> HttpResponse {
     let request: HttpRequest = HttpRequest { 
         method: "GET", 
         url: url, 
@@ -29,7 +29,7 @@ export fun GET(url: String) -> HttpResponse {
     return send_request(request);
 }
 
-export fun POST(url: String, body: String) -> HttpResponse {
+export fun POST(url: string, body: string) -> HttpResponse {
     let request: HttpRequest = HttpRequest { 
         method: "POST", 
         url: url, 
@@ -39,7 +39,7 @@ export fun POST(url: String, body: String) -> HttpResponse {
     return send_request(request);
 }
 
-export fun PUT(url: String, body: String) -> HttpResponse {
+export fun PUT(url: string, body: string) -> HttpResponse {
     let request: HttpRequest = HttpRequest { 
         method: "PUT", 
         url: url, 
@@ -49,7 +49,7 @@ export fun PUT(url: String, body: String) -> HttpResponse {
     return send_request(request);
 }
 
-export fun DELETE(url: String) -> HttpResponse {
+export fun DELETE(url: string) -> HttpResponse {
     let request: HttpRequest = HttpRequest { 
         method: "DELETE", 
         url: url, 
@@ -74,15 +74,15 @@ export fun send_request(request: HttpRequest) -> HttpResponse {
 
 // URL parsing
 struct Url {
-    protocol: String,
-    host: String,
+    protocol: string,
+    host: string,
     port: int,
-    path: String,
-    query: String,
-    fragment: String
+    path: string,
+    query: string,
+    fragment: string
 }
 
-export fun parse_url(url_string: String) -> Url {
+export fun parse_url(url_string: string) -> Url {
     let url: Url = Url {
         protocol: "",
         host: "",
@@ -96,7 +96,7 @@ export fun parse_url(url_string: String) -> Url {
     let protocol_end: int = string.index_of(url_string, "://");
     if (protocol_end != -1) {
         url.protocol = url_string.slice(0, protocol_end);
-        let rest: String = url_string.slice(protocol_end + 3, len(url_string));
+        let rest: string = url_string.slice(protocol_end + 3, len(url_string));
         
         let path_start: int = string.index_of(rest, "/");
         if (path_start != -1) {
@@ -109,7 +109,7 @@ export fun parse_url(url_string: String) -> Url {
         // Check for port
         let port_start: int = string.index_of(url.host, ":");
         if (port_start != -1) {
-            let port_str: String = url.host.slice(port_start + 1, len(url.host));
+            let port_str: string = url.host.slice(port_start + 1, len(url.host));
             url.port = parse_int(port_str);
             url.host = url.host.slice(0, port_start);
         }
@@ -118,8 +118,8 @@ export fun parse_url(url_string: String) -> Url {
     return url;
 }
 
-export fun build_url(protocol: String, host: String, port: int, path: String) -> String {
-    let url: String = protocol + "://" + host;
+export fun build_url(protocol: string, host: string, port: int, path: string) -> string {
+    let url: string = protocol + "://" + host;
     
     if (port != 80 && port != 443) {
         url = url + ":" + format("{}", port);
@@ -134,7 +134,7 @@ export fun build_url(protocol: String, host: String, port: int, path: String) ->
 }
 
 // Query string handling
-export fun parse_query_string(query: String) -> String[] {
+export fun parse_query_string(query: string) -> string[] {
     if (len(query) == 0) {
         return [];
     }
@@ -142,7 +142,7 @@ export fun parse_query_string(query: String) -> String[] {
     return query.split("&");
 }
 
-export fun build_query_string(params: String[]) -> String {
+export fun build_query_string(params: string[]) -> string {
     if (len(params) == 0) {
         return "";
     }
@@ -150,17 +150,17 @@ export fun build_query_string(params: String[]) -> String {
     return params.join("&");
 }
 
-export fun get_query_param(query: String, param_name: String) -> String {
-    let params: String[] = parse_query_string(query);
+export fun get_query_param(query: string, param_name: string) -> string {
+    let params: string[] = parse_query_string(query);
     
     let i: int = 0;
     while (i < len(params)) {
-        let param: String = params[i];
+        let param: string = params[i];
         let equal_pos: int = string.index_of(param, "=");
         
         if (equal_pos != -1) {
-            let name: String = param.slice(0, equal_pos);
-            let value: String = param.slice(equal_pos + 1, len(param));
+            let name: string = param.slice(0, equal_pos);
+            let value: string = param.slice(equal_pos + 1, len(param));
             
             if (name == param_name) {
                 return value;
@@ -174,17 +174,17 @@ export fun get_query_param(query: String, param_name: String) -> String {
 }
 
 // HTTP headers
-export fun set_header(headers: String[], name: String, value: String) -> String[] {
-    let new_headers: String[] = [];
+export fun set_header(headers: string[], name: string, value: string) -> string[] {
+    let new_headers: string[] = [];
     let found: bool = false;
     
     let i: int = 0;
     while (i < len(headers)) {
-        let header: String = headers[i];
+        let header: string = headers[i];
         let colon_pos: int = string.index_of(header, ":");
         
         if (colon_pos != -1) {
-            let header_name: String = string.trim(header.slice(0, colon_pos));
+            let header_name: string = string.trim(header.slice(0, colon_pos));
             
             if (header_name == name) {
                 new_headers.push(name + ": " + value);
@@ -206,15 +206,15 @@ export fun set_header(headers: String[], name: String, value: String) -> String[
     return new_headers;
 }
 
-export fun get_header(headers: String[], name: String) -> String {
+export fun get_header(headers: string[], name: string) -> string {
     let i: int = 0;
     while (i < len(headers)) {
-        let header: String = headers[i];
+        let header: string = headers[i];
         let colon_pos: int = string.index_of(header, ":");
         
         if (colon_pos != -1) {
-            let header_name: String = string.trim(header.slice(0, colon_pos));
-            let header_value: String = string.trim(header.slice(colon_pos + 1, len(header)));
+            let header_name: string = string.trim(header.slice(0, colon_pos));
+            let header_value: string = string.trim(header.slice(colon_pos + 1, len(header)));
             
             if (header_name == name) {
                 return header_value;
@@ -227,16 +227,16 @@ export fun get_header(headers: String[], name: String) -> String {
     return "";
 }
 
-export fun remove_header(headers: String[], name: String) -> String[] {
-    let new_headers: String[] = [];
+export fun remove_header(headers: string[], name: string) -> string[] {
+    let new_headers: string[] = [];
     
     let i: int = 0;
     while (i < len(headers)) {
-        let header: String = headers[i];
+        let header: string = headers[i];
         let colon_pos: int = string.index_of(header, ":");
         
         if (colon_pos != -1) {
-            let header_name: String = string.trim(header.slice(0, colon_pos));
+            let header_name: string = string.trim(header.slice(0, colon_pos));
             
             if (header_name != name) {
                 new_headers.push(header);
@@ -268,7 +268,7 @@ export fun is_server_error(response: HttpResponse) -> bool {
     return response.status_code >= 500 && response.status_code < 600;
 }
 
-export fun get_status_text(status_code: int) -> String {
+export fun get_status_text(status_code: int) -> string {
     if (status_code == 200) { return "OK"; }
     if (status_code == 201) { return "Created"; }
     if (status_code == 204) { return "No Content"; }
@@ -283,12 +283,12 @@ export fun get_status_text(status_code: int) -> String {
 }
 
 // JSON helpers (simplified)
-export fun json_encode(obj: String) -> String {
+export fun json_encode(obj: string) -> string {
     // Simple JSON encoding - just wrap in quotes
     return "\"" + obj + "\"";
 }
 
-export fun json_decode(json: String) -> String {
+export fun json_decode(json: string) -> string {
     // Simple JSON decoding - remove quotes
     if (string.starts_with(json, "\"") && string.ends_with(json, "\"")) {
         return json.slice(1, len(json) - 1);
@@ -297,7 +297,7 @@ export fun json_decode(json: String) -> String {
 }
 
 // File download
-export fun download_file(url: String, filename: String) -> bool {
+export fun download_file(url: string, filename: string) -> bool {
     let response: HttpResponse = GET(url);
     
     if (!is_success(response)) {
@@ -311,7 +311,7 @@ export fun download_file(url: String, filename: String) -> bool {
 // Simple HTTP server (placeholder)
 struct HttpServer {
     port: int,
-    routes: String[]
+    routes: string[]
 }
 
 export fun create_server(port: int) -> HttpServer {
@@ -322,8 +322,8 @@ export fun create_server(port: int) -> HttpServer {
     return server;
 }
 
-export fun add_route(server: HttpServer, method: String, path: String, handler: String) -> HttpServer {
-    let route: String = method + " " + path + " -> " + handler;
+export fun add_route(server: HttpServer, method: string, path: string, handler: string) -> HttpServer {
+    let route: string = method + " " + path + " -> " + handler;
     server.routes.push(route);
     return server;
 }
@@ -337,11 +337,11 @@ export fun start_server(server: HttpServer) -> bool {
 
 // WebSocket (placeholder)
 struct WebSocket {
-    url: String,
+    url: string,
     connected: bool
 }
 
-export fun connect_websocket(url: String) -> WebSocket {
+export fun connect_websocket(url: string) -> WebSocket {
     let ws: WebSocket = WebSocket {
         url: url,
         connected: true
@@ -349,7 +349,7 @@ export fun connect_websocket(url: String) -> WebSocket {
     return ws;
 }
 
-export fun send_message(ws: WebSocket, message: String) -> bool {
+export fun send_message(ws: WebSocket, message: string) -> bool {
     if (!ws.connected) {
         return false;
     }
@@ -365,29 +365,29 @@ export fun close_websocket(ws: WebSocket) -> bool {
 }
 
 // Network utilities
-export fun ping(host: String) -> bool {
+export fun ping(host: string) -> bool {
     // This would normally ping a host
     // For now, return true as a placeholder
     return true;
 }
 
-export fun resolve_dns(hostname: String) -> String {
+export fun resolve_dns(hostname: string) -> string {
     // This would normally resolve DNS
     // For now, return the hostname as a placeholder
     return hostname;
 }
 
-export fun is_valid_url(url: String) -> bool {
+export fun is_valid_url(url: string) -> bool {
     return string.starts_with(url, "http://") || string.starts_with(url, "https://");
 }
 
-export fun is_valid_email(email: String) -> bool {
+export fun is_valid_email(email: string) -> bool {
     let at_pos: int = string.index_of(email, "@");
     if (at_pos == -1) {
         return false;
     }
     
-    let after_at: String = email.slice(at_pos + 1, len(email));
+    let after_at: string = email.slice(at_pos + 1, len(email));
     let dot_pos: int = string.index_of(after_at, ".");
     if (dot_pos == -1) {
         return false;

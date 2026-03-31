@@ -52,11 +52,11 @@ fun demo_collections() -> void {
     print(format("Set size: {}", set.len()));
 }
 
-// String utilities demo
+// string utilities demo
 fun demo_string() -> void {
-    print("\n=== String Utilities Demo ===");
+    print("\n=== string Utilities Demo ===");
     
-    let text: String = "  hello world  ";
+    let text: string = "  hello world  ";
     print(format("Original: '{}'", text));
     print(format("Trimmed: '{}'", string.trim(text)));
     print(format("Capitalized: '{}'", string.capitalize(string.trim(text))));
@@ -81,8 +81,8 @@ fun demo_time() -> void {
 fun demo_filesystem() -> void {
     print("\n=== File System Demo ===");
     
-    let test_file: String = "test_demo.txt";
-    let content: String = "Hello from Raven!\nThis is a test file.\nLine 3";
+    let test_file: string = "test_demo.txt";
+    let content: string = "Hello from Raven!\nThis is a test file.\nLine 3";
     
     // Write test file
     filesystem.write_lines(test_file, content.split("\n"));
@@ -95,11 +95,11 @@ fun demo_filesystem() -> void {
     print(format("Is file: {}", info.is_file));
     
     // Read file content
-    let lines: String[] = filesystem.read_lines(test_file);
+    let lines: string[] = filesystem.read_lines(test_file);
     print(format("File has {} lines", len(lines)));
     
     // Path manipulation
-    let path: String = filesystem.join_path(["dir", "subdir", "file.txt"]);
+    let path: string = filesystem.join_path(["dir", "subdir", "file.txt"]);
     print(format("Joined path: {}", path));
     print(format("Directory: {}", filesystem.dirname(path)));
     print(format("Filename: {}", filesystem.basename(path)));
@@ -115,7 +115,7 @@ fun demo_network() -> void {
     print("\n=== Network Library Demo ===");
     
     // URL parsing
-    let url: String = "https://api.example.com:8080/data?param=value#section";
+    let url: string = "https://api.example.com:8080/data?param=value#section";
     let parsed: Url = network.parse_url(url);
     print(format("Protocol: {}", parsed.protocol));
     print(format("Host: {}", parsed.host));
@@ -137,27 +137,27 @@ fun demo_testing() -> void {
     print("\n=== Testing Library Demo ===");
     
     // Create test suite
-    let tests: String[] = ["test_math", "test_string", "test_collections"];
+    let tests: string[] = ["test_math", "test_string", "test_collections"];
     let suite: TestSuite = testing.run_test_suite("Standard Library Tests", tests);
     
     // Print results
     testing.print_test_results(suite);
     
     // Generate report
-    let report: String = testing.generate_test_report(suite);
+    let report: string = testing.generate_test_report(suite);
     print("\nTest Report:");
     print(report);
     
     // Mock object demo
     let mock: MockObject = testing.create_mock("Calculator");
-    let result1: String = testing.mock_call(mock, "add", ["2", "3"]);
-    let result2: String = testing.mock_call(mock, "multiply", ["4", "5"]);
+    let result1: string = testing.mock_call(mock, "add", ["2", "3"]);
+    let result2: string = testing.mock_call(mock, "multiply", ["4", "5"]);
     
     print(format("Mock call 1: {}", result1));
     print(format("Mock call 2: {}", result2));
     
     // Test data generation
-    let random_str: String = testing.generate_random_string(10);
+    let random_str: string = testing.generate_random_string(10);
     let random_int: int = testing.generate_random_int(1, 100);
     
     print(format("Random string: {}", random_str));

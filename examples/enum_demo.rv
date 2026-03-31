@@ -25,17 +25,17 @@ fun main() -> void {
     print(format("  Status: {}", status));
     print(format("  Role: {}", role));
     
-    // 2. String-to-enum conversion (useful for JSON parsing)
+    // 2. string-to-enum conversion (useful for JSON parsing)
     let status_from_string: HttpStatus = enum_from_string("HttpStatus", "NotFound");
     let role_from_string: UserRole = enum_from_string("UserRole", "User");
     
-    print(format("String-to-enum conversion:"));
+    print(format("string-to-enum conversion:"));
     print(format("  Status: {}", status_from_string));
     print(format("  Role: {}", role_from_string));
     
     // 3. Simulating JSON data processing
-    let json_status: String = "InternalError";
-    let json_role: String = "Guest";
+    let json_status: string = "InternalError";
+    let json_role: string = "Guest";
     
     let parsed_status: HttpStatus = enum_from_string("HttpStatus", json_status);
     let parsed_role: UserRole = enum_from_string("UserRole", json_role);

@@ -2,8 +2,8 @@
 
 // Generic Map implementation using arrays
 struct Map {
-    keys: String[],
-    values: String[]
+    keys: string[],
+    values: string[]
 }
 
 fun new_map() -> Map {
@@ -11,7 +11,7 @@ fun new_map() -> Map {
     return map;
 }
 
-fun map_set(map: Map, key: String, value: String) -> Map {
+fun map_set(map: Map, key: string, value: string) -> Map {
     let i: int = 0;
     while (i < len(map.keys)) {
         if (map.keys[i] == key) {
@@ -26,7 +26,7 @@ fun map_set(map: Map, key: String, value: String) -> Map {
     return map;
 }
 
-fun map_get(map: Map, key: String) -> String {
+fun map_get(map: Map, key: string) -> string {
     let i: int = 0;
     while (i < len(map.keys)) {
         if (map.keys[i] == key) {
@@ -37,7 +37,7 @@ fun map_get(map: Map, key: String) -> String {
     return ""; // Return empty string if key not found
 }
 
-fun map_has(map: Map, key: String) -> bool {
+fun map_has(map: Map, key: string) -> bool {
     let i: int = 0;
     while (i < len(map.keys)) {
         if (map.keys[i] == key) {
@@ -48,12 +48,12 @@ fun map_has(map: Map, key: String) -> bool {
     return false;
 }
 
-fun map_remove(map: Map, key: String) -> Map {
+fun map_remove(map: Map, key: string) -> Map {
     let i: int = 0;
     while (i < len(map.keys)) {
         if (map.keys[i] == key) {
-            let new_keys: String[] = [];
-            let new_values: String[] = [];
+            let new_keys: string[] = [];
+            let new_values: string[] = [];
             let j: int = 0;
             while (j < len(map.keys)) {
                 if (j != i) {
@@ -75,41 +75,41 @@ fun map_len(map: Map) -> int {
     return len(map.keys);
 }
 
-fun map_keys(map: Map) -> String[] {
+fun map_keys(map: Map) -> string[] {
     return map.keys;
 }
 
-fun map_values(map: Map) -> String[] {
+fun map_values(map: Map) -> string[] {
     return map.values;
 }
 
 impl Map {
-    fun set(self, key: String, value: String) -> Map {
+    fun set(self, key: string, value: string) -> Map {
         return map_set(self, key, value);
     }
-    fun get(self, key: String) -> String {
+    fun get(self, key: string) -> string {
         return map_get(self, key);
     }
-    fun has(self, key: String) -> bool {
+    fun has(self, key: string) -> bool {
         return map_has(self, key);
     }
-    fun remove(self, key: String) -> Map {
+    fun remove(self, key: string) -> Map {
         return map_remove(self, key);
     }
     fun len(self) -> int {
         return map_len(self);
     }
-    fun keys(self) -> String[] {
+    fun keys(self) -> string[] {
         return map_keys(self);
     }
-    fun values(self) -> String[] {
+    fun values(self) -> string[] {
         return map_values(self);
     }
 }
 
 // Generic Set implementation using arrays
 struct Set {
-    items: String[]
+    items: string[]
 }
 
 fun new_set() -> Set {
@@ -117,7 +117,7 @@ fun new_set() -> Set {
     return set;
 }
 
-fun set_contains(set: Set, item: String) -> bool {
+fun set_contains(set: Set, item: string) -> bool {
     let i: int = 0;
     while (i < len(set.items)) {
         if (set.items[i] == item) {
@@ -128,18 +128,18 @@ fun set_contains(set: Set, item: String) -> bool {
     return false;
 }
 
-fun set_add(set: Set, item: String) -> Set {
+fun set_add(set: Set, item: string) -> Set {
     if (!set_contains(set, item)) {
         set.items.push(item);
     }
     return set;
 }
 
-fun set_remove(set: Set, item: String) -> Set {
+fun set_remove(set: Set, item: string) -> Set {
     let i: int = 0;
     while (i < len(set.items)) {
         if (set.items[i] == item) {
-            let new_items: String[] = [];
+            let new_items: string[] = [];
             let j: int = 0;
             while (j < len(set.items)) {
                 if (j != i) {
@@ -187,13 +187,13 @@ fun set_intersection(set1: Set, set2: Set) -> Set {
 }
 
 impl Set {
-    fun contains(self, item: String) -> bool {
+    fun contains(self, item: string) -> bool {
         return set_contains(self, item);
     }
-    fun add(self, item: String) -> Set {
+    fun add(self, item: string) -> Set {
         return set_add(self, item);
     }
-    fun remove(self, item: String) -> Set {
+    fun remove(self, item: string) -> Set {
         return set_remove(self, item);
     }
     fun len(self) -> int {
@@ -203,7 +203,7 @@ impl Set {
 
 // Stack implementation
 struct Stack {
-    items: String[]
+    items: string[]
 }
 
 fun new_stack() -> Stack {
@@ -211,22 +211,22 @@ fun new_stack() -> Stack {
     return stack;
 }
 
-fun stack_push(stack: Stack, item: String) -> Stack {
+fun stack_push(stack: Stack, item: string) -> Stack {
     stack.items.push(item);
     return stack;
 }
 
-fun stack_pop(stack: Stack) -> String {
+fun stack_pop(stack: Stack) -> string {
     if (len(stack.items) == 0) {
         return "";
     }
-    let item: String = stack.items[len(stack.items) - 1];
-    let new_items: String[] = stack.items.slice(0, len(stack.items) - 1);
+    let item: string = stack.items[len(stack.items) - 1];
+    let new_items: string[] = stack.items.slice(0, len(stack.items) - 1);
     stack.items = new_items;
     return item;
 }
 
-fun stack_peek(stack: Stack) -> String {
+fun stack_peek(stack: Stack) -> string {
     if (len(stack.items) == 0) {
         return "";
     }
@@ -243,7 +243,7 @@ fun stack_len(stack: Stack) -> int {
 
 // Queue implementation
 struct Queue {
-    items: String[]
+    items: string[]
 }
 
 fun new_queue() -> Queue {
@@ -251,22 +251,22 @@ fun new_queue() -> Queue {
     return queue;
 }
 
-fun queue_enqueue(queue: Queue, item: String) -> Queue {
+fun queue_enqueue(queue: Queue, item: string) -> Queue {
     queue.items.push(item);
     return queue;
 }
 
-fun queue_dequeue(queue: Queue) -> String {
+fun queue_dequeue(queue: Queue) -> string {
     if (len(queue.items) == 0) {
         return "";
     }
-    let item: String = queue.items[0];
-    let new_items: String[] = queue.items.slice(1, len(queue.items));
+    let item: string = queue.items[0];
+    let new_items: string[] = queue.items.slice(1, len(queue.items));
     queue.items = new_items;
     return item;
 }
 
-fun queue_peek(queue: Queue) -> String {
+fun queue_peek(queue: Queue) -> string {
     if (len(queue.items) == 0) {
         return "";
     }
@@ -282,13 +282,13 @@ fun queue_len(queue: Queue) -> int {
 }
 
 impl Queue {
-    fun enqueue(self, item: String) -> Queue {
+    fun enqueue(self, item: string) -> Queue {
         return queue_enqueue(self, item);
     }
-    fun dequeue(self) -> String {
+    fun dequeue(self) -> string {
         return queue_dequeue(self);
     }
-    fun peek(self) -> String {
+    fun peek(self) -> string {
         return queue_peek(self);
     }
     fun is_empty(self) -> bool {

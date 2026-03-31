@@ -41,10 +41,10 @@ Whether you're writing system-level code or high-level applications, Raven is bu
 - [x] **Type Checking** - Static type validation with error reporting
 - [x] **Interpreter** - Tree-walking interpreter with full execution
 - [x] **CLI Tool** - Complete command-line interface
-- [x] **Variables & Types** - int, float, String, bool, arrays
+- [x] **Variables & Types** - int, float, string, bool, arrays
 - [x] **Control Flow** - if/else, while, for loops
 - [x] **Functions** - Parameters, return types, recursion
-- [x] **String Operations** - Concatenation, methods, formatting
+- [x] **string Operations** - Concatenation, methods, formatting
 - [x] **Array Operations** - Literals, indexing, methods (push, pop, slice, join)
 - [x] **Built-in Functions** - print, input, format, len, type
 - [x] **File I/O** - read_file, write_file, append_file, file_exists
@@ -68,7 +68,7 @@ Whether you're writing system-level code or high-level applications, Raven is bu
 ### Data Types
 - **int** - 64-bit signed integers
 - **float** - 64-bit floating-point numbers  
-- **String** - UTF-8 strings with rich operations
+- **string** - UTF-8 strings with rich operations
 - **bool** - Boolean values (true/false)
 - **Arrays** - Dynamic arrays with type safety
 - **Structs** - User-defined data structures with named fields
@@ -81,7 +81,7 @@ Whether you're writing system-level code or high-level applications, Raven is bu
 - **for** - C-style for loops
 - **Functions** - Parameters, return types, recursion
 
-### String Operations
+### string Operations
 - **Concatenation** - `+` operator
 - **Methods** - `slice()`, `split()`, `replace()`
 - **Formatting** - `format()` with placeholders
@@ -96,7 +96,7 @@ Whether you're writing system-level code or high-level applications, Raven is bu
 ### Built-in Functions
 - **print()** - Output with formatting
 - **input()** - User input
-- **format()** - String formatting with `{}` placeholders
+- **format()** - string formatting with `{}` placeholders
 - **len()** - Length of strings and arrays
 - **type()** - Type information
 
@@ -158,14 +158,14 @@ raven program.rv --show-ast
 ### Hello World
 
 ```raven
-let message: String = "Hello, Raven!";
+let message: string = "Hello, Raven!";
 print(message);
 ```
 
 ### Variables and Types
 
 ```raven
-let name: String = "Raven";
+let name: string = "Raven";
 let age: int = 25;
 let height: float = 5.9;
 let isActive: bool = true;
@@ -173,18 +173,18 @@ let isActive: bool = true;
 print(format("Name: {}, Age: {}, Height: {}", name, age, height));
 ```
 
-### Arrays and String Operations
+### Arrays and string Operations
 
 ```raven
 let numbers: int[] = [1, 2, 3, 4, 5];
 numbers.push(6);
 print(numbers);  // [1, 2, 3, 4, 5, 6]
 
-let text: String = "Hello World";
-let words: String[] = text.split(" ");
+let text: string = "Hello World";
+let words: string[] = text.split(" ");
 print(len(words));  // 2
 
-let joined: String = words.join("-");
+let joined: string = words.join("-");
 print(joined);  // "Hello-World"
 ```
 
@@ -236,7 +236,7 @@ print(result);  // 15
 ```raven
 // Struct definition
 struct Person {
-    name: String,
+    name: string,
     age: int,
     isActive: bool
 }
@@ -252,8 +252,8 @@ enum HttpStatus {
 let person: Person = Person { name: "Alice", age: 25, isActive: true };
 let status: HttpStatus = HttpStatus::OK;
 
-// String to enum conversion (useful for JSON parsing)
-let jsonStatus: String = "NotFound";
+// string to enum conversion (useful for JSON parsing)
+let jsonStatus: string = "NotFound";
 let parsedStatus: HttpStatus = enum_from_string("HttpStatus", jsonStatus);
 
 print(format("Person: {}, Status: {}", person.name, status));
@@ -262,11 +262,11 @@ print(format("Person: {}, Status: {}", person.name, status));
 ### File I/O
 
 ```raven
-let content: String = "Hello from Raven!";
+let content: string = "Hello from Raven!";
 write_file("output.txt", content);
 
 if (file_exists("output.txt")) {
-    let data: String = read_file("output.txt");
+    let data: string = read_file("output.txt");
     print(data);
 }
 ```
@@ -275,7 +275,7 @@ if (file_exists("output.txt")) {
 
 ```bash
 raven
-raven> let name: String = "World";
+raven> let name: string = "World";
 raven> print(format("Hello, {}!", name));
 Hello, World!
 raven> 
@@ -311,7 +311,7 @@ Feel free to ⭐ star the project and open issues for suggestions!
 ## 📬 Contact
 
 - GitHub: [martian56](https://github.com/martian56)
-- LinkedIn [martian56](www.linkedin.com/in/martian56)
+- LinkedIn [martian56](www.linkedin.com/in/martian58)
 - Issues or suggestions? Feel free to open one!
 
 ---

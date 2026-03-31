@@ -27,11 +27,11 @@ export function activate(context: vscode.ExtensionContext) {
             
             const builtinFunctions: { [key: string]: string } = {
                 'print': 'Prints output to console. Usage: `print(message)`',
-                'input': 'Gets user input. Usage: `let name: String = input("Enter name: ")`',
+                'input': 'Gets user input. Usage: `let name: string = input("Enter name: ")`',
                 'format': 'Formats string with placeholders. Usage: `format("Hello {}", name)`',
                 'len': 'Gets length of string or array. Usage: `len(text)` or `len(array)`',
                 'type': 'Gets type information. Usage: `type(variable)`',
-                'read_file': 'Reads file contents. Usage: `let content: String = read_file("file.txt")`',
+                'read_file': 'Reads file contents. Usage: `let content: string = read_file("file.txt")`',
                 'write_file': 'Writes to file. Usage: `write_file("file.txt", content)`',
                 'append_file': 'Appends to file. Usage: `append_file("file.txt", content)`',
                 'file_exists': 'Checks if file exists. Usage: `file_exists("file.txt")`',
@@ -62,7 +62,7 @@ export function activate(context: vscode.ExtensionContext) {
             ];
 
             const types = [
-                'int', 'float', 'bool', 'String', 'int[]', 'float[]', 'bool[]', 'String[]'
+                'int', 'float', 'bool', 'string', 'int[]', 'float[]', 'bool[]', 'string[]'
             ];
 
             const completions: vscode.CompletionItem[] = [];

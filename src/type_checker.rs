@@ -42,7 +42,7 @@ impl Type {
             "int[]" => Type::Array(Box::new(Type::Int)),
             "float[]" => Type::Array(Box::new(Type::Float)),
             "bool[]" => Type::Array(Box::new(Type::Bool)),
-            "String[]" => Type::Array(Box::new(Type::String)),
+            "string[]" => Type::Array(Box::new(Type::String)),
             _ => Type::Struct(s.to_string()),
         }
     }
@@ -61,7 +61,7 @@ impl Type {
             "int[]" => Type::Array(Box::new(Type::Int)),
             "float[]" => Type::Array(Box::new(Type::Float)),
             "bool[]" => Type::Array(Box::new(Type::Bool)),
-            "String[]" => Type::Array(Box::new(Type::String)),
+            "string[]" => Type::Array(Box::new(Type::String)),
             _ => {
                 if enums.contains_key(s) {
                     Type::Enum(s.to_string())
@@ -75,6 +75,7 @@ impl Type {
 
 pub struct TypeChecker {
     variables: HashMap<String, Type>,
+    module_bindings: HashMap<String, String>,
     functions: HashMap<String, (Type, Vec<Type>)>,
     structs: HashMap<String, StructInfo>,
     struct_methods: HashMap<String, HashMap<String, (Type, Vec<Type>)>>,
@@ -107,6 +108,7 @@ impl TypeChecker {
     pub fn new() -> Self {
         TypeChecker {
             variables: HashMap::new(),
+            module_bindings: HashMap::new(),
             functions: HashMap::new(),
             structs: HashMap::new(),
             struct_methods: HashMap::new(),
@@ -383,6 +385,8 @@ impl TypeChecker {
 
                 let var_name = alias.as_ref().unwrap_or(module_name);
                 self.variables.insert(var_name.clone(), Type::Module);
+                self.module_bindings
+                    .insert(var_name.clone(), module_name.clone());
                 Ok(Type::Void)
             }
 
@@ -667,6 +671,66 @@ impl TypeChecker {
                         _ => Err(format!("Unknown method '{}' for array", method_name)),
                     }
                 } else if let Type::Module = object_type {
+                    if let Expression::Identifier(module_var) = object_expr.as_ref() {
+                        if let Some(module_name) = self.module_bindings.get(module_var) {
+                            if let Some(module_info) = self.modules.get(module_name) {
+                                if let Some((return_type, param_types)) =
+                                    module_info.functions.get(method_name).cloned()
+                                {
+                                    if args.len() != param_types.len() {
+                                        return Err(format!(
+                                            "Function '{}.{}' expects {} arguments, got {}\n   = help: Expected signature: {}.{}({})",
+                                            module_var,
+                                            method_name,
+                                            param_types.len(),
+                                            args.len(),
+                                            module_var,
+                                            method_name,
+                                            param_types
+                                                .iter()
+                                                .map(|t| t.fmt_for_user())
+                                                .collect::<Vec<_>>()
+                                                .join(", ")
+                                        ));
+                                    }
+
+                                    for (i, arg) in args.iter().enumerate() {
+                                        let arg_type = self.check_expression(arg)?;
+                                        if arg_type != param_types[i] {
+                                            return Err(format!(
+                                                "Function '{}.{}' parameter {} expects {}, got {}\n   = help: Pass a value of type '{}' for this parameter.",
+                                                module_var,
+                                                method_name,
+                                                i + 1,
+                                                param_types[i].fmt_for_user(),
+                                                arg_type.fmt_for_user(),
+                                                param_types[i].fmt_for_user()
+                                            ));
+                                        }
+                                    }
+
+                                    return Ok(return_type);
+                                } else {
+                                    let available = module_info
+                                        .functions
+                                        .keys()
+                                        .cloned()
+                                        .collect::<Vec<_>>()
+                                        .join(", ");
+                                    return Err(format!(
+                                        "Function '{}.{}' not found\n   = help: Available module functions: {}",
+                                        module_var,
+                                        method_name,
+                                        if available.is_empty() {
+                                            "(none)".to_string()
+                                        } else {
+                                            available
+                                        }
+                                    ));
+                                }
+                            }
+                        }
+                    }
                     Ok(Type::Unknown)
                 } else if let Type::String = object_type {
                     match method_name.as_str() {
@@ -1255,5 +1319,32 @@ mod tests {
         let expr = Expression::Identifier("x".to_string());
 
         assert!(checker.check_expression(&expr).is_err());
+    }
+
+    #[test]
+    fn test_module_method_call_resolves_return_type() {
+        let mut checker = TypeChecker::new();
+        checker.variables.insert("json".to_string(), Type::Module);
+        checker
+            .module_bindings
+            .insert("json".to_string(), "json".to_string());
+
+        let mut module_functions = HashMap::new();
+        module_functions.insert("load".to_string(), (Type::String, vec![Type::String]));
+        checker.modules.insert(
+            "json".to_string(),
+            ModuleInfo {
+                variables: HashMap::new(),
+                functions: module_functions,
+            },
+        );
+
+        let expr = Expression::MethodCall(
+            Box::new(Expression::Identifier("json".to_string())),
+            "load".to_string(),
+            vec![Expression::StringLiteral("test.json".to_string())],
+        );
+
+        assert_eq!(checker.check_expression(&expr).unwrap(), Type::String);
     }
 }

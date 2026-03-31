@@ -180,21 +180,21 @@ for (let i: int = 0; i < length; i = i + 1) {
 
 ---
 
-### 1.6 String Operations ⭐⭐⭐☆☆ (MEDIUM PRIORITY)
+### 1.6 string Operations ⭐⭐⭐☆☆ (MEDIUM PRIORITY)
 
-**Need**: String manipulation
+**Need**: string manipulation
 ```raven
-let name: String = "Raven";
+let name: string = "Raven";
 let len: int = len(name);  // 5
 
-let first: String = name[0];  // "R"
-let upper: String = uppercase(name);  // "RAVEN"
+let first: string = name[0];  // "R"
+let upper: string = uppercase(name);  // "RAVEN"
 ```
 
 **Implementation Checklist**:
-- [ ] String indexing
-- [ ] String slicing
-- [ ] String concatenation (already have +)
+- [ ] string indexing
+- [ ] string slicing
+- [ ] string concatenation (already have +)
 - [ ] Built-in string functions
 
 **Estimated Time**: 3-4 days
@@ -218,7 +218,7 @@ bool(value)
 // I/O
 print(value)
 println(value)
-input(prompt: String) -> String
+input(prompt: string) -> string
 
 // Collections
 len(collection) -> int
@@ -232,11 +232,11 @@ sqrt(n: float) -> float
 min(a: int, b: int) -> int
 max(a: int, b: int) -> int
 
-// String
-uppercase(s: String) -> String
-lowercase(s: String) -> String
-trim(s: String) -> String
-split(s: String, delim: String) -> [String]
+// string
+uppercase(s: string) -> string
+lowercase(s: string) -> string
+trim(s: string) -> string
+split(s: string, delim: string) -> [string]
 ```
 
 **Implementation Checklist**:
@@ -289,17 +289,17 @@ let result: int = math.add(5, 10);
 ```raven
 import io;
 
-let content: String = io.read_file("data.txt");
+let content: string = io.read_file("data.txt");
 io.write_file("output.txt", content);
 
-let line: String = io.read_line();
+let line: string = io.read_line();
 ```
 
 **Functions**:
-- `read_file(path: String) -> String`
-- `write_file(path: String, content: String) -> void`
-- `read_line() -> String`
-- `file_exists(path: String) -> bool`
+- `read_file(path: string) -> string`
+- `write_file(path: string, content: string) -> void`
+- `read_line() -> string`
+- `file_exists(path: string) -> bool`
 
 ---
 
@@ -327,9 +327,9 @@ let rounded: int = math.round(3.7);
 ```raven
 import string;
 
-let upper: String = string.uppercase("hello");
-let parts: [String] = string.split("a,b,c", ",");
-let joined: String = string.join(parts, "-");
+let upper: string = string.uppercase("hello");
+let parts: [string] = string.split("a,b,c", ",");
+let joined: string = string.join(parts, "-");
 ```
 
 **Functions**:
@@ -344,7 +344,7 @@ let joined: String = string.join(parts, "-");
 ```raven
 import collections;
 
-let map: Map<String, int> = collections.new_map();
+let map: Map<string, int> = collections.new_map();
 map.set("age", 25);
 let age: int = map.get("age");
 
@@ -359,7 +359,7 @@ set.add(5);
 ### 3.1 Structs & Methods ⭐⭐⭐⭐☆
 ```raven
 struct Person {
-    name: String;
+    name: string;
     age: int;
 }
 
@@ -404,7 +404,7 @@ enum Result<T, E> {
     Err(E)
 }
 
-fun divide(a: int, b: int) -> Result<int, String> {
+fun divide(a: int, b: int) -> Result<int, string> {
     if (b == 0) {
         return Result.Err("Division by zero");
     }
@@ -519,7 +519,7 @@ For IDE support:
 ### Short Term (Next Month):
 5. ✅ Arrays/Lists
 6. ✅ Built-in functions
-7. ✅ String operations
+7. ✅ string operations
 8. ✅ REPL
 
 ### Medium Term (2-3 Months):

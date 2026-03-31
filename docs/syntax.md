@@ -36,13 +36,13 @@ letter     = "a"…"z" | "A"…"Z" ;
 digit      = "0"…"9" ;
 ```
 
-Identifiers are case-sensitive. Type names for built-in string types are written as `String` in type positions (see [Types](#types)).
+Identifiers are case-sensitive. Type names for built-in string types are written as `string` in type positions (see [Types](#types)).
 
 ### Keywords
 
 The following words are reserved and cannot be used as identifiers:
 
-`let`, `const`, `fun`, `return`, `if`, `elseif`, `else`, `while`, `for`, `import`, `export`, `from`, `struct`, `impl`, `enum`, `print`, `and`, `or`, `not`, `int`, `float`, `bool`, `String`, `void`, `true`, `false`.
+`let`, `const`, `fun`, `return`, `if`, `elseif`, `else`, `while`, `for`, `import`, `export`, `from`, `struct`, `impl`, `enum`, `print`, `and`, `or`, `not`, `int`, `float`, `bool`, `string`, `void`, `true`, `false`.
 
 Note: `const` is recognized by the lexer as a keyword; the current parser does not treat `const` as a declaration. Use `let` for variables.
 
@@ -53,7 +53,7 @@ Note: `const` is recognized by the lexer as a keyword; the current parser does n
 | Integer | Sequence of digits; optional leading `-` only as a unary operator on an expression, not as part of the literal token. |
 | Float   | Digits with a single `.` (for example `3.14`). |
 | Boolean | `true` or `false`. |
-| String  | Characters between double quotes `"..."`. The lexer does not process escape sequences inside strings; newlines inside a string are not supported by the quote rules. |
+| string  | Characters between double quotes `"..."`. The lexer does not process escape sequences inside strings; newlines inside a string are not supported by the quote rules. |
 
 ### Punctuation and operators
 
@@ -93,9 +93,9 @@ In type positions (after `:`), the following built-in spellings are accepted:
 | `int` | 64-bit signed integer |
 | `float` | Floating-point |
 | `bool` | Boolean |
-| `String` | String (also accepted as `string` in some positions inside the implementation) |
+| `string` | string (also accepted as `string` in some positions inside the implementation) |
 | `void` | No value (return type) |
-| `int[]`, `float[]`, `bool[]`, `String[]` | Homogeneous arrays |
+| `int[]`, `float[]`, `bool[]`, `string[]` | Homogeneous arrays |
 
 User-defined types are referred to by identifier: struct and enum names.
 
@@ -107,7 +107,7 @@ Every `let` declaration must include an explicit type:
 let name: type = expression;
 ```
 
-Omitting `= expression` is allowed only for types that have a default: `int` (0), `float` (0.0), `bool` (`false`), `String` / string (`""`), and array types (`[]`). Other types require an initializer.
+Omitting `= expression` is allowed only for types that have a default: `int` (0), `float` (0.0), `bool` (`false`), `string` / string (`""`), and array types (`[]`). Other types require an initializer.
 
 ---
 

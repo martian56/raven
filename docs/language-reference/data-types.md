@@ -31,13 +31,13 @@ let isComplete: bool = false;
 let isValid: bool = (age > 18);
 ```
 
-### String (`String`)
+### string (`string`)
 UTF-8 encoded strings.
 
 ```raven
-let name: String = "Alice";
-let message: String = "Hello, World!";
-let empty: String = "";
+let name: string = "Alice";
+let message: string = "Hello, World!";
+let empty: string = "";
 ```
 
 ## Array Types
@@ -51,10 +51,10 @@ let emptyNumbers: int[] = [];
 let singleNumber: int[] = [42];
 ```
 
-### String Arrays
+### string Arrays
 ```raven
-let names: String[] = ["Alice", "Bob", "Charlie"];
-let words: String[] = ["Hello", "World"];
+let names: string[] = ["Alice", "Bob", "Charlie"];
+let words: string[] = ["Hello", "World"];
 ```
 
 ### Boolean Arrays
@@ -70,7 +70,7 @@ Custom data structures with named fields.
 
 ```raven
 struct Person {
-    name: String,
+    name: string,
     age: int,
     isActive: bool
 }
@@ -95,7 +95,7 @@ Structs can have methods defined with `impl` blocks. Each method receives `self`
 
 ```raven
 struct Person {
-    name: String,
+    name: string,
     age: int
 }
 
@@ -147,11 +147,11 @@ Raven can infer types in some cases, but explicit typing is recommended for clar
 
 ```raven
 // Explicit typing (recommended)
-let name: String = "Alice";
+let name: string = "Alice";
 let age: int = 25;
 
 // Type inference (works but less clear)
-let name = "Alice";  // Inferred as String
+let name = "Alice";  // Inferred as string
 let age = 25;        // Inferred as int
 ```
 
@@ -160,14 +160,14 @@ let age = 25;        // Inferred as int
 Raven performs static type checking at compile time.
 
 ```raven
-let name: String = "Alice";
+let name: string = "Alice";
 let age: int = 25;
 
 // This would cause a type error:
-// let result: int = name + age;  // Error: can't add String and int
+// let result: int = name + age;  // Error: can't add string and int
 
 // Correct way:
-let result: String = format("{} is {} years old", name, age);
+let result: string = format("{} is {} years old", name, age);
 ```
 
 ## Type Conversion
@@ -176,9 +176,9 @@ Raven provides built-in functions for type conversion.
 
 ```raven
 let number: int = 42;
-let text: String = format("{}", number);  // Convert int to String
+let text: string = format("{}", number);  // Convert int to string
 
-let input: String = "123";
+let input: string = "123";
 // Note: Raven doesn't have built-in string-to-number conversion yet
 // This would be added in future versions
 ```
@@ -188,7 +188,7 @@ let input: String = "123";
 The `void` type represents the absence of a value, used for functions that don't return anything.
 
 ```raven
-fun greet(name: String) -> void {
+fun greet(name: string) -> void {
     print(format("Hello, {}!", name));
     // No return statement needed
 }

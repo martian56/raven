@@ -422,7 +422,7 @@ impl Lexer {
             "int" => TokenType::IntType,
             "float" => TokenType::FloatType,
             "bool" => TokenType::BoolType,
-            "String" => TokenType::StringType,
+            "string" => TokenType::StringType,
             "void" => TokenType::VoidType,
 
             "true" => TokenType::BoolLiteral(true),

@@ -26,7 +26,7 @@ code --install-extension martian56.raven-language
 
 ### Syntax Highlighting
 - **Keywords**: `fun`, `let`, `if`, `while`, `for`, `struct`, `enum`
-- **Types**: `int`, `float`, `bool`, `String`, `void`
+- **Types**: `int`, `float`, `bool`, `string`, `void`
 - **Operators**: `+`, `-`, `*`, `/`, `%`, `==`, `!=`, `&&`, `||`
 - **Comments**: `//` and `/* */`
 - **Strings**: Proper string highlighting

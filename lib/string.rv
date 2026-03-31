@@ -1,7 +1,7 @@
-// lib/string.rv - String Utilities Library
+// lib/string.rv - string Utilities Library
 
-// String manipulation functions
-fun trim(s: String) -> String {
+// string manipulation functions
+fun trim(s: string) -> string {
     let start: int = 0;
     let end: int = len(s) - 1;
     
@@ -22,7 +22,7 @@ fun trim(s: String) -> String {
     return s.slice(start, end + 1);
 }
 
-fun trim_left(s: String) -> String {
+fun trim_left(s: string) -> string {
     let start: int = 0;
     while (start < len(s) && s[start] == " ") {
         start = start + 1;
@@ -30,7 +30,7 @@ fun trim_left(s: String) -> String {
     return s.slice(start, len(s));
 }
 
-fun trim_right(s: String) -> String {
+fun trim_right(s: string) -> string {
     let end: int = len(s) - 1;
     while (end >= 0 && s[end] == " ") {
         end = end - 1;
@@ -38,7 +38,7 @@ fun trim_right(s: String) -> String {
     return s.slice(0, end + 1);
 }
 
-fun find_char_in(str: String, ch: String) -> int {
+fun find_char_in(str: string, ch: string) -> int {
     let i: int = 0;
     while (i < len(str)) {
         if (str[i] == ch) {
@@ -49,13 +49,13 @@ fun find_char_in(str: String, ch: String) -> int {
     return -1;
 }
 
-fun to_upper(s: String) -> String {
-    let lower: String = "abcdefghijklmnopqrstuvwxyz";
-    let upper: String = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    let result: String = "";
+fun to_upper(s: string) -> string {
+    let lower: string = "abcdefghijklmnopqrstuvwxyz";
+    let upper: string = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    let result: string = "";
     let i: int = 0;
     while (i < len(s)) {
-        let c: String = s[i];
+        let c: string = s[i];
         let idx: int = find_char_in(lower, c);
         if (idx >= 0) {
             result = result + upper[idx];
@@ -67,13 +67,13 @@ fun to_upper(s: String) -> String {
     return result;
 }
 
-fun to_lower(s: String) -> String {
-    let lower: String = "abcdefghijklmnopqrstuvwxyz";
-    let upper: String = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    let result: String = "";
+fun to_lower(s: string) -> string {
+    let lower: string = "abcdefghijklmnopqrstuvwxyz";
+    let upper: string = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    let result: string = "";
     let i: int = 0;
     while (i < len(s)) {
-        let c: String = s[i];
+        let c: string = s[i];
         let idx: int = find_char_in(upper, c);
         if (idx >= 0) {
             result = result + lower[idx];
@@ -85,7 +85,7 @@ fun to_lower(s: String) -> String {
     return result;
 }
 
-fun starts_with(s: String, prefix: String) -> bool {
+fun starts_with(s: string, prefix: string) -> bool {
     if (len(prefix) > len(s)) {
         return false;
     }
@@ -100,7 +100,7 @@ fun starts_with(s: String, prefix: String) -> bool {
     return true;
 }
 
-fun ends_with(s: String, suffix: String) -> bool {
+fun ends_with(s: string, suffix: string) -> bool {
     if (len(suffix) > len(s)) {
         return false;
     }
@@ -116,7 +116,7 @@ fun ends_with(s: String, suffix: String) -> bool {
     return true;
 }
 
-fun contains(s: String, substring: String) -> bool {
+fun contains(s: string, substring: string) -> bool {
     if (len(substring) == 0) {
         return true;
     }
@@ -140,7 +140,7 @@ fun contains(s: String, substring: String) -> bool {
     return false;
 }
 
-fun index_of(s: String, substring: String) -> int {
+fun index_of(s: string, substring: string) -> int {
     if (len(substring) == 0) {
         return 0;
     }
@@ -164,7 +164,7 @@ fun index_of(s: String, substring: String) -> int {
     return -1;
 }
 
-fun last_index_of(s: String, substring: String) -> int {
+fun last_index_of(s: string, substring: string) -> int {
     if (len(substring) == 0) {
         return len(s);
     }
@@ -188,13 +188,13 @@ fun last_index_of(s: String, substring: String) -> int {
     return -1;
 }
 
-fun pad_left(s: String, length: int, pad_char: String) -> String {
+fun pad_left(s: string, length: int, pad_char: string) -> string {
     if (len(s) >= length) {
         return s;
     }
     
     let padding_length: int = length - len(s);
-    let padding: String = "";
+    let padding: string = "";
     let i: int = 0;
     while (i < padding_length) {
         padding = padding + pad_char;
@@ -204,13 +204,13 @@ fun pad_left(s: String, length: int, pad_char: String) -> String {
     return padding + s;
 }
 
-fun pad_right(s: String, length: int, pad_char: String) -> String {
+fun pad_right(s: string, length: int, pad_char: string) -> string {
     if (len(s) >= length) {
         return s;
     }
     
     let padding_length: int = length - len(s);
-    let padding: String = "";
+    let padding: string = "";
     let i: int = 0;
     while (i < padding_length) {
         padding = padding + pad_char;
@@ -220,7 +220,7 @@ fun pad_right(s: String, length: int, pad_char: String) -> String {
     return s + padding;
 }
 
-fun pad_center(s: String, length: int, pad_char: String) -> String {
+fun pad_center(s: string, length: int, pad_char: string) -> string {
     if (len(s) >= length) {
         return s;
     }
@@ -229,14 +229,14 @@ fun pad_center(s: String, length: int, pad_char: String) -> String {
     let left_padding: int = total_padding / 2;
     let right_padding: int = total_padding - left_padding;
     
-    let left_pad: String = "";
+    let left_pad: string = "";
     let i: int = 0;
     while (i < left_padding) {
         left_pad = left_pad + pad_char;
         i = i + 1;
     }
     
-    let right_pad: String = "";
+    let right_pad: string = "";
     i = 0;
     while (i < right_padding) {
         right_pad = right_pad + pad_char;
@@ -246,12 +246,12 @@ fun pad_center(s: String, length: int, pad_char: String) -> String {
     return left_pad + s + right_pad;
 }
 
-fun repeat(s: String, count: int) -> String {
+fun repeat(s: string, count: int) -> string {
     if (count <= 0) {
         return "";
     }
     
-    let result: String = "";
+    let result: string = "";
     let i: int = 0;
     while (i < count) {
         result = result + s;
@@ -260,8 +260,8 @@ fun repeat(s: String, count: int) -> String {
     return result;
 }
 
-fun reverse(s: String) -> String {
-    let result: String = "";
+fun reverse(s: string) -> string {
+    let result: string = "";
     let i: int = len(s) - 1;
     while (i >= 0) {
         result = result + s[i];
@@ -270,20 +270,20 @@ fun reverse(s: String) -> String {
     return result;
 }
 
-fun capitalize(s: String) -> String {
+fun capitalize(s: string) -> string {
     if (len(s) == 0) {
         return s;
     }
     
-    let first_char: String = s[0];
-    let rest: String = s.slice(1, len(s));
+    let first_char: string = s[0];
+    let rest: string = s.slice(1, len(s));
     
     return to_upper(first_char) + to_lower(rest);
 }
 
-fun title_case(s: String) -> String {
-    let words: String[] = s.split(" ");
-    let result: String[] = [];
+fun title_case(s: string) -> string {
+    let words: string[] = s.split(" ");
+    let result: string[] = [];
     
     let i: int = 0;
     while (i < len(words)) {
@@ -294,16 +294,16 @@ fun title_case(s: String) -> String {
     return result.join(" ");
 }
 
-fun is_empty(s: String) -> bool {
+fun is_empty(s: string) -> bool {
     return len(s) == 0;
 }
 
-fun is_blank(s: String) -> bool {
-    let trimmed: String = trim(s);
+fun is_blank(s: string) -> bool {
+    let trimmed: string = trim(s);
     return len(trimmed) == 0;
 }
 
-fun is_numeric(s: String) -> bool {
+fun is_numeric(s: string) -> bool {
     if (len(s) == 0) {
         return false;
     }
@@ -317,7 +317,7 @@ fun is_numeric(s: String) -> bool {
     }
     
     while (i < len(s)) {
-        let char: String = s[i];
+        let char: string = s[i];
         if (char >= "0" && char <= "9") {
             // Valid digit
         } else {
@@ -333,14 +333,14 @@ fun is_numeric(s: String) -> bool {
     return true;
 }
 
-fun is_alpha(s: String) -> bool {
+fun is_alpha(s: string) -> bool {
     if (len(s) == 0) {
         return false;
     }
     
     let i: int = 0;
     while (i < len(s)) {
-        let char: String = s[i];
+        let char: string = s[i];
         if (!((char >= "a" && char <= "z") || (char >= "A" && char <= "Z"))) {
             return false;
         }
@@ -350,14 +350,14 @@ fun is_alpha(s: String) -> bool {
     return true;
 }
 
-fun is_alphanumeric(s: String) -> bool {
+fun is_alphanumeric(s: string) -> bool {
     if (len(s) == 0) {
         return false;
     }
     
     let i: int = 0;
     while (i < len(s)) {
-        let char: String = s[i];
+        let char: string = s[i];
         if (!((char >= "a" && char <= "z") || (char >= "A" && char <= "Z") || (char >= "0" && char <= "9"))) {
             return false;
         }
@@ -367,8 +367,8 @@ fun is_alphanumeric(s: String) -> bool {
     return true;
 }
 
-// String comparison functions
-fun compare(a: String, b: String) -> int {
+// string comparison functions
+fun compare(a: string, b: string) -> int {
     let len_a: int = len(a);
     let len_b: int = len(b);
     let min_len: int = len_a;
@@ -398,6 +398,6 @@ fun compare(a: String, b: String) -> int {
     }
 }
 
-fun compare_ignore_case(a: String, b: String) -> int {
+fun compare_ignore_case(a: string, b: string) -> int {
     return compare(to_lower(a), to_lower(b));
 }

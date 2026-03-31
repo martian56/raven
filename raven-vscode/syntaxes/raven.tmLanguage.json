@@ -84,11 +84,11 @@
       "patterns": [
         {
           "name": "support.type.primitive.raven",
-          "match": "\\b(int|float|bool|String)\\b"
+          "match": "\\b(int|float|bool|string)\\b"
         },
         {
           "name": "support.type.array.raven",
-          "match": "\\b(int\\[\\]|float\\[\\]|bool\\[\\]|String\\[\\])\\b"
+          "match": "\\b(int\\[\\]|float\\[\\]|bool\\[\\]|string\\[\\])\\b"
         },
         {
           "name": "support.type.custom.raven",

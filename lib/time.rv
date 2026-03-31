@@ -18,8 +18,8 @@ struct DateTime {
 }
 
 // --- Internal helpers (not exported) ---
-fun pad_two(n: int) -> String {
-    let s: String = format("{}", n);
+fun pad_two(n: int) -> string {
+    let s: string = format("{}", n);
     if (len(s) == 1) {
         return "0" + s;
     }
@@ -46,12 +46,12 @@ fun _days_in_month(year: int, month: int) -> int {
 
 // --- Time impl ---
 impl Time {
-    fun to_string(self) -> String {
+    fun to_string(self) -> string {
         return pad_two(self.hour) + ":" + pad_two(self.minute) + ":" + pad_two(self.second);
     }
 
-    fun from_string(self, time_str: String) -> Time {
-        let parts: String[] = time_str.split(":");
+    fun from_string(self, time_str: string) -> Time {
+        let parts: string[] = time_str.split(":");
         if (len(parts) != 3) {
             return Time { hour: 0, minute: 0, second: 0 };
         }
@@ -85,7 +85,7 @@ impl Time {
         return seconds1 - seconds2;
     }
 
-    fun format(self, fmt: String) -> String {
+    fun format(self, fmt: string) -> string {
         if (fmt == "HH:mm:ss") {
             return self.to_string();
         } elseif (fmt == "HH:mm") {
@@ -98,12 +98,12 @@ impl Time {
 
 // --- Date impl ---
 impl Date {
-    fun to_string(self) -> String {
+    fun to_string(self) -> string {
         return format("{}", self.year) + "-" + pad_two(self.month) + "-" + pad_two(self.day);
     }
 
-    fun from_string(self, date_str: String) -> Date {
-        let parts: String[] = date_str.split("-");
+    fun from_string(self, date_str: string) -> Date {
+        let parts: string[] = date_str.split("-");
         if (len(parts) != 3) {
             return Date { year: 2000, month: 1, day: 1 };
         }
@@ -200,8 +200,8 @@ impl Date {
         return (dow + 5) % 7;
     }
 
-    fun day_name(self) -> String {
-        let names: String[] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    fun day_name(self) -> string {
+        let names: string[] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
         let dow: int = self.day_of_week();
         if (dow >= 0 && dow < 7) {
             return names[dow];
@@ -209,8 +209,8 @@ impl Date {
         return "Unknown";
     }
 
-    fun month_name(self) -> String {
-        let names: String[] = ["", "January", "February", "March", "April", "May", "June",
+    fun month_name(self) -> string {
+        let names: string[] = ["", "January", "February", "March", "April", "May", "June",
                               "July", "August", "September", "October", "November", "December"];
         if (self.month >= 1 && self.month <= 12) {
             return names[self.month];
@@ -218,7 +218,7 @@ impl Date {
         return "Unknown";
     }
 
-    fun format(self, fmt: String) -> String {
+    fun format(self, fmt: string) -> string {
         if (fmt == "YYYY-MM-DD") {
             return self.to_string();
         } elseif (fmt == "MM/DD/YYYY") {
@@ -231,12 +231,12 @@ impl Date {
 
 // --- DateTime impl ---
 impl DateTime {
-    fun to_string(self) -> String {
+    fun to_string(self) -> string {
         return self.date.to_string() + " " + self.time.to_string();
     }
 
-    fun from_string(self, datetime_str: String) -> DateTime {
-        let parts: String[] = datetime_str.split(" ");
+    fun from_string(self, datetime_str: string) -> DateTime {
+        let parts: string[] = datetime_str.split(" ");
         if (len(parts) != 2) {
             return DateTime { date: Date { year: 2000, month: 1, day: 1 }, time: Time { hour: 0, minute: 0, second: 0 } };
         }
@@ -271,7 +271,7 @@ impl DateTime {
         return DateTime { date: new_date, time: self.time };
     }
 
-    fun format(self, fmt: String) -> String {
+    fun format(self, fmt: string) -> string {
         if (fmt == "YYYY-MM-DD HH:mm:ss" || fmt == "YYYY-MM-DD") {
             return self.to_string();
         } elseif (fmt == "HH:mm") {
@@ -290,11 +290,11 @@ export fun new_time(hour: int, minute: int, second: int) -> Time {
     return Time { hour: hour, minute: minute, second: second };
 }
 
-export fun time_to_string(time: Time) -> String {
+export fun time_to_string(time: Time) -> string {
     return time.to_string();
 }
 
-export fun time_from_string(time_str: String) -> Time {
+export fun time_from_string(time_str: string) -> Time {
     let t: Time = Time { hour: 0, minute: 0, second: 0 };
     return t.from_string(time_str);
 }
@@ -319,11 +319,11 @@ export fun new_date(year: int, month: int, day: int) -> Date {
     return Date { year: year, month: month, day: day };
 }
 
-export fun date_to_string(date: Date) -> String {
+export fun date_to_string(date: Date) -> string {
     return date.to_string();
 }
 
-export fun date_from_string(date_str: String) -> Date {
+export fun date_from_string(date_str: string) -> Date {
     let d: Date = Date { year: 2000, month: 1, day: 1 };
     return d.from_string(date_str);
 }
@@ -357,16 +357,16 @@ export fun day_of_week(year: int, month: int, day: int) -> int {
     return d.day_of_week();
 }
 
-export fun day_name(day_num: int) -> String {
-    let names: String[] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+export fun day_name(day_num: int) -> string {
+    let names: string[] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     if (day_num >= 0 && day_num < 7) {
         return names[day_num];
     }
     return "Unknown";
 }
 
-export fun month_name(month_num: int) -> String {
-    let names: String[] = ["", "January", "February", "March", "April", "May", "June",
+export fun month_name(month_num: int) -> string {
+    let names: string[] = ["", "January", "February", "March", "April", "May", "June",
                           "July", "August", "September", "October", "November", "December"];
     if (month_num >= 1 && month_num <= 12) {
         return names[month_num];
@@ -378,11 +378,11 @@ export fun new_datetime(date: Date, time: Time) -> DateTime {
     return DateTime { date: date, time: time };
 }
 
-export fun datetime_to_string(datetime: DateTime) -> String {
+export fun datetime_to_string(datetime: DateTime) -> string {
     return datetime.to_string();
 }
 
-export fun datetime_from_string(datetime_str: String) -> DateTime {
+export fun datetime_from_string(datetime_str: string) -> DateTime {
     let dt: DateTime = DateTime { date: Date { year: 2000, month: 1, day: 1 }, time: Time { hour: 0, minute: 0, second: 0 } };
     return dt.from_string(datetime_str);
 }
@@ -403,27 +403,27 @@ export fun datetime_add_days(datetime: DateTime, days: int) -> DateTime {
     return datetime.add_days(days);
 }
 
-export fun current_time() -> String {
+export fun current_time() -> string {
     return sys_time();
 }
 
-export fun current_date() -> String {
+export fun current_date() -> string {
     return sys_date();
 }
 
-export fun current_datetime() -> String {
+export fun current_datetime() -> string {
     return sys_date() + " " + sys_time();
 }
 
-export fun format_time(time: Time, format: String) -> String {
+export fun format_time(time: Time, format: string) -> string {
     return time.format(format);
 }
 
-export fun format_date(date: Date, format: String) -> String {
+export fun format_date(date: Date, format: string) -> string {
     return date.format(format);
 }
 
-export fun format_datetime(datetime: DateTime, format: String) -> String {
+export fun format_datetime(datetime: DateTime, format: string) -> string {
     return datetime.format(format);
 }
 
@@ -433,8 +433,8 @@ export fun days_between(dt1: DateTime, dt2: DateTime) -> int {
 
 // now() returns current DateTime from system clock
 export fun now() -> DateTime {
-    let date_str: String = sys_date();
-    let time_str: String = sys_time();
+    let date_str: string = sys_date();
+    let time_str: string = sys_time();
     let date: Date = date_from_string(date_str);
     let time: Time = time_from_string(time_str);
     return DateTime { date: date, time: time };

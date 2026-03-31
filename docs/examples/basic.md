@@ -18,7 +18,7 @@ main();
 
 ```raven
 fun main() -> void {
-    let name: String = "Alice";
+    let name: string = "Alice";
     let age: int = 25;
     let height: float = 5.9;
     let isActive: bool = true;
@@ -110,7 +110,7 @@ main();
 ### Simple Functions
 
 ```raven
-fun greet(name: String) -> void {
+fun greet(name: string) -> void {
     print(format("Hello, {}!", name));
 }
 
@@ -149,7 +149,7 @@ main();
 
 ```raven
 struct Person {
-    name: String,
+    name: string,
     age: int,
     isActive: bool
 }
@@ -177,7 +177,7 @@ main();
 
 ```raven
 struct Person {
-    name: String,
+    name: string,
     age: int
 }
 
@@ -216,8 +216,8 @@ fun main() -> void {
     
     print(format("Status: {}", status));
     
-    // String to enum conversion
-    let jsonStatus: String = "NotFound";
+    // string to enum conversion
+    let jsonStatus: string = "NotFound";
     let parsedStatus: HttpStatus = enum_from_string("HttpStatus", jsonStatus);
     print(format("Parsed: {}", parsedStatus));
 }
@@ -229,8 +229,8 @@ main();
 
 ```raven
 fun main() -> void {
-    let filename: String = "test.txt";
-    let content: String = "Hello from Raven!";
+    let filename: string = "test.txt";
+    let content: string = "Hello from Raven!";
     
     // Write file
     write_file(filename, content);
@@ -241,7 +241,7 @@ fun main() -> void {
         print("File exists");
         
         // Read file
-        let data: String = read_file(filename);
+        let data: string = read_file(filename);
         print(format("Content: {}", data));
     } else {
         print("File not found");
@@ -255,8 +255,8 @@ main();
 
 ```raven
 fun main() -> void {
-    let name: String = input("Enter your name: ");
-    let ageStr: String = input("Enter your age: ");
+    let name: string = input("Enter your name: ");
+    let ageStr: string = input("Enter your age: ");
     
     print(format("Hello, {}!", name));
     print(format("You are {} years old", ageStr));
@@ -317,9 +317,9 @@ fun main() -> void {
     print("3. Multiply");
     print("4. Divide");
     
-    let choice: String = input("Enter choice (1-4): ");
-    let aStr: String = input("Enter first number: ");
-    let bStr: String = input("Enter second number: ");
+    let choice: string = input("Enter choice (1-4): ");
+    let aStr: string = input("Enter first number: ");
+    let bStr: string = input("Enter second number: ");
     
     // Note: In a real implementation, you'd convert strings to numbers
     print(format("Choice: {}, A: {}, B: {}", choice, aStr, bStr));
