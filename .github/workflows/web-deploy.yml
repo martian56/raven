@@ -4,10 +4,16 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "web/**"
+      - ".github/workflows/web-deploy.yml"
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
     
     steps:
       - name: Checkout code
@@ -26,6 +32,5 @@ jobs:
         env:
           UFAZIEN_HOSTING_EMAIL: ${{ secrets.UFAZIEN_HOSTING_EMAIL }}
           UFAZIEN_HOSTING_PASSWORD: ${{ secrets.UFAZIEN_HOSTING_PASSWORD }}
-        working-directory: web
         run: |
           python deploy.py

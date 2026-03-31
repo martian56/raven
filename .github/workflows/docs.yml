@@ -3,6 +3,11 @@ name: Deploy MkDocs documentation to Pages
 on:
   push:
     branches: ["main"]
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "README.md"
+      - ".github/workflows/docs.yml"
 
   workflow_dispatch:
 
@@ -21,6 +26,9 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
     steps:
       - name: Checkout
         uses: actions/checkout@v4

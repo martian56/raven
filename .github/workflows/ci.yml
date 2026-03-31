@@ -3,8 +3,24 @@ name: Raven CI
 on:
   push:
     branches: [ "main" ]
+    paths:
+      - "src/**"
+      - "lib/**"
+      - "examples/**"
+      - "tests/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ci.yml"
   pull_request:
     branches: [ "main" ]
+    paths:
+      - "src/**"
+      - "lib/**"
+      - "examples/**"
+      - "tests/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ci.yml"
 
 env:
   CARGO_TERM_COLOR: always
@@ -12,6 +28,9 @@ env:
 jobs:
   format:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
     steps:
     - uses: actions/checkout@v4
     - name: Format
@@ -19,6 +38,9 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
     steps:
     - uses: actions/checkout@v4
     - name: Lint
@@ -26,6 +48,9 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
 
     steps:
     - uses: actions/checkout@v4
