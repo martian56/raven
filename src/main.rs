@@ -7,10 +7,10 @@ use std::fs;
 use std::process;
 
 fn main() {
-    let matches = Command::new("Raven Programming Language")
+    let matches = Command::new("Raven")
         .version("1.3.0")
         .author("martian56 <https://github.com/martian56>")
-        .about("Raven compiler and interpreter - fast, safe, and expressive")
+        .about("Raven compiler and interpreter")
         .arg(
             Arg::new("file")
                 .help("The Raven source file to execute")

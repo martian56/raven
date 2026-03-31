@@ -1,398 +1,389 @@
-# Raven Language Specification (v1.1.0)
+# Raven syntax reference
 
-Raven is a modern programming language with advanced features including static typing, modules, arrays, string operations, and more.
+This document describes the **concrete syntax** of the Raven language as implemented by the reference interpreter (lexer and parser). Source files use the `.rv` extension.
 
-## 🔡 Variable Declarations
-
-```raven
-let name: String = "Alice";
-let age: int = 25;
-let pi: float = 3.14159;
-let isReady: bool = true;
-let numbers: int[] = [1, 2, 3, 4, 5];
-```
-
-- Variables declared with `let` are **mutable by default**
-- Type annotations are optional but recommended for clarity
-- Supported types: `int`, `float`, `bool`, `String`, `int[]`, `float[]`, `bool[]`, `String[]`
+For semantic rules (typing, runtime behavior), see the language reference and standard library docs.
 
 ---
 
-## 🧮 Expressions
+## Lexical structure
 
-### Arithmetic Operations
+### Whitespace
+
+Spaces, tabs, and newlines separate tokens. Whitespace is required only where two tokens would otherwise merge (for example, between a keyword and an identifier).
+
+### Comments
+
+- **Line comment**: from `//` to the end of the line.
+- **Block comment**: from `/*` to `*/`. Block comments do not nest.
+
 ```raven
-let sum = 5 + 10;           // Addition
-let diff = 20 - 8;          // Subtraction
-let product = 6 * 7;        // Multiplication
-let quotient = 15 / 3;      // Division
-let remainder = 17 % 5;     // Modulo
+// line comment
+let x: int = 1;
+
+/* multi-line
+   comment */
+let y: int = 2;
 ```
 
-### Logical Operations
-```raven
-let andResult = true && false;   // Logical AND
-let orResult = true || false;    // Logical OR
-let notResult = !true;           // Logical NOT
+### Identifiers
+
+An identifier starts with an ASCII letter or underscore and continues with letters, digits, or underscores.
+
+```ebnf
+identifier = ( letter | "_" ) { letter | digit | "_" } ;
+letter     = "a"…"z" | "A"…"Z" ;
+digit      = "0"…"9" ;
 ```
 
-### Comparison Operations
+Identifiers are case-sensitive. Type names for built-in string types are written as `String` in type positions (see [Types](#types)).
+
+### Keywords
+
+The following words are reserved and cannot be used as identifiers:
+
+`let`, `const`, `fun`, `return`, `if`, `elseif`, `else`, `while`, `for`, `import`, `export`, `from`, `struct`, `impl`, `enum`, `print`, `and`, `or`, `not`, `int`, `float`, `bool`, `String`, `void`, `true`, `false`.
+
+Note: `const` is recognized by the lexer as a keyword; the current parser does not treat `const` as a declaration. Use `let` for variables.
+
+### Literals
+
+| Kind    | Form |
+|--------|------|
+| Integer | Sequence of digits; optional leading `-` only as a unary operator on an expression, not as part of the literal token. |
+| Float   | Digits with a single `.` (for example `3.14`). |
+| Boolean | `true` or `false`. |
+| String  | Characters between double quotes `"..."`. The lexer does not process escape sequences inside strings; newlines inside a string are not supported by the quote rules. |
+
+### Punctuation and operators
+
+Single- and multi-character tokens include:
+
+| Token | Meaning |
+|-------|---------|
+| `=` | Assignment |
+| `:` | Type annotation separator |
+| `;` | Statement terminator |
+| `,` | Separator |
+| `.` | Member access |
+| `(` `)` | Grouping, calls |
+| `{` `}` | Blocks, struct literals |
+| `[` `]` | Arrays, indexing |
+| `->` | Function return type |
+| `+` `-` `*` `/` `%` | Arithmetic |
+| `==` `!=` `<` `>` `<=` `>=` | Comparisons |
+| `&&` `||` | Logical AND, OR (same token kinds as `and` / `or`) |
+| `!` | Logical NOT (same token kind as `not`) |
+| `::` | Enum variant (after a type name) |
+
+The token `..` is lexed (`DotDot`) but is not used by the core parser for range syntax.
+
+Characters that are not valid tokens in context produce a lexer error.
+
+---
+
+## Types
+
+### Primitive and array types
+
+In type positions (after `:`), the following built-in spellings are accepted:
+
+| Syntax | Meaning |
+|--------|---------|
+| `int` | 64-bit signed integer |
+| `float` | Floating-point |
+| `bool` | Boolean |
+| `String` | String (also accepted as `string` in some positions inside the implementation) |
+| `void` | No value (return type) |
+| `int[]`, `float[]`, `bool[]`, `String[]` | Homogeneous arrays |
+
+User-defined types are referred to by identifier: struct and enum names.
+
+### Typing in declarations
+
+Every `let` declaration must include an explicit type:
+
 ```raven
-let equal = 5 == 5;         // Equal
-let notEqual = 5 != 3;      // Not equal
-let less = 3 < 5;           // Less than
-let greater = 7 > 4;        // Greater than
-let lessEqual = 5 <= 5;     // Less than or equal
-let greaterEqual = 6 >= 4;  // Greater than or equal
+let name: type = expression;
 ```
 
-### String Operations
+Omitting `= expression` is allowed only for types that have a default: `int` (0), `float` (0.0), `bool` (`false`), `String` / string (`""`), and array types (`[]`). Other types require an initializer.
+
+---
+
+## Operator precedence and associativity
+
+Binary operators are parsed with the following precedence (highest to lowest). All binary operators are left-associative except that unary operators bind tighter than binary ones.
+
+| Level | Operators |
+|-------|-----------|
+| 7 | Unary `-`, unary `!` / `not` |
+| 6 | `*`, `/`, `%` |
+| 5 | `+`, `-` (binary) |
+| 4 | `<`, `>`, `<=`, `>=` |
+| 3 | `==`, `!=` |
+| 2 | `&&`, `and` |
+| 1 | `\|\|`, `or` |
+
+Parentheses `( )` override precedence.
+
+---
+
+## Expressions
+
+Expressions are built from literals, identifiers, operators, calls, indexing, and the forms below.
+
+### Primary forms
+
+- **Literals**: integer, float, boolean, string.
+- **Identifiers**: variable names; may be followed by suffixes (call, struct literal, index, field, method, enum variant).
+- **Parenthesized**: `( expression )`.
+- **Array literal**: `[` optional `expression` (`,` `expression`)* `]` .
+- **Struct literal**: `TypeName {` field `:` expression (`,` field `:` expression)* `}` .
+- **Function call**: `name (` optional arguments `)` .
+- **Method call / field access**: `expr .` identifier with optional `( arguments )` for methods; chaining is supported.
+- **Indexing**: `expr [ expression ]` (arrays and strings).
+- **Enum variant**: `EnumName :: VariantName` (after the type name, `::` introduces the variant).
+
+### Assignment expressions (statements)
+
+At statement level, assignment is `expression = expression ;` where the left-hand side is an assignable expression (identifier, field access, array index).
+
+---
+
+## Statements and program structure
+
+A program is a sequence of **items**. The parser builds a single block of statements from the file.
+
+### Top-level items
+
+These may appear at the outermost level:
+
+- `let` variable declaration
+- `fun` function declaration
+- `struct` declaration
+- `impl` block
+- `enum` declaration
+- `import` / `export`
+- `if` / `while` / `for`
+- `return` (at top level is unusual but parsed)
+- `print ( … ) ;`
+- Expression statement or assignment (for example a bare call)
+
+Nested `fun`, `struct`, `enum`, `impl`, `import`, and `export` are **not** accepted inside `{ }` blocks by the parser—only a subset of statements is allowed in block bodies (see below).
+
+### Block bodies
+
+Inside `{ }` (function bodies, `if`, `while`, `for`), allowed statements include:
+
+- `let`
+- `if`, `while`, `for`
+- `return`
+- `print ( … ) ;`
+- Expression statements and assignments
+
+### Variable declaration
+
 ```raven
-let greeting = "Hello, " + "World!";  // String concatenation
-let mixed = "Number: " + 42;          // String + number concatenation
+let name: type = expression;
+let name: type;   // only for types with defaults (see above)
+```
+
+### Expression statement
+
+```raven
+expression;
+```
+
+### Assignment
+
+```raven
+assignable_expression = expression;
+```
+
+### `return`
+
+```raven
+return expression;
+```
+
+Every function path should match the declared return type; `void` functions typically use `return` with a value compatible with `void` per the type checker, or omit—follow the compiler’s rules for your version.
+
+### `print`
+
+```raven
+print ( argument ( , argument )* ) ;
+```
+
+`print` is a dedicated statement form in the parser (not an ordinary identifier call).
+
+### Conditional
+
+```raven
+if ( expression ) {
+  statements
+} elseif ( expression ) {
+  statements
+} …
+else {
+  statements
+}
+```
+
+`elseif` chains are parsed as nested conditionals. Each branch body is a block `{ }`.
+
+### Loops
+
+**While:**
+
+```raven
+while ( expression ) {
+  statements
+}
+```
+
+**For** (C-style; initialization must be a `let` declaration):
+
+```raven
+for ( let name: type = expression; expression; name = expression ) {
+  statements
+}
+```
+
+The increment clause must be an assignment to an identifier (for example `i = i + 1`).
+
+---
+
+## Functions
+
+```raven
+fun name ( parameter : type ( , parameter : type )* ) -> return_type {
+  statements
+}
+```
+
+If `-> return_type` is omitted, the return type defaults to `void`.
+
+Parameters use the same type syntax as variables. The body is a single block.
+
+---
+
+## User-defined types
+
+### Struct
+
+```raven
+struct Name {
+  field : type ( , field : type )*
+}
+```
+
+Fields are separated by commas. Trailing commas are not required.
+
+### `impl` (methods)
+
+```raven
+impl StructName {
+  fun method(self) -> return_type { statements }
+  fun method(self : StructName, param: type) -> return_type { statements }
+  …
+}
+```
+
+The first parameter must be named `self`. An optional `: StructName` (or compatible) type annotation is allowed after `self`. Additional parameters use the usual `name: type` form.
+
+Methods are called with `value.method(arguments)`; fields use `value.field`.
+
+### Enum
+
+```raven
+enum Name {
+  Variant ( , Variant )*
+}
+```
+
+Variants are identifiers, separated by commas. Variants are referenced as `Name::Variant`.
+
+---
+
+## Modules
+
+### Import
+
+**Whole module path (string):**
+
+```raven
+import "path.rv";
+```
+
+**Import with namespace alias:**
+
+```raven
+import alias from "path.rv";
+```
+
+**Selective import:**
+
+```raven
+import { name ( , name )* } from "path.rv";
+```
+
+Each import ends with `;`. The path is a string literal.
+
+### Export
+
+```raven
+export let name: type = expression;
+export fun name(…) -> type { … }
+```
+
+Only `export` followed by `let` or `fun` is accepted.
+
+---
+
+## Built-in and standard library (syntax-related)
+
+Calls to runtime and standard functions use the normal `identifier ( … )` syntax. Commonly used names include `format`, `len`, `type`, `input`, `read_file`, `write_file`, `append_file`, `file_exists`, `enum_from_string`, and methods on strings and arrays (for example `push`, `pop`, `slice`, `join`). See [STDLIB_SPEC.md](STDLIB_SPEC.md) and the standard library overview for the full API.
+
+---
+
+## Summary grammar (informal)
+
+```text
+program           = { top_level_statement }
+top_level_statement = let_decl | fun_decl | struct_decl | enum_decl | impl_block
+                    | import | export | if_stmt | while_stmt | for_stmt
+                    | return_stmt | print_stmt | expr_stmt | assign_stmt
+
+let_decl          = "let" identifier ":" type ( "=" expr )? ";"
+
+fun_decl          = "fun" identifier "(" params ")" ( "->" type )? block
+
+struct_decl       = "struct" identifier "{" field_list "}"
+enum_decl         = "enum" identifier "{" variant_list "}"
+impl_block        = "impl" identifier "{" { method } "}"
+
+import            = "import" ( string | identifier … ) … ";"   // see [Modules](#modules)
+export            = "export" ( let_decl | fun_decl )
+
+if_stmt           = "if" "(" expr ")" block { "elseif" "(" expr ")" block } [ "else" block ]
+while_stmt        = "while" "(" expr ")" block
+for_stmt          = "for" "(" let_decl expr ";" assign ")" block
+
+print_stmt        = "print" "(" [ expr { "," expr } ] ")" ";"
+return_stmt       = "return" expr ";"
+expr_stmt         = expr ";"
+assign_stmt       = expr "=" expr ";"
+
+block             = "{" { inner_statement } "}"
+inner_statement   = let_decl | if_stmt | while_stmt | for_stmt | return_stmt | print_stmt
+                  | expr_stmt | assign_stmt
+
+expr              = … precedence climbing / unary / primaries …
 ```
 
 ---
 
-## 🏗️ Structs
+## Version
 
-```raven
-struct Person {
-    name: String,
-    age: int,
-    isActive: bool
-}
-
-// Struct instantiation
-let person: Person = Person { 
-    name: "Alice", 
-    age: 25, 
-    isActive: true 
-};
-
-// Field access
-print(person.name);  // "Alice"
-person.age = 26;     // Field modification
-```
-
-- Structs define custom data types with named fields
-- Fields are separated by commas (not semicolons)
-- All fields must be provided during instantiation
-- Fields can be accessed and modified using dot notation
-
-### Struct Methods (`impl`)
-
-Structs can have methods defined via `impl` blocks:
-
-```raven
-struct Person {
-    name: String,
-    age: int
-}
-
-impl Person {
-    fun greet(self) -> string {
-        return format("Hello, I'm {} and I'm {} years old", self.name, self.age);
-    }
-
-    fun have_birthday(self) -> void {
-        self.age = self.age + 1;  // Mutates the struct in place
-    }
-}
-
-// Usage
-let p: Person = Person { name: "Alice", age: 30 };
-print(p.greet());      // "Hello, I'm Alice and I'm 30 years old"
-p.have_birthday();     // Mutates p
-print(p.greet());      // "Hello, I'm Alice and I'm 31 years old"
-```
-
-- Use `impl StructName { ... }` to define methods on a struct
-- Every method must have `self` as the first parameter (the receiver)
-- Methods can read and mutate `self`; mutations persist when called on a variable
-- Methods are called with `value.method(args)` syntax
-
----
-
-## 🎯 Enums
-
-```raven
-enum HttpStatus {
-    OK,
-    NotFound,
-    InternalError,
-    BadRequest
-}
-
-// Enum variant creation
-let status: HttpStatus = HttpStatus::OK;
-
-// String to enum conversion (useful for JSON parsing)
-let jsonStatus: String = "NotFound";
-let parsedStatus: HttpStatus = enum_from_string("HttpStatus", jsonStatus);
-
-// Type checking
-print(type(status));  // "HttpStatus"
-```
-
-- Enums define custom types with named variants
-- Variants are accessed using `EnumName::VariantName` syntax
-- Use `enum_from_string()` to convert strings to enum variants
-- Perfect for API responses, configuration values, and state management
-
----
-
-## 🧠 Functions
-
-```raven
-fun add(a: int, b: int) -> int {
-    return a + b;
-}
-
-fun greet(name: String) -> void {
-    print("Hello, {}!", name);
-}
-
-fun factorial(n: int) -> int {
-    if (n <= 1) {
-        return 1;
-    }
-    return n * factorial(n - 1);  // Recursion supported
-}
-```
-
-- `fun` declares a function
-- Supports multiple parameters with type annotations
-- `void` return type means no return value
-- Recursion is fully supported
-
----
-
-## 🔁 Control Flow
-
-### `if`, `elseif`, `else`
-```raven
-if (age < 18) {
-    print("Too young");
-} elseif (age < 30) {
-    print("Young adult");
-} else {
-    print("Mature");
-}
-```
-
-### `while` loop
-```raven
-let i: int = 0;
-while (i < 10) {
-    print(i);
-    i = i + 1;
-}
-```
-
-### `for` loop (C-style)
-```raven
-for (let i = 0; i < 10; i = i + 1) {
-    print(i);
-}
-```
-
----
-
-## 📦 Arrays
-
-### Array Literals
-```raven
-let numbers: int[] = [1, 2, 3, 4, 5];
-let words: String[] = ["hello", "world", "raven"];
-let empty: int[] = [];
-```
-
-### Array Indexing
-```raven
-let first = numbers[0];     // First element
-let last = numbers[len(numbers) - 1];  // Last element
-numbers[2] = 99;           // Modify element
-```
-
-### Array Operations
-```raven
-numbers.push(6);           // Add element to end
-let popped = numbers.pop(); // Remove and return last element
-let slice = numbers.slice(1, 3);  // Get subarray
-let joined = words.join("-");     // Join with delimiter
-```
-
----
-
-## 🔤 String Operations
-
-### String Methods
-```raven
-let text: String = "Hello World";
-let hello = text.slice(0, 5);           // "Hello"
-let words = text.split(" ");            // ["Hello", "World"]
-let replaced = text.replace("World", "Raven");  // "Hello Raven"
-```
-
-### String Formatting
-```raven
-let name: String = "Alice";
-let age: int = 25;
-let message = format("Hello, my name is {} and I am {} years old.", name, age);
-```
-
----
-
-## 🧰 Built-in Functions
-
-### Input/Output
-```raven
-print("Hello World!");                    // Simple print
-print("Hello, {}!", "World");            // Formatted print
-let input = input("Enter your name: ");   // Read user input
-```
-
-### Type Information
-```raven
-let value = 42;
-let typeName = type(value);  // Returns "int"
-```
-
-### Array/String Length
-```raven
-let arr: int[] = [1, 2, 3];
-let length = len(arr);       // Returns 3
-
-let str: String = "hello";
-let strLength = len(str);    // Returns 5
-```
-
-### File I/O
-```raven
-write_file("data.txt", "Hello from Raven!");     // Write file
-let content = read_file("data.txt");             // Read file
-append_file("data.txt", "\nMore content");       // Append to file
-let exists = file_exists("data.txt");            // Check if file exists
-```
-
----
-
-## 📁 Modules
-
-### Module Definition
-```raven
-// math.rv
-export fun add(a: int, b: int) -> int {
-    return a + b;
-}
-
-export fun multiply(a: int, b: int) -> int {
-    return a * b;
-}
-
-export let PI: float = 3.14159;
-```
-
-### Module Import
-```raven
-// Main program
-import math from "math.rv";
-import { add, multiply } from "math.rv";
-
-let result1 = math.add(5, 3);        // Method call
-let result2 = add(5, 3);              // Direct import
-let pi = math.PI;                     // Access exported variable
-```
-
----
-
-## 💬 Comments
-
-```raven
-// This is a single-line comment
-let x: int = 5; // This is an inline comment
-
-/* This is a multi-line comment
-   that can span multiple lines */
-
-let y: int = 10; /* This is an inline multi-line comment */
-```
-
----
-
-## 🧪 Complete Example Program
-
-```raven
-// Import modules
-import { add, multiply } from "math.rv";
-
-// Function definition
-fun fibonacci(n: int) -> int {
-    if (n <= 1) {
-        return n;
-    }
-    return fibonacci(n - 1) + fibonacci(n - 2);
-}
-
-// Main program
-let name: String = input("Enter your name: ");
-print("Hello, {}!", name);
-
-// Array operations
-let numbers: int[] = [1, 2, 3, 4, 5];
-numbers.push(6);
-print("Numbers: {}", numbers);
-
-// String operations
-let text: String = "Programming is fun";
-let words: String[] = text.split(" ");
-let joined: String = words.join("-");
-print("Joined: {}", joined);
-
-// File operations
-write_file("output.txt", format("Hello from {}!", name));
-let content: String = read_file("output.txt");
-print("File content: {}", content);
-
-// Function calls
-let result: int = add(10, 20);
-print("10 + 20 = {}", result);
-
-// Control flow
-for (let i = 0; i < 5; i = i + 1) {
-    let fib = fibonacci(i);
-    print("fibonacci({}) = {}", i, fib);
-}
-```
-
----
-
-## 🚀 Getting Started
-
-1. **Install Raven**: Download the Windows installer from GitHub releases
-2. **Run Programs**: `raven program.rv` (Python-style interface)
-3. **Interactive Mode**: `raven` (no flags needed)
-4. **Examples**: Check the `examples/` directory for sample programs
-
----
-
-## 📚 Language Features Summary
-
-- ✅ **Static Typing**: Type-safe variable declarations
-- ✅ **Functions**: With recursion and multiple parameters
-- ✅ **Control Flow**: if/else, while, for loops
-- ✅ **Arrays**: Dynamic arrays with methods (push, pop, slice, join)
-- ✅ **Strings**: String operations and formatting
-- ✅ **Modules**: Import/export system with file-based modules
-- ✅ **Built-ins**: print, input, len, type, file I/O functions
-- ✅ **Comments**: Single-line and multi-line comments
-- ✅ **Error Handling**: Comprehensive error messages
-- ✅ **REPL**: Interactive development environment
-- ✅ **File I/O**: Read, write, append, and file existence checking
-- ✅ **Structs**: User-defined data structures with fields
-- ✅ **Struct Methods**: OOP-style methods via `impl` blocks with `self`
-- ✅ **Enums**: User-defined types with variants and string conversion
-- ✅ **Professional CLI**: Python-style interface (raven file.rv, raven)
-
-Raven v1.1.0 is a complete, production-ready programming language!
+This syntax reference is aligned with the Raven toolchain version **1.3.0** (see `src/main.rs` and `Cargo.toml`). Minor implementation details may evolve; when in doubt, refer to the parser and lexer sources under `src/`.
