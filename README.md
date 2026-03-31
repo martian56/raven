@@ -79,11 +79,9 @@ Or get the installer for your OS from the [releases](https://github.com/martian5
 
 <p>
   <a href="https://www.rust-lang.org/"><img src="https://cdn.simpleicons.org/rust" alt="Rust" width="34" height="34" /></a>
-  <a href="https://code.visualstudio.com/api"><img src="https://cdn.simpleicons.org/visualstudiocode" alt="VS Code Extension API" width="34" height="34" /></a>
   <a href="https://www.typescriptlang.org/"><img src="https://cdn.simpleicons.org/typescript" alt="TypeScript" width="34" height="34" /></a>
   <a href="https://github.com/features/actions"><img src="https://cdn.simpleicons.org/githubactions" alt="GitHub Actions" width="34" height="34" /></a>
   <a href="https://www.docker.com/"><img src="https://cdn.simpleicons.org/docker" alt="Docker" width="34" height="34" /></a>
-  <a href="https://www.gnu.org/software/bash/"><img src="https://cdn.simpleicons.org/gnubash" alt="Bash" width="34" height="34" /></a>
 </p>
 
 ---
@@ -101,7 +99,7 @@ Or get the installer for your OS from the [releases](https://github.com/martian5
 ## Contributors
 
 <a href="https://github.com/martian56/raven/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=martian56/raven/" alt="Contributors" />
+  <img src="https://contrib.rocks/image?repo=martian56/raven" alt="Contributors" />
 </a>
 
 ---
