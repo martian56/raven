@@ -1,325 +1,117 @@
-# 🦅 Raven Programming Language
+<p align="center">
+  <img src="./images/raven.png" alt="Raven Logo" width="260" />
+</p>
 
-**Raven** is a modern programming language and interpreter built with [Rust](https://www.rust-lang.org/), combining the best features of Rust, Python, C++, Java, and Go. It's designed to be fast, safe, expressive, and simple—without compromising power or performance.
+<p align="center">
+  A modern programming language built with Rust.<br/>
+  Fast, safe, expressive, and easy to read.
+</p>
 
-> 🚀 **Raven v1.1.0 is now available!** A complete, production-ready programming language with professional CLI interface.
+<p align="center">
+  <a href="https://github.com/martian56/raven/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/martian56/raven/ci.yml?branch=main&label=CI&style=for-the-badge" alt="CI Status"></a>
+  <a href="https://github.com/martian56/raven/releases"><img src="https://img.shields.io/github/v/release/martian56/raven?style=for-the-badge" alt="Latest Release"></a>
+  <a href="https://github.com/martian56/raven/blob/main/LICENSE"><img src="https://img.shields.io/github/license/martian56/raven?style=for-the-badge" alt="License"></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=martian56.raven-language"><img src="https://img.shields.io/visual-studio-marketplace/v/martian56.raven-language?style=for-the-badge&label=VS%20Code" alt="VS Code Extension"></a>
+</p>
 
----
-
-## ✨ Why Raven?
-
-Raven aims to be:
-
-- 🔥 **Fast** like C++
-- 🛡️ **Memory-safe** like Rust
-- 🧠 **Readable** like Python
-- 🧱 **Scalable** like Java
-- 🎯 **Simple** like Go
-
-Whether you're writing system-level code or high-level applications, Raven is built to be your go-to tool—modern, efficient, and elegant.
-
----
-
-## 🎯 Project Goals
-
-- ✅ Memory safety without garbage collection  
-- ✅ Clean, beginner-friendly syntax  
-- ✅ First-class support for concurrency and async  
-- ✅ Built-in package manager and formatter  
-- ✅ Cross-platform compiler written in Rust  
-- ✅ Helpful, beginner-friendly compiler errors  
+<p align="center">
+  <a href="https://martian56.github.io/raven/">Documentation</a>
+  ·
+  <a href="https://raven.ufazien.com/">Website</a>
+  ·
+  <a href="https://github.com/martian56/raven/releases">Releases</a>
+  ·
+  <a href="https://github.com/martian56/raven/issues">Issues</a>
+</p>
 
 ---
 
-## 🛠️ Current Status
+## Why Raven
 
-**Raven v1.1.0 is complete!** All core features implemented:
+- Fast runtime and modern tooling built in Rust.
+- Clean syntax with static typing.
+- Structs, enums, modules, and rich standard library.
+- CLI and REPL workflow for quick iteration.
+- VS Code extension for syntax and developer ergonomics.
 
-- [x] **Tokenizer / Lexer** - Complete with comments, strings, numbers, identifiers
-- [x] **Parser** - Full support for all language constructs
-- [x] **AST Generation** - Complete abstract syntax tree
-- [x] **Type Checking** - Static type validation with error reporting
-- [x] **Interpreter** - Tree-walking interpreter with full execution
-- [x] **CLI Tool** - Complete command-line interface
-- [x] **Variables & Types** - int, float, string, bool, arrays
-- [x] **Control Flow** - if/else, while, for loops
-- [x] **Functions** - Parameters, return types, recursion
-- [x] **string Operations** - Concatenation, methods, formatting
-- [x] **Array Operations** - Literals, indexing, methods (push, pop, slice, join)
-- [x] **Built-in Functions** - print, input, format, len, type
-- [x] **File I/O** - read_file, write_file, append_file, file_exists
-- [x] **Comments** - Single-line (//) and multi-line (/* */)
-- [x] **Module System** - import/export functionality
-- [x] **REPL** - Interactive Read-Eval-Print Loop
-- [x] **Error Reporting** - Comprehensive error messages with line/column info
-- [x] **Operator Precedence** - Correct expression evaluation
-- [x] **Variable Scoping** - Proper scope management
-- [x] **Method Chaining** - Object.method1().method2() support
-- [x] **Structs** - User-defined data structures with fields
-- [x] **Struct Methods** - OOP-style `impl` blocks with `self` and in-place mutation
-- [x] **Enums** - User-defined types with variants and string conversion
-- [x] **Complex Assignments** - object.field[index] = value support
-- [x] **Professional CLI** - Python-style interface (raven file.rv, raven)
+## Quick Example
 
----
+```rust
+struct User {
+    name: string,
+    age: int
+}
 
-## 🎯 Language Features
+fun greet(user: User) -> void {
+    print(format("Hello {}, you are {}!", user.name, user.age));
+}
 
-### Data Types
-- **int** - 64-bit signed integers
-- **float** - 64-bit floating-point numbers  
-- **string** - UTF-8 strings with rich operations
-- **bool** - Boolean values (true/false)
-- **Arrays** - Dynamic arrays with type safety
-- **Structs** - User-defined data structures with named fields
-- **Struct Methods** - Methods on structs via `impl` blocks (OOP)
-- **Enums** - User-defined types with named variants
+let u: User = User { name: "Raven", age: 1 };
+greet(u);
+```
 
-### Control Flow
-- **if/else** - Conditional statements
-- **while** - Loop with condition
-- **for** - C-style for loops
-- **Functions** - Parameters, return types, recursion
-
-### string Operations
-- **Concatenation** - `+` operator
-- **Methods** - `slice()`, `split()`, `replace()`
-- **Formatting** - `format()` with placeholders
-- **Length** - `len()` function
-
-### Array Operations  
-- **Literals** - `[1, 2, 3]` syntax
-- **Indexing** - `array[0]` access
-- **Methods** - `push()`, `pop()`, `slice()`, `join()`
-- **Bounds checking** - Automatic array bounds validation
-
-### Built-in Functions
-- **print()** - Output with formatting
-- **input()** - User input
-- **format()** - string formatting with `{}` placeholders
-- **len()** - Length of strings and arrays
-- **type()** - Type information
-
-### File I/O
-- **read_file()** - Read file contents
-- **write_file()** - Write to file
-- **append_file()** - Append to file
-- **file_exists()** - Check file existence
-
-### Advanced Features
-- **Static Typing** - All variables must have explicit types
-- **Type Checking** - Compile-time type validation
-- **Error Reporting** - Detailed error messages with line/column info
-- **Comments** - Single-line (`//`) and multi-line (`/* */`)
-- **Module System** - `import`/`export` functionality
-- **REPL** - Interactive development environment
-- **Method Chaining** - `object.method1().method2()` support
-
----
-
-## 📦 Installation & Usage
-
-### Build from Source
+## Quick Start
 
 ```bash
-# Clone the repository
+# Build from source
 git clone https://github.com/martian56/raven.git
 cd raven
-
-# Build the project
 cargo build --release
 
-# The binary will be at target/release/raven (or raven.exe on Windows)
+# Run a file
+./target/release/raven hello.rv
+
+# REPL
+./target/release/raven
 ```
+Or get the installer for your OS from the [releases](https://github.com/martian56/raven/releases) page.
 
-### Running Raven Programs
+## Learn More
 
-```bash
-# Run a Raven program (Python-style interface)
-raven program.rv
-
-# Interactive REPL mode
-raven
-
-# Show verbose output (tokens, AST, type checking)
-raven program.rv -v
-
-# Only check syntax and types (don't execute)
-raven program.rv -c
-
-# Show the Abstract Syntax Tree
-raven program.rv --show-ast
-```
+- Full docs: [https://martian56.github.io/raven/](https://martian56.github.io/raven/)
+- Project website: [https://raven.ufazien.com/](https://raven.ufazien.com/)
+- Standard library overview: [https://martian56.github.io/raven/standard-library/overview/](https://martian56.github.io/raven/standard-library/overview/)
+- Examples: [https://martian56.github.io/raven/examples/basic/](https://martian56.github.io/raven/examples/basic/)
 
 ---
 
-## 📚 Examples
+## Technologies Used
 
-### Hello World
-
-```raven
-let message: string = "Hello, Raven!";
-print(message);
-```
-
-### Variables and Types
-
-```raven
-let name: string = "Raven";
-let age: int = 25;
-let height: float = 5.9;
-let isActive: bool = true;
-
-print(format("Name: {}, Age: {}, Height: {}", name, age, height));
-```
-
-### Arrays and string Operations
-
-```raven
-let numbers: int[] = [1, 2, 3, 4, 5];
-numbers.push(6);
-print(numbers);  // [1, 2, 3, 4, 5, 6]
-
-let text: string = "Hello World";
-let words: string[] = text.split(" ");
-print(len(words));  // 2
-
-let joined: string = words.join("-");
-print(joined);  // "Hello-World"
-```
-
-### Conditionals
-
-```raven
-let age: int = 25;
-
-if (age < 18) {
-    print("Too young");
-} else {
-    if (age < 30) {
-        print("Young adult");
-    } else {
-        print("Mature");
-    }
-}
-```
-
-### Loops
-
-```raven
-// While loop
-let i: int = 0;
-while (i < 5) {
-    print(i);
-    i = i + 1;
-}
-
-// For loop
-for (let j: int = 0; j < 5; j = j + 1) {
-    print(j);
-}
-```
-
-### Functions
-
-```raven
-fun add(a: int, b: int) -> int {
-    return a + b;
-}
-
-let result: int = add(10, 5);
-print(result);  // 15
-```
-
-### Structs and Enums
-
-```raven
-// Struct definition
-struct Person {
-    name: string,
-    age: int,
-    isActive: bool
-}
-
-// Enum definition
-enum HttpStatus {
-    OK,
-    NotFound,
-    InternalError
-}
-
-// Usage
-let person: Person = Person { name: "Alice", age: 25, isActive: true };
-let status: HttpStatus = HttpStatus::OK;
-
-// string to enum conversion (useful for JSON parsing)
-let jsonStatus: string = "NotFound";
-let parsedStatus: HttpStatus = enum_from_string("HttpStatus", jsonStatus);
-
-print(format("Person: {}, Status: {}", person.name, status));
-```
-
-### File I/O
-
-```raven
-let content: string = "Hello from Raven!";
-write_file("output.txt", content);
-
-if (file_exists("output.txt")) {
-    let data: string = read_file("output.txt");
-    print(data);
-}
-```
-
-### Interactive REPL
-
-```bash
-raven
-raven> let name: string = "World";
-raven> print(format("Hello, {}!", name));
-Hello, World!
-raven> 
-```
-
-### Complete Application Example
-
-Check out `examples/working_calculator.rv` for a full-featured application showcasing:
-- Interactive menu system
-- Calculator with arithmetic operations  
-- Text processor with string operations
-- Number analysis with mathematical functions
-- User input/output and file operations
-
-More examples available in the `examples/` directory!
+<p>
+  <a href="https://www.rust-lang.org/"><img src="https://cdn.simpleicons.org/rust" alt="Rust" width="34" height="34" /></a>
+  <a href="https://code.visualstudio.com/api"><img src="https://cdn.simpleicons.org/visualstudiocode" alt="VS Code Extension API" width="34" height="34" /></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://cdn.simpleicons.org/typescript" alt="TypeScript" width="34" height="34" /></a>
+  <a href="https://github.com/features/actions"><img src="https://cdn.simpleicons.org/githubactions" alt="GitHub Actions" width="34" height="34" /></a>
+  <a href="https://www.docker.com/"><img src="https://cdn.simpleicons.org/docker" alt="Docker" width="34" height="34" /></a>
+  <a href="https://www.gnu.org/software/bash/"><img src="https://cdn.simpleicons.org/gnubash" alt="Bash" width="34" height="34" /></a>
+</p>
 
 ---
 
-## 🤝 Contributing
+## Star History
 
-Raven v1.1.0 is complete and ready for use! Contributions are welcome for:
+<a href="https://www.star-history.com/?repos=martian56%2Fraven&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=martian56/raven&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=martian56/raven&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=martian56/raven&type=date&legend=top-left" />
+ </picture>
+</a>
 
-- 🐛 Bug fixes and improvements
-- 📚 Documentation enhancements  
-- 🧪 Additional test cases
-- 🚀 Performance optimizations
-- 📦 Standard library modules
+## Contributors
 
-Feel free to ⭐ star the project and open issues for suggestions!
-
----
-
-## 📬 Contact
-
-- GitHub: [martian56](https://github.com/martian56)
-- LinkedIn [martian56](www.linkedin.com/in/martian58)
-- Issues or suggestions? Feel free to open one!
+<a href="https://github.com/martian56/raven/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=martian56/raven/" alt="Contributors" />
+</a>
 
 ---
 
-## 🧠 License
+## Community
 
-MIT License. See [LICENSE](./LICENSE) for details.
+- Contributing guide: [CONTRIBUTING.md](./CONTRIBUTING.md)
+- Code of conduct: [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
+- Security policy: [SECURITY.md](./SECURITY.md)
 
----
+## License
 
-Made with ❤️ and `rustc` by [@martian56](https://github.com/martian56)
+MIT License. See [LICENSE](./LICENSE).
