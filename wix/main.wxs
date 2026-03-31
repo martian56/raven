@@ -139,6 +139,7 @@
                             <File Id='filesystem_rv' Source='lib\filesystem.rv'/>
                             <File Id='network_rv' Source='lib\network.rv'/>
                             <File Id='testing_rv' Source='lib\testing.rv'/>
+                            <File Id='json_rv' Source='lib\json.rv'/>
                         </Component>
                     </Directory>
                 </Directory>
