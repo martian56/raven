@@ -61,10 +61,10 @@ jobs:
       - name: Create .exe bootstrapper (setup installer)
         run: |
           $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-          $msi = (Get-ChildItem target\wix\*.msi)[0]
-          $version = "${{ github.ref_name }}".TrimStart('v')
+          $msi = (Get-ChildItem target\wix\*.msi | Select-Object -First 1)
+          $version = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"(.*)"$').Matches[0].Groups[1].Value
           candle -ext WixBalExtension -dMsiPath="$($msi.FullName)" -dVersion="$version" bundle.wxs
-          light -ext WixBalExtension bundle.wixobj -o target\wix\raven-setup.exe
+          light -ext WixBalExtension bundle.wixobj -o "target\wix\raven-setup-$version.exe"
 
       - name: Create portable .zip
         run: |

@@ -1,19 +1,19 @@
 [package]
 name = "raven"
-version = "1.4.0"
+version = "1.4.1"
 edition = "2021"
 authors = ["martian56"]
 description = "A modern programming language with advanced features"
 license = "MIT"
 repository = "https://github.com/martian56/raven"
-homepage = "https://github.com/martian56/raven"
+homepage = "https://raven.ufazien.com"
 keywords = ["programming", "language", "compiler", "interpreter"]
 categories = ["development-tools", "command-line-utilities"]
 
 # Debian package configuration
 [package.metadata.deb]
 maintainer = "martian56"
-copyright = "2024 martian56"
+copyright = "2026 martian56"
 license-file = ["LICENSE"]
 depends = "$auto"
 section = "devel"
