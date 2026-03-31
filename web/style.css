@@ -396,9 +396,10 @@ body {
 }
 
 .feature-card:hover {
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-lg);
-    background: var(--white);
+    transform: none;
+    box-shadow: var(--shadow-sm);
+    border-color: var(--gray-300);
+    background: var(--gray-100);
 }
 
 .feature-icon {
@@ -505,8 +506,8 @@ body {
 
 .download-card:hover {
     border-color: var(--electric-blue);
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-lg);
+    transform: none;
+    box-shadow: var(--shadow-sm);
 }
 
 .download-icon {
@@ -582,8 +583,9 @@ body {
 }
 
 .doc-card:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-md);
+    transform: none;
+    box-shadow: var(--shadow-sm);
+    border-color: var(--gray-300);
 }
 
 .doc-card h3 {
