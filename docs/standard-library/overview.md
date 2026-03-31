@@ -11,6 +11,7 @@ Raven comes with a comprehensive standard library that provides essential functi
 - **[Filesystem](https://github.com/martian56/raven/blob/main/lib/filesystem.rv)** - File and directory operations
 - **[Time](https://github.com/martian56/raven/blob/main/lib/time.rv)** - Date and time handling
 - **[Network](https://github.com/martian56/raven/blob/main/lib/network.rv)** - HTTP and networking utilities
+- **[JSON](https://github.com/martian56/raven/blob/main/lib/json.rv)** - JSON parsing, validation, minify/pretty utilities
 - **[Testing](https://github.com/martian56/raven/blob/main/lib/testing.rv)** - Unit testing framework
 
 ## Built-in Functions
@@ -70,11 +71,32 @@ Import modules using the `import` statement:
 import "math";
 import "collections";
 import "string";
+import "json";
 
 // Use functions from modules
 let result: float = math_pow(2.0, 3.0);
 let map: Map = new_map();
 let formatted: string = string_format("Value: {}", 42);
+let parsed: string[] = json.parse("{\"name\":\"Raven\"}");
+```
+
+## JSON Module Quick Example
+
+```raven
+import "json";
+
+let raw: string = "{\"name\":\"Raven\",\"stars\":27}";
+
+// Validate JSON
+let status: string = json.validate(raw);  // "ok" on success
+
+// Parse into path-indexed entries
+let entries: string[] = json.parse(raw);
+let name: string = json.get_value(entries, "$[name]");
+
+// Formatting helpers
+let compact: string = json.minify(raw);
+let pretty: string = json.pretty(raw, 2);
 ```
 
 ## Module Structure
@@ -138,7 +160,6 @@ if (len(numbers) > 0) {
 ## Future Modules
 
 Planned standard library modules:
-- **JSON** - JSON parsing and generation
 - **Regex** - Regular expressions
 - **Crypto** - Cryptographic functions
 - **Database** - Database connectivity

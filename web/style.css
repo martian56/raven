@@ -135,12 +135,16 @@ body {
     padding: var(--spacing-2) var(--spacing-4);
     border-radius: var(--radius-md);
     transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
 }
 
 .nav-link.github-link:hover {
     background: var(--electric-blue);
     color: var(--midnight-blue);
 }
+
 
 .nav-toggle {
     display: none;
@@ -391,14 +395,13 @@ body {
     padding: var(--spacing-8);
     border-radius: var(--radius-xl);
     background: var(--gray-100);
-    transition: all 0.3s ease;
+    transition: border-color 0.2s ease;
     border: 1px solid var(--gray-200);
 }
 
 .feature-card:hover {
-    transform: none;
-    box-shadow: var(--shadow-sm);
-    border-color: var(--gray-300);
+    box-shadow: none;
+    border-color: var(--gray-200);
     background: var(--gray-100);
 }
 
@@ -501,13 +504,12 @@ body {
     border: 2px solid var(--gray-200);
     border-radius: var(--radius-xl);
     background: var(--white);
-    transition: all 0.3s ease;
+    transition: border-color 0.2s ease;
 }
 
 .download-card:hover {
-    border-color: var(--electric-blue);
-    transform: none;
-    box-shadow: var(--shadow-sm);
+    border-color: var(--gray-200);
+    box-shadow: none;
 }
 
 .download-icon {
@@ -579,13 +581,12 @@ body {
     padding: var(--spacing-6);
     border-radius: var(--radius-xl);
     border: 1px solid var(--gray-200);
-    transition: all 0.3s ease;
+    transition: border-color 0.2s ease;
 }
 
 .doc-card:hover {
-    transform: none;
-    box-shadow: var(--shadow-sm);
-    border-color: var(--gray-300);
+    box-shadow: none;
+    border-color: var(--gray-200);
 }
 
 .doc-card h3 {
@@ -710,7 +711,7 @@ body {
     .nav-links .nav-link:last-child {
         border-bottom: none;
     }
-    
+
     .nav-toggle {
         display: flex;
     }

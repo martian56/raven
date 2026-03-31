@@ -1,5 +1,28 @@
 // Raven Website JavaScript
 document.addEventListener('DOMContentLoaded', function() {
+    // Load latest release version from GitHub (fallback: existing HTML value)
+    async function setLatestReleaseVersion() {
+        const versionEl = document.getElementById('latest-release-version');
+        if (!versionEl) return;
+
+        try {
+            const response = await fetch('https://api.github.com/repos/martian56/raven/releases/latest', {
+                headers: { 'Accept': 'application/vnd.github+json' }
+            });
+
+            if (!response.ok) return;
+            const release = await response.json();
+            const tag = release && typeof release.tag_name === 'string' ? release.tag_name.trim() : '';
+            if (tag) {
+                versionEl.textContent = tag;
+            }
+        } catch (_) {
+            // Keep default version text if API call fails.
+        }
+    }
+
+    setLatestReleaseVersion();
+
     // Mobile Navigation Toggle
     const navToggle = document.querySelector('.nav-toggle');
     const navLinks = document.querySelector('.nav-links');
