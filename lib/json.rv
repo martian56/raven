@@ -1,0 +1,631 @@
+// src/json.rv
+// Production-focused JSON package for Raven.
+// Primary APIs:
+// - load(path)
+// - write(path, json_content)
+// - parse(json_text)
+// - parse_file(path)
+// - validate(json_text)
+// - is_valid(json_text)
+// - last_error()
+// - minify(json_text)
+// - pretty(json_text, indent)
+// - stringify(json_text)
+// - get(entries, path)
+// - get_type(entries, path)
+// - get_value(entries, path)
+// - has_path(entries, path)
+
+let _src: String = "";
+let _idx: int = 0;
+let _len: int = 0;
+let _ok: bool = true;
+let _err: String = "";
+let _entries: String[] = ["init"];
+
+fun _empty_entries() -> String[] {
+    let arr: String[] = ["tmp"];
+    arr.pop();
+    return arr;
+}
+
+fun _is_digit(ch: String) -> bool {
+    return ch >= "0" && ch <= "9";
+}
+
+fun _is_hex(ch: String) -> bool {
+    if (ch >= "0" && ch <= "9") {
+        return true;
+    }
+    if (ch >= "a" && ch <= "f") {
+        return true;
+    }
+    if (ch >= "A" && ch <= "F") {
+        return true;
+    }
+    return false;
+}
+
+fun _is_ws(ch: String) -> bool {
+    let code: int = char_code(ch);
+    return code == 32 || code == 10 || code == 13 || code == 9;
+}
+
+fun _peek() -> String {
+    if (_idx >= _len) {
+        return "";
+    }
+    return _src[_idx];
+}
+
+fun _advance() -> String {
+    if (_idx >= _len) {
+        return "";
+    }
+    let ch: String = _src[_idx];
+    _idx = _idx + 1;
+    return ch;
+}
+
+fun _skip_ws() -> int {
+    while (_idx < _len && _is_ws(_src[_idx])) {
+        _idx = _idx + 1;
+    }
+    return 0;
+}
+
+fun _repeat(ch: String, n: int) -> String {
+    let out: String = "";
+    let i: int = 0;
+    while (i < n) {
+        out = out + ch;
+        i = i + 1;
+    }
+    return out;
+}
+
+fun _position() -> String {
+    let line: int = 1;
+    let col: int = 1;
+    let i: int = 0;
+
+    while (i < _idx && i < _len) {
+        let code: int = char_code(_src[i]);
+        if (code == 10) {
+            line = line + 1;
+            col = 1;
+        } else {
+            col = col + 1;
+        }
+        i = i + 1;
+    }
+
+    return format("line {}, col {}", line, col);
+}
+
+fun _set_error(message: String) -> int {
+    if (_ok) {
+        _ok = false;
+        _err = message + " (" + _position() + ")";
+    }
+    return 0;
+}
+
+fun _matches(token: String) -> bool {
+    if (_idx + len(token) > _len) {
+        return false;
+    }
+
+    let i: int = 0;
+    while (i < len(token)) {
+        if (_src[_idx + i] != token[i]) {
+            return false;
+        }
+        i = i + 1;
+    }
+
+    return true;
+}
+
+fun _add_entry(path: String, kind: String, value: String) -> int {
+    _entries.push(path + "|" + kind + "|" + value);
+    return 0;
+}
+
+fun _parse_string_literal() -> String {
+    if (_idx >= _len || char_code(_peek()) != 34) {
+        _set_error("Expected string");
+        return "";
+    }
+
+    let quote: String = _advance();
+    let result: String = "";
+    let closed: bool = false;
+
+    while (_idx < _len && !closed && _ok) {
+        let ch: String = _advance();
+        let code: int = char_code(ch);
+
+        if (code == 34) {
+            closed = true;
+        } else {
+            if (code == 92) {
+                if (_idx >= _len) {
+                    _set_error("Unterminated escape sequence");
+                    return "";
+                }
+
+                let esc: String = _advance();
+                let esc_code: int = char_code(esc);
+
+                if (esc_code == 34 || esc_code == 92 || esc == "/" || esc == "b" || esc == "f" || esc == "n" || esc == "r" || esc == "t") {
+                    result = result + quote + esc;
+                } else {
+                    if (esc == "u") {
+                        if (_idx + 4 > _len) {
+                            _set_error("Incomplete unicode escape");
+                            return "";
+                        }
+
+                        let d1: String = _advance();
+                        let d2: String = _advance();
+                        let d3: String = _advance();
+                        let d4: String = _advance();
+
+                        if (!_is_hex(d1) || !_is_hex(d2) || !_is_hex(d3) || !_is_hex(d4)) {
+                            _set_error("Invalid unicode escape");
+                            return "";
+                        }
+
+                        result = result + quote + "u" + d1 + d2 + d3 + d4;
+                    } else {
+                        _set_error("Invalid escape sequence");
+                        return "";
+                    }
+                }
+            } else {
+                if (code < 32) {
+                    _set_error("Control characters are not allowed in strings");
+                    return "";
+                }
+                result = result + ch;
+            }
+        }
+    }
+
+    if (!closed) {
+        _set_error("Unterminated string literal");
+        return "";
+    }
+
+    return result;
+}
+
+fun _parse_number(path: String) -> int {
+    let start: int = _idx;
+
+    if (_peek() == "-") {
+        _idx = _idx + 1;
+    }
+
+    if (_idx >= _len) {
+        _set_error("Invalid number");
+        return 0;
+    }
+
+    if (_peek() == "0") {
+        _idx = _idx + 1;
+    } else {
+        if (!_is_digit(_peek())) {
+            _set_error("Invalid number");
+            return 0;
+        }
+        while (_idx < _len && _is_digit(_peek())) {
+            _idx = _idx + 1;
+        }
+    }
+
+    if (_idx < _len && _peek() == ".") {
+        _idx = _idx + 1;
+        if (_idx >= _len || !_is_digit(_peek())) {
+            _set_error("Invalid fraction in number");
+            return 0;
+        }
+        while (_idx < _len && _is_digit(_peek())) {
+            _idx = _idx + 1;
+        }
+    }
+
+    if (_idx < _len && (_peek() == "e" || _peek() == "E")) {
+        _idx = _idx + 1;
+        if (_idx < _len && (_peek() == "+" || _peek() == "-")) {
+            _idx = _idx + 1;
+        }
+        if (_idx >= _len || !_is_digit(_peek())) {
+            _set_error("Invalid exponent in number");
+            return 0;
+        }
+        while (_idx < _len && _is_digit(_peek())) {
+            _idx = _idx + 1;
+        }
+    }
+
+    _add_entry(path, "number", _src.slice(start, _idx));
+    return 0;
+}
+
+fun _parse_value(path: String) -> int {
+    _skip_ws();
+    if (!_ok) {
+        return 0;
+    }
+
+    if (_idx >= _len) {
+        _set_error("Unexpected end of input");
+        return 0;
+    }
+
+    let ch: String = _peek();
+
+    if (ch == "{") {
+        _add_entry(path, "object", "");
+        _advance();
+        _skip_ws();
+
+        if (_idx < _len && _peek() == "}") {
+            _advance();
+            return 0;
+        }
+
+        let done_obj: bool = false;
+        while (!done_obj && _ok) {
+            _skip_ws();
+            let key: String = _parse_string_literal();
+            if (!_ok) {
+                return 0;
+            }
+
+            _skip_ws();
+            if (_idx >= _len || _peek() != ":") {
+                _set_error("Expected ':' after object key");
+                return 0;
+            }
+            _advance();
+
+            let child_path: String = path + "[" + key + "]";
+            _parse_value(child_path);
+            if (!_ok) {
+                return 0;
+            }
+
+            _skip_ws();
+            if (_idx >= _len) {
+                _set_error("Unterminated object");
+                return 0;
+            }
+
+            if (_peek() == ",") {
+                _advance();
+            } else {
+                if (_peek() == "}") {
+                    _advance();
+                    done_obj = true;
+                } else {
+                    _set_error("Expected ',' or '}' in object");
+                    return 0;
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    if (ch == "[") {
+        _add_entry(path, "array", "");
+        _advance();
+        _skip_ws();
+
+        if (_idx < _len && _peek() == "]") {
+            _advance();
+            return 0;
+        }
+
+        let i: int = 0;
+        let done_arr: bool = false;
+        while (!done_arr && _ok) {
+            let child_path: String = path + "[" + format("{}", i) + "]";
+            _parse_value(child_path);
+            if (!_ok) {
+                return 0;
+            }
+
+            _skip_ws();
+            if (_idx >= _len) {
+                _set_error("Unterminated array");
+                return 0;
+            }
+
+            if (_peek() == ",") {
+                _advance();
+                i = i + 1;
+            } else {
+                if (_peek() == "]") {
+                    _advance();
+                    done_arr = true;
+                } else {
+                    _set_error("Expected ',' or ']' in array");
+                    return 0;
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    if (char_code(ch) == 34) {
+        _add_entry(path, "string", _parse_string_literal());
+        return 0;
+    }
+
+    if (ch == "t") {
+        if (_matches("true")) {
+            _idx = _idx + 4;
+            _add_entry(path, "bool", "true");
+        } else {
+            _set_error("Invalid literal, expected true");
+        }
+        return 0;
+    }
+
+    if (ch == "f") {
+        if (_matches("false")) {
+            _idx = _idx + 5;
+            _add_entry(path, "bool", "false");
+        } else {
+            _set_error("Invalid literal, expected false");
+        }
+        return 0;
+    }
+
+    if (ch == "n") {
+        if (_matches("null")) {
+            _idx = _idx + 4;
+            _add_entry(path, "null", "null");
+        } else {
+            _set_error("Invalid literal, expected null");
+        }
+        return 0;
+    }
+
+    if (ch == "-" || _is_digit(ch)) {
+        _parse_number(path);
+        return 0;
+    }
+
+    _set_error("Unexpected token while parsing value");
+    return 0;
+}
+
+export fun parse(json_text: String) -> String[] {
+    _src = json_text;
+    _idx = 0;
+    _len = len(json_text);
+    _ok = true;
+    _err = "";
+    _entries = _empty_entries();
+
+    _skip_ws();
+    _parse_value("$");
+    _skip_ws();
+
+    if (_ok && _idx != _len) {
+        _set_error("Trailing content after JSON value");
+    }
+
+    if (_ok) {
+        return _entries;
+    }
+
+    return _empty_entries();
+}
+
+export fun parse_file(path: String) -> String[] {
+    return parse(read_file(path));
+}
+
+export fun validate(json_text: String) -> String {
+    parse(json_text);
+    if (_ok) {
+        return "ok";
+    }
+    return _err;
+}
+
+export fun is_valid(json_text: String) -> bool {
+    parse(json_text);
+    return _ok;
+}
+
+export fun last_error() -> String {
+    return _err;
+}
+
+export fun load(path: String) -> String {
+    let content: String = read_file(path);
+    parse(content);
+    if (_ok) {
+        return content;
+    }
+    return "";
+}
+
+export fun loads(json_text: String) -> String {
+    parse(json_text);
+    if (_ok) {
+        return json_text;
+    }
+    return "";
+}
+
+export fun write(path: String, json_content: String) -> bool {
+    parse(json_content);
+    if (!_ok) {
+        return false;
+    }
+    write_file(path, json_content);
+    return true;
+}
+
+export fun dumps(json_content: String, indent: int) -> String {
+    let keep_indent: int = indent;
+    if (keep_indent >= 0) {
+        // no-op to keep parameter usage explicit
+    }
+    return json_content;
+}
+
+export fun stringify(json_content: String) -> String {
+    return json_content;
+}
+
+export fun minify(json_text: String) -> String {
+    let out: String = "";
+    let in_string: bool = false;
+    let escaped: bool = false;
+    let i: int = 0;
+
+    while (i < len(json_text)) {
+        let ch: String = json_text[i];
+        let code: int = char_code(ch);
+
+        if (in_string) {
+            out = out + ch;
+            if (escaped) {
+                escaped = false;
+            } else {
+                if (code == 92) {
+                    escaped = true;
+                } else {
+                    if (code == 34) {
+                        in_string = false;
+                    }
+                }
+            }
+        } else {
+            if (code == 34) {
+                in_string = true;
+                out = out + ch;
+            } else {
+                if (!_is_ws(ch)) {
+                    out = out + ch;
+                }
+            }
+        }
+
+        i = i + 1;
+    }
+
+    return out;
+}
+
+export fun pretty(json_text: String, indent: int) -> String {
+    let compact: String = minify(json_text);
+    let out: String = "";
+    let in_string: bool = false;
+    let escaped: bool = false;
+    let depth: int = 0;
+    let i: int = 0;
+
+    while (i < len(compact)) {
+        let ch: String = compact[i];
+        let code: int = char_code(ch);
+
+        if (in_string) {
+            out = out + ch;
+            if (escaped) {
+                escaped = false;
+            } else {
+                if (code == 92) {
+                    escaped = true;
+                } else {
+                    if (code == 34) {
+                        in_string = false;
+                    }
+                }
+            }
+        } else {
+            if (code == 34) {
+                in_string = true;
+                out = out + ch;
+            } else {
+                if (ch == "{" || ch == "[") {
+                    depth = depth + 1;
+                    out = out + ch + "\n" + _repeat(" ", depth * indent);
+                } else {
+                    if (ch == "}" || ch == "]") {
+                        depth = depth - 1;
+                        out = out + "\n" + _repeat(" ", depth * indent) + ch;
+                    } else {
+                        if (ch == ",") {
+                            out = out + ",\n" + _repeat(" ", depth * indent);
+                        } else {
+                            if (ch == ":") {
+                                out = out + ": ";
+                            } else {
+                                out = out + ch;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        i = i + 1;
+    }
+
+    return out;
+}
+
+export fun get(entries: String[], path: String) -> String {
+    let prefix: String = path + "|";
+    let i: int = 0;
+    while (i < len(entries)) {
+        let row: String = entries[i];
+        if (len(row) >= len(prefix) && row.slice(0, len(prefix)) == prefix) {
+            return row;
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+export fun has_path(entries: String[], path: String) -> bool {
+    let row: String = get(entries, path);
+    return len(row) > 0;
+}
+
+export fun get_type(entries: String[], path: String) -> String {
+    let row: String = get(entries, path);
+    if (len(row) == 0) {
+        return "";
+    }
+
+    let parts: String[] = row.split("|");
+    if (len(parts) >= 3) {
+        return parts[1];
+    }
+    return "";
+}
+
+export fun get_value(entries: String[], path: String) -> String {
+    let row: String = get(entries, path);
+    if (len(row) == 0) {
+        return "";
+    }
+
+    let parts: String[] = row.split("|");
+    if (len(parts) >= 3) {
+        return parts[2];
+    }
+    return "";
+}
