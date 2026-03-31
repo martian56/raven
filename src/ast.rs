@@ -42,6 +42,8 @@ pub enum Expression {
     StructInstantiation(String, Vec<(String, Expression)>),
     FieldAccess(Box<Expression>, String),
     EnumVariant(String, String),
+    /// Placeholder for `let x: T;` when `T` is a struct or other type that allows default init.
+    Uninitialized,
 }
 
 #[derive(Debug, Clone)]

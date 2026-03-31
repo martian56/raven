@@ -70,6 +70,8 @@ pub struct Interpreter {
     variables: HashMap<String, Value>,
     functions: HashMap<String, Function>,
     structs: HashMap<String, Vec<String>>,
+    /// Struct name -> field name -> field type string (for default initialization).
+    struct_field_types: HashMap<String, HashMap<String, String>>,
     struct_methods: HashMap<String, HashMap<String, Function>>,
     enums: HashMap<String, Vec<String>>,
     modules: HashMap<String, Module>,
@@ -88,6 +90,7 @@ impl Interpreter {
             variables: HashMap::new(),
             functions: HashMap::new(),
             structs: HashMap::new(),
+            struct_field_types: HashMap::new(),
             struct_methods: HashMap::new(),
             enums: HashMap::new(),
             modules: HashMap::new(),
@@ -107,8 +110,11 @@ impl Interpreter {
                 Ok(Value::Void)
             }
 
-            ASTNode::VariableDeclTyped(name, _type_str, expr) => {
-                let value = self.eval_expression(expr)?;
+            ASTNode::VariableDeclTyped(name, type_str, expr) => {
+                let value = match expr.as_ref() {
+                    Expression::Uninitialized => self.default_value_for_type_str(type_str)?,
+                    _ => self.eval_expression(expr)?,
+                };
                 self.variables.insert(name.clone(), value);
                 Ok(Value::Void)
             }
@@ -229,6 +235,11 @@ impl Interpreter {
 
             ASTNode::StructDecl(name, fields) => {
                 let field_names: Vec<String> = fields.iter().map(|f| f.name.clone()).collect();
+                let mut types = HashMap::new();
+                for f in fields {
+                    types.insert(f.name.clone(), f.field_type.clone());
+                }
+                self.struct_field_types.insert(name.clone(), types);
                 self.structs.insert(name.clone(), field_names);
                 Ok(Value::Void)
             }
@@ -446,8 +457,47 @@ impl Interpreter {
         }
     }
 
+    fn default_value_for_type_str(&self, type_str: &str) -> Result<Value, String> {
+        match type_str {
+            "int" => Ok(Value::Int(0)),
+            "float" => Ok(Value::Float(0.0)),
+            "bool" => Ok(Value::Bool(false)),
+            "string" => Ok(Value::String(String::new())),
+            s if s.ends_with("[]") => Ok(Value::Array(vec![])),
+            struct_name => {
+                let field_names = self.structs.get(struct_name).ok_or_else(|| {
+                    format!(
+                        "Unknown type '{}' for default-initialized variable",
+                        struct_name
+                    )
+                })?;
+                let types = self.struct_field_types.get(struct_name).ok_or_else(|| {
+                    format!(
+                        "Missing field metadata for struct '{}' (internal error)",
+                        struct_name
+                    )
+                })?;
+                let mut fields = HashMap::new();
+                for fname in field_names {
+                    let ftype = types.get(fname).ok_or_else(|| {
+                        format!(
+                            "Missing type for field '{}' in struct '{}'",
+                            fname, struct_name
+                        )
+                    })?;
+                    fields.insert(fname.clone(), self.default_value_for_type_str(ftype)?);
+                }
+                Ok(Value::Struct(struct_name.to_string(), fields))
+            }
+        }
+    }
+
     fn eval_expression(&mut self, expr: &Expression) -> Result<Value, String> {
         match expr {
+            Expression::Uninitialized => Err(
+                "Evaluated uninitialized placeholder (internal error)".to_string(),
+            ),
+
             Expression::Integer(i) => Ok(Value::Int(*i)),
             Expression::Float(f) => Ok(Value::Float(*f)),
             Expression::Boolean(b) => Ok(Value::Bool(*b)),
@@ -1714,6 +1764,11 @@ impl Interpreter {
 
         for (name, fields) in &module_interpreter.structs {
             self.structs.insert(name.clone(), fields.clone());
+        }
+
+        for (name, types) in &module_interpreter.struct_field_types {
+            self.struct_field_types
+                .insert(name.clone(), types.clone());
         }
 
         for (struct_name, methods) in &module_interpreter.struct_methods {

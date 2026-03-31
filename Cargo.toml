@@ -1,6 +1,6 @@
 [package]
 name = "raven"
-version = "1.4.1"
+version = "1.4.2"
 edition = "2021"
 authors = ["martian56"]
 description = "A modern programming language with advanced features"

@@ -35,11 +35,11 @@ impl Parser {
                 TokenType::Impl => self.parse_impl_block()?,
                 TokenType::Enum => self.parse_enum_declaration()?,
                 TokenType::Identifier(_) => {
-                    let expr = self.parse_expression();
+                    let expr = self.parse_expression()?;
 
                     if let Some(TokenType::Assign) = &self.current_token {
                         self.advance();
-                        let value_expr = self.parse_expression();
+                        let value_expr = self.parse_expression()?;
 
                         if let Some(TokenType::Semicolon) = &self.current_token {
                             self.advance();
@@ -219,7 +219,7 @@ impl Parser {
             self.advance();
 
             let expr_start_line = self.lexer.line;
-            let expr = self.parse_expression();
+            let expr = self.parse_expression()?;
 
             if let Some(TokenType::Semicolon) = &self.current_token {
                 self.advance();
@@ -257,19 +257,7 @@ impl Parser {
                 "bool" => Expression::Boolean(false),
                 "string" => Expression::StringLiteral("".to_string()),
                 _ if var_type.ends_with("[]") => Expression::ArrayLiteral(vec![]),
-                _ => {
-                    let span =
-                        Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
-                    return Err(parse_error(
-                        format!(
-                            "Cannot declare uninitialized variable of type '{}'",
-                            var_type
-                        ),
-                        span,
-                    )
-                    .with_source(self.source_code.clone())
-                    .with_hint("Provide an initial value or use a supported type".to_string()));
-                }
+                _ => Expression::Uninitialized,
             };
 
             Ok(ASTNode::VariableDeclTyped(
@@ -297,7 +285,7 @@ impl Parser {
 
         if let Some(TokenType::LeftParen) = &self.current_token {
             self.advance();
-            let condition: Expression = self.parse_expression();
+            let condition: Expression = self.parse_expression()?;
 
             if let Some(TokenType::RightParen) = &self.current_token {
                 self.advance();
@@ -378,11 +366,11 @@ impl Parser {
             let stmt = match token {
                 TokenType::Let => self.parse_variable_declaration()?,
                 TokenType::Identifier(_) => {
-                    let expr = self.parse_expression();
+                    let expr = self.parse_expression()?;
 
                     if let Some(TokenType::Assign) = &self.current_token {
                         self.advance();
-                        let value_expr = self.parse_expression();
+                        let value_expr = self.parse_expression()?;
 
                         if let Some(TokenType::Semicolon) = &self.current_token {
                             self.advance();
@@ -436,12 +424,15 @@ impl Parser {
         Ok(ASTNode::Block(statements))
     }
 
-    fn parse_expression(&mut self) -> Expression {
+    fn parse_expression(&mut self) -> Result<Expression, RavenError> {
         self.parse_expression_with_precedence(0)
     }
 
-    fn parse_expression_with_precedence(&mut self, min_precedence: u8) -> Expression {
-        let mut left = self.parse_term();
+    fn parse_expression_with_precedence(
+        &mut self,
+        min_precedence: u8,
+    ) -> Result<Expression, RavenError> {
+        let mut left = self.parse_term()?;
 
         while let Some(op) = self.match_operator() {
             let precedence = self.operator_precedence(&op);
@@ -452,12 +443,12 @@ impl Parser {
 
             self.advance();
 
-            let right = self.parse_expression_with_precedence(precedence + 1);
+            let right = self.parse_expression_with_precedence(precedence + 1)?;
 
             left = Expression::BinaryOp(Box::new(left), op, Box::new(right));
         }
 
-        left
+        Ok(left)
     }
 
     fn operator_precedence(&self, op: &Operator) -> u8 {
@@ -494,47 +485,51 @@ impl Parser {
         }
     }
 
-    fn parse_term(&mut self) -> Expression {
+    fn parse_term(&mut self) -> Result<Expression, RavenError> {
         match &self.current_token {
             Some(TokenType::Minus) => {
                 self.advance();
-                let expr = self.parse_term();
-                Expression::UnaryOp(Operator::UnaryMinus, Box::new(expr))
+                let expr = self.parse_term()?;
+                Ok(Expression::UnaryOp(Operator::UnaryMinus, Box::new(expr)))
             }
             Some(TokenType::Not) => {
                 self.advance();
-                let expr = self.parse_term();
-                Expression::UnaryOp(Operator::Not, Box::new(expr))
+                let expr = self.parse_term()?;
+                Ok(Expression::UnaryOp(Operator::Not, Box::new(expr)))
             }
             Some(TokenType::IntLiteral(value)) => {
                 let val = *value;
                 self.advance();
-                Expression::Integer(val)
+                Ok(Expression::Integer(val))
             }
             Some(TokenType::FloatLiteral(value)) => {
                 let val = *value;
                 self.advance();
-                Expression::Float(val)
+                Ok(Expression::Float(val))
             }
             Some(TokenType::BoolLiteral(value)) => {
                 let val = *value;
                 self.advance();
-                Expression::Boolean(val)
+                Ok(Expression::Boolean(val))
             }
             Some(TokenType::StringLiteral(s)) => {
                 let s_clone = s.clone();
                 self.advance();
-                Expression::StringLiteral(s_clone)
+                Ok(Expression::StringLiteral(s_clone))
             }
             Some(TokenType::LeftParen) => {
                 self.advance();
-                let expr = self.parse_expression();
+                let expr = self.parse_expression()?;
                 if let Some(TokenType::RightParen) = &self.current_token {
                     self.advance();
                 } else {
-                    panic!("Expected ')' to close parenthesized expression");
+                    let span =
+                        Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                    return Err(parse_error("Expected ')' to close parenthesized expression", span)
+                        .with_source(self.source_code.clone())
+                        .with_hint("Add ')' after the expression".to_string()));
                 }
-                expr
+                Ok(expr)
             }
             Some(TokenType::LeftBracket) => self.parse_array_literal(),
             Some(TokenType::Identifier(name)) => {
@@ -548,23 +543,27 @@ impl Parser {
 
                     if let Some(TokenType::RightParen) = &self.current_token {
                         self.advance();
-                        return Expression::FunctionCall(name_clone, arguments);
+                        return Ok(Expression::FunctionCall(name_clone, arguments));
                     }
 
-                    arguments.push(self.parse_expression());
+                    arguments.push(self.parse_expression()?);
 
                     while let Some(TokenType::Comma) = &self.current_token {
                         self.advance();
-                        arguments.push(self.parse_expression());
+                        arguments.push(self.parse_expression()?);
                     }
 
                     if let Some(TokenType::RightParen) = &self.current_token {
                         self.advance();
                     } else {
-                        panic!("Expected ')' after function arguments");
+                        let span =
+                            Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                        return Err(parse_error("Expected ')' after function arguments", span)
+                            .with_source(self.source_code.clone())
+                            .with_hint("Close the argument list with ')'".to_string()));
                     }
 
-                    Expression::FunctionCall(name_clone, arguments)
+                    Ok(Expression::FunctionCall(name_clone, arguments))
                 } else if let Some(TokenType::LeftBrace) = &self.current_token {
                     self.advance();
 
@@ -572,7 +571,7 @@ impl Parser {
 
                     if let Some(TokenType::RightBrace) = &self.current_token {
                         self.advance();
-                        return Expression::StructInstantiation(name_clone, fields);
+                        return Ok(Expression::StructInstantiation(name_clone, fields));
                     }
 
                     let field_name = if let Some(TokenType::Identifier(field)) = &self.current_token
@@ -581,16 +580,32 @@ impl Parser {
                         self.advance();
                         field_clone
                     } else {
-                        panic!("Expected field name in struct instantiation");
+                        let span =
+                            Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                        return Err(parse_error(
+                            "Expected field name or '}' in struct literal",
+                            span,
+                        )
+                        .with_source(self.source_code.clone())
+                        .with_hint(
+                            "Use: TypeName { field: value, ... } with each field as name: value."
+                                .to_string(),
+                        ));
                     };
 
                     if let Some(TokenType::Colon) = &self.current_token {
                         self.advance();
                     } else {
-                        panic!("Expected ':' after field name");
+                        let span =
+                            Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                        return Err(parse_error("Expected ':' after field name in struct literal", span)
+                            .with_source(self.source_code.clone())
+                            .with_hint(
+                                "Use: field_name: expression for each struct field.".to_string(),
+                            ));
                     }
 
-                    let field_value = self.parse_expression();
+                    let field_value = self.parse_expression()?;
                     fields.push((field_name, field_value));
 
                     while let Some(TokenType::Comma) = &self.current_token {
@@ -602,40 +617,71 @@ impl Parser {
                                 self.advance();
                                 field_clone
                             } else {
-                                panic!("Expected field name in struct instantiation");
+                                let span = Span::new(
+                                    self.lexer.line,
+                                    self.lexer.column,
+                                    self.lexer.position,
+                                    1,
+                                );
+                                return Err(parse_error(
+                                    "Expected field name in struct literal",
+                                    span,
+                                )
+                                .with_source(self.source_code.clone())
+                                .with_hint(
+                                    "After each comma, add field_name: value.".to_string(),
+                                ));
                             };
 
                         if let Some(TokenType::Colon) = &self.current_token {
                             self.advance();
                         } else {
-                            panic!("Expected ':' after field name");
+                            let span = Span::new(
+                                self.lexer.line,
+                                self.lexer.column,
+                                self.lexer.position,
+                                1,
+                            );
+                            return Err(parse_error(
+                                "Expected ':' after field name in struct literal",
+                                span,
+                            )
+                            .with_source(self.source_code.clone()));
                         }
 
-                        let field_value = self.parse_expression();
+                        let field_value = self.parse_expression()?;
                         fields.push((field_name, field_value));
                     }
 
                     if let Some(TokenType::RightBrace) = &self.current_token {
                         self.advance();
                     } else {
-                        panic!("Expected '}}' after struct fields");
+                        let span =
+                            Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                        return Err(parse_error("Expected '}' after struct fields", span)
+                            .with_source(self.source_code.clone())
+                            .with_hint("Close the struct literal with '}'".to_string()));
                     }
 
-                    Expression::StructInstantiation(name_clone, fields)
+                    Ok(Expression::StructInstantiation(name_clone, fields))
                 } else if let Some(TokenType::LeftBracket) = &self.current_token {
                     self.advance();
-                    let index = self.parse_expression();
+                    let index = self.parse_expression()?;
 
                     if let Some(TokenType::RightBracket) = &self.current_token {
                         self.advance();
                     } else {
-                        panic!("Expected ']' after array index");
+                        let span =
+                            Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                        return Err(parse_error("Expected ']' after array index", span)
+                            .with_source(self.source_code.clone())
+                            .with_hint("Close the index with ']'".to_string()));
                     }
 
-                    Expression::ArrayIndex(
+                    Ok(Expression::ArrayIndex(
                         Box::new(Expression::Identifier(name_clone)),
                         Box::new(index),
-                    )
+                    ))
                 } else if let Some(TokenType::Colon) = &self.current_token {
                     if let Some(TokenType::Colon) = self.lexer.peek_token() {
                         self.advance();
@@ -647,25 +693,51 @@ impl Parser {
                                 self.advance();
                                 variant_clone
                             } else {
-                                panic!("Expected variant name after '::'");
+                                let span = Span::new(
+                                    self.lexer.line,
+                                    self.lexer.column,
+                                    self.lexer.position,
+                                    1,
+                                );
+                                return Err(parse_error("Expected variant name after '::'", span)
+                                    .with_source(self.source_code.clone())
+                                    .with_hint(
+                                        "Use: EnumName::VariantName for enum values.".to_string(),
+                                    ));
                             };
 
-                        Expression::EnumVariant(name_clone, variant_name)
+                        Ok(Expression::EnumVariant(name_clone, variant_name))
                     } else {
-                        Expression::Identifier(name_clone)
+                        Ok(Expression::Identifier(name_clone))
                     }
                 } else if let Some(TokenType::Dot) = &self.current_token {
                     let object = Expression::Identifier(name_clone);
                     self.parse_method_call_chain(object)
                 } else {
-                    Expression::Identifier(name_clone)
+                    Ok(Expression::Identifier(name_clone))
                 }
             }
-            _ => panic!("Unexpected token in expression: {:?}", self.current_token),
+            Some(tok) => {
+                let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                Err(parse_error(format!("Unexpected token in expression: {:?}", tok), span)
+                    .with_source(self.source_code.clone())
+                    .with_hint(
+                        "Expected a literal, identifier, '(', or '[' to start an expression."
+                            .to_string(),
+                    ))
+            }
+            None => {
+                let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                Err(parse_error("Unexpected end of input in expression", span)
+                    .with_source(self.source_code.clone()))
+            }
         }
     }
 
-    fn parse_method_call_chain(&mut self, object: Expression) -> Expression {
+    fn parse_method_call_chain(
+        &mut self,
+        object: Expression,
+    ) -> Result<Expression, RavenError> {
         let mut current_object = object;
 
         while let Some(TokenType::Dot) = &self.current_token {
@@ -676,7 +748,10 @@ impl Parser {
                 self.advance();
                 name_clone
             } else {
-                panic!("Expected method or field name after '.'");
+                let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                return Err(parse_error("Expected method or field name after '.'", span)
+                    .with_source(self.source_code.clone())
+                    .with_hint("Use: value.method(...) or value.field".to_string()));
             };
 
             if let Some(TokenType::LeftParen) = &self.current_token {
@@ -691,17 +766,21 @@ impl Parser {
                     continue;
                 }
 
-                arguments.push(self.parse_expression());
+                arguments.push(self.parse_expression()?);
 
                 while let Some(TokenType::Comma) = &self.current_token {
                     self.advance();
-                    arguments.push(self.parse_expression());
+                    arguments.push(self.parse_expression()?);
                 }
 
                 if let Some(TokenType::RightParen) = &self.current_token {
                     self.advance();
                 } else {
-                    panic!("Expected ')' after method arguments");
+                    let span =
+                        Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                    return Err(parse_error("Expected ')' after method arguments", span)
+                        .with_source(self.source_code.clone())
+                        .with_hint("Close the argument list with ')'".to_string()));
                 }
 
                 current_object = Expression::MethodCall(Box::new(current_object), name, arguments);
@@ -711,45 +790,52 @@ impl Parser {
 
             while let Some(TokenType::LeftBracket) = &self.current_token {
                 self.advance();
-                let index = self.parse_expression();
+                let index = self.parse_expression()?;
 
                 if let Some(TokenType::RightBracket) = &self.current_token {
                     self.advance();
                 } else {
-                    panic!("Expected ']' after array index");
+                    let span =
+                        Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                    return Err(parse_error("Expected ']' after array index", span)
+                        .with_source(self.source_code.clone())
+                        .with_hint("Close the index with ']'".to_string()));
                 }
 
                 current_object = Expression::ArrayIndex(Box::new(current_object), Box::new(index));
             }
         }
 
-        current_object
+        Ok(current_object)
     }
 
-    fn parse_array_literal(&mut self) -> Expression {
+    fn parse_array_literal(&mut self) -> Result<Expression, RavenError> {
         self.advance();
 
         let mut elements = Vec::new();
 
         if let Some(TokenType::RightBracket) = &self.current_token {
             self.advance();
-            return Expression::ArrayLiteral(elements);
+            return Ok(Expression::ArrayLiteral(elements));
         }
 
-        elements.push(self.parse_expression());
+        elements.push(self.parse_expression()?);
 
         while let Some(TokenType::Comma) = &self.current_token {
             self.advance();
-            elements.push(self.parse_expression());
+            elements.push(self.parse_expression()?);
         }
 
         if let Some(TokenType::RightBracket) = &self.current_token {
             self.advance();
         } else {
-            panic!("Expected ']' after array elements");
+            let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+            return Err(parse_error("Expected ']' after array elements", span)
+                .with_source(self.source_code.clone())
+                .with_hint("Close the array literal with ']'".to_string()));
         }
 
-        Expression::ArrayLiteral(elements)
+        Ok(Expression::ArrayLiteral(elements))
     }
 
     fn parse_print_statement(&mut self) -> Result<ASTNode, RavenError> {
@@ -765,11 +851,11 @@ impl Parser {
             if let Some(TokenType::RightParen) = &self.current_token {
                 self.advance();
             } else {
-                arguments.push(self.parse_expression());
+                arguments.push(self.parse_expression()?);
 
                 while let Some(TokenType::Comma) = &self.current_token {
                     self.advance();
-                    arguments.push(self.parse_expression());
+                    arguments.push(self.parse_expression()?);
                 }
 
                 if let Some(TokenType::RightParen) = &self.current_token {
@@ -1543,7 +1629,7 @@ impl Parser {
                 .with_hint("Use: while (condition) { ... }".to_string()));
         }
 
-        let condition = self.parse_expression();
+        let condition = self.parse_expression()?;
 
         if let Some(TokenType::RightParen) = &self.current_token {
             self.advance();
@@ -1600,7 +1686,7 @@ impl Parser {
             .with_hint("Use 'let' to declare the loop variable".to_string()));
         };
 
-        let condition = self.parse_expression();
+        let condition = self.parse_expression()?;
 
         if let Some(TokenType::Semicolon) = &self.current_token {
             self.advance();
@@ -1622,7 +1708,7 @@ impl Parser {
 
             if let Some(TokenType::Assign) = &self.current_token {
                 self.advance();
-                let expr = self.parse_expression();
+                let expr = self.parse_expression()?;
                 ASTNode::Assignment(Box::new(Expression::Identifier(name_clone)), Box::new(expr))
             } else {
                 let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
@@ -1687,7 +1773,7 @@ impl Parser {
         self.advance();
 
         let expr_start_line = self.lexer.line;
-        let expr = self.parse_expression();
+        let expr = self.parse_expression()?;
 
         if let Some(TokenType::Semicolon) = &self.current_token {
             self.advance();

@@ -431,6 +431,32 @@ impl TypeChecker {
         expected_type: Option<&Type>,
     ) -> Result<Type, String> {
         match expr {
+            Expression::Uninitialized => {
+                if let Some(et) = expected_type {
+                    match et {
+                        Type::Struct(struct_name) => {
+                            if self.structs.contains_key(struct_name) {
+                                Ok(Type::Struct(struct_name.clone()))
+                            } else {
+                                Err(format!(
+                                    "Struct '{}' is not defined\n   = help: Declare it with 'struct {} {{ ... }}' before use.",
+                                    struct_name, struct_name
+                                ))
+                            }
+                        }
+                        _ => Err(
+                            "Uninitialized declaration (`let x: T;`) is only allowed for struct types\n   = help: Use `let x: T = value;` for primitives and arrays, or provide a struct initializer."
+                                .to_string(),
+                        ),
+                    }
+                } else {
+                    Err(
+                        "Invalid use of uninitialized value (internal error)\n   = help: This should only appear in `let name: StructType;`."
+                            .to_string(),
+                    )
+                }
+            }
+
             Expression::Integer(_) => Ok(Type::Int),
             Expression::Float(_) => Ok(Type::Float),
             Expression::Boolean(_) => Ok(Type::Bool),
@@ -1288,6 +1314,36 @@ impl TypeChecker {
 mod tests {
     use super::*;
     use crate::ast::{ASTNode, Expression};
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_uninitialized_struct_declaration() {
+        let mut checker = TypeChecker::new();
+        let mut fields = HashMap::new();
+        fields.insert("x".to_string(), Type::Int);
+        fields.insert("y".to_string(), Type::Int);
+        checker
+            .structs
+            .insert("Point".to_string(), StructInfo { fields });
+
+        let node = ASTNode::VariableDeclTyped(
+            "p".to_string(),
+            "Point".to_string(),
+            Box::new(Expression::Uninitialized),
+        );
+        assert!(checker.check(&node).is_ok());
+    }
+
+    #[test]
+    fn test_uninitialized_only_for_struct_type() {
+        let mut checker = TypeChecker::new();
+        let node = ASTNode::VariableDeclTyped(
+            "x".to_string(),
+            "int".to_string(),
+            Box::new(Expression::Uninitialized),
+        );
+        assert!(checker.check(&node).is_err());
+    }
 
     #[test]
     fn test_variable_declaration() {
