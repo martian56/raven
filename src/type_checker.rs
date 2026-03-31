@@ -1324,18 +1324,13 @@ mod tests {
     #[test]
     fn test_module_method_call_resolves_return_type() {
         let mut checker = TypeChecker::new();
-        checker
-            .variables
-            .insert("json".to_string(), Type::Module);
+        checker.variables.insert("json".to_string(), Type::Module);
         checker
             .module_bindings
             .insert("json".to_string(), "json".to_string());
 
         let mut module_functions = HashMap::new();
-        module_functions.insert(
-            "load".to_string(),
-            (Type::String, vec![Type::String]),
-        );
+        module_functions.insert("load".to_string(), (Type::String, vec![Type::String]));
         checker.modules.insert(
             "json".to_string(),
             ModuleInfo {
