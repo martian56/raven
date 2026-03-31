@@ -5,11 +5,13 @@
 //!   rvpm install    Install dependencies from rv.toml
 //!   rvpm add <pkg>  Add a dependency
 //!   rvpm run        Run the project (raven src/main.rv)
+//!   rvpm fmt        Format Raven source (.rv) files
 
 use clap::{Arg, Command};
+use raven::format::format_source;
 use std::fs;
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 const DEFAULT_MAIN_RV: &str = r#"// Raven program - run with: rvpm run
 fun main() -> void {
@@ -49,6 +51,21 @@ fn main() {
                 .arg(Arg::new("package").required(true)),
         )
         .subcommand(Command::new("run").about("Run the project"))
+        .subcommand(
+            Command::new("fmt")
+                .about("Format Raven source files")
+                .arg(
+                    Arg::new("paths")
+                        .help("Files or directories to format (default: project src/)")
+                        .num_args(0..),
+                )
+                .arg(
+                    Arg::new("check")
+                        .long("check")
+                        .help("Fail if any file would change (CI / verify formatted)")
+                        .action(clap::ArgAction::SetTrue),
+                ),
+        )
         .get_matches();
 
     match matches.subcommand() {
@@ -73,9 +90,20 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        Some(("fmt", sub_matches)) => {
+            let paths: Vec<String> = sub_matches
+                .get_many::<String>("paths")
+                .map(|p| p.cloned().collect())
+                .unwrap_or_default();
+            let check = sub_matches.get_flag("check");
+            if let Err(e) = cmd_fmt(&paths, check) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
         _ => {
             let _ = io::stderr().write_fmt(format_args!(
-                "Usage: rvpm <COMMAND>\n\nCommands:\n  init     Create a new Raven project\n  install  Install dependencies\n  add      Add a dependency\n  run      Run the project\n"
+                "Usage: rvpm <COMMAND>\n\nCommands:\n  init     Create a new Raven project\n  install  Install dependencies\n  add      Add a dependency\n  run      Run the project\n  fmt      Format Raven source files\n"
             ));
             std::process::exit(1);
         }
@@ -176,4 +204,134 @@ fn cmd_run() -> Result<(), String> {
             }
         };
     }
+}
+
+fn find_rv_project_root() -> Result<PathBuf, String> {
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let mut dir = cwd.as_path();
+    loop {
+        if dir.join("rv.toml").exists() {
+            return Ok(dir.to_path_buf());
+        }
+        dir = dir.parent().ok_or_else(|| {
+            "Not a Raven project (no rv.toml found). Run 'rvpm init' or pass explicit paths."
+                .to_string()
+        })?;
+    }
+}
+
+fn collect_rv_files(path: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut out = Vec::new();
+    if path.is_dir() {
+        for entry in fs::read_dir(path).map_err(|e| format!("{}: {}", path.display(), e))? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let p = entry.path();
+            if p.is_dir() {
+                out.extend(collect_rv_files(&p)?);
+            } else if p.extension().is_some_and(|e| e == "rv") {
+                out.push(p);
+            }
+        }
+    } else if path.is_file() {
+        if path.extension().is_some_and(|e| e == "rv") {
+            out.push(path.to_path_buf());
+        } else {
+            return Err(format!(
+                "Not a Raven source file (expected .rv): {}",
+                path.display()
+            ));
+        }
+    }
+    out.sort();
+    out.dedup();
+    Ok(out)
+}
+
+fn normalize_nl(s: &str) -> String {
+    s.replace("\r\n", "\n")
+}
+
+fn cmd_fmt(paths: &[String], check: bool) -> Result<(), String> {
+    let files: Vec<PathBuf> = if paths.is_empty() {
+        let root = find_rv_project_root()?;
+        let src = root.join("src");
+        if !src.is_dir() {
+            return Err(format!(
+                "No src/ directory at {}. Pass explicit paths or create src/.",
+                root.display()
+            ));
+        }
+        collect_rv_files(&src)?
+    } else {
+        let mut all = Vec::new();
+        for p in paths {
+            let path = Path::new(p);
+            if !path.exists() {
+                return Err(format!("Path not found: {}", p));
+            }
+            if path.is_dir() {
+                all.extend(collect_rv_files(path)?);
+            } else if path.extension().is_some_and(|e| e == "rv") {
+                all.push(path.to_path_buf());
+            } else {
+                return Err(format!(
+                    "Not a Raven source file (expected .rv): {}",
+                    path.display()
+                ));
+            }
+        }
+        all.sort();
+        all.dedup();
+        all
+    };
+
+    if files.is_empty() {
+        println!("No .rv files to format.");
+        return Ok(());
+    }
+
+    let mut changed = Vec::new();
+    let mut errors = Vec::new();
+
+    for file in &files {
+        let source = fs::read_to_string(file).map_err(|e| format!("{}: {}", file.display(), e))?;
+        let normalized = normalize_nl(&source);
+        let formatted = match format_source(&normalized, &file.display().to_string()) {
+            Ok(s) => s,
+            Err(e) => {
+                errors.push(format!("{}: {}", file.display(), e.format()));
+                continue;
+            }
+        };
+
+        if normalized == formatted {
+            continue;
+        }
+
+        if check {
+            changed.push(file.display().to_string());
+        } else {
+            fs::write(file, &formatted).map_err(|e| format!("{}: {}", file.display(), e))?;
+            println!("Formatted {}", file.display());
+        }
+    }
+
+    if !errors.is_empty() {
+        for err in errors {
+            eprintln!("{}", err);
+        }
+        return Err("fmt: one or more files failed to parse.".to_string());
+    }
+
+    if check && !changed.is_empty() {
+        for path in &changed {
+            eprintln!("Would reformat: {}", path);
+        }
+        return Err(format!(
+            "fmt --check: {} file(s) need formatting.",
+            changed.len()
+        ));
+    }
+
+    Ok(())
 }
