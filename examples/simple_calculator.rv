@@ -1,7 +1,7 @@
 print("=== SIMPLE CALCULATOR ===");
 print("Built with Raven v1.1.0");
 
-let user_name: String = input("Enter your name: ");
+let user_name: string = input("Enter your name: ");
 print(format("Welcome, {}!", user_name));
 
 print("\nMAIN MENU:");
@@ -10,15 +10,15 @@ print("2. Text Processor");
 print("3. Number Analysis");
 print("0. Exit");
 
-let choice: String = input("Select an option (0-3): ");
+let choice: string = input("Select an option (0-3): ");
 
 if (choice == "1") {
     print("\n=== CALCULATOR ===");
-    let num1_str: String = input("Enter first number: ");
+    let num1_str: string = input("Enter first number: ");
     let num1: float = 10.0;
-    let num2_str: String = input("Enter second number: ");
+    let num2_str: string = input("Enter second number: ");
     let num2: float = 5.0;
-    let operation: String = input("Enter operation (+, -, *, /): ");
+    let operation: string = input("Enter operation (+, -, *, /): ");
     
     let result: float = 0.0;
     if (operation == "+") {
@@ -42,23 +42,23 @@ if (choice == "1") {
 } else {
     if (choice == "2") {
         print("\n=== TEXT PROCESSOR ===");
-        let text: String = input("Enter some text: ");
+        let text: string = input("Enter some text: ");
         
         let length: int = len(text);
         print(format("Text length: {}", length));
         
-        let upper_text: String = text.replace("a", "A");
-        let processed_text: String = upper_text.replace("e", "E");
+        let upper_text: string = text.replace("a", "A");
+        let processed_text: string = upper_text.replace("e", "E");
         print(format("Processed text: {}", processed_text));
         
-        let words: String[] = text.split(" ");
+        let words: string[] = text.split(" ");
         let word_count: int = len(words);
         print(format("Word count: {}", word_count));
         
     } else {
         if (choice == "3") {
             print("\n=== NUMBER ANALYSIS ===");
-            let number_str: String = input("Enter a number: ");
+            let number_str: string = input("Enter a number: ");
             let number: int = 15;
             
             print(format("Number: {}", number));

@@ -17,7 +17,7 @@ raven/
 │   │   ├── basic.rv
 │   │   ├── trig.rv
 │   │   └── mod.rv
-│   ├── string/         # String manipulation
+│   ├── string/         # string manipulation
 │   │   ├── transform.rv
 │   │   ├── search.rv
 │   │   └── mod.rv
@@ -39,12 +39,12 @@ raven/
 fun int(value: any) -> int;
 fun float(value: any) -> float;
 fun bool(value: any) -> bool;
-fun string(value: any) -> String;
+fun string(value: any) -> string;
 
 // Examples:
-let x: int = int("42");        // String to int
+let x: int = int("42");        // string to int
 let y: float = float(42);       // Int to float
-let s: String = string(3.14);   // Float to string
+let s: string = string(3.14);   // Float to string
 let b: bool = bool(1);          // Int to bool (0=false, else=true)
 ```
 
@@ -57,12 +57,12 @@ fun print(value: any) -> void;
 fun println(value: any) -> void;
 
 // Read input from user
-fun input(prompt: String) -> String;
+fun input(prompt: string) -> string;
 
 // Examples:
 print("Hello");      // Hello (no newline)
 println("World");    // World\n
-let name: String = input("Enter name: ");
+let name: string = input("Enter name: ");
 ```
 
 ### Collection Functions
@@ -78,10 +78,10 @@ let count: int = len([1, 2, 3]);  // 3
 ### Utility Functions
 ```raven
 // Type checking
-fun type_of(value: any) -> String;
+fun type_of(value: any) -> string;
 
 // Examples:
-let t: String = type_of(42);  // "int"
+let t: string = type_of(42);  // "int"
 ```
 
 ---
@@ -94,29 +94,29 @@ let t: String = type_of(42);  // "int"
 import io;
 
 // Read entire file to string
-fun io.read_file(path: String) -> String;
+fun io.read_file(path: string) -> string;
 
 // Write string to file
-fun io.write_file(path: String, content: String) -> void;
+fun io.write_file(path: string, content: string) -> void;
 
 // Append to file
-fun io.append_file(path: String, content: String) -> void;
+fun io.append_file(path: string, content: string) -> void;
 
 // Check if file exists
-fun io.file_exists(path: String) -> bool;
+fun io.file_exists(path: string) -> bool;
 
 // Delete file
-fun io.delete_file(path: String) -> void;
+fun io.delete_file(path: string) -> void;
 
 // Read file line by line
-fun io.read_lines(path: String) -> [String];
+fun io.read_lines(path: string) -> [string];
 
 // Examples:
-let content: String = io.read_file("data.txt");
+let content: string = io.read_file("data.txt");
 io.write_file("output.txt", "Hello, World!");
 
 if (io.file_exists("config.txt")) {
-    let lines: [String] = io.read_lines("config.txt");
+    let lines: [string] = io.read_lines("config.txt");
 }
 ```
 
@@ -126,17 +126,17 @@ if (io.file_exists("config.txt")) {
 import io;
 
 // Read single line from console
-fun io.read_line() -> String;
+fun io.read_line() -> string;
 
 // Read single character
-fun io.read_char() -> String;
+fun io.read_char() -> string;
 
 // Clear console
 fun io.clear() -> void;
 
 // Examples:
 println("Enter your name:");
-let name: String = io.read_line();
+let name: string = io.read_line();
 ```
 
 ---
@@ -227,22 +227,22 @@ fun math.random_int(min: int, max: int) -> int;
 import string;
 
 // Case conversion
-fun string.uppercase(s: String) -> String;
-fun string.lowercase(s: String) -> String;
+fun string.uppercase(s: string) -> string;
+fun string.lowercase(s: string) -> string;
 
 // Trim whitespace
-fun string.trim(s: String) -> String;
-fun string.trim_left(s: String) -> String;
-fun string.trim_right(s: String) -> String;
+fun string.trim(s: string) -> string;
+fun string.trim_left(s: string) -> string;
+fun string.trim_right(s: string) -> string;
 
 // Reverse
-fun string.reverse(s: String) -> String;
+fun string.reverse(s: string) -> string;
 
 // Examples:
-let upper: String = string.uppercase("hello");  // "HELLO"
-let lower: String = string.lowercase("WORLD");  // "world"
-let clean: String = string.trim("  hello  ");  // "hello"
-let rev: String = string.reverse("abc");        // "cba"
+let upper: string = string.uppercase("hello");  // "HELLO"
+let lower: string = string.lowercase("WORLD");  // "world"
+let clean: string = string.trim("  hello  ");  // "hello"
+let rev: string = string.reverse("abc");        // "cba"
 ```
 
 ### Searching & Testing
@@ -251,14 +251,14 @@ let rev: String = string.reverse("abc");        // "cba"
 import string;
 
 // Check if string contains substring
-fun string.contains(s: String, substr: String) -> bool;
+fun string.contains(s: string, substr: string) -> bool;
 
 // Check if starts/ends with
-fun string.starts_with(s: String, prefix: String) -> bool;
-fun string.ends_with(s: String, suffix: String) -> bool;
+fun string.starts_with(s: string, prefix: string) -> bool;
+fun string.ends_with(s: string, suffix: string) -> bool;
 
 // Find index of substring
-fun string.index_of(s: String, substr: String) -> int;  // -1 if not found
+fun string.index_of(s: string, substr: string) -> int;  // -1 if not found
 
 // Examples:
 let has_hello: bool = string.contains("hello world", "hello");  // true
@@ -272,18 +272,18 @@ let idx: int = string.index_of("hello", "ll");                  // 2
 import string;
 
 // Split string by delimiter
-fun string.split(s: String, delim: String) -> [String];
+fun string.split(s: string, delim: string) -> [string];
 
 // Join array of strings
-fun string.join(parts: [String], delim: String) -> String;
+fun string.join(parts: [string], delim: string) -> string;
 
 // Replace occurrences
-fun string.replace(s: String, old: String, new: String) -> String;
+fun string.replace(s: string, old: string, new: string) -> string;
 
 // Examples:
-let parts: [String] = string.split("a,b,c", ",");  // ["a", "b", "c"]
-let joined: String = string.join(parts, "-");      // "a-b-c"
-let replaced: String = string.replace("hello", "l", "r");  // "herro"
+let parts: [string] = string.split("a,b,c", ",");  // ["a", "b", "c"]
+let joined: string = string.join(parts, "-");      // "a-b-c"
+let replaced: string = string.replace("hello", "l", "r");  // "herro"
 ```
 
 ### Character Operations
@@ -292,18 +292,18 @@ let replaced: String = string.replace("hello", "l", "r");  // "herro"
 import string;
 
 // Get character at index
-fun string.char_at(s: String, index: int) -> String;
+fun string.char_at(s: string, index: int) -> string;
 
 // Get ASCII code
-fun string.char_code(c: String) -> int;
+fun string.char_code(c: string) -> int;
 
 // From ASCII code
-fun string.from_char_code(code: int) -> String;
+fun string.from_char_code(code: int) -> string;
 
 // Examples:
-let ch: String = string.char_at("hello", 0);  // "h"
+let ch: string = string.char_at("hello", 0);  // "h"
 let code: int = string.char_code("A");        // 65
-let letter: String = string.from_char_code(65);  // "A"
+let letter: string = string.from_char_code(65);  // "A"
 ```
 
 ---
@@ -358,12 +358,12 @@ fun time.now() -> int;
 fun time.sleep(ms: int) -> void;
 
 // Format time
-fun time.format(timestamp: int, format: String) -> String;
+fun time.format(timestamp: int, format: string) -> string;
 
 // Examples:
 let now: int = time.now();
 time.sleep(1000);  // Sleep 1 second
-let formatted: String = time.format(now, "YYYY-MM-DD");
+let formatted: string = time.format(now, "YYYY-MM-DD");
 ```
 
 ---
@@ -374,14 +374,14 @@ let formatted: String = time.format(now, "YYYY-MM-DD");
 import json;
 
 // Parse JSON string
-fun json.parse(s: String) -> Map;
+fun json.parse(s: string) -> Map;
 
 // Convert to JSON string
-fun json.stringify(obj: Map) -> String;
+fun json.stringify(obj: Map) -> string;
 
 // Examples:
 let data: Map = json.parse('{"name": "Alice", "age": 25}');
-let json_str: String = json.stringify(data);
+let json_str: string = json.stringify(data);
 ```
 
 ---
@@ -392,14 +392,14 @@ let json_str: String = json.stringify(data);
 import http;
 
 // Make HTTP GET request
-fun http.get(url: String) -> String;
+fun http.get(url: string) -> string;
 
 // Make HTTP POST request
-fun http.post(url: String, body: String) -> String;
+fun http.post(url: string, body: string) -> string;
 
 // Examples:
-let response: String = http.get("https://api.example.com/data");
-let result: String = http.post("https://api.example.com/submit", '{"data": "value"}');
+let response: string = http.get("https://api.example.com/data");
+let result: string = http.post("https://api.example.com/submit", '{"data": "value"}');
 ```
 
 ---
@@ -467,25 +467,25 @@ let radius: float = 5.0;
 let area: float = math.PI * math.pow_f(radius, 2.0);
 println(area);
 
-// String manipulation
+// string manipulation
 import string;
 
-let text: String = "Hello, Raven!";
-let upper: String = string.uppercase(text);
-let parts: [String] = string.split(upper, ",");
+let text: string = "Hello, Raven!";
+let upper: string = string.uppercase(text);
+let parts: [string] = string.split(upper, ",");
 
 for (let i: int = 0; i < len(parts); i = i + 1) {
-    let trimmed: String = string.trim(parts[i]);
+    let trimmed: string = string.trim(parts[i]);
     println(trimmed);
 }
 
 // File I/O
 import io;
 
-let data: String = io.read_file("input.txt");
-let lines: [String] = string.split(data, "\n");
+let data: string = io.read_file("input.txt");
+let lines: [string] = string.split(data, "\n");
 
-let processed: String = "";
+let processed: string = "";
 for (let i: int = 0; i < len(lines); i = i + 1) {
     processed = processed + string.uppercase(lines[i]) + "\n";
 }

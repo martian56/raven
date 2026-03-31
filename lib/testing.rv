@@ -5,16 +5,16 @@ import math;
 
 // Test result structure
 struct TestResult {
-    name: String,
+    name: string,
     passed: bool,
-    error_message: String,
+    error_message: string,
     execution_time: float
 }
 
 // Test suite structure
 struct TestSuite {
-    name: String,
-    tests: String[],
+    name: string,
+    tests: string[],
     results: TestResult[],
     total_tests: int,
     passed_tests: int,
@@ -22,112 +22,112 @@ struct TestSuite {
 }
 
 // Assertion functions
-export fun assert_true(condition: bool, message: String) -> bool {
+export fun assert_true(condition: bool, message: string) -> bool {
     if (!condition) {
         panic("Assertion failed: " + message);
     }
     return true;
 }
 
-export fun assert_false(condition: bool, message: String) -> bool {
+export fun assert_false(condition: bool, message: string) -> bool {
     if (condition) {
         panic("Assertion failed: " + message);
     }
     return true;
 }
 
-export fun assert_equals(actual: String, expected: String, message: String) -> bool {
+export fun assert_equals(actual: string, expected: string, message: string) -> bool {
     if (actual != expected) {
         panic(format("Assertion failed: {} - Expected '{}', got '{}'", message, expected, actual));
     }
     return true;
 }
 
-export fun assert_not_equals(actual: String, expected: String, message: String) -> bool {
+export fun assert_not_equals(actual: string, expected: string, message: string) -> bool {
     if (actual == expected) {
         panic(format("Assertion failed: {} - Expected different values, got '{}'", message, actual));
     }
     return true;
 }
 
-export fun assert_greater_than(actual: int, expected: int, message: String) -> bool {
+export fun assert_greater_than(actual: int, expected: int, message: string) -> bool {
     if (actual <= expected) {
         panic(format("Assertion failed: {} - Expected {} > {}, got {}", message, actual, expected, actual));
     }
     return true;
 }
 
-export fun assert_less_than(actual: int, expected: int, message: String) -> bool {
+export fun assert_less_than(actual: int, expected: int, message: string) -> bool {
     if (actual >= expected) {
         panic(format("Assertion failed: {} - Expected {} < {}, got {}", message, actual, expected, actual));
     }
     return true;
 }
 
-export fun assert_greater_than_or_equal(actual: int, expected: int, message: String) -> bool {
+export fun assert_greater_than_or_equal(actual: int, expected: int, message: string) -> bool {
     if (actual < expected) {
         panic(format("Assertion failed: {} - Expected {} >= {}, got {}", message, actual, expected, actual));
     }
     return true;
 }
 
-export fun assert_less_than_or_equal(actual: int, expected: int, message: String) -> bool {
+export fun assert_less_than_or_equal(actual: int, expected: int, message: string) -> bool {
     if (actual > expected) {
         panic(format("Assertion failed: {} - Expected {} <= {}, got {}", message, actual, expected, actual));
     }
     return true;
 }
 
-export fun assert_contains(haystack: String, needle: String, message: String) -> bool {
+export fun assert_contains(haystack: string, needle: string, message: string) -> bool {
     if (!string.contains(haystack, needle)) {
         panic(format("Assertion failed: {} - Expected '{}' to contain '{}'", message, haystack, needle));
     }
     return true;
 }
 
-export fun assert_not_contains(haystack: String, needle: String, message: String) -> bool {
+export fun assert_not_contains(haystack: string, needle: string, message: string) -> bool {
     if (string.contains(haystack, needle)) {
         panic(format("Assertion failed: {} - Expected '{}' to not contain '{}'", message, haystack, needle));
     }
     return true;
 }
 
-export fun assert_starts_with(str: String, prefix: String, message: String) -> bool {
+export fun assert_starts_with(str: string, prefix: string, message: string) -> bool {
     if (!string.starts_with(str, prefix)) {
         panic(format("Assertion failed: {} - Expected '{}' to start with '{}'", message, str, prefix));
     }
     return true;
 }
 
-export fun assert_ends_with(str: String, suffix: String, message: String) -> bool {
+export fun assert_ends_with(str: string, suffix: string, message: string) -> bool {
     if (!string.ends_with(str, suffix)) {
         panic(format("Assertion failed: {} - Expected '{}' to end with '{}'", message, str, suffix));
     }
     return true;
 }
 
-export fun assert_is_empty(str: String, message: String) -> bool {
+export fun assert_is_empty(str: string, message: string) -> bool {
     if (len(str) != 0) {
         panic(format("Assertion failed: {} - Expected empty string, got '{}'", message, str));
     }
     return true;
 }
 
-export fun assert_is_not_empty(str: String, message: String) -> bool {
+export fun assert_is_not_empty(str: string, message: string) -> bool {
     if (len(str) == 0) {
         panic(format("Assertion failed: {} - Expected non-empty string, got empty", message));
     }
     return true;
 }
 
-export fun assert_is_null(value: String, message: String) -> bool {
+export fun assert_is_null(value: string, message: string) -> bool {
     if (value != "") {
         panic(format("Assertion failed: {} - Expected null/empty value, got '{}'", message, value));
     }
     return true;
 }
 
-export fun assert_is_not_null(value: String, message: String) -> bool {
+export fun assert_is_not_null(value: string, message: string) -> bool {
     if (value == "") {
         panic(format("Assertion failed: {} - Expected non-null value, got null/empty", message));
     }
@@ -135,7 +135,7 @@ export fun assert_is_not_null(value: String, message: String) -> bool {
 }
 
 // Test execution
-export fun run_test(test_name: String, test_function: String) -> TestResult {
+export fun run_test(test_name: string, test_function: string) -> TestResult {
     let start_time: float = sys_timestamp();
     let result: TestResult = TestResult {
         name: test_name,
@@ -150,7 +150,7 @@ export fun run_test(test_name: String, test_function: String) -> TestResult {
     return result;
 }
 
-export fun run_test_suite(suite_name: String, tests: String[]) -> TestSuite {
+export fun run_test_suite(suite_name: string, tests: string[]) -> TestSuite {
     let suite: TestSuite = TestSuite {
         name: suite_name,
         tests: tests,
@@ -162,7 +162,7 @@ export fun run_test_suite(suite_name: String, tests: String[]) -> TestSuite {
     
     let i: int = 0;
     while (i < len(tests)) {
-        let test_name: String = tests[i];
+        let test_name: string = tests[i];
         let result: TestResult = run_test(test_name, test_name);
         
         suite.results.push(result);
@@ -190,7 +190,7 @@ export fun print_test_results(suite: TestSuite) -> void {
     let i: int = 0;
     while (i < len(suite.results)) {
         let result: TestResult = suite.results[i];
-        let status: String = "FAIL";
+        let status: string = "FAIL";
         if (result.passed) {
             status = "PASS";
         }
@@ -204,8 +204,8 @@ export fun print_test_results(suite: TestSuite) -> void {
     }
 }
 
-export fun generate_test_report(suite: TestSuite) -> String {
-    let report: String = "";
+export fun generate_test_report(suite: TestSuite) -> string {
+    let report: string = "";
     report = report + format("Test Suite: {}\n", suite.name);
     report = report + format("Total Tests: {}\n", suite.total_tests);
     report = report + format("Passed: {}\n", suite.passed_tests);
@@ -216,7 +216,7 @@ export fun generate_test_report(suite: TestSuite) -> String {
     let i: int = 0;
     while (i < len(suite.results)) {
         let result: TestResult = suite.results[i];
-        let status: String = "FAIL";
+        let status: string = "FAIL";
         if (result.passed) {
             status = "PASS";
         }
@@ -233,7 +233,7 @@ export fun generate_test_report(suite: TestSuite) -> String {
 }
 
 // Test utilities
-export fun skip_test(test_name: String, reason: String) -> TestResult {
+export fun skip_test(test_name: string, reason: string) -> TestResult {
     let result: TestResult = TestResult {
         name: test_name,
         passed: true,
@@ -243,7 +243,7 @@ export fun skip_test(test_name: String, reason: String) -> TestResult {
     return result;
 }
 
-export fun todo_test(test_name: String, description: String) -> TestResult {
+export fun todo_test(test_name: string, description: string) -> TestResult {
     let result: TestResult = TestResult {
         name: test_name,
         passed: true,
@@ -253,7 +253,7 @@ export fun todo_test(test_name: String, description: String) -> TestResult {
     return result;
 }
 
-export fun benchmark_function(function_name: String, iterations: int) -> float {
+export fun benchmark_function(function_name: string, iterations: int) -> float {
     let start_time: float = sys_timestamp();
     
     let i: int = 0;
@@ -264,11 +264,11 @@ export fun benchmark_function(function_name: String, iterations: int) -> float {
     return sys_timestamp() - start_time;
 }
 
-export fun performance_test(test_name: String, max_execution_time: float) -> TestResult {
+export fun performance_test(test_name: string, max_execution_time: float) -> TestResult {
     let start_time: float = sys_timestamp();
     let execution_time: float = sys_timestamp() - start_time;
     
-    let err_msg: String = "";
+    let err_msg: string = "";
     if (execution_time > max_execution_time) {
         err_msg = format("Performance test failed: {}ms > {}ms", execution_time, max_execution_time);
     }
@@ -284,12 +284,12 @@ export fun performance_test(test_name: String, max_execution_time: float) -> Tes
 
 // Mock objects (simplified)
 struct MockObject {
-    name: String,
-    calls: String[],
-    return_values: String[]
+    name: string,
+    calls: string[],
+    return_values: string[]
 }
 
-export fun create_mock(name: String) -> MockObject {
+export fun create_mock(name: string) -> MockObject {
     let mock: MockObject = MockObject {
         name: name,
         calls: [],
@@ -298,15 +298,15 @@ export fun create_mock(name: String) -> MockObject {
     return mock;
 }
 
-export fun mock_call(mock: MockObject, method_name: String, args: String[]) -> String {
-    let call_info: String = method_name + "(" + args.join(", ") + ")";
+export fun mock_call(mock: MockObject, method_name: string, args: string[]) -> string {
+    let call_info: string = method_name + "(" + args.join(", ") + ")";
     mock.calls.push(call_info);
     
     // Return a mock value
     return "mock_" + method_name + "_result";
 }
 
-export fun verify_mock_calls(mock: MockObject, expected_calls: String[]) -> bool {
+export fun verify_mock_calls(mock: MockObject, expected_calls: string[]) -> bool {
     if (len(mock.calls) != len(expected_calls)) {
         return false;
     }
@@ -329,9 +329,9 @@ export fun reset_mock(mock: MockObject) -> MockObject {
 }
 
 // Test data generators
-export fun generate_random_string(length: int) -> String {
-    let chars: String = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let result: String = "";
+export fun generate_random_string(length: int) -> string {
+    let chars: string = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let result: string = "";
     
     let i: int = 0;
     while (i < length) {
@@ -347,8 +347,8 @@ export fun generate_random_int(min: int, max: int) -> int {
     return math.random_int(min, max);
 }
 
-export fun generate_test_data(count: int) -> String[] {
-    let data: String[] = [];
+export fun generate_test_data(count: int) -> string[] {
+    let data: string[] = [];
     
     let i: int = 0;
     while (i < count) {
@@ -364,7 +364,7 @@ struct TestConfig {
     verbose: bool,
     stop_on_failure: bool,
     max_execution_time: float,
-    output_format: String
+    output_format: string
 }
 
 export fun create_test_config() -> TestConfig {
@@ -377,7 +377,7 @@ export fun create_test_config() -> TestConfig {
     return config;
 }
 
-export fun run_tests_with_config(tests: String[], config: TestConfig) -> TestSuite {
+export fun run_tests_with_config(tests: string[], config: TestConfig) -> TestSuite {
     let suite: TestSuite = TestSuite {
         name: "Configured Test Suite",
         tests: tests,
@@ -390,7 +390,7 @@ export fun run_tests_with_config(tests: String[], config: TestConfig) -> TestSui
     let i: int = 0;
     let stop: bool = false;
     while (i < len(tests) && !stop) {
-        let test_name: String = tests[i];
+        let test_name: string = tests[i];
         let result: TestResult = run_test(test_name, test_name);
         
         suite.results.push(result);

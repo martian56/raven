@@ -186,7 +186,7 @@ impl Parser {
 
                     if let Some(TokenType::RightBracket) = &self.current_token {
                         self.advance();
-                        "String[]".to_string()
+                        "string[]".to_string()
                     } else {
                         let span =
                             Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
@@ -256,7 +256,6 @@ impl Parser {
                 "float" => Expression::Float(0.0),
                 "bool" => Expression::Boolean(false),
                 "string" => Expression::StringLiteral("".to_string()),
-                "String" => Expression::StringLiteral("".to_string()),
                 _ if var_type.ends_with("[]") => Expression::ArrayLiteral(vec![]),
                 _ => {
                     let span =
@@ -283,7 +282,7 @@ impl Parser {
             return Err(parse_error("Expected '=' or ';' after variable type", span)
                 .with_source(self.source_code.clone())
                 .with_hint(
-                    "Add '=' with initial value or ';' for declaration only. For array types use int[], String[], etc."
+                    "Add '=' with initial value or ';' for declaration only. For array types use int[], string[], etc."
                         .to_string(),
                 ));
         }
@@ -935,7 +934,7 @@ impl Parser {
 
                         if let Some(TokenType::RightBracket) = &self.current_token {
                             self.advance();
-                            "String[]".to_string()
+                            "string[]".to_string()
                         } else {
                             let span = Span::new(
                                 self.lexer.line,
@@ -1063,7 +1062,7 @@ impl Parser {
 
                         if let Some(TokenType::RightBracket) = &self.current_token {
                             self.advance();
-                            "String[]".to_string()
+                            "string[]".to_string()
                         } else {
                             let span = Span::new(
                                 self.lexer.line,
@@ -1255,7 +1254,7 @@ impl Parser {
 
                         if let Some(TokenType::RightBracket) = &self.current_token {
                             self.advance();
-                            "String[]".to_string()
+                            "string[]".to_string()
                         } else {
                             let span = Span::new(
                                 self.lexer.line,
@@ -1502,7 +1501,7 @@ impl Parser {
                     self.advance();
                     if matches!(&self.current_token, Some(TokenType::RightBracket)) {
                         self.advance();
-                        "String[]".to_string()
+                        "string[]".to_string()
                     } else {
                         "string".to_string()
                     }

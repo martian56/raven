@@ -33,7 +33,7 @@ raven
 You'll see the Raven prompt:
 
 ```
-raven> let name: String = "World";
+raven> let name: string = "World";
 raven> print(format("Hello, {}!", name));
 Hello, World!
 raven> exit
@@ -44,7 +44,7 @@ raven> exit
 ### Variables
 
 ```raven
-let name: String = "Alice";
+let name: string = "Alice";
 let age: int = 25;
 let height: float = 5.9;
 let isActive: bool = true;
@@ -80,7 +80,7 @@ while (i < 5) {
 ### Functions
 
 ```raven
-fun greet(name: String) -> void {
+fun greet(name: string) -> void {
     print(format("Hello, {}!", name));
 }
 
@@ -100,7 +100,7 @@ print(result);  // 8
 
 ```raven
 struct Person {
-    name: String,
+    name: string,
     age: int,
     isActive: bool
 }
@@ -131,12 +131,12 @@ print(status);  // HttpStatus::OK
 
 ```raven
 // Write to file
-let content: String = "Hello from Raven!";
+let content: string = "Hello from Raven!";
 write_file("output.txt", content);
 
 // Read from file
 if (file_exists("output.txt")) {
-    let data: String = read_file("output.txt");
+    let data: string = read_file("output.txt");
     print(data);
 }
 ```

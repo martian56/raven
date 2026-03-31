@@ -74,7 +74,7 @@ These live inside the Raven installation and do not require `rvpm install`:
 | std/core | Basics: print, len, type, format  |
 | std/math | Math: abs, min, max, sqrt, etc.   |
 | std/io   | File I/O: read_file, write_file   |
-| std/string| String: trim, split, replace     |
+| std/string| string: trim, split, replace     |
 | std/collections | Arrays, maps (future)       |
 
 Import syntax: `import std.math from "std/math"` or `import math from "math"` (when std resolves first).

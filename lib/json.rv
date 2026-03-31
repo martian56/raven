@@ -16,24 +16,24 @@
 // - get_value(entries, path)
 // - has_path(entries, path)
 
-let _src: String = "";
+let _src: string = "";
 let _idx: int = 0;
 let _len: int = 0;
 let _ok: bool = true;
-let _err: String = "";
-let _entries: String[] = ["init"];
+let _err: string = "";
+let _entries: string[] = ["init"];
 
-fun _empty_entries() -> String[] {
-    let arr: String[] = ["tmp"];
+fun _empty_entries() -> string[] {
+    let arr: string[] = ["tmp"];
     arr.pop();
     return arr;
 }
 
-fun _is_digit(ch: String) -> bool {
+fun _is_digit(ch: string) -> bool {
     return ch >= "0" && ch <= "9";
 }
 
-fun _is_hex(ch: String) -> bool {
+fun _is_hex(ch: string) -> bool {
     if (ch >= "0" && ch <= "9") {
         return true;
     }
@@ -46,23 +46,23 @@ fun _is_hex(ch: String) -> bool {
     return false;
 }
 
-fun _is_ws(ch: String) -> bool {
+fun _is_ws(ch: string) -> bool {
     let code: int = char_code(ch);
     return code == 32 || code == 10 || code == 13 || code == 9;
 }
 
-fun _peek() -> String {
+fun _peek() -> string {
     if (_idx >= _len) {
         return "";
     }
     return _src[_idx];
 }
 
-fun _advance() -> String {
+fun _advance() -> string {
     if (_idx >= _len) {
         return "";
     }
-    let ch: String = _src[_idx];
+    let ch: string = _src[_idx];
     _idx = _idx + 1;
     return ch;
 }
@@ -74,8 +74,8 @@ fun _skip_ws() -> int {
     return 0;
 }
 
-fun _repeat(ch: String, n: int) -> String {
-    let out: String = "";
+fun _repeat(ch: string, n: int) -> string {
+    let out: string = "";
     let i: int = 0;
     while (i < n) {
         out = out + ch;
@@ -84,7 +84,7 @@ fun _repeat(ch: String, n: int) -> String {
     return out;
 }
 
-fun _position() -> String {
+fun _position() -> string {
     let line: int = 1;
     let col: int = 1;
     let i: int = 0;
@@ -103,7 +103,7 @@ fun _position() -> String {
     return format("line {}, col {}", line, col);
 }
 
-fun _set_error(message: String) -> int {
+fun _set_error(message: string) -> int {
     if (_ok) {
         _ok = false;
         _err = message + " (" + _position() + ")";
@@ -111,7 +111,7 @@ fun _set_error(message: String) -> int {
     return 0;
 }
 
-fun _matches(token: String) -> bool {
+fun _matches(token: string) -> bool {
     if (_idx + len(token) > _len) {
         return false;
     }
@@ -127,23 +127,23 @@ fun _matches(token: String) -> bool {
     return true;
 }
 
-fun _add_entry(path: String, kind: String, value: String) -> int {
+fun _add_entry(path: string, kind: string, value: string) -> int {
     _entries.push(path + "|" + kind + "|" + value);
     return 0;
 }
 
-fun _parse_string_literal() -> String {
+fun _parse_string_literal() -> string {
     if (_idx >= _len || char_code(_peek()) != 34) {
         _set_error("Expected string");
         return "";
     }
 
-    let quote: String = _advance();
-    let result: String = "";
+    let quote: string = _advance();
+    let result: string = "";
     let closed: bool = false;
 
     while (_idx < _len && !closed && _ok) {
-        let ch: String = _advance();
+        let ch: string = _advance();
         let code: int = char_code(ch);
 
         if (code == 34) {
@@ -155,7 +155,7 @@ fun _parse_string_literal() -> String {
                     return "";
                 }
 
-                let esc: String = _advance();
+                let esc: string = _advance();
                 let esc_code: int = char_code(esc);
 
                 if (esc_code == 34 || esc_code == 92 || esc == "/" || esc == "b" || esc == "f" || esc == "n" || esc == "r" || esc == "t") {
@@ -167,10 +167,10 @@ fun _parse_string_literal() -> String {
                             return "";
                         }
 
-                        let d1: String = _advance();
-                        let d2: String = _advance();
-                        let d3: String = _advance();
-                        let d4: String = _advance();
+                        let d1: string = _advance();
+                        let d2: string = _advance();
+                        let d3: string = _advance();
+                        let d4: string = _advance();
 
                         if (!_is_hex(d1) || !_is_hex(d2) || !_is_hex(d3) || !_is_hex(d4)) {
                             _set_error("Invalid unicode escape");
@@ -201,7 +201,7 @@ fun _parse_string_literal() -> String {
     return result;
 }
 
-fun _parse_number(path: String) -> int {
+fun _parse_number(path: string) -> int {
     let start: int = _idx;
 
     if (_peek() == "-") {
@@ -254,7 +254,7 @@ fun _parse_number(path: String) -> int {
     return 0;
 }
 
-fun _parse_value(path: String) -> int {
+fun _parse_value(path: string) -> int {
     _skip_ws();
     if (!_ok) {
         return 0;
@@ -265,7 +265,7 @@ fun _parse_value(path: String) -> int {
         return 0;
     }
 
-    let ch: String = _peek();
+    let ch: string = _peek();
 
     if (ch == "{") {
         _add_entry(path, "object", "");
@@ -280,7 +280,7 @@ fun _parse_value(path: String) -> int {
         let done_obj: bool = false;
         while (!done_obj && _ok) {
             _skip_ws();
-            let key: String = _parse_string_literal();
+            let key: string = _parse_string_literal();
             if (!_ok) {
                 return 0;
             }
@@ -292,7 +292,7 @@ fun _parse_value(path: String) -> int {
             }
             _advance();
 
-            let child_path: String = path + "[" + key + "]";
+            let child_path: string = path + "[" + key + "]";
             _parse_value(child_path);
             if (!_ok) {
                 return 0;
@@ -333,7 +333,7 @@ fun _parse_value(path: String) -> int {
         let i: int = 0;
         let done_arr: bool = false;
         while (!done_arr && _ok) {
-            let child_path: String = path + "[" + format("{}", i) + "]";
+            let child_path: string = path + "[" + format("{}", i) + "]";
             _parse_value(child_path);
             if (!_ok) {
                 return 0;
@@ -406,7 +406,7 @@ fun _parse_value(path: String) -> int {
     return 0;
 }
 
-export fun parse(json_text: String) -> String[] {
+export fun parse(json_text: string) -> string[] {
     _src = json_text;
     _idx = 0;
     _len = len(json_text);
@@ -429,11 +429,11 @@ export fun parse(json_text: String) -> String[] {
     return _empty_entries();
 }
 
-export fun parse_file(path: String) -> String[] {
+export fun parse_file(path: string) -> string[] {
     return parse(read_file(path));
 }
 
-export fun validate(json_text: String) -> String {
+export fun validate(json_text: string) -> string {
     parse(json_text);
     if (_ok) {
         return "ok";
@@ -441,17 +441,17 @@ export fun validate(json_text: String) -> String {
     return _err;
 }
 
-export fun is_valid(json_text: String) -> bool {
+export fun is_valid(json_text: string) -> bool {
     parse(json_text);
     return _ok;
 }
 
-export fun last_error() -> String {
+export fun last_error() -> string {
     return _err;
 }
 
-export fun load(path: String) -> String {
-    let content: String = read_file(path);
+export fun load(path: string) -> string {
+    let content: string = read_file(path);
     parse(content);
     if (_ok) {
         return content;
@@ -459,7 +459,7 @@ export fun load(path: String) -> String {
     return "";
 }
 
-export fun loads(json_text: String) -> String {
+export fun loads(json_text: string) -> string {
     parse(json_text);
     if (_ok) {
         return json_text;
@@ -467,7 +467,7 @@ export fun loads(json_text: String) -> String {
     return "";
 }
 
-export fun write(path: String, json_content: String) -> bool {
+export fun write(path: string, json_content: string) -> bool {
     parse(json_content);
     if (!_ok) {
         return false;
@@ -476,7 +476,7 @@ export fun write(path: String, json_content: String) -> bool {
     return true;
 }
 
-export fun dumps(json_content: String, indent: int) -> String {
+export fun dumps(json_content: string, indent: int) -> string {
     let keep_indent: int = indent;
     if (keep_indent >= 0) {
         // no-op to keep parameter usage explicit
@@ -484,18 +484,18 @@ export fun dumps(json_content: String, indent: int) -> String {
     return json_content;
 }
 
-export fun stringify(json_content: String) -> String {
+export fun stringify(json_content: string) -> string {
     return json_content;
 }
 
-export fun minify(json_text: String) -> String {
-    let out: String = "";
+export fun minify(json_text: string) -> string {
+    let out: string = "";
     let in_string: bool = false;
     let escaped: bool = false;
     let i: int = 0;
 
     while (i < len(json_text)) {
-        let ch: String = json_text[i];
+        let ch: string = json_text[i];
         let code: int = char_code(ch);
 
         if (in_string) {
@@ -528,16 +528,16 @@ export fun minify(json_text: String) -> String {
     return out;
 }
 
-export fun pretty(json_text: String, indent: int) -> String {
-    let compact: String = minify(json_text);
-    let out: String = "";
+export fun pretty(json_text: string, indent: int) -> string {
+    let compact: string = minify(json_text);
+    let out: string = "";
     let in_string: bool = false;
     let escaped: bool = false;
     let depth: int = 0;
     let i: int = 0;
 
     while (i < len(compact)) {
-        let ch: String = compact[i];
+        let ch: string = compact[i];
         let code: int = char_code(ch);
 
         if (in_string) {
@@ -586,11 +586,11 @@ export fun pretty(json_text: String, indent: int) -> String {
     return out;
 }
 
-export fun get(entries: String[], path: String) -> String {
-    let prefix: String = path + "|";
+export fun get(entries: string[], path: string) -> string {
+    let prefix: string = path + "|";
     let i: int = 0;
     while (i < len(entries)) {
-        let row: String = entries[i];
+        let row: string = entries[i];
         if (len(row) >= len(prefix) && row.slice(0, len(prefix)) == prefix) {
             return row;
         }
@@ -599,31 +599,31 @@ export fun get(entries: String[], path: String) -> String {
     return "";
 }
 
-export fun has_path(entries: String[], path: String) -> bool {
-    let row: String = get(entries, path);
+export fun has_path(entries: string[], path: string) -> bool {
+    let row: string = get(entries, path);
     return len(row) > 0;
 }
 
-export fun get_type(entries: String[], path: String) -> String {
-    let row: String = get(entries, path);
+export fun get_type(entries: string[], path: string) -> string {
+    let row: string = get(entries, path);
     if (len(row) == 0) {
         return "";
     }
 
-    let parts: String[] = row.split("|");
+    let parts: string[] = row.split("|");
     if (len(parts) >= 3) {
         return parts[1];
     }
     return "";
 }
 
-export fun get_value(entries: String[], path: String) -> String {
-    let row: String = get(entries, path);
+export fun get_value(entries: string[], path: string) -> string {
+    let row: string = get(entries, path);
     if (len(row) == 0) {
         return "";
     }
 
-    let parts: String[] = row.split("|");
+    let parts: string[] = row.split("|");
     if (len(parts) >= 3) {
         return parts[2];
     }

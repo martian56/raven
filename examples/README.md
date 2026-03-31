@@ -7,12 +7,12 @@ This directory contains essential examples demonstrating Raven v1.0 features.
 ### `hello.rv`
 Basic "Hello World" program demonstrating:
 - Variable declarations with types
-- String literals
+- string literals
 - Print function
 
 ### `comprehensive.rv`
 Comprehensive example showcasing:
-- All data types (int, float, String, bool)
+- All data types (int, float, string, bool)
 - Control structures (if/else, while, for loops)
 - Functions with parameters and return types
 - Arithmetic operations
@@ -66,7 +66,7 @@ Complete working application featuring:
 ### `test_write_file.rv`
 Basic file writing test:
 - write_file() function
-- String content writing
+- string content writing
 
 ### `test_format_write.rv`
 Advanced file operations:
@@ -86,7 +86,7 @@ Run any example with:
 - **Static Typing**: All variables must have explicit types
 - **Control Flow**: if/else, while, for loops
 - **Functions**: Parameters, return types, function calls
-- **String Operations**: len(), replace(), split(), format()
+- **string Operations**: len(), replace(), split(), format()
 - **File I/O**: read_file(), write_file(), append_file(), file_exists()
 - **User Interaction**: input(), print()
 - **Arrays**: Array literals, indexing, methods

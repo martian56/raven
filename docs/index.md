@@ -35,7 +35,7 @@ raven hello.rv -c
 ### **Rich Type System**
 ```raven
 // Basic types
-let name: String = "Raven";
+let name: string = "Raven";
 let version: int = 1;
 let isActive: bool = true;
 
@@ -44,7 +44,7 @@ let numbers: int[] = [1, 2, 3, 4, 5];
 
 // Structs
 struct Person {
-    name: String,
+    name: string,
     age: int,
     isActive: bool
 }

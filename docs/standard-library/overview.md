@@ -7,7 +7,7 @@ Raven comes with a comprehensive standard library that provides essential functi
 ### Core Modules
 - **[Math](https://github.com/martian56/raven/blob/main/lib/math.rv)** - Mathematical operations and functions
 - **[Collections](https://github.com/martian56/raven/blob/main/lib/collections.rv)** - Data structures (maps, sets, lists)
-- **[String](https://github.com/martian56/raven/blob/main/lib/string.rv)** - String manipulation and utilities
+- **[string](https://github.com/martian56/raven/blob/main/lib/string.rv)** - string manipulation and utilities
 - **[Filesystem](https://github.com/martian56/raven/blob/main/lib/filesystem.rv)** - File and directory operations
 - **[Time](https://github.com/martian56/raven/blob/main/lib/time.rv)** - Date and time handling
 - **[Network](https://github.com/martian56/raven/blob/main/lib/network.rv)** - HTTP and networking utilities
@@ -29,7 +29,7 @@ print(format("User: {}, Age: {}", name, age));
 ### Input Functions
 ```raven
 // Get user input
-let name: String = input("Enter your name: ");
+let name: string = input("Enter your name: ");
 ```
 
 ### Type Functions
@@ -46,7 +46,7 @@ let status: HttpStatus = enum_from_string("HttpStatus", "OK");
 ```raven
 // File operations
 write_file("data.txt", "Hello, World!");
-let content: String = read_file("data.txt");
+let content: string = read_file("data.txt");
 let exists: bool = file_exists("data.txt");
 ```
 
@@ -74,7 +74,7 @@ import "string";
 // Use functions from modules
 let result: float = math_pow(2.0, 3.0);
 let map: Map = new_map();
-let formatted: String = string_format("Value: {}", 42);
+let formatted: string = string_format("Value: {}", 42);
 ```
 
 ## Module Structure
@@ -114,7 +114,7 @@ Standard library functions use consistent error handling:
 ```raven
 // File operations may fail
 if (file_exists("config.txt")) {
-    let config: String = read_file("config.txt");
+    let config: string = read_file("config.txt");
     print(config);
 } else {
     print("Config file not found");
@@ -133,7 +133,7 @@ if (len(numbers) > 0) {
 - **Built-in functions** are optimized and fast
 - **Module functions** may have slight overhead
 - **Array operations** are efficient for most use cases
-- **String operations** create new strings (immutable)
+- **string operations** create new strings (immutable)
 
 ## Future Modules
 

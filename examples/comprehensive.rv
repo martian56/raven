@@ -1,4 +1,4 @@
-let name: String = "Raven";
+let name: string = "Raven";
 let version: float = 0.1;
 
 print(name);

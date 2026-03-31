@@ -1,6 +1,27 @@
 # Changelog
 
-## [1.1.0] - 2025-10-04
+All notable changes to Raven are documented in this file.
+
+## [1.4.0] - 2026-03-21
+
+### Added
+- `json` standard library module added and included in release packaging artifacts.
+- Community health files added for repository standards:
+  - `CODE_OF_CONDUCT.md`
+  - `CONTRIBUTING.md`
+  - `SECURITY.md`
+  - Issue templates and pull request template under `.github/`.
+
+### Changed
+- Language type spelling standardized to lowercase `string` in Raven source/docs/examples/editor assets.
+- CLI/package version bumped to `1.4.0`.
+
+### Fixed
+- Module method-call type inference now resolves imported module function signatures:
+  - `import "json"; let content: string = json.load("test.json");` now type-checks correctly.
+- Windows/Linux release manifests updated to include all standard library modules.
+
+## [1.3.0] - 2025-10-04
 
 ### Added
 - Professional Python-style CLI interface (`raven file.rv`, `raven`)
@@ -14,7 +35,6 @@
 
 ### Changed
 - CLI interface now matches Python/Node.js behavior
-- Removed unprofessional startup messages
 - Enhanced error messages and type checking
 - Improved module loading and resolution
 
@@ -24,34 +44,24 @@
 - Method calls on struct fields
 - Type checking for custom types
 - Module path resolution
-- All compiler warnings
+- Compiler warnings cleanup
 
 ### Removed
 - Unnecessary `-f` and `--repl` flags
 - Unprofessional startup messages
 - Dead code and unused imports
 
----
-
 ## [1.0.0] - 2025-10-03
 
 ### Added
-- Complete programming language implementation
-- Tokenizer/Lexer with comments, strings, numbers, identifiers
-- Parser with full support for all language constructs
-- AST generation and type checking
-- Tree-walking interpreter with full execution
-- CLI tool with command-line interface
-- Variables & types (int, float, String, bool, arrays)
-- Control flow (if/else, while, for loops)
-- Functions with parameters, return types, and recursion
-- String operations (concatenation, methods, formatting)
-- Array operations (literals, indexing, methods)
-- Built-in functions (print, input, format, len, type)
-- File I/O (read_file, write_file, append_file, file_exists)
-- Comments (single-line and multi-line)
-- Module system (import/export functionality)
-- REPL (Interactive Read-Eval-Print Loop)
-- Error reporting with line/column info
-- Operator precedence and variable scoping
-- Method chaining support
+- Initial public release of the Raven language and toolchain.
+- Tokenizer/lexer with comments, strings, numbers, and identifiers.
+- Parser with support for core language constructs.
+- AST generation, type checking, and interpreter execution.
+- CLI tool and interactive REPL.
+- Variables and types (`int`, `float`, `string`, `bool`, arrays).
+- Control flow (`if`/`else`, `while`, `for`).
+- Functions with parameters, return types, and recursion.
+- String operations, array operations, and built-in functions.
+- File I/O and module system (`import`/`export`).
+- Error reporting with line/column information.

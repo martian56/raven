@@ -1,0 +1,11 @@
+{
+  "iconDefinitions": {
+    "_file_rv": {
+      "iconPath": "./raven.svg"
+    }
+  },
+  "fileExtensions": {
+    "rv": "_file_rv"
+  },
+  "fileNames": {}
+}

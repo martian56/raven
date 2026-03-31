@@ -140,7 +140,7 @@
   "File I/O Read": {
     "prefix": "read",
     "body": [
-      "let ${1:content}: String = read_file(\"${2:filename}\");"
+      "let ${1:content}: string = read_file(\"${2:filename}\");"
     ],
     "description": "Read file contents"
   },
@@ -151,12 +151,12 @@
     ],
     "description": "Write to file"
   },
-  "String Format": {
+  "string Format": {
     "prefix": "format",
     "body": [
       "format(\"${1:template}\", ${2:args})"
     ],
-    "description": "String formatting"
+    "description": "string formatting"
   },
   "Enum Variant": {
     "prefix": "enumvar",
@@ -165,7 +165,7 @@
     ],
     "description": "Enum variant"
   },
-  "Enum From String": {
+  "Enum From string": {
     "prefix": "enumfromstr",
     "body": [
       "enum_from_string(\"${1:EnumName}\", \"${2:VariantName}\")"
