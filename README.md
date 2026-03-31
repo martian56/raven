@@ -90,6 +90,9 @@ Or get the installer for your OS from the [releases](https://github.com/martian5
  </picture>
 </a>
 
+## Repo Activity
+![Raven Repo Activity](https://repobeats.axiom.co/api/embed/9d035f992470205e678447d3b03b50356374c34e.svg "Repobeats analytics image")
+
 ## Contributors
 
 <a href="https://github.com/martian56/raven/graphs/contributors">
