@@ -30,6 +30,7 @@ assets = [
     ["lib/filesystem.rv", "usr/share/raven/lib/", "644"],
     ["lib/network.rv", "usr/share/raven/lib/", "644"],
     ["lib/testing.rv", "usr/share/raven/lib/", "644"],
+    ["lib/json.rv", "usr/share/raven/lib/", "644"],
 ]
 extended-description = """\
 Raven is a modern programming language with advanced features.
@@ -52,6 +53,7 @@ assets = [
     { source = "lib/filesystem.rv", dest = "/usr/share/raven/lib/", mode = "644" },
     { source = "lib/network.rv", dest = "/usr/share/raven/lib/", mode = "644" },
     { source = "lib/testing.rv", dest = "/usr/share/raven/lib/", mode = "644" },
+    { source = "lib/json.rv", dest = "/usr/share/raven/lib/", mode = "644" },
 ]
 
 [dependencies]
