@@ -24,8 +24,6 @@
   <a href="https://github.com/martian56/raven/issues">Issues</a>
 </p>
 
----
-
 ## Why Raven
 
 - Fast runtime and modern tooling built in Rust.
@@ -73,8 +71,6 @@ Or get the installer for your OS from the [releases](https://github.com/martian5
 - Standard library overview: [https://martian56.github.io/raven/standard-library/overview/](https://martian56.github.io/raven/standard-library/overview/)
 - Examples: [https://martian56.github.io/raven/examples/basic/](https://martian56.github.io/raven/examples/basic/)
 
----
-
 ## Technologies Used
 
 <p>
@@ -83,8 +79,6 @@ Or get the installer for your OS from the [releases](https://github.com/martian5
   <a href="https://github.com/features/actions"><img src="https://cdn.simpleicons.org/githubactions" alt="GitHub Actions" width="34" height="34" /></a>
   <a href="https://www.docker.com/"><img src="https://cdn.simpleicons.org/docker" alt="Docker" width="34" height="34" /></a>
 </p>
-
----
 
 ## Star History
 
@@ -101,8 +95,6 @@ Or get the installer for your OS from the [releases](https://github.com/martian5
 <a href="https://github.com/martian56/raven/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=martian56/raven" alt="Contributors" />
 </a>
-
----
 
 ## Community
 
