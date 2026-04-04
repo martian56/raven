@@ -1,6 +1,6 @@
 [package]
 name = "raven"
-version = "1.5.1"
+version = "1.6.0"
 edition = "2021"
 authors = ["martian56"]
 description = "A modern programming language with advanced features"
@@ -29,6 +29,7 @@ assets = [
     ["lib/time.rv", "usr/share/raven/lib/", "644"],
     ["lib/filesystem.rv", "usr/share/raven/lib/", "644"],
     ["lib/network.rv", "usr/share/raven/lib/", "644"],
+    ["lib/web.rv", "usr/share/raven/lib/", "644"],
     ["lib/testing.rv", "usr/share/raven/lib/", "644"],
     ["lib/json.rv", "usr/share/raven/lib/", "644"],
 ]
@@ -52,6 +53,7 @@ assets = [
     { source = "lib/time.rv", dest = "/usr/share/raven/lib/", mode = "644" },
     { source = "lib/filesystem.rv", dest = "/usr/share/raven/lib/", mode = "644" },
     { source = "lib/network.rv", dest = "/usr/share/raven/lib/", mode = "644" },
+    { source = "lib/web.rv", dest = "/usr/share/raven/lib/", mode = "644" },
     { source = "lib/testing.rv", dest = "/usr/share/raven/lib/", mode = "644" },
     { source = "lib/json.rv", dest = "/usr/share/raven/lib/", mode = "644" },
 ]
