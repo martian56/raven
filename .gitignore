@@ -58,3 +58,4 @@ site/
 .cursor/
 testing/
 tmp_rvpm_test/
+scripts/
