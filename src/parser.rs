@@ -1,6 +1,8 @@
 #![allow(clippy::result_large_err)]
 
-use crate::ast::{ASTNode, Expression, Operator};
+use crate::ast::{
+    ASTNode, EnumMember, Expression, ImplMember, Operator, StructMember,
+};
 use crate::error::{parse_error, RavenError};
 use crate::lexer::{Lexer, TokenType};
 use crate::span::Span;
@@ -78,6 +80,11 @@ impl Parser {
                 TokenType::Print => self.parse_print_statement()?,
                 TokenType::Import => self.parse_import_statement()?,
                 TokenType::Export => self.parse_export_statement()?,
+                TokenType::Comment(text) => {
+                    let text = text.clone();
+                    self.advance();
+                    ASTNode::Comment(text)
+                }
                 TokenType::EOF => break,
                 _ => {
                     let span =
@@ -95,6 +102,66 @@ impl Parser {
         }
 
         Ok(ASTNode::Block(statements))
+    }
+
+    /// Parses a type: primitive, `void`, or identifier, followed by any number of `[]` dimensions.
+    /// Examples: `int`, `int[][]`, `Point`, `Point[]`, `string[][][]`.
+    fn parse_type_string(&mut self) -> Result<String, RavenError> {
+        let mut s = match &self.current_token {
+            Some(TokenType::IntType) => {
+                self.advance();
+                "int".to_string()
+            }
+            Some(TokenType::FloatType) => {
+                self.advance();
+                "float".to_string()
+            }
+            Some(TokenType::BoolType) => {
+                self.advance();
+                "bool".to_string()
+            }
+            Some(TokenType::StringType) => {
+                self.advance();
+                "string".to_string()
+            }
+            Some(TokenType::VoidType) => {
+                self.advance();
+                "void".to_string()
+            }
+            Some(TokenType::Identifier(name)) => {
+                let n = name.clone();
+                self.advance();
+                n
+            }
+            _ => {
+                let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                return Err(
+                    parse_error("Expected type", span)
+                        .with_source(self.source_code.clone())
+                        .with_hint(
+                            "Use: int, float, bool, string, void, or a struct/enum name, with optional []"
+                                .to_string(),
+                        ),
+                );
+            }
+        };
+
+        while let Some(TokenType::LeftBracket) = &self.current_token {
+            self.advance();
+            if let Some(TokenType::RightBracket) = &self.current_token {
+                self.advance();
+                s.push_str("[]");
+            } else {
+                let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
+                return Err(parse_error("Expected ']' after '[' in array type", span)
+                    .with_source(self.source_code.clone())
+                    .with_hint(
+                        "Close each dimension with ]; e.g. int[][], Point[][]".to_string(),
+                    ));
+            }
+        }
+
+        Ok(s)
     }
 
     fn parse_variable_declaration(&mut self) -> Result<ASTNode, RavenError> {
@@ -120,100 +187,7 @@ impl Parser {
                 .with_hint("Use: let name: type = value;".to_string()));
         }
 
-        let var_type = match &self.current_token {
-            Some(TokenType::IntType) => {
-                self.advance();
-
-                if let Some(TokenType::LeftBracket) = &self.current_token {
-                    self.advance();
-
-                    if let Some(TokenType::RightBracket) = &self.current_token {
-                        self.advance();
-                        "int[]".to_string()
-                    } else {
-                        let span =
-                            Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
-                        return Err(parse_error("Expected ']' after array type", span)
-                            .with_source(self.source_code.clone()));
-                    }
-                } else {
-                    "int".to_string()
-                }
-            }
-            Some(TokenType::FloatType) => {
-                self.advance();
-
-                if let Some(TokenType::LeftBracket) = &self.current_token {
-                    self.advance();
-
-                    if let Some(TokenType::RightBracket) = &self.current_token {
-                        self.advance();
-                        "float[]".to_string()
-                    } else {
-                        let span =
-                            Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
-                        return Err(parse_error("Expected ']' after array type", span)
-                            .with_source(self.source_code.clone()));
-                    }
-                } else {
-                    "float".to_string()
-                }
-            }
-            Some(TokenType::BoolType) => {
-                self.advance();
-
-                if let Some(TokenType::LeftBracket) = &self.current_token {
-                    self.advance();
-
-                    if let Some(TokenType::RightBracket) = &self.current_token {
-                        self.advance();
-                        "bool[]".to_string()
-                    } else {
-                        let span =
-                            Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
-                        return Err(parse_error("Expected ']' after array type", span)
-                            .with_source(self.source_code.clone()));
-                    }
-                } else {
-                    "bool".to_string()
-                }
-            }
-            Some(TokenType::StringType) => {
-                self.advance();
-
-                if let Some(TokenType::LeftBracket) = &self.current_token {
-                    self.advance();
-
-                    if let Some(TokenType::RightBracket) = &self.current_token {
-                        self.advance();
-                        "string[]".to_string()
-                    } else {
-                        let span =
-                            Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
-                        return Err(parse_error("Expected ']' after array type", span)
-                            .with_source(self.source_code.clone()));
-                    }
-                } else {
-                    "string".to_string()
-                }
-            }
-            Some(TokenType::VoidType) => {
-                self.advance();
-                "void".to_string()
-            }
-            Some(TokenType::Identifier(type_name)) => {
-                let type_name_clone = type_name.clone();
-                self.advance();
-                type_name_clone
-            }
-            other => {
-                let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
-                return Err(
-                    parse_error(format!("Expected type after ':', got {:?}", other), span)
-                        .with_source(self.source_code.clone()),
-                );
-            }
-        };
+        let var_type = self.parse_type_string()?;
 
         if let Some(TokenType::Assign) = &self.current_token {
             self.advance();
@@ -406,6 +380,11 @@ impl Parser {
                 TokenType::For => self.parse_for_loop()?,
                 TokenType::Return => self.parse_return_statement()?,
                 TokenType::Print => self.parse_print_statement()?,
+                TokenType::Comment(text) => {
+                    let text = text.clone();
+                    self.advance();
+                    ASTNode::Comment(text)
+                }
                 _ => {
                     let span =
                         Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
@@ -678,10 +657,38 @@ impl Parser {
                             .with_hint("Close the index with ']'".to_string()));
                     }
 
-                    Ok(Expression::ArrayIndex(
+                    let mut current_object = Expression::ArrayIndex(
                         Box::new(Expression::Identifier(name_clone)),
                         Box::new(index),
-                    ))
+                    );
+
+                    while let Some(TokenType::LeftBracket) = &self.current_token {
+                        self.advance();
+                        let index = self.parse_expression()?;
+
+                        if let Some(TokenType::RightBracket) = &self.current_token {
+                            self.advance();
+                        } else {
+                            let span = Span::new(
+                                self.lexer.line,
+                                self.lexer.column,
+                                self.lexer.position,
+                                1,
+                            );
+                            return Err(parse_error("Expected ']' after array index", span)
+                                .with_source(self.source_code.clone())
+                                .with_hint("Close the index with ']'".to_string()));
+                        }
+
+                        current_object =
+                            Expression::ArrayIndex(Box::new(current_object), Box::new(index));
+                    }
+
+                    if let Some(TokenType::Dot) = &self.current_token {
+                        self.parse_method_call_chain(current_object)
+                    } else {
+                        Ok(current_object)
+                    }
                 } else if let Some(TokenType::Colon) = &self.current_token {
                     if let Some(TokenType::Colon) = self.lexer.peek_token() {
                         self.advance();
@@ -942,112 +949,7 @@ impl Parser {
                     .with_hint("Add ':' followed by the parameter type".to_string()));
             }
 
-            let param_type = match &self.current_token {
-                Some(TokenType::IntType) => {
-                    self.advance();
-
-                    if let Some(TokenType::LeftBracket) = &self.current_token {
-                        self.advance();
-
-                        if let Some(TokenType::RightBracket) = &self.current_token {
-                            self.advance();
-                            "int[]".to_string()
-                        } else {
-                            let span = Span::new(
-                                self.lexer.line,
-                                self.lexer.column,
-                                self.lexer.position,
-                                1,
-                            );
-                            return Err(parse_error("Expected ']' after array type", span)
-                                .with_source(self.source_code.clone()));
-                        }
-                    } else {
-                        "int".to_string()
-                    }
-                }
-                Some(TokenType::FloatType) => {
-                    self.advance();
-
-                    if let Some(TokenType::LeftBracket) = &self.current_token {
-                        self.advance();
-
-                        if let Some(TokenType::RightBracket) = &self.current_token {
-                            self.advance();
-                            "float[]".to_string()
-                        } else {
-                            let span = Span::new(
-                                self.lexer.line,
-                                self.lexer.column,
-                                self.lexer.position,
-                                1,
-                            );
-                            return Err(parse_error("Expected ']' after array type", span)
-                                .with_source(self.source_code.clone()));
-                        }
-                    } else {
-                        "float".to_string()
-                    }
-                }
-                Some(TokenType::BoolType) => {
-                    self.advance();
-
-                    if let Some(TokenType::LeftBracket) = &self.current_token {
-                        self.advance();
-
-                        if let Some(TokenType::RightBracket) = &self.current_token {
-                            self.advance();
-                            "bool[]".to_string()
-                        } else {
-                            let span = Span::new(
-                                self.lexer.line,
-                                self.lexer.column,
-                                self.lexer.position,
-                                1,
-                            );
-                            return Err(parse_error("Expected ']' after array type", span)
-                                .with_source(self.source_code.clone()));
-                        }
-                    } else {
-                        "bool".to_string()
-                    }
-                }
-                Some(TokenType::StringType) => {
-                    self.advance();
-
-                    if let Some(TokenType::LeftBracket) = &self.current_token {
-                        self.advance();
-
-                        if let Some(TokenType::RightBracket) = &self.current_token {
-                            self.advance();
-                            "string[]".to_string()
-                        } else {
-                            let span = Span::new(
-                                self.lexer.line,
-                                self.lexer.column,
-                                self.lexer.position,
-                                1,
-                            );
-                            return Err(parse_error("Expected ']' after array type", span)
-                                .with_source(self.source_code.clone()));
-                        }
-                    } else {
-                        "string".to_string()
-                    }
-                }
-                Some(TokenType::Identifier(type_name)) => {
-                    let type_name_clone = type_name.clone();
-                    self.advance();
-                    type_name_clone
-                }
-                _ => {
-                    let span =
-                        Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
-                    return Err(parse_error("Expected type for parameter", span)
-                        .with_source(self.source_code.clone())
-                        .with_hint("Use: int, float, bool, string, or custom type".to_string()));
-                }
-            };
+            let param_type = self.parse_type_string()?;
 
             parameters.push(crate::ast::Parameter {
                 name: param_name,
@@ -1070,118 +972,7 @@ impl Parser {
 
         let return_type = if let Some(TokenType::Arrow) = &self.current_token {
             self.advance();
-            match &self.current_token {
-                Some(TokenType::IntType) => {
-                    self.advance();
-
-                    if let Some(TokenType::LeftBracket) = &self.current_token {
-                        self.advance();
-
-                        if let Some(TokenType::RightBracket) = &self.current_token {
-                            self.advance();
-                            "int[]".to_string()
-                        } else {
-                            let span = Span::new(
-                                self.lexer.line,
-                                self.lexer.column,
-                                self.lexer.position,
-                                1,
-                            );
-                            return Err(parse_error("Expected ']' after array type", span)
-                                .with_source(self.source_code.clone()));
-                        }
-                    } else {
-                        "int".to_string()
-                    }
-                }
-                Some(TokenType::FloatType) => {
-                    self.advance();
-
-                    if let Some(TokenType::LeftBracket) = &self.current_token {
-                        self.advance();
-
-                        if let Some(TokenType::RightBracket) = &self.current_token {
-                            self.advance();
-                            "float[]".to_string()
-                        } else {
-                            let span = Span::new(
-                                self.lexer.line,
-                                self.lexer.column,
-                                self.lexer.position,
-                                1,
-                            );
-                            return Err(parse_error("Expected ']' after array type", span)
-                                .with_source(self.source_code.clone()));
-                        }
-                    } else {
-                        "float".to_string()
-                    }
-                }
-                Some(TokenType::BoolType) => {
-                    self.advance();
-
-                    if let Some(TokenType::LeftBracket) = &self.current_token {
-                        self.advance();
-
-                        if let Some(TokenType::RightBracket) = &self.current_token {
-                            self.advance();
-                            "bool[]".to_string()
-                        } else {
-                            let span = Span::new(
-                                self.lexer.line,
-                                self.lexer.column,
-                                self.lexer.position,
-                                1,
-                            );
-                            return Err(parse_error("Expected ']' after array type", span)
-                                .with_source(self.source_code.clone()));
-                        }
-                    } else {
-                        "bool".to_string()
-                    }
-                }
-                Some(TokenType::StringType) => {
-                    self.advance();
-
-                    if let Some(TokenType::LeftBracket) = &self.current_token {
-                        self.advance();
-
-                        if let Some(TokenType::RightBracket) = &self.current_token {
-                            self.advance();
-                            "string[]".to_string()
-                        } else {
-                            let span = Span::new(
-                                self.lexer.line,
-                                self.lexer.column,
-                                self.lexer.position,
-                                1,
-                            );
-                            return Err(parse_error("Expected ']' after array type", span)
-                                .with_source(self.source_code.clone()));
-                        }
-                    } else {
-                        "string".to_string()
-                    }
-                }
-                Some(TokenType::VoidType) => {
-                    self.advance();
-                    "void".to_string()
-                }
-                Some(TokenType::Identifier(type_name)) => {
-                    let type_name_clone = type_name.clone();
-                    self.advance();
-                    type_name_clone
-                }
-                _ => {
-                    let span =
-                        Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
-                    return Err(parse_error("Expected return type", span)
-                        .with_source(self.source_code.clone())
-                        .with_hint(
-                            "Use: int, float, bool, string, void, or custom type".to_string(),
-                        ));
-                }
-            }
+            self.parse_type_string()?
         } else {
             "void".to_string()
         };
@@ -1236,10 +1027,17 @@ impl Parser {
                 .with_hint("Add '{' to start struct body".to_string()));
         }
 
-        let mut fields = Vec::new();
+        let mut members = Vec::new();
         while let Some(token) = &self.current_token {
             if let TokenType::RightBrace = token {
                 break;
+            }
+
+            if let TokenType::Comment(text) = token {
+                let text = text.clone();
+                self.advance();
+                members.push(StructMember::Comment(text));
+                continue;
             }
 
             let field_name = if let Some(TokenType::Identifier(name)) = &self.current_token {
@@ -1262,117 +1060,12 @@ impl Parser {
                     .with_hint("Add ':' followed by the field type".to_string()));
             }
 
-            let field_type = match &self.current_token {
-                Some(TokenType::IntType) => {
-                    self.advance();
+            let field_type = self.parse_type_string()?;
 
-                    if let Some(TokenType::LeftBracket) = &self.current_token {
-                        self.advance();
-
-                        if let Some(TokenType::RightBracket) = &self.current_token {
-                            self.advance();
-                            "int[]".to_string()
-                        } else {
-                            let span = Span::new(
-                                self.lexer.line,
-                                self.lexer.column,
-                                self.lexer.position,
-                                1,
-                            );
-                            return Err(parse_error("Expected ']' after array type", span)
-                                .with_source(self.source_code.clone()));
-                        }
-                    } else {
-                        "int".to_string()
-                    }
-                }
-                Some(TokenType::FloatType) => {
-                    self.advance();
-
-                    if let Some(TokenType::LeftBracket) = &self.current_token {
-                        self.advance();
-
-                        if let Some(TokenType::RightBracket) = &self.current_token {
-                            self.advance();
-                            "float[]".to_string()
-                        } else {
-                            let span = Span::new(
-                                self.lexer.line,
-                                self.lexer.column,
-                                self.lexer.position,
-                                1,
-                            );
-                            return Err(parse_error("Expected ']' after array type", span)
-                                .with_source(self.source_code.clone()));
-                        }
-                    } else {
-                        "float".to_string()
-                    }
-                }
-                Some(TokenType::BoolType) => {
-                    self.advance();
-
-                    if let Some(TokenType::LeftBracket) = &self.current_token {
-                        self.advance();
-
-                        if let Some(TokenType::RightBracket) = &self.current_token {
-                            self.advance();
-                            "bool[]".to_string()
-                        } else {
-                            let span = Span::new(
-                                self.lexer.line,
-                                self.lexer.column,
-                                self.lexer.position,
-                                1,
-                            );
-                            return Err(parse_error("Expected ']' after array type", span)
-                                .with_source(self.source_code.clone()));
-                        }
-                    } else {
-                        "bool".to_string()
-                    }
-                }
-                Some(TokenType::StringType) => {
-                    self.advance();
-
-                    if let Some(TokenType::LeftBracket) = &self.current_token {
-                        self.advance();
-
-                        if let Some(TokenType::RightBracket) = &self.current_token {
-                            self.advance();
-                            "string[]".to_string()
-                        } else {
-                            let span = Span::new(
-                                self.lexer.line,
-                                self.lexer.column,
-                                self.lexer.position,
-                                1,
-                            );
-                            return Err(parse_error("Expected ']' after array type", span)
-                                .with_source(self.source_code.clone()));
-                        }
-                    } else {
-                        "string".to_string()
-                    }
-                }
-                Some(TokenType::Identifier(type_name)) => {
-                    let type_name_clone = type_name.clone();
-                    self.advance();
-                    type_name_clone
-                }
-                _ => {
-                    let span =
-                        Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
-                    return Err(parse_error("Expected type for field", span)
-                        .with_source(self.source_code.clone())
-                        .with_hint("Use: int, float, bool, string, or custom type".to_string()));
-                }
-            };
-
-            fields.push(crate::ast::StructField {
+            members.push(StructMember::Field(crate::ast::StructField {
                 name: field_name,
                 field_type,
-            });
+            }));
 
             if let Some(TokenType::Comma) = &self.current_token {
                 self.advance();
@@ -1388,7 +1081,7 @@ impl Parser {
                 .with_hint("Add '}' to close the struct body".to_string()));
         }
 
-        Ok(ASTNode::StructDecl(struct_name, fields))
+        Ok(ASTNode::StructDecl(struct_name, members))
     }
 
     fn parse_impl_block(&mut self) -> Result<ASTNode, RavenError> {
@@ -1417,6 +1110,12 @@ impl Parser {
 
         let mut methods = Vec::new();
         while !matches!(&self.current_token, Some(TokenType::RightBrace)) {
+            if let Some(TokenType::Comment(text)) = &self.current_token {
+                let text = text.clone();
+                self.advance();
+                methods.push(ImplMember::Comment(text));
+                continue;
+            }
             if !matches!(&self.current_token, Some(TokenType::Fun)) {
                 let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
                 return Err(parse_error("Expected 'fun' for method in impl block", span)
@@ -1465,7 +1164,7 @@ impl Parser {
             }
             if matches!(&self.current_token, Some(TokenType::Colon)) {
                 self.advance();
-                let _ = self.parse_param_type();
+                let _ = self.parse_type_string()?;
             }
             let mut parameters = vec![Parameter {
                 name: "self".to_string(),
@@ -1489,7 +1188,7 @@ impl Parser {
                             .with_source(self.source_code.clone()));
                     }
                     self.advance();
-                    let ptype = self.parse_param_type();
+                    let ptype = self.parse_type_string()?;
                     parameters.push(Parameter {
                         name: pname,
                         param_type: ptype,
@@ -1508,7 +1207,7 @@ impl Parser {
             }
             self.advance();
 
-            let return_type = self.parse_return_type();
+            let return_type = self.parse_return_type()?;
 
             if !matches!(&self.current_token, Some(TokenType::LeftBrace)) {
                 let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
@@ -1524,7 +1223,12 @@ impl Parser {
             }
             self.advance();
 
-            methods.push((method_name, return_type, parameters, Box::new(body)));
+            methods.push(ImplMember::Method(
+                method_name,
+                return_type,
+                parameters,
+                Box::new(body),
+            ));
         }
 
         if !matches!(&self.current_token, Some(TokenType::RightBrace)) {
@@ -1537,83 +1241,12 @@ impl Parser {
         Ok(ASTNode::ImplBlock(struct_name, methods))
     }
 
-    fn parse_param_type(&mut self) -> String {
-        match &self.current_token {
-            Some(TokenType::IntType) => {
-                self.advance();
-                if matches!(&self.current_token, Some(TokenType::LeftBracket)) {
-                    self.advance();
-                    if matches!(&self.current_token, Some(TokenType::RightBracket)) {
-                        self.advance();
-                        "int[]".to_string()
-                    } else {
-                        "int".to_string()
-                    }
-                } else {
-                    "int".to_string()
-                }
-            }
-            Some(TokenType::FloatType) => {
-                self.advance();
-                if matches!(&self.current_token, Some(TokenType::LeftBracket)) {
-                    self.advance();
-                    if matches!(&self.current_token, Some(TokenType::RightBracket)) {
-                        self.advance();
-                        "float[]".to_string()
-                    } else {
-                        "float".to_string()
-                    }
-                } else {
-                    "float".to_string()
-                }
-            }
-            Some(TokenType::BoolType) => {
-                self.advance();
-                if matches!(&self.current_token, Some(TokenType::LeftBracket)) {
-                    self.advance();
-                    if matches!(&self.current_token, Some(TokenType::RightBracket)) {
-                        self.advance();
-                        "bool[]".to_string()
-                    } else {
-                        "bool".to_string()
-                    }
-                } else {
-                    "bool".to_string()
-                }
-            }
-            Some(TokenType::StringType) => {
-                self.advance();
-                if matches!(&self.current_token, Some(TokenType::LeftBracket)) {
-                    self.advance();
-                    if matches!(&self.current_token, Some(TokenType::RightBracket)) {
-                        self.advance();
-                        "string[]".to_string()
-                    } else {
-                        "string".to_string()
-                    }
-                } else {
-                    "string".to_string()
-                }
-            }
-            Some(TokenType::VoidType) => {
-                self.advance();
-                "void".to_string()
-            }
-            Some(TokenType::Identifier(t)) => {
-                let c = t.clone();
-                self.advance();
-                c
-            }
-            _ => "void".to_string(),
-        }
-    }
-
-    fn parse_return_type(&mut self) -> String {
+    fn parse_return_type(&mut self) -> Result<String, RavenError> {
         if matches!(&self.current_token, Some(TokenType::Arrow)) {
             self.advance();
-            self.parse_param_type()
+            self.parse_type_string()
         } else {
-            "void".to_string()
+            Ok("void".to_string())
         }
     }
 
@@ -1979,10 +1612,17 @@ impl Parser {
                 .with_hint("Add '{' to start enum body".to_string()));
         }
 
-        let mut variants = Vec::new();
+        let mut members = Vec::new();
         while let Some(token) = &self.current_token {
             if let TokenType::RightBrace = token {
                 break;
+            }
+
+            if let TokenType::Comment(text) = token {
+                let text = text.clone();
+                self.advance();
+                members.push(EnumMember::Comment(text));
+                continue;
             }
 
             let variant_name = if let Some(TokenType::Identifier(name)) = &self.current_token {
@@ -1996,7 +1636,7 @@ impl Parser {
                     .with_hint("Provide a variant name".to_string()));
             };
 
-            variants.push(variant_name);
+            members.push(EnumMember::Variant(variant_name));
 
             if let Some(TokenType::Comma) = &self.current_token {
                 self.advance();
@@ -2019,6 +1659,6 @@ impl Parser {
                 .with_hint("Add '}' to close the enum".to_string()));
         }
 
-        Ok(ASTNode::EnumDecl(enum_name, variants))
+        Ok(ASTNode::EnumDecl(enum_name, members))
     }
 }
