@@ -14,6 +14,8 @@ pub enum Type {
     Enum(String),
     Module,
     Unknown,
+    TcpListener,
+    TcpStream,
 }
 
 impl Type {
@@ -29,6 +31,8 @@ impl Type {
             Type::Enum(s) => s.clone(),
             Type::Module => "module".to_string(),
             Type::Unknown => "unknown".to_string(),
+            Type::TcpListener => "TcpListener".to_string(),
+            Type::TcpStream => "TcpStream".to_string(),
         }
     }
 
@@ -45,6 +49,8 @@ impl Type {
             "bool" => Type::Bool,
             "string" => Type::String,
             "void" => Type::Void,
+            "TcpListener" => Type::TcpListener,
+            "TcpStream" => Type::TcpStream,
             _ => Type::Struct(s.to_string()),
         }
     }
@@ -68,6 +74,8 @@ impl Type {
             "bool" => Type::Bool,
             "string" => Type::String,
             "void" => Type::Void,
+            "TcpListener" => Type::TcpListener,
+            "TcpStream" => Type::TcpStream,
             _ => {
                 if enums.contains_key(s) {
                     Type::Enum(s.to_string())
@@ -87,7 +95,6 @@ pub struct TypeChecker {
     struct_methods: HashMap<String, HashMap<String, (Type, Vec<Type>)>>,
     enums: HashMap<String, EnumInfo>,
     modules: HashMap<String, ModuleInfo>,
-    /// When type-checking a function or impl method body, used to type `return []` and validate returns.
     current_function_return_type: Option<Type>,
 }
 
@@ -1413,6 +1420,89 @@ impl TypeChecker {
                 Ok(Some(Type::Bool))
             }
 
+            "tcp_listen" => {
+                if args.len() != 2 {
+                    return Err(format!(
+                        "tcp_listen() expects 2 arguments, got {}",
+                        args.len()
+                    ));
+                }
+                let a = self.check_expression(&args[0])?;
+                let b = self.check_expression(&args[1])?;
+                if a != Type::String || b != Type::Int {
+                    return Err(
+                        "tcp_listen(addr, backlog) requires string address and int backlog"
+                            .to_string(),
+                    );
+                }
+                Ok(Some(Type::TcpListener))
+            }
+
+            "tcp_accept" => {
+                if args.len() != 1 {
+                    return Err(format!(
+                        "tcp_accept() expects 1 argument, got {}",
+                        args.len()
+                    ));
+                }
+                let t = self.check_expression(&args[0])?;
+                if t != Type::TcpListener {
+                    return Err("tcp_accept() requires a TcpListener".to_string());
+                }
+                Ok(Some(Type::TcpStream))
+            }
+
+            "tcp_read" => {
+                if args.len() != 2 {
+                    return Err(format!(
+                        "tcp_read() expects 2 arguments, got {}",
+                        args.len()
+                    ));
+                }
+                let a = self.check_expression(&args[0])?;
+                let b = self.check_expression(&args[1])?;
+                if a != Type::TcpStream || b != Type::Int {
+                    return Err(
+                        "tcp_read(stream, max_bytes) requires TcpStream and int max_bytes"
+                            .to_string(),
+                    );
+                }
+                Ok(Some(Type::String))
+            }
+
+            "tcp_write" => {
+                if args.len() != 2 {
+                    return Err(format!(
+                        "tcp_write() expects 2 arguments, got {}",
+                        args.len()
+                    ));
+                }
+                let a = self.check_expression(&args[0])?;
+                let b = self.check_expression(&args[1])?;
+                if a != Type::TcpStream || b != Type::String {
+                    return Err(
+                        "tcp_write(stream, data) requires TcpStream and string data".to_string()
+                    );
+                }
+                Ok(Some(Type::Int))
+            }
+
+            "tcp_close_stream" | "tcp_close_listener" => {
+                if args.len() != 1 {
+                    return Err(format!("{}() expects 1 argument, got {}", name, args.len()));
+                }
+                let t = self.check_expression(&args[0])?;
+                let expected = if name == "tcp_close_stream" {
+                    Type::TcpStream
+                } else {
+                    Type::TcpListener
+                };
+                if t != expected {
+                    return Err(format!("{}() requires a {}", name, expected.fmt_for_user()));
+                }
+                Ok(Some(Type::Void))
+            }
+
             "enum_from_string" => {
                 if args.len() != 2 {
                     return Err(format!(
@@ -1439,6 +1529,23 @@ impl TypeChecker {
                 }
 
                 Ok(Some(Type::Enum("Unknown".to_string())))
+            }
+
+            "http_invoke_dispatch" => {
+                if args.len() != 1 {
+                    return Err(format!(
+                        "http_invoke_dispatch() expects 1 argument, got {}",
+                        args.len()
+                    ));
+                }
+                let t = self.check_expression(&args[0])?;
+                if t != Type::Struct("Request".to_string()) {
+                    return Err(
+                        "http_invoke_dispatch(req) requires a Request (e.g. from web.read_request)"
+                            .to_string(),
+                    );
+                }
+                Ok(Some(Type::String))
             }
 
             _ => Ok(None),
@@ -1611,5 +1718,29 @@ mod tests {
         );
 
         assert_eq!(checker.check_expression(&expr).unwrap(), Type::String);
+    }
+
+    #[test]
+    fn tcp_builtins_typecheck_like_network_wrappers() {
+        let src = r#"
+export fun listen(addr: string, backlog: int) -> TcpListener {
+    return tcp_listen(addr, backlog);
+}
+
+export fun accept(listener: TcpListener) -> TcpStream {
+    return tcp_accept(listener);
+}
+
+export fun close_listener(listener: TcpListener) -> void {
+    tcp_close_listener(listener);
+}
+"#;
+        let lexer = crate::lexer::Lexer::new(src.to_string());
+        let mut parser = crate::parser::Parser::new(lexer, src.to_string());
+        let ast = parser.parse().expect("parse tcp wrapper module");
+        let mut checker = TypeChecker::new();
+        checker
+            .check(&ast)
+            .expect("typecheck tcp builtins in functions");
     }
 }
