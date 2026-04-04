@@ -20,8 +20,12 @@ raven hello.rv
 # Interactive REPL
 raven
 
-# Check syntax only
+# Type-check only (parse + types; no run)
 raven hello.rv -c
+
+# Optional: project helper (init, run, fmt)
+rvpm init my_app && cd my_app && rvpm run
+rvpm fmt
 ```
 
 ### **Modern Language Features**
@@ -60,7 +64,7 @@ enum HttpStatus {
 ## 📦 Installation
 
 ### **Windows Installer**
-Download the professional MSI installer from our [GitHub releases](https://github.com/martian56/raven/releases/tag/v1.1.0).
+Download the latest MSI from [GitHub Releases](https://github.com/martian56/raven/releases).
 
 ### **VS Code Extension**
 Install the Raven language extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=martian56.raven-language).
@@ -90,6 +94,7 @@ cargo build --release
 
 - **[Language Reference](syntax.md)** - Complete syntax guide
 - **[Standard Library](standard-library/overview.md)** - Built-in functions and modules
+- **[rvpm and formatting](getting-started/rvpm-and-format.md)** - `rv.toml`, `rvpm fmt`, `[fmt]`
 - **[Examples](examples/basic.md)** - Sample programs and tutorials
 - **[VS Code Extension](resources/vscode-extension.md)** - Development environment setup
 
@@ -101,11 +106,11 @@ cargo build --release
 
 ## 🚀 What's Next?
 
-Raven v1.1.0 is production-ready! Future versions will include:
-- Bytecode VM implementation
+The current toolchain includes the interpreter, type checker, **rvpm** scaffolding (`init`, `run`, `fmt`), and optional **`[fmt]`** settings in `rv.toml`. Planned work includes:
+- Bytecode VM or compiled backend
 - Advanced type system (generics, traits)
-- Concurrency support (async/await)
-- Package manager
+- Concurrency (async/await)
+- Full **rvpm** package install / registry
 - Language server protocol (LSP)
 
 ---
