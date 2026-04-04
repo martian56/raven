@@ -8,7 +8,7 @@
 //!   rvpm fmt        Format Raven source (.rv) files
 
 use clap::{Arg, Command};
-use raven::format::format_source;
+use raven::format::{format_source_with_options, FormatOptions};
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -29,6 +29,10 @@ authors = []
 [dependencies]
 # Add packages here, e.g.:
 # math = "1.0"
+
+# [fmt]
+# indent_width = 4
+# wrap_width = 88
 "#;
 
 fn main() {
@@ -53,7 +57,7 @@ fn main() {
         .subcommand(Command::new("run").about("Run the project"))
         .subcommand(
             Command::new("fmt")
-                .about("Format Raven source files")
+                .about("Format Raven source files (optional [fmt] in rv.toml: indent_width, wrap_width)")
                 .arg(
                     Arg::new("paths")
                         .help("Files or directories to format (default: project src/)")
@@ -252,8 +256,17 @@ fn normalize_nl(s: &str) -> String {
 }
 
 fn cmd_fmt(paths: &[String], check: bool) -> Result<(), String> {
+    let project_root = find_rv_project_root().ok();
+    let fmt_opts = project_root
+        .as_ref()
+        .map(|r| FormatOptions::from_rv_toml(&r.join("rv.toml")))
+        .unwrap_or_default();
+
     let files: Vec<PathBuf> = if paths.is_empty() {
-        let root = find_rv_project_root()?;
+        let root = project_root.ok_or_else(|| {
+            "Not a Raven project (no rv.toml found). Run 'rvpm init' or pass explicit paths."
+                .to_string()
+        })?;
         let src = root.join("src");
         if !src.is_dir() {
             return Err(format!(
@@ -296,7 +309,11 @@ fn cmd_fmt(paths: &[String], check: bool) -> Result<(), String> {
     for file in &files {
         let source = fs::read_to_string(file).map_err(|e| format!("{}: {}", file.display(), e))?;
         let normalized = normalize_nl(&source);
-        let formatted = match format_source(&normalized, &file.display().to_string()) {
+        let formatted = match format_source_with_options(
+            &normalized,
+            &file.display().to_string(),
+            &fmt_opts,
+        ) {
             Ok(s) => s,
             Err(e) => {
                 errors.push(format!("{}: {}", file.display(), e.format()));
