@@ -58,8 +58,8 @@ set.add("apple");
 set.add("banana");
 ```
 
-### 3. string Utilities (`string.rv`)
-Additional string manipulation functions.
+### 3. string utilities (`str.rv`)
+Additional string manipulation functions. Import with a binding name (the module file is `str.rv`):
 
 **Functions:**
 - `capitalize(s: string) -> string` - Capitalizes the first letter
@@ -71,11 +71,11 @@ Additional string manipulation functions.
 
 **Usage:**
 ```raven
-import string;
+import str from "str";
 
-let result: string = string.capitalize("hello world");
-let trimmed: string = string.trim("  hello  ");
-let starts: bool = string.starts_with("hello", "he");
+let result: string = str.capitalize("hello world");
+let trimmed: string = str.trim("  hello  ");
+let starts: bool = str.starts_with("hello", "he");
 ```
 
 ### 4. Time and Date (`time.rv`)
@@ -253,8 +253,8 @@ Testing framework and utilities.
 - `assert_less_than_or_equal(actual: int, expected: int, message: string) -> bool` - Asserts less than or equal
 - `assert_contains(haystack: string, needle: string, message: string) -> bool` - Asserts contains
 - `assert_not_contains(haystack: string, needle: string, message: string) -> bool` - Asserts not contains
-- `assert_starts_with(str: string, prefix: string, message: string) -> bool` - Asserts starts with
-- `assert_ends_with(str: string, suffix: string, message: string) -> bool` - Asserts ends with
+- `assert_starts_with(text: string, prefix: string, message: string) -> bool` - Asserts starts with
+- `assert_ends_with(text: string, suffix: string, message: string) -> bool` - Asserts ends with
 - `assert_is_empty(str: string, message: string) -> bool` - Asserts empty
 - `assert_is_not_empty(str: string, message: string) -> bool` - Asserts not empty
 - `assert_is_null(value: string, message: string) -> bool` - Asserts null
