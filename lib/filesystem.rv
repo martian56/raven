@@ -1,6 +1,6 @@
 // lib/filesystem.rv - File System Library
 
-import string;
+import str from "str";
 
 // File information structure
 struct FileInfo {
@@ -52,7 +52,7 @@ export fun join_path(parts: string[]) -> string {
     let result: string = parts[0];
     let i: int = 1;
     while (i < len(parts)) {
-        if (!string.ends_with(result, "/") && !string.starts_with(parts[i], "/")) {
+        if (!str.ends_with(result, "/") && !str.starts_with(parts[i], "/")) {
             result = result + "/";
         }
         result = result + parts[i];
@@ -102,7 +102,7 @@ export fun extension(path: string) -> string {
 
 export fun remove_extension(path: string) -> string {
     let filename: string = basename(path);
-    let last_dot: int = string.last_index_of(filename, ".");
+    let last_dot: int = str.last_index_of(filename, ".");
     
     if (last_dot == -1) {
         return path;
@@ -209,7 +209,7 @@ export fun find_files(directory: string, pattern: string) -> string[] {
     let matching_files: string[] = [];
     let i: int = 0;
     while (i < len(all_files)) {
-        if (string.contains(all_files[i], pattern)) {
+        if (str.contains(all_files[i], pattern)) {
             matching_files.push(all_files[i]);
         }
         i = i + 1;
@@ -237,14 +237,14 @@ export fun is_valid_filename(filename: string) -> bool {
     let invalid_chars: string[] = ["<", ">", ":", "\"", "|", "?", "*"];
     let i: int = 0;
     while (i < len(invalid_chars)) {
-        if (string.contains(filename, invalid_chars[i])) {
+        if (str.contains(filename, invalid_chars[i])) {
             return false;
         }
         i = i + 1;
     }
     
     let reserved_names: string[] = ["CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"];
-    let upper_filename: string = string.to_upper(filename);
+    let upper_filename: string = str.to_upper(filename);
     i = 0;
     while (i < len(reserved_names)) {
         if (upper_filename == reserved_names[i]) {
@@ -305,7 +305,7 @@ export fun create_temp_file(content: string) -> string {
 }
 
 export fun cleanup_temp_file(path: string) -> bool {
-    if (string.starts_with(path, "temp_") && string.ends_with(path, ".tmp")) {
+    if (str.starts_with(path, "temp_") && str.ends_with(path, ".tmp")) {
         return remove_file(path);
     }
     return false;
