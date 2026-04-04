@@ -6,7 +6,6 @@ pub enum ASTNode {
     StructDecl(String, Vec<StructMember>),
     ImplBlock(String, Vec<ImplMember>),
     EnumDecl(String, Vec<EnumMember>),
-    /// Preserved `//` or `/* */` comment (statement or top-level).
     Comment(String),
     ForLoop(Box<ASTNode>, Box<Expression>, Box<ASTNode>, Box<ASTNode>),
     WhileLoop(Box<Expression>, Box<ASTNode>),
@@ -44,7 +43,6 @@ pub enum Expression {
     StructInstantiation(String, Vec<(String, Expression)>),
     FieldAccess(Box<Expression>, String),
     EnumVariant(String, String),
-    /// Placeholder for `let x: T;` when `T` is a struct or other type that allows default init.
     Uninitialized,
 }
 

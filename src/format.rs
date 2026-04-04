@@ -1,8 +1,4 @@
-//! Pretty-print Raven source (parse and re-emit with consistent style).
-//!
-//! Goals: readable vertical rhythm (blank lines between imports and declarations, between
-//! top-level items, and before control flow inside blocks), wrap long signatures and literals,
-//! and stable `elseif` / `else` layout.
+//! Raven source formatter (parse + re-emit).
 
 use crate::ast::{ASTNode, EnumMember, Expression, ImplMember, Operator, Parameter, StructMember};
 use crate::error::RavenError;
@@ -11,15 +7,10 @@ use crate::parser::Parser;
 use std::fs;
 use std::path::Path;
 
-/// Options for [`format_source_with_options`], including values from `rv.toml` under `[fmt]`.
-///
-/// - `indent_width` (default 4): spaces per indent level; TOML values are clamped to 1–16.
-/// - `wrap_width` (default 88): soft line length for wrapping; TOML values are clamped to 40–200.
+/// rv.toml `[fmt]`: `indent_width`, `wrap_width`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FormatOptions {
-    /// Spaces per indent level (default `4`).
     pub indent_width: usize,
-    /// Target width for wrapping long lines (default `88`, clamped when read from TOML).
     pub wrap_width: usize,
 }
 
@@ -38,7 +29,6 @@ impl FormatOptions {
         " ".repeat(w.saturating_mul(depth))
     }
 
-    /// Read `[fmt]` from `rv.toml` at `path`. Missing file or invalid values fall back to defaults.
     pub fn from_rv_toml(path: &Path) -> Self {
         Self::from_rv_toml_inner(path).unwrap_or_default()
     }
@@ -64,12 +54,10 @@ impl FormatOptions {
     }
 }
 
-/// Format a Raven source string. `filename` is used only for parse error messages.
 pub fn format_source(source: &str, filename: &str) -> Result<String, RavenError> {
     format_source_with_options(source, filename, &FormatOptions::default())
 }
 
-/// Format with explicit options (e.g. from `rv.toml` `[fmt]` via [`FormatOptions::from_rv_toml`]).
 pub fn format_source_with_options(
     source: &str,
     filename: &str,
@@ -109,7 +97,6 @@ fn is_major_decl(node: &ASTNode) -> bool {
     }
 }
 
-/// Blank line between consecutive top-level items for visual sections (imports vs code, decl vs decl).
 fn blank_between_top_level(prev: &ASTNode, next: &ASTNode) -> bool {
     if matches!(next, ASTNode::Comment(_)) {
         return false;
@@ -130,7 +117,6 @@ fn blank_between_top_level(prev: &ASTNode, next: &ASTNode) -> bool {
     is_major_decl(prev) && is_major_decl(next)
 }
 
-/// Blank line before control-flow statements inside blocks (not before the first statement).
 fn blank_between_inner(prev: &ASTNode, next: &ASTNode) -> bool {
     if matches!(prev, ASTNode::Comment(_)) || matches!(next, ASTNode::Comment(_)) {
         return false;
@@ -141,7 +127,6 @@ fn blank_between_inner(prev: &ASTNode, next: &ASTNode) -> bool {
     )
 }
 
-/// Single-line or wrapped parameter lists for `fun` / `impl` signatures.
 fn format_parameter_list(params: &[Parameter], indent: usize, opts: &FormatOptions) -> String {
     let parts: Vec<String> = params
         .iter()
@@ -381,10 +366,6 @@ fn format_stmt(node: &ASTNode, indent: usize, opts: &FormatOptions) -> String {
     }
 }
 
-/// Format a single-statement node without outer indentation (for `for` init / increment).
-///
-/// [`format_stmt`] always ends statement forms with `;`, but `for (...)` already adds `;` between
-/// the three clauses. Strip trailing semicolons so we do not emit `let i: int = 0;;`.
 fn format_stmt_strip_pad(node: &ASTNode, base_indent: usize, opts: &FormatOptions) -> String {
     let s = format_stmt(node, base_indent, opts);
     let mut t = s.trim_start().to_string();
@@ -471,13 +452,10 @@ fn op_str(op: &Operator) -> &'static str {
     }
 }
 
-/// Default: no surrounding statement indent (wrap_depth `0`).
 fn format_expr(e: &Expression, opts: &FormatOptions) -> String {
     format_expr_at(e, opts, 0)
 }
 
-/// `wrap_depth` is the statement block depth for the expression (0 = top-level in file).
-/// Multi-line `fn(...)`, `[...]`, etc. indent arguments with `pad(wrap_depth + 1)`.
 fn format_expr_at(e: &Expression, opts: &FormatOptions, wrap_depth: usize) -> String {
     format_expr_ctx(e, 0, true, opts, wrap_depth)
 }

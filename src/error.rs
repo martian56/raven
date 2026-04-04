@@ -1,7 +1,6 @@
 use crate::span::Span;
 use std::fmt;
 
-/// Types of errors that can occur
 #[derive(Debug, Clone, PartialEq)]
 pub enum ErrorType {
     LexError,
@@ -21,7 +20,6 @@ impl fmt::Display for ErrorType {
     }
 }
 
-/// Represents an error with location information
 #[derive(Debug, Clone)]
 pub struct RavenError {
     pub error_type: ErrorType,
@@ -59,14 +57,11 @@ impl RavenError {
         self
     }
 
-    /// Format the error with context like Rust compiler errors
     pub fn format(&self) -> String {
         let mut output = String::new();
 
-        // Error header
         output.push_str(&format!("\x1b[1;31merror\x1b[0m: {}\n", self.message));
 
-        // Location
         let filename = self.filename.as_deref().unwrap_or("program.rv");
         output.push_str(&format!(
             "  \x1b[1;34m-->\x1b[0m {}:{}:{}\n",
@@ -75,7 +70,6 @@ impl RavenError {
             self.span.column + 1
         ));
 
-        // Source context
         if let Some(source) = &self.source_code {
             let lines: Vec<&str> = source.lines().collect();
 
@@ -83,19 +77,16 @@ impl RavenError {
                 let line_num = self.span.line + 1;
                 let line_num_width = line_num.to_string().len();
 
-                // Separator
                 output.push_str(&format!(
                     "   {}\x1b[1;34m|\x1b[0m\n",
                     " ".repeat(line_num_width)
                 ));
 
-                // The actual line with error
                 output.push_str(&format!(
                     "  \x1b[1;34m{}\x1b[0m \x1b[1;34m|\x1b[0m {}\n",
                     line_num, lines[self.span.line]
                 ));
 
-                // Error indicator (^^^^^)
                 let padding = " ".repeat(line_num_width);
                 let column_padding = " ".repeat(self.span.column);
                 let indicator_length = if self.span.length > 0 {
@@ -112,9 +103,7 @@ impl RavenError {
             }
         }
 
-        // Hint
         if let Some(hint) = &self.hint {
-            // If the hint is multiline, keep subsequent lines aligned under the hint text.
             if hint.contains('\n') {
                 let mut lines = hint.lines();
                 if let Some(first) = lines.next() {
@@ -147,7 +136,6 @@ impl From<String> for RavenError {
     }
 }
 
-// Allow reverse conversion for gradual migration
 impl From<RavenError> for String {
     fn from(error: RavenError) -> Self {
         error.message
@@ -159,17 +147,14 @@ pub fn parse_error(message: impl Into<String>, span: Span) -> RavenError {
     RavenError::new(ErrorType::ParseError, message.into(), span)
 }
 
-/// Helper function to create type errors
 pub fn type_error(message: impl Into<String>, span: Span) -> RavenError {
     RavenError::new(ErrorType::TypeError, message.into(), span)
 }
 
-/// Helper function to create runtime errors
 pub fn runtime_error(message: impl Into<String>, span: Span) -> RavenError {
     RavenError::new(ErrorType::RuntimeError, message.into(), span)
 }
 
-/// Helper function to create lex errors
 pub fn lex_error(message: impl Into<String>, span: Span) -> RavenError {
     RavenError::new(ErrorType::LexError, message.into(), span)
 }

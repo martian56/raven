@@ -1,4 +1,3 @@
-/// Represents a position in source code
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Span {
     pub line: usize,
@@ -26,7 +25,6 @@ impl Span {
         }
     }
 
-    /// Combine two spans into one spanning both
     pub fn merge(&self, other: &Span) -> Span {
         let start = self.offset.min(other.offset);
         let end = (self.offset + self.length).max(other.offset + other.length);
@@ -50,7 +48,6 @@ impl Default for Span {
     }
 }
 
-/// Wraps a value with its source location
 #[derive(Debug, Clone)]
 pub struct Spanned<T> {
     pub value: T,

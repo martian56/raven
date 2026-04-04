@@ -71,7 +71,6 @@ pub enum TokenType {
 
     DotDot,
 
-    /// Line (`// ...`) or block (`/* ... */`) comment text as written (excluding trailing newline for `//`).
     Comment(String),
 
     EOF,
@@ -180,8 +179,6 @@ impl Lexer {
         result
     }
 
-    /// Reads a double-quoted string starting at the opening `"` (consumed here).
-    /// Supports escapes: `\\`, `\"`, `\n`, `\r`, `\t`, `\0`. Any other `\x` emits `\` + `x` (lenient).
     pub fn read_string(&mut self) -> String {
         let mut result: String = String::new();
         self.advance();
@@ -533,7 +530,6 @@ mod tests {
 
     #[test]
     fn test_string_escape_quote_and_backslash() {
-        // Raven: let s = "{\"hello\":1}";
         let input = "let s = \"{\\\"hello\\\":1}\";\n".to_string();
         let mut lexer = Lexer::new(input);
         assert_eq!(lexer.next_token(), TokenType::Let);

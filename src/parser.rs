@@ -102,8 +102,6 @@ impl Parser {
         Ok(ASTNode::Block(statements))
     }
 
-    /// Parses a type: primitive, `void`, or identifier, followed by any number of `[]` dimensions.
-    /// Examples: `int`, `int[][]`, `Point`, `Point[]`, `string[][][]`.
     fn parse_type_string(&mut self) -> Result<String, RavenError> {
         let mut s = match &self.current_token {
             Some(TokenType::IntType) => {

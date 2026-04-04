@@ -43,18 +43,14 @@ fn main() {
     let check_only = matches.get_flag("check");
     let show_ast = matches.get_flag("ast");
 
-    // Check if a file was provided
     if let Some(file_name) = matches.get_one::<String>("file") {
-        // Execute the file
         execute_file(file_name, verbose, check_only, show_ast);
     } else {
-        // No file provided, start REPL
         start_repl(verbose);
     }
 }
 
 fn execute_file(file_name: &str, verbose: bool, check_only: bool, show_ast: bool) {
-    // Read source code
     let source_code = fs::read_to_string(file_name).unwrap_or_else(|err| {
         eprintln!("❌ Failed to read file '{}': {}", file_name, err);
         process::exit(1);
@@ -65,7 +61,6 @@ fn execute_file(file_name: &str, verbose: bool, check_only: bool, show_ast: bool
         println!("─────────────────────────────────────────");
     }
 
-    // === LEXING ===
     if verbose {
         println!("\n🔍 LEXING...");
     }
@@ -86,7 +81,6 @@ fn execute_file(file_name: &str, verbose: bool, check_only: bool, show_ast: bool
         println!("   Tokens: {:?}", tokens);
     }
 
-    // === PARSING ===
     if verbose {
         println!("\n🌳 PARSING...");
     }
@@ -106,7 +100,6 @@ fn execute_file(file_name: &str, verbose: bool, check_only: bool, show_ast: bool
         println!("{:?}", ast);
     }
 
-    // === TYPE CHECKING ===
     if verbose {
         println!("\n🔎 TYPE CHECKING...");
     }
@@ -135,7 +128,6 @@ fn execute_file(file_name: &str, verbose: bool, check_only: bool, show_ast: bool
         return;
     }
 
-    // === EXECUTION ===
     if verbose {
         println!("\n🚀 EXECUTING...");
         println!("─────────────────────────────────────────");
@@ -192,7 +184,6 @@ fn start_repl(verbose: bool) {
                     continue;
                 }
 
-                // Process Raven code
                 match process_repl_input(input, &mut interpreter, &mut type_checker, verbose) {
                     Ok(_) => {}
                     Err(e) => {
@@ -214,14 +205,12 @@ fn process_repl_input(
     type_checker: &mut TypeChecker,
     verbose: bool,
 ) -> Result<(), String> {
-    // Create lexer
     let lexer = Lexer::new(input.to_string());
 
     if verbose {
         println!("🔍 Input: {}", input);
     }
 
-    // Create parser
     let mut parser = Parser::new(lexer, input.to_string());
     let ast = parser
         .parse()
@@ -231,22 +220,17 @@ fn process_repl_input(
         println!("🌳 AST: {:?}", ast);
     }
 
-    // Type check with persistent type checker
     type_checker.check(&ast)?;
 
     if verbose {
         println!("✅ Type check passed");
     }
 
-    // Execute
     match interpreter.execute(&ast) {
-        Ok(value) => {
-            // Only print if there's a meaningful result
-            match value {
-                raven::code_gen::Value::Void => {} // Don't print void
-                _ => println!("{}", value),
-            }
-        }
+        Ok(value) => match value {
+            raven::code_gen::Value::Void => {}
+            _ => println!("{}", value),
+        },
         Err(e) => return Err(e),
     }
 
