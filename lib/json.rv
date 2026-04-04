@@ -1,20 +1,4 @@
-// src/json.rv
-// Production-focused JSON package for Raven.
-// Primary APIs:
-// - load(path)
-// - write(path, json_content)
-// - parse(json_text)
-// - parse_file(path)
-// - validate(json_text)
-// - is_valid(json_text)
-// - last_error()
-// - minify(json_text)
-// - pretty(json_text, indent)
-// - stringify(json_text)
-// - get(entries, path)
-// - get_type(entries, path)
-// - get_value(entries, path)
-// - has_path(entries, path)
+// JSON: parse, stringify, path get/set, file load/write.
 
 let _src: string = "";
 let _idx: int = 0;
