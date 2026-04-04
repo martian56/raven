@@ -25,7 +25,7 @@ assets = [
     ["docs/syntax.md", "usr/share/doc/raven/", "644"],
     ["lib/math.rv", "usr/share/raven/lib/", "644"],
     ["lib/collections.rv", "usr/share/raven/lib/", "644"],
-    ["lib/string.rv", "usr/share/raven/lib/", "644"],
+    ["lib/str.rv", "usr/share/raven/lib/", "644"],
     ["lib/time.rv", "usr/share/raven/lib/", "644"],
     ["lib/filesystem.rv", "usr/share/raven/lib/", "644"],
     ["lib/network.rv", "usr/share/raven/lib/", "644"],
@@ -48,7 +48,7 @@ assets = [
     { source = "docs/syntax.md", dest = "/usr/share/doc/raven/", mode = "644", doc = true },
     { source = "lib/math.rv", dest = "/usr/share/raven/lib/", mode = "644" },
     { source = "lib/collections.rv", dest = "/usr/share/raven/lib/", mode = "644" },
-    { source = "lib/string.rv", dest = "/usr/share/raven/lib/", mode = "644" },
+    { source = "lib/str.rv", dest = "/usr/share/raven/lib/", mode = "644" },
     { source = "lib/time.rv", dest = "/usr/share/raven/lib/", mode = "644" },
     { source = "lib/filesystem.rv", dest = "/usr/share/raven/lib/", mode = "644" },
     { source = "lib/network.rv", dest = "/usr/share/raven/lib/", mode = "644" },
@@ -59,6 +59,8 @@ assets = [
 [dependencies]
 clap = "4.1"
 chrono = "0.4"
+toml = "0.8"
+ureq = "2.10"
 
 [profile.release]
 opt-level = 1
