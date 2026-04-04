@@ -34,7 +34,7 @@
 
 ## Quick Example
 
-```raven
+```rust
 struct User {
     name: string,
     age: int
