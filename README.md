@@ -34,7 +34,7 @@
 
 ## Quick Example
 
-```rust
+```raven
 struct User {
     name: string,
     age: int
@@ -59,9 +59,22 @@ cargo build --release
 # Run a file
 ./target/release/raven hello.rv
 
+# Type-check only (no run)
+./target/release/raven hello.rv -c
+
 # REPL
 ./target/release/raven
 ```
+
+**Project workflow** (optional `rv.toml`):
+
+```bash
+./target/release/rvpm init my_app
+cd my_app
+./target/release/rvpm run          # runs src/main.rv
+./target/release/rvpm fmt          # format .rv sources (see [fmt] in rv.toml)
+```
+
 Or get the installer for your OS from the [releases](https://github.com/martian56/raven/releases) page.
 
 ## Learn More
