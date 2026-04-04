@@ -25,7 +25,7 @@ code --install-extension martian56.raven-language
 ## Features
 
 ### Syntax Highlighting
-- **Keywords**: `fun`, `let`, `if`, `while`, `for`, `struct`, `enum`
+- **Keywords**: `fun`, `let`, `if`, **`elseif`**, `else`, `while`, `for`, `struct`, `enum`, `import`, `export`, `from`, `print`, … (Raven uses the single keyword **`elseif`** for else-if branches, not two words `else if`.)
 - **Types**: `int`, `float`, `bool`, `string`, `void`
 - **Operators**: `+`, `-`, `*`, `/`, `%`, `==`, `!=`, `&&`, `||`
 - **Comments**: `//` and `/* */`
@@ -42,6 +42,8 @@ Type these shortcuts and press Tab:
 | `fun` | `fun name() -> Type { }` |
 | `if` | `if (condition) { }` |
 | `ifelse` | `if (condition) { } else { }` |
+| `elseif` | `} elseif (condition) { }` (continues a chain) |
+| `ifelseif` | `if` / `elseif` / `else` chain |
 | `while` | `while (condition) { }` |
 | `for` | `for (let i: int = 0; i < len; i = i + 1) { }` |
 | `struct` | `struct Name { field: Type }` |
