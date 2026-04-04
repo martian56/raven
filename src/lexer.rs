@@ -71,6 +71,9 @@ pub enum TokenType {
 
     DotDot,
 
+    /// Line (`// ...`) or block (`/* ... */`) comment text as written (excluding trailing newline for `//`).
+    Comment(String),
+
     EOF,
     Illegal(char),
 }
@@ -177,6 +180,8 @@ impl Lexer {
         result
     }
 
+    /// Reads a double-quoted string starting at the opening `"` (consumed here).
+    /// Supports escapes: `\\`, `\"`, `\n`, `\r`, `\t`, `\0`. Any other `\x` emits `\` + `x` (lenient).
     pub fn read_string(&mut self) -> String {
         let mut result: String = String::new();
         self.advance();
@@ -184,30 +189,73 @@ impl Lexer {
         while let Some(ch) = self.current_char {
             if ch == '"' {
                 break;
+            }
+            if ch == '\\' {
+                self.advance();
+                match self.current_char {
+                    Some('n') => {
+                        result.push('\n');
+                        self.advance();
+                    }
+                    Some('r') => {
+                        result.push('\r');
+                        self.advance();
+                    }
+                    Some('t') => {
+                        result.push('\t');
+                        self.advance();
+                    }
+                    Some('0') => {
+                        result.push('\0');
+                        self.advance();
+                    }
+                    Some('"') => {
+                        result.push('"');
+                        self.advance();
+                    }
+                    Some('\\') => {
+                        result.push('\\');
+                        self.advance();
+                    }
+                    Some(c) => {
+                        result.push('\\');
+                        result.push(c);
+                        self.advance();
+                    }
+                    None => {
+                        result.push('\\');
+                        break;
+                    }
+                }
             } else {
                 result.push(ch);
                 self.advance();
             }
         }
 
-        self.advance();
+        if self.current_char == Some('"') {
+            self.advance();
+        }
         result
     }
 
-    fn skip_single_line_comment(&mut self) {
+    fn read_line_comment(&mut self) -> String {
+        let mut s = String::from("//");
         self.advance();
         self.advance();
 
         while let Some(ch) = self.current_char {
             if ch == '\n' {
-                self.advance();
                 break;
             }
+            s.push(ch);
             self.advance();
         }
+        s
     }
 
-    fn skip_multi_line_comment(&mut self) {
+    fn read_multi_line_comment(&mut self) -> String {
+        let mut s = String::from("/*");
         self.advance();
         self.advance();
 
@@ -215,13 +263,18 @@ impl Lexer {
             if ch == '*' {
                 self.advance();
                 if let Some('/') = self.current_char {
+                    s.push('*');
+                    s.push('/');
                     self.advance();
                     break;
                 }
+                s.push('*');
             } else {
+                s.push(ch);
                 self.advance();
             }
         }
+        s
     }
 
     pub fn next_token(&mut self) -> TokenType {
@@ -229,11 +282,9 @@ impl Lexer {
 
         if let Some('/') = self.current_char {
             if let Some('/') = self.peek() {
-                self.skip_single_line_comment();
-                return self.next_token();
+                return TokenType::Comment(self.read_line_comment());
             } else if let Some('*') = self.peek() {
-                self.skip_multi_line_comment();
-                return self.next_token();
+                return TokenType::Comment(self.read_multi_line_comment());
             }
         }
 
@@ -478,6 +529,31 @@ mod tests {
         let string: String = lexer.read_string();
         println!("String: {}", string);
         assert_eq!(string, "hello");
+    }
+
+    #[test]
+    fn test_string_escape_quote_and_backslash() {
+        // Raven: let s = "{\"hello\":1}";
+        let input = "let s = \"{\\\"hello\\\":1}\";\n".to_string();
+        let mut lexer = Lexer::new(input);
+        assert_eq!(lexer.next_token(), TokenType::Let);
+        assert_eq!(lexer.next_token(), TokenType::Identifier("s".to_string()));
+        assert_eq!(lexer.next_token(), TokenType::Assign);
+        match lexer.next_token() {
+            TokenType::StringLiteral(s) => assert_eq!(s, "{\"hello\":1}"),
+            other => panic!("expected StringLiteral, got {:?}", other),
+        }
+        assert_eq!(lexer.next_token(), TokenType::Semicolon);
+    }
+
+    #[test]
+    fn test_string_escape_newline_tab() {
+        let input = "\"a\\nb\\tc\\\\d\"\n".to_string();
+        let mut lexer = Lexer::new(input);
+        match lexer.next_token() {
+            TokenType::StringLiteral(s) => assert_eq!(s, "a\nb\tc\\d"),
+            other => panic!("expected StringLiteral, got {:?}", other),
+        }
     }
 
     #[test]
