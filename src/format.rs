@@ -190,7 +190,12 @@ fn format_stmt(node: &ASTNode, indent: usize, opts: &FormatOptions) -> String {
     match node {
         ASTNode::Block(stmts) => join_block_stmts(stmts, indent, false, opts),
         ASTNode::VariableDecl(name, expr) => {
-            format!("{}let {} = {};", pad, name, format_expr_at(expr, opts, indent))
+            format!(
+                "{}let {} = {};",
+                pad,
+                name,
+                format_expr_at(expr, opts, indent)
+            )
         }
         ASTNode::VariableDeclTyped(name, ty, expr) => {
             if matches!(expr.as_ref(), Expression::Uninitialized) {
