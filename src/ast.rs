@@ -3,9 +3,11 @@ pub enum ASTNode {
     VariableDecl(String, Box<Expression>),
     VariableDeclTyped(String, String, Box<Expression>),
     FunctionDecl(String, String, Vec<Parameter>, Box<ASTNode>),
-    StructDecl(String, Vec<StructField>),
-    ImplBlock(String, Vec<(String, String, Vec<Parameter>, Box<ASTNode>)>),
-    EnumDecl(String, Vec<String>),
+    StructDecl(String, Vec<StructMember>),
+    ImplBlock(String, Vec<ImplMember>),
+    EnumDecl(String, Vec<EnumMember>),
+    /// Preserved `//` or `/* */` comment (statement or top-level).
+    Comment(String),
     ForLoop(Box<ASTNode>, Box<Expression>, Box<ASTNode>, Box<ASTNode>),
     WhileLoop(Box<Expression>, Box<ASTNode>),
     Assignment(Box<Expression>, Box<Expression>),
@@ -75,6 +77,24 @@ pub struct Parameter {
 pub struct StructField {
     pub name: String,
     pub field_type: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum StructMember {
+    Field(StructField),
+    Comment(String),
+}
+
+#[derive(Debug, Clone)]
+pub enum EnumMember {
+    Variant(String),
+    Comment(String),
+}
+
+#[derive(Debug, Clone)]
+pub enum ImplMember {
+    Method(String, String, Vec<Parameter>, Box<ASTNode>),
+    Comment(String),
 }
 
 #[derive(Debug, Clone)]
