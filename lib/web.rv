@@ -1,0 +1,464 @@
+// HTTP server helpers. `serve` / `serve_on` log each request (time, method, path, status, ms). `serve_quiet*` does not.
+
+import str from "str";
+import network;
+
+struct Request {
+    method: string,
+    url_path: string,
+    path: string,
+    query: string
+}
+
+struct App {
+    routes: string[]
+}
+
+struct Reply {
+}
+
+struct Site {
+    routes: string[],
+    kinds: int[],
+    payloads: string[]
+}
+
+fun wire_route_key(method: string, path: string) -> string {
+    return method + " " + path;
+}
+
+fun wire_read_first_line(raw: string) -> string {
+    let n: int = str.index_of(raw, "\r\n");
+    if (n < 0) {
+        return "";
+    }
+    return raw.slice(0, n);
+}
+
+fun wire_request_line_method(line: string) -> string {
+    let sp1: int = str.index_of(line, " ");
+    if (sp1 < 0) {
+        return "";
+    }
+    return line.slice(0, sp1);
+}
+
+fun wire_request_line_target(line: string) -> string {
+    let sp1: int = str.index_of(line, " ");
+    if (sp1 < 0) {
+        return "";
+    }
+    let rest: string = line.slice(sp1 + 1, len(line));
+    let sp2: int = str.index_of(rest, " ");
+    if (sp2 < 0) {
+        return str.trim(rest);
+    }
+    return rest.slice(0, sp2);
+}
+
+fun wire_path_without_query(target: string) -> string {
+    let q: int = str.index_of(target, "?");
+    if (q < 0) {
+        return target;
+    }
+    return target.slice(0, q);
+}
+
+fun wire_query_string(target: string) -> string {
+    let q: int = str.index_of(target, "?");
+    if (q < 0) {
+        return "";
+    }
+    return target.slice(q + 1, len(target));
+}
+
+fun wire_route_index(routes: string[], method: string, path: string) -> int {
+    let key: string = wire_route_key(method, path);
+    let i: int = 0;
+    while (i < len(routes)) {
+        if (routes[i] == key) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fun wire_status_phrase(code: int) -> string {
+    if (code == 200) {
+        return "OK";
+    }
+    if (code == 201) {
+        return "Created";
+    }
+    if (code == 204) {
+        return "No Content";
+    }
+    if (code == 400) {
+        return "Bad Request";
+    }
+    if (code == 404) {
+        return "Not Found";
+    }
+    if (code == 500) {
+        return "Internal Server Error";
+    }
+    return "OK";
+}
+
+fun wire_respond(status: int, content_type: string, body: string) -> string {
+    let line: string = "HTTP/1.1 " + format("{}", status) + " " + wire_status_phrase(status);
+    let cl: string = format("{}", len(body));
+    return line + "\r\nContent-Type: " + content_type
+        + "\r\nConnection: close\r\nContent-Length: " + cl + "\r\n\r\n" + body;
+}
+
+fun wire_http_status_from_response(response: string) -> int {
+    let line: string = wire_read_first_line(response);
+    if (len(line) == 0) {
+        return 0;
+    }
+    let parts: string[] = line.split(" ");
+    if (len(parts) < 2) {
+        return 0;
+    }
+    return parse_int(parts[1]);
+}
+
+fun app_append_route(a: App, method: string, path: string) -> App {
+    let key: string = wire_route_key(method, path);
+    let n: string[] = [];
+    let i: int = 0;
+    while (i < len(a.routes)) {
+        n.push(a.routes[i]);
+        i = i + 1;
+    }
+    n.push(key);
+    return App { routes: n };
+}
+
+// Site kinds: 0=json 1=html 2=text 3=html_index (payload = title; lists self.routes)
+fun site_push(s: Site, method: string, path: string, kind: int, payload: string) -> Site {
+    let r: string[] = [];
+    let k: int[] = [];
+    let p: string[] = [];
+    let i: int = 0;
+    while (i < len(s.routes)) {
+        r.push(s.routes[i]);
+        k.push(s.kinds[i]);
+        p.push(s.payloads[i]);
+        i = i + 1;
+    }
+    r.push(wire_route_key(method, path));
+    k.push(kind);
+    p.push(payload);
+    return Site { routes: r, kinds: k, payloads: p };
+}
+
+export fun parse_request_line(line: string) -> Request {
+    let method: string = wire_request_line_method(line);
+    let target: string = wire_request_line_target(line);
+    let path_only: string = wire_path_without_query(target);
+    let query: string = wire_query_string(target);
+    return Request {
+        method: method,
+        url_path: target,
+        path: path_only,
+        query: query
+    };
+}
+
+export fun read_request(raw: string) -> Request {
+    let line: string = wire_read_first_line(raw);
+    return parse_request_line(line);
+}
+
+impl Request {
+    fun matches(self, method: string, path: string) -> bool {
+        return self.method == method && self.path == path;
+    }
+
+    fun has_query(self) -> bool {
+        return len(self.query) > 0;
+    }
+}
+
+// --- App (fluent router) ---
+
+export fun new_app() -> App {
+    return App { routes: [] };
+}
+
+impl App {
+    fun get(self, path: string) -> App {
+        return app_append_route(self, "GET", path);
+    }
+
+    fun post(self, path: string) -> App {
+        return app_append_route(self, "POST", path);
+    }
+
+    fun put(self, path: string) -> App {
+        return app_append_route(self, "PUT", path);
+    }
+
+    fun delete(self, path: string) -> App {
+        return app_append_route(self, "DELETE", path);
+    }
+
+    fun patch(self, path: string) -> App {
+        return app_append_route(self, "PATCH", path);
+    }
+
+    fun resolve(self, req: Request) -> int {
+        return wire_route_index(self.routes, req.method, req.path);
+    }
+
+    fun route_list(self) -> string[] {
+        return self.routes;
+    }
+}
+
+export fun reply() -> Reply {
+    return Reply {};
+}
+
+impl Reply {
+    fun respond(self, status: int, content_type: string, body: string) -> string {
+        return wire_respond(status, content_type, body);
+    }
+
+    fun ok_text(self, body: string) -> string {
+        return wire_respond(200, "text/plain; charset=utf-8", body);
+    }
+
+    fun ok_html(self, body: string) -> string {
+        return wire_respond(200, "text/html; charset=utf-8", body);
+    }
+
+    fun ok_json(self, body: string) -> string {
+        return wire_respond(200, "application/json; charset=utf-8", body);
+    }
+
+    fun json(self, body: string) -> string {
+        return self.ok_json(body);
+    }
+
+    fun html(self, body: string) -> string {
+        return self.ok_html(body);
+    }
+
+    fun text(self, body: string) -> string {
+        return self.ok_text(body);
+    }
+
+    fun json_error(self, status: int, message: string) -> string {
+        let body: string = "{\"error\":\"" + message + "\"}";
+        return wire_respond(status, "application/json; charset=utf-8", body);
+    }
+
+    fun not_found(self) -> string {
+        return wire_respond(404, "text/plain; charset=utf-8", "Not Found\n");
+    }
+
+    fun html_route_list(self, title: string, routes: string[]) -> string {
+        let body: string = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>"
+            + title + "</title></head><body><h1>" + title + "</h1><ul>";
+        let i: int = 0;
+        while (i < len(routes)) {
+            body = body + "<li><code>" + routes[i] + "</code></li>";
+            i = i + 1;
+        }
+        body = body + "</ul></body></html>";
+        return self.ok_html(body);
+    }
+}
+
+export fun new_site() -> Site {
+    return Site { routes: [], kinds: [], payloads: [] };
+}
+
+impl Site {
+    fun get_json(self, path: string, body: string) -> Site {
+        return site_push(self, "GET", path, 0, body);
+    }
+
+    fun get_html(self, path: string, body: string) -> Site {
+        return site_push(self, "GET", path, 1, body);
+    }
+
+    fun get_text(self, path: string, body: string) -> Site {
+        return site_push(self, "GET", path, 2, body);
+    }
+
+    fun get_html_index(self, path: string, title: string) -> Site {
+        return site_push(self, "GET", path, 3, title);
+    }
+
+    fun post_json(self, path: string, body: string) -> Site {
+        return site_push(self, "POST", path, 0, body);
+    }
+
+    fun post_html(self, path: string, body: string) -> Site {
+        return site_push(self, "POST", path, 1, body);
+    }
+
+    fun post_text(self, path: string, body: string) -> Site {
+        return site_push(self, "POST", path, 2, body);
+    }
+
+    fun put_json(self, path: string, body: string) -> Site {
+        return site_push(self, "PUT", path, 0, body);
+    }
+
+    fun delete_json(self, path: string, body: string) -> Site {
+        return site_push(self, "DELETE", path, 0, body);
+    }
+
+    fun resolve(self, req: Request) -> int {
+        return wire_route_index(self.routes, req.method, req.path);
+    }
+
+    fun route_list(self) -> string[] {
+        return self.routes;
+    }
+
+    fun handle(self, req: Request) -> string {
+        let out: Reply = reply();
+        let idx: int = wire_route_index(self.routes, req.method, req.path);
+        if (idx < 0) {
+            return out.not_found();
+        }
+        let kind: int = self.kinds[idx];
+        let pl: string = self.payloads[idx];
+        if (kind == 0) {
+            return out.json(pl);
+        }
+        if (kind == 1) {
+            return out.html(pl);
+        }
+        if (kind == 2) {
+            return out.text(pl);
+        }
+        if (kind == 3) {
+            return out.html_route_list(pl, self.routes);
+        }
+        return out.not_found();
+    }
+}
+
+fun serve_connection(stream: TcpStream, log_requests: bool) -> void {
+    let raw: string = network.read(stream, 16384);
+    if (len(raw) > 0) {
+        let req: Request = read_request(raw);
+        let t0: float = sys_timestamp();
+        let body: string = http_invoke_dispatch(req);
+        let dt: float = sys_timestamp() - t0;
+        if (log_requests) {
+            let code: int = wire_http_status_from_response(body);
+            let ms: float = dt * 1000.0;
+            print(format("{} {} {} {} {}ms", sys_time(), req.method, req.path, code, ms));
+        }
+        network.write(stream, body);
+    }
+    network.close_stream(stream);
+}
+
+export fun serve(addr: string, backlog: int) -> void {
+    print(format("HTTP server listening on http://{}", addr));
+    print("Press Ctrl+C to stop.");
+    let listener: TcpListener = network.listen(addr, backlog);
+    while (true) {
+        let conn: TcpStream = network.accept(listener);
+        serve_connection(conn, true);
+    }
+}
+
+export fun serve_quiet(addr: string, backlog: int) -> void {
+    let listener: TcpListener = network.listen(addr, backlog);
+    while (true) {
+        let conn: TcpStream = network.accept(listener);
+        serve_connection(conn, false);
+    }
+}
+
+export fun serve_on(addr: string) -> void {
+    serve(addr, 128);
+}
+
+export fun serve_on_quiet(addr: string) -> void {
+    serve_quiet(addr, 128);
+}
+
+export fun read_first_line(raw: string) -> string {
+    return wire_read_first_line(raw);
+}
+
+export fun request_line_method(line: string) -> string {
+    return wire_request_line_method(line);
+}
+
+export fun request_line_target(line: string) -> string {
+    return wire_request_line_target(line);
+}
+
+export fun path_without_query(target: string) -> string {
+    return wire_path_without_query(target);
+}
+
+export fun query_string(target: string) -> string {
+    return wire_query_string(target);
+}
+
+export fun route_key(method: string, path: string) -> string {
+    return wire_route_key(method, path);
+}
+
+export fun route_index(routes: string[], method: string, path: string) -> int {
+    return wire_route_index(routes, method, path);
+}
+
+export fun is_route(method: string, path: string, want_method: string, want_path: string) -> bool {
+    return method == want_method && path == want_path;
+}
+
+export fun status_phrase(code: int) -> string {
+    return wire_status_phrase(code);
+}
+
+export fun respond(status: int, content_type: string, body: string) -> string {
+    return wire_respond(status, content_type, body);
+}
+
+export fun text_ok(body: string) -> string {
+    return wire_respond(200, "text/plain; charset=utf-8", body);
+}
+
+export fun html_ok(body: string) -> string {
+    return wire_respond(200, "text/html; charset=utf-8", body);
+}
+
+export fun json_ok(body: string) -> string {
+    return wire_respond(200, "application/json; charset=utf-8", body);
+}
+
+export fun json_error(status: int, message: string) -> string {
+    let body: string = "{\"error\":\"" + message + "\"}";
+    return wire_respond(status, "application/json; charset=utf-8", body);
+}
+
+export fun not_found() -> string {
+    return wire_respond(404, "text/plain; charset=utf-8", "Not Found\n");
+}
+
+export fun html_route_list(title: string, routes: string[]) -> string {
+    let body: string = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>"
+        + title + "</title></head><body><h1>" + title + "</h1><ul>";
+    let i: int = 0;
+    while (i < len(routes)) {
+        body = body + "<li><code>" + routes[i] + "</code></li>";
+        i = i + 1;
+    }
+    body = body + "</ul></body></html>";
+    return wire_respond(200, "text/html; charset=utf-8", body);
+}
