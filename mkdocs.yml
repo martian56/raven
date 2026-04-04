@@ -84,6 +84,7 @@ nav:
   - Getting Started:
     - Installation: getting-started/installation.md
     - Quick Start: getting-started/quick-start.md
+    - rvpm and formatting: getting-started/rvpm-and-format.md
   - Language Reference:
     - Syntax: syntax.md
     - Data Types: language-reference/data-types.md
@@ -107,4 +108,4 @@ extra:
     - icon: fontawesome/brands/linkedin
       link: https://linkedin.com/in/martian58
 
-copyright: Copyright &copy; 2025 Raven Programming Language
+copyright: Copyright &copy; 2026 Raven Programming Language

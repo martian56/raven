@@ -134,7 +134,7 @@
                         <Component Id='stdlib' Guid='A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D'>
                             <File Id='math_rv' Source='lib\math.rv' KeyPath='yes'/>
                             <File Id='collections_rv' Source='lib\collections.rv'/>
-                            <File Id='string_rv' Source='lib\string.rv'/>
+                            <File Id='str_rv' Source='lib\str.rv'/>
                             <File Id='time_rv' Source='lib\time.rv'/>
                             <File Id='filesystem_rv' Source='lib\filesystem.rv'/>
                             <File Id='network_rv' Source='lib\network.rv'/>

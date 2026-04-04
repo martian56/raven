@@ -2,7 +2,7 @@
 
 import math;
 import collections;
-import string;
+import str from "str";
 import time;
 import filesystem;
 import network;
@@ -58,10 +58,10 @@ fun demo_string() -> void {
     
     let text: string = "  hello world  ";
     print(format("Original: '{}'", text));
-    print(format("Trimmed: '{}'", string.trim(text)));
-    print(format("Capitalized: '{}'", string.capitalize(string.trim(text))));
-    print(format("Starts with 'he': {}", string.starts_with(text, "he")));
-    print(format("Ends with 'ld': {}", string.ends_with(text, "ld")));
+    print(format("Trimmed: '{}'", str.trim(text)));
+    print(format("Capitalized: '{}'", str.capitalize(str.trim(text))));
+    print(format("Starts with 'he': {}", str.starts_with(text, "he")));
+    print(format("Ends with 'ld': {}", str.ends_with(text, "ld")));
 }
 
 // Time library demo

@@ -6,15 +6,14 @@ The easiest way to install Raven on Windows is using our professional MSI instal
 
 ### Download and Install
 
-1. **Download**: Go to [GitHub Releases](https://github.com/martian56/raven/releases/tag/v1.1.0)
-2. **Download**: `raven-windows-x64-v1.1.0.msi` (401KB)
-3. **Install**: Double-click the MSI file and follow the installer
-4. **Verify**: Open Command Prompt and run `raven --version`
+1. **Download**: Open [GitHub Releases](https://github.com/martian56/raven/releases) and get the latest Windows MSI for your architecture.
+2. **Run** the downloaded `.msi` installer.
+3. **Verify**: Open Command Prompt or PowerShell and run `raven --version` (and `rvpm --version` if you use project commands).
 
 ### What's Included
 
 The installer includes:
-- ✅ Raven executable (`raven.exe`)
+- ✅ Raven executable (`raven.exe`) and **rvpm** (`rvpm.exe`, project helper)
 - ✅ Complete standard library
 - ✅ Example programs
 - ✅ Documentation

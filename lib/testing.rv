@@ -1,6 +1,6 @@
 // lib/testing.rv - Testing Library
 
-import string;
+import str from "str";
 import math;
 
 // Test result structure
@@ -79,29 +79,29 @@ export fun assert_less_than_or_equal(actual: int, expected: int, message: string
 }
 
 export fun assert_contains(haystack: string, needle: string, message: string) -> bool {
-    if (!string.contains(haystack, needle)) {
+    if (!str.contains(haystack, needle)) {
         panic(format("Assertion failed: {} - Expected '{}' to contain '{}'", message, haystack, needle));
     }
     return true;
 }
 
 export fun assert_not_contains(haystack: string, needle: string, message: string) -> bool {
-    if (string.contains(haystack, needle)) {
+    if (str.contains(haystack, needle)) {
         panic(format("Assertion failed: {} - Expected '{}' to not contain '{}'", message, haystack, needle));
     }
     return true;
 }
 
-export fun assert_starts_with(str: string, prefix: string, message: string) -> bool {
-    if (!string.starts_with(str, prefix)) {
-        panic(format("Assertion failed: {} - Expected '{}' to start with '{}'", message, str, prefix));
+export fun assert_starts_with(text: string, prefix: string, message: string) -> bool {
+    if (!str.starts_with(text, prefix)) {
+        panic(format("Assertion failed: {} - Expected '{}' to start with '{}'", message, text, prefix));
     }
     return true;
 }
 
-export fun assert_ends_with(str: string, suffix: string, message: string) -> bool {
-    if (!string.ends_with(str, suffix)) {
-        panic(format("Assertion failed: {} - Expected '{}' to end with '{}'", message, str, suffix));
+export fun assert_ends_with(text: string, suffix: string, message: string) -> bool {
+    if (!str.ends_with(text, suffix)) {
+        panic(format("Assertion failed: {} - Expected '{}' to end with '{}'", message, text, suffix));
     }
     return true;
 }

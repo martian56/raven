@@ -147,8 +147,9 @@ Now that you've got the basics:
 
 1. **[Language Reference](../syntax.md)** - Complete syntax guide
 2. **[Standard Library](../standard-library/overview.md)** - Built-in functions
-3. **[Examples](../examples/basic.md)** - More sample programs
-4. **[VS Code Extension](../resources/vscode-extension.md)** - Development setup
+3. **[rvpm and formatting](rvpm-and-format.md)** - `rv.toml`, formatter, `rvpm fmt`
+4. **[Examples](../examples/basic.md)** - More sample programs
+5. **[VS Code Extension](../resources/vscode-extension.md)** - Development setup
 
 ## Common Commands
 
@@ -159,14 +160,26 @@ raven program.rv
 # Start REPL
 raven
 
-# Check syntax only
+# Type-check only (parse + types; does not run)
 raven program.rv -c
 
-# Verbose output
+# Verbose output (tokens, AST)
 raven program.rv -v
 
 # Show help
 raven --help
+```
+
+### Project commands (`rvpm`)
+
+From a directory that contains (or is under) an `rv.toml` project:
+
+```bash
+rvpm init my_app    # create rv.toml, src/main.rv, rv_env/
+cd my_app
+rvpm run            # runs raven on src/main.rv
+rvpm fmt            # format .rv files (optional [fmt] in rv.toml)
+rvpm fmt --check    # fail if formatting would change files (CI)
 ```
 
 ---

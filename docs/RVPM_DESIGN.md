@@ -8,12 +8,7 @@
 
 ## Module Resolution Order
 
-When `import foo` or `import foo from "foo"` is used, Raven resolves modules in this order:
-
-1. **stdlib** – Bundled standard library (e.g. `std/math`, `std/string`, `std/io`)
-2. **rv_env/** – Project-local dependencies (installed by `rvpm install`)
-3. **lib/** – Raven install’s shared library directory (e.g. `$RAVEN_HOME/lib/` or next to `raven` binary)
-4. **./** – Current directory and `./lib/` for local modules
+When resolving `import` paths, the **reference implementation** searches (see `src/paths.rs`): `lib/` under the current working directory, `RAVEN_LIB_PATH`, directories next to the `raven` executable, OS install locations (`/usr/share/raven/lib` on Linux, `Program Files\raven\lib` on Windows), then the current directory. A fuller **stdlib → rv_env → install lib** story is the target once `rvpm install` lands.
 
 ---
 
@@ -45,6 +40,11 @@ authors = ["You <you@example.com>"]
 [dependencies]
 math = "1.0"           # From registry
 json = "github:user/json"  # Git source (future)
+
+# Optional: formatter defaults for `rvpm fmt`
+[fmt]
+indent_width = 4
+wrap_width = 88
 ```
 
 ---
@@ -59,7 +59,7 @@ rv_env/
 │   │   └── math.rv      # Main module file
 │   └── string@0.2.0/
 │       ├── rv.toml
-│       └── string.rv
+│       └── str.rv
 └── lock.rv             # Lockfile (exact versions)
 ```
 
@@ -85,30 +85,29 @@ Import syntax: `import std.math from "std/math"` or `import math from "math"` (w
 
 | Command        | Description                                          |
 |----------------|------------------------------------------------------|
-| `rvpm init`    | Create new project (rv.toml, rv_env/, src/main.rv)   |
-| `rvpm install` | Install dependencies from rv.toml                    |
-| `rvpm add <pkg>` | Add and install a dependency                        |
-| `rvpm run`     | Run project (calls `raven src/main.rv`)             |
+| `rvpm init`    | Create new project (`rv.toml`, `rv_env/`, `src/main.rv`) — **implemented** |
+| `rvpm run`     | Run project (`raven src/main.rv` from project root) — **implemented** |
+| `rvpm fmt`     | Format `.rv` files; reads optional `[fmt]` in `rv.toml` — **implemented** |
+| `rvpm fmt --check` | Exit with error if any file would be reformatted (CI) — **implemented** |
+| `rvpm install` | Install dependencies from `rv.toml` — **not yet implemented** |
+| `rvpm add <pkg>` | Add and install a dependency — **not yet implemented** |
 | `rvpm build`   | (Future) Compile to binary or archive               |
 
 ---
 
 ## Integration with `raven`
 
-When executing `raven main.rv`:
-
-1. If `rv.toml` exists in the current (or parent) directory, Raven treats it as a project root.
-2. Raven uses `rv_env/packages/` as an additional module search path.
-3. `RAVEN_STDLIB` (or equivalent) points to the bundled stdlib.
-4. Resolution order: stdlib → rv_env → lib → cwd.
+- **`rvpm run`** changes to the project directory (where `rv.toml` was found) and runs `raven src/main.rv`; it does not pass extra flags to the interpreter today.
+- **`rvpm fmt`** loads optional `[fmt]` from `rv.toml` and calls the formatter in the `raven` library.
+- The **`raven` executable** resolves modules via `src/paths.rs` (`lib/`, `RAVEN_LIB_PATH`, install `lib/`, cwd). **It does not yet read `rv.toml` or `rv_env/` for imports**—that remains planned work aligned with Phase 2 above.
 
 ---
 
 ## Implementation Phases
 
 ### Phase 1: Project scaffolding
-- [ ] `rvpm init` – create rv.toml, rv_env/, src/main.rv
-- [ ] Minimal rv.toml parsing
+- [x] `rvpm init` – create `rv.toml`, `rv_env/`, `src/main.rv`
+- [x] Minimal `rv.toml` presence for project discovery; `[fmt]` parsed for `rvpm fmt`
 
 ### Phase 2: Module resolution
 - [ ] Add rv_env to Raven’s module search paths

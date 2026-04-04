@@ -1,4 +1,4 @@
-use crate::ast::{ASTNode, Expression, Operator};
+use crate::ast::{ASTNode, EnumMember, Expression, ImplMember, Operator, StructMember};
 use std::collections::HashMap;
 use std::fs;
 
@@ -33,16 +33,18 @@ impl Type {
     }
 
     pub fn from_string(s: &str) -> Type {
+        if let Some(inner) = s.strip_suffix("[]") {
+            if inner.is_empty() {
+                return Type::Struct(s.to_string());
+            }
+            return Type::Array(Box::new(Type::from_string(inner)));
+        }
         match s {
             "int" => Type::Int,
             "float" => Type::Float,
             "bool" => Type::Bool,
             "string" => Type::String,
             "void" => Type::Void,
-            "int[]" => Type::Array(Box::new(Type::Int)),
-            "float[]" => Type::Array(Box::new(Type::Float)),
-            "bool[]" => Type::Array(Box::new(Type::Bool)),
-            "string[]" => Type::Array(Box::new(Type::String)),
             _ => Type::Struct(s.to_string()),
         }
     }
@@ -50,18 +52,22 @@ impl Type {
     pub fn from_string_with_context(
         s: &str,
         enums: &HashMap<String, EnumInfo>,
-        _structs: &HashMap<String, StructInfo>,
+        structs: &HashMap<String, StructInfo>,
     ) -> Type {
+        if let Some(inner) = s.strip_suffix("[]") {
+            if inner.is_empty() {
+                return Type::Struct(s.to_string());
+            }
+            return Type::Array(Box::new(Type::from_string_with_context(
+                inner, enums, structs,
+            )));
+        }
         match s {
             "int" => Type::Int,
             "float" => Type::Float,
             "bool" => Type::Bool,
             "string" => Type::String,
             "void" => Type::Void,
-            "int[]" => Type::Array(Box::new(Type::Int)),
-            "float[]" => Type::Array(Box::new(Type::Float)),
-            "bool[]" => Type::Array(Box::new(Type::Bool)),
-            "string[]" => Type::Array(Box::new(Type::String)),
             _ => {
                 if enums.contains_key(s) {
                     Type::Enum(s.to_string())
@@ -81,6 +87,8 @@ pub struct TypeChecker {
     struct_methods: HashMap<String, HashMap<String, (Type, Vec<Type>)>>,
     enums: HashMap<String, EnumInfo>,
     modules: HashMap<String, ModuleInfo>,
+    /// When type-checking a function or impl method body, used to type `return []` and validate returns.
+    current_function_return_type: Option<Type>,
 }
 
 #[derive(Debug, Clone)]
@@ -106,14 +114,28 @@ impl Default for TypeChecker {
 
 impl TypeChecker {
     pub fn new() -> Self {
+        let mut structs = HashMap::new();
+        let mut http_response_fields = HashMap::new();
+        http_response_fields.insert("status_code".to_string(), Type::Int);
+        http_response_fields.insert("status_text".to_string(), Type::String);
+        http_response_fields.insert("headers".to_string(), Type::Array(Box::new(Type::String)));
+        http_response_fields.insert("body".to_string(), Type::String);
+        structs.insert(
+            "HttpResponse".to_string(),
+            StructInfo {
+                fields: http_response_fields,
+            },
+        );
+
         TypeChecker {
             variables: HashMap::new(),
             module_bindings: HashMap::new(),
             functions: HashMap::new(),
-            structs: HashMap::new(),
+            structs,
             struct_methods: HashMap::new(),
             enums: HashMap::new(),
             modules: HashMap::new(),
+            current_function_return_type: None,
         }
     }
 
@@ -144,49 +166,85 @@ impl TypeChecker {
                 Ok(Type::Void)
             }
 
-            ASTNode::Assignment(target, expr) => {
-                let expr_type = self.check_expression(expr)?;
-
-                match target.as_ref() {
-                    Expression::Identifier(name) => {
-                        if let Some(var_type) = self.variables.get(name) {
-                            if var_type != &expr_type {
-                                let expected = var_type.fmt_for_user();
-                                let got = expr_type.fmt_for_user();
-                                return Err(format!(
+            ASTNode::Assignment(target, expr) => match target.as_ref() {
+                Expression::Identifier(name) => {
+                    if let Some(var_type) = self.variables.get(name).cloned() {
+                        let expr_type =
+                            self.check_expression_with_expected_type(expr, Some(&var_type))?;
+                        if var_type != expr_type {
+                            let expected = var_type.fmt_for_user();
+                            let got = expr_type.fmt_for_user();
+                            return Err(format!(
                                     "Type mismatch in assignment to '{}': expected {}, got {}\n   = help: The value must match the variable's type '{}'. Consider converting or changing the expression.",
                                     name, expected, got, expected
                                 ));
-                            }
-                            Ok(Type::Void)
-                        } else {
-                            Err(format!(
+                        }
+                        Ok(Type::Void)
+                    } else {
+                        Err(format!(
                                 "Variable '{}' not declared\n   = help: Declare the variable with 'let {}: type = value;' before using it.",
                                 name, name
                             ))
-                        }
                     }
-                    Expression::FieldAccess(object, _field_name) => {
-                        let _object_type = self.check_expression(object)?;
-
-                        Ok(Type::Void)
-                    }
-                    Expression::ArrayIndex(array_expr, index_expr) => {
-                        let _array_type = self.check_expression(array_expr)?;
-                        let index_type = self.check_expression(index_expr)?;
-
-                        if index_type != Type::Int {
-                            return Err(format!(
-                                "Array index must be an integer, got {}\n   = help: Use an int variable or expression, e.g. arr[i] or arr[i + 1] where i is int.",
-                                index_type.fmt_for_user()
-                            ));
-                        }
-
-                        Ok(Type::Void)
-                    }
-                    _ => Ok(Type::Void),
                 }
-            }
+                Expression::FieldAccess(object, field_name) => {
+                    let object_type = self.check_expression(object)?;
+
+                    if let Type::Struct(ref struct_name) = object_type {
+                        if let Some(struct_info) = self.structs.get(struct_name) {
+                            if let Some(field_type) = struct_info.fields.get(field_name) {
+                                let field_type = field_type.clone();
+                                let expr_type = self
+                                    .check_expression_with_expected_type(expr, Some(&field_type))?;
+                                if expr_type != field_type {
+                                    let expected = field_type.fmt_for_user();
+                                    let got = expr_type.fmt_for_user();
+                                    return Err(format!(
+                                            "Type mismatch in assignment to field '{}.{}': expected {}, got {}\n   = help: The value must match the field's type '{}'.",
+                                            struct_name,
+                                            field_name,
+                                            expected,
+                                            got,
+                                            expected
+                                        ));
+                                }
+                                return Ok(Type::Void);
+                            }
+                            let available: Vec<&str> =
+                                struct_info.fields.keys().map(String::as_str).collect();
+                            return Err(format!(
+                                    "Field '{}' not found in struct '{}'\n   = help: Available fields: {}",
+                                    field_name,
+                                    struct_name,
+                                    available.join(", ")
+                                ));
+                        }
+                    }
+
+                    Err(format!(
+                            "Cannot assign to field on non-struct value of type '{}'\n   = help: Only struct values have assignable fields.",
+                            object_type.fmt_for_user()
+                        ))
+                }
+                Expression::ArrayIndex(_, _) => {
+                    let lhs_type = self.check_expression(target)?;
+                    let expr_type =
+                        self.check_expression_with_expected_type(expr, Some(&lhs_type))?;
+                    if lhs_type != expr_type {
+                        let expected = lhs_type.fmt_for_user();
+                        let got = expr_type.fmt_for_user();
+                        return Err(format!(
+                                "Type mismatch in assignment to indexed value: expected {}, got {}\n   = help: The right-hand side must match the element type at this index (e.g. int for int[][], or int[] for int[][]).",
+                                expected, got
+                            ));
+                    }
+                    Ok(Type::Void)
+                }
+                _ => {
+                    self.check_expression(expr)?;
+                    Ok(Type::Void)
+                }
+            },
 
             ASTNode::FunctionDecl(name, return_type_str, params, body) => {
                 let return_type =
@@ -207,23 +265,33 @@ impl TypeChecker {
                 self.functions
                     .insert(name.clone(), (return_type.clone(), param_types));
 
-                self.check(body)?;
+                let saved = self
+                    .current_function_return_type
+                    .replace(return_type.clone());
+                let check_result = self.check(body);
+                self.current_function_return_type = saved;
+                check_result?;
 
                 Ok(Type::Void)
             }
 
-            ASTNode::StructDecl(name, fields) => {
+            ASTNode::StructDecl(name, members) => {
                 let mut struct_info = StructInfo {
                     fields: HashMap::new(),
                 };
 
-                for field in fields {
-                    let field_type = Type::from_string_with_context(
-                        &field.field_type,
-                        &self.enums,
-                        &self.structs,
-                    );
-                    struct_info.fields.insert(field.name.clone(), field_type);
+                for member in members {
+                    match member {
+                        StructMember::Field(field) => {
+                            let field_type = Type::from_string_with_context(
+                                &field.field_type,
+                                &self.enums,
+                                &self.structs,
+                            );
+                            struct_info.fields.insert(field.name.clone(), field_type);
+                        }
+                        StructMember::Comment(_) => {}
+                    }
                 }
 
                 self.structs.insert(name.clone(), struct_info);
@@ -239,7 +307,11 @@ impl TypeChecker {
                     ));
                 }
 
-                for (method_name, return_type_str, params, body) in methods {
+                for method in methods {
+                    let (method_name, return_type_str, params, body) = match method {
+                        ImplMember::Method(n, r, p, b) => (n, r, p, b),
+                        ImplMember::Comment(_) => continue,
+                    };
                     let return_type =
                         Type::from_string_with_context(return_type_str, &self.enums, &self.structs);
                     let param_types: Vec<Type> = params
@@ -271,7 +343,12 @@ impl TypeChecker {
                         }
                     }
 
-                    self.check(body)?;
+                    let saved = self
+                        .current_function_return_type
+                        .replace(return_type.clone());
+                    let check_result = self.check(body);
+                    self.current_function_return_type = saved;
+                    check_result?;
 
                     self.variables.remove("self");
                     for param in params.iter().skip(1) {
@@ -282,15 +359,22 @@ impl TypeChecker {
                 Ok(Type::Void)
             }
 
-            ASTNode::EnumDecl(name, variants) => {
-                let enum_info = EnumInfo {
-                    variants: variants.clone(),
-                };
+            ASTNode::EnumDecl(name, members) => {
+                let variants: Vec<String> = members
+                    .iter()
+                    .filter_map(|m| match m {
+                        EnumMember::Variant(v) => Some(v.clone()),
+                        EnumMember::Comment(_) => None,
+                    })
+                    .collect();
+                let enum_info = EnumInfo { variants };
 
                 self.enums.insert(name.clone(), enum_info);
 
                 Ok(Type::Void)
             }
+
+            ASTNode::Comment(_) => Ok(Type::Void),
 
             ASTNode::IfStatement(condition, then_block, else_if, else_block) => {
                 let cond_type = self.check_expression(condition)?;
@@ -357,7 +441,19 @@ impl TypeChecker {
             }
 
             ASTNode::Return(expr) => {
-                self.check_expression(expr)?;
+                if let Some(expected_rt) = self.current_function_return_type.clone() {
+                    let actual =
+                        self.check_expression_with_expected_type(expr, Some(&expected_rt))?;
+                    if actual != expected_rt {
+                        return Err(format!(
+                            "Return type mismatch: expected {}, got {}\n   = help: Change the returned expression to match the function's declared return type.",
+                            expected_rt.fmt_for_user(),
+                            actual.fmt_for_user()
+                        ));
+                    }
+                } else {
+                    self.check_expression(expr)?;
+                }
                 Ok(Type::Void)
             }
 
@@ -431,6 +527,32 @@ impl TypeChecker {
         expected_type: Option<&Type>,
     ) -> Result<Type, String> {
         match expr {
+            Expression::Uninitialized => {
+                if let Some(et) = expected_type {
+                    match et {
+                        Type::Struct(struct_name) => {
+                            if self.structs.contains_key(struct_name) {
+                                Ok(Type::Struct(struct_name.clone()))
+                            } else {
+                                Err(format!(
+                                    "Struct '{}' is not defined\n   = help: Declare it with 'struct {} {{ ... }}' before use.",
+                                    struct_name, struct_name
+                                ))
+                            }
+                        }
+                        _ => Err(
+                            "Uninitialized declaration (`let x: T;`) is only allowed for struct types\n   = help: Use `let x: T = value;` for primitives and arrays, or provide a struct initializer."
+                                .to_string(),
+                        ),
+                    }
+                } else {
+                    Err(
+                        "Invalid use of uninitialized value (internal error)\n   = help: This should only appear in `let name: StructType;`."
+                            .to_string(),
+                    )
+                }
+            }
+
             Expression::Integer(_) => Ok(Type::Int),
             Expression::Float(_) => Ok(Type::Float),
             Expression::Boolean(_) => Ok(Type::Bool),
@@ -571,17 +693,26 @@ impl TypeChecker {
 
             Expression::ArrayLiteral(elements) => {
                 if elements.is_empty() {
-                    if let Some(Type::Array(element_type)) = expected_type {
-                        return Ok(Type::Array(element_type.clone()));
+                    if let Some(et) = expected_type {
+                        if let Type::Array(element_type) = et {
+                            return Ok(Type::Array(element_type.clone()));
+                        }
                     }
                     return Err(
                         "Cannot infer type of empty array\n   = help: Give the array an explicit type, e.g. let arr: int[] = []; or add at least one element.".to_string(),
                     );
                 }
 
-                let first_type = self.check_expression_with_expected_type(&elements[0], None)?;
+                let elem_expected = match expected_type {
+                    Some(Type::Array(inner)) => Some(inner.as_ref()),
+                    _ => None,
+                };
+
+                let first_type =
+                    self.check_expression_with_expected_type(&elements[0], elem_expected)?;
                 for element in elements.iter().skip(1) {
-                    let element_type = self.check_expression_with_expected_type(element, None)?;
+                    let element_type =
+                        self.check_expression_with_expected_type(element, elem_expected)?;
                     if element_type != first_type {
                         return Err(format!(
                             "Array elements must have the same type, got {} and {}\n   = help: All elements in [a, b, c, ...] must be the same type. Use separate arrays or convert values.",
@@ -774,6 +905,20 @@ impl TypeChecker {
                                 return Err("replace() arguments must be strings".to_string());
                             }
                             Ok(Type::String)
+                        }
+                        "index_of" | "last_index_of" => {
+                            if args.len() != 1 {
+                                return Err(format!(
+                                    "{}() expects 1 argument, got {}",
+                                    method_name,
+                                    args.len()
+                                ));
+                            }
+                            let sub_type = self.check_expression(&args[0])?;
+                            if sub_type != Type::String {
+                                return Err(format!("{}() argument must be string", method_name));
+                            }
+                            Ok(Type::Int)
                         }
                         _ => Err(format!("Unknown method '{}' for string", method_name)),
                     }
@@ -972,6 +1117,18 @@ impl TypeChecker {
             "print" => {
                 if args.is_empty() {
                     return Err("print() expects at least 1 argument".to_string());
+                }
+
+                for arg in args {
+                    self.check_expression(arg)?;
+                }
+
+                Ok(Some(Type::Void))
+            }
+
+            "panic" => {
+                if args.is_empty() {
+                    return Err("panic() expects at least 1 argument".to_string());
                 }
 
                 for arg in args {
@@ -1196,6 +1353,66 @@ impl TypeChecker {
                 Ok(Some(Type::String))
             }
 
+            "http_fetch" => {
+                if args.len() != 4 {
+                    return Err(format!(
+                        "http_fetch() expects 4 arguments, got {}",
+                        args.len()
+                    ));
+                }
+
+                let m = self.check_expression(&args[0])?;
+                let u = self.check_expression(&args[1])?;
+                let h = self.check_expression(&args[2])?;
+                let b = self.check_expression(&args[3])?;
+
+                if m != Type::String || u != Type::String || b != Type::String {
+                    return Err(
+                        "http_fetch(method, url, headers, body) requires string method, url, and body"
+                            .to_string(),
+                    );
+                }
+
+                match h {
+                    Type::Array(inner) if *inner == Type::String => {}
+                    _ => return Err("http_fetch() headers must be string[]".to_string()),
+                }
+
+                Ok(Some(Type::Struct("HttpResponse".to_string())))
+            }
+
+            "dns_lookup" => {
+                if args.len() != 1 {
+                    return Err(format!(
+                        "dns_lookup() expects 1 argument, got {}",
+                        args.len()
+                    ));
+                }
+
+                let t = self.check_expression(&args[0])?;
+                if t != Type::String {
+                    return Err("dns_lookup() hostname must be a string".to_string());
+                }
+
+                Ok(Some(Type::String))
+            }
+
+            "reachable" => {
+                if args.len() != 1 {
+                    return Err(format!(
+                        "reachable() expects 1 argument, got {}",
+                        args.len()
+                    ));
+                }
+
+                let t = self.check_expression(&args[0])?;
+                if t != Type::String {
+                    return Err("reachable() hostname must be a string".to_string());
+                }
+
+                Ok(Some(Type::Bool))
+            }
+
             "enum_from_string" => {
                 if args.len() != 2 {
                     return Err(format!(
@@ -1280,6 +1497,10 @@ impl TypeChecker {
 
         self.modules.insert(module_name.to_string(), module_info);
 
+        for (nested_name, nested_info) in module_checker.modules {
+            self.modules.entry(nested_name).or_insert(nested_info);
+        }
+
         Ok(())
     }
 }
@@ -1288,6 +1509,36 @@ impl TypeChecker {
 mod tests {
     use super::*;
     use crate::ast::{ASTNode, Expression};
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_uninitialized_struct_declaration() {
+        let mut checker = TypeChecker::new();
+        let mut fields = HashMap::new();
+        fields.insert("x".to_string(), Type::Int);
+        fields.insert("y".to_string(), Type::Int);
+        checker
+            .structs
+            .insert("Point".to_string(), StructInfo { fields });
+
+        let node = ASTNode::VariableDeclTyped(
+            "p".to_string(),
+            "Point".to_string(),
+            Box::new(Expression::Uninitialized),
+        );
+        assert!(checker.check(&node).is_ok());
+    }
+
+    #[test]
+    fn test_uninitialized_only_for_struct_type() {
+        let mut checker = TypeChecker::new();
+        let node = ASTNode::VariableDeclTyped(
+            "x".to_string(),
+            "int".to_string(),
+            Box::new(Expression::Uninitialized),
+        );
+        assert!(checker.check(&node).is_err());
+    }
 
     #[test]
     fn test_variable_declaration() {
@@ -1319,6 +1570,20 @@ mod tests {
         let expr = Expression::Identifier("x".to_string());
 
         assert!(checker.check_expression(&expr).is_err());
+    }
+
+    #[test]
+    fn test_empty_nested_array_literal_with_expected_matrix_type() {
+        let mut checker = TypeChecker::new();
+        let node = ASTNode::VariableDeclTyped(
+            "m".to_string(),
+            "int[][]".to_string(),
+            Box::new(Expression::ArrayLiteral(vec![
+                Expression::ArrayLiteral(vec![]),
+                Expression::ArrayLiteral(vec![]),
+            ])),
+        );
+        assert!(checker.check(&node).is_ok());
     }
 
     #[test]

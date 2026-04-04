@@ -1,6 +1,6 @@
 # Raven Examples
 
-This directory contains essential examples demonstrating Raven v1.0 features.
+This directory contains essential examples demonstrating Raven language features.
 
 ## Core Language Examples
 
@@ -76,10 +76,17 @@ Advanced file operations:
 
 ## Usage
 
-Run any example with:
+From the repository root (after `cargo build --release`):
+
 ```bash
-.\target\release\raven.exe -f examples\<filename>.rv
+# Windows PowerShell
+.\target\release\raven.exe examples\hello.rv
+
+# Unix
+./target/release/raven examples/hello.rv
 ```
+
+Use `raven path\to\file.rv -c` to type-check without running.
 
 ## Key Features Demonstrated
 

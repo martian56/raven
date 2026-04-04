@@ -1,0 +1,13 @@
+// Smoke test: real HTTP (requires network). Run: raven examples/network_http_smoke.rv
+
+import "network";
+
+fun main() -> void {
+    let r: HttpResponse = network.GET("https://httpbin.org/get");
+    print(format("HTTP status: {}", r.status_code));
+    if (r.status_code != 200) {
+        print("Unexpected status");
+    }
+}
+
+main();

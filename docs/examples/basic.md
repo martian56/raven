@@ -66,7 +66,7 @@ fun main() -> void {
     
     if (age < 18) {
         print("Too young");
-    } else if (age < 65) {
+    } elseif (age < 65) {
         print("Working age");
     } else {
         print("Retirement age");

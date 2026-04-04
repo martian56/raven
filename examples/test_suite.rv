@@ -2,7 +2,7 @@
 
 import testing;
 import math;
-import string;
+import str from "str";
 import collections;
 
 // Test math functions
@@ -26,28 +26,28 @@ fun test_math_rounding() -> void {
 
 // Test string functions
 fun test_string_trim() -> void {
-    let trimmed: string = string.trim("  hello  ");
+    let trimmed: string = str.trim("  hello  ");
     testing.assert_equals(trimmed, "hello", "trim should remove spaces");
     
-    let empty: string = string.trim("");
+    let empty: string = str.trim("");
     testing.assert_equals(empty, "", "trim of empty string should be empty");
 }
 
 fun test_string_starts_ends_with() -> void {
     let text: string = "hello world";
     
-    testing.assert_true(string.starts_with(text, "hello"), "should start with 'hello'");
-    testing.assert_false(string.starts_with(text, "world"), "should not start with 'world'");
+    testing.assert_true(str.starts_with(text, "hello"), "should start with 'hello'");
+    testing.assert_false(str.starts_with(text, "world"), "should not start with 'world'");
     
-    testing.assert_true(string.ends_with(text, "world"), "should end with 'world'");
-    testing.assert_false(string.ends_with(text, "hello"), "should not end with 'hello'");
+    testing.assert_true(str.ends_with(text, "world"), "should end with 'world'");
+    testing.assert_false(str.ends_with(text, "hello"), "should not end with 'hello'");
 }
 
 fun test_string_capitalize() -> void {
-    let result: string = string.capitalize("hello");
+    let result: string = str.capitalize("hello");
     testing.assert_equals(result, "Hello", "capitalize should work");
     
-    let empty: string = string.capitalize("");
+    let empty: string = str.capitalize("");
     testing.assert_equals(empty, "", "capitalize of empty should be empty");
 }
 

@@ -221,91 +221,91 @@ fun math.random_int(min: int, max: int) -> int;
 
 ---
 
-## `string` Module
+## `str` module (`lib/str.rv`)
 
 ### Transformation
 
 ```raven
-import string;
+import str from "str";
 
 // Case conversion
-fun string.uppercase(s: string) -> string;
-fun string.lowercase(s: string) -> string;
+fun str.uppercase(s: string) -> string;
+fun str.lowercase(s: string) -> string;
 
 // Trim whitespace
-fun string.trim(s: string) -> string;
-fun string.trim_left(s: string) -> string;
-fun string.trim_right(s: string) -> string;
+fun str.trim(s: string) -> string;
+fun str.trim_left(s: string) -> string;
+fun str.trim_right(s: string) -> string;
 
 // Reverse
-fun string.reverse(s: string) -> string;
+fun str.reverse(s: string) -> string;
 
 // Examples:
-let upper: string = string.uppercase("hello");  // "HELLO"
-let lower: string = string.lowercase("WORLD");  // "world"
-let clean: string = string.trim("  hello  ");  // "hello"
-let rev: string = string.reverse("abc");        // "cba"
+let upper: string = str.uppercase("hello");  // "HELLO"
+let lower: string = str.lowercase("WORLD");  // "world"
+let clean: string = str.trim("  hello  ");  // "hello"
+let rev: string = str.reverse("abc");        // "cba"
 ```
 
 ### Searching & Testing
 
 ```raven
-import string;
+import str from "str";
 
 // Check if string contains substring
-fun string.contains(s: string, substr: string) -> bool;
+fun str.contains(s: string, substr: string) -> bool;
 
 // Check if starts/ends with
-fun string.starts_with(s: string, prefix: string) -> bool;
-fun string.ends_with(s: string, suffix: string) -> bool;
+fun str.starts_with(s: string, prefix: string) -> bool;
+fun str.ends_with(s: string, suffix: string) -> bool;
 
 // Find index of substring
-fun string.index_of(s: string, substr: string) -> int;  // -1 if not found
+fun str.index_of(s: string, substr: string) -> int;  // -1 if not found
 
 // Examples:
-let has_hello: bool = string.contains("hello world", "hello");  // true
-let starts: bool = string.starts_with("raven", "rav");          // true
-let idx: int = string.index_of("hello", "ll");                  // 2
+let has_hello: bool = str.contains("hello world", "hello");  // true
+let starts: bool = str.starts_with("raven", "rav");          // true
+let idx: int = str.index_of("hello", "ll");                  // 2
 ```
 
 ### Splitting & Joining
 
 ```raven
-import string;
+import str from "str";
 
 // Split string by delimiter
-fun string.split(s: string, delim: string) -> [string];
+fun str.split(s: string, delim: string) -> [string];
 
 // Join array of strings
-fun string.join(parts: [string], delim: string) -> string;
+fun str.join(parts: [string], delim: string) -> string;
 
 // Replace occurrences
-fun string.replace(s: string, old: string, new: string) -> string;
+fun str.replace(s: string, old: string, new: string) -> string;
 
 // Examples:
-let parts: [string] = string.split("a,b,c", ",");  // ["a", "b", "c"]
-let joined: string = string.join(parts, "-");      // "a-b-c"
-let replaced: string = string.replace("hello", "l", "r");  // "herro"
+let parts: [string] = str.split("a,b,c", ",");  // ["a", "b", "c"]
+let joined: string = str.join(parts, "-");      // "a-b-c"
+let replaced: string = str.replace("hello", "l", "r");  // "herro"
 ```
 
 ### Character Operations
 
 ```raven
-import string;
+import str from "str";
 
 // Get character at index
-fun string.char_at(s: string, index: int) -> string;
+fun str.char_at(s: string, index: int) -> string;
 
 // Get ASCII code
-fun string.char_code(c: string) -> int;
+fun str.char_code(c: string) -> int;
 
 // From ASCII code
-fun string.from_char_code(code: int) -> string;
+fun str.from_char_code(code: int) -> string;
 
 // Examples:
-let ch: string = string.char_at("hello", 0);  // "h"
-let code: int = string.char_code("A");        // 65
-let letter: string = string.from_char_code(65);  // "A"
+let ch: string = str.char_at("hello", 0);  // "h"
+let code: int = str.char_code("A");        // 65
+let letter: string = str.from_char_code(65);  // "A"
 ```
 
 ---
@@ -470,14 +470,14 @@ let area: float = math.PI * math.pow_f(radius, 2.0);
 println(area);
 
 // string manipulation
-import string;
+import str from "str";
 
 let text: string = "Hello, Raven!";
-let upper: string = string.uppercase(text);
-let parts: [string] = string.split(upper, ",");
+let upper: string = str.uppercase(text);
+let parts: [string] = str.split(upper, ",");
 
 for (let i: int = 0; i < len(parts); i = i + 1) {
-    let trimmed: string = string.trim(parts[i]);
+    let trimmed: string = str.trim(parts[i]);
     println(trimmed);
 }
 
@@ -485,11 +485,11 @@ for (let i: int = 0; i < len(parts); i = i + 1) {
 import io;
 
 let data: string = io.read_file("input.txt");
-let lines: [string] = string.split(data, "\n");
+let lines: [string] = str.split(data, "\n");
 
 let processed: string = "";
 for (let i: int = 0; i < len(lines); i = i + 1) {
-    processed = processed + string.uppercase(lines[i]) + "\n";
+    processed = processed + str.uppercase(lines[i]) + "\n";
 }
 
 io.write_file("output.txt", processed);

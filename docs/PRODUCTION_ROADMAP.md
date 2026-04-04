@@ -151,25 +151,23 @@ print(result);
 
 ### 1.5 Arrays/Lists ⭐⭐⭐⭐☆ (HIGH PRIORITY)
 
-**Need**: Basic array support
+**Status**: Core array support is implemented in the reference interpreter (1D and multi-dimensional types, literals, indexing, assignment, `len()`, and common array methods).
+
+**Need** (historical sketch; syntax below is illustrative):
 ```raven
-let numbers: [int] = [1, 2, 3, 4, 5];
+let numbers: int[] = [1, 2, 3, 4, 5];
 print(numbers[0]);  // 1
 
 let length: int = len(numbers);  // 5
-
-for (let i: int = 0; i < length; i = i + 1) {
-    print(numbers[i]);
-}
 ```
 
 **Implementation Checklist**:
-- [ ] Add array type to type system
-- [ ] Parse array literals `[1, 2, 3]`
-- [ ] Parse array access `arr[index]`
-- [ ] Implement array indexing
-- [ ] Add `len()` built-in function
-- [ ] Support array assignment `arr[i] = value`
+- [x] Add array type to type system (including nested `[][]` / `[][][]` types)
+- [x] Parse array literals `[1, 2, 3]`
+- [x] Parse array access `arr[index]` and chained `arr[i][j]` / `arr[i][j][k]`
+- [x] Implement array indexing
+- [x] Add `len()` built-in function
+- [x] Support array assignment `arr[i] = value` and nested `arr[i][j] = value`
 
 **Files to Create/Modify**:
 - `src/ast.rs` - Add array expressions
@@ -325,7 +323,7 @@ let rounded: int = math.round(3.7);
 
 #### 2.3.3 `string` Module
 ```raven
-import string;
+import str from "str";
 
 let upper: string = string.uppercase("hello");
 let parts: [string] = string.split("a,b,c", ",");

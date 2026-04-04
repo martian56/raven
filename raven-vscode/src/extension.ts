@@ -57,8 +57,9 @@ export function activate(context: vscode.ExtensionContext) {
             ];
 
             const keywords = [
-                'let', 'fun', 'if', 'else', 'while', 'for', 'return',
-                'import', 'export', 'struct', 'impl', 'enum', 'true', 'false', 'void'
+                'let', 'fun', 'if', 'elseif', 'else', 'while', 'for', 'return',
+                'import', 'export', 'from', 'struct', 'impl', 'enum', 'print',
+                'true', 'false', 'void', 'const', 'and', 'or', 'not'
             ];
 
             const types = [

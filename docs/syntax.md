@@ -17,6 +17,8 @@ Spaces, tabs, and newlines separate tokens. Whitespace is required only where tw
 - **Line comment**: from `//` to the end of the line.
 - **Block comment**: from `/*` to `*/`. Block comments do not nest.
 
+Comments are **tokens** in the parser: they can appear between many top-level and block statements and inside struct, enum, and `impl` bodies, so tools like **`rvpm fmt`** can preserve them when reformatting.
+
 ```raven
 // line comment
 let x: int = 1;
@@ -53,7 +55,7 @@ Note: `const` is recognized by the lexer as a keyword; the current parser does n
 | Integer | Sequence of digits; optional leading `-` only as a unary operator on an expression, not as part of the literal token. |
 | Float   | Digits with a single `.` (for example `3.14`). |
 | Boolean | `true` or `false`. |
-| string  | Characters between double quotes `"..."`. The lexer does not process escape sequences inside strings; newlines inside a string are not supported by the quote rules. |
+| string  | Characters between double quotes `"..."`. **Escape sequences** after `\` are recognized: `\\` (backslash), `\"` (quote), `\n` `\r` `\t`, `\0` (NUL). Any other `\x` is treated as a literal backslash followed by `x`. Unescaped newlines inside a string are still not allowed (use `\n`). |
 
 ### Punctuation and operators
 
@@ -95,9 +97,10 @@ In type positions (after `:`), the following built-in spellings are accepted:
 | `bool` | Boolean |
 | `string` | string (also accepted as `string` in some positions inside the implementation) |
 | `void` | No value (return type) |
-| `int[]`, `float[]`, `bool[]`, `string[]` | Homogeneous arrays |
+| `int[]`, `float[]`, `bool[]`, `string[]` | Homogeneous arrays (one dimension) |
+| `int[][]`, `string[][]`, … | Multi-dimensional arrays: repeat `[]` for each dimension (e.g. `int[][][]` is a 3D array of integers) |
 
-User-defined types are referred to by identifier: struct and enum names.
+User-defined types are referred to by identifier: struct and enum names. Array dimensions may also apply to struct or enum types (for example `Point[][]`).
 
 ### Typing in declarations
 
@@ -142,12 +145,12 @@ Expressions are built from literals, identifiers, operators, calls, indexing, an
 - **Struct literal**: `TypeName {` field `:` expression (`,` field `:` expression)* `}` .
 - **Function call**: `name (` optional arguments `)` .
 - **Method call / field access**: `expr .` identifier with optional `( arguments )` for methods; chaining is supported.
-- **Indexing**: `expr [ expression ]` (arrays and strings).
+- **Indexing**: `expr [ expression ]` (arrays and strings). Indexing may chain: `expr [ expr ] [ expr ] …` for multi-dimensional arrays (and similarly after field access, e.g. `a[i][j].method()`).
 - **Enum variant**: `EnumName :: VariantName` (after the type name, `::` introduces the variant).
 
 ### Assignment expressions (statements)
 
-At statement level, assignment is `expression = expression ;` where the left-hand side is an assignable expression (identifier, field access, array index).
+At statement level, assignment is `expression = expression ;` where the left-hand side is an assignable expression (identifier, field access, or one or more array index operations on those, for example `m[i] = v`, `m[i][j] = v`, `s.field[i][j] = v`). The right-hand side must match the element type at that position (same rules as for a single `[]`).
 
 ---
 
@@ -386,4 +389,4 @@ expr              = … precedence climbing / unary / primaries …
 
 ## Version
 
-This syntax reference is aligned with the Raven toolchain version **1.4.0** (see `src/main.rs` and `Cargo.toml`). Minor implementation details may evolve; when in doubt, refer to the parser and lexer sources under `src/`.
+This syntax reference is aligned with the Raven toolchain version **1.4.x** (see `Cargo.toml` / `raven --version`). Minor implementation details may evolve; when in doubt, refer to the parser and lexer sources under `src/`.

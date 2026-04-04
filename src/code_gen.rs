@@ -1,8 +1,75 @@
-use crate::ast::{ASTNode, Expression, Operator, Parameter};
+use crate::ast::{ASTNode, EnumMember, Expression, ImplMember, Operator, Parameter, StructMember};
 use chrono::Local;
 use std::collections::HashMap;
 use std::fs;
+use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::path::Path;
+use std::time::Duration;
+
+/// `arr[i][j]...` → root (`Identifier` or `FieldAccess`) and index expressions in order `[i, j, ...]`.
+fn flatten_array_index_chain(expr: &Expression) -> Option<(&Expression, Vec<&Expression>)> {
+    let mut indices = Vec::new();
+    let mut e = expr;
+    loop {
+        match e {
+            Expression::ArrayIndex(array_expr, index_expr) => {
+                indices.push(index_expr.as_ref());
+                e = array_expr.as_ref();
+            }
+            Expression::Identifier(_) | Expression::FieldAccess(..) => {
+                indices.reverse();
+                return Some((e, indices));
+            }
+            _ => return None,
+        }
+    }
+}
+
+fn assign_array_element_by_path(
+    value: &mut Value,
+    indices: &[usize],
+    final_value: Value,
+) -> Result<(), String> {
+    if indices.is_empty() {
+        return Err("Array assignment requires at least one index".to_string());
+    }
+
+    let mut current = value;
+    for (depth, &idx) in indices.iter().enumerate() {
+        if depth == indices.len() - 1 {
+            match current {
+                Value::Array(elements) => {
+                    if idx < elements.len() {
+                        elements[idx] = final_value;
+                        return Ok(());
+                    }
+                    return Err(format!(
+                        "Array index {} out of bounds (array length: {})",
+                        idx,
+                        elements.len()
+                    ));
+                }
+                _ => return Err("Cannot assign through non-array value".to_string()),
+            }
+        } else {
+            match current {
+                Value::Array(elements) => {
+                    if idx < elements.len() {
+                        current = &mut elements[idx];
+                    } else {
+                        return Err(format!(
+                            "Array index {} out of bounds (array length: {})",
+                            idx,
+                            elements.len()
+                        ));
+                    }
+                }
+                _ => return Err("Cannot index non-array value".to_string()),
+            }
+        }
+    }
+    unreachable!()
+}
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -70,6 +137,8 @@ pub struct Interpreter {
     variables: HashMap<String, Value>,
     functions: HashMap<String, Function>,
     structs: HashMap<String, Vec<String>>,
+    /// Struct name -> field name -> field type string (for default initialization).
+    struct_field_types: HashMap<String, HashMap<String, String>>,
     struct_methods: HashMap<String, HashMap<String, Function>>,
     enums: HashMap<String, Vec<String>>,
     modules: HashMap<String, Module>,
@@ -88,6 +157,7 @@ impl Interpreter {
             variables: HashMap::new(),
             functions: HashMap::new(),
             structs: HashMap::new(),
+            struct_field_types: HashMap::new(),
             struct_methods: HashMap::new(),
             enums: HashMap::new(),
             modules: HashMap::new(),
@@ -107,8 +177,11 @@ impl Interpreter {
                 Ok(Value::Void)
             }
 
-            ASTNode::VariableDeclTyped(name, _type_str, expr) => {
-                let value = self.eval_expression(expr)?;
+            ASTNode::VariableDeclTyped(name, type_str, expr) => {
+                let value = match expr.as_ref() {
+                    Expression::Uninitialized => self.default_value_for_type_str(type_str)?,
+                    _ => self.eval_expression(expr)?,
+                };
                 self.variables.insert(name.clone(), value);
                 Ok(Value::Void)
             }
@@ -142,74 +215,12 @@ impl Interpreter {
                             _ => Err("Cannot assign to complex field expression".to_string()),
                         }
                     }
-                    Expression::ArrayIndex(array_expr, index_expr) => {
-                        let index_value = self.eval_expression(index_expr)?;
-
-                        if let Value::Int(index) = index_value {
-                            match array_expr.as_ref() {
-                                Expression::Identifier(var_name) => {
-                                    if let Some(Value::Array(ref mut elements)) =
-                                        self.variables.get_mut(var_name)
-                                    {
-                                        if index >= 0 && (index as usize) < elements.len() {
-                                            elements[index as usize] = value;
-                                            Ok(Value::Void)
-                                        } else {
-                                            Err(format!(
-                                                "Array index {} out of bounds (array length: {})",
-                                                index,
-                                                elements.len()
-                                            ))
-                                        }
-                                    } else {
-                                        Err(format!("Variable '{}' is not an array", var_name))
-                                    }
-                                }
-                                Expression::FieldAccess(object, field_name) => {
-                                    let index_value = self.eval_expression(index_expr)?;
-
-                                    match object.as_ref() {
-                                        Expression::Identifier(obj_name) => {
-                                            if let Some(Value::Struct(_, ref mut fields)) =
-                                                self.variables.get_mut(obj_name)
-                                            {
-                                                if let Some(Value::Array(ref mut elements)) =
-                                                    fields.get_mut(field_name)
-                                                {
-                                                    if let Value::Int(index) = index_value {
-                                                        if index >= 0
-                                                            && (index as usize) < elements.len()
-                                                        {
-                                                            elements[index as usize] = value;
-                                                            Ok(Value::Void)
-                                                        } else {
-                                                            Err(format!("Array index {} out of bounds (array length: {})", index, elements.len()))
-                                                        }
-                                                    } else {
-                                                        Err("Array index must be an integer"
-                                                            .to_string())
-                                                    }
-                                                } else {
-                                                    Err(format!(
-                                                        "Field '{}' is not an array",
-                                                        field_name
-                                                    ))
-                                                }
-                                            } else {
-                                                Err(format!(
-                                                    "Variable '{}' is not a struct",
-                                                    obj_name
-                                                ))
-                                            }
-                                        }
-                                        _ => Err("Cannot assign to complex field array expression"
-                                            .to_string()),
-                                    }
-                                }
-                                _ => Err("Cannot assign to complex array expression".to_string()),
-                            }
+                    Expression::ArrayIndex(_, _) => {
+                        if let Some((root, indices)) = flatten_array_index_chain(target.as_ref()) {
+                            self.assign_array_flat_target(root, &indices, value)?;
+                            Ok(Value::Void)
                         } else {
-                            Err("Array index must be an integer".to_string())
+                            Err("Cannot assign to this array expression".to_string())
                         }
                     }
                     _ => Ok(Value::Void),
@@ -227,30 +238,55 @@ impl Interpreter {
                 Ok(Value::Void)
             }
 
-            ASTNode::StructDecl(name, fields) => {
-                let field_names: Vec<String> = fields.iter().map(|f| f.name.clone()).collect();
+            ASTNode::StructDecl(name, members) => {
+                let mut field_names = Vec::new();
+                let mut types = HashMap::new();
+                for m in members {
+                    match m {
+                        StructMember::Field(f) => {
+                            field_names.push(f.name.clone());
+                            types.insert(f.name.clone(), f.field_type.clone());
+                        }
+                        StructMember::Comment(_) => {}
+                    }
+                }
+                self.struct_field_types.insert(name.clone(), types);
                 self.structs.insert(name.clone(), field_names);
                 Ok(Value::Void)
             }
 
             ASTNode::ImplBlock(struct_name, methods) => {
-                for (method_name, _return_type, params, body) in methods {
-                    let func = Function {
-                        params: params.clone(),
-                        body: (**body).clone(),
-                    };
-                    self.struct_methods
-                        .entry(struct_name.clone())
-                        .or_default()
-                        .insert(method_name.clone(), func);
+                for method in methods {
+                    match method {
+                        ImplMember::Method(method_name, _return_type, params, body) => {
+                            let func = Function {
+                                params: params.clone(),
+                                body: (**body).clone(),
+                            };
+                            self.struct_methods
+                                .entry(struct_name.clone())
+                                .or_default()
+                                .insert(method_name.clone(), func);
+                        }
+                        ImplMember::Comment(_) => {}
+                    }
                 }
                 Ok(Value::Void)
             }
 
-            ASTNode::EnumDecl(name, variants) => {
-                self.enums.insert(name.clone(), variants.clone());
+            ASTNode::EnumDecl(name, members) => {
+                let variants: Vec<String> = members
+                    .iter()
+                    .filter_map(|m| match m {
+                        EnumMember::Variant(v) => Some(v.clone()),
+                        EnumMember::Comment(_) => None,
+                    })
+                    .collect();
+                self.enums.insert(name.clone(), variants);
                 Ok(Value::Void)
             }
+
+            ASTNode::Comment(_) => Ok(Value::Void),
 
             ASTNode::IfStatement(condition, then_block, else_if, else_block) => {
                 let cond_value = self.eval_expression(condition)?;
@@ -446,8 +482,88 @@ impl Interpreter {
         }
     }
 
+    fn assign_array_flat_target(
+        &mut self,
+        root: &Expression,
+        indices: &[&Expression],
+        value: Value,
+    ) -> Result<(), String> {
+        let index_vals: Vec<usize> = indices
+            .iter()
+            .map(|e| match self.eval_expression(*e)? {
+                Value::Int(i) if i >= 0 => Ok(i as usize),
+                _ => Err("Array index must be a non-negative integer".to_string()),
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+
+        match root {
+            Expression::Identifier(name) => {
+                if let Some(v) = self.variables.get_mut(name) {
+                    assign_array_element_by_path(v, &index_vals, value)
+                } else {
+                    Err(format!("Variable '{}' not declared", name))
+                }
+            }
+            Expression::FieldAccess(obj, field) => match obj.as_ref() {
+                Expression::Identifier(obj_name) => {
+                    if let Some(Value::Struct(_, ref mut fields)) = self.variables.get_mut(obj_name)
+                    {
+                        if let Some(v) = fields.get_mut(field) {
+                            assign_array_element_by_path(v, &index_vals, value)
+                        } else {
+                            Err(format!("Field '{}' not found on struct", field))
+                        }
+                    } else {
+                        Err(format!("Variable '{}' is not a struct", obj_name))
+                    }
+                }
+                _ => Err("Cannot assign to complex field array expression".to_string()),
+            },
+            _ => Err("Invalid array assignment target".to_string()),
+        }
+    }
+
+    fn default_value_for_type_str(&self, type_str: &str) -> Result<Value, String> {
+        match type_str {
+            "int" => Ok(Value::Int(0)),
+            "float" => Ok(Value::Float(0.0)),
+            "bool" => Ok(Value::Bool(false)),
+            "string" => Ok(Value::String(String::new())),
+            s if s.ends_with("[]") => Ok(Value::Array(vec![])),
+            struct_name => {
+                let field_names = self.structs.get(struct_name).ok_or_else(|| {
+                    format!(
+                        "Unknown type '{}' for default-initialized variable",
+                        struct_name
+                    )
+                })?;
+                let types = self.struct_field_types.get(struct_name).ok_or_else(|| {
+                    format!(
+                        "Missing field metadata for struct '{}' (internal error)",
+                        struct_name
+                    )
+                })?;
+                let mut fields = HashMap::new();
+                for fname in field_names {
+                    let ftype = types.get(fname).ok_or_else(|| {
+                        format!(
+                            "Missing type for field '{}' in struct '{}'",
+                            fname, struct_name
+                        )
+                    })?;
+                    fields.insert(fname.clone(), self.default_value_for_type_str(ftype)?);
+                }
+                Ok(Value::Struct(struct_name.to_string(), fields))
+            }
+        }
+    }
+
     fn eval_expression(&mut self, expr: &Expression) -> Result<Value, String> {
         match expr {
+            Expression::Uninitialized => {
+                Err("Evaluated uninitialized placeholder (internal error)".to_string())
+            }
+
             Expression::Integer(i) => Ok(Value::Int(*i)),
             Expression::Float(f) => Ok(Value::Float(*f)),
             Expression::Boolean(b) => Ok(Value::Bool(*b)),
@@ -778,8 +894,17 @@ impl Interpreter {
                             }
                             _ => Err(format!("Unknown method '{}' for array", method_name)),
                         }
-                    } else if let Some(Value::Module(module_name)) = self.variables.get(var_name) {
-                        let module_name_clone = module_name.clone();
+                    } else if let Some(module_name_clone) =
+                        self.variables.get(var_name).and_then(|v| match v {
+                            Value::Module(name) => Some(name.clone()),
+                            _ => None,
+                        })
+                    {
+                        if self.modules.get(&module_name_clone).is_none() {
+                            // Submodule was imported in a loaded library but not merged into
+                            // self.modules (edge cases); try to load it now.
+                            self.load_module(&module_name_clone)?;
+                        }
                         if let Some(module) = self.modules.get(&module_name_clone) {
                             if let Some(func) = module.functions.get(method_name) {
                                 let func_clone = func.clone();
@@ -801,12 +926,12 @@ impl Interpreter {
                                 Err(format!(
                                     "Method '{}' not found in module '{}'\n   = help: Available: {}",
                                     method_name,
-                                    module_name,
+                                    module_name_clone,
                                     available.join(", ")
                                 ))
                             }
                         } else {
-                            Err(format!("Module '{}' not found", module_name))
+                            Err(format!("Module '{}' not found", module_name_clone))
                         }
                     } else if let Some(Value::String(s)) = self.variables.get(var_name) {
                         match method_name.as_str() {
@@ -878,6 +1003,40 @@ impl Interpreter {
                                 };
 
                                 Ok(Value::String(s.replace(from, to)))
+                            }
+                            "index_of" => {
+                                if evaluated_args.len() != 1 {
+                                    return Err(format!(
+                                        "index_of() expects 1 argument, got {}",
+                                        evaluated_args.len()
+                                    ));
+                                }
+                                let sub = match &evaluated_args[0] {
+                                    Value::String(x) => x.as_str(),
+                                    _ => {
+                                        return Err("index_of() argument must be string".to_string())
+                                    }
+                                };
+                                let i = s.find(sub).map(|i| i as i64).unwrap_or(-1);
+                                Ok(Value::Int(i))
+                            }
+                            "last_index_of" => {
+                                if evaluated_args.len() != 1 {
+                                    return Err(format!(
+                                        "last_index_of() expects 1 argument, got {}",
+                                        evaluated_args.len()
+                                    ));
+                                }
+                                let sub = match &evaluated_args[0] {
+                                    Value::String(x) => x.as_str(),
+                                    _ => {
+                                        return Err(
+                                            "last_index_of() argument must be string".to_string()
+                                        )
+                                    }
+                                };
+                                let i = s.rfind(sub).map(|i| i as i64).unwrap_or(-1);
+                                Ok(Value::Int(i))
                             }
                             _ => Err(format!("Unknown method '{}' for string", method_name)),
                         }
@@ -1050,6 +1209,40 @@ impl Interpreter {
 
                                 Ok(Value::String(s.replace(from, to)))
                             }
+                            "index_of" => {
+                                if evaluated_args.len() != 1 {
+                                    return Err(format!(
+                                        "index_of() expects 1 argument, got {}",
+                                        evaluated_args.len()
+                                    ));
+                                }
+                                let sub = match &evaluated_args[0] {
+                                    Value::String(x) => x.as_str(),
+                                    _ => {
+                                        return Err("index_of() argument must be string".to_string())
+                                    }
+                                };
+                                let i = s.find(sub).map(|i| i as i64).unwrap_or(-1);
+                                Ok(Value::Int(i))
+                            }
+                            "last_index_of" => {
+                                if evaluated_args.len() != 1 {
+                                    return Err(format!(
+                                        "last_index_of() expects 1 argument, got {}",
+                                        evaluated_args.len()
+                                    ));
+                                }
+                                let sub = match &evaluated_args[0] {
+                                    Value::String(x) => x.as_str(),
+                                    _ => {
+                                        return Err(
+                                            "last_index_of() argument must be string".to_string()
+                                        )
+                                    }
+                                };
+                                let i = s.rfind(sub).map(|i| i as i64).unwrap_or(-1);
+                                Ok(Value::Int(i))
+                            }
                             _ => Err(format!("Unknown method '{}' for string", method_name)),
                         }
                     } else if let Value::Struct(..) = &object {
@@ -1206,6 +1399,24 @@ impl Interpreter {
         }
     }
 
+    fn value_from_ureq_response(resp: ureq::Response) -> Result<Value, String> {
+        let status = resp.status() as i64;
+        let status_text = resp.status_text().to_string();
+        let mut header_strings: Vec<Value> = Vec::new();
+        for name in resp.headers_names() {
+            if let Some(v) = resp.header(&name) {
+                header_strings.push(Value::String(format!("{}: {}", name, v)));
+            }
+        }
+        let body_str = resp.into_string().unwrap_or_default();
+        let mut fields = HashMap::new();
+        fields.insert("status_code".to_string(), Value::Int(status));
+        fields.insert("status_text".to_string(), Value::String(status_text));
+        fields.insert("headers".to_string(), Value::Array(header_strings));
+        fields.insert("body".to_string(), Value::String(body_str));
+        Ok(Value::Struct("HttpResponse".to_string(), fields))
+    }
+
     fn call_builtin_function(
         &mut self,
         name: &str,
@@ -1282,6 +1493,18 @@ impl Interpreter {
                 }
 
                 Ok(Some(Value::Void))
+            }
+
+            "panic" => {
+                if args.is_empty() {
+                    return Err("panic() expects at least 1 argument".to_string());
+                }
+                let mut parts = Vec::new();
+                for arg in args {
+                    let v = self.eval_expression(arg)?;
+                    parts.push(v.to_string());
+                }
+                Err(parts.join(""))
             }
 
             "input" => {
@@ -1642,6 +1865,147 @@ impl Interpreter {
                 }
             }
 
+            "http_fetch" => {
+                if args.len() != 4 {
+                    return Err(format!(
+                        "http_fetch() expects 4 arguments, got {}",
+                        args.len()
+                    ));
+                }
+
+                let method_val = self.eval_expression(&args[0])?;
+                let url_val = self.eval_expression(&args[1])?;
+                let headers_val = self.eval_expression(&args[2])?;
+                let body_val = self.eval_expression(&args[3])?;
+
+                let method = match method_val {
+                    Value::String(s) => s,
+                    _ => return Err("http_fetch() method must be a string".to_string()),
+                };
+                let url = match url_val {
+                    Value::String(s) => s,
+                    _ => return Err("http_fetch() url must be a string".to_string()),
+                };
+                let body = match body_val {
+                    Value::String(s) => s,
+                    other => other.to_string(),
+                };
+
+                let headers_vec: Vec<String> = match headers_val {
+                    Value::Array(elements) => {
+                        let mut v = Vec::new();
+                        for e in elements {
+                            match e {
+                                Value::String(s) => v.push(s),
+                                _ => {
+                                    return Err("http_fetch() headers must be an array of strings"
+                                        .to_string());
+                                }
+                            }
+                        }
+                        v
+                    }
+                    _ => return Err("http_fetch() headers must be string[]".to_string()),
+                };
+
+                let agent = ureq::Agent::new();
+                let mut req = agent.request(method.trim(), &url).set(
+                    "User-Agent",
+                    "Raven/1.4 (+https://github.com/martian56/raven)",
+                );
+                for h in &headers_vec {
+                    if let Some(colon) = h.find(':') {
+                        let hn = h[..colon].trim();
+                        let hv = h[colon + 1..].trim();
+                        if !hn.is_empty() {
+                            req = req.set(hn, hv);
+                        }
+                    }
+                }
+
+                let resp_result = if body.is_empty() {
+                    req.call()
+                } else {
+                    req.send_string(&body)
+                };
+
+                match resp_result {
+                    Ok(resp) => Ok(Some(Self::value_from_ureq_response(resp)?)),
+                    Err(ureq::Error::Status(_code, resp)) => {
+                        Ok(Some(Self::value_from_ureq_response(resp)?))
+                    }
+                    Err(ureq::Error::Transport(e)) => {
+                        let mut fields = HashMap::new();
+                        fields.insert("status_code".to_string(), Value::Int(0));
+                        fields.insert(
+                            "status_text".to_string(),
+                            Value::String("Transport Error".to_string()),
+                        );
+                        fields.insert("headers".to_string(), Value::Array(vec![]));
+                        fields.insert("body".to_string(), Value::String(e.to_string()));
+                        Ok(Some(Value::Struct("HttpResponse".to_string(), fields)))
+                    }
+                }
+            }
+
+            "dns_lookup" => {
+                if args.len() != 1 {
+                    return Err(format!(
+                        "dns_lookup() expects 1 argument, got {}",
+                        args.len()
+                    ));
+                }
+
+                let host_val = self.eval_expression(&args[0])?;
+                let host = match host_val {
+                    Value::String(s) => s,
+                    _ => return Err("dns_lookup() hostname must be a string".to_string()),
+                };
+
+                match (host.as_str(), 80u16).to_socket_addrs() {
+                    Ok(mut iter) => {
+                        let ip = iter.next().map(|a| a.ip().to_string()).unwrap_or_default();
+                        Ok(Some(Value::String(ip)))
+                    }
+                    Err(_) => Ok(Some(Value::String(String::new()))),
+                }
+            }
+
+            "reachable" => {
+                if args.len() != 1 {
+                    return Err(format!(
+                        "reachable() expects 1 argument, got {}",
+                        args.len()
+                    ));
+                }
+
+                let host_val = self.eval_expression(&args[0])?;
+                let host = match host_val {
+                    Value::String(s) => s,
+                    _ => return Err("reachable() hostname must be a string".to_string()),
+                };
+
+                let host = host.trim();
+                // `host:port` (e.g. `127.0.0.1:80`) — parse as SocketAddr; otherwise try host + port
+                if let Ok(addr) = host.parse::<SocketAddr>() {
+                    return Ok(Some(Value::Bool(
+                        TcpStream::connect_timeout(&addr, Duration::from_secs(4)).is_ok(),
+                    )));
+                }
+
+                for port in [443u16, 80u16, 22u16] {
+                    if let Ok(iter) = (host, port).to_socket_addrs() {
+                        for addr in iter {
+                            if TcpStream::connect_timeout(&addr, Duration::from_secs(4)).is_ok() {
+                                return Ok(Some(Value::Bool(true)));
+                            }
+                        }
+                    }
+                }
+
+                Ok(Some(Value::Bool(false)))
+            }
+
             "enum_from_string" => {
                 if args.len() != 2 {
                     return Err(format!(
@@ -1701,6 +2065,9 @@ impl Interpreter {
 
         module_interpreter.execute(&ast)?;
 
+        // Snapshot before moving fields out of `module_interpreter` (partial move must not skip this).
+        let nested_modules_snapshot = module_interpreter.modules.clone();
+
         // Extract exports from the module
         let module = Module {
             variables: module_interpreter.variables,
@@ -1716,6 +2083,10 @@ impl Interpreter {
             self.structs.insert(name.clone(), fields.clone());
         }
 
+        for (name, types) in &module_interpreter.struct_field_types {
+            self.struct_field_types.insert(name.clone(), types.clone());
+        }
+
         for (struct_name, methods) in &module_interpreter.struct_methods {
             for (method_name, func) in methods {
                 self.struct_methods
@@ -1726,6 +2097,13 @@ impl Interpreter {
         }
 
         self.modules.insert(module_name.to_string(), module);
+
+        // Submodules imported by this file (e.g. `import str from "str"`) were only registered
+        // on the nested interpreter; merge so `Value::Module("str")` resolves when calling methods
+        // from code exported by this module (e.g. `network.is_valid_url` using `str.starts_with`).
+        for (nested_name, nested_mod) in nested_modules_snapshot {
+            self.modules.entry(nested_name).or_insert(nested_mod);
+        }
 
         Ok(())
     }
@@ -1771,6 +2149,51 @@ impl Interpreter {
 mod tests {
     use super::*;
     use crate::ast::Expression;
+    use crate::lexer::Lexer;
+    use crate::parser::Parser;
+    use crate::type_checker::TypeChecker;
+
+    #[test]
+    fn test_nested_array_assignment_and_read() {
+        let src = r#"
+let m: int[][] = [[1, 2], [3, 4]];
+m[0][1] = 9;
+let m2: int[][][] = [[[1]], [[2]]];
+m2[0][0][0] = 7;
+"#;
+        let lexer = Lexer::new(src.to_string());
+        let mut parser = Parser::new(lexer, src.to_string());
+        let ast = parser.parse().expect("parse");
+        let mut checker = TypeChecker::new();
+        checker.check(&ast).expect("typecheck");
+        let mut interp = Interpreter::new();
+        interp.execute(&ast).expect("run");
+
+        if let Some(Value::Array(rows)) = interp.variables.get("m") {
+            assert_eq!(rows.len(), 2);
+            if let Value::Array(r0) = &rows[0] {
+                assert!(matches!(r0[1], Value::Int(9)));
+            } else {
+                panic!("expected row 0 to be array");
+            }
+        } else {
+            panic!("expected m");
+        }
+
+        if let Some(Value::Array(planes)) = interp.variables.get("m2") {
+            if let Value::Array(rows) = &planes[0] {
+                if let Value::Array(cells) = &rows[0] {
+                    assert!(matches!(cells[0], Value::Int(7)));
+                } else {
+                    panic!("expected depth 3");
+                }
+            } else {
+                panic!("expected depth 2");
+            }
+        } else {
+            panic!("expected m2");
+        }
+    }
 
     #[test]
     fn test_variable_assignment() {

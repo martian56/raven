@@ -1,8 +1,7 @@
-// lib/network.rv - Network Library
+// lib/network.rv - Network library (HTTP via host runtime builtins)
 
-import string;
+import str from "str";
 
-// HTTP request structure
 struct HttpRequest {
     method: string,
     url: string,
@@ -10,7 +9,6 @@ struct HttpRequest {
     body: string
 }
 
-// HTTP response structure
 struct HttpResponse {
     status_code: int,
     status_text: string,
@@ -18,61 +16,56 @@ struct HttpResponse {
     body: string
 }
 
-// HTTP methods
+// Real HTTP via built-in `http_fetch` (ureq in the Raven interpreter).
+export fun send_request(request: HttpRequest) -> HttpResponse {
+    return http_fetch(
+        request.method,
+        request.url,
+        request.headers,
+        request.body
+    );
+}
+
 export fun GET(url: string) -> HttpResponse {
-    let request: HttpRequest = HttpRequest { 
-        method: "GET", 
-        url: url, 
-        headers: [], 
-        body: "" 
+    let request: HttpRequest = HttpRequest {
+        method: "GET",
+        url: url,
+        headers: [],
+        body: ""
     };
     return send_request(request);
 }
 
 export fun POST(url: string, body: string) -> HttpResponse {
-    let request: HttpRequest = HttpRequest { 
-        method: "POST", 
-        url: url, 
-        headers: ["Content-Type: application/json"], 
-        body: body 
+    let request: HttpRequest = HttpRequest {
+        method: "POST",
+        url: url,
+        headers: ["Content-Type: application/json"],
+        body: body
     };
     return send_request(request);
 }
 
 export fun PUT(url: string, body: string) -> HttpResponse {
-    let request: HttpRequest = HttpRequest { 
-        method: "PUT", 
-        url: url, 
-        headers: ["Content-Type: application/json"], 
-        body: body 
+    let request: HttpRequest = HttpRequest {
+        method: "PUT",
+        url: url,
+        headers: ["Content-Type: application/json"],
+        body: body
     };
     return send_request(request);
 }
 
 export fun DELETE(url: string) -> HttpResponse {
-    let request: HttpRequest = HttpRequest { 
-        method: "DELETE", 
-        url: url, 
-        headers: [], 
-        body: "" 
+    let request: HttpRequest = HttpRequest {
+        method: "DELETE",
+        url: url,
+        headers: [],
+        body: ""
     };
     return send_request(request);
 }
 
-// Core HTTP function (placeholder implementation)
-export fun send_request(request: HttpRequest) -> HttpResponse {
-    // This would normally make an actual HTTP request
-    // For now, return a mock response
-    let response: HttpResponse = HttpResponse {
-        status_code: 200,
-        status_text: "OK",
-        headers: ["Content-Type: application/json"],
-        body: format("{{\"message\": \"Mock response for {} {}\"}}", request.method, request.url)
-    };
-    return response;
-}
-
-// URL parsing
 struct Url {
     protocol: string,
     host: string,
@@ -91,54 +84,76 @@ export fun parse_url(url_string: string) -> Url {
         query: "",
         fragment: ""
     };
-    
-    // Simple URL parsing
-    let protocol_end: int = string.index_of(url_string, "://");
-    if (protocol_end != -1) {
-        url.protocol = url_string.slice(0, protocol_end);
-        let rest: string = url_string.slice(protocol_end + 3, len(url_string));
-        
-        let path_start: int = string.index_of(rest, "/");
-        if (path_start != -1) {
-            url.host = rest.slice(0, path_start);
-            url.path = rest.slice(path_start, len(rest));
+
+    let protocol_end: int = str.index_of(url_string, "://");
+    if (protocol_end == -1) {
+        return url;
+    }
+
+    url.protocol = url_string.slice(0, protocol_end);
+    let rest: string = url_string.slice(protocol_end + 3, len(url_string));
+
+    let path_start: int = str.index_of(rest, "/");
+    let host_port: string = rest;
+    let path_part: string = "/";
+
+    if (path_start != -1) {
+        host_port = rest.slice(0, path_start);
+        path_part = rest.slice(path_start, len(rest));
+    }
+
+    let port_colon: int = str.index_of(host_port, ":");
+    if (port_colon != -1) {
+        url.host = host_port.slice(0, port_colon);
+        let port_str: string = host_port.slice(port_colon + 1, len(host_port));
+        url.port = parse_int(port_str);
+    } else {
+        url.host = host_port;
+        if (url.protocol == "https") {
+            url.port = 443;
         } else {
-            url.host = rest;
-        }
-        
-        // Check for port
-        let port_start: int = string.index_of(url.host, ":");
-        if (port_start != -1) {
-            let port_str: string = url.host.slice(port_start + 1, len(url.host));
-            url.port = parse_int(port_str);
-            url.host = url.host.slice(0, port_start);
+            url.port = 80;
         }
     }
-    
+
+    let hash_pos: int = str.index_of(path_part, "#");
+    let path_query: string = path_part;
+    if (hash_pos != -1) {
+        url.fragment = path_part.slice(hash_pos + 1, len(path_part));
+        path_query = path_part.slice(0, hash_pos);
+    }
+
+    let q_pos: int = str.index_of(path_query, "?");
+    if (q_pos != -1) {
+        url.query = path_query.slice(q_pos + 1, len(path_query));
+        url.path = path_query.slice(0, q_pos);
+    } else {
+        url.path = path_query;
+    }
+
     return url;
 }
 
 export fun build_url(protocol: string, host: string, port: int, path: string) -> string {
     let url: string = protocol + "://" + host;
-    
+
     if (port != 80 && port != 443) {
         url = url + ":" + format("{}", port);
     }
-    
-    if (!path.starts_with("/")) {
+
+    if (!str.starts_with(path, "/")) {
         url = url + "/";
     }
-    
+
     url = url + path;
     return url;
 }
 
-// Query string handling
 export fun parse_query_string(query: string) -> string[] {
     if (len(query) == 0) {
         return [];
     }
-    
+
     return query.split("&");
 }
 
@@ -146,46 +161,45 @@ export fun build_query_string(params: string[]) -> string {
     if (len(params) == 0) {
         return "";
     }
-    
+
     return params.join("&");
 }
 
 export fun get_query_param(query: string, param_name: string) -> string {
     let params: string[] = parse_query_string(query);
-    
+
     let i: int = 0;
     while (i < len(params)) {
         let param: string = params[i];
-        let equal_pos: int = string.index_of(param, "=");
-        
+        let equal_pos: int = str.index_of(param, "=");
+
         if (equal_pos != -1) {
             let name: string = param.slice(0, equal_pos);
             let value: string = param.slice(equal_pos + 1, len(param));
-            
+
             if (name == param_name) {
                 return value;
             }
         }
-        
+
         i = i + 1;
     }
-    
+
     return "";
 }
 
-// HTTP headers
 export fun set_header(headers: string[], name: string, value: string) -> string[] {
     let new_headers: string[] = [];
     let found: bool = false;
-    
+
     let i: int = 0;
     while (i < len(headers)) {
         let header: string = headers[i];
-        let colon_pos: int = string.index_of(header, ":");
-        
+        let colon_pos: int = str.index_of(header, ":");
+
         if (colon_pos != -1) {
-            let header_name: string = string.trim(header.slice(0, colon_pos));
-            
+            let header_name: string = str.trim(header.slice(0, colon_pos));
+
             if (header_name == name) {
                 new_headers.push(name + ": " + value);
                 found = true;
@@ -195,14 +209,14 @@ export fun set_header(headers: string[], name: string, value: string) -> string[
         } else {
             new_headers.push(header);
         }
-        
+
         i = i + 1;
     }
-    
+
     if (!found) {
         new_headers.push(name + ": " + value);
     }
-    
+
     return new_headers;
 }
 
@@ -210,48 +224,47 @@ export fun get_header(headers: string[], name: string) -> string {
     let i: int = 0;
     while (i < len(headers)) {
         let header: string = headers[i];
-        let colon_pos: int = string.index_of(header, ":");
-        
+        let colon_pos: int = str.index_of(header, ":");
+
         if (colon_pos != -1) {
-            let header_name: string = string.trim(header.slice(0, colon_pos));
-            let header_value: string = string.trim(header.slice(colon_pos + 1, len(header)));
-            
+            let header_name: string = str.trim(header.slice(0, colon_pos));
+            let header_value: string = str.trim(header.slice(colon_pos + 1, len(header)));
+
             if (header_name == name) {
                 return header_value;
             }
         }
-        
+
         i = i + 1;
     }
-    
+
     return "";
 }
 
 export fun remove_header(headers: string[], name: string) -> string[] {
     let new_headers: string[] = [];
-    
+
     let i: int = 0;
     while (i < len(headers)) {
         let header: string = headers[i];
-        let colon_pos: int = string.index_of(header, ":");
-        
+        let colon_pos: int = str.index_of(header, ":");
+
         if (colon_pos != -1) {
-            let header_name: string = string.trim(header.slice(0, colon_pos));
-            
+            let header_name: string = str.trim(header.slice(0, colon_pos));
+
             if (header_name != name) {
                 new_headers.push(header);
             }
         } else {
             new_headers.push(header);
         }
-        
+
         i = i + 1;
     }
-    
+
     return new_headers;
 }
 
-// Response helpers
 export fun is_success(response: HttpResponse) -> bool {
     return response.status_code >= 200 && response.status_code < 300;
 }
@@ -282,33 +295,17 @@ export fun get_status_text(status_code: int) -> string {
     return "Unknown";
 }
 
-// JSON helpers (simplified)
-export fun json_encode(obj: string) -> string {
-    // Simple JSON encoding - just wrap in quotes
-    return "\"" + obj + "\"";
-}
-
-export fun json_decode(json: string) -> string {
-    // Simple JSON decoding - remove quotes
-    if (string.starts_with(json, "\"") && string.ends_with(json, "\"")) {
-        return json.slice(1, len(json) - 1);
-    }
-    return json;
-}
-
-// File download
 export fun download_file(url: string, filename: string) -> bool {
     let response: HttpResponse = GET(url);
-    
+
     if (!is_success(response)) {
         return false;
     }
-    
+
     write_file(filename, response.body);
     return true;
 }
 
-// Simple HTTP server (placeholder)
 struct HttpServer {
     port: int,
     routes: string[]
@@ -329,22 +326,20 @@ export fun add_route(server: HttpServer, method: string, path: string, handler: 
 }
 
 export fun start_server(server: HttpServer) -> bool {
-    // This would normally start an HTTP server
-    // For now, just return true as a placeholder
-    print(format("Starting HTTP server on port {}", server.port));
-    return true;
+    print("start_server: embedded HTTP server is not implemented in the Raven runtime.");
+    return false;
 }
 
-// WebSocket (placeholder)
 struct WebSocket {
     url: string,
     connected: bool
 }
 
 export fun connect_websocket(url: string) -> WebSocket {
+    print("connect_websocket: WebSockets are not implemented; use HTTP via GET/POST.");
     let ws: WebSocket = WebSocket {
         url: url,
-        connected: true
+        connected: false
     };
     return ws;
 }
@@ -353,8 +348,7 @@ export fun send_message(ws: WebSocket, message: string) -> bool {
     if (!ws.connected) {
         return false;
     }
-    
-    // This would normally send a WebSocket message
+
     print(format("Sending message to {}: {}", ws.url, message));
     return true;
 }
@@ -364,34 +358,33 @@ export fun close_websocket(ws: WebSocket) -> bool {
     return true;
 }
 
-// Network utilities
 export fun ping(host: string) -> bool {
-    // This would normally ping a host
-    // For now, return true as a placeholder
-    return true;
+    return reachable(host);
 }
 
 export fun resolve_dns(hostname: string) -> string {
-    // This would normally resolve DNS
-    // For now, return the hostname as a placeholder
-    return hostname;
+    let ip: string = dns_lookup(hostname);
+    if (len(ip) == 0) {
+        return hostname;
+    }
+    return ip;
 }
 
 export fun is_valid_url(url: string) -> bool {
-    return string.starts_with(url, "http://") || string.starts_with(url, "https://");
+    return str.starts_with(url, "http://") || str.starts_with(url, "https://");
 }
 
 export fun is_valid_email(email: string) -> bool {
-    let at_pos: int = string.index_of(email, "@");
+    let at_pos: int = str.index_of(email, "@");
     if (at_pos == -1) {
         return false;
     }
-    
+
     let after_at: string = email.slice(at_pos + 1, len(email));
-    let dot_pos: int = string.index_of(after_at, ".");
+    let dot_pos: int = str.index_of(after_at, ".");
     if (dot_pos == -1) {
         return false;
     }
-    
+
     return true;
 }

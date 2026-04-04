@@ -32,12 +32,13 @@ let isValid: bool = (age > 18);
 ```
 
 ### string (`string`)
-UTF-8 encoded strings.
+UTF-8 encoded strings. Inside double-quoted literals, backslash escapes are supported (for example `\"`, `\\`, `\n`, `\r`, `\t`, `\0`), so JSON-like payloads such as `"{\"hello\":1}"` parse as a single string value.
 
 ```raven
 let name: string = "Alice";
 let message: string = "Hello, World!";
 let empty: string = "";
+let json: string = "{\"hello\":1}";
 ```
 
 ## Array Types
@@ -62,6 +63,24 @@ let words: string[] = ["Hello", "World"];
 let flags: bool[] = [true, false, true];
 let results: bool[] = [];
 ```
+
+### Multi-dimensional arrays
+
+Array types nest: each `[]` adds one dimension. Element types must match at every level.
+
+```raven
+// 2D: matrix of int
+let grid: int[][] = [[1, 2, 3], [4, 5, 6]];
+let empty2d: int[][] = [];                    // zero rows
+let rows: int[][] = [[], []];                // two empty rows (needs explicit int[][])
+
+// 3D and deeper
+let cube: int[][][] = [[[1, 2]], [[3, 4]]];
+```
+
+**Indexing** chains left-to-right: `matrix[row][col]` reads an element; `matrix[row][col] = value` assigns to that cell. The same works for struct fields that hold arrays, for example `point.values[i][j] = x`.
+
+**Type checking**: nested literals like `[[], []]` are only valid when the variable has an explicit multi-dimensional type (for example `int[][]`), so the checker knows each inner `[]` is an `int[]`.
 
 ## User-Defined Types
 

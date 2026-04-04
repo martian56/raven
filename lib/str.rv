@@ -1,4 +1,4 @@
-// lib/string.rv - string Utilities Library
+// lib/str.rv - string utilities (import as: import str from "str";)
 
 // string manipulation functions
 fun trim(s: string) -> string {

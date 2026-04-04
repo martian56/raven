@@ -7,7 +7,7 @@ Raven comes with a comprehensive standard library that provides essential functi
 ### Core Modules
 - **[Math](https://github.com/martian56/raven/blob/main/lib/math.rv)** - Mathematical operations and functions
 - **[Collections](https://github.com/martian56/raven/blob/main/lib/collections.rv)** - Data structures (maps, sets, lists)
-- **[string](https://github.com/martian56/raven/blob/main/lib/string.rv)** - string manipulation and utilities
+- **[str](https://github.com/martian56/raven/blob/main/lib/str.rv)** - string manipulation and utilities (`import str from "str";`)
 - **[Filesystem](https://github.com/martian56/raven/blob/main/lib/filesystem.rv)** - File and directory operations
 - **[Time](https://github.com/martian56/raven/blob/main/lib/time.rv)** - Date and time handling
 - **[Network](https://github.com/martian56/raven/blob/main/lib/network.rv)** - HTTP and networking utilities
@@ -63,6 +63,13 @@ let last: int = numbers.pop();
 let slice: int[] = numbers.slice(1, 3);
 ```
 
+Multi-dimensional arrays use repeated `[]` in the type and chained `[index]` in expressions (see [Data types](../language-reference/data-types.md#multi-dimensional-arrays)):
+
+```raven
+let grid: int[][] = [[1, 2], [3, 4]];
+grid[0][1] = 9;
+```
+
 ## Using Modules
 
 Import modules using the `import` statement:
@@ -70,7 +77,7 @@ Import modules using the `import` statement:
 ```raven
 import "math";
 import "collections";
-import "string";
+import str from "str";
 import "json";
 
 // Use functions from modules
