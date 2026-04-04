@@ -2,11 +2,11 @@ use crate::ast::{ASTNode, EnumMember, Expression, ImplMember, Operator, Paramete
 use chrono::Local;
 use std::collections::HashMap;
 use std::fs;
-use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::path::Path;
 use std::time::Duration;
 
-/// `arr[i][j]...` → root (`Identifier` or `FieldAccess`) and index expressions in order `[i, j, ...]`.
 fn flatten_array_index_chain(expr: &Expression) -> Option<(&Expression, Vec<&Expression>)> {
     let mut indices = Vec::new();
     let mut e = expr;
@@ -82,6 +82,8 @@ pub enum Value {
     Enum(String, String),
     Module(String),
     Void,
+    TcpListener(u64),
+    TcpStream(u64),
 }
 
 impl std::fmt::Display for Value {
@@ -116,6 +118,8 @@ impl std::fmt::Display for Value {
             }
             Value::Module(name) => write!(f, "<module: {}>", name),
             Value::Void => write!(f, "void"),
+            Value::TcpListener(id) => write!(f, "<TcpListener {}>", id),
+            Value::TcpStream(id) => write!(f, "<TcpStream {}>", id),
         }
     }
 }
@@ -137,12 +141,14 @@ pub struct Interpreter {
     variables: HashMap<String, Value>,
     functions: HashMap<String, Function>,
     structs: HashMap<String, Vec<String>>,
-    /// Struct name -> field name -> field type string (for default initialization).
     struct_field_types: HashMap<String, HashMap<String, String>>,
     struct_methods: HashMap<String, HashMap<String, Function>>,
     enums: HashMap<String, Vec<String>>,
     modules: HashMap<String, Module>,
     return_value: Option<Value>,
+    tcp_listeners: HashMap<u64, TcpListener>,
+    tcp_streams: HashMap<u64, TcpStream>,
+    next_tcp_id: u64,
 }
 
 impl Default for Interpreter {
@@ -162,7 +168,16 @@ impl Interpreter {
             enums: HashMap::new(),
             modules: HashMap::new(),
             return_value: None,
+            tcp_listeners: HashMap::new(),
+            tcp_streams: HashMap::new(),
+            next_tcp_id: 1,
         }
+    }
+
+    fn alloc_tcp_id(&mut self) -> u64 {
+        let id = self.next_tcp_id;
+        self.next_tcp_id += 1;
+        id
     }
 
     pub fn execute(&mut self, node: &ASTNode) -> Result<Value, String> {
@@ -529,6 +544,10 @@ impl Interpreter {
             "float" => Ok(Value::Float(0.0)),
             "bool" => Ok(Value::Bool(false)),
             "string" => Ok(Value::String(String::new())),
+            "TcpListener" | "TcpStream" => Err(
+                "TcpListener and TcpStream cannot be default-initialized; use tcp_listen / tcp_accept"
+                    .to_string(),
+            ),
             s if s.ends_with("[]") => Ok(Value::Array(vec![])),
             struct_name => {
                 let field_names = self.structs.get(struct_name).ok_or_else(|| {
@@ -737,6 +756,19 @@ impl Interpreter {
                         Ok(Value::Bool(l != r))
                     }
 
+                    (Value::TcpListener(l), Operator::Equal, Value::TcpListener(r)) => {
+                        Ok(Value::Bool(l == r))
+                    }
+                    (Value::TcpListener(l), Operator::NotEqual, Value::TcpListener(r)) => {
+                        Ok(Value::Bool(l != r))
+                    }
+                    (Value::TcpStream(l), Operator::Equal, Value::TcpStream(r)) => {
+                        Ok(Value::Bool(l == r))
+                    }
+                    (Value::TcpStream(l), Operator::NotEqual, Value::TcpStream(r)) => {
+                        Ok(Value::Bool(l != r))
+                    }
+
                     _ => Err(format!(
                         "Type error in binary operation: {:?} {:?}",
                         left, right
@@ -901,8 +933,6 @@ impl Interpreter {
                         })
                     {
                         if self.modules.get(&module_name_clone).is_none() {
-                            // Submodule was imported in a loaded library but not merged into
-                            // self.modules (edge cases); try to load it now.
                             self.load_module(&module_name_clone)?;
                         }
                         if let Some(module) = self.modules.get(&module_name_clone) {
@@ -1263,7 +1293,6 @@ impl Interpreter {
                         field_values.insert(field_name.clone(), field_value);
                     }
 
-                    // Check that all required fields are provided
                     for field_name in &field_names_clone {
                         if !field_values.contains_key(field_name) {
                             return Err(format!(
@@ -1452,6 +1481,8 @@ impl Interpreter {
                     Value::Enum(name, _) => name.clone(),
                     Value::Module(_) => "module".to_string(),
                     Value::Void => "void".to_string(),
+                    Value::TcpListener(_) => "TcpListener".to_string(),
+                    Value::TcpStream(_) => "TcpStream".to_string(),
                 };
                 Ok(Some(Value::String(type_name.to_string())))
             }
@@ -1845,7 +1876,6 @@ impl Interpreter {
                     let mut result = template_str.clone();
                     let mut arg_index = 1;
 
-                    // Replace {} placeholders with arguments
                     while let Some(pos) = result.find("{}") {
                         if arg_index >= args.len() {
                             return Err(
@@ -1948,6 +1978,170 @@ impl Interpreter {
                 }
             }
 
+            "tcp_listen" => {
+                if args.len() != 2 {
+                    return Err(format!(
+                        "tcp_listen() expects 2 arguments, got {}",
+                        args.len()
+                    ));
+                }
+                let addr_val = self.eval_expression(&args[0])?;
+                let _backlog_val = self.eval_expression(&args[1])?;
+                let addr = match addr_val {
+                    Value::String(s) => s,
+                    _ => return Err("tcp_listen() address must be a string".to_string()),
+                };
+                let _ = _backlog_val;
+                let listener =
+                    TcpListener::bind(addr.as_str()).map_err(|e| format!("tcp_listen: {}", e))?;
+                let id = self.alloc_tcp_id();
+                self.tcp_listeners.insert(id, listener);
+                Ok(Some(Value::TcpListener(id)))
+            }
+
+            "tcp_accept" => {
+                if args.len() != 1 {
+                    return Err(format!(
+                        "tcp_accept() expects 1 argument, got {}",
+                        args.len()
+                    ));
+                }
+                let lid = match self.eval_expression(&args[0])? {
+                    Value::TcpListener(id) => id,
+                    _ => return Err("tcp_accept() requires a TcpListener".to_string()),
+                };
+                let listener = self
+                    .tcp_listeners
+                    .get_mut(&lid)
+                    .ok_or_else(|| "tcp_accept: invalid TcpListener handle".to_string())?;
+                let (stream, _addr) = listener
+                    .accept()
+                    .map_err(|e| format!("tcp_accept: {}", e))?;
+                let sid = self.alloc_tcp_id();
+                self.tcp_streams.insert(sid, stream);
+                Ok(Some(Value::TcpStream(sid)))
+            }
+
+            "tcp_read" => {
+                if args.len() != 2 {
+                    return Err(format!(
+                        "tcp_read() expects 2 arguments, got {}",
+                        args.len()
+                    ));
+                }
+                let sid = match self.eval_expression(&args[0])? {
+                    Value::TcpStream(id) => id,
+                    _ => return Err("tcp_read() requires a TcpStream".to_string()),
+                };
+                let max_bytes = match self.eval_expression(&args[1])? {
+                    Value::Int(i) => i,
+                    _ => return Err("tcp_read() max_bytes must be an int".to_string()),
+                };
+                if max_bytes <= 0 {
+                    return Ok(Some(Value::String(String::new())));
+                }
+                let max_bytes = max_bytes as usize;
+                let stream = self
+                    .tcp_streams
+                    .get_mut(&sid)
+                    .ok_or_else(|| "tcp_read: invalid TcpStream handle".to_string())?;
+                let mut buf = vec![0u8; max_bytes];
+                let n = stream
+                    .read(&mut buf)
+                    .map_err(|e| format!("tcp_read: {}", e))?;
+                let s = String::from_utf8_lossy(&buf[..n]).to_string();
+                Ok(Some(Value::String(s)))
+            }
+
+            "tcp_write" => {
+                if args.len() != 2 {
+                    return Err(format!(
+                        "tcp_write() expects 2 arguments, got {}",
+                        args.len()
+                    ));
+                }
+                let sid = match self.eval_expression(&args[0])? {
+                    Value::TcpStream(id) => id,
+                    _ => return Err("tcp_write() requires a TcpStream".to_string()),
+                };
+                let data = match self.eval_expression(&args[1])? {
+                    Value::String(s) => s,
+                    other => other.to_string(),
+                };
+                let stream = self
+                    .tcp_streams
+                    .get_mut(&sid)
+                    .ok_or_else(|| "tcp_write: invalid TcpStream handle".to_string())?;
+                let n = stream
+                    .write(data.as_bytes())
+                    .map_err(|e| format!("tcp_write: {}", e))?;
+                stream
+                    .flush()
+                    .map_err(|e| format!("tcp_write: flush: {}", e))?;
+                Ok(Some(Value::Int(n as i64)))
+            }
+
+            "tcp_close_stream" => {
+                if args.len() != 1 {
+                    return Err(format!(
+                        "tcp_close_stream() expects 1 argument, got {}",
+                        args.len()
+                    ));
+                }
+                let sid = match self.eval_expression(&args[0])? {
+                    Value::TcpStream(id) => id,
+                    _ => return Err("tcp_close_stream() requires a TcpStream".to_string()),
+                };
+                if self.tcp_streams.remove(&sid).is_none() {
+                    return Err("tcp_close_stream: invalid TcpStream handle".to_string());
+                }
+                Ok(Some(Value::Void))
+            }
+
+            "tcp_close_listener" => {
+                if args.len() != 1 {
+                    return Err(format!(
+                        "tcp_close_listener() expects 1 argument, got {}",
+                        args.len()
+                    ));
+                }
+                let lid = match self.eval_expression(&args[0])? {
+                    Value::TcpListener(id) => id,
+                    _ => return Err("tcp_close_listener() requires a TcpListener".to_string()),
+                };
+                if self.tcp_listeners.remove(&lid).is_none() {
+                    return Err("tcp_close_listener: invalid TcpListener handle".to_string());
+                }
+                Ok(Some(Value::Void))
+            }
+
+            "http_invoke_dispatch" => {
+                if args.len() != 1 {
+                    return Err(format!(
+                        "http_invoke_dispatch() expects 1 argument, got {}",
+                        args.len()
+                    ));
+                }
+                let req = self.eval_expression(&args[0])?;
+                match &req {
+                    Value::Struct(name, _) if name == "Request" => {}
+                    _ => {
+                        return Err(format!(
+                            "http_invoke_dispatch(req) requires a Request value, got {:?}",
+                            req
+                        ));
+                    }
+                }
+                let result = self.call_function("dispatch", vec![req])?;
+                match result {
+                    Value::String(s) => Ok(Some(Value::String(s))),
+                    other => Err(format!(
+                        "dispatch() must return the full HTTP response as a string; got {:?}",
+                        other
+                    )),
+                }
+            }
+
             "dns_lookup" => {
                 if args.len() != 1 {
                     return Err(format!(
@@ -1986,7 +2180,6 @@ impl Interpreter {
                 };
 
                 let host = host.trim();
-                // `host:port` (e.g. `127.0.0.1:80`) — parse as SocketAddr; otherwise try host + port
                 if let Ok(addr) = host.parse::<SocketAddr>() {
                     return Ok(Some(Value::Bool(
                         TcpStream::connect_timeout(&addr, Duration::from_secs(4)).is_ok(),
@@ -2037,7 +2230,7 @@ impl Interpreter {
                 }
             }
 
-            _ => Ok(None), // Not a built-in function
+            _ => Ok(None),
         }
     }
 
@@ -2065,10 +2258,8 @@ impl Interpreter {
 
         module_interpreter.execute(&ast)?;
 
-        // Snapshot before moving fields out of `module_interpreter` (partial move must not skip this).
         let nested_modules_snapshot = module_interpreter.modules.clone();
 
-        // Extract exports from the module
         let module = Module {
             variables: module_interpreter.variables,
             functions: module_interpreter.functions,
@@ -2098,9 +2289,6 @@ impl Interpreter {
 
         self.modules.insert(module_name.to_string(), module);
 
-        // Submodules imported by this file (e.g. `import str from "str"`) were only registered
-        // on the nested interpreter; merge so `Value::Module("str")` resolves when calling methods
-        // from code exported by this module (e.g. `network.is_valid_url` using `str.starts_with`).
         for (nested_name, nested_mod) in nested_modules_snapshot {
             self.modules.entry(nested_name).or_insert(nested_mod);
         }
@@ -2114,7 +2302,7 @@ impl Interpreter {
         args: Vec<Value>,
         module: &Module,
     ) -> Result<Value, String> {
-        let mut function_variables = HashMap::new();
+        let mut function_variables = self.variables.clone();
 
         for (name, value) in &module.variables {
             function_variables.insert(name.clone(), value.clone());
@@ -2135,13 +2323,15 @@ impl Interpreter {
         let old_variables = std::mem::replace(&mut self.variables, function_variables);
         let old_return_value = self.return_value.take();
 
-        // Execute function body
-        let result = self.execute(&func.body);
+        self.return_value = None;
+        self.execute(&func.body)?;
+        let result = self.return_value.clone().unwrap_or(Value::Void);
+        self.return_value = None;
 
         self.variables = old_variables;
         self.return_value = old_return_value;
 
-        result
+        Ok(result)
     }
 }
 
