@@ -118,10 +118,7 @@ impl TypeChecker {
         let mut http_response_fields = HashMap::new();
         http_response_fields.insert("status_code".to_string(), Type::Int);
         http_response_fields.insert("status_text".to_string(), Type::String);
-        http_response_fields.insert(
-            "headers".to_string(),
-            Type::Array(Box::new(Type::String)),
-        );
+        http_response_fields.insert("headers".to_string(), Type::Array(Box::new(Type::String)));
         http_response_fields.insert("body".to_string(), Type::String);
         structs.insert(
             "HttpResponse".to_string(),
@@ -169,43 +166,40 @@ impl TypeChecker {
                 Ok(Type::Void)
             }
 
-            ASTNode::Assignment(target, expr) => {
-                match target.as_ref() {
-                    Expression::Identifier(name) => {
-                        if let Some(var_type) = self.variables.get(name).cloned() {
-                            let expr_type =
-                                self.check_expression_with_expected_type(expr, Some(&var_type))?;
-                            if var_type != expr_type {
-                                let expected = var_type.fmt_for_user();
-                                let got = expr_type.fmt_for_user();
-                                return Err(format!(
+            ASTNode::Assignment(target, expr) => match target.as_ref() {
+                Expression::Identifier(name) => {
+                    if let Some(var_type) = self.variables.get(name).cloned() {
+                        let expr_type =
+                            self.check_expression_with_expected_type(expr, Some(&var_type))?;
+                        if var_type != expr_type {
+                            let expected = var_type.fmt_for_user();
+                            let got = expr_type.fmt_for_user();
+                            return Err(format!(
                                     "Type mismatch in assignment to '{}': expected {}, got {}\n   = help: The value must match the variable's type '{}'. Consider converting or changing the expression.",
                                     name, expected, got, expected
                                 ));
-                            }
-                            Ok(Type::Void)
-                        } else {
-                            Err(format!(
+                        }
+                        Ok(Type::Void)
+                    } else {
+                        Err(format!(
                                 "Variable '{}' not declared\n   = help: Declare the variable with 'let {}: type = value;' before using it.",
                                 name, name
                             ))
-                        }
                     }
-                    Expression::FieldAccess(object, field_name) => {
-                        let object_type = self.check_expression(object)?;
+                }
+                Expression::FieldAccess(object, field_name) => {
+                    let object_type = self.check_expression(object)?;
 
-                        if let Type::Struct(ref struct_name) = object_type {
-                            if let Some(struct_info) = self.structs.get(struct_name) {
-                                if let Some(field_type) = struct_info.fields.get(field_name) {
-                                    let field_type = field_type.clone();
-                                    let expr_type = self.check_expression_with_expected_type(
-                                        expr,
-                                        Some(&field_type),
-                                    )?;
-                                    if expr_type != field_type {
-                                        let expected = field_type.fmt_for_user();
-                                        let got = expr_type.fmt_for_user();
-                                        return Err(format!(
+                    if let Type::Struct(ref struct_name) = object_type {
+                        if let Some(struct_info) = self.structs.get(struct_name) {
+                            if let Some(field_type) = struct_info.fields.get(field_name) {
+                                let field_type = field_type.clone();
+                                let expr_type = self
+                                    .check_expression_with_expected_type(expr, Some(&field_type))?;
+                                if expr_type != field_type {
+                                    let expected = field_type.fmt_for_user();
+                                    let got = expr_type.fmt_for_user();
+                                    return Err(format!(
                                             "Type mismatch in assignment to field '{}.{}': expected {}, got {}\n   = help: The value must match the field's type '{}'.",
                                             struct_name,
                                             field_name,
@@ -213,48 +207,44 @@ impl TypeChecker {
                                             got,
                                             expected
                                         ));
-                                    }
-                                    return Ok(Type::Void);
                                 }
-                                let available: Vec<&str> = struct_info
-                                    .fields
-                                    .keys()
-                                    .map(String::as_str)
-                                    .collect();
-                                return Err(format!(
+                                return Ok(Type::Void);
+                            }
+                            let available: Vec<&str> =
+                                struct_info.fields.keys().map(String::as_str).collect();
+                            return Err(format!(
                                     "Field '{}' not found in struct '{}'\n   = help: Available fields: {}",
                                     field_name,
                                     struct_name,
                                     available.join(", ")
                                 ));
-                            }
                         }
+                    }
 
-                        Err(format!(
+                    Err(format!(
                             "Cannot assign to field on non-struct value of type '{}'\n   = help: Only struct values have assignable fields.",
                             object_type.fmt_for_user()
                         ))
-                    }
-                    Expression::ArrayIndex(_, _) => {
-                        let lhs_type = self.check_expression(target)?;
-                        let expr_type =
-                            self.check_expression_with_expected_type(expr, Some(&lhs_type))?;
-                        if lhs_type != expr_type {
-                            let expected = lhs_type.fmt_for_user();
-                            let got = expr_type.fmt_for_user();
-                            return Err(format!(
+                }
+                Expression::ArrayIndex(_, _) => {
+                    let lhs_type = self.check_expression(target)?;
+                    let expr_type =
+                        self.check_expression_with_expected_type(expr, Some(&lhs_type))?;
+                    if lhs_type != expr_type {
+                        let expected = lhs_type.fmt_for_user();
+                        let got = expr_type.fmt_for_user();
+                        return Err(format!(
                                 "Type mismatch in assignment to indexed value: expected {}, got {}\n   = help: The right-hand side must match the element type at this index (e.g. int for int[][], or int[] for int[][]).",
                                 expected, got
                             ));
-                        }
-                        Ok(Type::Void)
                     }
-                    _ => {
-                        self.check_expression(expr)?;
-                        Ok(Type::Void)
-                    }
+                    Ok(Type::Void)
                 }
-            }
+                _ => {
+                    self.check_expression(expr)?;
+                    Ok(Type::Void)
+                }
+            },
 
             ASTNode::FunctionDecl(name, return_type_str, params, body) => {
                 let return_type =
@@ -926,10 +916,7 @@ impl TypeChecker {
                             }
                             let sub_type = self.check_expression(&args[0])?;
                             if sub_type != Type::String {
-                                return Err(format!(
-                                    "{}() argument must be string",
-                                    method_name
-                                ));
+                                return Err(format!("{}() argument must be string", method_name));
                             }
                             Ok(Type::Int)
                         }

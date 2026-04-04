@@ -1,8 +1,6 @@
 #![allow(clippy::result_large_err)]
 
-use crate::ast::{
-    ASTNode, EnumMember, Expression, ImplMember, Operator, StructMember,
-};
+use crate::ast::{ASTNode, EnumMember, Expression, ImplMember, Operator, StructMember};
 use crate::error::{parse_error, RavenError};
 use crate::lexer::{Lexer, TokenType};
 use crate::span::Span;
@@ -504,9 +502,12 @@ impl Parser {
                 } else {
                     let span =
                         Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
-                    return Err(parse_error("Expected ')' to close parenthesized expression", span)
-                        .with_source(self.source_code.clone())
-                        .with_hint("Add ')' after the expression".to_string()));
+                    return Err(parse_error(
+                        "Expected ')' to close parenthesized expression",
+                        span,
+                    )
+                    .with_source(self.source_code.clone())
+                    .with_hint("Add ')' after the expression".to_string()));
                 }
                 Ok(expr)
             }
@@ -577,11 +578,14 @@ impl Parser {
                     } else {
                         let span =
                             Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
-                        return Err(parse_error("Expected ':' after field name in struct literal", span)
-                            .with_source(self.source_code.clone())
-                            .with_hint(
-                                "Use: field_name: expression for each struct field.".to_string(),
-                            ));
+                        return Err(parse_error(
+                            "Expected ':' after field name in struct literal",
+                            span,
+                        )
+                        .with_source(self.source_code.clone())
+                        .with_hint(
+                            "Use: field_name: expression for each struct field.".to_string(),
+                        ));
                     }
 
                     let field_value = self.parse_expression()?;
@@ -590,27 +594,25 @@ impl Parser {
                     while let Some(TokenType::Comma) = &self.current_token {
                         self.advance();
 
-                        let field_name =
-                            if let Some(TokenType::Identifier(field)) = &self.current_token {
-                                let field_clone = field.clone();
-                                self.advance();
-                                field_clone
-                            } else {
-                                let span = Span::new(
-                                    self.lexer.line,
-                                    self.lexer.column,
-                                    self.lexer.position,
-                                    1,
-                                );
-                                return Err(parse_error(
-                                    "Expected field name in struct literal",
-                                    span,
-                                )
+                        let field_name = if let Some(TokenType::Identifier(field)) =
+                            &self.current_token
+                        {
+                            let field_clone = field.clone();
+                            self.advance();
+                            field_clone
+                        } else {
+                            let span = Span::new(
+                                self.lexer.line,
+                                self.lexer.column,
+                                self.lexer.position,
+                                1,
+                            );
+                            return Err(parse_error("Expected field name in struct literal", span)
                                 .with_source(self.source_code.clone())
                                 .with_hint(
                                     "After each comma, add field_name: value.".to_string(),
                                 ));
-                            };
+                        };
 
                         if let Some(TokenType::Colon) = &self.current_token {
                             self.advance();
@@ -726,12 +728,14 @@ impl Parser {
             }
             Some(tok) => {
                 let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
-                Err(parse_error(format!("Unexpected token in expression: {:?}", tok), span)
-                    .with_source(self.source_code.clone())
-                    .with_hint(
-                        "Expected a literal, identifier, '(', or '[' to start an expression."
-                            .to_string(),
-                    ))
+                Err(
+                    parse_error(format!("Unexpected token in expression: {:?}", tok), span)
+                        .with_source(self.source_code.clone())
+                        .with_hint(
+                            "Expected a literal, identifier, '(', or '[' to start an expression."
+                                .to_string(),
+                        ),
+                )
             }
             None => {
                 let span = Span::new(self.lexer.line, self.lexer.column, self.lexer.position, 1);
@@ -741,10 +745,7 @@ impl Parser {
         }
     }
 
-    fn parse_method_call_chain(
-        &mut self,
-        object: Expression,
-    ) -> Result<Expression, RavenError> {
+    fn parse_method_call_chain(&mut self, object: Expression) -> Result<Expression, RavenError> {
         let mut current_object = object;
 
         while let Some(TokenType::Dot) = &self.current_token {

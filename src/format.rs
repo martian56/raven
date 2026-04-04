@@ -4,9 +4,7 @@
 //! top-level items, and before control flow inside blocks), wrap long signatures and literals,
 //! and stable `elseif` / `else` layout.
 
-use crate::ast::{
-    ASTNode, EnumMember, Expression, ImplMember, Operator, Parameter, StructMember,
-};
+use crate::ast::{ASTNode, EnumMember, Expression, ImplMember, Operator, Parameter, StructMember};
 use crate::error::RavenError;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
@@ -101,10 +99,7 @@ fn format_ast(ast: &ASTNode, opts: &FormatOptions) -> String {
 }
 
 fn is_import(node: &ASTNode) -> bool {
-    matches!(
-        node,
-        ASTNode::Import(..) | ASTNode::ImportSelective(..)
-    )
+    matches!(node, ASTNode::Import(..) | ASTNode::ImportSelective(..))
 }
 
 fn is_major_decl(node: &ASTNode) -> bool {
@@ -170,7 +165,12 @@ fn format_parameter_list(params: &[Parameter], indent: usize, opts: &FormatOptio
     format!("\n{}\n{}", inner, close_pad)
 }
 
-fn join_block_stmts(stmts: &[ASTNode], indent: usize, top_level: bool, opts: &FormatOptions) -> String {
+fn join_block_stmts(
+    stmts: &[ASTNode],
+    indent: usize,
+    top_level: bool,
+    opts: &FormatOptions,
+) -> String {
     let mut parts: Vec<String> = Vec::new();
     for (i, s) in stmts.iter().enumerate() {
         if i > 0 {
@@ -200,13 +200,7 @@ fn format_stmt(node: &ASTNode, indent: usize, opts: &FormatOptions) -> String {
             if matches!(expr.as_ref(), Expression::Uninitialized) {
                 format!("{}let {}: {};", pad, name, ty)
             } else {
-                format!(
-                    "{}let {}: {} = {};",
-                    pad,
-                    name,
-                    ty,
-                    format_expr(expr, opts)
-                )
+                format!("{}let {}: {} = {};", pad, name, ty, format_expr(expr, opts))
             }
         }
         ASTNode::FunctionDecl(name, ret, params, body) => {
@@ -221,24 +215,15 @@ fn format_stmt(node: &ASTNode, indent: usize, opts: &FormatOptions) -> String {
             let lines: Vec<String> = members
                 .iter()
                 .map(|m| match m {
-                    StructMember::Field(f) => format!(
-                        "{}{}: {},",
-                        opts.pad(indent + 1),
-                        f.name,
-                        f.field_type
-                    ),
+                    StructMember::Field(f) => {
+                        format!("{}{}: {},", opts.pad(indent + 1), f.name, f.field_type)
+                    }
                     StructMember::Comment(text) => {
                         format!("{}{}", opts.pad(indent + 1), text)
                     }
                 })
                 .collect();
-            format!(
-                "{}struct {} {{\n{}\n{}}}",
-                pad,
-                name,
-                lines.join("\n"),
-                pad
-            )
+            format!("{}struct {} {{\n{}\n{}}}", pad, name, lines.join("\n"), pad)
         }
         ASTNode::ImplBlock(struct_name, methods) => {
             let mut parts = Vec::new();
@@ -278,13 +263,7 @@ fn format_stmt(node: &ASTNode, indent: usize, opts: &FormatOptions) -> String {
                     EnumMember::Comment(text) => format!("{}{}", opts.pad(indent + 1), text),
                 })
                 .collect();
-            format!(
-                "{}enum {} {{\n{}\n{}}}",
-                pad,
-                name,
-                lines.join("\n"),
-                pad
-            )
+            format!("{}enum {} {{\n{}\n{}}}", pad, name, lines.join("\n"), pad)
         }
         ASTNode::Comment(text) => format!("{}{}", pad, text),
         ASTNode::ForLoop(init, cond, inc, body) => {
@@ -292,11 +271,7 @@ fn format_stmt(node: &ASTNode, indent: usize, opts: &FormatOptions) -> String {
             let cond_s = format_expr(cond, opts);
             let inc_s = match inc.as_ref() {
                 ASTNode::Assignment(lhs, rhs) => {
-                    format!(
-                        "{} = {}",
-                        format_expr(lhs, opts),
-                        format_expr(rhs, opts)
-                    )
+                    format!("{} = {}", format_expr(lhs, opts), format_expr(rhs, opts))
                 }
                 _ => format_stmt_strip_pad(inc, 0, opts),
             };
@@ -347,12 +322,7 @@ fn format_stmt(node: &ASTNode, indent: usize, opts: &FormatOptions) -> String {
         }
         ASTNode::Print(e) => format!("{}print({});", pad, format_expr(e, opts)),
         ASTNode::FunctionCall(name, args) => {
-            format!(
-                "{}{}({});",
-                pad,
-                name,
-                format_expr_list(args, opts)
-            )
+            format!("{}{}({});", pad, name, format_expr_list(args, opts))
         }
         ASTNode::MethodCall(obj, name, args) => {
             format!(
@@ -487,7 +457,12 @@ fn format_expr(e: &Expression, opts: &FormatOptions) -> String {
     format_expr_ctx(e, 0, true, opts)
 }
 
-fn format_expr_ctx(expr: &Expression, parent_prec: u8, is_left: bool, opts: &FormatOptions) -> String {
+fn format_expr_ctx(
+    expr: &Expression,
+    parent_prec: u8,
+    is_left: bool,
+    opts: &FormatOptions,
+) -> String {
     match expr {
         Expression::BinaryOp(l, op, r) => {
             let p = precedence(op);

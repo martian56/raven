@@ -309,17 +309,14 @@ fn cmd_fmt(paths: &[String], check: bool) -> Result<(), String> {
     for file in &files {
         let source = fs::read_to_string(file).map_err(|e| format!("{}: {}", file.display(), e))?;
         let normalized = normalize_nl(&source);
-        let formatted = match format_source_with_options(
-            &normalized,
-            &file.display().to_string(),
-            &fmt_opts,
-        ) {
-            Ok(s) => s,
-            Err(e) => {
-                errors.push(format!("{}: {}", file.display(), e.format()));
-                continue;
-            }
-        };
+        let formatted =
+            match format_source_with_options(&normalized, &file.display().to_string(), &fmt_opts) {
+                Ok(s) => s,
+                Err(e) => {
+                    errors.push(format!("{}: {}", file.display(), e.format()));
+                    continue;
+                }
+            };
 
         if normalized == formatted {
             continue;

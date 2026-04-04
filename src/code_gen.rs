@@ -560,9 +560,9 @@ impl Interpreter {
 
     fn eval_expression(&mut self, expr: &Expression) -> Result<Value, String> {
         match expr {
-            Expression::Uninitialized => Err(
-                "Evaluated uninitialized placeholder (internal error)".to_string(),
-            ),
+            Expression::Uninitialized => {
+                Err("Evaluated uninitialized placeholder (internal error)".to_string())
+            }
 
             Expression::Integer(i) => Ok(Value::Int(*i)),
             Expression::Float(f) => Ok(Value::Float(*f)),
@@ -1013,7 +1013,9 @@ impl Interpreter {
                                 }
                                 let sub = match &evaluated_args[0] {
                                     Value::String(x) => x.as_str(),
-                                    _ => return Err("index_of() argument must be string".to_string()),
+                                    _ => {
+                                        return Err("index_of() argument must be string".to_string())
+                                    }
                                 };
                                 let i = s.find(sub).map(|i| i as i64).unwrap_or(-1);
                                 Ok(Value::Int(i))
@@ -1029,7 +1031,7 @@ impl Interpreter {
                                     Value::String(x) => x.as_str(),
                                     _ => {
                                         return Err(
-                                            "last_index_of() argument must be string".to_string(),
+                                            "last_index_of() argument must be string".to_string()
                                         )
                                     }
                                 };
@@ -1216,7 +1218,9 @@ impl Interpreter {
                                 }
                                 let sub = match &evaluated_args[0] {
                                     Value::String(x) => x.as_str(),
-                                    _ => return Err("index_of() argument must be string".to_string()),
+                                    _ => {
+                                        return Err("index_of() argument must be string".to_string())
+                                    }
                                 };
                                 let i = s.find(sub).map(|i| i as i64).unwrap_or(-1);
                                 Ok(Value::Int(i))
@@ -1232,7 +1236,7 @@ impl Interpreter {
                                     Value::String(x) => x.as_str(),
                                     _ => {
                                         return Err(
-                                            "last_index_of() argument must be string".to_string(),
+                                            "last_index_of() argument must be string".to_string()
                                         )
                                     }
                                 };
@@ -1894,10 +1898,8 @@ impl Interpreter {
                             match e {
                                 Value::String(s) => v.push(s),
                                 _ => {
-                                    return Err(
-                                        "http_fetch() headers must be an array of strings"
-                                            .to_string(),
-                                    );
+                                    return Err("http_fetch() headers must be an array of strings"
+                                        .to_string());
                                 }
                             }
                         }
@@ -1907,12 +1909,10 @@ impl Interpreter {
                 };
 
                 let agent = ureq::Agent::new();
-                let mut req = agent
-                    .request(method.trim(), &url)
-                    .set(
-                        "User-Agent",
-                        "Raven/1.4 (+https://github.com/martian56/raven)",
-                    );
+                let mut req = agent.request(method.trim(), &url).set(
+                    "User-Agent",
+                    "Raven/1.4 (+https://github.com/martian56/raven)",
+                );
                 for h in &headers_vec {
                     if let Some(colon) = h.find(':') {
                         let hn = h[..colon].trim();
@@ -1964,10 +1964,7 @@ impl Interpreter {
 
                 match (host.as_str(), 80u16).to_socket_addrs() {
                     Ok(mut iter) => {
-                        let ip = iter
-                            .next()
-                            .map(|a| a.ip().to_string())
-                            .unwrap_or_default();
+                        let ip = iter.next().map(|a| a.ip().to_string()).unwrap_or_default();
                         Ok(Some(Value::String(ip)))
                     }
                     Err(_) => Ok(Some(Value::String(String::new()))),
@@ -2087,8 +2084,7 @@ impl Interpreter {
         }
 
         for (name, types) in &module_interpreter.struct_field_types {
-            self.struct_field_types
-                .insert(name.clone(), types.clone());
+            self.struct_field_types.insert(name.clone(), types.clone());
         }
 
         for (struct_name, methods) in &module_interpreter.struct_methods {
