@@ -44,7 +44,8 @@ docs/
 ├── STDLIB_SPEC.md             # Standard library specification
 ├── getting-started/            # Installation and quick start
 │   ├── installation.md
-│   └── quick-start.md
+│   ├── quick-start.md
+│   └── rvpm-and-format.md      # rv.toml, rvpm fmt, [fmt]
 ├── language-reference/         # Language features
 │   └── data-types.md
 ├── standard-library/           # Standard library docs
