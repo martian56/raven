@@ -2,7 +2,7 @@
   "name": "raven-language",
   "displayName": "Raven Language",
   "description": "Syntax highlighting and language support for Raven programming language",
-  "version": "1.1.10",
+  "version": "1.2.0",
   "publisher": "martian56",
   "icon": "icons/raven.png",
   "engines": {
@@ -50,10 +50,18 @@
       {
         "command": "raven.runFile",
         "title": "Run Raven File",
-        "category": "Raven"
+        "category": "Raven",
+        "icon": "$(play)"
       }
     ],
     "menus": {
+      "editor/title": [
+        {
+          "command": "raven.runFile",
+          "when": "resourceLangId == raven && resourceScheme == file && !isInDiffEditor",
+          "group": "navigation@1"
+        }
+      ],
       "explorer/context": [
         {
           "command": "raven.runFile",

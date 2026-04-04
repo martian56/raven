@@ -38,10 +38,6 @@ impl FormatOptions {
         " ".repeat(w.saturating_mul(depth))
     }
 
-    fn unit(&self) -> String {
-        " ".repeat(self.indent_width.max(1))
-    }
-
     /// Read `[fmt]` from `rv.toml` at `path`. Missing file or invalid values fall back to defaults.
     pub fn from_rv_toml(path: &Path) -> Self {
         Self::from_rv_toml_inner(path).unwrap_or_default()
@@ -194,13 +190,19 @@ fn format_stmt(node: &ASTNode, indent: usize, opts: &FormatOptions) -> String {
     match node {
         ASTNode::Block(stmts) => join_block_stmts(stmts, indent, false, opts),
         ASTNode::VariableDecl(name, expr) => {
-            format!("{}let {} = {};", pad, name, format_expr(expr, opts))
+            format!("{}let {} = {};", pad, name, format_expr_at(expr, opts, indent))
         }
         ASTNode::VariableDeclTyped(name, ty, expr) => {
             if matches!(expr.as_ref(), Expression::Uninitialized) {
                 format!("{}let {}: {};", pad, name, ty)
             } else {
-                format!("{}let {}: {} = {};", pad, name, ty, format_expr(expr, opts))
+                format!(
+                    "{}let {}: {} = {};",
+                    pad,
+                    name,
+                    ty,
+                    format_expr_at(expr, opts, indent)
+                )
             }
         }
         ASTNode::FunctionDecl(name, ret, params, body) => {
@@ -267,13 +269,17 @@ fn format_stmt(node: &ASTNode, indent: usize, opts: &FormatOptions) -> String {
         }
         ASTNode::Comment(text) => format!("{}{}", pad, text),
         ASTNode::ForLoop(init, cond, inc, body) => {
-            let init_s = format_stmt_strip_pad(init, 0, opts);
-            let cond_s = format_expr(cond, opts);
+            let init_s = format_stmt_strip_pad(init, indent, opts);
+            let cond_s = format_expr_at(cond, opts, indent);
             let inc_s = match inc.as_ref() {
                 ASTNode::Assignment(lhs, rhs) => {
-                    format!("{} = {}", format_expr(lhs, opts), format_expr(rhs, opts))
+                    format!(
+                        "{} = {}",
+                        format_expr_at(lhs, opts, indent),
+                        format_expr_at(rhs, opts, indent)
+                    )
                 }
-                _ => format_stmt_strip_pad(inc, 0, opts),
+                _ => format_stmt_strip_pad(inc, indent, opts),
             };
             let body_s = format_block_body(body, indent, opts);
             format!(
@@ -286,7 +292,7 @@ fn format_stmt(node: &ASTNode, indent: usize, opts: &FormatOptions) -> String {
             format!(
                 "{}while ({}) {{\n{}\n{}}}",
                 pad,
-                format_expr(cond, opts),
+                format_expr_at(cond, opts, indent),
                 body_s,
                 pad
             )
@@ -295,15 +301,15 @@ fn format_stmt(node: &ASTNode, indent: usize, opts: &FormatOptions) -> String {
             format!(
                 "{}{} = {};",
                 pad,
-                format_expr(lhs, opts),
-                format_expr(rhs, opts)
+                format_expr_at(lhs, opts, indent),
+                format_expr_at(rhs, opts, indent)
             )
         }
         ASTNode::IfStatement(cond, then_b, else_if, else_b) => {
             let mut s = format!(
                 "{}if ({}) {{\n{}\n{}}}",
                 pad,
-                format_expr(cond, opts),
+                format_expr_at(cond, opts, indent),
                 format_block_body(then_b, indent, opts),
                 pad
             );
@@ -320,7 +326,7 @@ fn format_stmt(node: &ASTNode, indent: usize, opts: &FormatOptions) -> String {
             }
             s
         }
-        ASTNode::Print(e) => format!("{}print({});", pad, format_expr(e, opts)),
+        ASTNode::Print(e) => format!("{}print({});", pad, format_expr_at(e, opts, indent)),
         ASTNode::FunctionCall(name, args) => {
             format!("{}{}({});", pad, name, format_expr_list(args, opts))
         }
@@ -328,13 +334,13 @@ fn format_stmt(node: &ASTNode, indent: usize, opts: &FormatOptions) -> String {
             format!(
                 "{}{}.{}({});",
                 pad,
-                format_expr(obj, opts),
+                format_expr_at(obj, opts, indent),
                 name,
                 format_expr_list(args, opts)
             )
         }
-        ASTNode::ExpressionStatement(e) => format!("{}{};", pad, format_expr(e, opts)),
-        ASTNode::Return(e) => format!("{}return {};", pad, format_expr(e, opts)),
+        ASTNode::ExpressionStatement(e) => format!("{}{};", pad, format_expr_at(e, opts, indent)),
+        ASTNode::Return(e) => format!("{}return {};", pad, format_expr_at(e, opts, indent)),
         ASTNode::Import(module, alias) => match alias {
             Some(a) => format!("{}import {} from \"{}\";", pad, a, module),
             None => format!("{}import \"{}\";", pad, module),
@@ -370,10 +376,17 @@ fn format_stmt(node: &ASTNode, indent: usize, opts: &FormatOptions) -> String {
     }
 }
 
-/// Format a single-statement node without outer indentation (for `for` init / export).
+/// Format a single-statement node without outer indentation (for `for` init / increment).
+///
+/// [`format_stmt`] always ends statement forms with `;`, but `for (...)` already adds `;` between
+/// the three clauses. Strip trailing semicolons so we do not emit `let i: int = 0;;`.
 fn format_stmt_strip_pad(node: &ASTNode, base_indent: usize, opts: &FormatOptions) -> String {
     let s = format_stmt(node, base_indent, opts);
-    s.trim_start().to_string()
+    let mut t = s.trim_start().to_string();
+    while t.ends_with(';') {
+        t.pop();
+    }
+    t.trim_end().to_string()
 }
 
 fn format_else_if_chain(node: &ASTNode, indent: usize, opts: &FormatOptions) -> String {
@@ -383,7 +396,7 @@ fn format_else_if_chain(node: &ASTNode, indent: usize, opts: &FormatOptions) -> 
             let mut s = format!(
                 "\n{}elseif ({}) {{\n{}\n{}}}",
                 pad,
-                format_expr(cond, opts),
+                format_expr_at(cond, opts, indent),
                 format_block_body(then_b, indent, opts),
                 pad
             );
@@ -453,8 +466,15 @@ fn op_str(op: &Operator) -> &'static str {
     }
 }
 
+/// Default: no surrounding statement indent (wrap_depth `0`).
 fn format_expr(e: &Expression, opts: &FormatOptions) -> String {
-    format_expr_ctx(e, 0, true, opts)
+    format_expr_at(e, opts, 0)
+}
+
+/// `wrap_depth` is the statement block depth for the expression (0 = top-level in file).
+/// Multi-line `fn(...)`, `[...]`, etc. indent arguments with `pad(wrap_depth + 1)`.
+fn format_expr_at(e: &Expression, opts: &FormatOptions, wrap_depth: usize) -> String {
+    format_expr_ctx(e, 0, true, opts, wrap_depth)
 }
 
 fn format_expr_ctx(
@@ -462,12 +482,13 @@ fn format_expr_ctx(
     parent_prec: u8,
     is_left: bool,
     opts: &FormatOptions,
+    wrap_depth: usize,
 ) -> String {
     match expr {
         Expression::BinaryOp(l, op, r) => {
             let p = precedence(op);
-            let left_s = format_expr_ctx(l, p, true, opts);
-            let right_s = format_expr_ctx(r, p, false, opts);
+            let left_s = format_expr_ctx(l, p, true, opts, wrap_depth);
+            let right_s = format_expr_ctx(r, p, false, opts, wrap_depth);
             let inner = format!("{} {} {}", left_s, op_str(op), right_s);
             if p < parent_prec || (p == parent_prec && !is_left) {
                 format!("({})", inner)
@@ -476,7 +497,7 @@ fn format_expr_ctx(
             }
         }
         Expression::UnaryOp(op, e) => {
-            let operand = format_unary_operand(e, opts);
+            let operand = format_unary_operand(e, opts, wrap_depth);
             match op {
                 Operator::UnaryMinus => format!("-{}", operand),
                 Operator::Not => format!("not {}", operand),
@@ -499,47 +520,74 @@ fn format_expr_ctx(
             if args.len() <= 3 && compact.len() <= opts.wrap_width {
                 return compact;
             }
-            let u = opts.unit();
+            let cont_pad = opts.pad(wrap_depth + 1);
+            let close_pad = opts.pad(wrap_depth);
             let inner = args
                 .iter()
-                .map(|a| format!("{}{}", u, format_expr(a, opts)))
+                .map(|a| {
+                    format!(
+                        "{}{}",
+                        cont_pad,
+                        format_expr_ctx(a, 0, true, opts, wrap_depth + 1)
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join(",\n");
-            format!("{}(\n{}\n)", name, inner)
+            format!("{}(\n{}\n{})", name, inner, close_pad)
         }
         Expression::ArrayLiteral(el) => {
             let compact = format!("[{}]", format_expr_list(el, opts));
             if el.len() <= 4 && compact.len() <= opts.wrap_width {
                 return compact;
             }
-            let u = opts.unit();
+            let cont_pad = opts.pad(wrap_depth + 1);
+            let close_pad = opts.pad(wrap_depth);
             let inner = el
                 .iter()
-                .map(|e| format!("{}{}", u, format_expr(e, opts)))
+                .map(|e| {
+                    format!(
+                        "{}{}",
+                        cont_pad,
+                        format_expr_ctx(e, 0, true, opts, wrap_depth + 1)
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join(",\n");
-            format!("[\n{}\n]", inner)
+            format!("[\n{}\n{}]", inner, close_pad)
         }
         Expression::ArrayIndex(a, i) => {
             let base = match a.as_ref() {
-                Expression::BinaryOp(..) => format!("({})", format_expr(a, opts)),
-                _ => format_expr_ctx(a, 0, true, opts),
+                Expression::BinaryOp(..) => {
+                    format!("({})", format_expr_ctx(a, 0, true, opts, wrap_depth))
+                }
+                _ => format_expr_ctx(a, 0, true, opts, wrap_depth),
             };
-            format!("{}[{}]", base, format_expr(i, opts))
+            format!(
+                "{}[{}]",
+                base,
+                format_expr_ctx(i, 0, true, opts, wrap_depth)
+            )
         }
         Expression::MethodCall(obj, name, args) => {
-            let obj_s = format_expr_ctx(obj, 0, true, opts);
+            let obj_s = format_expr_ctx(obj, 0, true, opts, wrap_depth);
             let compact = format!("{}.{}({})", obj_s, name, format_expr_list(args, opts));
             if args.len() <= 3 && compact.len() <= opts.wrap_width {
                 return compact;
             }
-            let u = opts.unit();
+            let cont_pad = opts.pad(wrap_depth + 1);
+            let close_pad = opts.pad(wrap_depth);
             let inner = args
                 .iter()
-                .map(|a| format!("{}{}", u, format_expr(a, opts)))
+                .map(|a| {
+                    format!(
+                        "{}{}",
+                        cont_pad,
+                        format_expr_ctx(a, 0, true, opts, wrap_depth + 1)
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join(",\n");
-            format!("{}.{}(\n{}\n)", obj_s, name, inner)
+            format!("{}.{}(\n{}\n{})", obj_s, name, inner, close_pad)
         }
         Expression::StructInstantiation(name, fields) => {
             let parts: Vec<String> = fields
@@ -551,16 +599,28 @@ fn format_expr_ctx(
             if fields.len() <= 2 && compact.len() <= opts.wrap_width {
                 return compact;
             }
-            let u = opts.unit();
+            let cont_pad = opts.pad(wrap_depth + 1);
+            let close_pad = opts.pad(wrap_depth);
             let inner = fields
                 .iter()
-                .map(|(n, e)| format!("{}{}: {}", u, n, format_expr(e, opts)))
+                .map(|(n, e)| {
+                    format!(
+                        "{}{}: {}",
+                        cont_pad,
+                        n,
+                        format_expr_ctx(e, 0, true, opts, wrap_depth + 1)
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join(",\n");
-            format!("{} {{\n{}\n}}", name, inner)
+            format!("{} {{\n{}\n{}}}", name, inner, close_pad)
         }
         Expression::FieldAccess(obj, field) => {
-            format!("{}.{}", format_expr_ctx(obj, 0, true, opts), field)
+            format!(
+                "{}.{}",
+                format_expr_ctx(obj, 0, true, opts, wrap_depth),
+                field
+            )
         }
         Expression::EnumVariant(enum_name, variant) => {
             format!("{}::{}", enum_name, variant)
@@ -569,10 +629,12 @@ fn format_expr_ctx(
     }
 }
 
-fn format_unary_operand(e: &Expression, opts: &FormatOptions) -> String {
+fn format_unary_operand(e: &Expression, opts: &FormatOptions, wrap_depth: usize) -> String {
     match e {
-        Expression::BinaryOp(..) => format!("({})", format_expr(e, opts)),
-        _ => format_expr(e, opts),
+        Expression::BinaryOp(..) => {
+            format!("({})", format_expr_ctx(e, 0, true, opts, wrap_depth))
+        }
+        _ => format_expr_ctx(e, 0, true, opts, wrap_depth),
     }
 }
 
@@ -679,6 +741,42 @@ mod tests {
         };
         let out = format_source_with_options(src, "t.rv", &opts).unwrap();
         assert!(out.contains("a: int") && out.contains('\n'));
+    }
+
+    #[test]
+    fn for_loop_clauses_no_double_semicolon() {
+        let src = concat!(
+            "fun main() -> void {\n",
+            "    for (let i: int = 0; i < 10; i = i + 1) {\n",
+            "        print(i);\n",
+            "    }\n",
+            "}\n",
+        );
+        let out = format_source(src, "t.rv").unwrap();
+        assert!(
+            !out.contains(";;"),
+            "for-loop formatter must not duplicate semicolons:\n{out}"
+        );
+        assert!(out.contains("for (let i: int = 0; i < 10; i = i + 1)"));
+    }
+
+    #[test]
+    fn wrapped_call_continuation_indents_with_block_depth() {
+        let src = r#"fun main() -> void {
+    if (not move_is_valid(g, mv[0], mv[1], mv[2], mv[3], turn)) {
+        print(1);
+    }
+}
+"#;
+        let out = format_source(src, "t.rv").unwrap();
+        assert!(
+            out.contains("        g,"),
+            "wrapped call args should use pad(2) when `if` is at indent 1 (default width 88):\n{out}"
+        );
+        assert!(
+            !out.contains("\n    g,"),
+            "args must not align to a single indent unit only:\n{out}"
+        );
     }
 
     #[test]
