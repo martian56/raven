@@ -1,11 +1,4 @@
-//! rvpm - Raven Package Manager
-//!
-//! Commands:
-//!   rvpm init       Create a new Raven project
-//!   rvpm install    Install dependencies from rv.toml
-//!   rvpm add <pkg>  Add a dependency
-//!   rvpm run        Run the project (raven src/main.rv)
-//!   rvpm fmt        Format Raven source (.rv) files
+//! Raven package manager (`init`, `run`, `fmt`, …).
 
 use clap::{Arg, Command};
 use raven::format::{format_source_with_options, FormatOptions};
@@ -152,7 +145,6 @@ fn cmd_init(name: &str) -> Result<(), String> {
     fs::write(project_dir.join("rv.toml"), rv_toml)
         .map_err(|e| format!("Failed to write rv.toml: {}", e))?;
 
-    // Write src/main.rv
     fs::write(src_dir.join("main.rv"), DEFAULT_MAIN_RV)
         .map_err(|e| format!("Failed to write src/main.rv: {}", e))?;
 
