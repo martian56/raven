@@ -2,6 +2,14 @@
 
 All notable changes to Raven are documented in this file.
 
+## [Unreleased]
+
+### Documentation
+- Refreshed installation links (latest releases), CLI descriptions (`-c` type-check), **rvpm** (`init`, `run`, `fmt`, `fmt --check`), and optional **`[fmt]`** in `rv.toml`.
+- Added **Getting Started → rvpm and formatting** (`docs/getting-started/rvpm-and-format.md`).
+- Corrected examples README (removed obsolete `-f` flag; document `raven file.rv`).
+- **RVPM_DESIGN.md** updated for implemented commands and real module path notes.
+
 ## [1.4.0] - 2026-03-21
 
 ### Added
