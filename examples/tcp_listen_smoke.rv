@@ -1,0 +1,9 @@
+// Smoke test: bind an ephemeral TCP port and close the listener.
+// Run: raven examples/tcp_listen_smoke.rv
+
+import network;
+
+fun main() -> void {
+    let l: TcpListener = network.listen("127.0.0.1:0", 128);
+    network.close_listener(l);
+}
