@@ -1,4 +1,4 @@
-// lib/network.rv - Network library (HTTP via host runtime builtins)
+// Network (HTTP client + TCP server builtins).
 
 import str from "str";
 
@@ -16,7 +16,6 @@ struct HttpResponse {
     body: string
 }
 
-// Real HTTP via built-in `http_fetch` (ureq in the Raven interpreter).
 export fun send_request(request: HttpRequest) -> HttpResponse {
     return http_fetch(
         request.method,
@@ -64,6 +63,30 @@ export fun DELETE(url: string) -> HttpResponse {
         body: ""
     };
     return send_request(request);
+}
+
+export fun listen(addr: string, backlog: int) -> TcpListener {
+    return tcp_listen(addr, backlog);
+}
+
+export fun accept(listener: TcpListener) -> TcpStream {
+    return tcp_accept(listener);
+}
+
+export fun read(stream: TcpStream, max_bytes: int) -> string {
+    return tcp_read(stream, max_bytes);
+}
+
+export fun write(stream: TcpStream, data: string) -> int {
+    return tcp_write(stream, data);
+}
+
+export fun close_stream(stream: TcpStream) -> void {
+    tcp_close_stream(stream);
+}
+
+export fun close_listener(listener: TcpListener) -> void {
+    tcp_close_listener(listener);
 }
 
 struct Url {
@@ -326,7 +349,7 @@ export fun add_route(server: HttpServer, method: string, path: string, handler: 
 }
 
 export fun start_server(server: HttpServer) -> bool {
-    print("start_server: embedded HTTP server is not implemented in the Raven runtime.");
+    print("start_server: use network.listen(addr, backlog) and network.accept() for TCP; build HTTP on top in application code.");
     return false;
 }
 
