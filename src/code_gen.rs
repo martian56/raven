@@ -505,7 +505,7 @@ impl Interpreter {
     ) -> Result<(), String> {
         let index_vals: Vec<usize> = indices
             .iter()
-            .map(|e| match self.eval_expression(*e)? {
+            .map(|e| match self.eval_expression(e)? {
                 Value::Int(i) if i >= 0 => Ok(i as usize),
                 _ => Err("Array index must be a non-negative integer".to_string()),
             })
@@ -841,6 +841,60 @@ impl Interpreter {
                     evaluated_args.push(self.eval_expression(arg)?);
                 }
 
+                // map.keys.push(x) / map.keys.pop() — mutate array stored in a struct field (not
+                // only a standalone variable). Without this, push returns a new array but the Map
+                // struct is never updated (collections.rv map_set/map_remove rely on this).
+                if let Expression::FieldAccess(inner, field_name) = object_expr.as_ref() {
+                    if let Expression::Identifier(var_name) = inner.as_ref() {
+                        if method_name == "push" || method_name == "pop" {
+                            if let Some(Value::Struct(_, ref mut fields)) =
+                                self.variables.get_mut(var_name)
+                            {
+                                if let Some(Value::Array(mut elements)) =
+                                    fields.get(field_name).cloned()
+                                {
+                                    match method_name.as_str() {
+                                        "push" => {
+                                            if evaluated_args.len() != 1 {
+                                                return Err(format!(
+                                                    "push() expects 1 argument, got {}",
+                                                    evaluated_args.len()
+                                                ));
+                                            }
+                                            elements.push(evaluated_args[0].clone());
+                                            fields.insert(
+                                                field_name.clone(),
+                                                Value::Array(elements.clone()),
+                                            );
+                                            return Ok(Value::Array(elements));
+                                        }
+                                        "pop" => {
+                                            if !evaluated_args.is_empty() {
+                                                return Err(format!(
+                                                    "pop() expects 0 arguments, got {}",
+                                                    evaluated_args.len()
+                                                ));
+                                            }
+                                            if elements.is_empty() {
+                                                return Err(
+                                                    "Cannot pop from empty array".to_string(),
+                                                );
+                                            }
+                                            let popped = elements.pop().unwrap();
+                                            fields.insert(
+                                                field_name.clone(),
+                                                Value::Array(elements),
+                                            );
+                                            return Ok(popped);
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if let Expression::Identifier(var_name) = object_expr.as_ref() {
                     if let Some(Value::Array(mut elements)) = self.variables.get(var_name).cloned()
                     {
@@ -932,7 +986,7 @@ impl Interpreter {
                             _ => None,
                         })
                     {
-                        if self.modules.get(&module_name_clone).is_none() {
+                        if !self.modules.contains_key(&module_name_clone) {
                             self.load_module(&module_name_clone)?;
                         }
                         if let Some(module) = self.modules.get(&module_name_clone) {
@@ -2342,6 +2396,31 @@ mod tests {
     use crate::lexer::Lexer;
     use crate::parser::Parser;
     use crate::type_checker::TypeChecker;
+
+    #[test]
+    fn test_struct_field_array_push_updates_struct() {
+        let src = r#"
+struct S { items: string[] }
+let s: S = S { items: [] };
+s.items.push("a");
+"#;
+        let lexer = Lexer::new(src.to_string());
+        let mut parser = Parser::new(lexer, src.to_string());
+        let ast = parser.parse().expect("parse");
+        let mut checker = TypeChecker::new();
+        checker.check(&ast).expect("typecheck");
+        let mut interp = Interpreter::new();
+        interp.execute(&ast).expect("run");
+
+        let Some(Value::Struct(_, fields)) = interp.variables.get("s") else {
+            panic!("expected s");
+        };
+        let Some(Value::Array(items)) = fields.get("items") else {
+            panic!("expected items array");
+        };
+        assert_eq!(items.len(), 1);
+        assert!(matches!(items[0], Value::String(ref t) if t == "a"));
+    }
 
     #[test]
     fn test_nested_array_assignment_and_read() {

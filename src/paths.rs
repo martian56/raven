@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 ///
 /// Order:
 /// 1. **Current working directory** — `./name.rv`, then `./src/name.rv` (common project layout).
-/// 2. **Stdlib** — `RAVEN_LIB_PATH` if set, then install-relative `lib/` next to the executable,
-///    then platform install locations (`/usr/share/raven/lib`, Program Files, etc.).
+/// 2. **Stdlib** — `RAVEN_LIB_PATH` if set, then `lib/name.rv` by walking up from the `raven`
+///    executable’s directory (finds the repo `lib/` when running `target/debug/raven`), then
+///    platform install locations (`/usr/share/raven/lib`, Program Files, etc.).
 ///
 /// Raven does not depend on rvpm; resolution uses only `cwd` and install paths.
 pub fn resolve_module_path(module_name: &str) -> String {
@@ -33,13 +34,19 @@ pub fn resolve_module_path(module_name: &str) -> String {
         }
     }
 
+    // Walk up from the executable (e.g. target/debug/raven.exe → repo lib/) so `raven` works from
+    // any cwd when developing; MSI installs still hit Program Files below if needed.
     if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            for lib_dir in [dir.join("lib"), dir.join("..").join("lib")] {
-                let p = lib_dir.join(&filename);
+        if let Some(mut dir) = exe.parent() {
+            for _ in 0..8 {
+                let p = dir.join("lib").join(&filename);
                 if p.exists() {
                     return p.to_string_lossy().into_owned();
                 }
+                dir = match dir.parent() {
+                    Some(p) => p,
+                    None => break,
+                };
             }
         }
     }
