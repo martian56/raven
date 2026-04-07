@@ -2,6 +2,7 @@ use clap::{Arg, Command};
 use raven::code_gen::Interpreter;
 use raven::lexer::Lexer;
 use raven::parser::Parser;
+use raven::repl::delimiter_depth;
 use raven::type_checker::TypeChecker;
 use std::fs;
 use std::process;
@@ -148,43 +149,86 @@ fn execute_file(file_name: &str, verbose: bool, check_only: bool, show_ast: bool
     }
 }
 
-fn start_repl(verbose: bool) {
+enum ReplInput {
+    /// stdin closed before any code
+    Eof,
+    Quit,
+    Help,
+    Code(String),
+}
+
+/// Read one logical snippet: multiple lines while `(` / `{` depth is non-zero (outside strings
+/// and comments). Single-line statements run as soon as delimiters balance.
+fn read_repl_snippet() -> Result<ReplInput, std::io::Error> {
     use std::io::{self, Write};
 
+    let mut buffer = String::new();
+    loop {
+        if buffer.is_empty() {
+            print!("raven> ");
+        } else {
+            print!("...> ");
+        }
+        io::stdout().flush()?;
+
+        let mut line = String::new();
+        let n = io::stdin().read_line(&mut line)?;
+        if n == 0 {
+            if buffer.is_empty() {
+                return Ok(ReplInput::Eof);
+            }
+            return Ok(ReplInput::Code(buffer));
+        }
+
+        let trimmed = line.trim();
+        if buffer.is_empty() {
+            if trimmed == "exit" || trimmed == "quit" {
+                return Ok(ReplInput::Quit);
+            }
+            if trimmed == "help" {
+                return Ok(ReplInput::Help);
+            }
+            if trimmed.is_empty() {
+                continue;
+            }
+        }
+
+        buffer.push_str(&line);
+        let (p, b, bk) = delimiter_depth(&buffer);
+        if p > 0 || b > 0 || bk > 0 {
+            continue;
+        }
+        return Ok(ReplInput::Code(buffer));
+    }
+}
+
+fn start_repl(verbose: bool) {
     println!("🐦 Welcome to Raven REPL!");
     println!("Type 'exit' or 'quit' to exit, 'help' for help");
+    println!("Multi-line: keep typing until `()`, `{{}}`, and `[]` match (prompt changes to ...>)");
     println!("─────────────────────────────────────────");
 
     let mut interpreter = Interpreter::new();
     let mut type_checker = TypeChecker::new();
 
     loop {
-        print!("raven> ");
-        io::stdout().flush().unwrap();
-
-        let mut input = String::new();
-        match io::stdin().read_line(&mut input) {
-            Ok(_) => {
-                let input = input.trim();
-
-                if input.is_empty() {
-                    continue;
-                }
-
-                if input == "exit" || input == "quit" {
-                    println!("Goodbye!");
-                    break;
-                }
-
-                if input == "help" {
-                    println!("Available commands:");
-                    println!("  exit, quit - Exit the REPL");
-                    println!("  help - Show this help message");
-                    println!("  Any Raven code - Execute the code");
-                    continue;
-                }
-
-                match process_repl_input(input, &mut interpreter, &mut type_checker, verbose) {
+        match read_repl_snippet() {
+            Ok(ReplInput::Eof) => {
+                println!("Goodbye!");
+                break;
+            }
+            Ok(ReplInput::Quit) => {
+                println!("Goodbye!");
+                break;
+            }
+            Ok(ReplInput::Help) => {
+                println!("Available commands:");
+                println!("  exit, quit - Exit the REPL");
+                println!("  help - Show this help message");
+                println!("  Any Raven code - Execute the code (multi-line until delimiters match)");
+            }
+            Ok(ReplInput::Code(input)) => {
+                match process_repl_input(&input, &mut interpreter, &mut type_checker, verbose) {
                     Ok(_) => {}
                     Err(e) => {
                         eprintln!("❌ Error: {}", e);

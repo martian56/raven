@@ -5,5 +5,6 @@ pub mod format;
 pub mod lexer;
 pub mod parser;
 pub mod paths;
+pub mod repl;
 pub mod span;
 pub mod type_checker;
