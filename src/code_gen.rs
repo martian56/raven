@@ -877,14 +877,12 @@ impl Interpreter {
                                             }
                                             if elements.is_empty() {
                                                 return Err(
-                                                    "Cannot pop from empty array".to_string(),
+                                                    "Cannot pop from empty array".to_string()
                                                 );
                                             }
                                             let popped = elements.pop().unwrap();
-                                            fields.insert(
-                                                field_name.clone(),
-                                                Value::Array(elements),
-                                            );
+                                            fields
+                                                .insert(field_name.clone(), Value::Array(elements));
                                             return Ok(popped);
                                         }
                                         _ => {}
