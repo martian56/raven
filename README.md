@@ -121,3 +121,4 @@ Or get the installer for your OS from the [releases](https://github.com/martian5
 ## License
 
 MIT License. See [LICENSE](./LICENSE).
+<!-- GitAds-Verify: Q5CON76MHBAPN78Y87F3Q18WQ1W4L13Z -->
