@@ -122,3 +122,5 @@ Or get the installer for your OS from the [releases](https://github.com/martian5
 
 MIT License. See [LICENSE](./LICENSE).
 <!-- GitAds-Verify: Q5CON76MHBAPN78Y87F3Q18WQ1W4L13Z -->
+## GitAds Sponsored
+[![Sponsored by GitAds](https://gitads.dev/v1/ad-serve?source=martian56/raven@github)](https://gitads.dev/v1/ad-track?source=martian56/raven@github)
