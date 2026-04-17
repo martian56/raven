@@ -49,7 +49,7 @@ docs/build/
 
 # Temporary Raven files
 running
-
+CLAUDE.md
 # Example output files
 examples/output/
 examples/*.txt

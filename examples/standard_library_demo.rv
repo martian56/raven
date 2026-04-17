@@ -29,24 +29,24 @@ fun demo_math() -> void {
 fun demo_collections() -> void {
     print("\n=== Collections Library Demo ===");
     
-    // HashMap demo
-    let map: HashMap = collections.HashMap.new();
-    map.set("name", "John Doe");
-    map.set("age", "30");
-    map.set("city", "New York");
-    
+    // Map demo
+    let map: Map = collections.new_map();
+    map = map.set("name", "John Doe");
+    map = map.set("age", "30");
+    map = map.set("city", "New York");
+
     print(format("Name: {}", map.get("name")));
     print(format("Age: {}", map.get("age")));
     print(format("City: {}", map.get("city")));
     print(format("Map size: {}", map.len()));
-    
+
     // Set demo
-    let set: Set = collections.Set.new();
-    set.add("apple");
-    set.add("banana");
-    set.add("apple"); // Duplicate
-    set.add("orange");
-    
+    let set: Set = collections.new_set();
+    set = set.add("apple");
+    set = set.add("banana");
+    set = set.add("apple");
+    set = set.add("orange");
+
     print(format("Set contains 'apple': {}", set.contains("apple")));
     print(format("Set contains 'grape': {}", set.contains("grape")));
     print(format("Set size: {}", set.len()));
@@ -180,3 +180,5 @@ fun main() -> void {
     print("\n=== Demo Complete ===");
     print("All standard library modules demonstrated successfully!");
 }
+
+main();
