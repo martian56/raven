@@ -3,6 +3,7 @@
 mod core;
 mod io;
 mod string;
+mod time;
 
 use super::{Type, TypeChecker};
 use crate::ast::Expression;
@@ -20,6 +21,9 @@ impl TypeChecker {
             return Ok(Some(t));
         }
         if let Some(t) = string::check(self, name, args)? {
+            return Ok(Some(t));
+        }
+        if let Some(t) = time::check(self, name, args)? {
             return Ok(Some(t));
         }
 
@@ -148,29 +152,6 @@ impl TypeChecker {
                 }
 
                 Ok(Some(Type::Bool))
-            }
-
-            "sys_time" | "sys_date" => {
-                if !args.is_empty() {
-                    return Err(format!(
-                        "{}() expects 0 arguments, got {}",
-                        name,
-                        args.len()
-                    ));
-                }
-
-                Ok(Some(Type::String))
-            }
-
-            "sys_timestamp" => {
-                if !args.is_empty() {
-                    return Err(format!(
-                        "sys_timestamp() expects 0 arguments, got {}",
-                        args.len()
-                    ));
-                }
-
-                Ok(Some(Type::Float))
             }
 
             "http_fetch" => {
