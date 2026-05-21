@@ -67,6 +67,15 @@ fn golden_examples() {
             .output()
             .expect("invoke raven");
 
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            failures.push(format!(
+                "{}: raven exited non-zero ({}). stderr:\n{}",
+                name, output.status, stderr
+            ));
+            continue;
+        }
+
         let stdout = normalize(&String::from_utf8_lossy(&output.stdout));
         let baseline_path = src.with_extension("rv.out");
 
