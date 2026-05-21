@@ -1,6 +1,7 @@
 //! Builtin type-checking. Mirrors src/code_gen/builtins/ structure.
 
 mod core;
+mod io;
 
 use super::{Type, TypeChecker};
 use crate::ast::Expression;
@@ -14,38 +15,11 @@ impl TypeChecker {
         if let Some(t) = core::check(self, name, args)? {
             return Ok(Some(t));
         }
+        if let Some(t) = io::check(self, name, args)? {
+            return Ok(Some(t));
+        }
 
         match name {
-            "print" => {
-                if args.is_empty() {
-                    return Err("print() expects at least 1 argument".to_string());
-                }
-
-                for arg in args {
-                    self.check_expression(arg)?;
-                }
-
-                Ok(Some(Type::Void))
-            }
-
-            "input" => {
-                if args.len() > 1 {
-                    return Err(format!(
-                        "input() expects 0 or 1 argument, got {}",
-                        args.len()
-                    ));
-                }
-
-                if args.len() == 1 {
-                    let prompt_type = self.check_expression(&args[0])?;
-                    if prompt_type != Type::String {
-                        return Err("input() prompt must be a string".to_string());
-                    }
-                }
-
-                Ok(Some(Type::String))
-            }
-
             "read_file" => {
                 if args.len() != 1 {
                     return Err(format!(
@@ -225,22 +199,6 @@ impl TypeChecker {
                 }
 
                 Ok(Some(Type::Float))
-            }
-
-            "format" => {
-                if args.is_empty() {
-                    return Err(format!(
-                        "format() expects at least 1 argument, got {}",
-                        args.len()
-                    ));
-                }
-
-                let template_type = self.check_expression(&args[0])?;
-                if template_type != Type::String {
-                    return Err("format() template must be a string".to_string());
-                }
-
-                Ok(Some(Type::String))
             }
 
             "http_fetch" => {
