@@ -39,8 +39,6 @@ impl TypeChecker {
             return Ok(Some(t));
         }
 
-        match name {
-            _ => Ok(None),
-        }
+        Ok(None)
     }
 }
