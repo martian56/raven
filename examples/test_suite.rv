@@ -1,3 +1,4 @@
+// golden:skip — uses random generators
 // examples/test_suite.rv - Simple test suite using the testing library
 
 import testing;

@@ -1,3 +1,4 @@
+// golden:skip — uses network
 // Smoke test: real HTTP (requires network). Run: raven examples/network_http_smoke.rv
 
 import "network";

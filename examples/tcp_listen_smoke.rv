@@ -1,3 +1,4 @@
+// golden:skip — uses network and blocks
 // Smoke test: bind an ephemeral TCP port and close the listener.
 // Run: raven examples/tcp_listen_smoke.rv
 
