@@ -1,3 +1,4 @@
+mod array;
 mod string;
 
 use super::{Interpreter, Value};
@@ -60,78 +61,9 @@ impl Interpreter {
         }
 
         if let Expression::Identifier(var_name) = object_expr {
-            if let Some(Value::Array(mut elements)) = self.variables.get(var_name).cloned() {
-                match method_name {
-                    "push" => {
-                        if evaluated_args.len() != 1 {
-                            return Err(format!(
-                                "push() expects 1 argument, got {}",
-                                evaluated_args.len()
-                            ));
-                        }
-                        elements.push(evaluated_args[0].clone());
-                        self.variables
-                            .insert(var_name.clone(), Value::Array(elements.clone()));
-                        Ok(Value::Array(elements))
-                    }
-                    "pop" => {
-                        if !evaluated_args.is_empty() {
-                            return Err(format!(
-                                "pop() expects 0 arguments, got {}",
-                                evaluated_args.len()
-                            ));
-                        }
-                        if elements.is_empty() {
-                            return Err("Cannot pop from empty array".to_string());
-                        }
-                        let popped = elements.pop().unwrap();
-                        self.variables
-                            .insert(var_name.clone(), Value::Array(elements));
-                        Ok(popped)
-                    }
-                    "slice" => {
-                        if evaluated_args.len() != 2 {
-                            return Err(format!(
-                                "slice() expects 2 arguments, got {}",
-                                evaluated_args.len()
-                            ));
-                        }
-                        let start = match &evaluated_args[0] {
-                            Value::Int(i) => *i,
-                            _ => return Err("slice() start index must be integer".to_string()),
-                        };
-                        let end = match &evaluated_args[1] {
-                            Value::Int(i) => *i,
-                            _ => return Err("slice() end index must be integer".to_string()),
-                        };
-
-                        if start < 0 || end < 0 || start > end || start as usize >= elements.len() {
-                            return Err("Invalid slice indices".to_string());
-                        }
-
-                        let start_idx = start as usize;
-                        let end_idx = (end as usize).min(elements.len());
-
-                        Ok(Value::Array(elements[start_idx..end_idx].to_vec()))
-                    }
-                    "join" => {
-                        if evaluated_args.len() != 1 {
-                            return Err(format!(
-                                "join() expects 1 argument, got {}",
-                                evaluated_args.len()
-                            ));
-                        }
-                        let delimiter = match &evaluated_args[0] {
-                            Value::String(d) => d,
-                            _ => return Err("join() delimiter must be string".to_string()),
-                        };
-
-                        let strings: Vec<String> = elements.iter().map(|v| v.to_string()).collect();
-
-                        Ok(Value::String(strings.join(delimiter)))
-                    }
-                    _ => Err(format!("Unknown method '{}' for array", method_name)),
-                }
+            if let Some(Value::Array(elements)) = self.variables.get(var_name).cloned() {
+                let name = var_name.clone();
+                array::call(self, elements, method_name, &evaluated_args, Some(&name))
             } else if let Some(module_name_clone) =
                 self.variables.get(var_name).and_then(|v| match v {
                     Value::Module(name) => Some(name.clone()),
@@ -187,73 +119,7 @@ impl Interpreter {
             let object = self.eval_expression(object_expr)?;
 
             if let Value::Array(elements) = object {
-                match method_name {
-                    "push" => {
-                        if evaluated_args.len() != 1 {
-                            return Err(format!(
-                                "push() expects 1 argument, got {}",
-                                evaluated_args.len()
-                            ));
-                        }
-                        let mut new_elements = elements.clone();
-                        new_elements.push(evaluated_args[0].clone());
-                        Ok(Value::Array(new_elements))
-                    }
-                    "pop" => {
-                        if !evaluated_args.is_empty() {
-                            return Err(format!(
-                                "pop() expects 0 arguments, got {}",
-                                evaluated_args.len()
-                            ));
-                        }
-                        if elements.is_empty() {
-                            return Err("Cannot pop from empty array".to_string());
-                        }
-                        Ok(elements.last().unwrap().clone())
-                    }
-                    "slice" => {
-                        if evaluated_args.len() != 2 {
-                            return Err(format!(
-                                "slice() expects 2 arguments, got {}",
-                                evaluated_args.len()
-                            ));
-                        }
-                        let start = match &evaluated_args[0] {
-                            Value::Int(i) => *i,
-                            _ => return Err("slice() start index must be integer".to_string()),
-                        };
-                        let end = match &evaluated_args[1] {
-                            Value::Int(i) => *i,
-                            _ => return Err("slice() end index must be integer".to_string()),
-                        };
-
-                        if start < 0 || end < 0 || start > end || start as usize >= elements.len() {
-                            return Err("Invalid slice indices".to_string());
-                        }
-
-                        let start_idx = start as usize;
-                        let end_idx = (end as usize).min(elements.len());
-
-                        Ok(Value::Array(elements[start_idx..end_idx].to_vec()))
-                    }
-                    "join" => {
-                        if evaluated_args.len() != 1 {
-                            return Err(format!(
-                                "join() expects 1 argument, got {}",
-                                evaluated_args.len()
-                            ));
-                        }
-                        let delimiter = match &evaluated_args[0] {
-                            Value::String(d) => d,
-                            _ => return Err("join() delimiter must be string".to_string()),
-                        };
-
-                        let strings: Vec<String> = elements.iter().map(|v| v.to_string()).collect();
-
-                        Ok(Value::String(strings.join(delimiter)))
-                    }
-                    _ => Err(format!("Unknown method '{}' for array", method_name)),
-                }
+                array::call(self, elements, method_name, &evaluated_args, None)
             } else if let Value::String(s) = object {
                 string::call(self, &s, method_name, &evaluated_args)
             } else if let Value::Struct(..) = &object {
