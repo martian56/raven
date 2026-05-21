@@ -2,6 +2,7 @@
 
 mod core;
 mod io;
+mod string;
 
 use super::{Type, TypeChecker};
 use crate::ast::Expression;
@@ -16,6 +17,9 @@ impl TypeChecker {
             return Ok(Some(t));
         }
         if let Some(t) = io::check(self, name, args)? {
+            return Ok(Some(t));
+        }
+        if let Some(t) = string::check(self, name, args)? {
             return Ok(Some(t));
         }
 
@@ -156,38 +160,6 @@ impl TypeChecker {
                 }
 
                 Ok(Some(Type::String))
-            }
-
-            "parse_int" => {
-                if args.len() != 1 {
-                    return Err(format!(
-                        "parse_int() expects 1 argument, got {}",
-                        args.len()
-                    ));
-                }
-
-                let arg_type = self.check_expression(&args[0])?;
-                if arg_type != Type::String {
-                    return Err("parse_int() expects a string argument".to_string());
-                }
-
-                Ok(Some(Type::Int))
-            }
-
-            "char_code" => {
-                if args.len() != 1 {
-                    return Err(format!(
-                        "char_code() expects 1 argument, got {}",
-                        args.len()
-                    ));
-                }
-
-                let arg_type = self.check_expression(&args[0])?;
-                if arg_type != Type::String {
-                    return Err("char_code() expects a string argument".to_string());
-                }
-
-                Ok(Some(Type::Int))
             }
 
             "sys_timestamp" => {
