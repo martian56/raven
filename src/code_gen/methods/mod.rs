@@ -1,5 +1,6 @@
 mod array;
 mod string;
+mod tcp;
 
 use super::{Interpreter, Value};
 use crate::ast::Expression;
@@ -99,6 +100,10 @@ impl Interpreter {
                 }
             } else if let Some(Value::String(s)) = self.variables.get(var_name).cloned() {
                 string::call(self, &s, method_name, &evaluated_args)
+            } else if let Some(v @ (Value::TcpListener(_) | Value::TcpStream(_))) =
+                self.variables.get(var_name).cloned()
+            {
+                tcp::call(self, v, method_name, &evaluated_args)
             } else if let Some(Value::Struct(struct_name, fields)) =
                 self.variables.get(var_name).cloned()
             {
@@ -122,6 +127,8 @@ impl Interpreter {
                 array::call(self, elements, method_name, &evaluated_args, None)
             } else if let Value::String(s) = object {
                 string::call(self, &s, method_name, &evaluated_args)
+            } else if matches!(object, Value::TcpListener(_) | Value::TcpStream(_)) {
+                tcp::call(self, object, method_name, &evaluated_args)
             } else if let Value::Struct(..) = &object {
                 self.call_struct_method(object, method_name, evaluated_args, None)
             } else {
