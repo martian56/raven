@@ -1,3 +1,4 @@
+mod array;
 mod string;
 
 use super::{Type, TypeChecker};
@@ -12,50 +13,8 @@ impl TypeChecker {
     ) -> Result<Type, String> {
         let object_type = self.check_expression(object_expr)?;
 
-        if let Type::Array(element_type) = object_type {
-            match method_name {
-                "push" => {
-                    if args.len() != 1 {
-                        return Err(format!("push() expects 1 argument, got {}", args.len()));
-                    }
-                    let arg_type = self.check_expression(&args[0])?;
-                    if arg_type != *element_type {
-                        return Err(format!(
-                            "push() argument type mismatch: expected {:?}, got {:?}",
-                            element_type, arg_type
-                        ));
-                    }
-                    Ok(Type::Array(element_type)) // push() returns the modified array
-                }
-                "pop" => {
-                    if !args.is_empty() {
-                        return Err(format!("pop() expects 0 arguments, got {}", args.len()));
-                    }
-                    Ok(*element_type)
-                }
-                "slice" => {
-                    if args.len() != 2 {
-                        return Err(format!("slice() expects 2 arguments, got {}", args.len()));
-                    }
-                    let start_type = self.check_expression(&args[0])?;
-                    let end_type = self.check_expression(&args[1])?;
-                    if start_type != Type::Int || end_type != Type::Int {
-                        return Err("slice() arguments must be integers".to_string());
-                    }
-                    Ok(Type::Array(element_type))
-                }
-                "join" => {
-                    if args.len() != 1 {
-                        return Err(format!("join() expects 1 argument, got {}", args.len()));
-                    }
-                    let delimiter_type = self.check_expression(&args[0])?;
-                    if delimiter_type != Type::String {
-                        return Err("join() delimiter must be string".to_string());
-                    }
-                    Ok(Type::String)
-                }
-                _ => Err(format!("Unknown method '{}' for array", method_name)),
-            }
+        if let Type::Array(_) = object_type {
+            array::check(self, object_type, method_name, args)
         } else if let Type::Module = object_type {
             if let Expression::Identifier(module_var) = object_expr {
                 if let Some(module_name) = self.module_bindings.get(module_var) {
