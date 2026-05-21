@@ -1,5 +1,6 @@
 mod array;
 mod string;
+mod struct_impl;
 mod tcp;
 
 use super::{Interpreter, Value};
@@ -108,7 +109,8 @@ impl Interpreter {
                 self.variables.get(var_name).cloned()
             {
                 let struct_val = Value::Struct(struct_name, fields);
-                self.call_struct_method(
+                struct_impl::call(
+                    self,
                     struct_val,
                     method_name,
                     evaluated_args,
@@ -130,7 +132,7 @@ impl Interpreter {
             } else if matches!(object, Value::TcpListener(_) | Value::TcpStream(_)) {
                 tcp::call(self, object, method_name, &evaluated_args)
             } else if let Value::Struct(..) = &object {
-                self.call_struct_method(object, method_name, evaluated_args, None)
+                struct_impl::call(self, object, method_name, evaluated_args, None)
             } else {
                 Err(format!("Cannot call method on value of type {:?}", object))
             }
