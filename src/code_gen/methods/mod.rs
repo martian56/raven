@@ -1,4 +1,5 @@
 mod array;
+mod module;
 mod string;
 mod struct_impl;
 mod tcp;
@@ -72,33 +73,7 @@ impl Interpreter {
                     _ => None,
                 })
             {
-                if !self.modules.contains_key(&module_name_clone) {
-                    self.load_module(&module_name_clone)?;
-                }
-                if let Some(module) = self.modules.get(&module_name_clone) {
-                    if let Some(func) = module.functions.get(method_name) {
-                        let func_clone = func.clone();
-                        let module_clone = module.clone();
-                        self.call_function_with_module(&func_clone, evaluated_args, &module_clone)
-                    } else if let Some(value) = module.variables.get(method_name) {
-                        Ok(value.clone())
-                    } else {
-                        let available: Vec<String> = module
-                            .functions
-                            .keys()
-                            .chain(module.variables.keys())
-                            .cloned()
-                            .collect();
-                        Err(format!(
-                            "Method '{}' not found in module '{}'\n   = help: Available: {}",
-                            method_name,
-                            module_name_clone,
-                            available.join(", ")
-                        ))
-                    }
-                } else {
-                    Err(format!("Module '{}' not found", module_name_clone))
-                }
+                module::call(self, &module_name_clone, method_name, evaluated_args)
             } else if let Some(Value::String(s)) = self.variables.get(var_name).cloned() {
                 string::call(self, &s, method_name, &evaluated_args)
             } else if let Some(v @ (Value::TcpListener(_) | Value::TcpStream(_))) =
