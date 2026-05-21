@@ -3,10 +3,10 @@
 mod core;
 mod io;
 mod string;
+mod time;
 
 use super::{Interpreter, Value};
 use crate::ast::Expression;
-use chrono::Local;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
@@ -45,6 +45,9 @@ impl Interpreter {
             return Ok(Some(v));
         }
         if let Some(v) = string::call(self, name, args)? {
+            return Ok(Some(v));
+        }
+        if let Some(v) = time::call(self, name, args)? {
             return Ok(Some(v));
         }
         match name {
@@ -267,44 +270,6 @@ impl Interpreter {
                 } else {
                     Err("is_dir() path must be a string".to_string())
                 }
-            }
-
-            "sys_time" => {
-                if !args.is_empty() {
-                    return Err(format!(
-                        "sys_time() expects 0 arguments, got {}",
-                        args.len()
-                    ));
-                }
-
-                let now = Local::now();
-                Ok(Some(Value::String(now.format("%H:%M:%S").to_string())))
-            }
-
-            "sys_date" => {
-                if !args.is_empty() {
-                    return Err(format!(
-                        "sys_date() expects 0 arguments, got {}",
-                        args.len()
-                    ));
-                }
-
-                let now = Local::now();
-                Ok(Some(Value::String(now.format("%Y-%m-%d").to_string())))
-            }
-
-            "sys_timestamp" => {
-                if !args.is_empty() {
-                    return Err(format!(
-                        "sys_timestamp() expects 0 arguments, got {}",
-                        args.len()
-                    ));
-                }
-
-                let now = Local::now();
-                Ok(Some(Value::Float(
-                    now.timestamp() as f64 + now.timestamp_subsec_millis() as f64 / 1000.0,
-                )))
             }
 
             "http_fetch" => {
