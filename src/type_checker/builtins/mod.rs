@@ -1,6 +1,7 @@
 //! Builtin type-checking. Mirrors src/code_gen/builtins/ structure.
 
 mod core;
+mod fs;
 mod io;
 mod string;
 mod time;
@@ -26,134 +27,11 @@ impl TypeChecker {
         if let Some(t) = time::check(self, name, args)? {
             return Ok(Some(t));
         }
+        if let Some(t) = fs::check(self, name, args)? {
+            return Ok(Some(t));
+        }
 
         match name {
-            "read_file" => {
-                if args.len() != 1 {
-                    return Err(format!(
-                        "read_file() expects 1 argument, got {}",
-                        args.len()
-                    ));
-                }
-
-                let filename_type = self.check_expression(&args[0])?;
-                if filename_type != Type::String {
-                    return Err("read_file() filename must be a string".to_string());
-                }
-
-                Ok(Some(Type::String))
-            }
-
-            "write_file" => {
-                if args.len() != 2 {
-                    return Err(format!(
-                        "write_file() expects 2 arguments, got {}",
-                        args.len()
-                    ));
-                }
-
-                let filename_type = self.check_expression(&args[0])?;
-                if filename_type != Type::String {
-                    return Err("write_file() filename must be a string".to_string());
-                }
-
-                self.check_expression(&args[1])?;
-
-                Ok(Some(Type::Void))
-            }
-
-            "append_file" => {
-                if args.len() != 2 {
-                    return Err(format!(
-                        "append_file() expects 2 arguments, got {}",
-                        args.len()
-                    ));
-                }
-
-                let filename_type = self.check_expression(&args[0])?;
-                if filename_type != Type::String {
-                    return Err("append_file() filename must be a string".to_string());
-                }
-
-                self.check_expression(&args[1])?;
-
-                Ok(Some(Type::Void))
-            }
-
-            "file_exists" => {
-                if args.len() != 1 {
-                    return Err(format!(
-                        "file_exists() expects 1 argument, got {}",
-                        args.len()
-                    ));
-                }
-
-                let filename_type = self.check_expression(&args[0])?;
-                if filename_type != Type::String {
-                    return Err("file_exists() filename must be a string".to_string());
-                }
-
-                Ok(Some(Type::Bool))
-            }
-
-            "list_directory" => {
-                if args.len() != 1 {
-                    return Err(format!(
-                        "list_directory() expects 1 argument, got {}",
-                        args.len()
-                    ));
-                }
-
-                let path_type = self.check_expression(&args[0])?;
-                if path_type != Type::String {
-                    return Err("list_directory() path must be a string".to_string());
-                }
-
-                Ok(Some(Type::Array(Box::new(Type::String))))
-            }
-
-            "create_directory" | "remove_file" | "remove_directory" => {
-                if args.len() != 1 {
-                    return Err(format!("{}() expects 1 argument, got {}", name, args.len()));
-                }
-
-                let path_type = self.check_expression(&args[0])?;
-                if path_type != Type::String {
-                    return Err(format!("{}() path must be a string", name));
-                }
-
-                Ok(Some(Type::Bool))
-            }
-
-            "get_file_size" => {
-                if args.len() != 1 {
-                    return Err(format!(
-                        "get_file_size() expects 1 argument, got {}",
-                        args.len()
-                    ));
-                }
-
-                let path_type = self.check_expression(&args[0])?;
-                if path_type != Type::String {
-                    return Err("get_file_size() path must be a string".to_string());
-                }
-
-                Ok(Some(Type::Int))
-            }
-
-            "is_dir" => {
-                if args.len() != 1 {
-                    return Err(format!("is_dir() expects 1 argument, got {}", args.len()));
-                }
-
-                let path_type = self.check_expression(&args[0])?;
-                if path_type != Type::String {
-                    return Err("is_dir() path must be a string".to_string());
-                }
-
-                Ok(Some(Type::Bool))
-            }
-
             "http_fetch" => {
                 if args.len() != 4 {
                     return Err(format!(
