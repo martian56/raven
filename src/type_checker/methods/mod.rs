@@ -1,5 +1,6 @@
 mod array;
 mod string;
+mod tcp;
 
 use super::{Type, TypeChecker};
 use crate::ast::Expression;
@@ -79,6 +80,8 @@ impl TypeChecker {
             Ok(Type::Unknown)
         } else if let Type::String = object_type {
             string::check(self, Type::String, method_name, args)
+        } else if matches!(object_type, Type::TcpListener | Type::TcpStream) {
+            tcp::check(self, object_type, method_name, args)
         } else if let Type::Struct(struct_name) = object_type {
             let (return_type, param_types) = match self.struct_methods.get(&struct_name) {
                 Some(methods) => match methods.get(method_name) {
