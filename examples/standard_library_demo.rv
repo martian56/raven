@@ -1,3 +1,4 @@
+// golden:skip — uses time.now() and random generators
 // examples/standard_library_demo.rv - Demonstrates standard library usage
 
 import math;

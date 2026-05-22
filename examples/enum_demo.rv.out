@@ -1,0 +1,14 @@
+=== Raven Enum Demo ===
+Direct enum creation:
+  Status: HttpStatus::OK
+  Role: UserRole::Admin
+string-to-enum conversion:
+  Status: HttpStatus::NotFound
+  Role: UserRole::User
+JSON-like data processing:
+  Parsed Status: HttpStatus::InternalError
+  Parsed Role: UserRole::Guest
+Type information:
+  Status type: HttpStatus
+  Role type: UserRole
+=== Demo Complete ===

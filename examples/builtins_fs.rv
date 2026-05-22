@@ -1,0 +1,14 @@
+// deterministic builtin coverage: fs round-trip (self-cleaning)
+create_directory("tmp_builtins_fs_test");
+print(is_dir("tmp_builtins_fs_test"));
+write_file("tmp_builtins_fs_test/a.txt", "hello");
+print(file_exists("tmp_builtins_fs_test/a.txt"));
+print(get_file_size("tmp_builtins_fs_test/a.txt"));
+append_file("tmp_builtins_fs_test/a.txt", "!");
+print(get_file_size("tmp_builtins_fs_test/a.txt"));
+print(read_file("tmp_builtins_fs_test/a.txt"));
+print(len(list_directory("tmp_builtins_fs_test")));
+print(remove_file("tmp_builtins_fs_test/a.txt"));
+print(file_exists("tmp_builtins_fs_test/a.txt"));
+print(remove_directory("tmp_builtins_fs_test"));
+print(is_dir("tmp_builtins_fs_test"));

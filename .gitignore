@@ -8,7 +8,6 @@
 *.swp
 *.swo
 *~
-tests/
 # OS generated files
 .DS_Store
 .DS_Store?
@@ -56,6 +55,7 @@ examples/*.txt
 
 site/
 .cursor/
+.claude/
 testing/
 tmp_rvpm_test/
 scripts/
