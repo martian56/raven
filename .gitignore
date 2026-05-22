@@ -55,6 +55,7 @@ examples/*.txt
 
 site/
 .cursor/
+.claude/
 testing/
 tmp_rvpm_test/
 scripts/
