@@ -14,3 +14,6 @@
 //! - `driver`  — orchestrator, grown alongside the above
 //!
 //! Phase 0 ships only this doc-shaped skeleton; no module files exist yet.
+
+pub mod error;
+pub mod span;
