@@ -1,71 +1,22 @@
 [package]
 name = "raven"
-version = "1.6.4"
+version = "2.0.0-dev"
 edition = "2021"
 authors = ["martian56"]
-description = "A modern programming language with advanced features"
+description = "A modern compiled programming language (v2 in development)"
 license = "MIT"
 repository = "https://github.com/martian56/raven"
 homepage = "https://raven.ufazien.com"
-keywords = ["programming", "language", "compiler", "interpreter"]
+keywords = ["programming", "language", "compiler"]
 categories = ["development-tools", "command-line-utilities"]
 
-# Debian package configuration
-[package.metadata.deb]
-maintainer = "martian56"
-copyright = "2026 martian56"
-license-file = ["LICENSE"]
-depends = "$auto"
-section = "devel"
-priority = "optional"
-assets = [
-    ["target/release/raven", "usr/bin/", "755"],
-    ["target/release/rvpm", "usr/bin/", "755"],
-    ["README.md", "usr/share/doc/raven/", "644"],
-    ["docs/syntax.md", "usr/share/doc/raven/", "644"],
-    ["lib/math.rv", "usr/share/raven/lib/", "644"],
-    ["lib/collections.rv", "usr/share/raven/lib/", "644"],
-    ["lib/str.rv", "usr/share/raven/lib/", "644"],
-    ["lib/time.rv", "usr/share/raven/lib/", "644"],
-    ["lib/filesystem.rv", "usr/share/raven/lib/", "644"],
-    ["lib/network.rv", "usr/share/raven/lib/", "644"],
-    ["lib/web.rv", "usr/share/raven/lib/", "644"],
-    ["lib/testing.rv", "usr/share/raven/lib/", "644"],
-    ["lib/json.rv", "usr/share/raven/lib/", "644"],
-]
-extended-description = """\
-Raven is a modern programming language with advanced features.
-Includes the standard library and rvpm package manager.
-"""
-
-# RPM package configuration (cargo-generate-rpm)
-[package.metadata.generate-rpm]
-license = "MIT"
-summary = "A modern programming language with advanced features"
-assets = [
-    { source = "target/release/raven", dest = "/usr/bin/raven", mode = "755" },
-    { source = "target/release/rvpm", dest = "/usr/bin/rvpm", mode = "755" },
-    { source = "README.md", dest = "/usr/share/doc/raven/", mode = "644", doc = true },
-    { source = "docs/syntax.md", dest = "/usr/share/doc/raven/", mode = "644", doc = true },
-    { source = "lib/math.rv", dest = "/usr/share/raven/lib/", mode = "644" },
-    { source = "lib/collections.rv", dest = "/usr/share/raven/lib/", mode = "644" },
-    { source = "lib/str.rv", dest = "/usr/share/raven/lib/", mode = "644" },
-    { source = "lib/time.rv", dest = "/usr/share/raven/lib/", mode = "644" },
-    { source = "lib/filesystem.rv", dest = "/usr/share/raven/lib/", mode = "644" },
-    { source = "lib/network.rv", dest = "/usr/share/raven/lib/", mode = "644" },
-    { source = "lib/web.rv", dest = "/usr/share/raven/lib/", mode = "644" },
-    { source = "lib/testing.rv", dest = "/usr/share/raven/lib/", mode = "644" },
-    { source = "lib/json.rv", dest = "/usr/share/raven/lib/", mode = "644" },
-]
+# Packaging metadata (deb / rpm / wix) intentionally omitted while v2 is under construction.
+# It will be repopulated in Phase 11 (tooling) once the v2 stdlib and rvpm shape settle.
 
 [dependencies]
-clap = "4.1"
-chrono = "0.4"
-toml = "0.8"
-ureq = "2.10"
+# Phase 0 has no dependencies. Cranelift, ureq, toml, clap etc. will be added per phase as they become needed.
 
 [profile.release]
-opt-level = 1
+opt-level = 3
 lto = true
 codegen-units = 1
-
