@@ -15,6 +15,7 @@
 //! Lexer, span, and error infrastructure ship today; the rest land in
 //! subsequent PRs.
 
+pub mod ast;
 pub mod error;
 pub mod lexer;
 pub mod span;
