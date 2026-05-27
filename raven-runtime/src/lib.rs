@@ -13,6 +13,12 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 #![allow(clippy::missing_safety_doc)]
 
+pub mod object;
+
+pub use object::{
+    ObjectHeader, OBJECT_ALIGN, TAG_BOX, TAG_CLOSURE, TAG_LIST, TAG_MAP, TAG_SET, TAG_STRING,
+};
+
 use std::alloc::{self, Layout};
 use std::io::{self, Write};
 use std::process;
