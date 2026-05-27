@@ -1,0 +1,4 @@
+fun pick(flag: Bool, a: Int, b: Int) -> Int {
+    let x = if flag { a } else { b };
+    return x
+}

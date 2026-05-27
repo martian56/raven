@@ -1,0 +1,8 @@
+fun head(xs: List<Int>) -> Int? {
+    return Some(1)
+}
+
+fun caller(xs: List<Int>) -> Int? {
+    let v = head(xs)?;
+    return Some(v + 1)
+}
