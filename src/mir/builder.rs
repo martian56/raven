@@ -112,6 +112,14 @@ impl FunctionBuilder {
         self.block_set[block.0 as usize]
     }
 
+    /// True if `block` is unclosed and contains no statements. The
+    /// lowering pass uses this to recognize the "dead block after a
+    /// `return`" pattern and skip emitting a redundant unit return.
+    pub fn is_empty_open(&self, block: MirBlockId) -> bool {
+        let idx = block.0 as usize;
+        !self.block_set[idx] && self.blocks[idx].statements.is_empty()
+    }
+
     pub fn locals(&self) -> &[MirLocalDecl] {
         &self.locals
     }

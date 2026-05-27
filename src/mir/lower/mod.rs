@@ -152,8 +152,16 @@ pub fn lower_function(
     let result = stmt::lower_block(&mut cx, body);
 
     if !cx.builder.is_closed(cx.current) {
-        cx.builder
-            .close_block(cx.current, super::ir::MirTerminator::Return(result));
+        if cx.builder.is_empty_open(cx.current) {
+            // The body's final action was a `return` which closed its
+            // own block and rolled a fresh dead one. Leave the dead
+            // block as `Unreachable` to keep the dump tidy.
+            cx.builder
+                .close_block(cx.current, super::ir::MirTerminator::Unreachable);
+        } else {
+            cx.builder
+                .close_block(cx.current, super::ir::MirTerminator::Return(result));
+        }
     }
 
     let pending = std::mem::take(&mut cx.pending_calls);
