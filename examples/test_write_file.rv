@@ -1,4 +1,0 @@
-let filename: string = "test.txt";
-let content: string = "Hello World";
-write_file(filename, content);
-print("File written successfully");
