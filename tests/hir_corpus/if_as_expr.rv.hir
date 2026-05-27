@@ -1,0 +1,26 @@
+(hir
+  (fn "pick" params=("flag":Bool "a":Int "b":Int) ret=Int
+    (body ty=()
+      (let "x" ty=Int
+        (if ty=Int
+          (ident "flag" ty=Bool)
+          (then ty=Int
+            (tail
+              (ident "a" ty=Int)
+            )
+          )
+          (else ty=Int
+            (tail
+              (ident "b" ty=Int)
+            )
+          )
+        )
+      )
+      (stmt-expr
+        (return ty=<error>
+          (ident "x" ty=Int)
+        )
+      )
+    )
+  )
+)

@@ -1,0 +1,14 @@
+struct Counter { value: Int }
+
+fun bump(c: Counter) -> Counter {
+    let local = c;
+    local.value += 1;
+    return local
+}
+
+fun bump_local() -> Int {
+    let x = 0;
+    x += 5;
+    x -= 1;
+    return x
+}

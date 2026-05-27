@@ -1,0 +1,53 @@
+(hir
+  (fn "sum" params=("xs":List<Int>) ret=Int
+    (body ty=()
+      (let "total" ty=Int
+        (int 0 ty=Int)
+      )
+      (stmt-expr
+                (block ty=()
+          (let "__hir_iter_0" ty=List<Int>
+            (iter-new ty=List<Int>
+              (ident "xs" ty=List<Int>)
+            )
+          )
+          (tail
+            (loop ty=()
+              (body ty=()
+                (stmt-expr
+                  (match ty=()
+                    (iter-next ty=Option<Int>
+                      (ident "__hir_iter_0" ty=List<Int>)
+                    )
+                    (arm
+                      (pat Some(x))
+                                            (block ty=()
+                        (assign
+                          (target-ident "total")
+                          (binary + ty=Int
+                            (ident "total" ty=Int)
+                            (ident "x" ty=Int)
+                          )
+                        )
+                      )
+                    )
+                    (arm
+                      (pat None())
+                      (break ty=<error>
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+      (stmt-expr
+        (return ty=<error>
+          (ident "total" ty=Int)
+        )
+      )
+    )
+  )
+)
