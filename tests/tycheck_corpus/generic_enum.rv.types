@@ -1,0 +1,7 @@
+(types
+  97..172 "{\n    return match e {\n        Left(x) -> x,\n        Right(_) -> 0,\n    }\n}" -> ()
+  110..170 "match e {\n        Left(x) -> x,\n        Right(_) -> 0,\n    }" -> Int
+  116..117 "e" -> Either<Int, String>
+  139..140 "x" -> Int
+  162..163 "0" -> Int
+)

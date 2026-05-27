@@ -195,10 +195,27 @@ pub enum TypeError {
     RedundantPattern,
     /// A type path could not be resolved to a known type.
     UnknownType(String),
-    /// A user item used a generic parameter list. This variant is
-    /// temporary and disappears when issue #59 lands the full generic
-    /// mechanism.
-    GenericsNotYetSupported,
+    /// Inference reached a binding or expression whose type could not
+    /// be determined from context. The user should annotate.
+    CannotInferType,
+    /// The occurs check rejected unifying a variable with a type that
+    /// transitively contains it (`?T` with `List<?T>`).
+    OccursCheck { var: String, ty: String },
+    /// A type does not satisfy a required trait bound.
+    BoundNotSatisfied { ty: String, trait_name: String },
+    /// A generic declaration was instantiated with the wrong number of
+    /// type arguments.
+    GenericArityMismatch {
+        decl: String,
+        expected: usize,
+        actual: usize,
+    },
+    /// Two or more impl blocks claim the same `(type, trait)` pair.
+    OverlappingImpls {
+        ty: String,
+        trait_name: String,
+        candidates: Vec<String>,
+    },
     /// A call expression's callee is not a callable type.
     NotCallable(String),
     /// A bespoke message for shapes without a dedicated variant.
@@ -255,9 +272,40 @@ impl fmt::Display for TypeError {
                 write!(f, "unreachable pattern, shadowed by an earlier arm")
             }
             TypeError::UnknownType(name) => write!(f, "unknown type `{}`", name),
-            TypeError::GenericsNotYetSupported => {
-                write!(f, "user defined generics are not yet supported")
-            }
+            TypeError::CannotInferType => write!(
+                f,
+                "cannot infer the type of this expression; an annotation is needed"
+            ),
+            TypeError::OccursCheck { var, ty } => write!(
+                f,
+                "occurs check failed: `{}` cannot equal `{}` (it contains itself)",
+                var, ty
+            ),
+            TypeError::BoundNotSatisfied { ty, trait_name } => write!(
+                f,
+                "the trait bound `{}: {}` is not satisfied",
+                ty, trait_name
+            ),
+            TypeError::GenericArityMismatch {
+                decl,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "`{}` takes {} type argument(s), but {} were supplied",
+                decl, expected, actual
+            ),
+            TypeError::OverlappingImpls {
+                ty,
+                trait_name,
+                candidates,
+            } => write!(
+                f,
+                "overlapping impls of `{}` for `{}` (candidates: {})",
+                trait_name,
+                ty,
+                candidates.join(", ")
+            ),
             TypeError::NotCallable(actual) => {
                 write!(f, "values of type `{}` are not callable", actual)
             }

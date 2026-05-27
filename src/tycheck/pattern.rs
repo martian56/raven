@@ -11,7 +11,8 @@ use crate::error::{RavenError, TypeError};
 
 use super::env::{TypeEnv, VariantPayloadSig};
 use super::expr::BindingKey;
-use super::ty::Ty;
+use super::infer::substitute;
+use super::ty::{ParamId, Ty};
 
 /// Bind every name introduced by `pat` into `locals`, using `scrut_ty`
 /// as the scrutinee's type.
@@ -75,13 +76,18 @@ pub fn bind(
                 ensure_arity(name.as_deref().unwrap(), 1, elements.len(), &pat.span)?;
                 bind(&elements[0], e, env, locals)
             }
-            (Some(variant), Ty::Enum { id, .. }) => {
+            (Some(variant), Ty::Enum { id, args, .. }) => {
                 let sig = env.enums.get(id).ok_or_else(|| {
                     RavenError::ty(
                         TypeError::Custom("enum signature missing".into()),
                         pat.span.clone(),
                     )
                 })?;
+                // Build a substitution from declared params to args.
+                let mut subst: HashMap<ParamId, Ty> = HashMap::new();
+                for (p, a) in sig.generics.iter().zip(args.iter()) {
+                    subst.insert(p.id.clone(), a.clone());
+                }
                 let (_, v) = sig.variant(variant).ok_or_else(|| {
                     RavenError::ty(
                         TypeError::Custom(format!(
@@ -105,7 +111,8 @@ pub fn bind(
                             ));
                         }
                         for (sub_pat, sub_ty) in elements.iter().zip(tys.iter()) {
-                            bind(sub_pat, sub_ty, env, locals)?;
+                            let substituted = substitute(sub_ty, &subst);
+                            bind(sub_pat, &substituted, env, locals)?;
                         }
                         Ok(())
                     }

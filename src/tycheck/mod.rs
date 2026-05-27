@@ -23,6 +23,7 @@ pub mod builtin;
 pub mod collect;
 pub mod env;
 pub mod expr;
+pub mod infer;
 pub mod match_check;
 pub mod pattern;
 pub mod stmt;
@@ -40,7 +41,8 @@ use crate::resolve::{ResolvedFile, UseKey};
 use crate::span::Span;
 
 pub use env::{
-    EnumSig, FieldSig, FnSig, ImplSig, StructSig, TraitSig, TypeEnv, VariantPayloadSig, VariantSig,
+    EnumSig, FieldSig, FnSig, GenericParamSig, ImplSig, StructSig, TraitSig, TypeEnv,
+    VariantPayloadSig, VariantSig,
 };
 pub use ty::Ty;
 

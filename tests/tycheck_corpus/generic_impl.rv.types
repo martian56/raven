@@ -1,0 +1,6 @@
+(types
+  75..79 "self" -> Self/* = Box<T> */
+  75..85 "self.value" -> T
+  120..121 "b" -> Box<Int>
+  120..127 "b.get()" -> Int
+)

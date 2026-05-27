@@ -1,0 +1,14 @@
+(types
+  23..24 "x" -> T
+  44..83 "{\n    let a: Int = id(1)\n    return a\n}" -> ()
+  50..68 "let a: Int = id(1)" -> Int
+  63..65 "id" -> fun(Int) -> Int
+  63..68 "id(1)" -> Int
+  66..67 "1" -> Int
+  80..81 "a" -> Int
+  106..108 "id" -> fun(Int) -> Int
+  106..115 "id(id(7))" -> Int
+  109..111 "id" -> fun(Int) -> Int
+  109..114 "id(7)" -> Int
+  112..113 "7" -> Int
+)

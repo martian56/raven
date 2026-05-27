@@ -169,7 +169,10 @@ All variants reach the user via `RavenError::Type(error, span, hint)`. The rende
 
 ## Out of scope
 
-* User defined generic functions, structs, and traits. Tracked in issue #59.
+* User defined generic functions, structs, and traits land in
+  `docs/v2/specs/generics.md`. The same document tracks the
+  Hindley-Milner inference flavor and trait-bound verification used by
+  the v2 checker once that feature ships.
 * `dyn Trait` trait objects. Tracked in issue #66.
 * C FFI extern signatures beyond syntactic acceptance. Tracked in issue #70.
 * `defer` semantics. Tracked in issue #68.

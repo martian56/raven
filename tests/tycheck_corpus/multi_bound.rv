@@ -1,0 +1,9 @@
+trait Display {
+    fun render() -> String
+}
+
+trait Clone {
+    fun copy() -> Int
+}
+
+fun util<T: Display + Clone>(x: T) -> T = x

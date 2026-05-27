@@ -1,0 +1,6 @@
+(types
+  66..82 "Box { value: 1 }" -> Box<Int>
+  79..80 "1" -> Int
+  114..115 "b" -> Box<Int>
+  114..121 "b.value" -> Int
+)

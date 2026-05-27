@@ -1,0 +1,8 @@
+fun id<T>(x: T) -> T = x
+
+fun pick() -> Int {
+    let a: Int = id(1)
+    return a
+}
+
+fun chain() -> Int = id(id(7))
