@@ -515,6 +515,31 @@ fn walk_type_path(
     // segments are member lookups against the leading binding and are
     // the type checker's responsibility.
     let head = &path.segments[0];
+    // `Self` is bound by an `impl` frame on the scope stack. If
+    // present there it resolves to `SelfType`; otherwise the lookup
+    // below raises `UnresolvedName`, which the dedicated check inside
+    // `walk_expr` for `ExprKind::SelfUpper` already covers in
+    // expression position.
+    if head.name == "Self" {
+        if let Some(entry) = scope.lookup("Self") {
+            let binding = entry.binding.clone();
+            map.bind_use(&head.span, binding);
+            for g in &head.generics {
+                walk_type(g, scope, map)?;
+            }
+            for seg in &path.segments[1..] {
+                for g in &seg.generics {
+                    walk_type(g, scope, map)?;
+                }
+            }
+            return Ok(());
+        }
+        return Err(RavenError::resolve(
+            ResolveError::SelfOutsideImpl,
+            head.span.clone(),
+        ));
+    }
+
     // Built in primitive type names are unconditionally accepted; the
     // type checker is responsible for assigning them concrete kinds.
     if is_builtin_type_name(&head.name) {
@@ -560,7 +585,6 @@ fn is_builtin_type_name(name: &str) -> bool {
             | "String"
             | "Char"
             | "Unit"
-            | "Self"
             | "Array"
             | "Option"
             | "Result"
