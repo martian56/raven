@@ -1,0 +1,14 @@
+(resolved
+  imports
+  uses
+    33..34 "a" -> Param@8..14
+    37..38 "b" -> Param@16..22
+    72..73 "a" -> Param@47..53
+    76..77 "b" -> Param@55..61
+    111..114 "add" -> Function(#0)
+    115..116 "a" -> Param@86..92
+    118..119 "b" -> Param@94..100
+    123..126 "mul" -> Function(#1)
+    127..128 "a" -> Param@86..92
+    130..131 "b" -> Param@94..100
+)

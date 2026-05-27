@@ -1,0 +1,13 @@
+(resolved
+  imports
+  uses
+    16..17 "T" -> GenericParam(T)
+    22..23 "T" -> GenericParam(T)
+    28..29 "T" -> GenericParam(T)
+    32..33 "a" -> Param@13..17
+    50..51 "T" -> GenericParam(T)
+    56..57 "T" -> GenericParam(T)
+    60..65 "first" -> Function(#0)
+    66..67 "x" -> Param@47..51
+    69..70 "x" -> Param@47..51
+)
