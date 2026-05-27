@@ -533,6 +533,11 @@ impl<'a, 'b> Checker<'a, 'b> {
             ExprKind::Binary { op, lhs, rhs } => {
                 let l = self.check_expr(lhs)?;
                 let r = self.check_expr(rhs)?;
+                // Resolve both operands through the inference table so
+                // arithmetic on `?N` after a generic call sees the
+                // solved type when one is available.
+                let l = self.infer.resolve(&l);
+                let r = self.infer.resolve(&r);
                 check_binary(&l, &r, *op, &expr.span)
             }
             ExprKind::Range { start, end, .. } => {

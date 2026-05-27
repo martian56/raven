@@ -1,0 +1,7 @@
+trait Display {
+    fun render() -> String
+}
+
+fun show<T: Display>(x: T) -> T = x
+
+fun multi<T: Display>(a: T, b: T) -> T = a
