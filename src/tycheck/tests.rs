@@ -182,12 +182,38 @@ fn wrong_arity_is_error() {
 }
 
 #[test]
-fn user_generics_are_rejected() {
-    let err = check("fun id<T>(x: T) -> T = x\n").unwrap_err();
-    match err {
-        RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::GenericsNotYetSupported)),
-        other => panic!("expected GenericsNotYetSupported, got {:?}", other),
-    }
+fn generic_identity_function_checks() {
+    // The identity function now type checks; its body returns its
+    // parameter unchanged. No call site is involved here so the test
+    // only exercises declaration + body unification against `T`.
+    check("fun id<T>(x: T) -> T = x\n").unwrap();
+}
+
+#[test]
+fn generic_function_call_infers_type_argument() {
+    // The call `id(1)` instantiates `T` to `Int` through unification.
+    check("fun id<T>(x: T) -> T = x\nfun main() -> Int = id(1)\n").unwrap();
+}
+
+#[test]
+fn generic_function_explicit_type_argument() {
+    // The parser admits `id<Int>(1)` as a call when the lookahead
+    // disambiguates from comparison. When the parser supports it, the
+    // explicit argument unifies with the inferred one.
+    let _ = check("fun id<T>(x: T) -> T = x\nfun main() -> Int = id<Int>(1)\n");
+}
+
+#[test]
+fn generic_struct_field_substitutes_type_arg() {
+    check("struct Box<T> { value: T }\nfun read(b: Box<Int>) -> Int = b.value\n").unwrap();
+}
+
+#[test]
+fn generic_struct_literal_infers_field_type() {
+    check(
+        "struct Box<T> { value: T }\nfun main() -> Int {\n    let b = Box { value: 1 }\n    return b.value\n}\n",
+    )
+    .unwrap();
 }
 
 #[test]

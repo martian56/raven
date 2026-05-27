@@ -10,12 +10,23 @@ use std::collections::HashMap;
 use crate::resolve::DeclId;
 use crate::span::Span;
 
-use super::ty::Ty;
+use super::ty::{ParamId, Ty};
+
+/// One declared generic parameter on a signature, with its trait bounds.
+#[derive(Debug, Clone)]
+pub struct GenericParamSig {
+    /// The parameter id (owner span plus index plus original name).
+    pub id: ParamId,
+    /// Names of the traits this parameter is constrained by.
+    pub bounds: Vec<String>,
+    pub span: Span,
+}
 
 /// A struct's declared shape: ordered field list and a name to index map.
 #[derive(Debug, Clone)]
 pub struct StructSig {
     pub name: String,
+    pub generics: Vec<GenericParamSig>,
     pub fields: Vec<FieldSig>,
     pub span: Span,
 }
@@ -43,6 +54,7 @@ pub struct FieldSig {
 #[derive(Debug, Clone)]
 pub struct EnumSig {
     pub name: String,
+    pub generics: Vec<GenericParamSig>,
     pub variants: Vec<VariantSig>,
     pub span: Span,
 }
@@ -80,6 +92,7 @@ pub enum VariantPayloadSig {
 #[derive(Debug, Clone)]
 pub struct FnSig {
     pub name: String,
+    pub generics: Vec<GenericParamSig>,
     pub params: Vec<Ty>,
     pub ret: Ty,
     pub span: Span,
@@ -93,6 +106,7 @@ pub struct FnSig {
 #[derive(Debug, Clone)]
 pub struct TraitSig {
     pub name: String,
+    pub generics: Vec<GenericParamSig>,
     pub methods: HashMap<String, FnSig>,
     pub span: Span,
 }
@@ -101,6 +115,8 @@ pub struct TraitSig {
 /// and the methods it provides.
 #[derive(Debug, Clone)]
 pub struct ImplSig {
+    /// Generic parameters declared on the impl block itself.
+    pub generics: Vec<GenericParamSig>,
     /// The implementing type. `Self` inside the block refers to this.
     pub self_ty: Ty,
     /// The trait this impl satisfies, if any. `None` for inherent impls.
@@ -185,6 +201,7 @@ mod tests {
     fn struct_field_lookup_returns_index() {
         let sig = StructSig {
             name: "Point".into(),
+            generics: Vec::new(),
             fields: vec![
                 FieldSig {
                     name: "x".into(),
@@ -209,6 +226,7 @@ mod tests {
     fn enum_variant_lookup() {
         let sig = EnumSig {
             name: "Color".into(),
+            generics: Vec::new(),
             variants: vec![
                 VariantSig {
                     name: "Red".into(),
@@ -236,6 +254,7 @@ mod tests {
             "get".into(),
             FnSig {
                 name: "get".into(),
+                generics: Vec::new(),
                 params: vec![Ty::Int],
                 ret: Ty::Int,
                 span: span(),
@@ -243,6 +262,7 @@ mod tests {
             },
         );
         env.impls.push(ImplSig {
+            generics: Vec::new(),
             self_ty: Ty::Struct {
                 id: DeclId(0),
                 name: "Point".into(),

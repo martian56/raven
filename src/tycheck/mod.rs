@@ -41,7 +41,8 @@ use crate::resolve::{ResolvedFile, UseKey};
 use crate::span::Span;
 
 pub use env::{
-    EnumSig, FieldSig, FnSig, ImplSig, StructSig, TraitSig, TypeEnv, VariantPayloadSig, VariantSig,
+    EnumSig, FieldSig, FnSig, GenericParamSig, ImplSig, StructSig, TraitSig, TypeEnv,
+    VariantPayloadSig, VariantSig,
 };
 pub use ty::Ty;
 
