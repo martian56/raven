@@ -1,20 +1,31 @@
-[package]
-name = "raven"
+[workspace]
+members = [".", "raven-runtime"]
+
+[workspace.package]
 version = "2.0.0-dev"
 edition = "2021"
 authors = ["martian56"]
-description = "A modern compiled programming language (v2 in development)"
 license = "MIT"
 repository = "https://github.com/martian56/raven"
+
+[package]
+name = "raven"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "A modern compiled programming language (v2 in development)"
 homepage = "https://raven.ufazien.com"
 keywords = ["programming", "language", "compiler"]
 categories = ["development-tools", "command-line-utilities"]
 
 # Packaging metadata (deb / rpm / wix) intentionally omitted while v2 is under construction.
-# It will be repopulated in Phase 11 (tooling) once the v2 stdlib and rvpm shape settle.
+# It will be repopulated alongside the v2 tooling work once the stdlib and rvpm shape settle.
 
 [dependencies]
-# Phase 0 has no dependencies. Cranelift, ureq, toml, clap etc. will be added per phase as they become needed.
+# The compiler crate has no third-party dependencies during early v2 work.
+# Cranelift, ureq, toml, clap etc. will be added per issue as they become needed.
 
 [profile.release]
 opt-level = 3

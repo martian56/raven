@@ -1,0 +1,14 @@
+[package]
+name = "raven-runtime"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Runtime support library that compiled Raven programs link against"
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+name = "raven_runtime"
+
+[dependencies]
