@@ -16,4 +16,5 @@
 //! Phase 0 ships only this doc-shaped skeleton; no module files exist yet.
 
 pub mod error;
+pub mod lexer;
 pub mod span;
