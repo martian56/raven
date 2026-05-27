@@ -16,6 +16,7 @@
 //! subsequent PRs.
 
 pub mod ast;
+pub mod codegen;
 pub mod error;
 pub mod hir;
 pub mod lexer;
