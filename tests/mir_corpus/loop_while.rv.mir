@@ -1,0 +1,36 @@
+(mir
+  (fn "sum_to" origin="sum_to" ret=Int
+    (params (_0: Int "n"))
+    (locals
+      (_0 Int "n" param=true)
+      (_1 Int "total" param=false)
+      (_2 Int "i" param=false)
+      (_3 Bool "bin_3" param=false)
+      (_4 Int "bin_4" param=false)
+      (_5 Int "bin_5" param=false)
+    )
+    (entry bb0)
+    (bb0
+      (assign _1 (use 0))
+      (assign _2 (use 0))
+      (goto bb1)
+    )
+    (bb1
+      (assign _3 (binop < _2 _0))
+      (switch-int _3 cases=(0:bb3 1:bb2) otherwise=bb3)
+    )
+    (bb2
+      (assign _4 (binop + _1 _2))
+      (assign _1 (use _4))
+      (assign _5 (binop + _2 1))
+      (assign _2 (use _5))
+      (goto bb1)
+    )
+    (bb3
+      (return _1)
+    )
+    (bb4
+      (unreachable)
+    )
+  )
+)
