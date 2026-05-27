@@ -1,8 +1,8 @@
 //! Compiler errors with colored source pointers.
 //!
-//! `RavenError` is the top level error enum for every compiler stage. In
-//! Phase 1 only `LexError` is populated; parse and type errors will be added
-//! in their respective phases as new variants.
+//! `RavenError` is the top level error enum for every compiler stage. Only
+//! `LexError` is populated today; parse, resolve, type, and runtime errors
+//! land as new variants when the corresponding stages are built.
 //!
 //! `RavenError::display(source)` renders a multi line message: a red header,
 //! the offending source line, a row of red carets under the bad span, and an

@@ -1,7 +1,7 @@
 //! Raven v2 lexer.
 //!
 //! Tokenizes UTF-8 source text into a `Vec<Token>` ending in `TokenKind::Eof`.
-//! See `docs/v2/phases/01-lexer-spec.md` for the full token catalog,
+//! See `docs/v2/specs/lexer.md` for the full token catalog,
 //! conventions, and edge cases.
 //!
 //! The lexer owns its source as a `String` (not a `&str`) so that the

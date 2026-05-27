@@ -1,8 +1,8 @@
-# Phase 1: Lexer Spec
+# Lexer Spec
 
 ## Goal
 
-Tokenize Raven v2 source text into a flat stream of `Token` values with byte ranges and line/column positions, suitable for consumption by the Phase 2 recursive descent parser. The lexer recognizes every lexical construct in the v2 grammar (keywords, identifiers, literals, operators, punctuation, comments, newlines), reports lex errors with precise spans, and produces output deterministically for any well formed UTF-8 input.
+Tokenize Raven v2 source text into a flat stream of `Token` values with byte ranges and line/column positions, suitable for consumption by the parser. The lexer recognizes every lexical construct in the v2 grammar (keywords, identifiers, literals, operators, punctuation, comments, newlines), reports lex errors with precise spans, and produces output deterministically for any well formed UTF-8 input.
 
 ## Token kinds
 
