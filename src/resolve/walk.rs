@@ -303,16 +303,26 @@ fn walk_expr(
             map.bind_use(&expr.span, Binding::SelfType);
         }
         ExprKind::Ident { name, generics } => {
-            let entry = scope.lookup(name).ok_or_else(|| {
-                RavenError::resolve(
-                    ResolveError::UnresolvedName(name.clone()),
-                    expr.span.clone(),
-                )
-            })?;
-            let binding = entry.binding.clone();
-            map.bind_use(&expr.span, binding);
-            for g in generics {
-                walk_type(g, scope, map)?;
+            // Built in constructor identifiers (`None`, `Some`, `Ok`,
+            // `Err`) bypass scope lookup. The type checker recognizes
+            // them and assigns the correct `Option<T>` or
+            // `Result<T, E>` type at the call site.
+            if is_builtin_ctor_name(name) {
+                for g in generics {
+                    walk_type(g, scope, map)?;
+                }
+            } else {
+                let entry = scope.lookup(name).ok_or_else(|| {
+                    RavenError::resolve(
+                        ResolveError::UnresolvedName(name.clone()),
+                        expr.span.clone(),
+                    )
+                })?;
+                let binding = entry.binding.clone();
+                map.bind_use(&expr.span, binding);
+                for g in generics {
+                    walk_type(g, scope, map)?;
+                }
             }
         }
         ExprKind::StructLit {
@@ -591,7 +601,16 @@ fn is_builtin_type_name(name: &str) -> bool {
             | "Map"
             | "Set"
             | "Vec"
+            | "List"
             | "CString"
             | "Any"
     )
+}
+
+/// Builtin constructor identifiers. These appear in expressions
+/// (`None`, `Some(x)`, `Ok(v)`, `Err(e)`) and are recognized by the
+/// type checker. The resolver bypasses scope lookup for them so they
+/// can be used without an explicit import.
+fn is_builtin_ctor_name(name: &str) -> bool {
+    matches!(name, "None" | "Some" | "Ok" | "Err")
 }
