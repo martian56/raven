@@ -524,6 +524,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                 Ok(Ty::Enum {
                     id: *id,
                     name: e.name.clone(),
+                    args: Vec::new(),
                 })
             }
             Binding::Struct(id) => {
@@ -535,6 +536,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                 Ok(Ty::Struct {
                     id: *id,
                     name: s.name.clone(),
+                    args: Vec::new(),
                 })
             }
             Binding::Trait(_) => Err(ty_custom(
@@ -829,7 +831,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         let recv = self.check_expr(receiver)?;
         let stripped = recv.strip_self().clone();
         match stripped {
-            Ty::Struct { id, name: sname } => {
+            Ty::Struct { id, name: sname, .. } => {
                 let sig = self
                     .env
                     .structs
@@ -1091,6 +1093,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         Ok(Ty::Struct {
             id,
             name: sig.name.clone(),
+            args: Vec::new(),
         })
     }
 

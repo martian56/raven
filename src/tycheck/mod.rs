@@ -23,6 +23,7 @@ pub mod builtin;
 pub mod collect;
 pub mod env;
 pub mod expr;
+pub mod infer;
 pub mod match_check;
 pub mod pattern;
 pub mod stmt;

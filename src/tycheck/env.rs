@@ -246,6 +246,7 @@ mod tests {
             self_ty: Ty::Struct {
                 id: DeclId(0),
                 name: "Point".into(),
+                args: Vec::new(),
             },
             trait_name: None,
             methods,
@@ -255,6 +256,7 @@ mod tests {
             &Ty::Struct {
                 id: DeclId(0),
                 name: "Point".into(),
+                args: Vec::new(),
             },
             "get",
         );

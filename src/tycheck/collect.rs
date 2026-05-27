@@ -360,9 +360,14 @@ fn resolve_type_path(
                 .structs
                 .get(id)
                 .ok_or_else(|| RavenError::ty(TypeError::UnknownType(name.clone()), head.span.clone()))?;
+            let mut args = Vec::with_capacity(head.generics.len());
+            for g in &head.generics {
+                args.push(resolve_ty(g, resolved, env, self_ty)?);
+            }
             Ok(Ty::Struct {
                 id: *id,
                 name: s.name.clone(),
+                args,
             })
         }
         Binding::Enum(id) => {
@@ -370,9 +375,14 @@ fn resolve_type_path(
                 .enums
                 .get(id)
                 .ok_or_else(|| RavenError::ty(TypeError::UnknownType(name.clone()), head.span.clone()))?;
+            let mut args = Vec::with_capacity(head.generics.len());
+            for g in &head.generics {
+                args.push(resolve_ty(g, resolved, env, self_ty)?);
+            }
             Ok(Ty::Enum {
                 id: *id,
                 name: e.name.clone(),
+                args,
             })
         }
         Binding::Trait(_) => Err(RavenError::ty(
