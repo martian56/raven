@@ -8,6 +8,7 @@
 //! See `docs/v2/specs/resolver.md` for the full design.
 
 pub mod bindings;
+pub mod items;
 pub mod scope;
 
 pub use bindings::{
