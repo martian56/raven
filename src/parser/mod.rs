@@ -29,6 +29,9 @@ mod pattern;
 mod stmt;
 mod ty;
 
+#[cfg(test)]
+mod tests;
+
 /// Convenience alias for parser results.
 pub type ParseResult<T> = Result<T, RavenError>;
 
