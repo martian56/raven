@@ -11,6 +11,7 @@
 pub mod builder;
 pub mod ir;
 pub mod lower;
+pub mod mono;
 pub mod pretty;
 pub mod ty;
 
@@ -23,3 +24,12 @@ pub use ir::{
 };
 pub use pretty::pretty_program;
 pub use ty::MirType;
+
+use crate::error::RavenError;
+use crate::hir::HirProgram;
+
+/// Lower an entire HIR program to MIR, monomorphizing every reachable
+/// generic function.
+pub fn lower_program(hir: &HirProgram) -> Result<MirProgram, RavenError> {
+    mono::monomorphize(hir)
+}
