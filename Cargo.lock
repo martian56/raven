@@ -5,3 +5,7 @@ version = 4
 [[package]]
 name = "raven"
 version = "2.0.0-dev"
+
+[[package]]
+name = "raven-runtime"
+version = "2.0.0-dev"
