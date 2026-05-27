@@ -560,12 +560,22 @@ impl<'a, 'b> Checker<'a, 'b> {
             } => self.check_method_call(receiver, name, args, &expr.span),
             ExprKind::Field { receiver, name } => self.check_field(receiver, name, &expr.span),
             ExprKind::Index { receiver, index } => self.check_index(receiver, index, &expr.span),
-            ExprKind::Try(_) => Err(RavenError::ty(
-                TypeError::Custom(
-                    "`?` operator is not yet supported (HIR lowering, issue #60)".into(),
-                ),
-                expr.span.clone(),
-            )),
+            ExprKind::Try(inner) => {
+                let inner_ty = self.check_expr(inner)?;
+                let resolved = self.infer.resolve(&inner_ty);
+                match resolved {
+                    Ty::Result(t, _) => Ok(*t),
+                    Ty::Option(t) => Ok(*t),
+                    Ty::Error => Ok(Ty::Error),
+                    other => Err(RavenError::ty(
+                        TypeError::Custom(format!(
+                            "`?` operator requires Result or Option, got `{}`",
+                            other
+                        )),
+                        expr.span.clone(),
+                    )),
+                }
+            }
             ExprKind::If {
                 cond,
                 then_branch,

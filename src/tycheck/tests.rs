@@ -314,8 +314,25 @@ fn empty_array_literal_requires_context_type() {
 }
 
 #[test]
-fn try_operator_emits_helpful_error() {
-    let err = check("fun f(x: Result<Int, String>) -> Int = x?\n").unwrap_err();
+fn try_operator_on_result_type_checks() {
+    // The `?` operator unwraps a Result<T, E> to T. HIR lowering then
+    // desugars it into a match; the type checker only needs to assign
+    // a type here so subsequent expressions see the inner T.
+    check(
+        "fun f(x: Result<Int, String>) -> Result<Int, String> { let v = x?; return Ok(v + 1) }\n",
+    )
+    .expect("? on Result type-checks");
+}
+
+#[test]
+fn try_operator_on_option_type_checks() {
+    check("fun f(x: Int?) -> Int? { let v = x?; return Some(v + 1) }\n")
+        .expect("? on Option type-checks");
+}
+
+#[test]
+fn try_operator_on_int_is_error() {
+    let err = check("fun f() -> Int { let v = 1?; return v }\n").unwrap_err();
     match err {
         RavenError::Type(b, _, _) => match *b {
             TypeError::Custom(m) => assert!(m.contains("?")),
