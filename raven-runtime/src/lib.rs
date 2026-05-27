@@ -7,9 +7,10 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 // The ABI surface is `extern "C"` and is called from machine code
-// emitted by the back-end. The crate documents the safety contract per
-// function; marking the symbols `unsafe` would change their mangling
-// and is not what the codegen is taught to call.
+// emitted by the back-end. The safety contract for each pointer
+// argument is documented on the function itself; the symbols are not
+// marked `unsafe` because the back-end emits direct call instructions
+// and an `unsafe` qualifier would only matter for Rust callers.
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 #![allow(clippy::missing_safety_doc)]
 
@@ -135,4 +136,71 @@ pub extern "C" fn raven_println_str(ptr: *const u8, len: usize) {
         let _ = handle.write_all(bytes);
     }
     let _ = handle.write_all(b"\n");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::mem::{align_of, size_of};
+
+    #[test]
+    fn object_header_is_sixteen_bytes() {
+        assert_eq!(size_of::<ObjectHeader>(), 16);
+    }
+
+    #[test]
+    fn object_header_alignment_divides_object_align() {
+        assert!(OBJECT_ALIGN.is_power_of_two());
+        assert_eq!(OBJECT_ALIGN % align_of::<ObjectHeader>(), 0);
+    }
+
+    #[test]
+    fn object_header_new_zeroes_gc_bits() {
+        let h = ObjectHeader::new(TAG_STRING, 5, 8);
+        assert_eq!(h.tag, TAG_STRING);
+        assert_eq!(h.gc_bits, 0);
+        assert_eq!(h.len, 5);
+        assert_eq!(h.cap, 8);
+    }
+
+    #[test]
+    fn tag_constants_are_distinct_and_dense() {
+        let tags = [TAG_STRING, TAG_LIST, TAG_MAP, TAG_SET, TAG_CLOSURE, TAG_BOX];
+        for (i, t) in tags.iter().enumerate() {
+            assert_eq!(*t as usize, i + 1, "tag {i} should be {}", i + 1);
+        }
+    }
+
+    #[test]
+    fn alloc_dealloc_roundtrip_succeeds() {
+        let size = 64;
+        let align = OBJECT_ALIGN;
+        let ptr = raven_alloc(size, align);
+        assert!(!ptr.is_null(), "raven_alloc returned null");
+        // Touch the memory so a miscompile or layout bug would show up
+        // under sanitizers.
+        unsafe {
+            std::ptr::write_bytes(ptr, 0xAB, size);
+        }
+        raven_dealloc(ptr, size, align);
+    }
+
+    #[test]
+    fn alloc_with_invalid_layout_returns_null() {
+        // align is not a power of two: invalid layout, must not abort.
+        let ptr = raven_alloc(8, 3);
+        assert!(ptr.is_null());
+    }
+
+    #[test]
+    fn dealloc_null_is_noop() {
+        raven_dealloc(std::ptr::null_mut(), 16, OBJECT_ALIGN);
+    }
+
+    #[test]
+    fn print_str_accepts_empty_slice() {
+        // Empty slices must not dereference the pointer.
+        raven_print_str(std::ptr::null(), 0);
+        raven_println_str(std::ptr::null(), 0);
+    }
 }
