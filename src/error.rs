@@ -112,6 +112,54 @@ impl fmt::Display for ParseError {
     }
 }
 
+/// Name resolution errors raised by the resolver.
+///
+/// All variants carry the offending span on the outer `RavenError::Resolve`
+/// wrapper; payload data here is just enough to format a human readable
+/// message. See `docs/v2/specs/resolver.md` for the full catalog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolveError {
+    /// An identifier could not be found in any enclosing scope.
+    UnresolvedName(String),
+    /// Two declarations with the same name appear in the same scope.
+    /// `first_span` points at the original declaration so the renderer can
+    /// surface both locations if it chooses.
+    DuplicateDeclaration { name: String, first_span: Span },
+    /// An import path could not be resolved to a target.
+    UnresolvedImport(String),
+    /// The import graph contains a cycle that reaches the given path.
+    CyclicImport(String),
+    /// A name is visible from multiple import sources at the same scope.
+    AmbiguousName { name: String, candidates: Vec<Span> },
+    /// `self` or `Self` used outside an `impl` block.
+    SelfOutsideImpl,
+}
+
+impl fmt::Display for ResolveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ResolveError::UnresolvedName(name) => {
+                write!(f, "cannot find `{}` in scope", name)
+            }
+            ResolveError::DuplicateDeclaration { name, .. } => {
+                write!(f, "the name `{}` is declared multiple times", name)
+            }
+            ResolveError::UnresolvedImport(path) => {
+                write!(f, "cannot resolve import `{}`", path)
+            }
+            ResolveError::CyclicImport(path) => {
+                write!(f, "cyclic import detected involving `{}`", path)
+            }
+            ResolveError::AmbiguousName { name, .. } => {
+                write!(f, "the name `{}` is ambiguous", name)
+            }
+            ResolveError::SelfOutsideImpl => {
+                write!(f, "`self` or `Self` used outside an `impl` block")
+            }
+        }
+    }
+}
+
 /// Top level compiler error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RavenError {
@@ -119,6 +167,8 @@ pub enum RavenError {
     Lex(LexError, Span, Option<String>),
     /// A parser error with the offending span and an optional hint.
     Parse(ParseError, Span, Option<String>),
+    /// A resolver error with the offending span and an optional hint.
+    Resolve(ResolveError, Span, Option<String>),
 }
 
 impl RavenError {
@@ -132,11 +182,17 @@ impl RavenError {
         RavenError::Parse(kind, span, None)
     }
 
+    /// Construct a resolve error.
+    pub fn resolve(kind: ResolveError, span: Span) -> Self {
+        RavenError::Resolve(kind, span, None)
+    }
+
     /// Attach a hint string to this error.
     pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
         match &mut self {
             RavenError::Lex(_, _, h) => *h = Some(hint.into()),
             RavenError::Parse(_, _, h) => *h = Some(hint.into()),
+            RavenError::Resolve(_, _, h) => *h = Some(hint.into()),
         }
         self
     }
@@ -146,6 +202,7 @@ impl RavenError {
         match self {
             RavenError::Lex(_, sp, _) => sp,
             RavenError::Parse(_, sp, _) => sp,
+            RavenError::Resolve(_, sp, _) => sp,
         }
     }
 
@@ -160,6 +217,7 @@ impl RavenError {
         let (kind_str, span, hint) = match self {
             RavenError::Lex(k, s, h) => (format!("error: {}", k), s, h.as_deref()),
             RavenError::Parse(k, s, h) => (format!("error: {}", k), s, h.as_deref()),
+            RavenError::Resolve(k, s, h) => (format!("error: {}", k), s, h.as_deref()),
         };
 
         let mut out = String::new();
@@ -221,6 +279,7 @@ impl fmt::Display for RavenError {
         match self {
             RavenError::Lex(k, s, _) => write!(f, "{}: {}", s, k),
             RavenError::Parse(k, s, _) => write!(f, "{}: {}", s, k),
+            RavenError::Resolve(k, s, _) => write!(f, "{}: {}", s, k),
         }
     }
 }
@@ -299,5 +358,30 @@ mod tests {
         let err = RavenError::parse(ParseError::ChainedComparison, span);
         let s = format!("{}", err);
         assert_eq!(s, "test.rv:2:3: comparison operators cannot be chained");
+    }
+
+    #[test]
+    fn resolve_error_renders_with_carets_and_hint() {
+        let src = "fun main() { println(\"hi\") }\n";
+        // `println` starts at byte 13, col 14.
+        let span = Span::new(file(), 13, 20, 1, 14);
+        let err = RavenError::resolve(ResolveError::UnresolvedName("println".into()), span)
+            .with_hint("did you mean to `import std/io { println }`?");
+        let rendered = err.display(src);
+        assert!(rendered.contains("cannot find `println` in scope"));
+        assert!(rendered.contains("fun main() { println"));
+        assert!(rendered.contains('^'));
+        assert!(rendered.contains("hint:"));
+    }
+
+    #[test]
+    fn resolve_error_display_formats_location_then_kind() {
+        let span = Span::new(file(), 0, 1, 4, 7);
+        let err = RavenError::resolve(ResolveError::SelfOutsideImpl, span);
+        let s = format!("{}", err);
+        assert_eq!(
+            s,
+            "test.rv:4:7: `self` or `Self` used outside an `impl` block"
+        );
     }
 }
