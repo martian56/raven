@@ -962,6 +962,24 @@ impl<'a, 'b> Checker<'a, 'b> {
                 let e = self.check_expr(&args[0])?;
                 Ok(Ty::Result(Box::new(Ty::Error), Box::new(e)))
             }
+            "print" => {
+                // Built in `print(s: String)` intrinsic. The codegen
+                // backend recognizes the mangled name and emits a call
+                // to the runtime's `raven_println_str` ABI symbol.
+                if args.len() != 1 {
+                    return Err(RavenError::ty(
+                        TypeError::WrongArity {
+                            func: "print".into(),
+                            expected: 1,
+                            actual: args.len(),
+                        },
+                        span.clone(),
+                    ));
+                }
+                let arg_ty = self.check_expr(&args[0])?;
+                self.unify(&Ty::Str, &arg_ty, &args[0].span)?;
+                Ok(Ty::Unit)
+            }
             other => Err(RavenError::ty(
                 TypeError::Custom(format!("identifier `{}` has no type binding", other)),
                 span.clone(),
