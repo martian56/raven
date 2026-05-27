@@ -106,35 +106,27 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
             slots.push(LocalSlot { slot, ty });
         }
 
-        // Spill the incoming parameters into their slots.
-        builder.switch_to_block(entry);
-        let entry_params: Vec<Value> = builder.block_params(entry).to_vec();
-        let mut entry_param_iter = entry_params.into_iter();
-        for (i, param_local) in self.func.params.iter().enumerate() {
-            let slot_info = slots[param_local.0 as usize];
-            match (slot_info.slot, slot_info.ty) {
-                (Some(slot), Some(_ty)) => {
-                    let v = entry_param_iter.next().unwrap_or_else(|| {
-                        unreachable!(
-                            "parameter count and block param count differ at index {}",
-                            i
-                        )
-                    });
-                    builder.ins().stack_store(v, slot, 0);
-                }
-                _ => {
-                    // Unit parameter: no machine value to consume.
-                }
-            }
-        }
-
-        // Lower each block.
+        // Lower each block. The entry block additionally spills its
+        // incoming parameters into their stack slots before the MIR
+        // statements run.
+        let entry_idx = self.func.entry.0 as usize;
         for (idx, mir_block) in self.func.blocks.iter().enumerate() {
-            if idx != self.func.entry.0 as usize {
-                builder.switch_to_block(blocks[idx]);
-            } else {
-                // entry was already switched above; ensure it is current
-                builder.switch_to_block(blocks[idx]);
+            builder.switch_to_block(blocks[idx]);
+            if idx == entry_idx {
+                let entry_params: Vec<Value> = builder.block_params(entry).to_vec();
+                let mut iter = entry_params.into_iter();
+                for (i, param_local) in self.func.params.iter().enumerate() {
+                    let slot_info = slots[param_local.0 as usize];
+                    if let (Some(slot), Some(_)) = (slot_info.slot, slot_info.ty) {
+                        let v = iter.next().unwrap_or_else(|| {
+                            unreachable!(
+                                "parameter count and block param count differ at index {}",
+                                i
+                            )
+                        });
+                        builder.ins().stack_store(v, slot, 0);
+                    }
+                }
             }
             lower_block(self.cx, &mut builder, mir_block, &slots, &blocks)?;
         }

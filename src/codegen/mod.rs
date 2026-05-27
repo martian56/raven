@@ -18,6 +18,9 @@ pub mod function;
 pub mod intrinsics;
 pub mod linker;
 
+#[cfg(test)]
+mod tests;
+
 use std::fmt;
 use std::sync::Arc;
 
