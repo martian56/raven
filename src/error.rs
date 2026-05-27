@@ -160,7 +160,119 @@ impl fmt::Display for ResolveError {
     }
 }
 
+/// Type checking errors raised by the type checker.
+///
+/// Wrapped in `RavenError::Type(error, span, hint)` and rendered by the
+/// shared error formatter. See `docs/v2/specs/tycheck.md` for the full
+/// catalog and which language constructs raise each variant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeError {
+    /// The actual type does not match the expected type at this position.
+    TypeMismatch { expected: String, actual: String },
+    /// A struct does not declare the field named here.
+    UndefinedField { struct_name: String, field: String },
+    /// The receiver type does not expose a method with this name.
+    UndefinedMethod { receiver_ty: String, method: String },
+    /// More than one impl provides a method with this name on the
+    /// receiver type. `candidates` lists the source spellings of the
+    /// providing impls so the diagnostic can quote them back.
+    AmbiguousMethod {
+        receiver_ty: String,
+        method: String,
+        candidates: Vec<String>,
+    },
+    /// A function or method is called with the wrong number of
+    /// arguments.
+    WrongArity {
+        func: String,
+        expected: usize,
+        actual: usize,
+    },
+    /// A `match` expression does not cover every variant of the
+    /// scrutinee, and lacks a wildcard arm.
+    NonExhaustiveMatch { missing: Vec<String> },
+    /// A `match` arm is fully shadowed by an earlier arm.
+    RedundantPattern,
+    /// A type path could not be resolved to a known type.
+    UnknownType(String),
+    /// A user item used a generic parameter list. This variant is
+    /// temporary and disappears when issue #59 lands the full generic
+    /// mechanism.
+    GenericsNotYetSupported,
+    /// A call expression's callee is not a callable type.
+    NotCallable(String),
+    /// A bespoke message for shapes without a dedicated variant.
+    Custom(String),
+}
+
+impl fmt::Display for TypeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TypeError::TypeMismatch { expected, actual } => {
+                write!(
+                    f,
+                    "type mismatch: expected `{}`, found `{}`",
+                    expected, actual
+                )
+            }
+            TypeError::UndefinedField { struct_name, field } => {
+                write!(f, "struct `{}` has no field `{}`", struct_name, field)
+            }
+            TypeError::UndefinedMethod {
+                receiver_ty,
+                method,
+            } => write!(f, "no method `{}` found for type `{}`", method, receiver_ty),
+            TypeError::AmbiguousMethod {
+                receiver_ty,
+                method,
+                candidates,
+            } => write!(
+                f,
+                "ambiguous method `{}` on `{}` (candidates: {})",
+                method,
+                receiver_ty,
+                candidates.join(", ")
+            ),
+            TypeError::WrongArity {
+                func,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "wrong number of arguments to `{}`: expected {}, found {}",
+                func, expected, actual
+            ),
+            TypeError::NonExhaustiveMatch { missing } => write!(
+                f,
+                "non exhaustive match: missing {}",
+                missing
+                    .iter()
+                    .map(|s| format!("`{}`", s))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            TypeError::RedundantPattern => {
+                write!(f, "unreachable pattern, shadowed by an earlier arm")
+            }
+            TypeError::UnknownType(name) => write!(f, "unknown type `{}`", name),
+            TypeError::GenericsNotYetSupported => {
+                write!(f, "user defined generics are not yet supported")
+            }
+            TypeError::NotCallable(actual) => {
+                write!(f, "values of type `{}` are not callable", actual)
+            }
+            TypeError::Custom(msg) => f.write_str(msg),
+        }
+    }
+}
+
 /// Top level compiler error.
+///
+/// The type error variant is boxed because `TypeError` carries richer
+/// payloads than the other stages (lists of candidate names, structured
+/// fields). Boxing keeps `RavenError` itself small so that pervasive
+/// `Result<_, RavenError>` returns elsewhere in the compiler do not
+/// inflate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RavenError {
     /// A lexer error with the offending span and an optional hint.
@@ -169,6 +281,9 @@ pub enum RavenError {
     Parse(ParseError, Span, Option<String>),
     /// A resolver error with the offending span and an optional hint.
     Resolve(ResolveError, Span, Option<String>),
+    /// A type checker error with the offending span and an optional
+    /// hint. Boxed to keep the enum compact.
+    Type(Box<TypeError>, Span, Option<String>),
 }
 
 impl RavenError {
@@ -187,12 +302,18 @@ impl RavenError {
         RavenError::Resolve(kind, span, None)
     }
 
+    /// Construct a type error.
+    pub fn ty(kind: TypeError, span: Span) -> Self {
+        RavenError::Type(Box::new(kind), span, None)
+    }
+
     /// Attach a hint string to this error.
     pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
         match &mut self {
             RavenError::Lex(_, _, h) => *h = Some(hint.into()),
             RavenError::Parse(_, _, h) => *h = Some(hint.into()),
             RavenError::Resolve(_, _, h) => *h = Some(hint.into()),
+            RavenError::Type(_, _, h) => *h = Some(hint.into()),
         }
         self
     }
@@ -203,6 +324,7 @@ impl RavenError {
             RavenError::Lex(_, sp, _) => sp,
             RavenError::Parse(_, sp, _) => sp,
             RavenError::Resolve(_, sp, _) => sp,
+            RavenError::Type(_, sp, _) => sp,
         }
     }
 
@@ -218,6 +340,7 @@ impl RavenError {
             RavenError::Lex(k, s, h) => (format!("error: {}", k), s, h.as_deref()),
             RavenError::Parse(k, s, h) => (format!("error: {}", k), s, h.as_deref()),
             RavenError::Resolve(k, s, h) => (format!("error: {}", k), s, h.as_deref()),
+            RavenError::Type(k, s, h) => (format!("error: {}", k), s, h.as_deref()),
         };
 
         let mut out = String::new();
@@ -280,6 +403,7 @@ impl fmt::Display for RavenError {
             RavenError::Lex(k, s, _) => write!(f, "{}: {}", s, k),
             RavenError::Parse(k, s, _) => write!(f, "{}: {}", s, k),
             RavenError::Resolve(k, s, _) => write!(f, "{}: {}", s, k),
+            RavenError::Type(k, s, _) => write!(f, "{}: {}", s, k),
         }
     }
 }
@@ -383,5 +507,39 @@ mod tests {
             s,
             "test.rv:4:7: `self` or `Self` used outside an `impl` block"
         );
+    }
+
+    #[test]
+    fn type_error_renders_with_carets_and_hint() {
+        let src = "let x: Int = 1.5\n";
+        // The `1.5` literal sits at byte 13, line 1, col 14.
+        let span = Span::new(file(), 13, 16, 1, 14);
+        let err = RavenError::ty(
+            TypeError::TypeMismatch {
+                expected: "Int".into(),
+                actual: "Float".into(),
+            },
+            span,
+        )
+        .with_hint("did you mean to call `.to_int()`?");
+        let rendered = err.display(src);
+        assert!(rendered.contains("expected `Int`, found `Float`"));
+        assert!(rendered.contains("let x: Int = 1.5"));
+        assert!(rendered.contains('^'));
+        assert!(rendered.contains("hint:"));
+    }
+
+    #[test]
+    fn type_error_display_formats_location_then_kind() {
+        let span = Span::new(file(), 0, 1, 7, 2);
+        let err = RavenError::ty(
+            TypeError::UndefinedField {
+                struct_name: "Point".into(),
+                field: "z".into(),
+            },
+            span,
+        );
+        let s = format!("{}", err);
+        assert_eq!(s, "test.rv:7:2: struct `Point` has no field `z`");
     }
 }
