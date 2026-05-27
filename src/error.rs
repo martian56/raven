@@ -216,10 +216,6 @@ pub enum TypeError {
         trait_name: String,
         candidates: Vec<String>,
     },
-    /// Legacy variant kept for the deprecated reject path during the
-    /// generics rollout. Reserved for follow-up removal once the test
-    /// migrations land in this same commit chain.
-    GenericsNotYetSupported,
     /// A call expression's callee is not a callable type.
     NotCallable(String),
     /// A bespoke message for shapes without a dedicated variant.
@@ -310,9 +306,6 @@ impl fmt::Display for TypeError {
                 ty,
                 candidates.join(", ")
             ),
-            TypeError::GenericsNotYetSupported => {
-                write!(f, "user defined generics are not yet supported")
-            }
             TypeError::NotCallable(actual) => {
                 write!(f, "values of type `{}` are not callable", actual)
             }
