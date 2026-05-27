@@ -1,0 +1,24 @@
+(file
+  (fn "mix" params=("a":Int "b":Int "c":Int) ret=Int
+    (body-expr
+      (binary -
+        (binary +
+          (ident "a")
+          (binary *
+            (ident "b")
+            (ident "c")
+          )
+        )
+        (binary %
+          (paren
+            (binary /
+              (ident "a")
+              (ident "b")
+            )
+          )
+          (ident "c")
+        )
+      )
+    )
+  )
+)

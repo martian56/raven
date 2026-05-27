@@ -1,0 +1,11 @@
+fun apply(f: fun(Int) -> Int, x: Int) -> Int = f(x)
+
+fun double(x: Int) -> Int {
+    let f = { y -> y * 2 }
+    apply(f, x)
+}
+
+fun verbose() -> Int {
+    let g = fun(x: Int) -> Int = x + 1
+    g(10)
+}

@@ -18,12 +18,14 @@
 pub mod decl;
 pub mod expr;
 pub mod pattern;
+pub mod pretty;
 pub mod stmt;
 pub mod ty;
 
 pub use decl::*;
 pub use expr::*;
 pub use pattern::*;
+pub use pretty::pretty_file;
 pub use stmt::*;
 pub use ty::*;
 

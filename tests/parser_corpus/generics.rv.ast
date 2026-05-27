@@ -1,0 +1,40 @@
+(file
+  (fn "map" generics=("T" "U") params=("xs":List<T> "f":fun(T) -> U) ret=List<U>
+    (body
+      (let-stmt "out": List<U>
+        (call
+          (ident "empty" generics=(U))
+        )
+      )
+      (expr-stmt
+        (for
+          (pattern ident:"x")
+          (ident "xs")
+          (body
+            (trailing
+              (method-call "push"
+                (ident "out")
+                (call
+                  (ident "f")
+                  (ident "x")
+                )
+              )
+            )
+          )
+        )
+      )
+      (trailing
+        (ident "out")
+      )
+    )
+  )
+  (fn "nested" params=() ret=Vec<Vec<Int>>
+    (body
+      (trailing
+        (call
+          (ident "empty" generics=(Vec<Int>))
+        )
+      )
+    )
+  )
+)

@@ -1,0 +1,11 @@
+fun map<T, U>(xs: List<T>, f: fun(T) -> U) -> List<U> {
+    let out: List<U> = empty<U>()
+    for x in xs {
+        out.push(f(x))
+    }
+    out
+}
+
+fun nested() -> Vec<Vec<Int>> {
+    empty<Vec<Int>>()
+}

@@ -1,0 +1,23 @@
+fun fizzbuzz(n: Int) {
+    for i in 1..=n {
+        if i % 15 == 0 {
+            print("FizzBuzz")
+        } else if i % 3 == 0 {
+            print("Fizz")
+        } else if i % 5 == 0 {
+            print("Buzz")
+        } else {
+            print(i)
+        }
+    }
+}
+
+fun count(limit: Int) -> Int {
+    let total = 0
+    let i = 0
+    while i < limit {
+        total += 1
+        i += 1
+    }
+    total
+}
