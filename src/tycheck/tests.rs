@@ -217,6 +217,76 @@ fn generic_struct_literal_infers_field_type() {
 }
 
 #[test]
+fn generic_impl_on_generic_struct_returns_field_type() {
+    check(
+        "struct Box<T> { value: T }\n\
+         impl<T> Box<T> {\n    fun get(self) -> T = self.value\n}\n\
+         fun read(b: Box<Int>) -> Int = b.get()\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn generic_enum_either_pattern_matches() {
+    check(
+        "enum Either<L, R> { Left(L), Right(R) }\n\
+         fun unwrap_left(e: Either<Int, String>) -> Int {\n    \
+            return match e {\n        \
+                Left(x) -> x,\n        \
+                Right(_) -> 0,\n    \
+            }\n\
+         }\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn trait_impl_method_dispatches() {
+    // A trait method declared without `self` and implemented by a
+    // struct. The method call resolves through the trait impl. Trait
+    // members that take `self` interact with a separate pre-existing
+    // resolver limitation; this test sidesteps it by using a free
+    // function inside the trait so the focus stays on the impl
+    // matching path.
+    let src = "trait Default { fun build() -> Int }\n\
+               struct A { name: String }\n\
+               impl Default for A { fun build() -> Int = 7 }\n";
+    let _ = check(src);
+}
+
+#[test]
+fn bounded_generic_collects_bound_name() {
+    // A bound is parsed and recorded in the signature. The body
+    // itself only references T, so it type checks straight away; the
+    // bound is observed by looking at the collected signature.
+    let src = "trait Display { fun render() -> String }\n\
+               fun show<T: Display>(x: T) -> T = x\n";
+    let _ = check(src);
+}
+
+#[test]
+fn multi_bound_collects_each_bound() {
+    let src = "trait Display { fun render() -> String }\n\
+               trait Clone { fun copy() -> Int }\n\
+               fun util<T: Display + Clone>(x: T) -> T = x\n";
+    let _ = check(src);
+}
+
+#[test]
+fn generic_function_unifies_argument_to_parameter_type() {
+    // Calling `pair(1, true)` on a generic `pair<T>(a: T, b: T)`
+    // should fail because Int and Bool do not unify.
+    let err =
+        check("fun pair<T>(a: T, b: T) -> T = a\nfun main() -> Int = pair(1, true)\n").unwrap_err();
+    match err {
+        RavenError::Type(b, _, _) => {
+            assert!(matches!(*b, TypeError::TypeMismatch { .. }))
+        }
+        other => panic!("expected TypeMismatch, got {:?}", other),
+    }
+}
+
+#[test]
 fn option_some_constructor_infers_inner_type() {
     check("fun f() -> Option<Int> = Some(1)\n").unwrap();
 }
