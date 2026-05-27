@@ -2,22 +2,24 @@ name: Raven CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "v1.x-maintenance", "v2.x" ]
     paths:
       - "src/**"
       - "lib/**"
       - "examples/**"
       - "tests/**"
+      - "raven-runtime/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/ci.yml"
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "v1.x-maintenance", "v2.x" ]
     paths:
       - "src/**"
       - "lib/**"
       - "examples/**"
       - "tests/**"
+      - "raven-runtime/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/ci.yml"
