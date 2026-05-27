@@ -8,6 +8,7 @@
 //!
 //! See `docs/v2/specs/mir.md` for the full design.
 
+pub mod builder;
 pub mod ir;
 pub mod pretty;
 pub mod ty;
