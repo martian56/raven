@@ -1,0 +1,20 @@
+enum Color {
+    Red,
+    Green,
+    Blue,
+}
+
+fun name(c: Color) -> Int {
+    return match c {
+        Red -> 0,
+        Green -> 1,
+        Blue -> 2,
+    }
+}
+
+fun is_red(c: Color) -> Bool {
+    return match c {
+        Red -> true,
+        _ -> false,
+    }
+}

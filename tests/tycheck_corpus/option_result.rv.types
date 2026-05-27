@@ -1,0 +1,29 @@
+(types
+  39..118 "{\n    if xs.is_empty() {\n        return None\n    }\n    return Some(xs.get(0))\n}" -> ()
+  45..89 "if xs.is_empty() {\n        return None\n    }" -> ()
+  48..50 "xs" -> List<Int>
+  48..61 "xs.is_empty()" -> Bool
+  62..89 "{\n        return None\n    }" -> ()
+  79..83 "None" -> Option<<error>>
+  101..116 "Some(xs.get(0))" -> Option<Int>
+  106..108 "xs" -> List<Int>
+  106..115 "xs.get(0)" -> Int
+  113..114 "0" -> Int
+  170..255 "{\n    if b == 0 {\n        return Err(\"division by zero\")\n    }\n    return Ok(a / b)\n}" -> ()
+  176..232 "if b == 0 {\n        return Err(\"division by zero\")\n    }" -> ()
+  179..180 "b" -> Int
+  179..185 "b == 0" -> Bool
+  184..185 "0" -> Int
+  186..232 "{\n        return Err(\"division by zero\")\n    }" -> ()
+  203..226 "Err(\"division by zero\")" -> Result<<error>, String>
+  207..225 "\"division by zero\"" -> String
+  244..253 "Ok(a / b)" -> Result<Int, <error>>
+  247..248 "a" -> Int
+  247..252 "a / b" -> Int
+  251..252 "b" -> Int
+  289..360 "{\n    return match x {\n        None -> 0,\n        Some(n) -> n,\n    }\n}" -> ()
+  302..358 "match x {\n        None -> 0,\n        Some(n) -> n,\n    }" -> Int
+  308..309 "x" -> Option<Int>
+  328..329 "0" -> Int
+  350..351 "n" -> Int
+)

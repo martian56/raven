@@ -1,0 +1,12 @@
+struct Point {
+    x: Int,
+    y: Int,
+}
+
+impl Point {
+    fun get_x(self) -> Int = self.x
+    fun sum(self) -> Int = self.x + self.y
+}
+
+fun make() -> Point = Point { x: 1, y: 2 }
+fun read(p: Point) -> Int = p.get_x()
