@@ -1,8 +1,8 @@
 //! Compiler errors with colored source pointers.
 //!
-//! `RavenError` is the top level error enum for every compiler stage. Only
-//! `LexError` is populated today; parse, resolve, type, and runtime errors
-//! land as new variants when the corresponding stages are built.
+//! `RavenError` is the top level error enum for every compiler stage. Lex
+//! and parse errors are populated; resolve, type, and runtime errors land
+//! as new variants when the corresponding stages are built.
 //!
 //! `RavenError::display(source)` renders a multi line message: a red header,
 //! the offending source line, a row of red carets under the bad span, and an
@@ -49,11 +49,76 @@ impl fmt::Display for LexError {
     }
 }
 
+/// Parsing errors raised by the recursive descent parser.
+///
+/// Most errors render as "expected X, found Y" with the span pointing at
+/// the offending token. Specific variants exist for common shapes so that
+/// downstream tooling can match on them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParseError {
+    /// The next token did not match what the parser expected. `expected`
+    /// describes the syntactic category (e.g. "`{`", "type", "identifier")
+    /// and `found` quotes the actual token kind.
+    UnexpectedToken { expected: String, found: String },
+    /// End of file reached while expecting more input.
+    UnexpectedEof { expected: String },
+    /// The left hand side of an assignment is not a valid place
+    /// expression.
+    InvalidAssignmentTarget,
+    /// Comparison operators are not chainable: `a < b < c` is rejected.
+    ChainedComparison,
+    /// A struct or enum literal repeats a field name.
+    DuplicateField(String),
+    /// An `import` directive that the parser could not interpret.
+    InvalidImportPath,
+    /// Tuple syntax is parsed but not yet supported in v2.0.
+    UnsupportedTuple,
+    /// A pattern fragment that cannot be parsed.
+    InvalidPattern(String),
+    /// A bespoke error message for situations that do not fit the
+    /// dedicated variants above.
+    Custom(String),
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParseError::UnexpectedToken { expected, found } => {
+                write!(f, "expected {}, found {}", expected, found)
+            }
+            ParseError::UnexpectedEof { expected } => {
+                write!(f, "expected {}, found end of file", expected)
+            }
+            ParseError::InvalidAssignmentTarget => {
+                write!(f, "invalid assignment target")
+            }
+            ParseError::ChainedComparison => {
+                write!(f, "comparison operators cannot be chained")
+            }
+            ParseError::DuplicateField(name) => {
+                write!(f, "duplicate field '{}'", name)
+            }
+            ParseError::InvalidImportPath => {
+                write!(f, "invalid import path")
+            }
+            ParseError::UnsupportedTuple => {
+                write!(f, "tuple expressions are not yet supported")
+            }
+            ParseError::InvalidPattern(msg) => {
+                write!(f, "invalid pattern: {}", msg)
+            }
+            ParseError::Custom(msg) => f.write_str(msg),
+        }
+    }
+}
+
 /// Top level compiler error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RavenError {
     /// A lexer error with the offending span and an optional hint.
     Lex(LexError, Span, Option<String>),
+    /// A parser error with the offending span and an optional hint.
+    Parse(ParseError, Span, Option<String>),
 }
 
 impl RavenError {
@@ -62,10 +127,16 @@ impl RavenError {
         RavenError::Lex(kind, span, None)
     }
 
+    /// Construct a parse error.
+    pub fn parse(kind: ParseError, span: Span) -> Self {
+        RavenError::Parse(kind, span, None)
+    }
+
     /// Attach a hint string to this error.
     pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
         match &mut self {
             RavenError::Lex(_, _, h) => *h = Some(hint.into()),
+            RavenError::Parse(_, _, h) => *h = Some(hint.into()),
         }
         self
     }
@@ -74,6 +145,7 @@ impl RavenError {
     pub fn span(&self) -> &Span {
         match self {
             RavenError::Lex(_, sp, _) => sp,
+            RavenError::Parse(_, sp, _) => sp,
         }
     }
 
@@ -87,6 +159,7 @@ impl RavenError {
 
         let (kind_str, span, hint) = match self {
             RavenError::Lex(k, s, h) => (format!("error: {}", k), s, h.as_deref()),
+            RavenError::Parse(k, s, h) => (format!("error: {}", k), s, h.as_deref()),
         };
 
         let mut out = String::new();
@@ -147,6 +220,7 @@ impl fmt::Display for RavenError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RavenError::Lex(k, s, _) => write!(f, "{}: {}", s, k),
+            RavenError::Parse(k, s, _) => write!(f, "{}: {}", s, k),
         }
     }
 }
@@ -196,5 +270,34 @@ mod tests {
         let err = RavenError::lex(LexError::UnterminatedString, span);
         let s = format!("{}", err);
         assert_eq!(s, "test.rv:3:5: unterminated string literal");
+    }
+
+    #[test]
+    fn parse_error_renders_with_carets_and_hint() {
+        let src = "fun add(a Int)\n";
+        // The bad spot is the missing colon between `a` and `Int`.
+        let span = Span::new(file(), 10, 13, 1, 11);
+        let err = RavenError::parse(
+            ParseError::UnexpectedToken {
+                expected: "`:`".into(),
+                found: "`Int`".into(),
+            },
+            span,
+        )
+        .with_hint("parameters need a type annotation: `a: Int`");
+        let rendered = err.display(src);
+        assert!(rendered.contains("expected `:`, found `Int`"));
+        assert!(rendered.contains("fun add(a Int)"));
+        assert!(rendered.contains('^'));
+        assert!(rendered.contains("hint:"));
+        assert!(rendered.contains("type annotation"));
+    }
+
+    #[test]
+    fn parse_error_display_formats_location_then_kind() {
+        let span = Span::new(file(), 0, 1, 2, 3);
+        let err = RavenError::parse(ParseError::ChainedComparison, span);
+        let s = format!("{}", err);
+        assert_eq!(s, "test.rv:2:3: comparison operators cannot be chained");
     }
 }

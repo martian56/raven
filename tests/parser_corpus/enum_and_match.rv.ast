@@ -1,0 +1,40 @@
+(file
+  (enum "Shape"
+    (variant "Circle" struct("radius":Float))
+    (variant "Square" struct("side":Float))
+    (variant "Empty")
+  )
+  (fn "area" params=("s":Shape) ret=Float
+    (body
+      (trailing
+        (match
+          (ident "s")
+          (arm
+            (pattern "Circle"{"radius":ident:"r"})
+            (body
+              (binary *
+                (ident "r")
+                (ident "r")
+              )
+            )
+          )
+          (arm
+            (pattern "Square"{"side":ident:"w"})
+            (body
+              (binary *
+                (ident "w")
+                (ident "w")
+              )
+            )
+          )
+          (arm
+            (pattern ident:"Empty")
+            (body
+              (float 0)
+            )
+          )
+        )
+      )
+    )
+  )
+)

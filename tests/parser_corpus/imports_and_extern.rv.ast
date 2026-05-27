@@ -1,0 +1,16 @@
+(file
+  (import std=(io))
+  (import std=(collections) selectors=(Map Set))
+  (import quoted="github.com/example/http" alias="http")
+  (import quoted="./helpers")
+  (extern "C"
+    (extern-fn "puts" params=("s":CString) ret=Int)
+    (extern-fn "strlen" params=("s":CString) ret=Int)
+  )
+  (const "MAX": Int =
+    (int 100)
+  )
+  (let "greeting": String
+    (str "hi")
+  )
+)

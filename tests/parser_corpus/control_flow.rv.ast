@@ -1,0 +1,109 @@
+(file
+  (fn "fizzbuzz" params=("n":Int)
+    (body
+      (trailing
+        (for
+          (pattern ident:"i")
+          (range inclusive=true
+            (int 1)
+            (ident "n")
+          )
+          (body
+            (trailing
+              (if
+                (binary ==
+                  (binary %
+                    (ident "i")
+                    (int 15)
+                  )
+                  (int 0)
+                )
+                (then
+                  (trailing
+                    (call
+                      (ident "print")
+                      (str "FizzBuzz")
+                    )
+                  )
+                )
+                (if
+                  (binary ==
+                    (binary %
+                      (ident "i")
+                      (int 3)
+                    )
+                    (int 0)
+                  )
+                  (then
+                    (trailing
+                      (call
+                        (ident "print")
+                        (str "Fizz")
+                      )
+                    )
+                  )
+                  (if
+                    (binary ==
+                      (binary %
+                        (ident "i")
+                        (int 5)
+                      )
+                      (int 0)
+                    )
+                    (then
+                      (trailing
+                        (call
+                          (ident "print")
+                          (str "Buzz")
+                        )
+                      )
+                    )
+                    (else
+                      (trailing
+                        (call
+                          (ident "print")
+                          (ident "i")
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+  (fn "count" params=("limit":Int) ret=Int
+    (body
+      (let-stmt "total"
+        (int 0)
+      )
+      (let-stmt "i"
+        (int 0)
+      )
+      (expr-stmt
+        (while
+          (binary <
+            (ident "i")
+            (ident "limit")
+          )
+          (body
+            (assign op=+=
+              (ident "total")
+              (int 1)
+            )
+            (assign op=+=
+              (ident "i")
+              (int 1)
+            )
+          )
+        )
+      )
+      (trailing
+        (ident "total")
+      )
+    )
+  )
+)

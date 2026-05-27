@@ -1,0 +1,38 @@
+(file
+  (fn "find" params=("xs":List<Int> "target":Int) ret=Int?
+    (body
+      (trailing
+        (for
+          (pattern ident:"x")
+          (ident "xs")
+          (body
+            (trailing
+              (if
+                (binary ==
+                  (ident "x")
+                  (ident "target")
+                )
+                (then
+                  (return
+                    (ident "x")
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+  (fn "first_or_fail" params=("xs":List<Int>) ret=Int
+    (body
+      (trailing
+        (try
+          (method-call "first"
+            (ident "xs")
+          )
+        )
+      )
+    )
+  )
+)

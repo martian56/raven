@@ -1,0 +1,18 @@
+struct Point {
+    x: Float
+    y: Float
+}
+
+trait Distance {
+    fun dist(self) -> Float
+}
+
+impl Distance for Point {
+    fun dist(self) -> Float {
+        self.x * self.x + self.y * self.y
+    }
+}
+
+fun origin() -> Point {
+    Point { x: 0.0, y: 0.0 }
+}

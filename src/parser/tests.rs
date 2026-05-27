@@ -1,0 +1,649 @@
+//! Inline unit tests for the parser. Each test takes a source string,
+//! runs the lexer to produce tokens, and parses them, asserting on the
+//! shape of the resulting AST or on the expected `RavenError`.
+//!
+//! These tests are intentionally focused on parser behavior; they do
+//! not exercise the lexer beyond what is needed to set up a test.
+
+use crate::ast::{
+    BinaryOp, DeclKind, ExprKind, FunctionBody, ImportSource, LiteralPattern, PatternKind,
+    StmtKind, TypeKind, UnaryOp, VariantPayload,
+};
+use crate::error::{ParseError, RavenError};
+use crate::lexer::Lexer;
+
+use super::parse;
+
+fn tokens(src: &str) -> Vec<crate::lexer::Token> {
+    Lexer::new(src, "test.rv").tokenize().expect("lex ok")
+}
+
+fn parse_ok(src: &str) -> crate::ast::File {
+    let toks = tokens(src);
+    parse(&toks).unwrap_or_else(|e| panic!("expected parse ok, got: {}", e))
+}
+
+fn parse_err(src: &str) -> RavenError {
+    let toks = tokens(src);
+    parse(&toks).expect_err("expected parse error")
+}
+
+// ----- expressions -----
+
+#[test]
+fn empty_file_has_no_items() {
+    let f = parse_ok("");
+    assert_eq!(f.items.len(), 0);
+}
+
+#[test]
+fn top_level_bare_expression_is_an_error() {
+    let err = parse_err("42\n");
+    assert!(matches!(err, RavenError::Parse(_, _, _)), "got: {}", err);
+}
+
+#[test]
+fn parses_let_decl_with_initializer() {
+    let f = parse_ok("let x = 42\n");
+    assert_eq!(f.items.len(), 1);
+    let DeclKind::Let(let_decl) = &f.items[0].kind else {
+        panic!("expected let decl");
+    };
+    assert_eq!(let_decl.name, "x");
+    assert!(let_decl.ty.is_none());
+    assert!(matches!(
+        let_decl.init.as_ref().unwrap().kind,
+        ExprKind::Int(42)
+    ));
+}
+
+#[test]
+fn parses_let_with_type_annotation() {
+    let f = parse_ok("let n: Int = 7\n");
+    let DeclKind::Let(d) = &f.items[0].kind else {
+        panic!()
+    };
+    assert!(d.ty.is_some());
+    assert!(matches!(&d.ty.as_ref().unwrap().kind, TypeKind::Path(_)));
+}
+
+#[test]
+fn parses_binary_arithmetic() {
+    let f = parse_ok("let x = 1 + 2 * 3\n");
+    let DeclKind::Let(d) = &f.items[0].kind else {
+        panic!()
+    };
+    let ExprKind::Binary { op, lhs, rhs } = &d.init.as_ref().unwrap().kind else {
+        panic!("expected Binary, got {:?}", d.init);
+    };
+    assert_eq!(*op, BinaryOp::Add);
+    assert!(matches!(lhs.kind, ExprKind::Int(1)));
+    let ExprKind::Binary { op: op2, .. } = &rhs.kind else {
+        panic!("expected nested Binary");
+    };
+    assert_eq!(*op2, BinaryOp::Mul);
+}
+
+#[test]
+fn parses_unary_negation_and_not() {
+    let f = parse_ok("let x = -!a\n");
+    let DeclKind::Let(d) = &f.items[0].kind else {
+        panic!()
+    };
+    let ExprKind::Unary { op, operand } = &d.init.as_ref().unwrap().kind else {
+        panic!();
+    };
+    assert_eq!(*op, UnaryOp::Neg);
+    let ExprKind::Unary { op: op2, .. } = &operand.kind else {
+        panic!();
+    };
+    assert_eq!(*op2, UnaryOp::Not);
+}
+
+#[test]
+fn chained_comparison_is_rejected() {
+    let err = parse_err("let x = a < b < c\n");
+    assert!(
+        matches!(err, RavenError::Parse(ParseError::ChainedComparison, _, _)),
+        "got: {}",
+        err
+    );
+}
+
+#[test]
+fn parses_call_and_method_chain() {
+    let f = parse_ok("let x = foo(1, 2).bar().baz\n");
+    let DeclKind::Let(d) = &f.items[0].kind else {
+        panic!()
+    };
+    // Outer: Field with name baz
+    let ExprKind::Field { name, receiver } = &d.init.as_ref().unwrap().kind else {
+        panic!("expected Field");
+    };
+    assert_eq!(name, "baz");
+    let ExprKind::MethodCall {
+        name: mname, args, ..
+    } = &receiver.kind
+    else {
+        panic!("expected MethodCall");
+    };
+    assert_eq!(mname, "bar");
+    assert_eq!(args.len(), 0);
+}
+
+#[test]
+fn parses_index_and_try() {
+    let f = parse_ok("let x = arr[0]?\n");
+    let DeclKind::Let(d) = &f.items[0].kind else {
+        panic!()
+    };
+    let ExprKind::Try(inner) = &d.init.as_ref().unwrap().kind else {
+        panic!()
+    };
+    let ExprKind::Index { .. } = inner.kind else {
+        panic!()
+    };
+}
+
+#[test]
+fn parses_range_expr() {
+    let f = parse_ok("let r = 0..10\n");
+    let DeclKind::Let(d) = &f.items[0].kind else {
+        panic!()
+    };
+    let ExprKind::Range { inclusive, .. } = &d.init.as_ref().unwrap().kind else {
+        panic!()
+    };
+    assert!(!*inclusive);
+}
+
+#[test]
+fn parses_array_literal() {
+    let f = parse_ok("let a = [1, 2, 3,]\n");
+    let DeclKind::Let(d) = &f.items[0].kind else {
+        panic!()
+    };
+    let ExprKind::Array(items) = &d.init.as_ref().unwrap().kind else {
+        panic!()
+    };
+    assert_eq!(items.len(), 3);
+}
+
+#[test]
+fn parses_paren_expr() {
+    let f = parse_ok("let a = (1 + 2)\n");
+    let DeclKind::Let(d) = &f.items[0].kind else {
+        panic!()
+    };
+    assert!(matches!(d.init.as_ref().unwrap().kind, ExprKind::Paren(_)));
+}
+
+#[test]
+fn tuple_expr_is_unsupported() {
+    let err = parse_err("let a = (1, 2)\n");
+    assert!(
+        matches!(err, RavenError::Parse(ParseError::UnsupportedTuple, _, _)),
+        "got: {}",
+        err
+    );
+}
+
+#[test]
+fn parses_if_expr_with_else() {
+    let f = parse_ok("let x = if a { 1 } else { 2 }\n");
+    let DeclKind::Let(d) = &f.items[0].kind else {
+        panic!()
+    };
+    assert!(matches!(d.init.as_ref().unwrap().kind, ExprKind::If { .. }));
+}
+
+#[test]
+fn parses_match_expr() {
+    let src = "let x = match v {\n  0 -> \"zero\"\n  _ -> \"other\"\n}\n";
+    let f = parse_ok(src);
+    let DeclKind::Let(d) = &f.items[0].kind else {
+        panic!()
+    };
+    let ExprKind::Match { arms, .. } = &d.init.as_ref().unwrap().kind else {
+        panic!()
+    };
+    assert_eq!(arms.len(), 2);
+    assert!(matches!(
+        arms[0].pattern.kind,
+        PatternKind::Literal(LiteralPattern::Int(0))
+    ));
+    assert!(matches!(arms[1].pattern.kind, PatternKind::Wildcard));
+}
+
+#[test]
+fn parses_while_and_for() {
+    let src = "fun f() { while a { let _ = 1 }\nfor x in xs { let _ = 1 }\n }\n";
+    let f = parse_ok(src);
+    assert_eq!(f.items.len(), 1);
+}
+
+#[test]
+fn parses_lambda_full_form() {
+    let f = parse_ok("let f = fun(x: Int) -> Int { x + 1 }\n");
+    let DeclKind::Let(d) = &f.items[0].kind else {
+        panic!()
+    };
+    let ExprKind::Lambda {
+        params,
+        params_inferred,
+        ..
+    } = &d.init.as_ref().unwrap().kind
+    else {
+        panic!()
+    };
+    assert_eq!(params.len(), 1);
+    assert!(!*params_inferred);
+}
+
+#[test]
+fn parses_lambda_shorthand() {
+    let f = parse_ok("let f = { x -> x * 2 }\n");
+    let DeclKind::Let(d) = &f.items[0].kind else {
+        panic!()
+    };
+    let ExprKind::Lambda {
+        params,
+        params_inferred,
+        ..
+    } = &d.init.as_ref().unwrap().kind
+    else {
+        panic!()
+    };
+    assert_eq!(params.len(), 1);
+    assert!(*params_inferred);
+}
+
+#[test]
+fn parses_struct_literal() {
+    let f = parse_ok("let p = Point { x: 1, y: 2 }\n");
+    let DeclKind::Let(d) = &f.items[0].kind else {
+        panic!()
+    };
+    let ExprKind::StructLit { name, fields, .. } = &d.init.as_ref().unwrap().kind else {
+        panic!()
+    };
+    assert_eq!(name, "Point");
+    assert_eq!(fields.len(), 2);
+}
+
+#[test]
+fn struct_literal_shorthand_field() {
+    let f = parse_ok("let p = Point { x, y }\n");
+    let DeclKind::Let(d) = &f.items[0].kind else {
+        panic!()
+    };
+    let ExprKind::StructLit { fields, .. } = &d.init.as_ref().unwrap().kind else {
+        panic!()
+    };
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].name, "x");
+}
+
+#[test]
+fn duplicate_field_in_struct_literal_errors() {
+    let err = parse_err("let p = Point { x: 1, x: 2 }\n");
+    assert!(
+        matches!(err, RavenError::Parse(ParseError::DuplicateField(_), _, _)),
+        "got: {}",
+        err
+    );
+}
+
+#[test]
+fn struct_literal_suppressed_in_if_condition() {
+    // The `{ x: 1 }` should be parsed as the body block, not as a
+    // struct literal. The condition `a` is just an ident.
+    let f = parse_ok("let r = if a { 1 } else { 2 }\n");
+    let DeclKind::Let(d) = &f.items[0].kind else {
+        panic!()
+    };
+    assert!(matches!(d.init.as_ref().unwrap().kind, ExprKind::If { .. }));
+}
+
+// ----- assignment statements -----
+
+#[test]
+fn parses_assignment_inside_function() {
+    let f = parse_ok("fun f() { let x = 0\n x = 5 }\n");
+    let DeclKind::Function(fun) = &f.items[0].kind else {
+        panic!()
+    };
+    let FunctionBody::Block(b) = &fun.body else {
+        panic!()
+    };
+    assert_eq!(b.stmts.len(), 2);
+    assert!(matches!(b.stmts[1].kind, StmtKind::Assign { .. }));
+}
+
+#[test]
+fn compound_assignment() {
+    let f = parse_ok("fun f() { let x = 0\n x += 1 }\n");
+    let DeclKind::Function(fun) = &f.items[0].kind else {
+        panic!()
+    };
+    let FunctionBody::Block(b) = &fun.body else {
+        panic!()
+    };
+    assert!(matches!(b.stmts[1].kind, StmtKind::Assign { .. }));
+}
+
+#[test]
+fn invalid_assignment_target_errors() {
+    let err = parse_err("fun f() { 1 + 2 = 3 }\n");
+    assert!(
+        matches!(
+            err,
+            RavenError::Parse(ParseError::InvalidAssignmentTarget, _, _)
+        ),
+        "got: {}",
+        err
+    );
+}
+
+// ----- functions, types, generics -----
+
+#[test]
+fn parses_function_with_block_body() {
+    let f = parse_ok("fun add(a: Int, b: Int) -> Int { a + b }\n");
+    let DeclKind::Function(fun) = &f.items[0].kind else {
+        panic!()
+    };
+    assert_eq!(fun.name, "add");
+    assert_eq!(fun.params.len(), 2);
+    assert!(fun.ret.is_some());
+    assert!(matches!(fun.body, FunctionBody::Block(_)));
+}
+
+#[test]
+fn parses_function_with_expr_body() {
+    let f = parse_ok("fun add(a: Int, b: Int) -> Int = a + b\n");
+    let DeclKind::Function(fun) = &f.items[0].kind else {
+        panic!()
+    };
+    assert!(matches!(fun.body, FunctionBody::Expr(_)));
+}
+
+#[test]
+fn parses_generic_function() {
+    let f = parse_ok("fun id<T>(x: T) -> T = x\n");
+    let DeclKind::Function(fun) = &f.items[0].kind else {
+        panic!()
+    };
+    assert_eq!(fun.generics.len(), 1);
+    assert_eq!(fun.generics[0].name, "T");
+}
+
+#[test]
+fn parses_generic_with_bounds() {
+    let f = parse_ok("fun show<T: Display + Debug>(x: T) { }\n");
+    let DeclKind::Function(fun) = &f.items[0].kind else {
+        panic!()
+    };
+    assert_eq!(fun.generics[0].bounds.len(), 2);
+}
+
+#[test]
+fn parses_nested_generic_types() {
+    // The closing `>>` must be split.
+    let f = parse_ok("fun foo() -> Vec<Vec<Int>> { }\n");
+    let DeclKind::Function(fun) = &f.items[0].kind else {
+        panic!()
+    };
+    assert!(fun.ret.is_some());
+}
+
+#[test]
+fn parses_optional_type_sugar() {
+    let f = parse_ok("fun get() -> Int? { }\n");
+    let DeclKind::Function(fun) = &f.items[0].kind else {
+        panic!()
+    };
+    let TypeKind::Optional(_) = &fun.ret.as_ref().unwrap().kind else {
+        panic!("expected Optional, got {:?}", fun.ret);
+    };
+}
+
+#[test]
+fn parses_function_type() {
+    let f = parse_ok("fun apply(f: fun(Int) -> Int) -> Int { f(1) }\n");
+    let DeclKind::Function(fun) = &f.items[0].kind else {
+        panic!()
+    };
+    let TypeKind::Function { .. } = &fun.params[0].ty.kind else {
+        panic!("expected fun type");
+    };
+}
+
+#[test]
+fn missing_function_body_is_error() {
+    let err = parse_err("fun foo() -> Int\n");
+    assert!(matches!(err, RavenError::Parse(_, _, _)));
+}
+
+// ----- structs, traits, impls, enums -----
+
+#[test]
+fn parses_struct_declaration() {
+    let f = parse_ok("struct Point { x: Int, y: Int }\n");
+    let DeclKind::Struct(s) = &f.items[0].kind else {
+        panic!()
+    };
+    assert_eq!(s.fields.len(), 2);
+}
+
+#[test]
+fn struct_field_newline_separator() {
+    let src = "struct Point {\n  x: Int\n  y: Int\n}\n";
+    let f = parse_ok(src);
+    let DeclKind::Struct(s) = &f.items[0].kind else {
+        panic!()
+    };
+    assert_eq!(s.fields.len(), 2);
+}
+
+#[test]
+fn parses_trait_with_default_method() {
+    let f = parse_ok("trait Greet { fun hello() -> String { \"hi\" } }\n");
+    let DeclKind::Trait(t) = &f.items[0].kind else {
+        panic!()
+    };
+    assert_eq!(t.members.len(), 1);
+    assert!(matches!(t.members[0].body, FunctionBody::Block(_)));
+}
+
+#[test]
+fn parses_trait_with_signature_only() {
+    let f = parse_ok("trait Greet { fun hello() -> String\n }\n");
+    let DeclKind::Trait(t) = &f.items[0].kind else {
+        panic!()
+    };
+    assert!(matches!(t.members[0].body, FunctionBody::None));
+}
+
+#[test]
+fn parses_inherent_impl() {
+    let f = parse_ok("impl Foo { fun bar() { } }\n");
+    let DeclKind::Impl(i) = &f.items[0].kind else {
+        panic!()
+    };
+    assert!(i.for_type.is_none());
+    assert_eq!(i.items.len(), 1);
+}
+
+#[test]
+fn parses_trait_impl() {
+    let f = parse_ok("impl Display for Foo { fun show() { } }\n");
+    let DeclKind::Impl(i) = &f.items[0].kind else {
+        panic!()
+    };
+    assert!(i.for_type.is_some());
+}
+
+#[test]
+fn parses_enum_with_variants() {
+    let src = "enum Color { Red, Green, Blue }\n";
+    let f = parse_ok(src);
+    let DeclKind::Enum(e) = &f.items[0].kind else {
+        panic!()
+    };
+    assert_eq!(e.variants.len(), 3);
+    assert!(matches!(e.variants[0].payload, VariantPayload::Unit));
+}
+
+#[test]
+fn parses_enum_with_tuple_payload() {
+    let src = "enum Result { Ok(Int), Err(String) }\n";
+    let f = parse_ok(src);
+    let DeclKind::Enum(e) = &f.items[0].kind else {
+        panic!()
+    };
+    let VariantPayload::Tuple(types) = &e.variants[0].payload else {
+        panic!()
+    };
+    assert_eq!(types.len(), 1);
+}
+
+#[test]
+fn parses_enum_with_struct_payload() {
+    let src = "enum Shape { Circle(radius: Int), Square(side: Int) }\n";
+    let f = parse_ok(src);
+    let DeclKind::Enum(e) = &f.items[0].kind else {
+        panic!()
+    };
+    let VariantPayload::Struct(fields) = &e.variants[0].payload else {
+        panic!()
+    };
+    assert_eq!(fields[0].name, "radius");
+}
+
+// ----- imports, externs, const -----
+
+#[test]
+fn parses_std_import() {
+    let f = parse_ok("import std/io\n");
+    let DeclKind::Import(im) = &f.items[0].kind else {
+        panic!()
+    };
+    let ImportSource::Std(parts) = &im.source else {
+        panic!()
+    };
+    assert_eq!(parts, &["io".to_string()]);
+}
+
+#[test]
+fn parses_std_import_with_selectors() {
+    let f = parse_ok("import std/collections { Map, Set }\n");
+    let DeclKind::Import(im) = &f.items[0].kind else {
+        panic!()
+    };
+    assert_eq!(im.selectors, vec!["Map".to_string(), "Set".to_string()]);
+}
+
+#[test]
+fn parses_quoted_import_with_alias() {
+    let f = parse_ok("import \"github.com/x/y\" as http\n");
+    let DeclKind::Import(im) = &f.items[0].kind else {
+        panic!()
+    };
+    assert_eq!(im.alias.as_deref(), Some("http"));
+    let ImportSource::Quoted(s) = &im.source else {
+        panic!()
+    };
+    assert!(s.contains("github.com"));
+}
+
+#[test]
+fn parses_extern_block() {
+    let f = parse_ok("extern \"C\" { fun puts(s: CString) -> Int\n }\n");
+    let DeclKind::Extern(e) = &f.items[0].kind else {
+        panic!()
+    };
+    assert_eq!(e.abi, "C");
+    assert_eq!(e.items.len(), 1);
+}
+
+#[test]
+fn parses_const_decl() {
+    let f = parse_ok("const PI: Float = 3.14\n");
+    let DeclKind::Const(c) = &f.items[0].kind else {
+        panic!()
+    };
+    assert_eq!(c.name, "PI");
+}
+
+// ----- block expressions and newline handling -----
+
+#[test]
+fn block_with_trailing_expr_is_value_bearing() {
+    // The block's last item is a bare expr without separator => trailing.
+    let f = parse_ok("fun f() -> Int { 1 + 2 }\n");
+    let DeclKind::Function(fun) = &f.items[0].kind else {
+        panic!()
+    };
+    let FunctionBody::Block(b) = &fun.body else {
+        panic!()
+    };
+    assert!(b.trailing.is_some());
+    assert_eq!(b.stmts.len(), 0);
+}
+
+#[test]
+fn block_with_semicolon_terminator_has_no_trailing() {
+    let f = parse_ok("fun f() { 1 + 2; }\n");
+    let DeclKind::Function(fun) = &f.items[0].kind else {
+        panic!()
+    };
+    let FunctionBody::Block(b) = &fun.body else {
+        panic!()
+    };
+    assert!(b.trailing.is_none());
+    assert_eq!(b.stmts.len(), 1);
+}
+
+#[test]
+fn block_trailing_expr_survives_newline() {
+    // Only `;` ends a statement; a trailing newline still leaves the
+    // expression as the block's value, matching Rust semantics.
+    let f = parse_ok("fun f() -> Int { 1 + 2\n }\n");
+    let DeclKind::Function(fun) = &f.items[0].kind else {
+        panic!()
+    };
+    let FunctionBody::Block(b) = &fun.body else {
+        panic!()
+    };
+    assert!(b.trailing.is_some());
+    assert_eq!(b.stmts.len(), 0);
+}
+
+#[test]
+fn newline_inside_expression_is_consumed() {
+    // Adding a newline after `+` must not terminate the expression.
+    let src = "let x = 1 +\n  2\n";
+    let f = parse_ok(src);
+    let DeclKind::Let(d) = &f.items[0].kind else {
+        panic!()
+    };
+    assert!(matches!(
+        d.init.as_ref().unwrap().kind,
+        ExprKind::Binary { .. }
+    ));
+}
+
+// ----- error variants -----
+
+#[test]
+fn unexpected_eof_reports_eof() {
+    let err = parse_err("fun foo(");
+    assert!(matches!(err, RavenError::Parse(_, _, _)));
+}
+
+#[test]
+fn invalid_import_path_for_bare_path() {
+    let err = parse_err("import 42\n");
+    assert!(matches!(err, RavenError::Parse(_, _, _)));
+}

@@ -1,0 +1,13 @@
+import std/io
+import std/collections { Map, Set }
+import "github.com/example/http" as http
+import "./helpers"
+
+extern "C" {
+    fun puts(s: CString) -> Int
+    fun strlen(s: CString) -> Int
+}
+
+const MAX: Int = 100
+
+let greeting: String = "hi"
