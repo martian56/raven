@@ -8,8 +8,11 @@
 //! See `docs/v2/specs/resolver.md` for the full design.
 
 pub mod bindings;
+pub mod imports;
 pub mod items;
 pub mod scope;
+
+pub use imports::{FsLoader, LoadedSource, SourceLoader};
 
 pub use bindings::{
     Binding, DeclId, ImportId, ImportTarget, ResolutionMap, ResolvedImport, UseKey,
