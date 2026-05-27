@@ -593,8 +593,8 @@ fn block_with_trailing_expr_is_value_bearing() {
 }
 
 #[test]
-fn block_with_terminator_has_no_trailing() {
-    let f = parse_ok("fun f() { 1 + 2\n }\n");
+fn block_with_semicolon_terminator_has_no_trailing() {
+    let f = parse_ok("fun f() { 1 + 2; }\n");
     let DeclKind::Function(fun) = &f.items[0].kind else {
         panic!()
     };
@@ -603,6 +603,21 @@ fn block_with_terminator_has_no_trailing() {
     };
     assert!(b.trailing.is_none());
     assert_eq!(b.stmts.len(), 1);
+}
+
+#[test]
+fn block_trailing_expr_survives_newline() {
+    // Only `;` ends a statement; a trailing newline still leaves the
+    // expression as the block's value, matching Rust semantics.
+    let f = parse_ok("fun f() -> Int { 1 + 2\n }\n");
+    let DeclKind::Function(fun) = &f.items[0].kind else {
+        panic!()
+    };
+    let FunctionBody::Block(b) = &fun.body else {
+        panic!()
+    };
+    assert!(b.trailing.is_some());
+    assert_eq!(b.stmts.len(), 0);
 }
 
 #[test]

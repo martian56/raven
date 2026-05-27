@@ -53,12 +53,15 @@ For `github.com/...` and `./...` paths, the lexer treats them as a single `Strin
 ```
 Function     := "fun" Identifier [ GenericParams ] "(" ParamList ")" [ "->" Type ] FunctionBody
 FunctionBody := Block | "=" Expr
-ParamList    := [ Param { "," Param }* [ "," ] ]
+ParamList    := [ SelfReceiver [ "," Param ]* | Param { "," Param }* ] [ "," ]
+SelfReceiver := "self"
 Param        := Identifier ":" Type
 GenericParams := "<" GenericParam { "," GenericParam }* [ "," ] ">"
 GenericParam := Identifier [ ":" TraitBound { "+" TraitBound }* ]
 TraitBound   := TypePath
 ```
+
+A leading `self` parameter is allowed in `impl` and `trait` methods. The parser desugars it to a parameter named `"self"` carrying a synthetic `Self` type so that downstream passes do not need a special case. The full `self: Self` spelling is also accepted and parses identically.
 
 The expression body form (`= expr`) makes the return value the trailing expression. A function with a block body and no return type defaults to `()`.
 
@@ -238,7 +241,7 @@ A `{` immediately after an identifier (or `Self`) parses as a struct literal. Af
 
 #### Block expressions
 
-A block `{ ... }` parses zero or more statements followed by an optional trailing expression. If the last item parses as an `ExprStmt` and is NOT followed by a statement separator before the closing brace, that expression becomes the block's value. Otherwise the block evaluates to `()`.
+A block `{ ... }` parses zero or more statements followed by an optional trailing expression. If the last item parses as an `ExprStmt` and only newlines separate it from the closing `}` (no `;`), that expression becomes the block's value. Otherwise the block evaluates to `()`. An explicit `;` terminates the expression as a statement and forces the block to evaluate to `()`.
 
 ## Error model
 

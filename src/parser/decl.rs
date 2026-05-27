@@ -152,6 +152,32 @@ impl Parser {
         if matches!(self.peek_kind(), TokenKind::RParen) {
             return Ok(params);
         }
+        // Leading `self` receiver gets a synthetic `Self` type.
+        self.skip_newlines();
+        if matches!(self.peek_kind(), TokenKind::SelfLower) {
+            let tok = self.advance();
+            let span = tok.span.clone();
+            let self_ty = crate::ast::Type {
+                kind: crate::ast::TypeKind::Path(crate::ast::TypePath {
+                    segments: vec![crate::ast::TypePathSegment {
+                        name: "Self".to_string(),
+                        generics: Vec::new(),
+                        span: span.clone(),
+                    }],
+                    span: span.clone(),
+                }),
+                span: span.clone(),
+            };
+            params.push(Param {
+                name: "self".to_string(),
+                ty: self_ty,
+                span,
+            });
+            self.skip_newlines();
+            if !self.eat(&TokenKind::Comma) {
+                return Ok(params);
+            }
+        }
         loop {
             self.skip_newlines();
             let (name, name_span) = self.expect_ident("parameter name")?;

@@ -946,13 +946,24 @@ impl Parser {
                 break;
             }
             let stmt = self.parse_stmt()?;
-            // A bare expression with no trailing separator before `}`
-            // becomes the block's value.
+            // Detect trailing expression: a bare expression statement
+            // followed by only newlines (not semicolons) before the
+            // closing `}` becomes the block's value. A `;` terminates
+            // the expression as a statement explicitly.
             let is_expr_stmt = matches!(stmt.kind, StmtKind::Expr(_));
-            // Detect "trailing": there is no `;`/newline before `}`.
-            let has_separator = matches!(self.peek_kind(), TokenKind::Newline | TokenKind::Semi);
-            let at_end = matches!(self.peek_kind(), TokenKind::RBrace);
-            if is_expr_stmt && !has_separator && at_end {
+            let mut at_trailing = is_expr_stmt;
+            if at_trailing {
+                let saved = self.checkpoint();
+                while matches!(self.peek_kind(), TokenKind::Newline) {
+                    self.advance();
+                }
+                let reached_brace = matches!(self.peek_kind(), TokenKind::RBrace);
+                if !reached_brace {
+                    self.rewind(saved);
+                    at_trailing = false;
+                }
+            }
+            if at_trailing {
                 let trailing = match stmt.kind {
                     StmtKind::Expr(e) => e,
                     _ => unreachable!(),
