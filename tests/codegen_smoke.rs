@@ -210,6 +210,18 @@ fn stdlib_string_method_program_compiles_and_runs() {
     compile_link_run_and_check("stdlib_string_method.rv", "HI\n", &runtime);
 }
 
+#[test]
+fn core_trait_prelude_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // The auto-imported std/core prelude in action: a generic function
+    // bounded by `ToString` dispatches to the built-in impls for Int and
+    // Bool, and a user struct implements `ToString` itself. No
+    // `import std/core` line is written; the prelude is always in scope.
+    compile_link_run_and_check("trait_tostring.rv", "42\ntrue\n(3, 4)\n", &runtime);
+}
+
 /// Return the runtime staticlib when a linker and the staticlib are both
 /// present, or skip with a diagnostic. Shared by every smoke case so the
 /// skip behavior stays identical.
