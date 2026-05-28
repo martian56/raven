@@ -135,7 +135,7 @@ Calling `emit_statement` appends to the current block; calling
 | HIR construct | MIR lowering |
 |---------------|--------------|
 | Literal       | `Assign { tmp, Use(Const) }` |
-| Binary / Unary | Evaluate children into locals, then `Assign { tmp, BinaryOp(...) }` |
+| Binary / Unary | Evaluate children into locals, then `Assign { tmp, BinaryOp(...) }`. Exception: `==`/`!=` on `String` lower to a `Call` to the `__raven_str_eq` intrinsic (content compare), with `!=` adding a `UnaryOp(Not)`; see `docs/v2/specs/codegen.md`. |
 | `Ident`       | `Assign { tmp, Use(Copy(local)) }` |
 | `Call`        | Lower callee and args to operands, emit `Assign { tmp, Call { callee, args } }` |
 | `MethodCall`  | Receiver becomes the first arg, otherwise identical to `Call` |

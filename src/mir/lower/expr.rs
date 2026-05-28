@@ -52,6 +52,15 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             MirOperand::Copy(dst)
         }
         HirExprKind::Binary { op, lhs, rhs } => {
+            // `==`/`!=` on `String` compare contents, not object identity,
+            // so route them through the runtime byte-equality intrinsic.
+            // `!=` negates the equality result. Every other operand type
+            // (and every other operator) keeps the value compare below.
+            if matches!(op, HirBinaryOp::Eq | HirBinaryOp::Ne)
+                && mir_ty(&lhs.ty, cx.subst) == MirType::Str
+            {
+                return lower_string_eq(cx, *op, lhs, rhs, ty);
+            }
             let l = lower_expr(cx, lhs);
             let r = lower_expr(cx, rhs);
             let dst = cx.builder.fresh_temp("bin", ty);
@@ -429,6 +438,43 @@ fn lower_while(cx: &mut LowerCx<'_>, cond: &HirExpr, body: &HirBlock, _ty: MirTy
     cx.current = cont;
     cx.diverged = false;
     MirOperand::Const(MirConstant::Unit)
+}
+
+/// Lower a `String` `==`/`!=` into a call to the runtime byte-equality
+/// intrinsic. `==` yields the call result directly; `!=` negates it.
+fn lower_string_eq(
+    cx: &mut LowerCx<'_>,
+    op: HirBinaryOp,
+    lhs: &HirExpr,
+    rhs: &HirExpr,
+    ty: MirType,
+) -> MirOperand {
+    let l = lower_expr(cx, lhs);
+    let r = lower_expr(cx, rhs);
+    let eq = cx.builder.fresh_temp("streq", MirType::Bool);
+    cx.builder.assign(
+        cx.current,
+        eq,
+        MirRvalue::Call {
+            callee: MirFnRef {
+                mangled: super::super::intrinsics::STR_EQ.into(),
+                origin: None,
+            },
+            args: vec![l, r],
+        },
+    );
+    match op {
+        HirBinaryOp::Eq => MirOperand::Copy(eq),
+        _ => {
+            let dst = cx.builder.fresh_temp("strne", ty);
+            cx.builder.assign(
+                cx.current,
+                dst,
+                MirRvalue::UnaryOp(MirUnOp::Not, MirOperand::Copy(eq)),
+            );
+            MirOperand::Copy(dst)
+        }
+    }
 }
 
 /// Desugar an interpolated string into a left-folded chain of runtime

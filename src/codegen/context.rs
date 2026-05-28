@@ -386,6 +386,10 @@ impl ModuleCx {
         sig = self.make_sig(&[ptr, ptr], &[ptr]);
         self.declare_runtime(intrinsics::RUNTIME_STRING_CONCAT, &sig)?;
 
+        // raven_string_eq(String ptr, String ptr) -> i8 (Bool)
+        sig = self.make_sig(&[ptr, ptr], &[types::I8]);
+        self.declare_runtime(intrinsics::RUNTIME_STRING_EQ, &sig)?;
+
         // raven_int_to_string(i64) -> String ptr
         sig = self.make_sig(&[i64t], &[ptr]);
         self.declare_runtime(intrinsics::RUNTIME_INT_TO_STRING, &sig)?;

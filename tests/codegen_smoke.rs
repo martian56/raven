@@ -225,6 +225,22 @@ fn collections_program_compiles_and_runs() {
 }
 
 #[test]
+fn string_eq_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // `==`/`!=` on String compare contents, not object identity: a
+    // concatenated "foo" equals the literal "foo", and unequal literals
+    // differ. Int and Bool `==` are value compares and stay unaffected.
+    // Prints true, false, false, true, true, false, true.
+    compile_link_run_and_check(
+        "string_eq.rv",
+        "true\nfalse\nfalse\ntrue\ntrue\nfalse\ntrue\n",
+        &runtime,
+    );
+}
+
+#[test]
 fn path_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

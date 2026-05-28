@@ -1462,11 +1462,11 @@ fn lower_call(
     if intrinsics::is_intrinsic(&callee.mangled) {
         return lower_intrinsic(cx, builder, &callee.mangled, args, slots);
     }
-    // Interpolation desugaring emits calls to the string concat and
-    // per-type to-string intrinsics. Route each to its runtime symbol;
+    // String runtime intrinsics (concat, per-type to-string, and the
+    // `==`/`!=` byte-equality compare). Route each to its runtime symbol;
     // every argument lowers as an ordinary operand (a String pointer or
-    // a scalar) and the call returns a heap String pointer.
-    if let Some(symbol) = intrinsics::interpolation_runtime_symbol(&callee.mangled) {
+    // a scalar) and the call returns a single result.
+    if let Some(symbol) = intrinsics::string_runtime_symbol(&callee.mangled) {
         let mut arg_vals = Vec::with_capacity(args.len());
         for a in args {
             if let Some(v) = lower_operand(cx, builder, a, slots)? {
@@ -1475,7 +1475,7 @@ fn lower_call(
         }
         let func_id = cx
             .runtime_id(symbol)
-            .expect("interpolation runtime symbol declared at module init");
+            .expect("string runtime symbol declared at module init");
         let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
         let inst = builder.ins().call(local_ref, &arg_vals);
         return Ok(builder.inst_results(inst).first().copied());

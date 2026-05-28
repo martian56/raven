@@ -102,6 +102,12 @@ Operators (selection):
 
 Mixed numeric operands are rejected; there is no implicit promotion.
 
+`==` and `!=` accept two operands of the same type and yield `Bool`. The comparison semantics depend on the operand type, and the back-end (not the type checker) selects them:
+
+* `Int`, `Float`, `Bool`, and `Char` compare by value.
+* `String` compares by content: two strings are equal when they hold the same bytes, regardless of whether they are the same heap object. `!=` is the negation. See `docs/v2/specs/codegen.md`.
+* User structs and enums currently compare by object identity (the two operands are equal only when they are the same heap object). Structural `==` for user types, and routing `==` through an `Eq` trait, are out of scope here; user code that wants value comparison defines and calls a method such as `equals`.
+
 Control flow:
 
 * `if c { a } else { b }` requires `c: Bool` and unifies `a` and `b`. A bare `if` without `else` has type `Unit`; both branches must therefore be `Unit`.

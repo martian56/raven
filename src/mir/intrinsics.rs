@@ -11,6 +11,11 @@
 /// Lowers to `raven_string_concat`.
 pub const STR_CONCAT: &str = "__raven_str_concat";
 
+/// Compare two heap `String` values by content, yielding a `Bool`.
+/// Lowers to `raven_string_eq`. The `==` operator uses the result
+/// directly; `!=` negates it.
+pub const STR_EQ: &str = "__raven_str_eq";
+
 /// Render an `Int` as a heap `String`. Lowers to `raven_int_to_string`.
 pub const INT_TO_STRING: &str = "__raven_int_to_string";
 
