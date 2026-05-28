@@ -912,8 +912,14 @@ fn lower_method_call(
     // emits the body specialized for this receiver. The symbol is the same
     // `<RecvType>$<method>` either way: the worklist recomputes it from the
     // concrete implementing type, which the receiver type fixes here.
-    queue_generic_method(cx, &receiver.ty, name, args);
-    let symbol = recv_ty.method_symbol(name);
+    // A generic method's per-instantiation symbol carries any method-level
+    // type arguments as a suffix (`Box_Int$mapped$Bool`), so the call site
+    // uses the symbol the queuing step computes rather than the bare
+    // `<RecvType>$<method>` name, which would collide across method-level
+    // instantiations. A concrete-receiver method or one with no method-level
+    // parameters keeps the bare per-type symbol.
+    let symbol = queue_generic_method(cx, &receiver.ty, name, args)
+        .unwrap_or_else(|| recv_ty.method_symbol(name));
     let recv = lower_expr(cx, receiver);
     let mut arg_ops = vec![recv];
     for a in args {
@@ -951,10 +957,8 @@ fn queue_generic_method(
     receiver_ty: &crate::tycheck::Ty,
     name: &str,
     args: &[HirExpr],
-) {
-    let Some(entries) = cx.decls.methods.get(name).cloned() else {
-        return;
-    };
+) -> Option<String> {
+    let entries = cx.decls.methods.get(name).cloned()?;
     let recv = super::substitute(receiver_ty, cx.subst);
     let recv = recv.strip_self().clone();
     // Pick the generic method whose implementing type matches the concrete
@@ -965,7 +969,10 @@ fn queue_generic_method(
         let mut subst: super::SubstMap = super::SubstMap::new();
         match_param(&entry.self_ty, &recv, &mut subst);
         // Also bind any method-level parameters from the concrete argument
-        // types.
+        // types. A method's own `<U>` is grounded by matching its declared
+        // parameter types (which carry `U`) against the concrete argument
+        // types, so the substitution carries both the impl's `T` and the
+        // method's `U`.
         for (decl_ty, arg) in entry.params.iter().zip(args.iter()) {
             let got = super::substitute(&arg.ty, cx.subst);
             match_param(decl_ty, &got, &mut subst);
@@ -975,10 +982,23 @@ fn queue_generic_method(
         // name on another type), skip this entry.
         let concrete_self = super::substitute(&entry.self_ty, &subst);
         if MirType::from_ty(&concrete_self) == MirType::from_ty(&recv) {
+            // The instantiation symbol the worklist will emit: the concrete
+            // implementing type's mangle plus `$<method>`, with each
+            // method-level type argument appended. The call site references
+            // this exact symbol so it resolves to the instantiation lowered
+            // for these receiver and method-level type arguments.
+            let concrete_self_mangle = MirType::from_ty(&concrete_self).mangle();
+            let symbol = super::method_mono_symbol(
+                &concrete_self_mangle,
+                name,
+                &entry.method_params,
+                &subst,
+            );
             cx.pending_calls.push((entry.decl, subst));
-            return;
+            return Some(symbol);
         }
     }
+    None
 }
 
 /// Resolve a field's slot index from the receiver's struct type and the

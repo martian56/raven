@@ -49,13 +49,30 @@ type SymbolIndex = HashMap<DeclId, String>;
 /// declaration order. The order fixes the mangled-name suffix.
 type GenericIndex = HashMap<DeclId, Vec<ParamId>>;
 
-/// Map from an impl-method declaration to its implementing type and
-/// method name. The worklist computes a generic method's per-instantiation
-/// symbol by substituting the concrete type arguments into the
-/// implementing type and mangling the result, so the symbol matches what
-/// the method call site recomputes from the concrete receiver type
-/// (`Box_Int$unwrap`, and so on).
-type MethodSymbolIndex = HashMap<DeclId, (Ty, String)>;
+/// Map from an impl-method declaration to its implementing type, method
+/// name, and method-level generic parameters. The worklist computes a
+/// generic method's per-instantiation symbol by substituting the concrete
+/// type arguments into the implementing type, mangling the result, and
+/// appending the concrete method-level type arguments, so the symbol
+/// matches what the method call site recomputes from the concrete receiver
+/// type and the inferred method-level arguments (`Box_Int$unwrap`, or
+/// `Box_Int$mapped$Bool` for a method-level `<U>` bound to `Bool`).
+type MethodSymbolIndex = HashMap<DeclId, MethodSymbolEntry>;
+
+/// The implementing type, method name, and method-level generic
+/// parameters the worklist needs to recompute a generic method's
+/// per-instantiation symbol.
+struct MethodSymbolEntry {
+    /// The implementing type as written on the `impl` block; may carry the
+    /// impl's `Ty::Param`s, grounded by the instantiation's substitution.
+    self_ty: Ty,
+    /// The method's source name.
+    method: String,
+    /// The method's own generic parameters (those absent from the
+    /// implementing type), in declaration order. Encoded into the symbol
+    /// suffix so distinct method-level type arguments do not collide.
+    method_params: Vec<ParamId>,
+}
 
 /// Run the full monomorphization pass.
 pub fn monomorphize(hir: &HirProgram) -> Result<MirProgram, RavenError> {
@@ -90,16 +107,22 @@ pub fn monomorphize(hir: &HirProgram) -> Result<MirProgram, RavenError> {
         // the call site recomputes from the concrete receiver type, so a
         // generic method specialized at `Box<Int>` and the call to it both
         // name `Box_Int$unwrap`. A free function uses its base symbol with
-        // the generic-parameter suffix. Because the implementing type
-        // already carries the concrete arguments, a method takes no extra
-        // `mono_symbol` suffix; its instantiations are distinguished by the
-        // implementing type's mangle.
+        // the generic-parameter suffix. The implementing type already
+        // carries its own concrete arguments, but a method-level generic
+        // parameter (a `<U>` the method introduces that is absent from the
+        // implementing type) contributes an extra suffix, so two
+        // instantiations of the same method at different method-level type
+        // arguments get distinct symbols (`Box_Int$mapped$Int` and
+        // `Box_Int$mapped$Bool`).
         let mangled = match method_symbols.get(&decl) {
-            Some((self_ty, method)) => {
-                let concrete_self = super::lower::substitute(self_ty, &subst);
-                super::ty::method_symbol(
-                    &super::ty::MirType::from_ty(&concrete_self).mangle(),
-                    method,
+            Some(entry) => {
+                let concrete_self = super::lower::substitute(&entry.self_ty, &subst);
+                let concrete_self_mangle = super::ty::MirType::from_ty(&concrete_self).mangle();
+                super::lower::method_mono_symbol(
+                    &concrete_self_mangle,
+                    &entry.method,
+                    &entry.method_params,
+                    &subst,
                 )
             }
             None => {
@@ -226,6 +249,13 @@ fn collect_roots(
                 // at the object level. The symbol matches what a call
                 // site recomputes from the receiver type.
                 let type_mangle = super::ty::MirType::from_ty(&imp.self_ty).mangle();
+                // The impl's own generic parameters are exactly those that
+                // appear in the implementing type (`T` in `impl<T>
+                // Box<T>`). A method's own parameters are the remainder of
+                // its generic parameters, those it introduces (`U` in `fun
+                // mapped<U>`).
+                let mut impl_params: Vec<ParamId> = Vec::new();
+                collect_params(&imp.self_ty, &mut impl_params);
                 for m in &imp.methods {
                     let id = DeclId(next_id);
                     next_id += 1;
@@ -233,11 +263,28 @@ fn collect_roots(
                     symbols.insert(id, super::ty::method_symbol(&type_mangle, &m.name));
                     let gp = generic_params_of(m);
                     generics.insert(id, gp.clone());
-                    // Record the implementing type so the worklist can
-                    // recompute a generic method's per-instantiation symbol
-                    // from the concrete type arguments, matching the call
-                    // site.
-                    method_symbols.insert(id, (imp.self_ty.clone(), m.name.clone()));
+                    // The method's own generic parameters: those it declares
+                    // that the implementing type does not. These contribute
+                    // the method-level suffix on the mangled symbol so two
+                    // instantiations of the method at different method-level
+                    // type arguments do not collide.
+                    let method_params: Vec<ParamId> = gp
+                        .iter()
+                        .filter(|p| !impl_params.contains(p))
+                        .cloned()
+                        .collect();
+                    // Record the implementing type and the method-level
+                    // parameters so the worklist can recompute a generic
+                    // method's per-instantiation symbol from the concrete
+                    // type arguments, matching the call site.
+                    method_symbols.insert(
+                        id,
+                        MethodSymbolEntry {
+                            self_ty: imp.self_ty.clone(),
+                            method: m.name.clone(),
+                            method_params: method_params.clone(),
+                        },
+                    );
                     // Index the method by name so a call site can find and
                     // specialize it. The user parameter types exclude the
                     // leading `self`, which the call site supplies from the
@@ -256,6 +303,7 @@ fn collect_roots(
                                 decl: id,
                                 self_ty: imp.self_ty.clone(),
                                 params: user_params,
+                                method_params: method_params.clone(),
                                 generic: !gp.is_empty(),
                             });
                     }
