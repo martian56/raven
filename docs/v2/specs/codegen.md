@@ -163,20 +163,71 @@ raven build path/to/program.rv -o out
 The driver runs lexing, parsing, resolution, type checking, HIR
 lowering, MIR lowering, and monomorphization in order, then hands the
 `MirProgram` to `codegen::compile_to_object`. The returned `Vec<u8>` is
-written to a temporary `.o` file. The driver then invokes the system
-`cc` to link the object with the `raven-runtime` staticlib (built by
-the same Cargo invocation as the compiler). The linker is whatever `cc`
-defaults to on the host; the driver does not try to call `link.exe`
-directly on Windows so MinGW or clang are required there.
+written to a temporary `.o` file. The driver then links the object with
+the `raven-runtime` staticlib (built by the same Cargo invocation as
+the compiler) into the requested output.
 
 `compile_to_object(program, target_isa)` is also exposed for in process
 use by tests, returning the raw object bytes so a test can call the
 linker itself or inspect the object with `goblin`.
 
-If `cc` is not on the path, the smoke test that compiles and runs a
-hello world program prints a diagnostic and short circuits via
-`#[ignore]` style logic. The unit tests that only consult MIR lowering
-do not depend on `cc` at all.
+### Entry point
+
+The exported program entry is an `int main(void)` shim, not the Raven
+`main` directly. Cranelift lowers the Raven `main` under an internal
+symbol that returns whatever the function returns (unit for a typical
+program, which is no machine value at all). A C runtime starting that
+symbol as `int main()` would read an uninitialized register as the
+process exit code. The shim calls the Raven body and returns a literal
+`0`, so a successful program exits with status `0` on every host.
+
+### Linker selection
+
+Cranelift emits an object in the host's native format: an MSVC-flavor
+COFF on windows-msvc, ELF on Linux, Mach-O on macOS. The link step is
+therefore toolchain aware and keyed on the host target triple
+(`target_lexicon::Triple::host()`):
+
+* `*-windows-msvc`: the MSVC `link.exe`, located through the Windows
+  registry with `cc::windows_registry::find_tool`. The `cc` crate hands
+  back a `Command` preloaded with the SDK and CRT `LIB`, `INCLUDE`, and
+  `PATH` environment, which is why this path is preferred. The link line
+  is `/NOLOGO /OUT:<output> <object> <runtime.lib> <native system libs>
+  /SUBSYSTEM:CONSOLE`. If the registry lookup fails, the driver falls
+  back (best effort) to the Rust toolchain's bundled `rust-lld` in
+  `lld-link` flavor, located under `rustc --print sysroot`. The fallback
+  needs the SDK `LIB` paths already present in the environment because
+  `rust-lld` does not supply them.
+* `*-windows-gnu`: a `cc`/`gcc` driver, which must be a 64-bit
+  MinGW-w64. A 32-bit MinGW.org `gcc` cannot read the 64-bit object, so
+  a link failure surfaces a hint about the architecture mismatch.
+* Linux, macOS, and other Unix: the system `cc` driver, which brings the
+  system linker and its default library search paths, plus the Rust std
+  system libraries the runtime depends on (`-lpthread`, `-ldl`, `-lm`,
+  and so on).
+
+### Rust std native system libraries on MSVC
+
+The Rust staticlib references system import libraries that must appear
+on the MSVC link line, because the staticlib does not carry them. The
+exact set is captured with:
+
+```
+cargo rustc -p raven-runtime --crate-type staticlib -- --print native-static-libs
+```
+
+The `note: native-static-libs: ...` line it prints is hardcoded as a
+`const` in `linker.rs` (currently `kernel32.lib advapi32.lib ntdll.lib
+userenv.lib ws2_32.lib dbghelp.lib /defaultlib:msvcrt`, captured against
+rustc 1.85.0). The driver does not shell out to cargo at link time.
+Refresh the list the same way if the runtime crate gains native
+dependencies.
+
+If no linker is available for the host at all, the smoke test that
+compiles and runs a hello world program prints a diagnostic and short
+circuits with a successful exit. On a correctly configured host it links
+and runs the program for real and asserts the output. The unit tests
+that only consult MIR lowering do not depend on a linker.
 
 ## Out of scope (tracked by follow up issues)
 
@@ -194,10 +245,12 @@ do not depend on `cc` at all.
   constant `Int`, an arithmetic `+` lowering, an `if` with a value, a
   call between two functions, and the `print("hello")` lowering.
 * An end to end smoke test that compiles `examples/v2/hello.rv` with
-  the driver, links via `cc`, runs the resulting binary, and asserts
-  the stdout matches `Hello, Raven!\n`. The test gates itself with a
-  presence check on `cc` and emits an `eprintln!` plus an `#[ignore]`
-  if the toolchain is missing rather than failing.
+  the driver, links it with the host toolchain, runs the resulting
+  binary, and asserts the stdout matches `Hello, Raven!\n` and the exit
+  status is success. The test gates itself with a presence check on the
+  host linker and emits an `eprintln!` plus a successful exit only when
+  no linker is available at all; on a correctly configured host it links
+  and runs the program rather than skipping.
 
 ## Crate layout
 
@@ -207,6 +260,6 @@ src/codegen/
   context.rs            Per module Cranelift context, function table, string table
   function.rs           Per function lowering
   intrinsics.rs         Recognized intrinsic mangled names (print, future stdlib)
-  linker.rs             cc invocation, temp directory management
+  linker.rs             per-platform linker selection by target triple
 src/main.rs             build subcommand wired through clap minimal parsing
 ```
