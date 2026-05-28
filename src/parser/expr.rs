@@ -5,10 +5,10 @@
 
 use crate::ast::{
     BinaryOp, Block, ElseBranch, Expr, ExprKind, FieldInit, LambdaBody, LambdaParam, MatchArm,
-    Type, UnaryOp,
+    StrFragment, Type, UnaryOp,
 };
 use crate::error::{ParseError, RavenError};
-use crate::lexer::TokenKind;
+use crate::lexer::{Lexer, TokenKind, ESCAPED_DOLLAR_SENTINEL};
 use crate::span::Span;
 
 use super::{merge_spans, ParseResult, Parser};
@@ -379,10 +379,7 @@ impl Parser {
             }
             TokenKind::StringLit(s) => {
                 self.advance();
-                Ok(Expr {
-                    kind: ExprKind::Str(s),
-                    span: tok.span,
-                })
+                self.string_literal_expr(s, tok.span)
             }
             TokenKind::BlockStringLit(s) => {
                 self.advance();
@@ -431,6 +428,34 @@ impl Parser {
             TokenKind::Identifier(_) => self.parse_ident_primary(),
             _ => Err(self.unexpected("expression")),
         }
+    }
+
+    /// Build the expression for a `"..."` string literal token. The
+    /// lexer has already decoded escapes and kept any real `${...}`
+    /// interpolation verbatim, marking each escaped `\$` with the
+    /// `ESCAPED_DOLLAR_SENTINEL`. This splits the decoded text into
+    /// fragments. A literal with no real `${...}` becomes a plain
+    /// `ExprKind::Str` (with any escaped dollars un-escaped). One or more
+    /// real interpolations produce an `ExprKind::InterpolatedString`.
+    fn string_literal_expr(&self, decoded: String, span: Span) -> ParseResult<Expr> {
+        let fragments = split_interpolation(&decoded, &span)?;
+        // Collapse to a plain string when no embedded expression survived.
+        if fragments.iter().all(|f| matches!(f, StrFragment::Literal(_))) {
+            let mut buf = String::new();
+            for f in &fragments {
+                if let StrFragment::Literal(s) = f {
+                    buf.push_str(s);
+                }
+            }
+            return Ok(Expr {
+                kind: ExprKind::Str(buf),
+                span,
+            });
+        }
+        Ok(Expr {
+            kind: ExprKind::InterpolatedString(fragments),
+            span,
+        })
     }
 
     fn parse_paren_or_tuple(&mut self) -> ParseResult<Expr> {
@@ -1021,5 +1046,169 @@ impl Parser {
                 | TokenKind::LParen
                 | TokenKind::LBracket
         )
+    }
+}
+
+/// Split the decoded text of a `"..."` literal into interpolation
+/// fragments. The lexer has already decoded escapes; a real `${...}`
+/// appears verbatim as the bytes `$ { ... }`, while an escaped `\$`
+/// appears as [`ESCAPED_DOLLAR_SENTINEL`] immediately followed by `$`.
+///
+/// Each real `${...}` snippet is re-lexed and re-parsed as a standalone
+/// Raven expression. The embedded expression's spans are anchored to a
+/// synthetic per-fragment source path so that the resolver, type
+/// checker, and lowering passes (all of which key on file plus byte
+/// range) never collide a fragment's spans with the surrounding source
+/// or with another fragment.
+///
+/// A literal with no real `${...}` yields a single
+/// [`StrFragment::Literal`] (with the sentinel stripped). The caller
+/// collapses an all-literal result back to a plain `ExprKind::Str`.
+fn split_interpolation(decoded: &str, span: &Span) -> ParseResult<Vec<StrFragment>> {
+    let mut fragments: Vec<StrFragment> = Vec::new();
+    let mut text = String::new();
+    let mut frag_index = 0usize;
+    let bytes = decoded.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        // An escaped dollar is the sentinel followed by `$`; emit a
+        // literal `$` and skip the sentinel so `\${x}` is literal text.
+        if decoded[i..].starts_with(ESCAPED_DOLLAR_SENTINEL) {
+            let sentinel_len = ESCAPED_DOLLAR_SENTINEL.len_utf8();
+            text.push('$');
+            // Skip the sentinel and the `$` byte that follows it.
+            i += sentinel_len;
+            if i < bytes.len() && bytes[i] == b'$' {
+                i += 1;
+            }
+            continue;
+        }
+        if bytes[i] == b'$' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
+            // Find the matching `}` with brace-depth tracking so a
+            // nested `{ }` inside the expression does not close early.
+            let start = i + 2;
+            let mut depth = 1usize;
+            let mut j = start;
+            while j < bytes.len() {
+                match bytes[j] {
+                    b'{' => depth += 1,
+                    b'}' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                j += 1;
+            }
+            if depth != 0 {
+                return Err(RavenError::parse(
+                    ParseError::Custom(
+                        "unterminated `${` interpolation in string literal".into(),
+                    ),
+                    span.clone(),
+                ));
+            }
+            // Flush the pending literal text.
+            if !text.is_empty() {
+                fragments.push(StrFragment::Literal(std::mem::take(&mut text)));
+            }
+            let snippet = &decoded[start..j];
+            if snippet.trim().is_empty() {
+                return Err(RavenError::parse(
+                    ParseError::Custom(
+                        "empty `${}` interpolation in string literal".into(),
+                    ),
+                    span.clone(),
+                ));
+            }
+            let expr = parse_interpolation_snippet(snippet, span, frag_index)?;
+            fragments.push(StrFragment::Expr(Box::new(expr)));
+            frag_index += 1;
+            i = j + 1;
+            continue;
+        }
+        let c = decoded[i..].chars().next().unwrap_or(' ');
+        text.push(c);
+        i += c.len_utf8();
+    }
+    if !text.is_empty() {
+        fragments.push(StrFragment::Literal(text));
+    }
+    Ok(fragments)
+}
+
+/// Re-lex and re-parse a single `${...}` snippet into an [`Expr`].
+///
+/// The snippet is parsed against a synthetic source file whose path is
+/// derived from the enclosing literal's span and the fragment index, so
+/// every fragment's spans occupy a private `(file, byte-range)` keyspace
+/// that cannot collide with real source spans. Parse errors are
+/// re-anchored to the literal's span so the diagnostic points the reader
+/// at the offending string.
+fn parse_interpolation_snippet(
+    snippet: &str,
+    span: &Span,
+    frag_index: usize,
+) -> ParseResult<Expr> {
+    let synthetic = std::path::PathBuf::from(format!(
+        "{}<interp:{}:{}>",
+        span.file.display(),
+        span.start,
+        frag_index
+    ));
+    let tokens = Lexer::new(snippet.to_string(), synthetic)
+        .tokenize()
+        .map_err(|e| reanchor(e, span))?;
+    let mut parser = Parser::new(&tokens);
+    parser.skip_newlines();
+    let expr = parser.parse_expr().map_err(|e| reanchor(e, span))?;
+    parser.skip_newlines();
+    if !parser.is_at_end() {
+        return Err(RavenError::parse(
+            ParseError::Custom(format!(
+                "`${{{}}}` interpolation must contain a single expression",
+                snippet.trim()
+            )),
+            span.clone(),
+        ));
+    }
+    Ok(expr)
+}
+
+/// Re-anchor an error raised while parsing an interpolation snippet onto
+/// the enclosing string literal's span, preserving the error kind and
+/// hint. The snippet's synthetic span is not useful to a reader.
+fn reanchor(err: RavenError, span: &Span) -> RavenError {
+    match err {
+        RavenError::Lex(k, _, h) => {
+            let mut e = RavenError::Lex(k, span.clone(), None);
+            if let Some(h) = h {
+                e = e.with_hint(h);
+            }
+            e
+        }
+        RavenError::Parse(k, _, h) => {
+            let mut e = RavenError::Parse(k, span.clone(), None);
+            if let Some(h) = h {
+                e = e.with_hint(h);
+            }
+            e
+        }
+        RavenError::Resolve(k, _, h) => {
+            let mut e = RavenError::Resolve(k, span.clone(), None);
+            if let Some(h) = h {
+                e = e.with_hint(h);
+            }
+            e
+        }
+        RavenError::Type(k, _, h) => {
+            let mut e = RavenError::Type(k, span.clone(), None);
+            if let Some(h) = h {
+                e = e.with_hint(h);
+            }
+            e
+        }
     }
 }

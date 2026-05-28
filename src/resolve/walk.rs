@@ -361,6 +361,17 @@ fn walk_expr(
                 walk_expr(&f.value, scope, map)?;
             }
         }
+        ExprKind::InterpolatedString(fragments) => {
+            // Each embedded `${expr}` is a normal expression that may
+            // reference names in scope at the literal's location. The
+            // parser parsed each fragment against a synthetic source
+            // path, so their use sites are bound under disjoint keys.
+            for frag in fragments {
+                if let crate::ast::StrFragment::Expr(e) = frag {
+                    walk_expr(e, scope, map)?;
+                }
+            }
+        }
         ExprKind::Array(items) | ExprKind::Tuple(items) => {
             for e in items {
                 walk_expr(e, scope, map)?;

@@ -11,8 +11,8 @@ use std::fmt::Write;
 
 use super::{
     AssignOp, BinaryOp, Block, Decl, DeclKind, ElseBranch, Expr, ExprKind, File, FunctionBody,
-    ImportSource, LambdaBody, LiteralPattern, Pattern, PatternKind, Stmt, StmtKind, Type, TypeKind,
-    TypePath, UnaryOp, VariantPayload,
+    ImportSource, LambdaBody, LiteralPattern, Pattern, PatternKind, Stmt, StmtKind, StrFragment,
+    Type, TypeKind, TypePath, UnaryOp, VariantPayload,
 };
 
 /// Render a [`File`] as a multi line S expression string.
@@ -318,6 +318,23 @@ fn pretty_expr(buf: &mut String, expr: &Expr, depth: usize) {
         ExprKind::Float(v) => writeln!(buf, "(float {})", v).unwrap(),
         ExprKind::Bool(b) => writeln!(buf, "(bool {})", b).unwrap(),
         ExprKind::Str(s) => writeln!(buf, "(str {})", quote(s)).unwrap(),
+        ExprKind::InterpolatedString(fragments) => {
+            buf.push_str("(interpolated\n");
+            for frag in fragments {
+                indent(buf, depth + 1);
+                match frag {
+                    StrFragment::Literal(s) => writeln!(buf, "(lit {})", quote(s)).unwrap(),
+                    StrFragment::Expr(e) => {
+                        buf.push_str("(frag\n");
+                        pretty_expr(buf, e, depth + 2);
+                        indent(buf, depth + 1);
+                        buf.push_str(")\n");
+                    }
+                }
+            }
+            indent(buf, depth);
+            buf.push_str(")\n");
+        }
         ExprKind::BlockStr(s) => writeln!(buf, "(blockstr {})", quote(s)).unwrap(),
         ExprKind::Char(c) => writeln!(buf, "(char {:?})", c).unwrap(),
         ExprKind::CStr(s) => writeln!(buf, "(cstr {})", quote(s)).unwrap(),

@@ -45,7 +45,7 @@ translation pass that buys nothing for the desugarings in scope.
 |-----------------------------------|---------------------------------------------------------|
 | `ExprKind::For { pat, iter, body }` | Lowered to `Loop` containing a `Match` on iterator `next` |
 | `ExprKind::Try(inner)`            | Lowered to `Match` on `Ok/Err` (or `Some/None`)         |
-| `ExprKind::Str(s)` with `${...}`  | `Interpolate { parts: Vec<InterpolPart> }`              |
+| `ExprKind::InterpolatedString(fragments)` | `Interpolate { parts: Vec<InterpolPart> }`      |
 | `ExprKind::Range { ... }`         | `RangeNew { start, end, inclusive }`                    |
 | `StmtKind::Assign { op != = }`    | Lowered to `Assign` with a synthesized RHS              |
 | `ExprKind::If`/`Match` in value position | Same node; trailing expression is the value         |
@@ -104,15 +104,20 @@ the type of `expr` from the `TypeMap` and selects the right enum.
 
 ### String interpolation
 
-The lexer keeps `${...}` verbatim inside a `StringLit`. HIR lowering
-splits the raw string into a `Vec<InterpolPart>` where each part is
-either a `Text(String)` chunk or an `Expr(HirExpr)` placeholder. The
-embedded expressions are re-lexed and re-parsed by the lowering pass
-so the resulting HIR expression mirrors what the user wrote.
+The parser splits a `"...${expr}..."` literal into an
+`ExprKind::InterpolatedString(Vec<StrFragment>)` where each fragment is
+either literal `Text` or a fully parsed embedded `Expr`. HIR lowering
+walks those fragments and produces a `Interpolate { parts:
+Vec<InterpolPart> }` node: literal fragments become `Text(String)`
+chunks and embedded fragments become `Expr(HirExpr)` (lowered like any
+other expression, carrying their static type).
 
-Concatenation is left to MIR/codegen so HIR retains the structured
-form. When no `${...}` segment is present, the literal stays as a
-plain `HirExpr::Str(s)`.
+Concatenation is left to MIR so HIR retains the structured form. MIR
+folds the parts into a chain of runtime string-concat calls, inserting
+a per-type to-string conversion for each non-String part. A literal
+with no real `${...}` (or only an escaped `\$`) stays a plain
+`HirExpr::Str(s)`. See `docs/v2/specs/interpolation.md` for the full
+pipeline.
 
 ### Range expressions
 

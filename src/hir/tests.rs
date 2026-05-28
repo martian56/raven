@@ -143,83 +143,41 @@ fun caller() -> Result<Int, String> {
 
 #[test]
 fn string_with_interpolation_lowers_to_parts() {
-    let src = "fun s() -> String { return \"hi ${name}!\" }";
-    // The string has no resolved `name`, so we cannot run the full
-    // pipeline. Build the literal in isolation through the lowering
-    // helper by re-running just the lexer and parser.
-    let tokens = crate::lexer::Lexer::new(src.to_string(), PathBuf::from("t.rv"))
-        .tokenize()
-        .expect("lex");
-    let file = crate::parser::parse(&tokens).expect("parse");
-    // We do not run resolve/tycheck (the placeholder name is unbound).
-    // Walk the AST to find the string literal directly.
-    let mut found_interpolate = false;
-    for item in &file.items {
-        if let crate::ast::DeclKind::Function(f) = &item.kind {
-            if let crate::ast::FunctionBody::Block(b) = &f.body {
-                for s in &b.stmts {
-                    if let crate::ast::StmtKind::Return(Some(expr)) = &s.kind {
-                        if let crate::ast::ExprKind::Str(raw) = &expr.kind {
-                            // Use the splitter via the lowering's
-                            // public-ish helper: re-run the split.
-                            let parts = split_for_test(raw, &expr.span);
-                            found_interpolate =
-                                parts.iter().any(|p| matches!(p, InterpolPart::Expr(_)));
-                        }
-                    }
-                }
-            }
-        }
-    }
-    assert!(found_interpolate, "expected an interpolation part");
-}
-
-// A tiny re-implementation of the splitter for the unit test only. The
-// real splitter is private to `lower::expr`; we test the externally
-// visible HIR form through the golden corpus instead.
-fn split_for_test(s: &str, span: &crate::span::Span) -> Vec<InterpolPart> {
-    use crate::hir::expr::HirExpr;
-    let mut parts: Vec<InterpolPart> = Vec::new();
-    let mut text = String::new();
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'$' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
-            let start = i + 2;
-            let mut depth = 1;
-            let mut j = start;
-            while j < bytes.len() && depth > 0 {
-                match bytes[j] {
-                    b'{' => depth += 1,
-                    b'}' => depth -= 1,
-                    _ => {}
-                }
-                if depth == 0 {
-                    break;
-                }
-                j += 1;
-            }
-            if depth == 0 && j < bytes.len() {
-                if !text.is_empty() {
-                    parts.push(InterpolPart::Text(std::mem::take(&mut text)));
-                }
-                parts.push(InterpolPart::Expr(HirExpr {
-                    kind: HirExprKind::Ident(s[start..j].trim().to_string()),
-                    ty: crate::tycheck::Ty::Str,
-                    span: span.clone(),
-                }));
-                i = j + 1;
-                continue;
-            }
-        }
-        let c = s[i..].chars().next().unwrap_or(' ');
-        text.push(c);
-        i += c.len_utf8();
-    }
-    if !text.is_empty() {
-        parts.push(InterpolPart::Text(text));
-    }
-    parts
+    // An interpolated string with an `Int` fragment runs the full
+    // pipeline and lowers to a structured `Interpolate` HIR node whose
+    // parts alternate literal text and the embedded expression.
+    let src = "fun s() -> String { let n = 7; return \"hi ${n}!\" }";
+    let p = lower(src);
+    let f = only_fn(&p, "s");
+    let body = f.body.as_ref().expect("function body");
+    // `return e` lowers to a bare-expression statement whose expression
+    // is a `Return(Some(..))` HIR node carrying the value.
+    let returned = body
+        .stmts
+        .iter()
+        .find_map(|stmt| match &stmt.kind {
+            HirStmtKind::Expr(e) => match &e.kind {
+                HirExprKind::Return(Some(inner)) => Some(inner.as_ref()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("return with a value");
+    let HirExprKind::Interpolate(parts) = &returned.kind else {
+        panic!("expected an Interpolate node, got {:?}", returned.kind);
+    };
+    assert!(
+        matches!(parts.first(), Some(InterpolPart::Text(t)) if t == "hi "),
+        "first part should be the literal text `hi `"
+    );
+    assert!(
+        parts.iter().any(|p| matches!(p, InterpolPart::Expr(_))),
+        "expected an embedded expression part"
+    );
+    assert!(
+        matches!(parts.last(), Some(InterpolPart::Text(t)) if t == "!"),
+        "last part should be the literal text `!`"
+    );
 }
 
 #[test]
