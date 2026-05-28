@@ -1,99 +1,206 @@
-// std/string: byte-oriented string utilities.
-//
-// This is bundled Raven source compiled into the program when a user
-// writes `import std/string { ... }`. The functions are ordinary Raven
-// built on a small set of compiler intrinsics whose names begin with
-// `__str_`. Those intrinsics are recognized by the compiler and lowered
-// to the matching `raven-runtime` C ABI symbols. See
-// `docs/v2/specs/std-string.md`.
-//
-// Semantics are byte oriented: indices, lengths, and slices count UTF-8
-// bytes, not code points or grapheme clusters. Case mapping is ASCII
-// only. Multi-byte text passes through search and trim unchanged because
-// the operations compare whole byte sequences, but `char_at`, `substring`,
-// and the case functions act on individual bytes. See the spec for the
-// full byte versus codepoint discussion and the out of scope items.
+// std/string: byte-oriented String methods. Indices, lengths, and slices
+// count UTF-8 bytes, not code points. Case mapping is ASCII only.
 
-// Return the byte length of `s`. This counts UTF-8 bytes, not code
-// points or grapheme clusters, so a string of multi-byte characters
-// reports a length larger than its visible character count.
-fun length(s: String) -> Int {
-    return __str_len(s)
-}
+impl String {
+    fun length(self) -> Int {
+        return __str_len(self)
+    }
 
-// True when `s` has zero bytes.
-fun is_empty(s: String) -> Bool {
-    return __str_len(s) == 0
-}
+    fun is_empty(self) -> Bool {
+        return __str_len(self) == 0
+    }
 
-// Return the `i`-th byte of `s` as a one-byte `String`. `i` is a byte
-// offset; for a multi-byte character this returns a single byte of its
-// UTF-8 encoding, which on its own is not valid UTF-8. An out of range
-// index yields the empty string.
-fun char_at(s: String, i: Int) -> String {
-    return __str_substring(s, i, i + 1)
-}
+    // Byte offset, not codepoint: for a multi-byte character this returns
+    // one byte of the encoding. Out of range yields the empty string.
+    fun char_at(self, i: Int) -> String {
+        return __str_substring(self, i, i + 1)
+    }
 
-// Return the half-open byte range `[start, end)` of `s`. Bounds are
-// clamped to `0..length(s)` and a `start` past `end` yields the empty
-// string, so this never reads out of range. Slicing through the middle
-// of a multi-byte character produces bytes that are not valid UTF-8.
-fun substring(s: String, start: Int, end: Int) -> String {
-    return __str_substring(s, start, end)
-}
+    // Half-open byte range, clamped to 0..length. A start past end yields
+    // the empty string.
+    fun substring(self, start: Int, end: Int) -> String {
+        return __str_substring(self, start, end)
+    }
 
-// Concatenate `a` and `b` into a fresh `String`.
-fun concat(a: String, b: String) -> String {
-    return __str_concat(a, b)
-}
+    fun concat(self, other: String) -> String {
+        return __str_concat(self, other)
+    }
 
-// ASCII upper case. Bytes in `a`..`z` are mapped to `A`..`Z`; every
-// other byte (including the upper half of any multi-byte UTF-8
-// sequence) is copied unchanged. Non ASCII case is out of scope.
-fun to_upper(s: String) -> String {
-    let n = __str_len(s)
-    let out = ""
-    let i = 0
-    while i < n {
-        let b = __str_byte_at(s, i)
-        if b >= 97 {
-            if b <= 122 {
-                out = __str_concat(out, __str_from_byte(b - 32))
+    fun to_upper(self) -> String {
+        let n = __str_len(self)
+        let out = ""
+        let i = 0
+        while i < n {
+            let b = __str_byte_at(self, i)
+            if b >= 97 {
+                if b <= 122 {
+                    out = __str_concat(out, __str_from_byte(b - 32))
+                } else {
+                    out = __str_concat(out, __str_from_byte(b))
+                }
             } else {
                 out = __str_concat(out, __str_from_byte(b))
             }
-        } else {
-            out = __str_concat(out, __str_from_byte(b))
+            i = i + 1
         }
-        i = i + 1
+        return out
     }
-    return out
-}
 
-// ASCII lower case. Bytes in `A`..`Z` are mapped to `a`..`z`; every
-// other byte is copied unchanged. Non ASCII case is out of scope.
-fun to_lower(s: String) -> String {
-    let n = __str_len(s)
-    let out = ""
-    let i = 0
-    while i < n {
-        let b = __str_byte_at(s, i)
-        if b >= 65 {
-            if b <= 90 {
-                out = __str_concat(out, __str_from_byte(b + 32))
+    fun to_lower(self) -> String {
+        let n = __str_len(self)
+        let out = ""
+        let i = 0
+        while i < n {
+            let b = __str_byte_at(self, i)
+            if b >= 65 {
+                if b <= 90 {
+                    out = __str_concat(out, __str_from_byte(b + 32))
+                } else {
+                    out = __str_concat(out, __str_from_byte(b))
+                }
             } else {
                 out = __str_concat(out, __str_from_byte(b))
             }
-        } else {
-            out = __str_concat(out, __str_from_byte(b))
+            i = i + 1
         }
-        i = i + 1
+        return out
     }
-    return out
+
+    // Remove leading and trailing ASCII whitespace; interior whitespace is
+    // kept.
+    fun trim(self) -> String {
+        let n = __str_len(self)
+        let start = 0
+        let scanning = true
+        while scanning {
+            if start >= n {
+                scanning = false
+            } else {
+                if is_space_byte(__str_byte_at(self, start)) {
+                    start = start + 1
+                } else {
+                    scanning = false
+                }
+            }
+        }
+        let end = n
+        scanning = true
+        while scanning {
+            if end <= start {
+                scanning = false
+            } else {
+                if is_space_byte(__str_byte_at(self, end - 1)) {
+                    end = end - 1
+                } else {
+                    scanning = false
+                }
+            }
+        }
+        return __str_substring(self, start, end)
+    }
+
+    fun is_blank(self) -> Bool {
+        let n = __str_len(self)
+        let i = 0
+        while i < n {
+            if is_space_byte(__str_byte_at(self, i)) {
+                i = i + 1
+            } else {
+                return false
+            }
+        }
+        return true
+    }
+
+    // A non-positive count yields the empty string.
+    fun repeat(self, n: Int) -> String {
+        let out = ""
+        let i = 0
+        while i < n {
+            out = __str_concat(out, self)
+            i = i + 1
+        }
+        return out
+    }
+
+    // True when the bytes of `needle` occur starting at byte index `at`.
+    fun matches_at(self, needle: String, at: Int) -> Bool {
+        let m = __str_len(needle)
+        let n = __str_len(self)
+        if at + m > n {
+            return false
+        }
+        let j = 0
+        while j < m {
+            if __str_byte_at(self, at + j) == __str_byte_at(needle, j) {
+                j = j + 1
+            } else {
+                return false
+            }
+        }
+        return true
+    }
+
+    // Byte index of the first occurrence of `needle`, or -1 when absent.
+    // An empty needle matches at 0.
+    fun index_of(self, needle: String) -> Int {
+        let n = __str_len(self)
+        let m = __str_len(needle)
+        if m == 0 {
+            return 0
+        }
+        let i = 0
+        while i + m <= n {
+            if self.matches_at(needle, i) {
+                return i
+            }
+            i = i + 1
+        }
+        return -1
+    }
+
+    fun contains(self, needle: String) -> Bool {
+        return self.index_of(needle) >= 0
+    }
+
+    fun starts_with(self, prefix: String) -> Bool {
+        return self.matches_at(prefix, 0)
+    }
+
+    fun ends_with(self, suffix: String) -> Bool {
+        let n = __str_len(self)
+        let m = __str_len(suffix)
+        if m > n {
+            return false
+        }
+        return self.matches_at(suffix, n - m)
+    }
+
+    // Replace every non-overlapping occurrence of `from`, left to right.
+    // An empty `from` returns the input unchanged.
+    fun replace(self, from: String, to: String) -> String {
+        let m = __str_len(from)
+        if m == 0 {
+            return self
+        }
+        let n = __str_len(self)
+        let out = ""
+        let i = 0
+        while i < n {
+            if self.matches_at(from, i) {
+                out = __str_concat(out, to)
+                i = i + m
+            } else {
+                out = __str_concat(out, __str_substring(self, i, i + 1))
+                i = i + 1
+            }
+        }
+        return out
+    }
 }
 
-// True when the byte at index `i` of `s` is ASCII whitespace: space,
-// tab, newline, carriage return, vertical tab, or form feed.
+// ASCII whitespace: space, tab, newline, carriage return, vertical tab,
+// form feed.
 fun is_space_byte(b: Int) -> Bool {
     if b == 32 {
         return true
@@ -114,161 +221,4 @@ fun is_space_byte(b: Int) -> Bool {
         return true
     }
     return false
-}
-
-// Remove leading and trailing ASCII whitespace. Interior whitespace is
-// preserved. Whitespace is the ASCII set listed in `is_space_byte`;
-// Unicode whitespace is out of scope. A string that is empty or all
-// whitespace trims to the empty string.
-fun trim(s: String) -> String {
-    let n = __str_len(s)
-    // Advance `start` past leading whitespace.
-    let start = 0
-    let scanning = true
-    while scanning {
-        if start >= n {
-            scanning = false
-        } else {
-            if is_space_byte(__str_byte_at(s, start)) {
-                start = start + 1
-            } else {
-                scanning = false
-            }
-        }
-    }
-    // Retreat `end` past trailing whitespace.
-    let end = n
-    scanning = true
-    while scanning {
-        if end <= start {
-            scanning = false
-        } else {
-            if is_space_byte(__str_byte_at(s, end - 1)) {
-                end = end - 1
-            } else {
-                scanning = false
-            }
-        }
-    }
-    return __str_substring(s, start, end)
-}
-
-// True when `s` is empty or contains only ASCII whitespace.
-fun is_blank(s: String) -> Bool {
-    let n = __str_len(s)
-    let i = 0
-    while i < n {
-        if is_space_byte(__str_byte_at(s, i)) {
-            i = i + 1
-        } else {
-            return false
-        }
-    }
-    return true
-}
-
-// Repeat `s` `n` times. A non positive `n` yields the empty string.
-fun repeat(s: String, n: Int) -> String {
-    let out = ""
-    let i = 0
-    while i < n {
-        out = __str_concat(out, s)
-        i = i + 1
-    }
-    return out
-}
-
-// A method on the built in `String` type, declared in a bundled stdlib
-// module. It exercises method resolution for a built in receiver and a
-// sibling free function call from inside an `impl` body. The body calls
-// the module's own `to_upper`, which the stdlib expander rewrites to its
-// namespaced name. A user writes `"hi".shout()` after importing this
-// module and gets the upper cased string back.
-impl String {
-    fun shout(self) -> String {
-        return to_upper(self)
-    }
-}
-
-// True when the bytes of `needle` occur in `s` starting exactly at byte
-// index `at`. A `needle` that runs past the end of `s` is not a match.
-fun matches_at(s: String, needle: String, at: Int) -> Bool {
-    let m = __str_len(needle)
-    let n = __str_len(s)
-    if at + m > n {
-        return false
-    }
-    let j = 0
-    while j < m {
-        if __str_byte_at(s, at + j) == __str_byte_at(needle, j) {
-            j = j + 1
-        } else {
-            return false
-        }
-    }
-    return true
-}
-
-// Byte index of the first occurrence of `needle` in `s`, or -1 when
-// `needle` does not occur. An empty `needle` matches at index 0.
-fun index_of(s: String, needle: String) -> Int {
-    let n = __str_len(s)
-    let m = __str_len(needle)
-    if m == 0 {
-        return 0
-    }
-    let i = 0
-    while i + m <= n {
-        if matches_at(s, needle, i) {
-            return i
-        }
-        i = i + 1
-    }
-    return -1
-}
-
-// True when `needle` occurs anywhere in `s`. An empty `needle` is
-// always contained.
-fun contains(s: String, needle: String) -> Bool {
-    return index_of(s, needle) >= 0
-}
-
-// True when `s` begins with the bytes of `prefix`. An empty prefix
-// always matches.
-fun starts_with(s: String, prefix: String) -> Bool {
-    return matches_at(s, prefix, 0)
-}
-
-// True when `s` ends with the bytes of `suffix`. An empty suffix always
-// matches.
-fun ends_with(s: String, suffix: String) -> Bool {
-    let n = __str_len(s)
-    let m = __str_len(suffix)
-    if m > n {
-        return false
-    }
-    return matches_at(s, suffix, n - m)
-}
-
-// Replace every non overlapping occurrence of `from` in `s` with `to`,
-// scanning left to right. When `from` is empty the input is returned
-// unchanged so the scan cannot loop forever.
-fun replace(s: String, from: String, to: String) -> String {
-    let m = __str_len(from)
-    if m == 0 {
-        return s
-    }
-    let n = __str_len(s)
-    let out = ""
-    let i = 0
-    while i < n {
-        if matches_at(s, from, i) {
-            out = __str_concat(out, to)
-            i = i + m
-        } else {
-            out = __str_concat(out, __str_substring(s, i, i + 1))
-            i = i + 1
-        }
-    }
-    return out
 }

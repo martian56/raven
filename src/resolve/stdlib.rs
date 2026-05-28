@@ -355,20 +355,22 @@ mod tests {
 
     #[test]
     fn intra_module_sibling_calls_are_namespaced() {
-        // `std/string`'s `trim` calls its sibling `is_space_byte`. After
-        // expansion the call site must reference the namespaced name so it
-        // resolves to the renamed declaration. Collect every identifier in
-        // `trim`'s body and assert the sibling call was renamed.
-        let user = parse_src("import std/string { trim }\nfun main() {}\n");
+        // `std/string`'s `trim` is a method on `impl String` that calls the
+        // module's free helper `is_space_byte`. After expansion the call
+        // site inside the method body must reference the namespaced name so
+        // it resolves to the renamed free declaration.
+        let user = parse_src("import std/string\nfun main() {}\n");
         let combined = expand_with_stdlib(&user).expect("expand");
         let trim_fn = combined
             .items
             .iter()
-            .find_map(|d| match &d.kind {
-                DeclKind::Function(f) if f.name == "std.string.trim" => Some(f),
+            .filter_map(|d| match &d.kind {
+                DeclKind::Impl(imp) => Some(imp),
                 _ => None,
             })
-            .expect("std.string.trim present");
+            .flat_map(|imp| imp.items.iter())
+            .find(|f| f.name == "trim")
+            .expect("trim method present");
         let mut idents = Vec::new();
         if let FunctionBody::Block(b) = &trim_fn.body {
             collect_block_idents(b, &mut idents);
@@ -377,7 +379,7 @@ mod tests {
         }
         assert!(
             idents.iter().any(|n| n == "std.string.is_space_byte"),
-            "trim body should call the namespaced sibling, got: {idents:?}"
+            "trim body should call the namespaced free sibling, got: {idents:?}"
         );
         assert!(
             !idents.iter().any(|n| n == "is_space_byte"),
