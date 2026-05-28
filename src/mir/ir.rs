@@ -129,6 +129,36 @@ pub enum MirRvalue {
     ClosureCreate {
         fn_name: String,
         captures: Vec<MirOperand>,
+        /// Capture types, parallel to `captures`. The back end uses these
+        /// to size the capture record, decide which capture slots hold GC
+        /// pointers, and copy each value into its slot. Capture analysis
+        /// orders GC-pointer captures first so the runtime's leading
+        /// `capture_ptr_count` pointer-slot contract holds.
+        capture_tys: Vec<MirType>,
+    },
+    /// Read a captured value from the env record of a lifted closure body.
+    /// The env is the lifted body's leading parameter (a raw pointer-width
+    /// value). Slot `slot` lives at byte offset `slot * 8`; the back end
+    /// loads a pointer-width word and narrows it to `ty`.
+    EnvLoad {
+        env: MirOperand,
+        slot: usize,
+        ty: MirType,
+    },
+    /// Invoke a closure value through its function pointer. The back end
+    /// loads the function pointer and the capture env from the `Closure`
+    /// object, then emits an indirect call passing the env as the leading
+    /// argument followed by `args`. The lifted body's signature is
+    /// uniformly `(env_ptr, <user params...>) -> ret`, independent of the
+    /// capture count or types, so the call site needs only the user
+    /// parameter and return types.
+    ClosureCall {
+        closure: MirOperand,
+        args: Vec<MirOperand>,
+        /// The user (non-env) parameter types, used to build the indirect
+        /// call signature.
+        param_tys: Vec<MirType>,
+        ret_ty: MirType,
     },
     /// Unsize a concrete value to a `dyn Trait` value. The back end
     /// allocates a two-slot fat pointer `{ data, vtable }`: slot 0 holds

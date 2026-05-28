@@ -68,6 +68,12 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
         }
         HirExprKind::StructLit { name, fields } => lower_struct_lit(cx, name, fields, ty),
         HirExprKind::Call { callee, args } => {
+            // A callee that is an in-scope local of function type is a
+            // closure value: dispatch indirectly through its Closure
+            // object. Any other callee is a direct call by symbol.
+            if is_closure_value_callee(cx, callee) {
+                return lower_closure_call(cx, callee, args, ty);
+            }
             let callee_ref = call_ref_from_callee(cx, callee);
             let arg_ops: Vec<MirOperand> = args.iter().map(|a| lower_expr(cx, a)).collect();
             let dst = cx.builder.fresh_temp("call", ty);
@@ -264,23 +270,13 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             );
             MirOperand::Copy(dst)
         }
-        HirExprKind::Lambda {
-            params: _,
-            ret: _,
-            body: _,
-        } => {
-            // Closure capture analysis is deferred (issue #62). For
-            // now emit a placeholder operand and a ClosureCreate with
-            // no captures so the shape is visible in dumps.
+        HirExprKind::Lambda { params, ret, body } => {
+            // Run capture analysis, lift the body into a standalone
+            // function, and emit a ClosureCreate that allocates the
+            // closure and copies each captured value into the env.
+            let rvalue = super::closure::lower_lambda(cx, params, ret, body);
             let dst = cx.builder.fresh_temp("closure", ty);
-            cx.builder.assign(
-                cx.current,
-                dst,
-                MirRvalue::ClosureCreate {
-                    fn_name: "__closure".into(),
-                    captures: Vec::new(),
-                },
-            );
+            cx.builder.assign(cx.current, dst, rvalue);
             MirOperand::Copy(dst)
         }
     }
@@ -629,6 +625,59 @@ fn call_ref_from_callee(_cx: &mut LowerCx<'_>, callee: &HirExpr) -> MirFnRef {
             origin: None,
         },
     }
+}
+
+/// Decide whether a call's callee is a closure value to dispatch
+/// indirectly. A callee is a closure value when its type is a function
+/// type and it is not a bare reference to a top-level function. A bare
+/// identifier that is in scope as a local or parameter (so `cx.lookup`
+/// finds it) and has a function type is a closure value; an identifier
+/// that does not resolve to an in-scope local is a top-level function
+/// reference dispatched by symbol.
+fn is_closure_value_callee(cx: &LowerCx<'_>, callee: &HirExpr) -> bool {
+    if !matches!(callee.ty, crate::tycheck::Ty::Function { .. }) {
+        return false;
+    }
+    match &callee.kind {
+        // Only a local or parameter of function type is a closure value.
+        // A top-level function name is not in `cx.scopes`.
+        HirExprKind::Ident(name) => cx.lookup(name).is_some(),
+        // Any other expression of function type (a returned closure, a
+        // field holding a closure, an element of a list, ...) is a
+        // closure value.
+        _ => true,
+    }
+}
+
+/// Lower a closure-value call: evaluate the callee to a `Closure`
+/// pointer, then dispatch indirectly through it. The runtime loads the
+/// function pointer and capture env from the Closure object; the env is
+/// passed as the leading argument followed by the user arguments.
+fn lower_closure_call(
+    cx: &mut LowerCx<'_>,
+    callee: &HirExpr,
+    args: &[HirExpr],
+    ty: MirType,
+) -> MirOperand {
+    let closure = lower_expr(cx, callee);
+    let mut arg_ops = Vec::with_capacity(args.len());
+    let mut param_tys = Vec::with_capacity(args.len());
+    for a in args {
+        param_tys.push(mir_ty(&a.ty, cx.subst));
+        arg_ops.push(lower_expr(cx, a));
+    }
+    let dst = cx.builder.fresh_temp("ccall", ty.clone());
+    cx.builder.assign(
+        cx.current,
+        dst,
+        MirRvalue::ClosureCall {
+            closure,
+            args: arg_ops,
+            param_tys,
+            ret_ty: ty,
+        },
+    );
+    MirOperand::Copy(dst)
 }
 
 /// Lower a method call. A concrete receiver dispatches statically to the

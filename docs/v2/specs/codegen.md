@@ -9,12 +9,13 @@ selection and register allocation. The covered surface is primitives,
 binary and unary operators, branches, switches, function calls with
 static dispatch, returns, the `print` and `print_int` intrinsics, and
 heap value construction: structs, enums (including `Option` and
-`Result`), field access, enum dispatch, and non-capturing closures, all
-with garbage collector root frames.
+`Result`), field access, enum dispatch, and closures (capturing,
+returned, passed, and invoked through their value), all with garbage
+collector root frames.
 
-Trait object (`dyn Trait`) dispatch, calling and capturing closures,
-`defer`, string interpolation, C FFI, and rich stdlib collection methods
-are out of scope here and tracked by the follow up issues listed below.
+Rich stdlib collection methods (`List` and `Map` operations beyond
+construction) are out of scope here and tracked by the follow up issues
+listed below.
 
 ## Pipeline position
 
@@ -108,7 +109,7 @@ lifetimes); `Nop` is also a no op.
 | `UnaryOp(Not)` on `Bool` | `bxor` with the constant `1`. |
 | `UnaryOp(Ref)` | Deferred; emits `Unreachable`. |
 | `Call { callee, args }` | Loads each argument from its slot, declares the callee through `cranelift-module`, emits `call` with the resulting `FuncRef`, stores the return value. |
-| `StructCreate`, `EnumCreate`, `FieldAccess`, `ClosureCreate` | Lowered. See the heap value section below. |
+| `StructCreate`, `EnumCreate`, `FieldAccess`, `ClosureCreate`, `EnvLoad`, `ClosureCall` | Lowered. See the heap value and closure sections below. |
 | `Cast` | Integer and float conversions through `sextend`, `ireduce`, `fcvt_from_sint`, `fcvt_to_sint_sat`. |
 | `IndexAccess`, `ArrayLit` | Deferred to the stdlib collection issues. |
 
@@ -248,19 +249,83 @@ undefined symbols.
 
 ### Closures
 
-`ClosureCreate { fn_name, captures }` allocates a `Closure` object
-through `raven_closure_new(fn_ptr, size, align, count, ptr_count)`. The
-MVP supports the non-capturing shape the front end emits today: the
-captures list is empty, the capture buffer is zero sized, and the
-function pointer is the lifted body's address when `fn_name` resolves to
-a defined function (or null while lambda body lifting is pending). A
-non-empty captures list returns a `CodegenError::Unsupported`.
+Closures are fully first class: a lambda is allocated as a heap `Closure`
+object, captures the free variables it references, and can be returned,
+passed as an argument, stored in a local or struct field, and invoked
+through its value.
 
-Calling a closure value (indirect dispatch through the stored function
-pointer) and capturing closures both require front-end lambda body
-lifting and capture analysis. They are tracked separately; the closure
-smoke program builds a closure value and prints a sentinel to show the
-allocation and GC root frame run.
+#### Capture analysis
+
+Capture analysis runs in HIR-to-MIR lowering (`src/mir/lower/closure.rs`).
+For a lambda it walks the body and collects every free identifier: a name
+that is neither one of the lambda's own parameters nor a binding
+introduced inside the body. A free name is a capture exactly when it
+resolves to a local or parameter that is in scope at the definition site
+(found through the lowering context's scope stack). A free name that does
+not resolve to an in-scope local is a reference to a top-level function or
+constant, which codegen addresses by symbol rather than capturing.
+
+#### Capture-by-value semantics
+
+Captures are by value: the value at closure-creation time is copied into
+the capture environment. For a scalar (`Int`, `Float`, `Bool`, `Char`)
+that copy is the bits. For a GC-managed value (`Str`, `Struct`, `Enum`,
+`Option`, `Result`, `List`, a closure `Function`, or a `dyn Trait`) the
+copied value is the same pointer, so the captured object aliases the
+original; mutations made through that heap object after the closure is
+built remain visible inside the closure. Capture-by-reference (rebinding a
+captured variable so a later assignment to the original is seen) would
+need upvalue or cell machinery and is not provided in this release.
+
+#### Environment layout
+
+The capture environment is a positional record of pointer-width (8 byte)
+slots stored in the `Closure` object's owned capture buffer. Capture
+analysis orders GC-pointer captures first, then scalar captures, so the
+leading `capture_ptr_count` slots are exactly the traced GC pointers the
+collector follows (see the runtime closure layout in
+`docs/v2/specs/object-layout.md`). `ClosureCreate { fn_name, captures,
+capture_tys }` allocates the closure through `raven_closure_new(fn_ptr,
+size, align, count, ptr_count)` where `size = 8 * count`, `align = 8` (or
+zero when there are no captures), and `ptr_count` is the number of
+GC-pointer captures. It then loads the capture buffer base through
+`raven_closure_captures` and stores each capture value into slot `i` at
+byte offset `i * 8`. Scalars narrower than a pointer and floats are
+widened to a slot the same way struct fields are.
+
+#### Lifted body and the env parameter
+
+Each lambda body is lifted into a standalone MIR function whose leading
+parameter is the capture environment (`__env`, a raw pointer-width value
+the GC does not trace), followed by the lambda's own parameters. The
+lifted body opens by reading each capture from the env with an `EnvLoad
+{ env, slot, ty }` rvalue (a pointer-width load at `slot * 8`, narrowed to
+the capture's type) into a local bound under the capture's source name, so
+the rest of the body references captures as ordinary locals. A capture
+that is a GC pointer, once read into a body local, is rooted by the lifted
+body's own shadow-stack frame like any other GC local.
+
+#### Invoking a closure value
+
+A call whose callee is a value of function type (an in-scope local of
+`fun(T) -> U` type, a returned closure, a closure stored in a field, ...)
+lowers to `ClosureCall { closure, args, param_tys, ret_ty }`. Codegen
+loads the function pointer through `raven_closure_fn_ptr` and the capture
+env base through `raven_closure_captures`, builds the indirect signature
+`(env_ptr, <user params...>) -> ret`, and emits a `call_indirect` passing
+the env base as the leading argument followed by the user arguments. The
+signature is uniform regardless of the capture count or types, so the call
+site needs only the user parameter and return types; a top-level function
+reference is still dispatched directly by symbol.
+
+#### GC
+
+A closure local is a GC pointer rooted in the enclosing function's shadow
+stack frame like any other GC local. The captured GC pointers inside the
+env are traced by the collector through the `Closure` descriptor: the
+runtime's closure-tracing arm reads `capture_ptr_count` and traces the
+leading pointer slots, which is why capture analysis places GC-pointer
+captures first.
 
 ## GC root frames
 
@@ -399,8 +464,11 @@ that only consult MIR lowering do not depend on a linker.
   as read-only data, and a `dyn` method call dispatches through the
   vtable. See `docs/v2/specs/dyn-trait.md`. Static trait method calls are
   monomorphized by MIR into direct calls.
-* Calling closure values and capturing closures (lambda body lifting and
-  capture analysis); non-capturing closure allocation is supported.
+* ~~Calling closure values and capturing closures (lambda body lifting and
+  capture analysis).~~ Implemented: capture analysis lifts each lambda
+  body into a standalone function, captures free variables by value, and
+  invokes closure values through an indirect call. See the Closures
+  section above.
 * `defer` ordering and runtime hooks (issue #68).
 * String interpolation (issue #69) and C FFI (issue #70).
 * Rich stdlib collection methods (`push`, `get`, and so on) beyond
@@ -417,8 +485,11 @@ that only consult MIR lowering do not depend on a linker.
 * End to end smoke tests that compile, link, run, and check the stdout of
   `examples/v2/hello.rv` (`Hello, Raven!`), `point.rv` (a struct,
   prints `7`), `option_sum.rv` (Option construction and matching, prints
-  `104`), and `closure_value.rv` (a non-capturing closure allocation,
-  prints `42`). Each gates on linker and runtime staticlib presence and
+  `104`), `closure_value.rv` (a non-capturing closure allocation, prints
+  `42`), `closure_capture.rv` (a returned closure capturing a local by
+  value, prints `15` then `42`), and `closure_arg.rv` (a capturing closure
+  passed as an argument and invoked indirectly, prints `21`). Each gates
+  on linker and runtime staticlib presence and
   emits an `eprintln!` plus a successful exit only when one is missing;
   on a correctly configured host it links and runs the program for real.
 

@@ -8,6 +8,7 @@
 //! the [`LowerCx`] context defined here, which owns the in-progress
 //! [`FunctionBuilder`] and tracks the lexical loop and `Self` stack.
 
+pub mod closure;
 pub mod expr;
 pub mod pattern;
 pub mod stmt;
@@ -72,6 +73,20 @@ pub struct LowerCx<'a> {
     /// reverse (LIFO) order at each block exit and at every `return`.
     /// See `src/hir` defer lowering and `docs/v2/specs/defer.md`.
     pub defers: Vec<crate::hir::expr::HirExpr>,
+    /// Lifted closure bodies produced while lowering this function. Each
+    /// lambda expression lifts its body into a standalone `MirFunction`
+    /// whose leading parameter is the capture environment. The functions
+    /// are returned alongside the enclosing function so the monomorphizer
+    /// can add them to the program and codegen can resolve the closure's
+    /// function pointer.
+    pub lifted: Vec<MirFunction>,
+    /// Monotonic counter used to mint unique lifted closure names within
+    /// one enclosing function. Combined with the enclosing function's
+    /// mangled name to stay globally unique.
+    pub lambda_seq: u32,
+    /// Mangled name of the enclosing function, used to derive lifted
+    /// closure names so two enclosing functions never collide.
+    pub enclosing: String,
 }
 
 impl LowerCx<'_> {
@@ -170,17 +185,27 @@ pub fn mir_ty(ty: &Ty, subst: &SubstMap) -> MirType {
     MirType::from_ty(&substitute(ty, subst))
 }
 
+/// The product of lowering one HIR function: the finished `MirFunction`,
+/// the nested call sites the monomorphizer should compile, and any lifted
+/// closure body functions produced while lowering lambda expressions.
+pub struct LoweredFunction {
+    pub func: MirFunction,
+    pub pending: Vec<(DeclId, Vec<Ty>)>,
+    pub lifted: Vec<MirFunction>,
+}
+
 /// Lower one HIR function under the given substitution. Returns the
-/// finished `MirFunction` plus the list of nested call sites the
-/// monomorphizer should compile.
+/// finished `MirFunction`, the list of nested call sites the
+/// monomorphizer should compile, and any lifted closure bodies.
 pub fn lower_function(
     mangled: String,
     hir: &HirFn,
     subst: &SubstMap,
     decls: &DeclTables<'_>,
-) -> (MirFunction, Vec<(DeclId, Vec<Ty>)>) {
+) -> LoweredFunction {
     let ret_ty = mir_ty(&hir.ret, subst);
-    let mut builder = FunctionBuilder::new(mangled, hir.name.clone(), ret_ty, hir.span.clone());
+    let mut builder =
+        FunctionBuilder::new(mangled.clone(), hir.name.clone(), ret_ty, hir.span.clone());
 
     let mut param_scope = Scope::new();
     for (name, ty, _) in &hir.params {
@@ -200,6 +225,9 @@ pub fn lower_function(
         decls,
         diverged: false,
         defers: Vec::new(),
+        lifted: Vec::new(),
+        lambda_seq: 0,
+        enclosing: mangled,
     };
 
     let body = hir
@@ -227,5 +255,10 @@ pub fn lower_function(
     }
 
     let pending = std::mem::take(&mut cx.pending_calls);
-    (cx.builder.finish(entry), pending)
+    let lifted = std::mem::take(&mut cx.lifted);
+    LoweredFunction {
+        func: cx.builder.finish(entry),
+        pending,
+        lifted,
+    }
 }

@@ -60,6 +60,28 @@ fn closure_value_program_compiles_and_runs() {
 }
 
 #[test]
+fn closure_capture_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // make_adder(10) returns a closure capturing the local `n = 10` by
+    // value. Invoking the returned closure value adds the captured amount:
+    // add10(5) prints 15 and add10(32) prints 42.
+    compile_link_run_and_check("closure_capture.rv", "15\n42\n", &runtime);
+}
+
+#[test]
+fn closure_arg_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A capturing closure passed as a function argument and invoked
+    // indirectly: `triple` captures `factor = 3`, and apply(triple, 7)
+    // returns 7 * 3, printing 21.
+    compile_link_run_and_check("closure_arg.rv", "21\n", &runtime);
+}
+
+#[test]
 fn dyn_dispatch_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

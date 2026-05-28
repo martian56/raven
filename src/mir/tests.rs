@@ -348,3 +348,158 @@ fn only_reached_defers_run_on_each_return_path() {
         return_blocks
     );
 }
+
+// ----- closure capture and invocation -----
+
+/// Find the single `ClosureCreate` rvalue in a function's blocks.
+fn closure_create_in(f: &MirFunction) -> &MirRvalue {
+    f.blocks
+        .iter()
+        .flat_map(|b| b.statements.iter())
+        .find_map(|s| match s {
+            MirStatement::Assign {
+                rvalue: rv @ MirRvalue::ClosureCreate { .. },
+                ..
+            } => Some(rv),
+            _ => None,
+        })
+        .expect("expected a ClosureCreate")
+}
+
+#[test]
+fn capturing_lambda_records_captured_local() {
+    // The lambda references the enclosing local `n`, so capture analysis
+    // records exactly one capture and emits a ClosureCreate carrying it.
+    let prog = compile(
+        r#"
+        fun make_adder(n: Int) -> fun(Int) -> Int {
+            return fun(x: Int) -> Int = x + n
+        }
+    "#,
+    );
+    let f = find_fn(&prog, "make_adder");
+    match closure_create_in(f) {
+        MirRvalue::ClosureCreate {
+            captures,
+            capture_tys,
+            ..
+        } => {
+            assert_eq!(captures.len(), 1, "exactly the captured `n`");
+            assert_eq!(capture_tys, &vec![MirType::Int]);
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn non_capturing_lambda_has_no_captures() {
+    // The lambda references only its own parameter, so it captures
+    // nothing and the ClosureCreate carries an empty capture list.
+    let prog = compile(
+        r#"
+        fun make() -> fun(Int) -> Int {
+            return fun(x: Int) -> Int = x + 1
+        }
+    "#,
+    );
+    let f = find_fn(&prog, "make");
+    match closure_create_in(f) {
+        MirRvalue::ClosureCreate { captures, .. } => {
+            assert!(captures.is_empty(), "no enclosing locals referenced");
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn lambda_body_is_lifted_to_standalone_function() {
+    // The lambda body becomes its own MIR function whose leading
+    // parameter is the capture environment.
+    let prog = compile(
+        r#"
+        fun make_adder(n: Int) -> fun(Int) -> Int {
+            return fun(x: Int) -> Int = x + n
+        }
+    "#,
+    );
+    let lifted = prog
+        .functions
+        .iter()
+        .find(|f| f.name.contains("$closure$"))
+        .expect("a lifted closure body function");
+    // env pointer + the lambda's own parameter.
+    assert_eq!(lifted.params.len(), 2, "env param plus lambda param");
+    let env_decl = lifted.local_decl(lifted.params[0]);
+    assert_eq!(env_decl.name, "__env");
+    // The body reads the capture from the env.
+    let saw_env_load = lifted
+        .blocks
+        .iter()
+        .flat_map(|b| b.statements.iter())
+        .any(|s| {
+            matches!(
+                s,
+                MirStatement::Assign {
+                    rvalue: MirRvalue::EnvLoad { .. },
+                    ..
+                }
+            )
+        });
+    assert!(saw_env_load, "lifted body reads its captures from the env");
+}
+
+#[test]
+fn invoking_a_closure_value_emits_closure_call() {
+    // Calling a local of function type dispatches indirectly through the
+    // Closure object via a ClosureCall rvalue, not a direct Call.
+    let prog = compile(
+        r#"
+        fun apply(f: fun(Int) -> Int, x: Int) -> Int {
+            return f(x)
+        }
+    "#,
+    );
+    let f = find_fn(&prog, "apply");
+    let saw_closure_call = f.blocks.iter().flat_map(|b| b.statements.iter()).any(|s| {
+        matches!(
+            s,
+            MirStatement::Assign {
+                rvalue: MirRvalue::ClosureCall { .. },
+                ..
+            }
+        )
+    });
+    assert!(
+        saw_closure_call,
+        "calling a closure value lowers to ClosureCall"
+    );
+}
+
+#[test]
+fn gc_pointer_captures_are_ordered_first() {
+    // A closure capturing both a scalar (`k`) and a GC pointer (`s`)
+    // places the GC pointer capture first so the runtime's leading
+    // `capture_ptr_count` traced-slot contract holds. The lambda is
+    // declared with `k` first in source, yet capture ordering puts the
+    // String capture ahead of the Int.
+    let prog = compile(
+        r#"
+        fun build(k: Int, s: String) -> fun() -> String {
+            return fun() -> String = "${k}${s}"
+        }
+    "#,
+    );
+    let f = find_fn(&prog, "build");
+    match closure_create_in(f) {
+        MirRvalue::ClosureCreate { capture_tys, .. } => {
+            assert_eq!(capture_tys.len(), 2);
+            assert_eq!(
+                capture_tys[0],
+                MirType::Str,
+                "the GC pointer capture comes first"
+            );
+            assert_eq!(capture_tys[1], MirType::Int);
+        }
+        _ => unreachable!(),
+    }
+}

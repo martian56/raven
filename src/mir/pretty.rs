@@ -192,11 +192,27 @@ fn pretty_rvalue(buf: &mut String, r: &MirRvalue) {
             pretty_operand(buf, operand);
             write!(buf, " {})", target).unwrap();
         }
-        MirRvalue::ClosureCreate { fn_name, captures } => {
+        MirRvalue::ClosureCreate {
+            fn_name, captures, ..
+        } => {
             write!(buf, "(closure {}", quote(fn_name)).unwrap();
             for c in captures {
                 buf.push(' ');
                 pretty_operand(buf, c);
+            }
+            buf.push(')');
+        }
+        MirRvalue::EnvLoad { env, slot, ty } => {
+            write!(buf, "(env-load slot={} ty={} ", slot, ty).unwrap();
+            pretty_operand(buf, env);
+            buf.push(')');
+        }
+        MirRvalue::ClosureCall { closure, args, .. } => {
+            buf.push_str("(closure-call ");
+            pretty_operand(buf, closure);
+            for a in args {
+                buf.push(' ');
+                pretty_operand(buf, a);
             }
             buf.push(')');
         }
