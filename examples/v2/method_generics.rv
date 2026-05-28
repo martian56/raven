@@ -1,0 +1,23 @@
+// Method-level generic monomorphization end to end.
+//
+// `mapped<U>` introduces a type parameter `U` that does not appear in the
+// implementing type `Box<T>`. Calling it at two distinct `U` on the same
+// `Box<Int>` must compile to two distinct instantiations whose symbols do
+// not collide (`Box_Int$mapped$Int` and `Box_Int$mapped$Bool`). The
+// substitution for each body binds both the impl's `T` and the method's
+// own `U`. Prints 42 then true.
+struct Box<T> {
+    value: T
+}
+
+impl<T> Box<T> {
+    fun mapped<U>(self, f: fun(T) -> U) -> U = f(self.value)
+}
+
+fun main() {
+    let b = Box { value: 21 }
+    let doubled = b.mapped(fun(x: Int) -> Int = x * 2)
+    let is_big = b.mapped(fun(x: Int) -> Bool = x > 10)
+    print_int(doubled)
+    print(is_big)
+}

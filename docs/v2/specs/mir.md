@@ -260,12 +260,27 @@ Vec_push$Int                (impl Vec<Int>::push)
 
 A method instantiation is named `<implementing_type_mangle>$<method>`,
 where the implementing type mangle already carries the concrete type
-arguments. A generic method specialized at `Box<Int>` and the call to it
-both name `Box_Int$unwrap`; a `Box<String>` instantiation names
-`Box_Str$unwrap`. Because the implementing type's mangle already
-distinguishes instantiations, a method takes no extra `$<typearg>` suffix.
-The call site recomputes the same name from the concrete receiver type, so
-the definition and the call always agree.
+arguments that come from the implementing type. A generic method
+specialized at `Box<Int>` and the call to it both name `Box_Int$unwrap`; a
+`Box<String>` instantiation names `Box_Str$unwrap`. The call site recomputes
+the same name from the concrete receiver type, so the definition and the
+call always agree.
+
+A method may also introduce its own generic parameters that do not appear
+in the implementing type (`impl<T> Box<T> { fun mapped<U>(self, f: fun(T)
+-> U) -> U }`, where `U` is the method's own parameter, distinct from the
+impl's `T`). These method-level type arguments are part of the
+instantiation: the monomorphization key is `(method declaration, receiver
+type arguments, method-level type arguments)`, so two calls to the same
+method on the same receiver type at different `U` dedupe to distinct
+instantiations. Each method-level argument is appended to the mangled name
+in declaration order, after the receiver-derived `$<method>` portion, so
+the two calls produce `Box_Int$mapped$Int` and `Box_Int$mapped$Bool`
+rather than colliding on `Box_Int$mapped`. The call site infers the
+concrete method-level arguments by matching the method's declared parameter
+types (which carry `U`) against the concrete argument types, then recomputes
+the same suffix, so the definition and the call still agree. The body
+substitution binds both the impl's `T` and the method's own `U`.
 
 The PR's golden tests pin the exact spelling so future changes are
 visible in diffs.
@@ -278,13 +293,6 @@ visible in diffs.
   concrete functions during type checking; `dyn` lowering is issue #66.
 * Async, generators, drop tracking, borrow analysis.
 * Cross-file monomorphization: the v2 pipeline still operates per file.
-* Method-level generic parameters that do not appear in the implementing
-  type (for example `impl Box<Int> { fun map<U>(self, f) -> U }`). The
-  call-site symbol is derived from the receiver type alone, so two
-  instantiations at different `U` would collide on one symbol. Generic
-  parameters that come from the implementing type (`impl<T> Box<T>`) are
-  fully supported because the implementing type's mangle distinguishes
-  them.
 
 ## Test coverage
 

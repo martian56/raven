@@ -251,6 +251,22 @@ fn generic_struct_program_compiles_and_runs() {
 }
 
 #[test]
+fn method_generics_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Method-level generic monomorphization end to end. The method
+    // `mapped<U>` on `impl<T> Box<T>` introduces a type parameter `U` that
+    // does not appear in the implementing type. Two calls on the same
+    // `Box<Int>` at distinct `U` (Int for the doubling closure, Bool for
+    // the comparison) must resolve to distinct per-instantiation symbols
+    // (`Box_Int$mapped$Int` and `Box_Int$mapped$Bool`) rather than colliding
+    // on the receiver-derived `Box_Int$mapped`. Each body substitution binds
+    // both the impl's `T` and the method's own `U`. Prints 42 then true.
+    compile_link_run_and_check("method_generics.rv", "42\ntrue\n", &runtime);
+}
+
+#[test]
 fn list_int_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
