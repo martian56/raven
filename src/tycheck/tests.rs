@@ -55,6 +55,17 @@ fn comparison_requires_compatible_operands() {
 }
 
 #[test]
+fn bound_trait_method_with_self_arg_keeps_its_parameter() {
+    // A trait method taking a `Self` argument, called on a generic value
+    // bounded by that trait, must keep the argument: only the leading
+    // `self` receiver is dropped, not every `Self`-typed parameter.
+    check(
+        "trait Combine {\n    fun combine(self, other: Self) -> Self\n}\nfun pair<T: Combine>(a: T, b: T) -> T {\n    return a.combine(b)\n}\n",
+    )
+    .unwrap();
+}
+
+#[test]
 fn struct_literal_and_field_access() {
     check(
         "struct Point { x: Int, y: Int }\nfun f() -> Int {\n    let p = Point { x: 1, y: 2 }\n    return p.x\n}\n",

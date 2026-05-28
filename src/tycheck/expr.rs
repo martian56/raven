@@ -1715,13 +1715,18 @@ impl<'a, 'b> Checker<'a, 'b> {
             .with_hint(hint));
         };
 
-        // Substitute every `Self` placeholder in the trait method's
-        // signature with the receiver's parameter type, and the trait's
-        // own generic parameters with the bound's type arguments.
-        let user_params: Vec<Ty> = sig
-            .params
+        // Drop the leading `self` receiver positionally, then substitute
+        // every remaining `Self` (for example the `other: Self` of
+        // `equals`) with the receiver's parameter type and the trait's own
+        // generic parameters with the bound's type arguments. Filtering by
+        // `Self` type instead would also drop a real `Self`-typed argument.
+        let rest = if sig.has_self && !sig.params.is_empty() {
+            &sig.params[1..]
+        } else {
+            &sig.params[..]
+        };
+        let user_params: Vec<Ty> = rest
             .iter()
-            .filter(|t| !matches!(t, Ty::SelfTy(_)))
             .map(|t| substitute(&substitute_self(t, &recv_ty), &trait_subst))
             .collect();
         if user_params.len() != args.len() {
