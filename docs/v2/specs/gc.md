@@ -168,10 +168,12 @@ retaining survivors (and clearing their mark bit) and dropping freed
 entries; the retained order does not matter.
 
 Two global counters back the trigger and the tests: `bytes_allocated`
-tracks total live object bytes (bodies plus owned buffers) and drives
-the collection threshold, and `live_objects` counts live objects so
-tests can assert bounded liveness deterministically without measuring
-flaky OS memory.
+tracks live object-body bytes (the bytes handed out by
+`raven_gc_alloc`) and drives the collection threshold, and
+`live_objects` counts live objects so tests can assert bounded liveness
+deterministically without measuring flaky OS memory. Owned buffers are
+freed with their object but are not separately metered; counting bodies
+is enough to bound the live object set and pace collection.
 
 ## Marking per layout
 
@@ -229,8 +231,9 @@ Sweep walks the all-objects list once. For each object:
   * `Box`: no separate buffer; the payload is inline in the body.
   Then free the object body itself. The body size and alignment are
   derived from the tag (fixed per kind, except `Box`, whose body size is
-  `16 + header.len`). The collector decrements `bytes_allocated` and
-  `live_objects` for each freed object.
+  `BOX_PAYLOAD_OFFSET + header.len`). The collector decrements
+  `bytes_allocated` by the body size and `live_objects` by one for each
+  freed object.
 * If the mark bit is set, the object survives. Clear the mark bit and
   retain it in the list.
 

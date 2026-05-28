@@ -6,6 +6,7 @@
 //! object is the same fixed size regardless of capture count.
 
 use super::{ObjectHeader, OBJECT_ALIGN, TAG_CLOSURE};
+use crate::gc::raven_gc_alloc;
 use crate::{raven_alloc, raven_dealloc};
 use std::mem::align_of;
 use std::ptr;
@@ -27,28 +28,36 @@ pub struct Closure {
     pub capture_size: u32,
     /// Alignment in bytes of the capture record.
     pub capture_align: u32,
+    /// Number of leading pointer-sized capture slots that are GC
+    /// pointers the collector traces. The closure-lowering pass places
+    /// the GC pointer captures first in the record; the remaining bytes
+    /// are scalars. Zero when the closure captures no GC pointers.
+    pub capture_ptr_count: u32,
+    /// Reserved padding; always zero.
+    pub _pad: u32,
 }
 
 /// Allocate a fresh `Closure` with the given function pointer and
 /// capture record shape. The capture buffer is zero-filled.
 ///
 /// `capture_count` is recorded in `header.len`; `capture_size` and
-/// `capture_align` describe the owned capture buffer. Returns null on
-/// allocation failure or invalid layout.
+/// `capture_align` describe the owned capture buffer. `capture_ptr_count`
+/// is the number of leading pointer-sized capture slots that are GC
+/// pointers the collector traces. Returns null on allocation failure or
+/// invalid layout.
 #[no_mangle]
 pub extern "C" fn raven_closure_new(
     fn_ptr: *const u8,
     capture_size: u32,
     capture_align: u32,
     capture_count: u32,
+    capture_ptr_count: u32,
 ) -> *mut Closure {
     if capture_align != 0 && !capture_align.is_power_of_two() {
         return ptr::null_mut();
     }
-    let closure_ptr = raven_alloc(size_of_closure(), align_of_closure()) as *mut Closure;
-    if closure_ptr.is_null() {
-        return ptr::null_mut();
-    }
+    // Allocate the owned capture buffer first so a body-allocation
+    // failure does not leave a half-registered object in the collector.
     let captures = if capture_size == 0 {
         ptr::null_mut()
     } else {
@@ -59,17 +68,18 @@ pub extern "C" fn raven_closure_new(
         };
         let p = raven_alloc(capture_size as usize, align);
         if p.is_null() {
-            raven_dealloc(
-                closure_ptr as *mut u8,
-                size_of_closure(),
-                align_of_closure(),
-            );
             return ptr::null_mut();
         }
         // SAFETY: the allocator just gave us `capture_size` bytes.
         unsafe { ptr::write_bytes(p, 0, capture_size as usize) };
         p
     };
+    let closure_ptr =
+        raven_gc_alloc(size_of_closure(), align_of_closure(), TAG_CLOSURE) as *mut Closure;
+    if closure_ptr.is_null() {
+        free_capture_buffer(captures, capture_size, capture_align);
+        return ptr::null_mut();
+    }
     // SAFETY: closure_ptr points to writable, correctly aligned storage.
     unsafe {
         ptr::write(
@@ -80,6 +90,8 @@ pub extern "C" fn raven_closure_new(
                 captures,
                 capture_size,
                 capture_align,
+                capture_ptr_count,
+                _pad: 0,
             },
         );
     }
@@ -125,6 +137,34 @@ pub(crate) const fn align_of_closure() -> usize {
     }
 }
 
+/// Free a `Closure`'s owned capture buffer. The collector frees the
+/// object body separately after this call.
+///
+/// # Safety
+///
+/// `c` must point to a live `Closure` produced by `raven_closure_new`.
+pub(crate) unsafe fn free_buffers(c: *mut Closure) {
+    // SAFETY: caller guarantees `c` is a live Closure.
+    let capture_size = unsafe { (*c).capture_size };
+    let capture_align = unsafe { (*c).capture_align };
+    let captures = unsafe { (*c).captures };
+    free_capture_buffer(captures, capture_size, capture_align);
+}
+
+/// Release a capture buffer allocated by the constructor. Used to
+/// unwind a partly-built closure when the body allocation fails.
+fn free_capture_buffer(captures: *mut u8, capture_size: u32, capture_align: u32) {
+    if captures.is_null() || capture_size == 0 {
+        return;
+    }
+    let align = if capture_align == 0 {
+        1
+    } else {
+        capture_align as usize
+    };
+    raven_dealloc(captures, capture_size as usize, align);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,25 +175,28 @@ mod tests {
     #[test]
     #[cfg(target_pointer_width = "64")]
     fn closure_size_and_offsets_match_spec() {
-        assert_eq!(size_of::<Closure>(), 40);
+        assert_eq!(size_of::<Closure>(), 48);
         assert_eq!(offset_of!(Closure, header), 0);
         assert_eq!(offset_of!(Closure, fn_ptr), 16);
         assert_eq!(offset_of!(Closure, captures), 24);
         assert_eq!(offset_of!(Closure, capture_size), 32);
         assert_eq!(offset_of!(Closure, capture_align), 36);
+        assert_eq!(offset_of!(Closure, capture_ptr_count), 40);
         assert!(align_of::<Closure>() >= 8);
     }
 
     #[test]
     fn new_no_captures_leaves_buffer_null() {
         let fp = dummy_body as *const u8;
-        let c = raven_closure_new(fp, 0, 0, 0);
+        let c = raven_closure_new(fp, 0, 0, 0, 0);
         assert!(!c.is_null());
         // SAFETY: c came from the constructor.
         unsafe {
             assert_eq!((*c).header.tag, TAG_CLOSURE);
             assert_eq!((*c).header.len, 0);
             assert_eq!((*c).capture_size, 0);
+            assert_eq!((*c).capture_ptr_count, 0);
+            assert_eq!((*c)._pad, 0);
             assert!((*c).captures.is_null());
             assert_eq!((*c).fn_ptr, fp);
         }
@@ -163,13 +206,14 @@ mod tests {
     #[test]
     fn new_with_captures_zero_fills_buffer() {
         let fp = dummy_body as *const u8;
-        let c = raven_closure_new(fp, 24, 8, 3);
+        let c = raven_closure_new(fp, 24, 8, 3, 2);
         assert!(!c.is_null());
         // SAFETY: c has a 24-byte capture buffer and len 3.
         unsafe {
             assert_eq!((*c).header.len, 3);
             assert_eq!((*c).capture_size, 24);
             assert_eq!((*c).capture_align, 8);
+            assert_eq!((*c).capture_ptr_count, 2);
             let buf = (*c).captures;
             assert!(!buf.is_null());
             for i in 0..24 {
@@ -182,7 +226,7 @@ mod tests {
     #[test]
     fn accessors_match_fields() {
         let fp = dummy_body as *const u8;
-        let c = raven_closure_new(fp, 16, 8, 2);
+        let c = raven_closure_new(fp, 16, 8, 2, 0);
         assert_eq!(raven_closure_fn_ptr(c), fp);
         let captures = raven_closure_captures(c);
         assert!(!captures.is_null());
@@ -201,27 +245,14 @@ mod tests {
         assert!(raven_closure_captures(std::ptr::null()).is_null());
     }
 
-    /// Test-only deallocator.
+    /// Test-only deallocator: unregister the object from the collector
+    /// and free its buffer and body.
     ///
     /// # Safety
     ///
     /// `c` must come from `raven_closure_new` and not be freed yet.
     unsafe fn drop_closure_for_test(c: *mut Closure) {
-        if c.is_null() {
-            return;
-        }
         // SAFETY: matches construction layout.
-        let capture_size = unsafe { (*c).capture_size };
-        let capture_align = unsafe { (*c).capture_align };
-        let captures = unsafe { (*c).captures };
-        if !captures.is_null() && capture_size > 0 {
-            let align = if capture_align == 0 {
-                1
-            } else {
-                capture_align as usize
-            };
-            raven_dealloc(captures, capture_size as usize, align);
-        }
-        raven_dealloc(c as *mut u8, size_of_closure(), align_of_closure());
+        unsafe { crate::gc::free_for_test(c as *mut ObjectHeader) };
     }
 }

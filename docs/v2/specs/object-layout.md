@@ -65,19 +65,23 @@ struct List {
     ObjectHeader header;     // tag = TAG_LIST
     u32          element_size;
     u32          element_align;
+    u32          elements_are_gc_ptrs; // nonzero when slots are GC pointers
+    u32          _pad;                 // reserved, zeroed
     u8          *elements;   // owned buffer of `cap * element_size` bytes
 };
 ```
 
 Field offsets on 64-bit:
 
-| offset | size | field         |
-| -----: | ---: | ------------- |
-| 0      | 16   | header        |
-| 16     | 4    | element_size  |
-| 20     | 4    | element_align |
-| 24     | 8    | elements      |
-| total  | 32   |               |
+| offset | size | field                |
+| -----: | ---: | -------------------- |
+| 0      | 16   | header               |
+| 16     | 4    | element_size         |
+| 20     | 4    | element_align        |
+| 24     | 4    | elements_are_gc_ptrs |
+| 28     | 4    | _pad                 |
+| 32     | 8    | elements             |
+| total  | 40   |                      |
 
 * Alignment: 8.
 * `header.tag = TAG_LIST`.
@@ -88,13 +92,12 @@ Field offsets on 64-bit:
   pointer to the inner object.
 * `element_align` is the alignment of one element, the same value the
   back-end would pass to `raven_alloc` for an element.
+* `elements_are_gc_ptrs` is nonzero when each element slot is a GC
+  pointer the collector traces, zero for scalar elements. Codegen sets
+  it from the static element type. The GC reads it instead of guessing
+  from `element_size`, because an 8-byte `Int` slot is not a pointer.
 * `elements` points to an owned buffer of `cap * element_size` bytes.
   When `cap == 0`, `elements` is null.
-
-The GC tracing rule keys on whether the element is a pointer type. The
-back-end records this in a per-list descriptor in a follow-up; for now
-the tracer treats `element_size == 8` and `element_align == 8` lists as
-potentially pointer-bearing.
 
 ## Map
 
@@ -102,7 +105,9 @@ potentially pointer-bearing.
 struct Map {
     ObjectHeader header;     // tag = TAG_MAP
     u32          bucket_count;
-    u32          _pad;       // reserved, zeroed
+    u8           keys_are_gc_ptrs;   // nonzero when keys are GC pointers
+    u8           values_are_gc_ptrs; // nonzero when values are GC pointers
+    u16          _pad;               // reserved, zeroed
     MapEntry    *buckets;
 };
 
@@ -115,13 +120,15 @@ struct MapEntry {
 
 Map field offsets on 64-bit:
 
-| offset | size | field         |
-| -----: | ---: | ------------- |
-| 0      | 16   | header        |
-| 16     | 4    | bucket_count  |
-| 20     | 4    | _pad          |
-| 24     | 8    | buckets       |
-| total  | 32   |               |
+| offset | size | field              |
+| -----: | ---: | ------------------ |
+| 0      | 16   | header             |
+| 16     | 4    | bucket_count       |
+| 20     | 1    | keys_are_gc_ptrs   |
+| 21     | 1    | values_are_gc_ptrs |
+| 22     | 2    | _pad               |
+| 24     | 8    | buckets            |
+| total  | 32   |                    |
 
 `MapEntry` offsets:
 
@@ -139,6 +146,10 @@ Map field offsets on 64-bit:
 * `bucket_count` is a power of two, or zero for the freshly-constructed
   empty map. The constructor accepts any non-negative request and rounds
   up to the next power of two.
+* `keys_are_gc_ptrs` and `values_are_gc_ptrs` are nonzero when bucket
+  keys or values are GC pointers the collector traces. Codegen sets them
+  from the static key and value types. They reuse the word that was
+  reserved padding before the collector landed.
 * `buckets` points to `bucket_count` contiguous `MapEntry` slots. An
   empty or tombstoned slot has `key == null`. Tombstones are distinguished
   from truly-empty slots by `hash == TOMBSTONE_HASH` (a reserved bit
@@ -162,7 +173,8 @@ an ABI change, because `hash` is internal to `MapEntry`.
 struct Set {
     ObjectHeader header;     // tag = TAG_SET
     u32          bucket_count;
-    u32          _pad;
+    u8           elements_are_gc_ptrs; // nonzero when elements are GC pointers
+    u8           _pad[3];              // reserved, zeroed
     SetEntry    *buckets;
 };
 
@@ -174,13 +186,14 @@ struct SetEntry {
 
 Set field offsets mirror Map:
 
-| offset | size | field         |
-| -----: | ---: | ------------- |
-| 0      | 16   | header        |
-| 16     | 4    | bucket_count  |
-| 20     | 4    | _pad          |
-| 24     | 8    | buckets       |
-| total  | 32   |               |
+| offset | size | field                |
+| -----: | ---: | -------------------- |
+| 0      | 16   | header               |
+| 16     | 4    | bucket_count         |
+| 20     | 1    | elements_are_gc_ptrs |
+| 21     | 3    | _pad                 |
+| 24     | 8    | buckets              |
+| total  | 32   |                      |
 
 `SetEntry` offsets:
 
@@ -192,7 +205,8 @@ Set field offsets mirror Map:
 
 Same rules as `Map`: `header.tag = TAG_SET`, `header.cap` mirrors
 `bucket_count`, empty or tombstoned slots have `element == null`,
-FNV-1a 64 is the hash function.
+FNV-1a 64 is the hash function. `elements_are_gc_ptrs` is nonzero when
+elements are GC pointers the collector traces.
 
 ## Closure
 
@@ -203,19 +217,23 @@ struct Closure {
     void        *captures;   // owned buffer of size `capture_size`
     u32          capture_size;
     u32          capture_align;
+    u32          capture_ptr_count; // leading GC-pointer capture slots
+    u32          _pad;              // reserved, zeroed
 };
 ```
 
 Field offsets on 64-bit:
 
-| offset | size | field         |
-| -----: | ---: | ------------- |
-| 0      | 16   | header        |
-| 16     | 8    | fn_ptr        |
-| 24     | 8    | captures      |
-| 32     | 4    | capture_size  |
-| 36     | 4    | capture_align |
-| total  | 40   |               |
+| offset | size | field             |
+| -----: | ---: | ----------------- |
+| 0      | 16   | header            |
+| 16     | 8    | fn_ptr            |
+| 24     | 8    | captures          |
+| 32     | 4    | capture_size      |
+| 36     | 4    | capture_align     |
+| 40     | 4    | capture_ptr_count |
+| 44     | 4    | _pad              |
+| total  | 48   |                   |
 
 * Alignment: 8.
 * `header.tag = TAG_CLOSURE`. `header.len` is the capture count (the
@@ -225,8 +243,12 @@ Field offsets on 64-bit:
   has the calling convention `(captures: *mut u8, args...) -> ret`.
 * `captures` is a pointer to an owned buffer of `capture_size` bytes.
   Layout inside the capture record is decided by the closure-lowering
-  pass and is opaque to the runtime. The GC walks it through a
-  descriptor produced by codegen in a follow-up.
+  pass and is opaque to the runtime apart from the convention below.
+* `capture_ptr_count` is the number of leading pointer-sized capture
+  slots that are GC pointers. The closure-lowering pass places the GC
+  pointer captures first in the record, so the collector traces the
+  first `capture_ptr_count` pointer-sized slots and leaves the rest. A
+  closure with no GC captures sets it to zero.
 * `captures` is null when `capture_size == 0`.
 
 The pointer-indirect form (rather than inline-after-header) keeps every
@@ -239,24 +261,32 @@ allocation per closure with non-empty captures.
 ```c
 struct Box {
     ObjectHeader header;     // tag = TAG_BOX, len = payload byte size
-    u8           payload[];  // sized payload follows the header
+    u32          payload_is_gc_ptr; // nonzero when payload is a GC pointer
+    u32          _pad;              // reserved, zeroed
+    u8           payload[];  // sized payload follows the flag word
 };
 ```
 
 Field offsets on 64-bit:
 
-| offset | size       | field   |
-| -----: | ---------: | ------- |
-| 0      | 16         | header  |
-| 16     | payload_sz | payload |
+| offset | size       | field             |
+| -----: | ---------: | ----------------- |
+| 0      | 16         | header            |
+| 16     | 4          | payload_is_gc_ptr |
+| 20     | 4          | _pad              |
+| 24     | payload_sz | payload           |
 
 * Alignment: `max(OBJECT_ALIGN, payload_align)`.
 * `header.tag = TAG_BOX`. `header.len` is the payload size in bytes.
 * `header.cap` is 1 (a `Box<T>` always holds exactly one `T`).
-* The payload lives inline at offset 16. For payload alignments greater
-  than 8 the constructor pads the request to the alignment, but at
-  current Raven scalar widths (8 bytes for `Int`, `Float`, pointers, less
-  for `Bool`) no padding is needed.
+* `payload_is_gc_ptr` is nonzero when the inline payload is a single GC
+  pointer the collector traces, zero for a scalar payload. Codegen sets
+  it from the static payload type.
+* The payload lives inline at offset 24 (`BOX_PAYLOAD_OFFSET`), after the
+  header and flag word, so it stays 8-byte aligned. For payload
+  alignments greater than 8 the constructor pads the request to the
+  alignment, but at current Raven scalar widths (8 bytes for `Int`,
+  `Float`, pointers, less for `Bool`) no padding is needed.
 
 `Box` exists so generic collections over primitives can be uniformly
 typed: a `List<Int>` may store `Int` inline (when codegen specialises it)
@@ -275,49 +305,51 @@ opaque and only ever passes back through accessors.
 | `raven_string_len` | `fn(s: *const String) -> u32` | Returns `header.len`. |
 | `raven_string_bytes` | `fn(s: *const String) -> *const u8` | Returns the `bytes` field. |
 | `raven_string_concat` | `fn(a: *const String, b: *const String) -> *mut String` | Returns a new heap string equal to `a` followed by `b`. |
-| `raven_list_new` | `fn(element_size: u32, element_align: u32, cap: u32) -> *mut List` | Allocates a `List` with the given per-element shape and slot capacity. `header.len = 0`. |
+| `raven_list_new` | `fn(element_size: u32, element_align: u32, cap: u32, elements_are_gc_ptrs: u32) -> *mut List` | Allocates a `List` with the given per-element shape, slot capacity, and GC-pointer flag. `header.len = 0`. |
 | `raven_list_len` | `fn(l: *const List) -> u32` | Returns `header.len`. |
 | `raven_list_elements` | `fn(l: *const List) -> *mut u8` | Returns the `elements` field. |
 | `raven_list_push` | `fn(l: *mut List, payload: *const u8)` | Copies `element_size` bytes from `payload` into the next slot, growing the buffer if needed. |
-| `raven_map_new` | `fn(bucket_count: u32) -> *mut Map` | Allocates a `Map` with the given initial bucket count, rounded up to a power of two. Bucket buffer is zero-filled. |
+| `raven_map_new` | `fn(bucket_count: u32, keys_are_gc_ptrs: u8, values_are_gc_ptrs: u8) -> *mut Map` | Allocates a `Map` with the given initial bucket count, rounded up to a power of two, and the key and value GC-pointer flags. Bucket buffer is zero-filled. |
 | `raven_map_buckets` | `fn(m: *const Map) -> *mut MapEntry` | Returns the `buckets` field. |
 | `raven_map_bucket_count` | `fn(m: *const Map) -> u32` | Returns the `bucket_count` field. |
-| `raven_set_new` | `fn(bucket_count: u32) -> *mut Set` | Set counterpart of `raven_map_new`. |
+| `raven_set_new` | `fn(bucket_count: u32, elements_are_gc_ptrs: u8) -> *mut Set` | Set counterpart of `raven_map_new`, with one element GC-pointer flag. |
 | `raven_set_buckets` | `fn(s: *const Set) -> *mut SetEntry` | Returns the `buckets` field. |
 | `raven_set_bucket_count` | `fn(s: *const Set) -> u32` | Returns the `bucket_count` field. |
-| `raven_closure_new` | `fn(fn_ptr: *const u8, capture_size: u32, capture_align: u32, capture_count: u32) -> *mut Closure` | Allocates a `Closure` with the given function pointer and capture record. Capture buffer is zero-filled and owned by the closure. |
+| `raven_closure_new` | `fn(fn_ptr: *const u8, capture_size: u32, capture_align: u32, capture_count: u32, capture_ptr_count: u32) -> *mut Closure` | Allocates a `Closure` with the given function pointer, capture record, and count of leading GC-pointer capture slots. Capture buffer is zero-filled and owned by the closure. |
 | `raven_closure_fn_ptr` | `fn(c: *const Closure) -> *const u8` | Returns the function pointer. |
 | `raven_closure_captures` | `fn(c: *const Closure) -> *mut u8` | Returns the captures buffer. |
-| `raven_box_new` | `fn(payload_size: u32, payload_align: u32) -> *mut Box` | Allocates a `Box` whose payload is `payload_size` bytes aligned to `payload_align`. Payload is zero-filled. |
-| `raven_box_payload` | `fn(b: *const Box) -> *mut u8` | Returns a pointer to the inline payload at offset 16. |
+| `raven_box_new` | `fn(payload_size: u32, payload_align: u32, payload_is_gc_ptr: u32) -> *mut Box` | Allocates a `Box` whose payload is `payload_size` bytes aligned to `payload_align`, with the payload GC-pointer flag. Payload is zero-filled. |
+| `raven_box_payload` | `fn(b: *const Box) -> *mut u8` | Returns a pointer to the inline payload at `BOX_PAYLOAD_OFFSET` (offset 24). |
 
-The deallocator counterpart for each kind is a follow-up issue; today the
-process leaks every heap object on exit, which is fine for the v2
-scaffold because no test program holds objects long enough to matter.
+Each constructor routes its object-body allocation through
+`raven_gc_alloc` so the collector tracks every object, and allocates its
+owned buffer (string bytes, list elements, map and set buckets, closure
+captures) through the raw `raven_alloc`. The collector frees both during
+sweep; see `docs/v2/specs/gc.md`.
 
 ## Tracing summary
 
-The GC (issue #64) will dispatch on `header.tag` and walk the layout's
-internal pointers. The pointers each layout owns are:
+The collector (issue #64) dispatches on `header.tag` and walks the
+layout's internal GC pointers, gated by the per-layout pointer-kind
+flags. The pointers each layout owns are:
 
 | Tag | Internal pointers | Notes |
 | --- | ----------------- | ----- |
-| `TAG_STRING` | `bytes` at offset 16 | Owned `u8` buffer of size `cap`. No further tracing needed. |
-| `TAG_LIST` | `elements` at offset 24 | The buffer holds `cap * element_size` bytes. If `element_size == 8` and `element_align == 8` it may hold heap pointers that the tracer recurses into. |
-| `TAG_MAP` | `buckets` at offset 24, then for each non-empty bucket `key` at entry offset 8 and `value` at entry offset 16 | Both `key` and `value` are heap pointers (or boxes for primitives). |
-| `TAG_SET` | `buckets` at offset 24, then for each non-empty bucket `element` at entry offset 8 | |
-| `TAG_CLOSURE` | `captures` at offset 24 | The capture record is opaque to the tracer; a per-closure descriptor produced by codegen will enumerate its pointers in a follow-up. |
-| `TAG_BOX` | none of its own; the payload at offset 16 is treated by the descriptor attached to the box's static type | |
+| `TAG_STRING` | none into GC objects | `bytes` at offset 16 is a plain owned buffer of size `cap`, freed with the string in sweep. Never traced. |
+| `TAG_LIST` | `elements` at offset 32 | When `elements_are_gc_ptrs != 0`, each of the first `len` pointer slots is traced; otherwise the buffer is opaque scalar bytes. |
+| `TAG_MAP` | `buckets` at offset 24, then for each non-empty bucket `key` at entry offset 8 and `value` at entry offset 16 | `keys_are_gc_ptrs` and `values_are_gc_ptrs` gate tracing of keys and values. A bucket is non-empty when `key != null`. |
+| `TAG_SET` | `buckets` at offset 24, then for each non-empty bucket `element` at entry offset 8 | `elements_are_gc_ptrs` gates tracing. A bucket is non-empty when `element != null`. |
+| `TAG_CLOSURE` | `captures` at offset 24 | The first `capture_ptr_count` pointer-sized capture slots are traced; the rest of the record is scalar. |
+| `TAG_BOX` | payload at offset 24 | When `payload_is_gc_ptr != 0` the single payload pointer is traced; otherwise the payload is a scalar. |
 
-The actual tracing implementation lands in issue #64. This document
-exists so that issue can be written against a fixed set of offsets.
+The marking, sweeping, and threshold logic live in `docs/v2/specs/gc.md`
+and `raven-runtime/src/gc.rs`.
 
 ## Out of scope
 
-* Real GC. `gc_bits` stays zero. Allocations leak at process exit. Issue
-  #64 lands the collector.
 * Codegen integration. Issue #67 wires field loads and stores through the
-  offsets pinned here.
+  offsets pinned here, and emits the shadow-stack root frames defined in
+  `docs/v2/specs/gc.md`.
 * Trait object fat pointers. The `BOX` tag is the storage shape; the
   vtable layout is issue #66.
 * Full stdlib over these layouts (string methods, list iteration, map

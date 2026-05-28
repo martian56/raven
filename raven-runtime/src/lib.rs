@@ -17,7 +17,10 @@
 pub mod gc;
 pub mod object;
 
-pub use gc::{raven_gc_enter_frame, raven_gc_leave_frame, raven_gc_pop_roots, raven_gc_push_root};
+pub use gc::{
+    raven_gc_alloc, raven_gc_bytes_allocated, raven_gc_collect, raven_gc_enter_frame,
+    raven_gc_leave_frame, raven_gc_live_objects, raven_gc_pop_roots, raven_gc_push_root,
+};
 pub use object::{
     raven_box_new, raven_box_payload, raven_closure_captures, raven_closure_fn_ptr,
     raven_closure_new, raven_list_elements, raven_list_len, raven_list_new, raven_list_push,
