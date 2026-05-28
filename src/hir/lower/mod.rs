@@ -84,6 +84,33 @@ impl<'a> LowerCtx<'a> {
     pub(crate) fn ty_at(&self, span: &Span) -> Ty {
         self.typed.types.lookup(span).cloned().unwrap_or(Ty::Error)
     }
+
+    /// Resolve an identifier use site to the declared name of the
+    /// top level function it binds to, if any.
+    ///
+    /// A bare call like `println(...)` carries the source spelling
+    /// `println` at its callee span, but the binding may point at a
+    /// function declared under a different name (for example a bundled
+    /// stdlib function namespaced as `std.io.println`). The back end keys
+    /// every call on the compiled function's name, so the call site must
+    /// use that declared name rather than the source spelling. Returns
+    /// `None` when the span does not resolve to a function (a local, a
+    /// parameter, a builtin like `print`, ...), in which case the caller
+    /// keeps the source spelling.
+    pub(crate) fn fn_name_at(&self, span: &Span) -> Option<String> {
+        use crate::resolve::Binding;
+        match self.resolved.map.lookup(span)? {
+            Binding::Function(decl_id) => {
+                let decl = self.resolved.file.items.get(decl_id.0)?;
+                if let crate::ast::DeclKind::Function(f) = &decl.kind {
+                    Some(f.name.clone())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
 }
 
 fn lower_decl(decl: &Decl, cx: &LowerCtx<'_>) -> Result<Option<HirItem>, RavenError> {

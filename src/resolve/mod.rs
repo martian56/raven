@@ -11,6 +11,7 @@ pub mod bindings;
 pub mod imports;
 pub mod items;
 pub mod scope;
+pub mod stdlib;
 pub mod walk;
 
 #[cfg(test)]
@@ -26,6 +27,7 @@ pub use bindings::{
 };
 pub use imports::{FsLoader, LoadedSource, SourceLoader, STDLIB_MODULES};
 pub use scope::{Scope, ScopeKind, ScopeStack};
+pub use stdlib::{expand_with_stdlib, mangle_stdlib_fn};
 
 /// The resolver output for a single file.
 ///

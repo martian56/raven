@@ -91,7 +91,15 @@ pub(crate) fn lower_expr(
         ExprKind::SelfLower => HirExprKind::SelfValue,
         ExprKind::SelfUpper => HirExprKind::Ident("Self".into()),
         ExprKind::Ident { name, .. } if name == "None" => HirExprKind::NoneCtor,
-        ExprKind::Ident { name, .. } => HirExprKind::Ident(name.clone()),
+        ExprKind::Ident { name, .. } => {
+            // A use that binds to a top level function carries that
+            // function's declared name, which may differ from the source
+            // spelling when the function was namespaced (a bundled stdlib
+            // function such as `std.io.println`). Any other identifier
+            // keeps its source spelling.
+            let resolved_name = cx.fn_name_at(&expr.span).unwrap_or_else(|| name.clone());
+            HirExprKind::Ident(resolved_name)
+        }
         ExprKind::Array(items) => {
             let elem_hint = match &ty {
                 Ty::List(t) => (**t).clone(),

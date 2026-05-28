@@ -313,26 +313,30 @@ fn walk_expr(
             map.bind_use(&expr.span, Binding::SelfType);
         }
         ExprKind::Ident { name, generics } => {
-            // Built in constructor identifiers (`None`, `Some`, `Ok`,
-            // `Err`) bypass scope lookup. The type checker recognizes
-            // them and assigns the correct `Option<T>` or
-            // `Result<T, E>` type at the call site.
-            if is_builtin_ctor_name(name) {
-                for g in generics {
-                    walk_type(g, scope, map)?;
-                }
-            } else {
-                let entry = scope.lookup(name).ok_or_else(|| {
-                    RavenError::resolve(
-                        ResolveError::UnresolvedName(name.clone()),
-                        expr.span.clone(),
-                    )
-                })?;
+            // An explicit binding in scope always wins. This lets a user
+            // shadow a builtin name by importing it: `import std/io { print }`
+            // binds `print` to the stdlib function, which then takes
+            // precedence over the built in `print` free function.
+            if let Some(entry) = scope.lookup(name) {
                 let binding = entry.binding.clone();
                 map.bind_use(&expr.span, binding);
                 for g in generics {
                     walk_type(g, scope, map)?;
                 }
+            } else if is_builtin_ctor_name(name) {
+                // Built in constructor identifiers (`None`, `Some`, `Ok`,
+                // `Err`), the `print`/`print_int` free functions, and the
+                // internal `__io_*` intrinsics bypass scope lookup. The
+                // type checker recognizes them and assigns the correct
+                // type at the call site.
+                for g in generics {
+                    walk_type(g, scope, map)?;
+                }
+            } else {
+                return Err(RavenError::resolve(
+                    ResolveError::UnresolvedName(name.clone()),
+                    expr.span.clone(),
+                ));
             }
         }
         ExprKind::StructLit {
@@ -639,6 +643,23 @@ fn is_builtin_type_name(name: &str) -> bool {
 /// can be used without an explicit import. `print` and `print_int` are
 /// treated the same way: they are built in free function intrinsics
 /// whose call sites are wired to the runtime by the codegen back end.
+///
+/// The `__io_*` names are internal stdlib intrinsics: the bundled
+/// `std/io` source calls them to reach the runtime's byte-level I/O
+/// symbols. The leading `__` marks them internal; users do not write
+/// them directly (they use `std/io`'s exported functions). They bypass
+/// scope lookup the same way the print builtins do.
 fn is_builtin_ctor_name(name: &str) -> bool {
-    matches!(name, "None" | "Some" | "Ok" | "Err" | "print" | "print_int")
+    matches!(
+        name,
+        "None"
+            | "Some"
+            | "Ok"
+            | "Err"
+            | "print"
+            | "print_int"
+            | "__io_print_str"
+            | "__io_println_str"
+            | "__io_read_line"
+    )
 }
