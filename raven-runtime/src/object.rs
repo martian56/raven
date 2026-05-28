@@ -11,12 +11,16 @@
 //! See `docs/v2/specs/runtime.md` for the contract and
 //! `docs/v2/specs/object-layout.md` for per-kind payload layouts.
 
+pub mod boxed;
+pub mod closure;
 pub mod hash;
 pub mod list;
 pub mod map;
 pub mod set;
 pub mod string;
 
+pub use boxed::{raven_box_new, raven_box_payload, Box, BOX_PAYLOAD_OFFSET};
+pub use closure::{raven_closure_captures, raven_closure_fn_ptr, raven_closure_new, Closure};
 pub use list::{raven_list_elements, raven_list_len, raven_list_new, raven_list_push, List};
 pub use map::{raven_map_bucket_count, raven_map_buckets, raven_map_new, Map, MapEntry};
 pub use set::{raven_set_bucket_count, raven_set_buckets, raven_set_new, Set, SetEntry};
