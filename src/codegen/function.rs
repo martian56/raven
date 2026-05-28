@@ -286,8 +286,83 @@ fn lower_stmt(
             store_local(builder, slots, *dst, value);
             Ok(())
         }
+        MirStatement::StoreField { base, index, value } => {
+            lower_store_field(cx, builder, base, *index, value, slots)
+        }
+        MirStatement::StoreIndex { base, index, value } => {
+            lower_store_index(cx, builder, base, index, value, slots)
+        }
         MirStatement::StorageLive(_) | MirStatement::StorageDead(_) | MirStatement::Nop => Ok(()),
     }
+}
+
+/// Lower `base.field = value`.
+///
+/// Loads the object's field base pointer (the same base
+/// [`lower_field_access`] reads from), widens the value to a
+/// pointer-width slot, and stores it at the field's byte offset. The
+/// store mirrors the field write `lower_struct_create` performs at
+/// construction. `base` is an already-rooted GC pointer, so the written
+/// value is reachable through it once stored; overwriting a slot simply
+/// drops the old value's last reference through this object, and the
+/// collector reclaims it on a later cycle. No new GC root is needed.
+fn lower_store_field(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    base: &MirOperand,
+    index: usize,
+    value: &MirOperand,
+    slots: &[LocalSlot],
+) -> Result<(), CodegenError> {
+    let ptr = cx.pointer_type();
+    let base_ptr = require_value(lower_operand(cx, builder, base, slots)?, "field store base")?;
+    let v = lower_operand(cx, builder, value, slots)?;
+    let v = widen_to_slot(builder, v, ptr);
+    let fields = call_struct_fields(cx, builder, base_ptr, ptr);
+    builder
+        .ins()
+        .store(MemFlags::new(), v, fields, layout::slot_offset(index));
+    Ok(())
+}
+
+/// Lower `base[index] = value`.
+///
+/// Loads the list's element buffer base and length, bounds-checks
+/// `index` (an out-of-range index calls `raven_panic`, matching
+/// [`lower_index_access`]), then stores the widened value at
+/// `base + index * ELEMENT_SLOT`. `base` is an already-rooted GC pointer
+/// to the list, so a stored GC pointer element is reachable through it;
+/// the overwritten element simply loses its last reference through this
+/// list.
+fn lower_store_index(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    base: &MirOperand,
+    index: &MirOperand,
+    value: &MirOperand,
+    slots: &[LocalSlot],
+) -> Result<(), CodegenError> {
+    let ptr = cx.pointer_type();
+    let list = require_value(lower_operand(cx, builder, base, slots)?, "index store base")?;
+    let idx = require_value(
+        lower_operand(cx, builder, index, slots)?,
+        "index store value",
+    )?;
+    let v = lower_operand(cx, builder, value, slots)?;
+    let v = widen_to_slot(builder, v, ptr);
+    // The index is a native `Int` (i64); take it to pointer width for the
+    // address arithmetic and the unsigned bounds compare.
+    let idx = to_pointer_width(builder, idx, ptr);
+
+    let len = call_list_len(cx, builder, list, ptr);
+    emit_bounds_check(cx, builder, idx, len, "list index out of bounds");
+
+    let elements = call_list_elements(cx, builder, list);
+    let slot_size = builder.ins().iconst(ptr, ELEMENT_SLOT);
+    let offset = builder.ins().imul(idx, slot_size);
+    let addr = builder.ins().iadd(elements, offset);
+    builder.ins().store(MemFlags::new(), v, addr, 0);
+    Ok(())
 }
 
 /// Result of lowering an rvalue: either a Cranelift `Value` for a

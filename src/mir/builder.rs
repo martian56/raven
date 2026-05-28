@@ -8,7 +8,7 @@
 use crate::span::Span;
 
 use super::ir::{
-    MirBlock, MirBlockId, MirFunction, MirLocal, MirLocalDecl, MirRvalue, MirStatement,
+    MirBlock, MirBlockId, MirFunction, MirLocal, MirLocalDecl, MirOperand, MirRvalue, MirStatement,
     MirTerminator,
 };
 use super::ty::MirType;
@@ -94,6 +94,28 @@ impl FunctionBuilder {
     /// Convenience wrapper around [`emit`] that builds an `Assign`.
     pub fn assign(&mut self, block: MirBlockId, dst: MirLocal, rvalue: MirRvalue) {
         self.emit(block, MirStatement::Assign { dst, rvalue });
+    }
+
+    /// Convenience wrapper around [`emit`] that builds a `StoreField`.
+    pub fn store_field(
+        &mut self,
+        block: MirBlockId,
+        base: MirOperand,
+        index: usize,
+        value: MirOperand,
+    ) {
+        self.emit(block, MirStatement::StoreField { base, index, value });
+    }
+
+    /// Convenience wrapper around [`emit`] that builds a `StoreIndex`.
+    pub fn store_index(
+        &mut self,
+        block: MirBlockId,
+        base: MirOperand,
+        index: MirOperand,
+        value: MirOperand,
+    ) {
+        self.emit(block, MirStatement::StoreIndex { base, index, value });
     }
 
     /// Close `block` with `terminator`. Calling this twice on the same
