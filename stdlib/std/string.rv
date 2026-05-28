@@ -178,6 +178,18 @@ fun repeat(s: String, n: Int) -> String {
     return out
 }
 
+// A method on the built in `String` type, declared in a bundled stdlib
+// module. It exercises method resolution for a built in receiver and a
+// sibling free function call from inside an `impl` body. The body calls
+// the module's own `to_upper`, which the stdlib expander rewrites to its
+// namespaced name. A user writes `"hi".shout()` after importing this
+// module and gets the upper cased string back.
+impl String {
+    fun shout(self) -> String {
+        return to_upper(self)
+    }
+}
+
 // True when the bytes of `needle` occur in `s` starting exactly at byte
 // index `at`. A `needle` that runs past the end of `s` is not a match.
 fun matches_at(s: String, needle: String, at: Int) -> Bool {

@@ -244,6 +244,48 @@ fn unknown_method_is_error() {
 }
 
 #[test]
+fn impl_method_on_builtin_int_resolves() {
+    // `impl Int { ... }` collects against the built in `Int` receiver and
+    // a call on an integer expression resolves to the impl method.
+    check("impl Int { fun doubled(self) -> Int = self * 2 }\nfun f() -> Int = 21.doubled()\n")
+        .expect("impl Int method resolves");
+}
+
+#[test]
+fn impl_method_on_builtin_string_resolves() {
+    check(
+        "impl String { fun first(self) -> Int = __str_byte_at(self, 0) }\n\
+         fun f() -> Int = \"A\".first()\n",
+    )
+    .expect("impl String method resolves");
+}
+
+#[test]
+fn impl_method_on_generic_list_resolves() {
+    // A generic impl on the built in `List<T>` introduces the impl's type
+    // parameter and resolves the method per element type.
+    check(
+        "impl<T> List<T> { fun head(self) -> T = self.get(0) }\n\
+         fun f() -> Int {\n    let xs = [1, 2, 3]\n    return xs.head()\n}\n",
+    )
+    .expect("impl List<T> method resolves");
+}
+
+#[test]
+fn impl_method_on_builtin_shadows_hardcoded_fast_path() {
+    // A user `impl String { fun len(self) -> Int }` takes precedence over
+    // the hard coded built in `String::len` fast path. The signature
+    // checked is the user impl's, so a return type mismatch against it is
+    // reported (the impl returns Int, used where Bool is expected).
+    let err = check("impl String { fun len(self) -> Int = 0 }\nfun f() -> Bool = \"hi\".len()\n")
+        .unwrap_err();
+    match err {
+        RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::TypeMismatch { .. })),
+        other => panic!("expected TypeMismatch, got {:?}", other),
+    }
+}
+
+#[test]
 fn wrong_arity_is_error() {
     let err =
         check("fun f() -> Int = add(1)\nfun add(a: Int, b: Int) -> Int = a + b\n").unwrap_err();
