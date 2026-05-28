@@ -31,8 +31,9 @@ use crate::hir::ty::HirTy;
 
 use super::super::ir::{MirFunction, MirLocal, MirRvalue, MirTerminator};
 use super::super::ty::{MirFfiTy, MirType};
-use super::{mir_ty, LowerCx, Scope};
+use super::{mir_ty, LowerCx, Scope, SubstMap};
 use crate::codegen::layout::is_gc_pointer;
+use crate::resolve::DeclId;
 
 /// One captured variable: its source name, its MIR type, and the
 /// enclosing-scope local that currently holds the value to copy.
@@ -88,10 +89,20 @@ pub fn lower_lambda(
     let ret_ty = mir_ty(ret, cx.subst);
 
     // Build the lifted body as a standalone function. Any lambdas nested
-    // inside the body lift their own bodies; surface those too.
-    let (lifted, nested) = lift_body(cx, &lifted_name, params, ret_ty, body, &captures);
+    // inside the body lift their own bodies; surface those too. The
+    // lifted body may also call generic functions: those call sites are
+    // collected during its lowering and must reach the monomorphization
+    // worklist exactly as an ordinary function body's calls do, otherwise
+    // a generic function reachable only through the closure is never
+    // instantiated.
+    let LiftedBody {
+        func: lifted,
+        nested,
+        pending,
+    } = lift_body(cx, &lifted_name, params, ret_ty, body, &captures);
     cx.lifted.push(lifted);
     cx.lifted.extend(nested);
+    cx.pending_calls.extend(pending);
 
     let capture_ops = captures
         .iter()
@@ -113,6 +124,17 @@ fn mint_lifted_name(cx: &mut LowerCx<'_>) -> String {
     format!("{}$closure${}", cx.enclosing, n)
 }
 
+/// The result of lifting one lambda body: the standalone `MirFunction`,
+/// any functions lifted from lambdas nested inside it, and the generic
+/// call sites discovered while lowering the body. The pending calls are
+/// surfaced so the monomorphizer queues every generic instantiation the
+/// closure reaches, just as it does for an ordinary function body.
+struct LiftedBody {
+    func: MirFunction,
+    nested: Vec<MirFunction>,
+    pending: Vec<(DeclId, SubstMap)>,
+}
+
 /// Lift a lambda body into a standalone `MirFunction`.
 ///
 /// The lifted function's parameters are the capture environment pointer
@@ -121,7 +143,6 @@ fn mint_lifted_name(cx: &mut LowerCx<'_>) -> String {
 /// bound under the capture's source name, so the body's identifier
 /// references resolve to those locals exactly as they did at the
 /// definition site.
-#[allow(clippy::type_complexity)]
 fn lift_body(
     cx: &LowerCx<'_>,
     name: &str,
@@ -129,7 +150,7 @@ fn lift_body(
     ret_ty: MirType,
     body: &HirBlock,
     captures: &[Capture],
-) -> (MirFunction, Vec<MirFunction>) {
+) -> LiftedBody {
     use super::super::builder::FunctionBuilder;
 
     let mut builder = FunctionBuilder::new(
@@ -201,7 +222,15 @@ fn lift_body(
     // A lambda body may itself contain nested lambdas; surface their
     // lifted functions through the enclosing function's accumulator.
     let nested = std::mem::take(&mut body_cx.lifted);
-    (body_cx.builder.finish(entry), nested)
+    // The body's own generic call sites travel up to the enclosing
+    // function so the monomorphizer instantiates every callee the
+    // closure reaches. Without this they would be dropped with `body_cx`.
+    let pending = std::mem::take(&mut body_cx.pending_calls);
+    LiftedBody {
+        func: body_cx.builder.finish(entry),
+        nested,
+        pending,
+    }
 }
 
 // ----- free-variable collection -----
