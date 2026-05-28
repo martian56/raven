@@ -37,6 +37,10 @@ pub const BUNDLED_MODULES: &[(&str, &str)] = &[
     ("io", include_str!("../../stdlib/std/io.rv")),
     ("string", include_str!("../../stdlib/std/string.rv")),
     ("iter", include_str!("../../stdlib/std/iter.rv")),
+    (
+        "collections",
+        include_str!("../../stdlib/std/collections.rv"),
+    ),
 ];
 
 /// The prelude module that is implicitly imported into every program.

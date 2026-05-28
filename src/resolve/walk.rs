@@ -623,8 +623,6 @@ fn is_builtin_type_name(name: &str) -> bool {
             | "Array"
             | "Option"
             | "Result"
-            | "Map"
-            | "Set"
             | "Vec"
             | "List"
             | "CString"
