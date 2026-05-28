@@ -162,6 +162,32 @@ fn std_string_program_compiles_and_runs() {
     compile_link_run_and_check("use_string.rv", expected, &runtime);
 }
 
+#[test]
+fn builtin_method_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A method declared on the built in `Int` type via `impl Int { fun
+    // doubled(self) -> Int = self * 2 }`. The call `21.doubled()`
+    // resolves to the impl method and dispatches statically to the per
+    // type symbol `Int$doubled`, printing 42.
+    compile_link_run_and_check("builtin_method.rv", "42\n", &runtime);
+}
+
+#[test]
+fn stdlib_string_method_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A method declared on the built in `String` type inside the bundled
+    // std/string module: `impl String { fun shout(self) -> String }`.
+    // Importing the module merges the `impl` block into the program; the
+    // method is resolved by the receiver's type, not by an imported name.
+    // `shout` calls the module's sibling `to_upper`, so "hi".shout()
+    // prints HI.
+    compile_link_run_and_check("stdlib_string_method.rv", "HI\n", &runtime);
+}
+
 /// Return the runtime staticlib when a linker and the staticlib are both
 /// present, or skip with a diagnostic. Shared by every smoke case so the
 /// skip behavior stays identical.
