@@ -1,12 +1,14 @@
 //! End to end smoke test for the Cranelift back end.
 //!
 //! Compiles `examples/v2/hello.rv` with the driver, links the
-//! resulting object with the `raven-runtime` staticlib via the system
-//! `cc` driver, runs the binary, and checks that stdout matches
-//! `Hello, Raven!\n`. The test short circuits with a diagnostic on
-//! `eprintln!` and a successful exit when `cc` is unavailable or the
-//! runtime staticlib has not been built yet, so contributors without
-//! a working C toolchain do not see spurious failures.
+//! resulting object with the `raven-runtime` staticlib using the
+//! toolchain-aware linker (MSVC `link.exe` on windows-msvc, `cc`
+//! elsewhere), runs the binary, and checks that stdout matches
+//! `Hello, Raven!\n`. On a correctly configured host the test links and
+//! runs the program for real. It short circuits with a diagnostic on
+//! `eprintln!` and a successful exit only in the genuinely unsupported
+//! cases: no linker is available at all, or the runtime staticlib has
+//! not been built yet.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -22,8 +24,12 @@ use raven::tycheck::check_file;
 
 #[test]
 fn hello_world_compiles_and_runs() {
-    if !linker::cc_available() {
-        eprintln!("codegen_smoke: skipping, no `cc` driver on PATH");
+    if !linker::linker_available() {
+        eprintln!(
+            "codegen_smoke: skipping, no linker available for the host. \
+             Install the MSVC C++ build tools on windows-msvc, a 64-bit \
+             MinGW-w64 on windows-gnu, or a `cc` driver on Unix."
+        );
         return;
     }
     let runtime = match locate_runtime() {
@@ -53,18 +59,11 @@ fn hello_world_compiles_and_runs() {
     std::fs::write(&object_path, &object_bytes).expect("write object");
     let binary = tmp.join(if cfg!(windows) { "hello.exe" } else { "hello" });
 
-    match linker::link(&object_path, &runtime, &binary) {
-        Ok(_) => {}
-        Err(e) => {
-            eprintln!(
-                "codegen_smoke: skipping, linker rejected the object: {}. \
-                 This usually means the system `cc` does not match the host \
-                 architecture Cranelift targets.",
-                e
-            );
-            cleanup(&tmp);
-            return;
-        }
+    // A linker was found above, so a link failure here is a real
+    // regression on a supported host, not a reason to skip.
+    if let Err(e) = linker::link(&object_path, &runtime, &binary) {
+        cleanup(&tmp);
+        panic!("linker failed to produce an executable: {}", e);
     }
 
     let output = Command::new(&binary).output().expect("run hello binary");
