@@ -105,9 +105,26 @@ pub fn expand_with_stdlib(user: &File) -> Result<File, RavenError> {
             .collect();
 
         for mut decl in module_file.items {
-            if let DeclKind::Function(f) = &mut decl.kind {
-                rewrite_fn_body_calls(&mut f.body, module, &siblings);
-                f.name = mangle_stdlib_fn(module, &f.name);
+            match &mut decl.kind {
+                DeclKind::Function(f) => {
+                    rewrite_fn_body_calls(&mut f.body, module, &siblings);
+                    f.name = mangle_stdlib_fn(module, &f.name);
+                }
+                DeclKind::Impl(i) => {
+                    // An `impl` on a built in type (for example
+                    // `impl String { ... }`) keeps its method names: a
+                    // method is dispatched by the receiver's type through
+                    // the per type symbol `<RecvType>$<method>`, not by a
+                    // free function name, so it never collides with user
+                    // code and needs no namespacing. Its body, however,
+                    // may call sibling free functions of the same module,
+                    // which were renamed above; rewrite those call sites
+                    // the same way a free function body is rewritten.
+                    for m in &mut i.items {
+                        rewrite_fn_body_calls(&mut m.body, module, &siblings);
+                    }
+                }
+                _ => {}
             }
             combined_items.push(decl);
         }

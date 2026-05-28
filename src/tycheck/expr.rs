@@ -1201,27 +1201,19 @@ impl<'a, 'b> Checker<'a, 'b> {
             return self.check_dyn_method_call(trait_name, name, args, span);
         }
 
-        // Built in methods first (Option/Result/List/String). These are
-        // matched directly against the resolved receiver shape; their
-        // signatures already substitute the element type.
-        if let Some((params, ret)) = builtin::lookup_method(&recv_stripped, name) {
-            if params.len() != args.len() {
-                return Err(RavenError::ty(
-                    TypeError::WrongArity {
-                        func: name.to_string(),
-                        expected: params.len(),
-                        actual: args.len(),
-                    },
-                    span.clone(),
-                ));
-            }
-            for (pt, arg) in params.iter().zip(args.iter()) {
-                let a = self.check_expr(arg)?;
-                self.unify(pt, &a, &arg.span)?;
-            }
-            return Ok(ret);
-        }
-
+        // User declared `impl` methods are searched first, including
+        // impls on built in receiver types (`impl Int`, `impl String`,
+        // `impl<T> List<T>`, ...). This is the same path that resolves
+        // methods on user structs; built in receivers fall out of it
+        // because their `self_ty` is the matching built in `Ty`.
+        //
+        // Precedence: a user `impl` method always wins over a hard coded
+        // built in fast path method of the same name (the fall back at
+        // the end of this function). This keeps the checked signature in
+        // step with code generation, where a method call lowers to the
+        // per type symbol `<RecvType>$<method>` and any user `impl`
+        // method defines exactly that symbol.
+        //
         // Gather candidate impls. For each impl, allocate fresh
         // inference variables for its declared generic parameters and
         // unify the substituted self_ty against the receiver type. An
@@ -1264,6 +1256,27 @@ impl<'a, 'b> Checker<'a, 'b> {
 
         let total = inherent_matches.len() + trait_matches.len();
         if total == 0 {
+            // No user `impl` method matched. Fall back to the hard coded
+            // built in fast path methods (Option/Result/List/String).
+            // These match directly against the resolved receiver shape;
+            // their signatures already substitute the element type.
+            if let Some((params, ret)) = builtin::lookup_method(&recv_stripped, name) {
+                if params.len() != args.len() {
+                    return Err(RavenError::ty(
+                        TypeError::WrongArity {
+                            func: name.to_string(),
+                            expected: params.len(),
+                            actual: args.len(),
+                        },
+                        span.clone(),
+                    ));
+                }
+                for (pt, arg) in params.iter().zip(args.iter()) {
+                    let a = self.check_expr(arg)?;
+                    self.unify(pt, &a, &arg.span)?;
+                }
+                return Ok(ret);
+            }
             return Err(RavenError::ty(
                 TypeError::UndefinedMethod {
                     receiver_ty: format!("{}", recv_stripped),

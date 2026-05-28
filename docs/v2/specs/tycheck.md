@@ -75,9 +75,10 @@ Walk every body expression in declaration order. For each expression, synthesize
 
 Method calls are looked up by the receiver's resolved type:
 
-1. Search inherent impls of the receiver type for a method with that name.
+1. Search user declared inherent impls of the receiver type for a method with that name. The receiver type may be a user struct or enum, or a built in type (`Int`, `Float`, `Bool`, `Char`, `String`, `List<T>`, `Set<T>`, `Map<K, V>`, `Option<T>`, `Result<T, E>`).
 2. If none, search trait impls of the receiver type for a method with that name.
-3. Multiple matches raise `AmbiguousMethod`; zero matches raise `UndefinedMethod`.
+3. If still none, fall back to the hard coded built in fast path methods (`Option`/`Result`/`List`/`String`).
+4. Multiple impl matches raise `AmbiguousMethod`; zero matches raise `UndefinedMethod`.
 
 For struct literals, every field declared on the struct must be initialized exactly once; unknown fields raise `UndefinedField`; missing fields raise a `TypeError::Custom` describing what is missing.
 
@@ -119,10 +120,39 @@ Method dispatch is statically resolved. When the user writes `r.m(...)` and `r: 
 
 1. Look up inherent methods of `T` (impl blocks with no `for` clause).
 2. Look up methods of any trait `Tr` such that `impl Tr for T` exists.
-3. If exactly one candidate has the name `m`, use it.
-4. If more than one matches, raise `AmbiguousMethod` listing the candidates. The user disambiguates by calling `Tr::m(r, ...)` (qualified call syntax). Qualified calls are accepted as a regular function call.
+3. If no user `impl` method matched, fall back to the hard coded built in fast path methods.
+4. If exactly one candidate has the name `m`, use it.
+5. If more than one impl matches, raise `AmbiguousMethod` listing the candidates. The user disambiguates by calling `Tr::m(r, ...)` (qualified call syntax). Qualified calls are accepted as a regular function call.
 
-A method call on a value of `Self` type inside an `impl` block resolves through the implementing type. `Option<T>` and `Result<T, E>` get a small inherent method table: `is_some`, `is_none`, `unwrap`, `unwrap_or`, `is_ok`, `is_err`. `List<T>` exposes `len`, `push`, `pop`, `is_empty`, `get`.
+A method call on a value of `Self` type inside an `impl` block resolves through the implementing type. Each impl's generic parameters get fresh inference variables and the substituted `self_ty` is unified against the receiver, so a generic impl such as `impl<T> List<T>` matches a concrete `List<Int>` receiver and the method's `T` binds to `Int`.
+
+### `impl` on built in types
+
+An `impl` block may target a built in type, not just a user struct or enum:
+
+```
+impl Int {
+    fun doubled(self) -> Int = self * 2
+}
+```
+
+The implementing type is resolved the same way any type path is resolved, so `impl Int`, `impl String`, `impl<T> List<T>`, `impl Bool`, `impl Char`, `impl Float`, `impl<T> Set<T>`, and `impl<K, V> Map<K, V>` all collect into the same method table the type checker uses for user structs. Inside the body, `self` is the built in receiver and `Self` is the built in type. Resolution then matches the receiver against the impl's `self_ty` exactly as for a user type, so `21.doubled()` resolves to the `Int` impl method.
+
+`Set` and `Map` are recognized as built in type names for the purpose of accepting an `impl` head, but their value types are not yet wired through lowering; an `impl<T> Set<T>` collects and resolves but is not exercised end to end until those types land.
+
+### Precedence vs hard coded inherent methods
+
+The hard coded built in fast path methods (`Option`/`Result`/`List`/`String`) are only consulted when no user `impl` method matched. A user `impl` method therefore always wins over a hard coded method of the same name. This keeps the checked signature in step with code generation: a method call lowers to the per type symbol `<RecvType>$<method>` (see below), and a user `impl` method defines exactly that symbol, so the type the checker assigns is the type of the method that actually runs.
+
+The hard coded tables remain available for receivers with no user impl: `Option<T>` and `Result<T, E>` expose `is_some`, `is_none`, `unwrap`, `unwrap_or`, `is_ok`, `is_err`; `List<T>` exposes `len`, `push`, `pop`, `is_empty`, `get`; `String` exposes `len`, `is_empty`.
+
+### Symbol naming
+
+A statically dispatched method lowers to the symbol `<TypeMangle>$<method>`, where `<TypeMangle>` is the receiver type's identifier safe mangling (`Int`, `Str`, `Bool`, `Char`, `Float`, `List_Int`, `Option_Int`, a struct or enum name, and so on). So `impl Int { fun doubled }` defines `Int$doubled` and `impl String { fun shout }` defines `Str$shout`. The definition site (HIR lowering of the impl) and the call site (MIR lowering of the method call) both compute this name from the same receiver type, so they always agree, and methods of the same name on different types never collide. Generic built in impls monomorphize per concrete element type through the same path that specializes generic user types: `impl<T> List<T>` produces one method instance per element type the program uses.
+
+### Methods in bundled stdlib modules
+
+A bundled stdlib module (loaded by `expand_with_stdlib` when a program writes `import std/<module>`) may declare `impl` blocks on built in types. Unlike the module's free functions, which are renamed to `std.<module>.<name>` to avoid colliding with user names, an `impl` method keeps its name: it is dispatched by the receiver's type through the `<RecvType>$<method>` symbol, not by a free function name, so it never collides with user code and needs no namespacing. The expander still rewrites sibling free function calls inside an impl method body to their namespaced names (a stdlib `impl String` method calling the module's own `to_upper` reaches `std.string.to_upper`). A user calls the method by writing `value.method()` after importing the module; no name needs to be brought into scope with a selector, because resolution is by receiver type.
 
 ## Exhaustiveness check
 
