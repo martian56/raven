@@ -38,7 +38,7 @@ fn string_constructor_and_concat_cross_crate() {
 
 #[test]
 fn list_push_grows_cross_crate() {
-    let l = raven_list_new(8, 8, 0);
+    let l = raven_list_new(8, 8, 0, 0);
     assert!(!l.is_null());
     // SAFETY: l is a fresh List.
     unsafe {
@@ -59,7 +59,7 @@ fn list_push_grows_cross_crate() {
 
 #[test]
 fn map_constructor_cross_crate() {
-    let m = raven_map_new(10);
+    let m = raven_map_new(10, 0, 0);
     assert!(!m.is_null());
     // 10 rounds up to 16.
     assert_eq!(raven_map_bucket_count(m), 16);
@@ -83,7 +83,7 @@ fn map_constructor_cross_crate() {
 
 #[test]
 fn set_constructor_cross_crate() {
-    let s = raven_set_new(3);
+    let s = raven_set_new(3, 0);
     assert!(!s.is_null());
     // 3 rounds up to 4.
     assert_eq!(raven_set_bucket_count(s), 4);
@@ -109,7 +109,7 @@ extern "C" fn closure_body() {}
 #[test]
 fn closure_constructor_cross_crate() {
     let fp = closure_body as *const u8;
-    let c = raven_closure_new(fp, 16, 8, 2);
+    let c = raven_closure_new(fp, 16, 8, 2, 0);
     assert!(!c.is_null());
     // SAFETY: c is a fresh Closure with 16 capture bytes.
     unsafe {
@@ -131,7 +131,7 @@ fn closure_constructor_cross_crate() {
 
 #[test]
 fn box_constructor_cross_crate() {
-    let b = raven_box_new(8, 8);
+    let b = raven_box_new(8, 8, 0);
     assert!(!b.is_null());
     // SAFETY: b is a fresh Box with an 8-byte payload.
     unsafe {

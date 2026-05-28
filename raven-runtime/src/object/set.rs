@@ -5,6 +5,7 @@
 //! contiguously as `bucket_count` `SetEntry` slots.
 
 use super::{ObjectHeader, OBJECT_ALIGN, TAG_SET};
+use crate::gc::raven_gc_alloc;
 use crate::{raven_alloc, raven_dealloc};
 use std::mem::align_of;
 use std::ptr;
@@ -18,8 +19,10 @@ pub struct Set {
     pub header: ObjectHeader,
     /// Power of two, or zero for the freshly-constructed empty set.
     pub bucket_count: u32,
+    /// Nonzero when bucket elements are GC pointers the collector traces.
+    pub elements_are_gc_ptrs: u8,
     /// Reserved padding; always zero.
-    pub _pad: u32,
+    pub _pad: [u8; 3],
     /// Owned buffer of `bucket_count` `SetEntry` slots. Null when
     /// `bucket_count == 0`.
     pub buckets: *mut SetEntry,
@@ -42,14 +45,15 @@ pub struct SetEntry {
 /// zero). The bucket buffer is zero-filled. `header.len = 0`,
 /// `header.cap = bucket_count` after rounding.
 ///
+/// `elements_are_gc_ptrs` is nonzero when bucket elements are GC
+/// pointers the collector traces.
+///
 /// Returns null on allocation failure.
 #[no_mangle]
-pub extern "C" fn raven_set_new(bucket_count: u32) -> *mut Set {
+pub extern "C" fn raven_set_new(bucket_count: u32, elements_are_gc_ptrs: u8) -> *mut Set {
     let rounded = round_up_pow2(bucket_count);
-    let set_ptr = raven_alloc(size_of_set(), align_of_set()) as *mut Set;
-    if set_ptr.is_null() {
-        return ptr::null_mut();
-    }
+    // Allocate the owned bucket buffer first so a body-allocation
+    // failure does not leave a half-registered object in the collector.
     let buckets = if rounded == 0 {
         ptr::null_mut()
     } else {
@@ -57,18 +61,21 @@ pub extern "C" fn raven_set_new(bucket_count: u32) -> *mut Set {
             .checked_mul(std::mem::size_of::<SetEntry>())
             .unwrap_or(0);
         if bytes == 0 {
-            raven_dealloc(set_ptr as *mut u8, size_of_set(), align_of_set());
             return ptr::null_mut();
         }
         let p = raven_alloc(bytes, align_of::<SetEntry>());
         if p.is_null() {
-            raven_dealloc(set_ptr as *mut u8, size_of_set(), align_of_set());
             return ptr::null_mut();
         }
         // SAFETY: the allocator just gave us `bytes` writable bytes.
         unsafe { ptr::write_bytes(p, 0, bytes) };
         p as *mut SetEntry
     };
+    let set_ptr = raven_gc_alloc(size_of_set(), align_of_set(), TAG_SET) as *mut Set;
+    if set_ptr.is_null() {
+        free_bucket_buffer(buckets as *mut u8, rounded);
+        return ptr::null_mut();
+    }
     // SAFETY: set_ptr points to writable, correctly aligned storage.
     unsafe {
         ptr::write(
@@ -76,7 +83,8 @@ pub extern "C" fn raven_set_new(bucket_count: u32) -> *mut Set {
             Set {
                 header: ObjectHeader::new(TAG_SET, 0, rounded),
                 bucket_count: rounded,
-                _pad: 0,
+                elements_are_gc_ptrs,
+                _pad: [0; 3],
                 buckets,
             },
         );
@@ -123,6 +131,29 @@ pub(crate) const fn align_of_set() -> usize {
     }
 }
 
+/// Free a `Set`'s owned bucket buffer. The collector frees the object
+/// body separately after this call.
+///
+/// # Safety
+///
+/// `s` must point to a live `Set` produced by `raven_set_new`.
+pub(crate) unsafe fn free_buffers(s: *mut Set) {
+    // SAFETY: caller guarantees `s` is a live Set.
+    let bucket_count = unsafe { (*s).bucket_count };
+    let buckets = unsafe { (*s).buckets };
+    free_bucket_buffer(buckets as *mut u8, bucket_count);
+}
+
+/// Release a bucket buffer allocated by the constructor. Used to unwind
+/// a partly-built set when the body allocation fails.
+fn free_bucket_buffer(buckets: *mut u8, bucket_count: u32) {
+    if buckets.is_null() || bucket_count == 0 {
+        return;
+    }
+    let bytes = (bucket_count as usize) * std::mem::size_of::<SetEntry>();
+    raven_dealloc(buckets, bytes, align_of::<SetEntry>());
+}
+
 fn round_up_pow2(n: u32) -> u32 {
     if n == 0 {
         0
@@ -144,7 +175,8 @@ mod tests {
         assert_eq!(size_of::<Set>(), 32);
         assert_eq!(offset_of!(Set, header), 0);
         assert_eq!(offset_of!(Set, bucket_count), 16);
-        assert_eq!(offset_of!(Set, _pad), 20);
+        assert_eq!(offset_of!(Set, elements_are_gc_ptrs), 20);
+        assert_eq!(offset_of!(Set, _pad), 21);
         assert_eq!(offset_of!(Set, buckets), 24);
         assert!(align_of::<Set>() >= 8);
     }
@@ -160,7 +192,7 @@ mod tests {
 
     #[test]
     fn new_zero_buckets_leaves_buffer_null() {
-        let s = raven_set_new(0);
+        let s = raven_set_new(0, 0);
         assert!(!s.is_null());
         // SAFETY: s came from the constructor.
         unsafe {
@@ -168,14 +200,27 @@ mod tests {
             assert_eq!((*s).header.len, 0);
             assert_eq!((*s).header.cap, 0);
             assert_eq!((*s).bucket_count, 0);
+            assert_eq!((*s).elements_are_gc_ptrs, 0);
+            assert_eq!((*s)._pad, [0; 3]);
             assert!((*s).buckets.is_null());
         }
         unsafe { drop_set_for_test(s) };
     }
 
     #[test]
+    fn new_records_gc_ptr_flag() {
+        let s = raven_set_new(4, 1);
+        assert!(!s.is_null());
+        // SAFETY: s came from the constructor.
+        unsafe {
+            assert_eq!((*s).elements_are_gc_ptrs, 1);
+        }
+        unsafe { drop_set_for_test(s) };
+    }
+
+    #[test]
     fn new_rounds_up_to_power_of_two() {
-        let s = raven_set_new(9);
+        let s = raven_set_new(9, 0);
         assert!(!s.is_null());
         assert_eq!(raven_set_bucket_count(s), 16);
         unsafe { drop_set_for_test(s) };
@@ -183,7 +228,7 @@ mod tests {
 
     #[test]
     fn new_zero_fills_bucket_buffer() {
-        let s = raven_set_new(4);
+        let s = raven_set_new(4, 0);
         assert!(!s.is_null());
         let buckets = raven_set_buckets(s);
         assert!(!buckets.is_null());
@@ -204,22 +249,14 @@ mod tests {
         assert_eq!(raven_set_bucket_count(std::ptr::null()), 0);
     }
 
-    /// Test-only deallocator.
+    /// Test-only deallocator: unregister the object from the collector
+    /// and free its buffer and body.
     ///
     /// # Safety
     ///
     /// `s` must come from `raven_set_new` and not be freed yet.
     unsafe fn drop_set_for_test(s: *mut Set) {
-        if s.is_null() {
-            return;
-        }
         // SAFETY: matches construction layout.
-        let bucket_count = unsafe { (*s).bucket_count };
-        let buckets = unsafe { (*s).buckets };
-        if !buckets.is_null() && bucket_count > 0 {
-            let bytes = (bucket_count as usize) * std::mem::size_of::<SetEntry>();
-            raven_dealloc(buckets as *mut u8, bytes, align_of::<SetEntry>());
-        }
-        raven_dealloc(s as *mut u8, size_of_set(), align_of_set());
+        unsafe { crate::gc::free_for_test(s as *mut ObjectHeader) };
     }
 }

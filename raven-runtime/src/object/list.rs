@@ -4,6 +4,7 @@
 //! offsets the back-end relies on.
 
 use super::{ObjectHeader, OBJECT_ALIGN, TAG_LIST};
+use crate::gc::raven_gc_alloc;
 use crate::{raven_alloc, raven_dealloc};
 use std::mem::align_of;
 use std::ptr;
@@ -19,6 +20,12 @@ pub struct List {
     pub element_size: u32,
     /// Alignment in bytes of one element slot.
     pub element_align: u32,
+    /// Nonzero when each element slot is a GC pointer the collector must
+    /// trace. Zero for scalar elements (the buffer is opaque bytes).
+    /// Codegen sets it from the static element type.
+    pub elements_are_gc_ptrs: u32,
+    /// Reserved padding; keeps `elements` 8-byte aligned. Always zero.
+    pub _pad: u32,
     /// Owned buffer of `header.cap * element_size` bytes. Null when
     /// `header.cap == 0`.
     pub elements: *mut u8,
@@ -28,23 +35,31 @@ pub struct List {
 /// capacity. Header is `len = 0`, `cap = cap`. Elements buffer is
 /// zero-filled.
 ///
+/// `elements_are_gc_ptrs` is nonzero when each slot holds a GC pointer
+/// the collector traces; zero for scalar elements.
+///
 /// Returns null on allocation failure or invalid layout.
 #[no_mangle]
-pub extern "C" fn raven_list_new(element_size: u32, element_align: u32, cap: u32) -> *mut List {
+pub extern "C" fn raven_list_new(
+    element_size: u32,
+    element_align: u32,
+    cap: u32,
+    elements_are_gc_ptrs: u32,
+) -> *mut List {
     if element_align != 0 && !element_align.is_power_of_two() {
         return ptr::null_mut();
     }
-    let list_ptr = raven_alloc(size_of_list(), align_of_list()) as *mut List;
-    if list_ptr.is_null() {
-        return ptr::null_mut();
-    }
+    // Allocate the owned buffer first so a body-allocation failure does
+    // not leave a half-registered object in the collector.
     let buffer = match alloc_elements(element_size, element_align, cap) {
         Some(p) => p,
-        None => {
-            raven_dealloc(list_ptr as *mut u8, size_of_list(), align_of_list());
-            return ptr::null_mut();
-        }
+        None => return ptr::null_mut(),
     };
+    let list_ptr = raven_gc_alloc(size_of_list(), align_of_list(), TAG_LIST) as *mut List;
+    if list_ptr.is_null() {
+        free_element_buffer(buffer, element_size, element_align, cap);
+        return ptr::null_mut();
+    }
     // SAFETY: list_ptr points to writable, correctly aligned storage.
     unsafe {
         ptr::write(
@@ -53,6 +68,8 @@ pub extern "C" fn raven_list_new(element_size: u32, element_align: u32, cap: u32
                 header: ObjectHeader::new(TAG_LIST, 0, cap),
                 element_size,
                 element_align,
+                elements_are_gc_ptrs,
+                _pad: 0,
                 elements: buffer,
             },
         );
@@ -142,6 +159,29 @@ pub(crate) const fn align_of_list() -> usize {
     }
 }
 
+/// Free a `List`'s owned element buffer. The collector frees the object
+/// body separately after this call.
+///
+/// # Safety
+///
+/// `l` must point to a live `List` produced by `raven_list_new`.
+pub(crate) unsafe fn free_buffers(l: *mut List) {
+    // SAFETY: caller guarantees `l` is a live List.
+    let cap = unsafe { (*l).header.cap };
+    let elem_size = unsafe { (*l).element_size };
+    let elem_align = unsafe { (*l).element_align };
+    let buffer = unsafe { (*l).elements };
+    if !buffer.is_null() && cap > 0 && elem_size > 0 {
+        let bytes = (cap as usize) * (elem_size as usize);
+        let align = if elem_align == 0 {
+            1
+        } else {
+            elem_align as usize
+        };
+        raven_dealloc(buffer, bytes, align);
+    }
+}
+
 fn alloc_elements(element_size: u32, element_align: u32, cap: u32) -> Option<*mut u8> {
     if cap == 0 || element_size == 0 {
         return Some(ptr::null_mut());
@@ -159,6 +199,21 @@ fn alloc_elements(element_size: u32, element_align: u32, cap: u32) -> Option<*mu
     // SAFETY: the allocator just gave us `bytes` writable bytes.
     unsafe { ptr::write_bytes(p, 0, bytes) };
     Some(p)
+}
+
+/// Release an element buffer allocated by `alloc_elements`. Used to
+/// unwind a partly-built list when the body allocation fails.
+fn free_element_buffer(buffer: *mut u8, element_size: u32, element_align: u32, cap: u32) {
+    if buffer.is_null() || cap == 0 || element_size == 0 {
+        return;
+    }
+    let bytes = (element_size as usize) * (cap as usize);
+    let align = if element_align == 0 {
+        1
+    } else {
+        element_align as usize
+    };
+    raven_dealloc(buffer, bytes, align);
 }
 
 fn grow_buffer(l: *mut List, elem_size: u32, elem_align: u32, old_cap: u32, new_cap: u32) -> bool {
@@ -195,17 +250,18 @@ mod tests {
     #[test]
     #[cfg(target_pointer_width = "64")]
     fn list_size_and_offsets_match_spec() {
-        assert_eq!(size_of::<List>(), 32);
+        assert_eq!(size_of::<List>(), 40);
         assert_eq!(offset_of!(List, header), 0);
         assert_eq!(offset_of!(List, element_size), 16);
         assert_eq!(offset_of!(List, element_align), 20);
-        assert_eq!(offset_of!(List, elements), 24);
+        assert_eq!(offset_of!(List, elements_are_gc_ptrs), 24);
+        assert_eq!(offset_of!(List, elements), 32);
         assert!(align_of::<List>() >= 8);
     }
 
     #[test]
     fn new_zero_capacity_yields_empty_list() {
-        let l = raven_list_new(8, 8, 0);
+        let l = raven_list_new(8, 8, 0, 0);
         assert!(!l.is_null());
         // SAFETY: l came from the constructor.
         unsafe {
@@ -214,14 +270,27 @@ mod tests {
             assert_eq!((*l).header.cap, 0);
             assert_eq!((*l).element_size, 8);
             assert_eq!((*l).element_align, 8);
+            assert_eq!((*l).elements_are_gc_ptrs, 0);
+            assert_eq!((*l)._pad, 0);
             assert!((*l).elements.is_null());
         }
         unsafe { drop_list_for_test(l) };
     }
 
     #[test]
+    fn new_records_gc_ptr_flag() {
+        let l = raven_list_new(8, 8, 4, 1);
+        assert!(!l.is_null());
+        // SAFETY: l came from the constructor.
+        unsafe {
+            assert_eq!((*l).elements_are_gc_ptrs, 1);
+        }
+        unsafe { drop_list_for_test(l) };
+    }
+
+    #[test]
     fn new_with_capacity_zero_fills_buffer() {
-        let l = raven_list_new(4, 4, 6);
+        let l = raven_list_new(4, 4, 6, 0);
         assert!(!l.is_null());
         // SAFETY: l has a 24-byte buffer.
         unsafe {
@@ -236,7 +305,7 @@ mod tests {
     #[test]
     fn push_appends_and_grows() {
         // Start with cap 0 so we exercise the grow path.
-        let l = raven_list_new(8, 8, 0);
+        let l = raven_list_new(8, 8, 0, 0);
         let values: [u64; 10] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
         for v in &values {
             // SAFETY: each push reads 8 bytes from a stack-local u64.
@@ -256,7 +325,7 @@ mod tests {
 
     #[test]
     fn push_preserves_earlier_elements_across_grow() {
-        let l = raven_list_new(8, 8, 2);
+        let l = raven_list_new(8, 8, 2, 0);
         let first = 0xDEADBEEFu64;
         let second = 0xCAFEBABEu64;
         raven_list_push(l, &first as *const u64 as *const u8);
@@ -283,30 +352,14 @@ mod tests {
         raven_list_push(std::ptr::null_mut(), std::ptr::null());
     }
 
-    /// Test-only deallocator. The real free path lands with the GC
-    /// (issue #64).
+    /// Test-only deallocator: unregister the object from the collector
+    /// and free its buffer and body.
     ///
     /// # Safety
     ///
     /// `l` must come from `raven_list_new` and not be freed yet.
     unsafe fn drop_list_for_test(l: *mut List) {
-        if l.is_null() {
-            return;
-        }
         // SAFETY: matches the construction layout.
-        let cap = unsafe { (*l).header.cap };
-        let elem_size = unsafe { (*l).element_size };
-        let elem_align = unsafe { (*l).element_align };
-        let buffer = unsafe { (*l).elements };
-        if !buffer.is_null() && cap > 0 && elem_size > 0 {
-            let bytes = (cap as usize) * (elem_size as usize);
-            let align = if elem_align == 0 {
-                1
-            } else {
-                elem_align as usize
-            };
-            raven_dealloc(buffer, bytes, align);
-        }
-        raven_dealloc(l as *mut u8, size_of_list(), align_of_list());
+        unsafe { crate::gc::free_for_test(l as *mut ObjectHeader) };
     }
 }

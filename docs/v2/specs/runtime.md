@@ -89,8 +89,9 @@ Constraints:
 * `tag` is read by `raven_panic` (when a debug build wants to print the
   object kind) and by the GC once it lands. The current scaffold writes
   it once at allocation time and never inspects it.
-* `gc_bits` is reserved. The scaffold leaves it zero. Issue #64 defines
-  the bit layout.
+* `gc_bits` carries the collector's mark bit (`GC_MARK_BIT`, bit 0); the
+  remaining bits stay zero and are reserved for a future colour scheme.
+  See `docs/v2/specs/gc.md`.
 
 ## Tag constants
 

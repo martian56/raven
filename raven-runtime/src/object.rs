@@ -58,6 +58,12 @@ pub const TAG_CLOSURE: u32 = 0x05;
 /// Generic heap box. Reserved for trait-object payloads (issue #66).
 pub const TAG_BOX: u32 = 0x06;
 
+/// Bit 0 of `ObjectHeader.gc_bits`: the mark bit the tracing collector
+/// sets during the mark phase and clears during sweep. The remaining
+/// `gc_bits` stay zero and are reserved for a future colour scheme. See
+/// `docs/v2/specs/gc.md`.
+pub const GC_MARK_BIT: u32 = 0x1;
+
 /// Canonical 16-byte object header.
 ///
 /// Every heap allocation the GC traces starts with one of these,
@@ -89,5 +95,84 @@ impl ObjectHeader {
             len,
             cap,
         }
+    }
+
+    /// Return true when the mark bit is set.
+    #[inline]
+    pub const fn is_marked(&self) -> bool {
+        self.gc_bits & GC_MARK_BIT != 0
+    }
+
+    /// Set the mark bit.
+    #[inline]
+    pub fn set_mark(&mut self) {
+        self.gc_bits |= GC_MARK_BIT;
+    }
+
+    /// Clear the mark bit.
+    #[inline]
+    pub fn clear_mark(&mut self) {
+        self.gc_bits &= !GC_MARK_BIT;
+    }
+}
+
+/// Return the allocation size and alignment of an object body given its
+/// header. The body is the fixed-size struct that begins with the
+/// header; owned buffers it points to are sized and freed separately.
+///
+/// For every kind except `Box` the body size is a constant; a `Box`
+/// carries its inline payload, so its body is
+/// `BOX_PAYLOAD_OFFSET + header.len` bytes.
+///
+/// # Safety
+///
+/// `header` must point to a live object produced by one of the
+/// constructors, so its `tag` and `len` are valid.
+pub(crate) unsafe fn object_body_layout(header: *const ObjectHeader) -> (usize, usize) {
+    // SAFETY: caller guarantees `header` is a live object header.
+    let tag = unsafe { (*header).tag };
+    match tag {
+        TAG_STRING => (string::size_of_string(), string::align_of_string()),
+        TAG_LIST => (list::size_of_list(), list::align_of_list()),
+        TAG_MAP => (map::size_of_map(), map::align_of_map()),
+        TAG_SET => (set::size_of_set(), set::align_of_set()),
+        TAG_CLOSURE => (closure::size_of_closure(), closure::align_of_closure()),
+        TAG_BOX => {
+            // SAFETY: a live Box header carries its payload size in `len`.
+            let payload_size = unsafe { (*header).len };
+            (
+                boxed::box_total_size(payload_size),
+                boxed::box_align(OBJECT_ALIGN as u32),
+            )
+        }
+        // An unknown tag should never reach the collector. Treat it as a
+        // bare header so freeing at least releases the body.
+        _ => (
+            std::mem::size_of::<ObjectHeader>(),
+            std::mem::align_of::<ObjectHeader>().max(OBJECT_ALIGN),
+        ),
+    }
+}
+
+/// Free the owned buffers a heap object points to (string bytes, list
+/// elements, map and set buckets, closure captures). The object body
+/// itself is freed by the collector after this call. `Box` and unknown
+/// tags own no separate buffer and are a no-op.
+///
+/// # Safety
+///
+/// `header` must point to a live object produced by one of the
+/// constructors.
+pub(crate) unsafe fn free_object_buffers(header: *mut ObjectHeader) {
+    // SAFETY: caller guarantees `header` is a live object header.
+    let tag = unsafe { (*header).tag };
+    match tag {
+        // SAFETY: tag matches the layout cast in each arm.
+        TAG_STRING => unsafe { string::free_buffers(header as *mut String) },
+        TAG_LIST => unsafe { list::free_buffers(header as *mut List) },
+        TAG_MAP => unsafe { map::free_buffers(header as *mut Map) },
+        TAG_SET => unsafe { set::free_buffers(header as *mut Set) },
+        TAG_CLOSURE => unsafe { closure::free_buffers(header as *mut Closure) },
+        _ => {}
     }
 }

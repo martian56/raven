@@ -4,6 +4,7 @@
 //! offsets the back-end relies on.
 
 use super::{ObjectHeader, OBJECT_ALIGN, TAG_STRING};
+use crate::gc::raven_gc_alloc;
 use crate::{raven_alloc, raven_dealloc};
 use std::mem::align_of;
 use std::ptr;
@@ -28,22 +29,26 @@ pub struct String {
 /// Returns null when the allocation fails.
 #[no_mangle]
 pub extern "C" fn raven_string_new(cap: u32) -> *mut String {
-    let header_ptr = raven_alloc(size_of_string(), align_of_string()) as *mut String;
-    if header_ptr.is_null() {
-        return ptr::null_mut();
-    }
+    // Allocate the owned byte buffer first so a body-allocation failure
+    // does not leave a half-registered object in the collector.
     let bytes_ptr = if cap == 0 {
         ptr::null_mut()
     } else {
         let p = raven_alloc(cap as usize, 1);
         if p.is_null() {
-            raven_dealloc(header_ptr as *mut u8, size_of_string(), align_of_string());
             return ptr::null_mut();
         }
         // SAFETY: the allocator just gave us `cap` writable bytes.
         unsafe { ptr::write_bytes(p, 0, cap as usize) };
         p
     };
+    let header_ptr = raven_gc_alloc(size_of_string(), align_of_string(), TAG_STRING) as *mut String;
+    if header_ptr.is_null() {
+        if !bytes_ptr.is_null() {
+            raven_dealloc(bytes_ptr, cap as usize, 1);
+        }
+        return ptr::null_mut();
+    }
     // SAFETY: header_ptr points to writable, correctly aligned storage.
     unsafe {
         ptr::write(
@@ -117,8 +122,7 @@ pub extern "C" fn raven_string_concat(a: *const String, b: *const String) -> *mu
 }
 
 /// Size, in bytes, of the in-memory `String` object on the host
-/// target. Used by constructors and by the GC's free routine in a
-/// follow-up.
+/// target. Used by constructors and by the collector's free routine.
 pub(crate) const fn size_of_string() -> usize {
     std::mem::size_of::<String>()
 }
@@ -130,6 +134,22 @@ pub(crate) const fn align_of_string() -> usize {
         a
     } else {
         OBJECT_ALIGN
+    }
+}
+
+/// Free a `String`'s owned byte buffer. The object body is freed by the
+/// collector after this call; this routine only releases the separate
+/// `bytes` allocation.
+///
+/// # Safety
+///
+/// `s` must point to a live `String` produced by `raven_string_new`.
+pub(crate) unsafe fn free_buffers(s: *mut String) {
+    // SAFETY: caller guarantees `s` is a live String.
+    let cap = unsafe { (*s).header.cap };
+    let bytes = unsafe { (*s).bytes };
+    if !bytes.is_null() && cap > 0 {
+        raven_dealloc(bytes, cap as usize, 1);
     }
 }
 
@@ -256,11 +276,7 @@ mod tests {
             return;
         }
         // SAFETY: matches the construction layout.
-        let cap = unsafe { (*s).header.cap };
-        let bytes = unsafe { (*s).bytes };
-        if !bytes.is_null() && cap > 0 {
-            raven_dealloc(bytes, cap as usize, 1);
-        }
+        unsafe { free_buffers(s) };
         raven_dealloc(s as *mut u8, size_of_string(), align_of_string());
     }
 }
