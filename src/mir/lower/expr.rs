@@ -9,8 +9,8 @@
 use crate::hir::expr::{HirBinaryOp, HirBlock, HirExpr, HirExprKind, HirUnaryOp, InterpolPart};
 
 use super::super::ir::{
-    MirBinOp, MirBlockId, MirConstant, MirFnRef, MirLocal, MirOperand, MirRvalue, MirStatement,
-    MirTerminator, MirUnOp,
+    ListMethodOp, MirBinOp, MirBlockId, MirConstant, MirFnRef, MirLocal, MirOperand, MirRvalue,
+    MirStatement, MirTerminator, MirUnOp,
 };
 use super::super::ty::MirType;
 use super::{mir_ty, stmt, LoopFrame, LowerCx};
@@ -797,6 +797,31 @@ fn lower_method_call(
         return MirOperand::Copy(dst);
     }
 
+    // A built-in `List<T>` method has no user `impl`; route it to a
+    // dedicated rvalue carrying the element type so the back end can size
+    // slots and pick the GC-pointer flag. Any user `impl` on a list type
+    // would have been resolved away before reaching the built-in set, so
+    // recognizing the fixed method names here is safe.
+    if let MirType::List(elem) = &recv_ty {
+        if let Some(op) = list_method_op(name) {
+            let elem_ty = (**elem).clone();
+            let recv = lower_expr(cx, receiver);
+            let arg = args.first().map(|a| lower_expr(cx, a));
+            let dst = cx.builder.fresh_temp("lmethod", ty);
+            cx.builder.assign(
+                cx.current,
+                dst,
+                MirRvalue::ListMethod {
+                    op,
+                    receiver: recv,
+                    arg,
+                    elem_ty,
+                },
+            );
+            return MirOperand::Copy(dst);
+        }
+    }
+
     // Static dispatch: build the per-type method symbol from the receiver
     // type so it matches the impl method's definition symbol.
     let symbol = recv_ty.method_symbol(name);
@@ -866,6 +891,20 @@ fn map_binary(op: HirBinaryOp) -> MirBinOp {
         HirBinaryOp::Shl => MirBinOp::Shl,
         HirBinaryOp::Shr => MirBinOp::Shr,
     }
+}
+
+/// Map a built-in `List<T>` method name to its [`ListMethodOp`], or
+/// `None` when the name is not one of the recognized list methods. The
+/// set mirrors `tycheck::builtin::list_methods`.
+fn list_method_op(name: &str) -> Option<ListMethodOp> {
+    Some(match name {
+        "len" => ListMethodOp::Len,
+        "is_empty" => ListMethodOp::IsEmpty,
+        "push" => ListMethodOp::Push,
+        "pop" => ListMethodOp::Pop,
+        "get" => ListMethodOp::Get,
+        _ => return None,
+    })
 }
 
 fn map_unary(op: HirUnaryOp) -> MirUnOp {

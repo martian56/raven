@@ -115,6 +115,35 @@ pub const RUNTIME_GC_ENTER_FRAME: &str = "raven_gc_enter_frame";
 /// Runtime C symbol leaving the most recent GC root frame.
 pub const RUNTIME_GC_LEAVE_FRAME: &str = "raven_gc_leave_frame";
 
+/// Runtime C symbols backing `List<T>` literals, indexing, and methods.
+///
+/// A list value is a single GC pointer to a heap `List` object. Codegen
+/// stores every element in a uniform eight-byte slot (`element_size ==
+/// element_align == 8`), the same slot width struct and enum fields use,
+/// and sets `elements_are_gc_ptrs` from the static element type so the
+/// collector traces pointer elements and leaves scalar buffers opaque.
+/// See `docs/v2/specs/codegen.md` and `docs/v2/specs/object-layout.md`.
+///
+/// `raven_list_new(element_size, element_align, cap, gc_ptrs) -> List`.
+pub const RUNTIME_LIST_NEW: &str = "raven_list_new";
+/// `raven_list_len(List) -> u32` returns the element count.
+pub const RUNTIME_LIST_LEN: &str = "raven_list_len";
+/// `raven_list_elements(List) -> ptr` returns the element buffer base.
+pub const RUNTIME_LIST_ELEMENTS: &str = "raven_list_elements";
+/// `raven_list_push(List, payload_ptr)` appends one eight-byte slot.
+pub const RUNTIME_LIST_PUSH: &str = "raven_list_push";
+/// `raven_list_pop(List, out_ptr) -> u32` removes the last element into
+/// `out_ptr`, returning `1` on success and `0` when the list is empty.
+pub const RUNTIME_LIST_POP: &str = "raven_list_pop";
+/// `raven_list_get(List, index, out_ptr) -> u32` reads the element at
+/// `index` into `out_ptr`, returning `1` on success and `0` when the
+/// index is out of range.
+pub const RUNTIME_LIST_GET: &str = "raven_list_get";
+
+/// Runtime C symbol reporting a fatal panic and terminating the process.
+/// Used by the out-of-bounds index check.
+pub const RUNTIME_PANIC: &str = "raven_panic";
+
 /// Runtime C symbol allocating a closure object.
 pub const RUNTIME_CLOSURE_NEW: &str = "raven_closure_new";
 
