@@ -58,6 +58,12 @@ pub const TAG_CLOSURE: u32 = 0x05;
 /// Generic heap box. Reserved for trait-object payloads (issue #66).
 pub const TAG_BOX: u32 = 0x06;
 
+/// Bit 0 of `ObjectHeader.gc_bits`: the mark bit the tracing collector
+/// sets during the mark phase and clears during sweep. The remaining
+/// `gc_bits` stay zero and are reserved for a future colour scheme. See
+/// `docs/v2/specs/gc.md`.
+pub const GC_MARK_BIT: u32 = 0x1;
+
 /// Canonical 16-byte object header.
 ///
 /// Every heap allocation the GC traces starts with one of these,
@@ -89,5 +95,23 @@ impl ObjectHeader {
             len,
             cap,
         }
+    }
+
+    /// Return true when the mark bit is set.
+    #[inline]
+    pub const fn is_marked(&self) -> bool {
+        self.gc_bits & GC_MARK_BIT != 0
+    }
+
+    /// Set the mark bit.
+    #[inline]
+    pub fn set_mark(&mut self) {
+        self.gc_bits |= GC_MARK_BIT;
+    }
+
+    /// Clear the mark bit.
+    #[inline]
+    pub fn clear_mark(&mut self) {
+        self.gc_bits &= !GC_MARK_BIT;
     }
 }
