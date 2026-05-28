@@ -23,6 +23,12 @@ pub const IO_PRINTLN_STR: &str = "__io_println_str";
 /// `__io_read_line() -> String` reads one line from stdin (no newline).
 pub const IO_READ_LINE: &str = "__io_read_line";
 
+/// Internal panic intrinsic. The bundled `std/test` source calls
+/// `__panic(msg: String)` to abort the process with a message on a failed
+/// assertion; it lowers to the runtime's `raven_panic` symbol. The
+/// leading `__` marks it internal (a user calls `std/test`'s assertions).
+pub const PANIC_FN: &str = "__panic";
+
 /// Internal stdlib string intrinsics. The bundled `std/string` source
 /// calls these byte-level primitives to build the higher-level utilities
 /// (case mapping, search, trim, ...) in pure Raven. The leading `__str_`
@@ -169,6 +175,7 @@ pub fn is_intrinsic(mangled: &str) -> bool {
             | IO_PRINT_STR
             | IO_PRINTLN_STR
             | IO_READ_LINE
+            | PANIC_FN
             | STR_LEN
             | STR_BYTE_AT
             | STR_SUBSTRING

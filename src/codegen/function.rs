@@ -1576,6 +1576,24 @@ fn lower_intrinsic(
             builder.ins().call(local_ref, &[ptr_val, len_val]);
             Ok(None)
         }
+        intrinsics::PANIC_FN => {
+            if args.len() != 1 {
+                return Err(CodegenError::Unsupported(format!(
+                    "__panic intrinsic expects 1 arg, got {}",
+                    args.len()
+                )));
+            }
+            let (ptr_val, len_val) = lower_string_arg(cx, builder, &args[0], slots)?;
+            let func_id = cx
+                .runtime_id(intrinsics::RUNTIME_PANIC)
+                .expect("panic declared at module init");
+            let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
+            // raven_panic terminates the process; the call is treated as a
+            // normal returning void call so lowering of any trailing code in
+            // the block stays well formed (that code is dead at runtime).
+            builder.ins().call(local_ref, &[ptr_val, len_val]);
+            Ok(None)
+        }
         intrinsics::IO_READ_LINE => {
             if !args.is_empty() {
                 return Err(CodegenError::Unsupported(format!(

@@ -80,6 +80,7 @@ pub const STDLIB_MODULES: &[&str] = &[
     "math",
     "path",
     "error",
+    "test",
     "fs",
     "net",
     "http",
