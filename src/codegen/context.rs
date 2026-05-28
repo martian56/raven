@@ -8,9 +8,10 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
-use cranelift_codegen::ir::{AbiParam, Signature};
+use cranelift_codegen::ir::{types, AbiParam, InstBuilder, Signature};
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::Context;
+use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectModule, ObjectProduct};
 
@@ -35,7 +36,27 @@ pub struct ModuleCx {
     strings: BTreeMap<Vec<u8>, DataId>,
     /// Counter for unique data symbol names.
     string_counter: u32,
+    /// The C entry shim and the Raven `main` it wraps, recorded during
+    /// declaration so the bodies can be emitted after every Raven
+    /// function is in the symbol table. `None` when the program has no
+    /// `main` (for example a unit test compiling a fragment).
+    main_entry: Option<MainEntry>,
 }
+
+/// The exported `main` shim plus the Raven `main` it dispatches to.
+struct MainEntry {
+    /// The exported `int main(void)` symbol the C runtime starts.
+    shim: FuncId,
+    /// The internal symbol holding the user's Raven `main` body.
+    raven_main: FuncId,
+}
+
+/// Symbol name for the user's Raven `main` body. The exported `main`
+/// the C runtime calls is a thin shim that invokes this and returns a
+/// deterministic `0` exit code, since the Raven entry point returns
+/// unit and the C runtime would otherwise read an uninitialized
+/// register as the process status.
+const RAVEN_MAIN_SYMBOL: &str = "__raven_main";
 
 impl ModuleCx {
     /// Build a fresh context wrapping `module`.
@@ -46,6 +67,7 @@ impl ModuleCx {
             runtime: HashMap::new(),
             strings: BTreeMap::new(),
             string_counter: 0,
+            main_entry: None,
         }
     }
 
@@ -116,23 +138,43 @@ impl ModuleCx {
 
     /// Declare every MIR function ahead of body emission so that calls
     /// between functions can be resolved without a fix up pass.
+    ///
+    /// The Raven `main` is declared under an internal symbol and wrapped
+    /// by an exported `int main(void)` shim. The shim is what the C
+    /// runtime starts; it calls the Raven body and returns `0`, so the
+    /// process exit code is deterministic rather than whatever the
+    /// runtime reads out of a register after a unit returning function.
     pub fn declare_functions(&mut self, program: &MirProgram) -> Result<(), CodegenError> {
         for func in &program.functions {
             let sig = self.signature_for(func)?;
-            let linkage = if func.origin == "main" {
-                Linkage::Export
-            } else {
-                Linkage::Local
-            };
-            let name = if func.origin == "main" {
-                "main".to_string()
+            let is_main = func.origin == "main";
+            let linkage = Linkage::Local;
+            let name = if is_main {
+                RAVEN_MAIN_SYMBOL.to_string()
             } else {
                 func.name.clone()
             };
             let id = self.module.declare_function(&name, linkage, &sig)?;
             self.functions.insert(func.name.clone(), id);
+            if is_main {
+                let shim = self.declare_main_shim()?;
+                self.main_entry = Some(MainEntry {
+                    shim,
+                    raven_main: id,
+                });
+            }
         }
         Ok(())
+    }
+
+    /// Declare the exported `int main(void)` C entry shim.
+    fn declare_main_shim(&mut self) -> Result<FuncId, CodegenError> {
+        let mut sig = Signature::new(self.module.target_config().default_call_conv);
+        sig.returns.push(AbiParam::new(types::I32));
+        let id = self
+            .module
+            .declare_function("main", Linkage::Export, &sig)?;
+        Ok(id)
     }
 
     /// Lower the body of every declared MIR function.
@@ -140,6 +182,47 @@ impl ModuleCx {
         for func in &program.functions {
             self.define_one(func)?;
         }
+        if self.main_entry.is_some() {
+            self.define_main_shim()?;
+        }
+        Ok(())
+    }
+
+    /// Emit the body of the `int main(void)` shim: call the Raven
+    /// `main`, discard its result, and return `0`.
+    fn define_main_shim(&mut self) -> Result<(), CodegenError> {
+        let MainEntry { shim, raven_main } = self
+            .main_entry
+            .as_ref()
+            .expect("define_main_shim called without a declared main");
+        let shim = *shim;
+        let raven_main = *raven_main;
+
+        let mut ctx = Context::new();
+        ctx.func.signature = {
+            let mut sig = Signature::new(self.module.target_config().default_call_conv);
+            sig.returns.push(AbiParam::new(types::I32));
+            sig
+        };
+
+        let callee = self.module.declare_func_in_func(raven_main, &mut ctx.func);
+        let mut builder_ctx = FunctionBuilderContext::new();
+        {
+            let mut builder = FunctionBuilder::new(&mut ctx.func, &mut builder_ctx);
+            let block = builder.create_block();
+            builder.switch_to_block(block);
+            builder.seal_block(block);
+            // The Raven `main` returns unit, so there is no result value
+            // to forward; the call is emitted purely for its effects.
+            builder.ins().call(callee, &[]);
+            let zero = builder.ins().iconst(types::I32, 0);
+            builder.ins().return_(&[zero]);
+            builder.finalize();
+        }
+
+        self.module
+            .define_function(shim, &mut ctx)
+            .map_err(|e| CodegenError::Codegen(format!("define main shim: {}", e)))?;
         Ok(())
     }
 

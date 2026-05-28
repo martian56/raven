@@ -9,7 +9,8 @@
 //! The `build` subcommand runs the entire v2 pipeline (lex, parse,
 //! resolve, type check, HIR, MIR) and feeds the resulting `MirProgram`
 //! to the Cranelift back end. The relocatable object is then linked
-//! with the `raven-runtime` staticlib through the system `cc` driver.
+//! with the `raven-runtime` staticlib by the toolchain-aware linker
+//! (MSVC `link.exe` on windows-msvc, `cc` elsewhere).
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
