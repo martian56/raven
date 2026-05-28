@@ -31,6 +31,23 @@ pub struct InferCtx {
     /// variable's representative; merging variables merges the bound
     /// lists.
     bounds: HashMap<InferVarId, Vec<PendingBound>>,
+    /// Deferred "element of an iterator" links. Each entry says the
+    /// element variable is the `T` of `source: Iterator<T>`. When the
+    /// source resolves to a concrete iterator type, the element variable
+    /// is unified with that type's element so a call like
+    /// `collect(pipeline)` can infer the element type from the argument
+    /// even though `T` appears only in the function's `S: Iterator<T>`
+    /// bound and never in a parameter position.
+    iterator_links: Vec<IteratorLink>,
+}
+
+/// A deferred link from an iterator-typed variable to its element
+/// variable, resolved once the source variable is known.
+#[derive(Debug, Clone)]
+struct IteratorLink {
+    source: InferVarId,
+    element: InferVarId,
+    span: Span,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -81,6 +98,39 @@ impl InferCtx {
     pub fn bounds_of(&self, v: InferVarId) -> Vec<PendingBound> {
         let root = self.find(v);
         self.bounds.get(&root).cloned().unwrap_or_default()
+    }
+
+    /// Record that `element` is the `T` of `source: Iterator<T>`. Resolved
+    /// later by `solve_iterator_links` once `source` is concrete.
+    pub fn add_iterator_link(&mut self, source: InferVarId, element: InferVarId, span: Span) {
+        self.iterator_links.push(IteratorLink {
+            source,
+            element,
+            span,
+        });
+    }
+
+    /// For each deferred iterator link whose source has resolved to a
+    /// concrete iterator type, unify the element variable with that type's
+    /// element. `elem_of` maps a concrete source type to its `Iterator`
+    /// element type (the checker supplies it because the impl table lives
+    /// outside the inference context). Returns once a fixed point is
+    /// reached. Unsolved links are left for `CannotInferType` to report.
+    pub fn solve_iterator_links(
+        &mut self,
+        elem_of: &impl Fn(&Ty) -> Option<Ty>,
+    ) -> Result<(), RavenError> {
+        let links = self.iterator_links.clone();
+        for link in links {
+            let source = self.resolve(&Ty::Var(link.source));
+            if source.has_var() {
+                continue;
+            }
+            if let Some(elem) = elem_of(&source) {
+                self.unify(&Ty::Var(link.element), &elem, &link.span)?;
+            }
+        }
+        Ok(())
     }
 
     /// Return the union-find root for `v`. Performs path compression.

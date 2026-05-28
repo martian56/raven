@@ -24,6 +24,7 @@ use super::collect::{resolve_ty, scope_from_params, GenericScope};
 use super::env::{FnSig, GenericParamSig, TypeEnv};
 use super::infer::{substitute, InferCtx};
 use super::pattern;
+use super::ty::InferVarId;
 use super::ty::{FfiTy, ParamId, Ty};
 use super::unify::assignable;
 use super::TypeMap;
@@ -227,6 +228,10 @@ struct Checker<'a, 'b> {
     /// Inference context for this body. Holds variables, their
     /// solutions, and any pending trait bounds.
     infer: InferCtx,
+    /// Element type hint for an empty array literal, set from a `let`
+    /// binding's declared `List<T>` type while its initializer is checked.
+    /// An empty `[]` has no element to infer from, so it adopts this hint.
+    array_hint: Option<Ty>,
 }
 
 /// Keys used by the locals map. Mirrors the resolver's `Binding`
@@ -273,6 +278,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             generic_scope: GenericScope::new(),
             param_bounds: HashMap::new(),
             infer: InferCtx::new(),
+            array_hint: None,
         }
     }
 
@@ -458,6 +464,15 @@ impl<'a, 'b> Checker<'a, 'b> {
     /// `CannotInferType` errors. Also resolves locals so subsequent
     /// stages see concrete types.
     fn finalize_types(&mut self) -> Result<(), RavenError> {
+        // First settle any deferred `Iterator<T>` element links: a call
+        // such as `collect(pipeline)` leaves the element type `T` to be
+        // inferred from the concrete argument bound to `S: Iterator<T>`.
+        // Map each concrete source type to its iterator element by
+        // structurally matching the `next` method's `Option<T>` return.
+        let impls = self.env.impls.clone();
+        let elem_of = move |ty: &Ty| -> Option<Ty> { iterator_elem_concrete(&impls, ty) };
+        self.infer.solve_iterator_links(&elem_of)?;
+
         // Resolve every entry in the type map. We do this in place by
         // replacing each entry's value with its resolved form, raising
         // CannotInferType if a variable remains.
@@ -527,17 +542,35 @@ impl<'a, 'b> Checker<'a, 'b> {
                 span.clone(),
             ));
         }
+        // First create a fresh variable for every parameter so a bound
+        // that mentions a sibling parameter (for example `S: Iterator<T>`)
+        // can link to that sibling's variable regardless of order.
+        let mut vars: Vec<InferVarId> = Vec::with_capacity(generics.len());
         let mut out: HashMap<ParamId, Ty> = HashMap::new();
-        for (i, p) in generics.iter().enumerate() {
+        for p in generics.iter() {
             let v = self.infer.fresh(span.clone());
-            for b in &p.bounds {
+            vars.push(v);
+            out.insert(p.id.clone(), Ty::Var(v));
+        }
+        for (i, p) in generics.iter().enumerate() {
+            let v = vars[i];
+            for (bi, b) in p.bounds.iter().enumerate() {
                 self.infer.add_bound(v, b.clone(), span.clone());
+                // For an `Iterator<T>` bound whose argument is a sibling
+                // parameter, link this variable's element to that
+                // sibling's variable so the element type can be inferred
+                // from a concrete argument at the call site.
+                if b == "Iterator" {
+                    if let Some(Ty::Param(elem_id)) = p.bound_args.get(bi).and_then(|a| a.first()) {
+                        if let Some(Ty::Var(elem_var)) = out.get(elem_id) {
+                            self.infer.add_iterator_link(v, *elem_var, span.clone());
+                        }
+                    }
+                }
             }
-            let assigned = Ty::Var(v);
             if let Some(explicit) = explicit_args.get(i) {
-                self.infer.unify(&assigned, explicit, span)?;
+                self.infer.unify(&Ty::Var(v), explicit, span)?;
             }
-            out.insert(p.id.clone(), assigned);
         }
         Ok(out)
     }
@@ -561,10 +594,17 @@ impl<'a, 'b> Checker<'a, 'b> {
                     Some(t) => Some(self.resolve_ast_ty(t)?),
                     None => None,
                 };
+                // While checking the initializer, expose the declared
+                // element type so an empty `[]` literal can adopt it.
+                let prev_hint = self.array_hint.take();
+                if let Some(Ty::List(elem)) = &declared {
+                    self.array_hint = Some((**elem).clone());
+                }
                 let init_ty = match init {
                     Some(e) => Some(self.check_expr(e)?),
                     None => None,
                 };
+                self.array_hint = prev_hint;
                 let final_ty = match (declared, init_ty) {
                     (Some(d), Some(i)) => {
                         self.unify(&d, &i, &init.as_ref().unwrap().span)?;
@@ -731,6 +771,21 @@ impl<'a, 'b> Checker<'a, 'b> {
                 let elem = match resolved.strip_self() {
                     Ty::List(t) => *t.clone(),
                     Ty::Error => Ty::Error,
+                    // A generic parameter `S` bounded by `Iterator<T>`
+                    // iterates at its bound's element type `T`. The loop is
+                    // monomorphized once `S` is known at each call site.
+                    Ty::Param(p) => match self.param_iterator_elem_ty(p) {
+                        Some(t) => t,
+                        None => {
+                            return Err(RavenError::ty(
+                                TypeError::Custom(format!(
+                                    "cannot iterate over `{}`; add an `Iterator<T>` bound to it",
+                                    p.name
+                                )),
+                                iter.span.clone(),
+                            ));
+                        }
+                    },
                     other => {
                         // Any value whose type implements `Iterator<T>`
                         // (resolved by finding a `next` method returning
@@ -989,6 +1044,12 @@ impl<'a, 'b> Checker<'a, 'b> {
 
     fn check_array(&mut self, items: &[Expr], span: &Span) -> Result<Ty, RavenError> {
         if items.is_empty() {
+            // An empty `[]` has no element to infer from. Adopt the
+            // element type hint from the enclosing `let` binding's
+            // declared `List<T>` type when one is present.
+            if let Some(elem) = self.array_hint.clone() {
+                return Ok(Ty::List(Box::new(elem)));
+            }
             return Err(RavenError::ty(
                 TypeError::Custom(
                     "empty array literals require a context type; annotate the binding".into(),
@@ -1506,6 +1567,20 @@ impl<'a, 'b> Checker<'a, 'b> {
             let ret = self.infer.resolve(&substitute(&msig.ret, &subst));
             if let Ty::Option(elem) = ret.strip_self() {
                 return Some((**elem).clone());
+            }
+        }
+        None
+    }
+
+    /// Element type for a generic parameter bounded by `Iterator<T>`.
+    /// Reads the parameter's recorded bounds and returns the type argument
+    /// of an `Iterator` bound, which is the element type the `for` loop and
+    /// `next()` calls produce once the parameter is grounded.
+    fn param_iterator_elem_ty(&self, param: &ParamId) -> Option<Ty> {
+        let bounds = self.param_bounds.get(param)?;
+        for (name, args) in bounds {
+            if name == "Iterator" {
+                return args.first().cloned();
             }
         }
         None
@@ -2160,4 +2235,88 @@ fn is_int_ffi(ty: &Ty) -> bool {
 
 fn ty_custom(msg: &str, span: &Span) -> RavenError {
     RavenError::ty(TypeError::Custom(msg.into()), span.clone())
+}
+
+/// Find the `Iterator` element type of a fully concrete type by matching
+/// it against the `next` method of every impl. The impl's `self_ty`
+/// (which carries `Ty::Param`s) is structurally matched against the
+/// concrete type to bind those parameters, and the bound substitution is
+/// applied to `next`'s `Option<T>` return. Pure: it allocates no
+/// inference variables, so it is safe to call from `finalize`.
+fn iterator_elem_concrete(impls: &[super::env::ImplSig], ty: &Ty) -> Option<Ty> {
+    for imp in impls {
+        let Some(msig) = imp.methods.get("next") else {
+            continue;
+        };
+        let mut subst: HashMap<ParamId, Ty> = HashMap::new();
+        if !structural_match(&imp.self_ty, ty, &mut subst) {
+            continue;
+        }
+        let ret = substitute(&msig.ret, &subst);
+        if let Ty::Option(elem) = ret.strip_self() {
+            if !elem.has_var() {
+                return Some((**elem).clone());
+            }
+        }
+    }
+    None
+}
+
+/// Structurally match a declared type (which may contain `Ty::Param`)
+/// against a concrete type, recording each parameter's binding. Returns
+/// false on a shape mismatch. Used to ground an impl's parameters from a
+/// concrete receiver without the inference machinery.
+fn structural_match(decl: &Ty, concrete: &Ty, out: &mut HashMap<ParamId, Ty>) -> bool {
+    match (decl, concrete) {
+        (Ty::Param(p), c) => {
+            out.insert(p.clone(), c.clone());
+            true
+        }
+        (Ty::Option(a), Ty::Option(b))
+        | (Ty::List(a), Ty::List(b))
+        | (Ty::SelfTy(a), Ty::SelfTy(b)) => structural_match(a, b, out),
+        (Ty::Result(a1, a2), Ty::Result(b1, b2)) => {
+            structural_match(a1, b1, out) && structural_match(a2, b2, out)
+        }
+        (
+            Ty::Struct {
+                id: ia, args: a, ..
+            },
+            Ty::Struct {
+                id: ib, args: b, ..
+            },
+        )
+        | (
+            Ty::Enum {
+                id: ia, args: a, ..
+            },
+            Ty::Enum {
+                id: ib, args: b, ..
+            },
+        ) => {
+            ia == ib
+                && a.len() == b.len()
+                && a.iter()
+                    .zip(b.iter())
+                    .all(|(x, y)| structural_match(x, y, out))
+        }
+        (
+            Ty::Function {
+                params: ap,
+                ret: ar,
+            },
+            Ty::Function {
+                params: bp,
+                ret: br,
+            },
+        ) => {
+            ap.len() == bp.len()
+                && ap
+                    .iter()
+                    .zip(bp.iter())
+                    .all(|(x, y)| structural_match(x, y, out))
+                && structural_match(ar, br, out)
+        }
+        (a, b) => a == b,
+    }
 }

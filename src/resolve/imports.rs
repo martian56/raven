@@ -73,6 +73,7 @@ impl SourceLoader for FsLoader {
 /// future code can be ported without re writing imports.
 pub const STDLIB_MODULES: &[&str] = &[
     "io",
+    "iter",
     "collections",
     "string",
     "math",
