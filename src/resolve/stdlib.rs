@@ -42,6 +42,7 @@ pub const BUNDLED_MODULES: &[(&str, &str)] = &[
         include_str!("../../stdlib/std/collections.rv"),
     ),
     ("cmp", include_str!("../../stdlib/std/cmp.rv")),
+    ("hash", include_str!("../../stdlib/std/hash.rv")),
     ("math", include_str!("../../stdlib/std/math.rv")),
     ("path", include_str!("../../stdlib/std/path.rv")),
     ("error", include_str!("../../stdlib/std/error.rv")),
@@ -417,6 +418,11 @@ mod tests {
     #[test]
     fn error_module_is_bundled() {
         assert!(bundled_source("error").is_some());
+    }
+
+    #[test]
+    fn hash_module_is_bundled() {
+        assert!(bundled_source("hash").is_some());
     }
 
     #[test]
