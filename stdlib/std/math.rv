@@ -1,0 +1,115 @@
+// std/math: numeric constants and functions. The transcendental and
+// rounding functions bind directly to the C runtime math library through
+// `extern "C"`; the rest is pure Raven.
+
+extern "C" {
+    fun sqrt(x: Float) -> Float
+    fun pow(base: Float, exp: Float) -> Float
+    fun exp(x: Float) -> Float
+    fun log10(x: Float) -> Float
+    fun sin(x: Float) -> Float
+    fun cos(x: Float) -> Float
+    fun tan(x: Float) -> Float
+    fun floor(x: Float) -> Float
+    fun ceil(x: Float) -> Float
+    fun trunc(x: Float) -> Float
+    fun round(x: Float) -> Float
+    fun log(x: Float) -> Float
+    fun fabs(x: Float) -> Float
+}
+
+fun pi() -> Float {
+    return 3.141592653589793
+}
+
+fun e() -> Float {
+    return 2.718281828459045
+}
+
+fun tau() -> Float {
+    return 6.283185307179586
+}
+
+fun abs_int(x: Int) -> Int {
+    if x < 0 {
+        return 0 - x
+    }
+    return x
+}
+
+fun min_int(a: Int, b: Int) -> Int {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+fun max_int(a: Int, b: Int) -> Int {
+    if a > b {
+        return a
+    }
+    return b
+}
+
+fun clamp_int(x: Int, lo: Int, hi: Int) -> Int {
+    if x < lo {
+        return lo
+    }
+    if x > hi {
+        return hi
+    }
+    return x
+}
+
+// Natural logarithm. C names this `log`; `ln` is the conventional spelling.
+fun ln(x: Float) -> Float {
+    return log(x)
+}
+
+// Float absolute value. C names this `fabs`.
+fun abs(x: Float) -> Float {
+    return fabs(x)
+}
+
+fun min(a: Float, b: Float) -> Float {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+fun max(a: Float, b: Float) -> Float {
+    if a > b {
+        return a
+    }
+    return b
+}
+
+fun clamp(x: Float, lo: Float, hi: Float) -> Float {
+    if x < lo {
+        return lo
+    }
+    if x > hi {
+        return hi
+    }
+    return x
+}
+
+// Integer power by squaring. A negative exponent has no integer result
+// and returns 0.
+fun pow_int(base: Int, exp: Int) -> Int {
+    if exp < 0 {
+        return 0
+    }
+    let result = 1
+    let b = base
+    let n = exp
+    while n > 0 {
+        if n % 2 == 1 {
+            result = result * b
+        }
+        b = b * b
+        n = n / 2
+    }
+    return result
+}

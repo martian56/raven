@@ -1,0 +1,30 @@
+// golden:skip
+import std/math { sqrt, pow, exp, ln, abs, floor, ceil, round, trunc, sin, cos, abs_int, min_int, max_int, clamp_int, pow_int, pi, e }
+
+fun main() {
+    print(abs_int(-5))
+    print(min_int(3, 7))
+    print(max_int(3, 7))
+    print(clamp_int(12, 0, 10))
+    print(pow_int(2, 10))
+
+    print(sqrt(16.0))
+    print(pow(2.0, 10.0))
+    print(abs(-4.0))
+    print(floor(3.7))
+    print(ceil(3.1))
+    print(round(2.5))
+    print(trunc(3.9))
+
+    // exp(ln(x)) recovers x; check it lands within tolerance of 5.
+    let recovered = exp(ln(5.0))
+    print(abs(recovered - 5.0) < 0.0001)
+
+    // sin(0) is 0, cos(0) is 1.
+    print(sin(0.0))
+    print(cos(0.0))
+
+    // Constants are positive and ordered pi < e_times below.
+    print(pi() > 3.0)
+    print(e() > 2.0)
+}
