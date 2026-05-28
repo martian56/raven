@@ -267,6 +267,20 @@ fn method_generics_program_compiles_and_runs() {
 }
 
 #[test]
+fn iter_pipeline_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // The lazy iterator pipeline end to end: `xs.iter().map(f).filter(g)`
+    // chained adapters driven by the generic consumers `collect`, `fold`,
+    // and `count`. Each consumer is generic over `S: Iterator<T>` where the
+    // element type `T` appears only in the bound and the return type, so the
+    // monomorphizer recovers it by matching the declared return type against
+    // the concrete call result. Prints 4, then 180, then 3.
+    compile_link_run_and_check("iter_pipeline.rv", "4\n180\n3\n", &runtime);
+}
+
+#[test]
 fn list_int_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

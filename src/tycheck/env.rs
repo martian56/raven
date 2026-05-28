@@ -19,6 +19,14 @@ pub struct GenericParamSig {
     pub id: ParamId,
     /// Names of the traits this parameter is constrained by.
     pub bounds: Vec<String>,
+    /// Type arguments applied to each bound, aligned positionally with
+    /// `bounds`. For a bound `T: Iterator<Int>` the entry holds `[Int]`;
+    /// for a bound with no type arguments (`T: ToString`) it is empty.
+    /// Resolved after all signatures are collected (see the bound-argument
+    /// resolution pass in `collect`), so a method call dispatched through
+    /// the bound can substitute the trait's own generic parameters with
+    /// the concrete arguments rather than leaving them abstract.
+    pub bound_args: Vec<Vec<Ty>>,
     pub span: Span,
 }
 

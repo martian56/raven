@@ -4,7 +4,7 @@
   48..50 "xs" -> List<Int>
   48..61 "xs.is_empty()" -> Bool
   62..89 "{\n        return None\n    }" -> ()
-  79..83 "None" -> Option<<error>>
+  79..83 "None" -> Option<Int>
   101..116 "Some(xs.get(0))" -> Option<Int>
   106..108 "xs" -> List<Int>
   106..115 "xs.get(0)" -> Int

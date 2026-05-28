@@ -576,7 +576,13 @@ fn lower_for(
         ));
     }
 
-    let list_expr = lower_expr(iter, &Ty::Error, cx)?;
+    let source_expr = lower_expr(iter, &Ty::Error, cx)?;
+    // A non-range, non-list iterable is any value whose type implements
+    // `Iterator<T>`. Drive it through repeated `next()` calls.
+    if !matches!(source_expr.ty.strip_self(), Ty::List(_)) {
+        return Ok(lower_iterator_for(pat, source_expr, body, span, cx));
+    }
+    let list_expr = source_expr;
     let element_ty = match list_expr.ty.strip_self() {
         Ty::List(t) => (**t).clone(),
         _ => Ty::Error,
@@ -615,6 +621,125 @@ fn lower_for(
         span: span.clone(),
     };
     Ok(make_expr(HirExprKind::Block(block), Ty::Unit, span.clone()))
+}
+
+/// Lower a `for` loop whose source is an arbitrary iterator (any value
+/// whose type implements `Iterator<T>`). The loop drives the iterator by
+/// calling `next()` until it yields `None`:
+///
+/// ```text
+/// {
+///     let __it = <source>;
+///     loop {
+///         match __it.next() {
+///             Some(<binding>) => { <body> },
+///             None => break,
+///         }
+///     }
+/// }
+/// ```
+///
+/// The `next` call is an ordinary method call, so monomorphization
+/// resolves it to the concrete adapter's `next` symbol and the closures
+/// captured by `map`/`filter`/... are dispatched statically. There is no
+/// boxing and no per-stage allocation: a chained pipeline runs in a
+/// single pass driven by this loop.
+fn lower_iterator_for(
+    pat: &crate::ast::Pattern,
+    source: HirExpr,
+    body: &AstBlock,
+    span: &Span,
+    cx: &LowerCtx<'_>,
+) -> HirExpr {
+    // The element type recorded by the type checker at the pattern span.
+    let element_ty = cx
+        .typed
+        .types
+        .lookup(&pat.span)
+        .cloned()
+        .unwrap_or(Ty::Error);
+
+    let it_name = cx.fresh("it");
+    let it_ty = source.ty.clone();
+    let it_let = let_stmt(&it_name, it_ty.clone(), source, span.clone());
+
+    // __it.next() : Option<element_ty>
+    let next_call = make_expr(
+        HirExprKind::MethodCall {
+            receiver: Box::new(ident_expr(&it_name, it_ty, span.clone())),
+            name: "next".into(),
+            args: Vec::new(),
+        },
+        Ty::Option(Box::new(element_ty.clone())),
+        span.clone(),
+    );
+
+    // Some(<binding>) => { <body> }
+    let bind_name = pattern_binding_name(pat).unwrap_or_else(|| cx.fresh("loopvar"));
+    let some_pat = HirPattern {
+        kind: HirPatternKind::Constructor {
+            name: Some("Some".into()),
+            elements: vec![HirPattern {
+                kind: HirPatternKind::Binding(bind_name),
+                span: span.clone(),
+            }],
+        },
+        span: span.clone(),
+    };
+    let body_block = lower_block_to_block(body, &Ty::Unit, cx).unwrap_or_else(|_| HirBlock {
+        stmts: Vec::new(),
+        tail: None,
+        ty: Ty::Unit,
+        span: span.clone(),
+    });
+    let some_arm = HirArm {
+        pattern: some_pat,
+        guard: None,
+        body: make_expr(HirExprKind::Block(body_block), Ty::Unit, span.clone()),
+        span: span.clone(),
+    };
+
+    // None => break
+    let none_pat = HirPattern {
+        kind: HirPatternKind::Constructor {
+            name: Some("None".into()),
+            elements: Vec::new(),
+        },
+        span: span.clone(),
+    };
+    let none_arm = HirArm {
+        pattern: none_pat,
+        guard: None,
+        body: make_expr(HirExprKind::Break(None), Ty::Error, span.clone()),
+        span: span.clone(),
+    };
+
+    let match_expr = make_expr(
+        HirExprKind::Match {
+            scrutinee: Box::new(next_call),
+            arms: vec![some_arm, none_arm],
+        },
+        Ty::Unit,
+        span.clone(),
+    );
+    let loop_block = HirBlock {
+        stmts: vec![HirStmt {
+            kind: HirStmtKind::Expr(match_expr),
+            span: span.clone(),
+        }],
+        tail: None,
+        ty: Ty::Unit,
+        span: span.clone(),
+    };
+    let loop_expr = make_expr(HirExprKind::Loop(loop_block), Ty::Unit, span.clone());
+
+    let block = HirBlock {
+        stmts: vec![it_let],
+        tail: Some(Box::new(loop_expr)),
+        ty: Ty::Unit,
+        span: span.clone(),
+    };
+    make_expr(HirExprKind::Block(block), Ty::Unit, span.clone())
 }
 
 /// Build the counter-loop body shared by the range and list for-loop
