@@ -116,7 +116,7 @@ impl<'a> LowerCtx<'a> {
 fn lower_decl(decl: &Decl, cx: &LowerCtx<'_>) -> Result<Option<HirItem>, RavenError> {
     match &decl.kind {
         DeclKind::Function(f) => {
-            let lowered = lower_function(f, None, &[], cx)?;
+            let lowered = lower_function(f, None, &[], None, cx)?;
             Ok(Some(HirItem {
                 span: decl.span.clone(),
                 kind: HirItemKind::Function(lowered),
@@ -186,7 +186,13 @@ fn lower_decl(decl: &Decl, cx: &LowerCtx<'_>) -> Result<Option<HirItem>, RavenEr
             let abstract_self = Ty::Error;
             let mut methods = Vec::with_capacity(t.members.len());
             for m in &t.members {
-                methods.push(lower_function(m, Some(&abstract_self), &t.generics, cx)?);
+                methods.push(lower_function(
+                    m,
+                    Some(&abstract_self),
+                    &t.generics,
+                    Some(&t.span),
+                    cx,
+                )?);
             }
             Ok(Some(HirItem {
                 span: decl.span.clone(),
@@ -206,7 +212,13 @@ fn lower_decl(decl: &Decl, cx: &LowerCtx<'_>) -> Result<Option<HirItem>, RavenEr
             };
             let mut methods = Vec::with_capacity(i.items.len());
             for m in &i.items {
-                methods.push(lower_function(m, Some(&self_ty), &i.generics, cx)?);
+                methods.push(lower_function(
+                    m,
+                    Some(&self_ty),
+                    &i.generics,
+                    Some(&i.span),
+                    cx,
+                )?);
             }
             Ok(Some(HirItem {
                 span: decl.span.clone(),
@@ -298,11 +310,21 @@ fn lower_function(
     f: &AstFunction,
     self_ty: Option<&Ty>,
     extra_generics: &[GenericParam],
+    extra_owner: Option<&Span>,
     cx: &LowerCtx<'_>,
 ) -> Result<HirFn, RavenError> {
     let mut sigs = Vec::new();
     if !extra_generics.is_empty() {
-        sigs.extend(collect_generic_params_for_owner(extra_generics, &f.span));
+        // The enclosing impl or trait owns its generic parameters: their
+        // owner is the impl/trait span, not the method span. This must
+        // match how the implementing type (`impl_self_ty`) and the type
+        // checker (`fill_impl`) resolve the same parameters, so a method
+        // that returns the impl's `T` and the impl's `Self<T>` agree on
+        // one `ParamId`. Falling back to the method span would mint a
+        // distinct `T` per method and break monomorphization's
+        // substitution.
+        let owner = extra_owner.unwrap_or(&f.span);
+        sigs.extend(collect_generic_params_for_owner(extra_generics, owner));
     }
     sigs.extend(collect_generic_params_for_owner(&f.generics, &f.span));
     let scope = scope_from_params(&sigs);

@@ -27,7 +27,9 @@ use crate::tycheck::ty::ParamId;
 use crate::tycheck::Ty;
 
 use super::ir::MirProgram;
-use super::lower::{lower_function, mono_symbol, DeclTables, FnEntry, FnIndex, SubstMap};
+use super::lower::{
+    lower_function, mono_symbol, DeclTables, FnEntry, FnIndex, MethodEntry, MethodIndex, SubstMap,
+};
 
 /// One entry in the monomorphization worklist: a declaration plus the
 /// substitution that specializes its generic parameters.
@@ -47,12 +49,21 @@ type SymbolIndex = HashMap<DeclId, String>;
 /// declaration order. The order fixes the mangled-name suffix.
 type GenericIndex = HashMap<DeclId, Vec<ParamId>>;
 
+/// Map from an impl-method declaration to its implementing type and
+/// method name. The worklist computes a generic method's per-instantiation
+/// symbol by substituting the concrete type arguments into the
+/// implementing type and mangling the result, so the symbol matches what
+/// the method call site recomputes from the concrete receiver type
+/// (`Box_Int$unwrap`, and so on).
+type MethodSymbolIndex = HashMap<DeclId, (Ty, String)>;
+
 /// Run the full monomorphization pass.
 pub fn monomorphize(hir: &HirProgram) -> Result<MirProgram, RavenError> {
     let mut program = MirProgram::new();
     program.externs = collect_externs(hir);
-    let (index, roots, symbols, generics, fn_index) = collect_roots(hir);
-    let decls = collect_decls(hir, fn_index);
+    let (index, roots, symbols, generics, fn_index, method_index, method_symbols) =
+        collect_roots(hir);
+    let decls = collect_decls(hir, fn_index, method_index);
 
     let mut seen: HashSet<(DeclId, Vec<MangleKey>)> = HashSet::new();
     let mut worklist: Vec<Item> = roots;
@@ -73,11 +84,32 @@ pub fn monomorphize(hir: &HirProgram) -> Result<MirProgram, RavenError> {
             Some(f) => *f,
             None => continue,
         };
-        let base = symbols
-            .get(&decl)
-            .cloned()
-            .unwrap_or_else(|| hir_fn.name.clone());
-        let mangled = mono_symbol(&base, &generic_params, &subst);
+        // A method's symbol is the concrete implementing type followed by
+        // `$<method>`, computed by substituting the instantiation's type
+        // arguments into the declared implementing type. This matches what
+        // the call site recomputes from the concrete receiver type, so a
+        // generic method specialized at `Box<Int>` and the call to it both
+        // name `Box_Int$unwrap`. A free function uses its base symbol with
+        // the generic-parameter suffix. Because the implementing type
+        // already carries the concrete arguments, a method takes no extra
+        // `mono_symbol` suffix; its instantiations are distinguished by the
+        // implementing type's mangle.
+        let mangled = match method_symbols.get(&decl) {
+            Some((self_ty, method)) => {
+                let concrete_self = super::lower::substitute(self_ty, &subst);
+                super::ty::method_symbol(
+                    &super::ty::MirType::from_ty(&concrete_self).mangle(),
+                    method,
+                )
+            }
+            None => {
+                let base = symbols
+                    .get(&decl)
+                    .cloned()
+                    .unwrap_or_else(|| hir_fn.name.clone());
+                mono_symbol(&base, &generic_params, &subst)
+            }
+        };
         let lowered = lower_function(mangled, hir_fn, &subst, &decls);
         program.functions.push(lowered.func);
         // Lifted closure bodies are already monomorphic standalone
@@ -118,9 +150,10 @@ fn collect_externs(hir: &HirProgram) -> Vec<super::ir::MirExternFn> {
 /// expression lowering can resolve field offsets and variant payloads.
 /// The free-function index built by [`collect_roots`] is folded in so a
 /// generic call can be specialized at its call site.
-fn collect_decls(hir: &HirProgram, functions: FnIndex) -> DeclTables<'_> {
+fn collect_decls(hir: &HirProgram, functions: FnIndex, methods: MethodIndex) -> DeclTables<'_> {
     let mut tables = DeclTables {
         functions,
+        methods,
         ..DeclTables::default()
     };
     for item in &hir.items {
@@ -143,14 +176,25 @@ fn collect_decls(hir: &HirProgram, functions: FnIndex) -> DeclTables<'_> {
 /// end, the per-declaration generic-parameter order, and the by-name
 /// free-function index a call site consults to specialize a generic
 /// call.
+#[allow(clippy::type_complexity)]
 fn collect_roots(
     hir: &HirProgram,
-) -> (HirIndex<'_>, Vec<Item>, SymbolIndex, GenericIndex, FnIndex) {
+) -> (
+    HirIndex<'_>,
+    Vec<Item>,
+    SymbolIndex,
+    GenericIndex,
+    FnIndex,
+    MethodIndex,
+    MethodSymbolIndex,
+) {
     let mut index: HirIndex<'_> = HashMap::new();
     let mut roots: Vec<Item> = Vec::new();
     let mut symbols: SymbolIndex = HashMap::new();
     let mut generics: GenericIndex = HashMap::new();
     let mut fn_index: FnIndex = FnIndex::new();
+    let mut method_index: MethodIndex = MethodIndex::new();
+    let mut method_symbols: MethodSymbolIndex = MethodSymbolIndex::new();
     let mut next_id: usize = 0;
 
     for item in &hir.items {
@@ -189,12 +233,40 @@ fn collect_roots(
                     symbols.insert(id, super::ty::method_symbol(&type_mangle, &m.name));
                     let gp = generic_params_of(m);
                     generics.insert(id, gp.clone());
-                    // A concrete-receiver method with no generic
-                    // parameters of its own is a root: it lowers to its
-                    // per-type symbol (`Int$to_string`, and so on), which
-                    // a static call site references directly. Generic
-                    // methods are specialized through their call sites,
-                    // a follow-up beyond the free-function path here.
+                    // Record the implementing type so the worklist can
+                    // recompute a generic method's per-instantiation symbol
+                    // from the concrete type arguments, matching the call
+                    // site.
+                    method_symbols.insert(id, (imp.self_ty.clone(), m.name.clone()));
+                    // Index the method by name so a call site can find and
+                    // specialize it. The user parameter types exclude the
+                    // leading `self`, which the call site supplies from the
+                    // receiver type.
+                    if m.body.is_some() {
+                        let user_params: Vec<Ty> = m
+                            .params
+                            .iter()
+                            .filter(|(n, _, _)| n != "self")
+                            .map(|(_, t, _)| t.clone())
+                            .collect();
+                        method_index
+                            .entry(m.name.clone())
+                            .or_default()
+                            .push(MethodEntry {
+                                decl: id,
+                                self_ty: imp.self_ty.clone(),
+                                params: user_params,
+                                generic: !gp.is_empty(),
+                            });
+                    }
+                    // A concrete-receiver method with no generic parameters
+                    // of its own is a root: it lowers to its per-type symbol
+                    // (`Int$to_string`, and so on), which a static call site
+                    // references directly. A generic method (one whose
+                    // declared types carry `Ty::Param`, for example a method
+                    // on `impl<T> Box<T>`) is specialized through its call
+                    // sites, like a generic free function, so it is not
+                    // rooted here.
                     if gp.is_empty() && m.body.is_some() {
                         roots.push((id, SubstMap::new()));
                     }
@@ -213,7 +285,15 @@ fn collect_roots(
             _ => {}
         }
     }
-    (index, roots, symbols, generics, fn_index)
+    (
+        index,
+        roots,
+        symbols,
+        generics,
+        fn_index,
+        method_index,
+        method_symbols,
+    )
 }
 
 /// Collect a function's generic parameters in declaration order. The

@@ -50,6 +50,37 @@ pub struct FnEntry {
 /// symbol. Built once by the monomorphization driver.
 pub type FnIndex = HashMap<String, FnEntry>;
 
+/// One impl method's shape, consulted at a method call site so a generic
+/// method (a method whose declared types carry `Ty::Param`, for example
+/// `impl<T> Box<T> { fun unwrap(self) -> T }`) is specialized for the
+/// concrete receiver type. A concrete-receiver method (no `Ty::Param`)
+/// is already a monomorphization root, so the call site only queues an
+/// instantiation when the method is generic.
+#[derive(Clone)]
+pub struct MethodEntry {
+    /// The method's monomorphization decl id, matching `collect_roots`.
+    pub decl: DeclId,
+    /// The implementing type as written on the `impl` block. May carry
+    /// the impl's `Ty::Param`s (`Box<T>`); matching it against the
+    /// concrete receiver type binds them.
+    pub self_ty: Ty,
+    /// The method's user parameter types, in order, excluding the leading
+    /// `self`. May carry `Ty::Param`. Matched against the concrete
+    /// argument types to bind any method-level parameters.
+    pub params: Vec<Ty>,
+    /// True when the method's declared types carry any `Ty::Param`, so it
+    /// must be specialized at each call site. A concrete-receiver method
+    /// is `false` and is reached through its own root instead.
+    pub generic: bool,
+}
+
+/// Index of impl methods by method name, consulted at a method call site
+/// to specialize a generic method to its per-receiver symbol. Several
+/// impls may define a method of the same name on different types, so the
+/// call site picks the entry whose `self_ty` matches the concrete
+/// receiver. Built once by the monomorphization driver.
+pub type MethodIndex = HashMap<String, Vec<MethodEntry>>;
+
 /// Declaration tables the expression lowering consults to resolve
 /// struct field offsets and enum variant payloads. Keyed by the source
 /// type name, which is stable through monomorphization for the
@@ -60,6 +91,9 @@ pub struct DeclTables<'a> {
     pub enums: HashMap<String, &'a HirEnum>,
     /// Free-function index used to specialize generic calls.
     pub functions: FnIndex,
+    /// Impl-method index used to specialize generic methods at their call
+    /// sites, the same way `functions` specializes generic free calls.
+    pub methods: MethodIndex,
 }
 
 /// Mapping from a source identifier name to its current MIR local.

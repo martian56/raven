@@ -66,7 +66,7 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
                 .assign(cx.current, dst, MirRvalue::ArrayLit { ty, elements });
             MirOperand::Copy(dst)
         }
-        HirExprKind::StructLit { name, fields } => lower_struct_lit(cx, name, fields, ty),
+        HirExprKind::StructLit { name, fields } => lower_struct_lit(cx, name, fields, &expr.ty, ty),
         HirExprKind::Call { callee, args } => {
             // A callee that is an in-scope local of function type is a
             // closure value: dispatch indirectly through its Closure
@@ -550,19 +550,57 @@ fn enum_ctor_unary(
 /// into the struct's declaration order so the field slot offsets match
 /// what `FieldAccess` reads, and records each field's concrete type so
 /// the back-end can build the GC pointer descriptor.
+///
+/// A generic struct (`struct Box<T> { value: T }`) is instantiated here:
+/// the literal's resolved type carries the concrete type arguments, which
+/// are matched against the struct declaration's own generic parameters to
+/// build a per-instantiation substitution. Each declared field type is
+/// then substituted to a ground type, so a `Box<Int>` lays out an `Int`
+/// slot and a `Box<String>` lays out a traced `String` slot. The
+/// per-instantiation `MirType::Struct` carries the concrete arguments, so
+/// the back end mangles each instantiation to a distinct descriptor with
+/// the right GC pointer mask.
 fn lower_struct_lit(
     cx: &mut LowerCx<'_>,
     name: &str,
     fields: &[(String, HirExpr)],
+    expr_ty: &crate::tycheck::Ty,
     ty: MirType,
 ) -> MirOperand {
-    // Declaration order from the struct table, when available. Generic
-    // structs are out of scope for the MVP, so the source name keys the
-    // single monomorphic declaration directly.
+    // Build the per-instantiation field substitution from the literal's
+    // resolved type. The struct's declared field types carry the struct's
+    // own `Ty::Param`s; matching the declaration's generic parameters
+    // against the concrete type arguments at this site binds each to a
+    // ground type. The literal's type has the enclosing function's
+    // substitution applied first so a caller's own `Ty::Param` is already
+    // ground.
+    let struct_subst = cx.decls.structs.get(name).map(|s| {
+        let mut subst: super::SubstMap = super::SubstMap::new();
+        let params = struct_generic_params(s);
+        if let crate::tycheck::Ty::Struct { args, .. } = super::substitute(expr_ty, cx.subst) {
+            for (p, arg) in params.iter().zip(args.iter()) {
+                subst.insert(p.clone(), arg.clone());
+            }
+        }
+        subst
+    });
+
+    // Declaration order from the struct table, when available. Each field
+    // type is substituted under the per-instantiation struct substitution
+    // (a generic field `T` becomes its concrete type) and then under the
+    // enclosing function's substitution so any remaining parameter is
+    // ground.
     let decl_order: Option<Vec<(String, MirType)>> = cx.decls.structs.get(name).map(|s| {
+        let struct_subst = struct_subst.as_ref();
         s.fields
             .iter()
-            .map(|(fname, fty, _)| (fname.clone(), mir_ty(fty, cx.subst)))
+            .map(|(fname, fty, _)| {
+                let ground = match struct_subst {
+                    Some(sub) => super::substitute(fty, sub),
+                    None => fty.clone(),
+                };
+                (fname.clone(), mir_ty(&ground, cx.subst))
+            })
             .collect()
     });
 
@@ -656,6 +694,51 @@ fn call_ref_from_callee(cx: &mut LowerCx<'_>, callee: &HirExpr, args: &[HirExpr]
     MirFnRef {
         mangled,
         origin: None,
+    }
+}
+
+/// Recover a struct declaration's generic parameters in declaration
+/// order. The HIR struct carries no explicit parameter list, so the
+/// parameters are recovered by scanning the field types for `Ty::Param`
+/// occurrences and ordering them by their declaration index. The order
+/// fixes how the literal's concrete type arguments map onto the
+/// parameters, matching how the type checker built the argument list.
+fn struct_generic_params(s: &crate::hir::HirStruct) -> Vec<crate::tycheck::ty::ParamId> {
+    let mut found: Vec<crate::tycheck::ty::ParamId> = Vec::new();
+    for (_, ty, _) in &s.fields {
+        collect_ty_params(ty, &mut found);
+    }
+    found.sort_by_key(|p| p.index);
+    found.dedup();
+    found
+}
+
+/// Walk a type and push every distinct `Ty::Param` into `out`.
+fn collect_ty_params(t: &crate::tycheck::Ty, out: &mut Vec<crate::tycheck::ty::ParamId>) {
+    use crate::tycheck::Ty;
+    match t {
+        Ty::Param(p) => {
+            if !out.contains(p) {
+                out.push(p.clone());
+            }
+        }
+        Ty::Option(t) | Ty::List(t) | Ty::SelfTy(t) => collect_ty_params(t, out),
+        Ty::Result(a, b) => {
+            collect_ty_params(a, out);
+            collect_ty_params(b, out);
+        }
+        Ty::Struct { args, .. } | Ty::Enum { args, .. } => {
+            for a in args {
+                collect_ty_params(a, out);
+            }
+        }
+        Ty::Function { params, ret } => {
+            for p in params {
+                collect_ty_params(p, out);
+            }
+            collect_ty_params(ret, out);
+        }
+        _ => {}
     }
 }
 
@@ -823,7 +906,13 @@ fn lower_method_call(
     }
 
     // Static dispatch: build the per-type method symbol from the receiver
-    // type so it matches the impl method's definition symbol.
+    // type so it matches the impl method's definition symbol. When the
+    // method is generic (a method on `impl<T> Box<T>`, whose declared
+    // types carry `Ty::Param`), queue its instantiation so the worklist
+    // emits the body specialized for this receiver. The symbol is the same
+    // `<RecvType>$<method>` either way: the worklist recomputes it from the
+    // concrete implementing type, which the receiver type fixes here.
+    queue_generic_method(cx, &receiver.ty, name, args);
     let symbol = recv_ty.method_symbol(name);
     let recv = lower_expr(cx, receiver);
     let mut arg_ops = vec![recv];
@@ -843,6 +932,53 @@ fn lower_method_call(
         },
     );
     MirOperand::Copy(dst)
+}
+
+/// Queue a generic method's instantiation for the monomorphizer.
+///
+/// A method on a generic implementing type (`impl<T> Box<T> { fun
+/// unwrap(self) -> T }`) carries `Ty::Param`s in its declared `self` and
+/// return types, so it must be specialized for each concrete receiver,
+/// the same way a generic free function is specialized at a call site.
+/// The concrete receiver type fixes the implementing type's arguments;
+/// matching the declared implementing type against it (and each declared
+/// parameter type against the concrete argument type) builds the
+/// substitution. The worklist recomputes the symbol from the substituted
+/// implementing type, so no symbol is returned here. A concrete-receiver
+/// method is already a monomorphization root and needs no queuing.
+fn queue_generic_method(
+    cx: &mut LowerCx<'_>,
+    receiver_ty: &crate::tycheck::Ty,
+    name: &str,
+    args: &[HirExpr],
+) {
+    let Some(entries) = cx.decls.methods.get(name).cloned() else {
+        return;
+    };
+    let recv = super::substitute(receiver_ty, cx.subst);
+    let recv = recv.strip_self().clone();
+    // Pick the generic method whose implementing type matches the concrete
+    // receiver. A concrete-receiver method is skipped: it is reached
+    // through its own root. The structural match against the implementing
+    // type both selects the entry and binds the impl's parameters.
+    for entry in entries.iter().filter(|e| e.generic) {
+        let mut subst: super::SubstMap = super::SubstMap::new();
+        match_param(&entry.self_ty, &recv, &mut subst);
+        // Also bind any method-level parameters from the concrete argument
+        // types.
+        for (decl_ty, arg) in entry.params.iter().zip(args.iter()) {
+            let got = super::substitute(&arg.ty, cx.subst);
+            match_param(decl_ty, &got, &mut subst);
+        }
+        // The match must have grounded the implementing type to the
+        // receiver; if it did not (a non-matching impl of the same method
+        // name on another type), skip this entry.
+        let concrete_self = super::substitute(&entry.self_ty, &subst);
+        if MirType::from_ty(&concrete_self) == MirType::from_ty(&recv) {
+            cx.pending_calls.push((entry.decl, subst));
+            return;
+        }
+    }
 }
 
 /// Resolve a field's slot index from the receiver's struct type and the
