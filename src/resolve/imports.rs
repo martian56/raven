@@ -311,6 +311,17 @@ fn bind_import(
                     scope.insert(name, binding, import.span.clone())?;
                     continue;
                 }
+                // A bundled module may export an `extern "C"` function
+                // (for example `std/math` binding libm's `sqrt`). Externs
+                // keep their bare C name, so the merged declaration is
+                // already in module scope under the selector's name. The
+                // selector therefore needs no new binding.
+                if matches!(
+                    scope.lookup(name).map(|e| &e.binding),
+                    Some(Binding::Extern { .. })
+                ) {
+                    continue;
+                }
             }
             scope.insert(
                 name,

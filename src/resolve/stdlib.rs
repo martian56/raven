@@ -42,6 +42,7 @@ pub const BUNDLED_MODULES: &[(&str, &str)] = &[
         include_str!("../../stdlib/std/collections.rv"),
     ),
     ("cmp", include_str!("../../stdlib/std/cmp.rv")),
+    ("math", include_str!("../../stdlib/std/math.rv")),
 ];
 
 /// The prelude module that is implicitly imported into every program.
@@ -356,6 +357,11 @@ mod tests {
     #[test]
     fn string_module_is_bundled() {
         assert!(bundled_source("string").is_some());
+    }
+
+    #[test]
+    fn math_module_is_bundled() {
+        assert!(bundled_source("math").is_some());
     }
 
     #[test]

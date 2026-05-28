@@ -237,6 +237,27 @@ fn cmp_program_compiles_and_runs() {
 }
 
 #[test]
+fn math_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // std/math end to end. The transcendental and rounding functions bind
+    // to the C runtime math library through `extern "C"` (libm via the CRT),
+    // returning C `double` as Raven `Float`; the integer helpers and the
+    // `ln`/`abs` wrappers are pure Raven. Inputs are chosen so every Float
+    // result lands on a whole number, and the exp(ln(x)) round trip is
+    // asserted within a tolerance so the printed output is stable. Prints
+    // abs_int 5, min_int 3, max_int 7, clamp_int 10, pow_int 1024, then
+    // sqrt 4, pow 1024, abs 4, floor 3, ceil 4, round 3, trunc 3, the
+    // tolerance check true, sin 0, cos 1, and the two constant checks true.
+    compile_link_run_and_check(
+        "use_math.rv",
+        "5\n3\n7\n10\n1024\n4\n1024\n4\n3\n4\n3\n3\ntrue\n0\n1\ntrue\ntrue\n",
+        &runtime,
+    );
+}
+
+#[test]
 fn stdlib_string_method_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
