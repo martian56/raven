@@ -1,0 +1,85 @@
+// std/error: an `Error` value type plus ergonomic helpers over the
+// built-in `Result<T, E>`. Raven already has `Result`, `Option`, and the
+// `?` operator; this module adds a carryable error with a message and
+// optional kind, context chaining, and a few free functions over Result.
+
+import std/string
+
+struct Error {
+    kind: String,
+    message: String,
+}
+
+// Construct an error with an empty kind.
+fun error(msg: String) -> Error {
+    return Error { kind: "", message: msg }
+}
+
+// Construct an error tagged with a kind (for example "io" or "parse").
+fun error_kind(kind: String, msg: String) -> Error {
+    return Error { kind: kind, message: msg }
+}
+
+impl Error {
+    fun message(self) -> String {
+        return self.message
+    }
+
+    fun kind(self) -> String {
+        return self.kind
+    }
+
+    // A new error whose message is `ctx + ": " + message`, preserving the
+    // kind. Use it to add a higher-level explanation to a lower-level
+    // failure as it propagates.
+    fun with_context(self, ctx: String) -> Error {
+        return Error { kind: self.kind, message: ctx.concat(": ").concat(self.message) }
+    }
+}
+
+impl ToString for Error {
+    fun to_string(self) -> String {
+        if self.kind.length() == 0 {
+            return self.message
+        }
+        return self.kind.concat(": ").concat(self.message)
+    }
+}
+
+fun is_ok<T, E>(r: Result<T, E>) -> Bool {
+    return match r {
+        Ok(v) -> true,
+        Err(e) -> false,
+    }
+}
+
+fun is_err<T, E>(r: Result<T, E>) -> Bool {
+    return match r {
+        Ok(v) -> false,
+        Err(e) -> true,
+    }
+}
+
+// The Ok value, or `default` when the Result is an Err.
+fun unwrap_or<T, E>(r: Result<T, E>, default: T) -> T {
+    return match r {
+        Ok(v) -> v,
+        Err(e) -> default,
+    }
+}
+
+// Discard the error, mapping Ok to Some and Err to None.
+fun ok<T, E>(r: Result<T, E>) -> Option<T> {
+    return match r {
+        Ok(v) -> Some(v),
+        Err(e) -> None,
+    }
+}
+
+// Keep the error, mapping Err to Some and Ok to None.
+fun err<T, E>(r: Result<T, E>) -> Option<E> {
+    return match r {
+        Ok(v) -> None,
+        Err(e) -> Some(e),
+    }
+}
