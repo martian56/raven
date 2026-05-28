@@ -3,7 +3,7 @@
 use crate::hir::expr::HirBlock;
 use crate::hir::stmt::{HirAssignTarget, HirStmt, HirStmtKind};
 
-use super::super::ir::{MirOperand, MirRvalue, MirStatement};
+use super::super::ir::{MirOperand, MirRvalue};
 use super::{mir_ty, LowerCx};
 
 /// Lower one HIR statement into the current block.
@@ -67,11 +67,12 @@ pub fn lower_stmt(cx: &mut LowerCx<'_>, stmt: &HirStmt) {
                 );
             }
         },
-        HirStmtKind::Defer(_) => {
-            // Defer is preserved through HIR but its lowering is
-            // deferred to a follow-up pass; emit a Nop so the shape
-            // remains visible.
-            cx.builder.emit(cx.current, MirStatement::Nop);
+        HirStmtKind::Defer(e) => {
+            // Register the deferred expression. It is not emitted here:
+            // `lower_block` flushes it (in reverse order) when its
+            // enclosing block exits, and any `return` that escapes the
+            // block emits it first. See `docs/v2/specs/defer.md`.
+            cx.defers.push(e.clone());
         }
     }
 }

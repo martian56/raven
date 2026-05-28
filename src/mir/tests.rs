@@ -12,7 +12,7 @@ use crate::hir::lower_file;
 use crate::lexer::Lexer;
 use crate::mir::builder::FunctionBuilder;
 use crate::mir::ir::{
-    MirConstant, MirFunction, MirOperand, MirRvalue, MirStatement, MirTerminator,
+    MirBlock, MirConstant, MirFunction, MirOperand, MirRvalue, MirStatement, MirTerminator,
 };
 use crate::mir::ty::MirType;
 use crate::mir::{lower_program, MirProgram};
@@ -258,5 +258,93 @@ fn mir_type_mangling_is_stable() {
     assert_eq!(
         MirType::Result(Box::new(MirType::Int), Box::new(MirType::Str)).mangle(),
         "Result_Int_Str"
+    );
+}
+
+// ----- Defer lowering -----
+
+/// Collect the integer constant argument of each `print_int` call in the
+/// block, in statement order. Used to assert deferred call ordering.
+fn print_int_args_in_block(block: &MirBlock) -> Vec<i64> {
+    let mut out = Vec::new();
+    for s in &block.statements {
+        if let MirStatement::Assign {
+            rvalue: MirRvalue::Call { callee, args },
+            ..
+        } = s
+        {
+            if callee.mangled == "print_int" {
+                if let Some(MirOperand::Const(MirConstant::Int(n))) = args.first() {
+                    out.push(*n);
+                }
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn defer_runs_in_reverse_order_before_return() {
+    // Two defers at the function body level: print_int(1) then
+    // print_int(2). The block that ends in `return` must call them in
+    // reverse (LIFO) order: 2 then 1.
+    let prog = compile(
+        r#"
+        fun demo() -> Int {
+            defer print_int(1)
+            defer print_int(2)
+            return 0
+        }
+    "#,
+    );
+    let demo = find_fn(&prog, "demo");
+    let ret_block = demo
+        .blocks
+        .iter()
+        .find(|b| matches!(b.terminator, MirTerminator::Return(_)))
+        .expect("demo has a return block");
+    assert_eq!(
+        print_int_args_in_block(ret_block),
+        vec![2, 1],
+        "deferred calls must run LIFO before the return"
+    );
+}
+
+#[test]
+fn only_reached_defers_run_on_each_return_path() {
+    // The first defer precedes the early return, so it is scheduled on
+    // both paths. The second defer follows the early return, so the early
+    // path never schedules it. The early-path return block runs only [9];
+    // the fall-through return block runs [8, 9] (LIFO).
+    let prog = compile(
+        r#"
+        fun f(early: Bool) -> Int {
+            defer print_int(9)
+            if early {
+                return 1
+            }
+            defer print_int(8)
+            return 2
+        }
+    "#,
+    );
+    let f = find_fn(&prog, "f");
+
+    let return_blocks: Vec<Vec<i64>> = f
+        .blocks
+        .iter()
+        .filter(|b| matches!(b.terminator, MirTerminator::Return(_)))
+        .map(print_int_args_in_block)
+        .collect();
+
+    assert!(
+        return_blocks.contains(&vec![9]),
+        "the early-return path runs only the first defer, got {:?}",
+        return_blocks
+    );
+    assert!(
+        return_blocks.contains(&vec![8, 9]),
+        "the fall-through path runs both defers LIFO, got {:?}",
+        return_blocks
     );
 }

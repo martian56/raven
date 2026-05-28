@@ -138,6 +138,14 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
                 Some(v) => lower_expr(cx, v),
                 None => MirOperand::Const(MirConstant::Unit),
             };
+            // A return escapes every enclosing block, so run all pending
+            // deferred expressions in reverse order. The return value was
+            // already evaluated above, matching Go: the result is computed
+            // first, then defers run, then the function returns. Emitting
+            // them here (before the Return terminator) also places them
+            // before codegen's GC leave-frame epilogue, so deferred code
+            // can still touch rooted GC locals.
+            cx.emit_all_defers();
             if !cx.builder.is_closed(cx.current) {
                 cx.builder
                     .close_block(cx.current, MirTerminator::Return(op));
@@ -282,6 +290,11 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
 /// side effects; the trailing expression (or unit) becomes the result.
 pub fn lower_block(cx: &mut LowerCx<'_>, block: &HirBlock) -> MirOperand {
     cx.push_scope();
+    // Defers are function-scoped at the body level: a `defer` registered
+    // in a nested block runs when that block exits, and the mark records
+    // where this block's own defers begin so its normal-exit flush does
+    // not disturb defers owned by an enclosing block.
+    let defer_mark = cx.defer_mark();
     for s in &block.stmts {
         stmt::lower_stmt(cx, s);
     }
@@ -289,6 +302,17 @@ pub fn lower_block(cx: &mut LowerCx<'_>, block: &HirBlock) -> MirOperand {
         Some(tail) => lower_expr(cx, tail),
         None => MirOperand::Const(MirConstant::Unit),
     };
+    // Run the defers this block registered, in reverse order, on the
+    // normal fall-through exit. When control already diverged (a `return`,
+    // `break`, or `continue` closed the block and rolled a fresh dead
+    // block), the normal exit is unreachable: the escaping statement
+    // already emitted the defers it needed, so skip the flush rather than
+    // populate the dead block. Then drop them so an enclosing block does
+    // not re-run them on its own exit.
+    if !cx.diverged {
+        cx.emit_defers_from(defer_mark);
+    }
+    cx.defers.truncate(defer_mark);
     cx.pop_scope();
     result
 }

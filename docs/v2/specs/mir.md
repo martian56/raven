@@ -161,8 +161,16 @@ statements at the start of the arm block that pull payload fields out
 of the discriminant via `EnumCreate` projections (or struct field
 projections), one per pattern binding name.
 
+`defer e` does not emit at its own site. The lowering records `e` on a
+per-function pending stack and re-emits the pending set, in reverse
+(LIFO) order, at each block's normal exit and before every `return`. A
+`return` escapes all enclosing blocks and flushes the whole stack; a
+block's normal exit flushes only the defers registered inside it. See
+`docs/v2/specs/defer.md` for the full algorithm and worked examples.
+
 `?` propagation is already desugared to a match in HIR, so MIR has no
-special rule for it.
+special rule for it. Because the desugaring produces an ordinary
+`return`, defers flush on the `?` early-return path with no extra work.
 
 ## Monomorphization
 
@@ -231,8 +239,6 @@ visible in diffs.
   empty capture list. Full capture rewriting is tracked by issue #62.
 * `dyn Trait` virtual dispatch. Trait method calls are resolved to
   concrete functions during type checking; `dyn` lowering is issue #66.
-* `defer` execution: HIR retains a `Defer` statement variant; MIR
-  passes it through as a `Nop` for now and reserves a follow-up issue.
 * Async, generators, drop tracking, borrow analysis.
 * Cross-file monomorphization: the v2 pipeline still operates per file.
 

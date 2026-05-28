@@ -70,6 +70,28 @@ fn dyn_dispatch_program_compiles_and_runs() {
     compile_link_run_and_check("dyn_dispatch.rv", "1\n2\n", &runtime);
 }
 
+#[test]
+fn defer_order_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Two defers run in reverse declaration order at the return: the
+    // function schedules print_int(1) then print_int(2), so the program
+    // prints 2 then 1.
+    compile_link_run_and_check("defer_order.rv", "2\n1\n", &runtime);
+}
+
+#[test]
+fn defer_early_return_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Only reached defers run. f(true) takes the early return after the
+    // first defer, printing 9. f(false) reaches both defers and runs
+    // them LIFO at its return, printing 8 then 9. Combined: 9, 8, 9.
+    compile_link_run_and_check("defer_early_return.rv", "9\n8\n9\n", &runtime);
+}
+
 /// Return the runtime staticlib when a linker and the staticlib are both
 /// present, or skip with a diagnostic. Shared by every smoke case so the
 /// skip behavior stays identical.
