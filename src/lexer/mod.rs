@@ -15,6 +15,16 @@ use std::sync::Arc;
 use crate::error::{LexError, RavenError};
 use crate::span::Span;
 
+/// Private-use sentinel the lexer emits in front of an escaped dollar
+/// sign (`\$`). String interpolation splitting runs on the lexer's
+/// decoded literal text, where an escaped `\$` and a real `$` would
+/// otherwise be indistinguishable. The sentinel marks the dollar as
+/// escaped; the interpolation splitter strips it and treats the dollar
+/// as ordinary text. `U+E000` is in the Unicode private-use area and is
+/// reserved for this internal purpose. See
+/// `docs/v2/specs/interpolation.md`.
+pub const ESCAPED_DOLLAR_SENTINEL: char = '\u{E000}';
+
 /// Kinds of tokens produced by the lexer.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
@@ -697,6 +707,18 @@ impl Lexer {
             '\'' => {
                 self.bump();
                 Ok("'".to_string())
+            }
+            '$' => {
+                // `\$` escapes a dollar sign so that `\${...}` is a literal
+                // `${...}` and not an interpolation. The decoded text keeps
+                // a private-use sentinel (`U+E000`) in front of the dollar
+                // so the interpolation splitter, which runs later on the
+                // decoded literal, can tell an escaped `$` apart from a real
+                // `${` interpolation start. The sentinel is dropped when the
+                // splitter emits the literal text. See
+                // `docs/v2/specs/interpolation.md`.
+                self.bump();
+                Ok(format!("{}$", ESCAPED_DOLLAR_SENTINEL))
             }
             '0' => {
                 self.bump();

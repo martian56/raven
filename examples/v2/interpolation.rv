@@ -1,0 +1,7 @@
+fun main() {
+    let name = "Raven"
+    let a = 3
+    let b = 4
+    print("Hello, ${name}!")
+    print("sum is ${a + b}")
+}

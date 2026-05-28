@@ -59,11 +59,20 @@ intentionally short. New symbols are added as later issues need them.
 | `raven_panic` | `fn(msg_ptr: *const u8, msg_len: usize) -> !` | Writes the UTF-8 slice `msg_ptr[..msg_len]` to standard error with a `raven panic: ` prefix and a trailing newline, then exits the process with status 101 (Rust panic code). Does not return. |
 | `raven_print_str` | `fn(ptr: *const u8, len: usize)` | Writes the UTF-8 slice to standard output without a trailing newline. |
 | `raven_println_str` | `fn(ptr: *const u8, len: usize)` | Writes the UTF-8 slice to standard output followed by a single `\n`. |
+| `raven_string_from_bytes` | `fn(ptr: *const u8, len: usize) -> *mut String` | Allocates a GC-managed `String` and copies `len` UTF-8 bytes into it. A zero `len` or null `ptr` yields an empty string. The back-end promotes static string literals into heap String values with this. |
+| `raven_string_concat` | `fn(a: *const String, b: *const String) -> *mut String` | Allocates a fresh GC `String` whose bytes are the concatenation of `a` then `b`. Either input may be null (treated as empty). The interpolation concat chain folds through this. |
+| `raven_int_to_string` | `fn(value: i64) -> *mut String` | Allocates a GC `String` with the base-ten rendering of `value`; negatives carry a leading `-`, zero renders `0`. |
+| `raven_bool_to_string` | `fn(value: i8) -> *mut String` | Allocates a GC `String` of `true` or `false`; any nonzero `value` is `true`. |
+| `raven_float_to_string` | `fn(value: f64) -> *mut String` | Allocates a GC `String` with the default `{}` rendering of `value` (so `7.0` renders `7`). |
+| `raven_char_to_string` | `fn(value: u32) -> *mut String` | Allocates a GC `String` holding the single Unicode scalar `value`; an invalid code point renders the replacement character `U+FFFD`. |
 
 All string-shaped entries take a raw pointer plus length so the codegen
 back-end does not need to know any Rust slice layout. The bytes are
 assumed valid UTF-8; the runtime does not re-validate them, mirroring
-the type-checker invariant.
+the type-checker invariant. The `raven_*_to_string` and
+`raven_string_concat` constructors return GC pointers to `String`
+objects (tag `TAG_STRING`) allocated through `raven_gc_alloc`, so the
+collector traces and frees them like any other heap value.
 
 ## Object header layout
 

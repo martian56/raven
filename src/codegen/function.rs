@@ -391,14 +391,26 @@ fn lower_constant(
         MirConstant::Float(f) => Ok(Some(builder.ins().f64const(*f))),
         MirConstant::Char(c) => Ok(Some(builder.ins().iconst(types::I32, *c as i64))),
         MirConstant::Str(s) => {
-            // String constants in the MVP only flow into the print
-            // intrinsic. We materialize the pointer to the interned
-            // bytes here so the caller can read the address and the
-            // length companion separately.
-            let id = cx.intern_string(s.as_bytes())?;
+            // A string constant used as a value (assigned to a local,
+            // passed to concat, interpolated, ...) is promoted to a heap
+            // `String` so every `Str`-typed value is a real GC object the
+            // collector can trace and the runtime string functions can
+            // consume. The direct `print("literal")` fast path bypasses
+            // this by pattern matching the const operand before it
+            // reaches here, so a bare literal print stays allocation
+            // free.
+            let bytes = s.as_bytes();
+            let id = cx.intern_string(bytes)?;
             let local_id = cx.module().declare_data_in_func(id, builder.func);
             let ptr = cx.pointer_type();
-            Ok(Some(builder.ins().symbol_value(ptr, local_id)))
+            let bytes_ptr = builder.ins().symbol_value(ptr, local_id);
+            let len_val = builder.ins().iconst(ptr, bytes.len() as i64);
+            let func_id = cx
+                .runtime_id(intrinsics::RUNTIME_STRING_FROM_BYTES)
+                .expect("string-from-bytes runtime symbol declared at module init");
+            let fref = cx.module().declare_func_in_func(func_id, builder.func);
+            let inst = builder.ins().call(fref, &[bytes_ptr, len_val]);
+            Ok(Some(builder.inst_results(inst)[0]))
         }
     }
 }
@@ -904,6 +916,24 @@ fn lower_call(
     if intrinsics::is_intrinsic(&callee.mangled) {
         return lower_intrinsic(cx, builder, &callee.mangled, args, slots);
     }
+    // Interpolation desugaring emits calls to the string concat and
+    // per-type to-string intrinsics. Route each to its runtime symbol;
+    // every argument lowers as an ordinary operand (a String pointer or
+    // a scalar) and the call returns a heap String pointer.
+    if let Some(symbol) = intrinsics::interpolation_runtime_symbol(&callee.mangled) {
+        let mut arg_vals = Vec::with_capacity(args.len());
+        for a in args {
+            if let Some(v) = lower_operand(cx, builder, a, slots)? {
+                arg_vals.push(v);
+            }
+        }
+        let func_id = cx
+            .runtime_id(symbol)
+            .expect("interpolation runtime symbol declared at module init");
+        let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
+        let inst = builder.ins().call(local_ref, &arg_vals);
+        return Ok(builder.inst_results(inst).first().copied());
+    }
     let func_id = cx.function_id(&callee.mangled).ok_or_else(|| {
         CodegenError::Unsupported(format!("unresolved callee: {}", callee.mangled))
     })?;
@@ -934,7 +964,7 @@ fn lower_intrinsic(
                     args.len()
                 )));
             }
-            let (ptr_val, len_val) = lower_string_arg(cx, builder, &args[0])?;
+            let (ptr_val, len_val) = lower_string_arg(cx, builder, &args[0], slots)?;
             let func_id = cx
                 .runtime_id(intrinsics::RUNTIME_PRINTLN_STR)
                 .expect("runtime imports declared at module init");
@@ -968,28 +998,56 @@ fn lower_intrinsic(
 }
 
 /// Produce a `(pointer, length)` pair for a string argument that
-/// reaches an intrinsic.
+/// reaches the `print` intrinsic.
 ///
-/// Only literal strings are supported in the MVP. Non literal string
-/// values would need the full object layout from issue #65.
+/// A bare string literal takes the static fast path: the interned bytes
+/// and their compile-time length are passed straight to the runtime, so
+/// `print("literal")` performs no allocation. Any other string value is
+/// a heap `String` pointer (an interpolation result, a `let`-bound
+/// string, a returned string, ...); the bytes pointer and byte length
+/// are read from the String object through the runtime accessors so
+/// `print(someStringValue)` works uniformly.
 fn lower_string_arg(
     cx: &mut ModuleCx,
     builder: &mut FunctionBuilder<'_>,
     op: &MirOperand,
+    slots: &[LocalSlot],
 ) -> Result<(Value, Value), CodegenError> {
+    let ptr = cx.pointer_type();
     match op {
         MirOperand::Const(MirConstant::Str(s)) => {
             let bytes = s.as_bytes();
             let id = cx.intern_string(bytes)?;
             let local_id = cx.module().declare_data_in_func(id, builder.func);
-            let ptr = cx.pointer_type();
             let ptr_val = builder.ins().symbol_value(ptr, local_id);
             let len_val = builder.ins().iconst(ptr, bytes.len() as i64);
             Ok((ptr_val, len_val))
         }
-        _ => Err(CodegenError::Unsupported(
-            "print currently only accepts a string literal argument".into(),
-        )),
+        _ => {
+            // A heap String value. Load its byte buffer pointer and byte
+            // length from the object through the runtime accessors.
+            let string_ptr = require_value(
+                lower_operand(cx, builder, op, slots)?,
+                "print string argument",
+            )?;
+            let bytes_id = cx
+                .runtime_id(intrinsics::RUNTIME_STRING_BYTES)
+                .expect("string-bytes runtime symbol declared at module init");
+            let bytes_ref = cx.module().declare_func_in_func(bytes_id, builder.func);
+            let bytes_inst = builder.ins().call(bytes_ref, &[string_ptr]);
+            let ptr_val = builder.inst_results(bytes_inst)[0];
+
+            let len_id = cx
+                .runtime_id(intrinsics::RUNTIME_STRING_LEN)
+                .expect("string-len runtime symbol declared at module init");
+            let len_ref = cx.module().declare_func_in_func(len_id, builder.func);
+            let len_inst = builder.ins().call(len_ref, &[string_ptr]);
+            // raven_string_len returns a u32; widen it to pointer width
+            // for the `raven_println_str(ptr, len)` ABI.
+            let len_u32 = builder.inst_results(len_inst)[0];
+            let len_val = builder.ins().uextend(ptr, len_u32);
+            Ok((ptr_val, len_val))
+        }
     }
 }
 

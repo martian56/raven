@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use crate::ast::{
     AssignOp, BinaryOp, Block, Decl, DeclKind, ElseBranch, Expr, ExprKind, FieldInit, Function,
-    FunctionBody, LambdaBody, Stmt, StmtKind, UnaryOp,
+    FunctionBody, LambdaBody, Stmt, StmtKind, StrFragment, UnaryOp,
 };
 use crate::error::{RavenError, TypeError};
 use crate::resolve::{Binding, ResolvedFile, UseKey};
@@ -548,6 +548,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             ExprKind::Float(_) => Ok(Ty::Float),
             ExprKind::Bool(_) => Ok(Ty::Bool),
             ExprKind::Str(_) | ExprKind::BlockStr(_) | ExprKind::CStr(_) => Ok(Ty::Str),
+            ExprKind::InterpolatedString(fragments) => self.check_interpolated_string(fragments),
             ExprKind::Char(_) => Ok(Ty::Char),
             ExprKind::SelfLower => Ok(self
                 .self_ty
@@ -1556,6 +1557,51 @@ impl<'a, 'b> Checker<'a, 'b> {
     fn record(&mut self, span: &Span, ty: Ty) {
         self.types.types.insert(UseKey::from_span(span), ty);
     }
+
+    /// Type an interpolated string literal. The whole literal has type
+    /// `String`. Every embedded `${expr}` must resolve to a type that
+    /// can be converted to a string: `String` (identity), `Int`, `Bool`,
+    /// `Float`, or `Char`. Any other type is rejected with a hint that
+    /// points the user at converting to a `String` first.
+    ///
+    /// Each embedded expression is checked through `check_expr`, which
+    /// records its resolved type under its (synthetic, per-fragment)
+    /// span so HIR lowering can pick the right conversion.
+    fn check_interpolated_string(&mut self, fragments: &[StrFragment]) -> Result<Ty, RavenError> {
+        for frag in fragments {
+            let StrFragment::Expr(e) = frag else {
+                continue;
+            };
+            let ty = self.check_expr(e)?;
+            let resolved = self.infer.resolve(&ty);
+            let stripped = resolved.strip_self();
+            if matches!(stripped, Ty::Error) {
+                // Eat the cascade; an earlier error was already reported.
+                continue;
+            }
+            if !is_interpolatable(stripped) {
+                return Err(RavenError::ty(
+                    TypeError::Custom(format!(
+                        "values of type `{}` cannot be interpolated into a string",
+                        resolved
+                    )),
+                    e.span.clone(),
+                )
+                .with_hint(format!(
+                    "only `String`, `Int`, `Bool`, `Float`, and `Char` interpolate today; convert the `{}` value to a `String` first",
+                    resolved
+                )));
+            }
+        }
+        Ok(Ty::Str)
+    }
+}
+
+/// True when a value of type `ty` can be interpolated into a string via
+/// a known per-type conversion. The set is kept in sync with the runtime
+/// `raven_*_to_string` conversions wired up in codegen.
+fn is_interpolatable(ty: &Ty) -> bool {
+    matches!(ty, Ty::Str | Ty::Int | Ty::Bool | Ty::Float | Ty::Char)
 }
 
 /// Type rules for binary operators. Exposed so the assignment helper

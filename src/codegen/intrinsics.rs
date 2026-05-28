@@ -17,6 +17,39 @@ pub const RUNTIME_PRINTLN_STR: &str = "raven_println_str";
 /// Runtime C symbol the `print_int` intrinsic dispatches to.
 pub const RUNTIME_PRINTLN_INT: &str = "raven_println_int";
 
+/// Runtime C symbol building a heap `String` from a byte slice. Used to
+/// promote a string literal into a heap `String` value.
+pub const RUNTIME_STRING_FROM_BYTES: &str = "raven_string_from_bytes";
+
+/// Runtime C symbol returning a heap `String`'s byte buffer pointer.
+pub const RUNTIME_STRING_BYTES: &str = "raven_string_bytes";
+
+/// Runtime C symbol returning a heap `String`'s byte length.
+pub const RUNTIME_STRING_LEN: &str = "raven_string_len";
+
+/// Runtime C symbols backing the interpolation desugaring intrinsics.
+/// Each MIR mangled name on the left dispatches to the runtime symbol on
+/// the right; see [`crate::mir::intrinsics`].
+pub const RUNTIME_STRING_CONCAT: &str = "raven_string_concat";
+pub const RUNTIME_INT_TO_STRING: &str = "raven_int_to_string";
+pub const RUNTIME_BOOL_TO_STRING: &str = "raven_bool_to_string";
+pub const RUNTIME_FLOAT_TO_STRING: &str = "raven_float_to_string";
+pub const RUNTIME_CHAR_TO_STRING: &str = "raven_char_to_string";
+
+/// Map a MIR interpolation intrinsic mangled name to the runtime C
+/// symbol it lowers to, or `None` when `mangled` is not one of them.
+pub fn interpolation_runtime_symbol(mangled: &str) -> Option<&'static str> {
+    use crate::mir::intrinsics as mir_intr;
+    Some(match mangled {
+        mir_intr::STR_CONCAT => RUNTIME_STRING_CONCAT,
+        mir_intr::INT_TO_STRING => RUNTIME_INT_TO_STRING,
+        mir_intr::BOOL_TO_STRING => RUNTIME_BOOL_TO_STRING,
+        mir_intr::FLOAT_TO_STRING => RUNTIME_FLOAT_TO_STRING,
+        mir_intr::CHAR_TO_STRING => RUNTIME_CHAR_TO_STRING,
+        _ => return None,
+    })
+}
+
 /// Runtime C symbol allocating a struct or enum value body.
 pub const RUNTIME_STRUCT_NEW: &str = "raven_struct_new";
 

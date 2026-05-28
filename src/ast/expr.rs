@@ -28,10 +28,16 @@ pub enum ExprKind {
     Float(f64),
     /// Boolean literal.
     Bool(bool),
-    /// Regular `"..."` string literal. Interpolation segments are kept
-    /// verbatim; splitting is tracked in a later issue.
+    /// Regular `"..."` string literal with no `${...}` interpolation.
     Str(String),
-    /// Triple quoted block string literal.
+    /// A string literal containing one or more `${...}` interpolation
+    /// segments, split into an ordered run of literal-text and embedded
+    /// expression fragments. The parser produces this only when at least
+    /// one real (non-escaped) `${...}` is present; otherwise the literal
+    /// stays a plain `Str`. See `docs/v2/specs/interpolation.md`.
+    InterpolatedString(Vec<StrFragment>),
+    /// Triple quoted block string literal. Block strings are raw and are
+    /// never interpolated.
     BlockStr(String),
     /// Character literal.
     Char(char),
@@ -135,6 +141,19 @@ pub enum ExprKind {
         body: LambdaBody,
         params_inferred: bool,
     },
+}
+
+/// One fragment of an interpolated string literal. An interpolated
+/// string is an ordered sequence of these: literal text chunks and
+/// embedded expressions, in source order.
+#[derive(Debug, Clone, PartialEq)]
+pub enum StrFragment {
+    /// A run of literal characters between embedded expressions. Already
+    /// escape-decoded by the lexer (and with any `\$` un-escaped).
+    Literal(String),
+    /// An embedded `${expr}` expression, parsed as a normal Raven
+    /// expression.
+    Expr(Box<Expr>),
 }
 
 /// Unary prefix operators.

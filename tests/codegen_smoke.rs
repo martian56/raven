@@ -71,6 +71,17 @@ fn dyn_dispatch_program_compiles_and_runs() {
 }
 
 #[test]
+fn interpolation_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // String interpolation end to end: a String fragment (`name`) and an
+    // arithmetic Int fragment (`a + b`) are converted, concatenated, and
+    // printed. Prints `Hello, Raven!` then `sum is 7`.
+    compile_link_run_and_check("interpolation.rv", "Hello, Raven!\nsum is 7\n", &runtime);
+}
+
+#[test]
 fn defer_order_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

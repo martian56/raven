@@ -121,6 +121,102 @@ pub extern "C" fn raven_string_concat(a: *const String, b: *const String) -> *mu
     out
 }
 
+/// Build a GC-managed `String` from a borrowed UTF-8 byte slice.
+///
+/// Allocates a fresh `String` with capacity equal to `len`, copies the
+/// `len` bytes from `ptr`, and sets the length. A zero `len` (or null
+/// `ptr`) yields an empty string. Returns null on allocation failure.
+///
+/// The back-end calls this to promote a static string literal into a
+/// heap String value so every `String`-typed local is a real GC object
+/// the collector can trace and the concat path can consume.
+///
+/// # Safety
+///
+/// `ptr` must point to `len` initialized UTF-8 bytes, or `len` must be
+/// zero.
+#[no_mangle]
+pub extern "C" fn raven_string_from_bytes(ptr: *const u8, len: usize) -> *mut String {
+    let len_u32 = match u32::try_from(len) {
+        Ok(v) => v,
+        Err(_) => return ptr::null_mut(),
+    };
+    let out = raven_string_new(len_u32);
+    if out.is_null() {
+        return ptr::null_mut();
+    }
+    if len_u32 > 0 && !ptr.is_null() {
+        // SAFETY: out has `len` bytes of capacity, and the caller
+        // guarantees `ptr` points to `len` initialized bytes.
+        unsafe {
+            ptr::copy_nonoverlapping(ptr, (*out).bytes, len);
+            (*out).header.len = len_u32;
+        }
+    }
+    out
+}
+
+/// Allocate a GC `String` whose bytes are the decimal rendering of a
+/// signed 64-bit integer. Negatives carry a leading `-`; zero renders
+/// as `0`.
+#[no_mangle]
+pub extern "C" fn raven_int_to_string(value: i64) -> *mut String {
+    let mut buf = [0u8; 20];
+    let s = format_i64_into(value, &mut buf);
+    raven_string_from_bytes(s.as_ptr(), s.len())
+}
+
+/// Allocate a GC `String` rendering of a boolean. The C ABI passes the
+/// value as an `i8`; any nonzero value is `true`.
+#[no_mangle]
+pub extern "C" fn raven_bool_to_string(value: i8) -> *mut String {
+    let s: &[u8] = if value != 0 { b"true" } else { b"false" };
+    raven_string_from_bytes(s.as_ptr(), s.len())
+}
+
+/// Allocate a GC `String` rendering of an `f64`, matching Rust's
+/// default `{}` float formatting (so `7.0` renders as `7`).
+#[no_mangle]
+pub extern "C" fn raven_float_to_string(value: f64) -> *mut String {
+    let rendered = format!("{}", value);
+    raven_string_from_bytes(rendered.as_ptr(), rendered.len())
+}
+
+/// Allocate a GC `String` holding a single Unicode scalar value. The C
+/// ABI passes the `Char` as a `u32` code point; an invalid code point
+/// renders as the Unicode replacement character.
+#[no_mangle]
+pub extern "C" fn raven_char_to_string(value: u32) -> *mut String {
+    let ch = char::from_u32(value).unwrap_or('\u{FFFD}');
+    let mut buf = [0u8; 4];
+    let s = ch.encode_utf8(&mut buf);
+    raven_string_from_bytes(s.as_ptr(), s.len())
+}
+
+/// Format `value` into `buf` as base-ten ASCII and return the written
+/// slice. Twenty bytes hold the widest `i64` (`-9223372036854775808`).
+/// Mirrors the `format_i64` helper in the crate root; kept local so the
+/// string conversions do not reach across modules.
+fn format_i64_into(value: i64, buf: &mut [u8; 20]) -> &str {
+    let negative = value < 0;
+    let mut magnitude = value.unsigned_abs();
+    let mut pos = buf.len();
+    loop {
+        pos -= 1;
+        buf[pos] = b'0' + (magnitude % 10) as u8;
+        magnitude /= 10;
+        if magnitude == 0 {
+            break;
+        }
+    }
+    if negative {
+        pos -= 1;
+        buf[pos] = b'-';
+    }
+    // SAFETY: every written byte is an ASCII digit or '-'.
+    unsafe { std::str::from_utf8_unchecked(&buf[pos..]) }
+}
+
 /// Size, in bytes, of the in-memory `String` object on the host
 /// target. Used by constructors and by the collector's free routine.
 pub(crate) const fn size_of_string() -> usize {
@@ -263,6 +359,111 @@ mod tests {
     fn null_accessors_are_safe() {
         assert_eq!(raven_string_len(std::ptr::null()), 0);
         assert!(raven_string_bytes(std::ptr::null()).is_null());
+    }
+
+    /// Read a String object's bytes into a Rust `String` for assertions.
+    fn read(s: *const String) -> std::string::String {
+        let len = raven_string_len(s) as usize;
+        if len == 0 {
+            return std::string::String::new();
+        }
+        // SAFETY: s is a live String with `len` valid UTF-8 bytes.
+        let slice = unsafe { std::slice::from_raw_parts(raven_string_bytes(s), len) };
+        std::str::from_utf8(slice).unwrap().to_string()
+    }
+
+    #[test]
+    fn from_bytes_copies_payload() {
+        let src = b"hello";
+        let s = raven_string_from_bytes(src.as_ptr(), src.len());
+        assert!(!s.is_null());
+        assert_eq!(read(s), "hello");
+        unsafe { drop_string_for_test(s) };
+    }
+
+    #[test]
+    fn from_bytes_empty_is_empty_string() {
+        let s = raven_string_from_bytes(std::ptr::null(), 0);
+        assert!(!s.is_null());
+        assert_eq!(raven_string_len(s), 0);
+        assert_eq!(read(s), "");
+        unsafe { drop_string_for_test(s) };
+    }
+
+    #[test]
+    fn int_to_string_handles_zero_and_negatives() {
+        for (value, want) in [
+            (0i64, "0"),
+            (7, "7"),
+            (-7, "-7"),
+            (i64::MAX, "9223372036854775807"),
+            (i64::MIN, "-9223372036854775808"),
+        ] {
+            let s = raven_int_to_string(value);
+            assert!(!s.is_null());
+            assert_eq!(read(s), want, "int_to_string({value})");
+            unsafe { drop_string_for_test(s) };
+        }
+    }
+
+    #[test]
+    fn bool_to_string_renders_true_and_false() {
+        let t = raven_bool_to_string(1);
+        let f = raven_bool_to_string(0);
+        // Any nonzero byte is true.
+        let other = raven_bool_to_string(-1);
+        assert_eq!(read(t), "true");
+        assert_eq!(read(f), "false");
+        assert_eq!(read(other), "true");
+        unsafe {
+            drop_string_for_test(t);
+            drop_string_for_test(f);
+            drop_string_for_test(other);
+        }
+    }
+
+    #[test]
+    fn float_to_string_matches_default_formatting() {
+        let whole = raven_float_to_string(7.0);
+        let frac = raven_float_to_string(3.5);
+        let neg = raven_float_to_string(-0.25);
+        assert_eq!(read(whole), "7");
+        assert_eq!(read(frac), "3.5");
+        assert_eq!(read(neg), "-0.25");
+        unsafe {
+            drop_string_for_test(whole);
+            drop_string_for_test(frac);
+            drop_string_for_test(neg);
+        }
+    }
+
+    #[test]
+    fn char_to_string_encodes_ascii_and_multibyte() {
+        let a = raven_char_to_string('A' as u32);
+        let euro = raven_char_to_string('€' as u32);
+        let invalid = raven_char_to_string(0xD800); // lone surrogate
+        assert_eq!(read(a), "A");
+        assert_eq!(read(euro), "€");
+        assert_eq!(read(invalid), "\u{FFFD}");
+        unsafe {
+            drop_string_for_test(a);
+            drop_string_for_test(euro);
+            drop_string_for_test(invalid);
+        }
+    }
+
+    #[test]
+    fn concat_result_is_gc_managed_and_correct() {
+        let a = raven_string_from_bytes(b"foo".as_ptr(), 3);
+        let b = raven_string_from_bytes(b"bar".as_ptr(), 3);
+        let joined = raven_string_concat(a, b);
+        assert!(!joined.is_null());
+        assert_eq!(read(joined), "foobar");
+        unsafe {
+            drop_string_for_test(joined);
+            drop_string_for_test(a);
+            drop_string_for_test(b);
+        }
     }
 
     /// Test-only deallocator. The real free path lands with the GC

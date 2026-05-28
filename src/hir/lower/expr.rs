@@ -67,7 +67,25 @@ pub(crate) fn lower_expr(
         ExprKind::Int(i) => HirExprKind::Int(*i),
         ExprKind::Float(f) => HirExprKind::Float(*f),
         ExprKind::Bool(b) => HirExprKind::Bool(*b),
-        ExprKind::Str(s) | ExprKind::BlockStr(s) => lower_string_literal(s, &span),
+        ExprKind::Str(s) | ExprKind::BlockStr(s) => HirExprKind::Str(s.clone()),
+        ExprKind::InterpolatedString(fragments) => {
+            let mut parts = Vec::with_capacity(fragments.len());
+            for frag in fragments {
+                match frag {
+                    crate::ast::StrFragment::Literal(text) => {
+                        parts.push(InterpolPart::Text(text.clone()))
+                    }
+                    crate::ast::StrFragment::Expr(e) => {
+                        // Each fragment was parsed as a real expression and
+                        // type-checked under its own span, so it lowers like
+                        // any other value. Lowering to MIR turns each part
+                        // into a per-type to-string conversion and a concat.
+                        parts.push(InterpolPart::Expr(lower_expr(e, &Ty::Str, cx)?));
+                    }
+                }
+            }
+            HirExprKind::Interpolate(parts)
+        }
         ExprKind::CStr(s) => HirExprKind::CStr(s.clone()),
         ExprKind::Char(c) => HirExprKind::Char(*c),
         ExprKind::SelfLower => HirExprKind::SelfValue,
@@ -343,93 +361,6 @@ fn lower_binop(op: BinaryOp) -> HirBinaryOp {
         BinaryOp::BitXor => HirBinaryOp::BitXor,
         BinaryOp::Shl => HirBinaryOp::Shl,
         BinaryOp::Shr => HirBinaryOp::Shr,
-    }
-}
-
-/// Inspect a raw string literal: if it contains `${...}` it is an
-/// interpolation; otherwise it is a plain string.
-fn lower_string_literal(s: &str, span: &Span) -> HirExprKind {
-    if !s.contains("${") {
-        return HirExprKind::Str(s.to_string());
-    }
-    let parts = split_interpolation(s, span);
-    if parts.iter().all(|p| matches!(p, InterpolPart::Text(_))) {
-        // No actual `${...}` once we look closely (e.g. `\$`).
-        let mut buf = String::new();
-        for p in &parts {
-            if let InterpolPart::Text(t) = p {
-                buf.push_str(t);
-            }
-        }
-        HirExprKind::Str(buf)
-    } else {
-        HirExprKind::Interpolate(parts)
-    }
-}
-
-/// Split the raw contents of a `StringLit` into text and expression
-/// fragments. Embedded expressions are stored as their textual source
-/// inside an `Expr` placeholder; the lowering pass cannot re-parse
-/// them in isolation without re-running the full pipeline, so this
-/// release ships them as raw `Ident` placeholders when the embedded
-/// snippet parses as a bare identifier and as text otherwise. The
-/// embedded form is documented in `docs/v2/specs/hir.md`.
-fn split_interpolation(s: &str, span: &Span) -> Vec<InterpolPart> {
-    let mut parts = Vec::new();
-    let mut text = String::new();
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'$' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
-            // Find matching `}`.
-            let start = i + 2;
-            let mut depth = 1;
-            let mut j = start;
-            while j < bytes.len() && depth > 0 {
-                match bytes[j] {
-                    b'{' => depth += 1,
-                    b'}' => depth -= 1,
-                    _ => {}
-                }
-                if depth == 0 {
-                    break;
-                }
-                j += 1;
-            }
-            if depth == 0 && j < bytes.len() {
-                if !text.is_empty() {
-                    parts.push(InterpolPart::Text(std::mem::take(&mut text)));
-                }
-                let snippet = &s[start..j];
-                parts.push(InterpolPart::Expr(make_snippet_expr(snippet, span)));
-                i = j + 1;
-                continue;
-            }
-            // Unterminated; fall through and treat as text.
-            text.push(s[i..].chars().next().unwrap_or('$'));
-            i += 1;
-        } else {
-            let c = s[i..].chars().next().unwrap_or(' ');
-            text.push(c);
-            i += c.len_utf8();
-        }
-    }
-    if !text.is_empty() {
-        parts.push(InterpolPart::Text(text));
-    }
-    parts
-}
-
-/// Wrap a literal snippet as an HIR `Ident` placeholder. The MIR pass
-/// is responsible for performing the real string-conversion call; for
-/// now we expose the snippet verbatim so snapshot tests can show what
-/// fragments the splitter produced. The span of the surrounding string
-/// is reused because the lexer keeps the literal as one token.
-fn make_snippet_expr(snippet: &str, span: &Span) -> HirExpr {
-    HirExpr {
-        kind: HirExprKind::Ident(snippet.trim().to_string()),
-        ty: Ty::Str,
-        span: span.clone(),
     }
 }
 
