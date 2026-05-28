@@ -180,6 +180,15 @@ The packaging note in `CLAUDE.md` about shipping `lib/*.rv` does not apply
 to bundled modules: they are compiled into the binary, so nothing extra
 ships.
 
+## Modules
+
+* `std/io`: input and output. Documented above.
+* `std/string`: byte-oriented string utilities (case, search, trim,
+  substring, replace, ...). See `std-string.md`. It is the first module
+  whose functions call one another, which the stdlib expansion supports
+  by rewriting intra-module sibling calls to their namespaced names; see
+  that spec for the detail.
+
 ## Out of scope
 
 * The aliased import form `import std/io as io` with `io.member(...)`
