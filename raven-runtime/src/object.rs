@@ -8,7 +8,14 @@
 //! advance, dispatching on the `tag` field only when it needs the
 //! payload shape.
 //!
-//! See `docs/v2/specs/runtime.md` for the contract.
+//! See `docs/v2/specs/runtime.md` for the contract and
+//! `docs/v2/specs/object-layout.md` for per-kind payload layouts.
+
+pub mod string;
+
+pub use string::{
+    raven_string_bytes, raven_string_concat, raven_string_len, raven_string_new, String,
+};
 
 /// Alignment, in bytes, used for every heap object the runtime
 /// allocates. The header itself is 4-byte aligned, but objects are
