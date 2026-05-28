@@ -26,7 +26,7 @@
     )
     (entry bb0)
     (bb0
-      (unreachable)
+      (return _0)
     )
   )
   (fn "id_int" origin="id_int" ret=Int
@@ -36,7 +36,7 @@
     )
     (entry bb0)
     (bb0
-      (unreachable)
+      (return _0)
     )
   )
 )

@@ -1,0 +1,26 @@
+// Dynamic dispatch through `dyn Trait`. Each concrete type implements
+// the trait; passing it where `dyn Speak` is expected boxes it as a fat
+// pointer, and the call dispatches through the vtable. Prints 1 then 2.
+trait Speak {
+    fun sound(self) -> Int
+}
+
+struct Dog {}
+struct Cat {}
+
+impl Speak for Dog {
+    fun sound(self) -> Int = 1
+}
+
+impl Speak for Cat {
+    fun sound(self) -> Int = 2
+}
+
+fun describe(s: dyn Speak) -> Int = s.sound()
+
+fun main() {
+    let d = Dog {}
+    let c = Cat {}
+    print_int(describe(d))
+    print_int(describe(c))
+}

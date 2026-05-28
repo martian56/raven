@@ -56,6 +56,13 @@ pub struct ModuleCx {
     descriptors: HashMap<String, StructDescriptor>,
     /// Counter handing out the next struct descriptor id.
     next_type_id: u32,
+    /// Emitted vtables keyed by `<concrete_type>$<trait>`. Each value is
+    /// the read-only data symbol holding the method pointer slots in the
+    /// trait's declaration order. Interned so one `(type, trait)` pair
+    /// shares a single vtable across every coercion site.
+    vtables: HashMap<String, DataId>,
+    /// Counter handing out unique vtable data symbol names.
+    vtable_counter: u32,
 }
 
 /// The exported `main` shim plus the Raven `main` it dispatches to.
@@ -85,7 +92,55 @@ impl ModuleCx {
             main_entry: None,
             descriptors: HashMap::new(),
             next_type_id: 0,
+            vtables: HashMap::new(),
+            vtable_counter: 0,
         }
+    }
+
+    /// Intern and emit the vtable for a `(concrete_type, trait)` pair.
+    ///
+    /// `key` is the stable identity `<concrete_type_mangle>$<trait>`.
+    /// `method_symbols` is the list of method symbols (the concrete
+    /// type's implementations) in the trait's declaration order, which is
+    /// the vtable's slot order. The first call emits a read-only data
+    /// object with one pointer-sized slot per method, each carrying a
+    /// relocation to the method symbol; later calls return the same id.
+    ///
+    /// Method symbols must already be declared as functions (they are,
+    /// because every reachable impl method is in the function table).
+    pub fn intern_vtable(
+        &mut self,
+        key: &str,
+        method_symbols: &[String],
+    ) -> Result<DataId, CodegenError> {
+        if let Some(id) = self.vtables.get(key) {
+            return Ok(*id);
+        }
+        let ptr_bytes = self.pointer_type().bytes() as usize;
+        let name = format!("__raven_vtable_{}", self.vtable_counter);
+        self.vtable_counter += 1;
+        let data_id = self
+            .module
+            .declare_data(&name, Linkage::Local, false, false)?;
+
+        let mut desc = DataDescription::new();
+        // A zeroed buffer of N pointer slots; each slot's bits are filled
+        // by a function-address relocation written below.
+        let total = ptr_bytes * method_symbols.len().max(1);
+        desc.define(vec![0u8; total].into_boxed_slice());
+        for (i, sym) in method_symbols.iter().enumerate() {
+            let func_id = self.function_id(sym).ok_or_else(|| {
+                CodegenError::Unsupported(format!(
+                    "vtable slot {} references undefined method symbol `{}`",
+                    i, sym
+                ))
+            })?;
+            let func_ref = self.module.declare_func_in_data(func_id, &mut desc);
+            desc.write_function_addr((i * ptr_bytes) as u32, func_ref);
+        }
+        self.module.define_data(data_id, &desc)?;
+        self.vtables.insert(key.to_string(), data_id);
+        Ok(data_id)
     }
 
     /// Return the descriptor id for an aggregate type, assigning a fresh

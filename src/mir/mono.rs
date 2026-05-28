@@ -32,10 +32,16 @@ type Item = (DeclId, Vec<Ty>);
 /// worklist to retrieve bodies.
 type HirIndex<'a> = HashMap<DeclId, &'a HirFn>;
 
+/// Map from a function declaration to the base symbol the back end uses.
+/// Free functions keep their source name; impl methods get a per-type
+/// symbol (`<TypeMangle>$<method>`) so several types implementing a
+/// method of the same name do not collide.
+type SymbolIndex = HashMap<DeclId, String>;
+
 /// Run the full monomorphization pass.
 pub fn monomorphize(hir: &HirProgram) -> Result<MirProgram, RavenError> {
     let mut program = MirProgram::new();
-    let (index, roots) = collect_roots(hir);
+    let (index, roots, symbols) = collect_roots(hir);
     let decls = collect_decls(hir);
 
     let mut seen: HashSet<(DeclId, Vec<MangleKey>)> = HashSet::new();
@@ -50,8 +56,12 @@ pub fn monomorphize(hir: &HirProgram) -> Result<MirProgram, RavenError> {
             Some(f) => *f,
             None => continue,
         };
+        let base = symbols
+            .get(&decl)
+            .cloned()
+            .unwrap_or_else(|| hir_fn.name.clone());
         let subst = build_subst(hir_fn, &args);
-        let mangled = mangle_name(&hir_fn.name, &args);
+        let mangled = mangle_name(&base, &args);
         let (mir_fn, pending) = lower_function(mangled, hir_fn, &subst, &decls);
         program.functions.push(mir_fn);
         for next in pending {
@@ -81,10 +91,12 @@ fn collect_decls(hir: &HirProgram) -> DeclTables<'_> {
 }
 
 /// Collect every top-level function plus impl methods. Returns the
-/// HIR lookup table and the initial worklist of non-generic roots.
-fn collect_roots<'a>(hir: &'a HirProgram) -> (HirIndex<'a>, Vec<Item>) {
+/// HIR lookup table, the initial worklist of non-generic roots, and the
+/// per-declaration base symbol used by the back end.
+fn collect_roots<'a>(hir: &'a HirProgram) -> (HirIndex<'a>, Vec<Item>, SymbolIndex) {
     let mut index: HirIndex<'a> = HashMap::new();
     let mut roots: Vec<Item> = Vec::new();
+    let mut symbols: SymbolIndex = HashMap::new();
     let mut next_id: usize = 0;
 
     for item in &hir.items {
@@ -98,10 +110,16 @@ fn collect_roots<'a>(hir: &'a HirProgram) -> (HirIndex<'a>, Vec<Item>) {
                 }
             }
             HirItemKind::Impl(imp) => {
+                // Each method gets a per-type symbol so several types
+                // implementing a method of the same name do not collide
+                // at the object level. The symbol matches what a call
+                // site recomputes from the receiver type.
+                let type_mangle = super::ty::MirType::from_ty(&imp.self_ty).mangle();
                 for m in &imp.methods {
                     let id = DeclId(next_id);
                     next_id += 1;
                     index.insert(id, m);
+                    symbols.insert(id, super::ty::method_symbol(&type_mangle, &m.name));
                     if !is_generic(m) && m.body.is_some() {
                         roots.push((id, Vec::new()));
                     }
@@ -120,7 +138,7 @@ fn collect_roots<'a>(hir: &'a HirProgram) -> (HirIndex<'a>, Vec<Item>) {
             _ => {}
         }
     }
-    (index, roots)
+    (index, roots, symbols)
 }
 
 /// Best-effort generic test. A function counts as generic if any of

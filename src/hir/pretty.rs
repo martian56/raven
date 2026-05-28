@@ -449,6 +449,22 @@ fn pretty_expr(buf: &mut String, expr: &HirExpr, depth: usize) {
             indent(buf, depth);
             buf.push_str(")\n");
         }
+        HirExprKind::DynCoerce {
+            trait_name,
+            value,
+            concrete_ty,
+            ..
+        } => {
+            writeln!(
+                buf,
+                "(dyn-coerce trait={} from={} ty={}",
+                trait_name, concrete_ty, expr.ty
+            )
+            .unwrap();
+            pretty_expr(buf, value, depth + 1);
+            indent(buf, depth);
+            buf.push_str(")\n");
+        }
     }
 }
 

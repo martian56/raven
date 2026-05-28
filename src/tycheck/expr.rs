@@ -283,7 +283,31 @@ impl<'a, 'b> Checker<'a, 'b> {
 
     /// Unify two types under the inference context. On failure, raise a
     /// TypeMismatch at `span` with a suggestion hint when possible.
+    ///
+    /// Before reporting a mismatch this checks for a `dyn Trait` unsizing
+    /// coercion: a concrete struct or enum used where `dyn Trait` is
+    /// expected, where that type implements the trait. When it applies,
+    /// the coercion is recorded at `span` (the coerced expression's span)
+    /// and unification succeeds.
     fn unify(&mut self, expected: &Ty, actual: &Ty, span: &Span) -> Result<(), RavenError> {
+        let exp_resolved = self.infer.resolve(expected);
+        if let Ty::Dyn { name, methods } = exp_resolved.strip_self() {
+            let act_resolved = self.infer.resolve(actual);
+            let concrete = act_resolved.strip_self().clone();
+            if self.implements_trait(&concrete, name) {
+                self.types.record_coercion(
+                    span,
+                    crate::tycheck::DynCoercion {
+                        trait_name: name.clone(),
+                        methods: methods.clone(),
+                        concrete_ty: concrete,
+                    },
+                );
+                return Ok(());
+            }
+            // A `dyn Trait` target with a concrete actual that does not
+            // implement the trait: fall through to the mismatch report.
+        }
         match self.infer.unify(expected, actual, span) {
             Ok(()) => Ok(()),
             Err(e) => {
@@ -327,6 +351,20 @@ impl<'a, 'b> Checker<'a, 'b> {
                 Err(err)
             }
         }
+    }
+
+    /// Whether `concrete` has a trait impl for the trait named `trait_name`.
+    /// Used to validate a `dyn Trait` unsizing coercion. The match is by
+    /// the implementing type's identity (ignoring `Self` wrappers) and the
+    /// impl's recorded trait name.
+    fn implements_trait(&self, concrete: &Ty, trait_name: &str) -> bool {
+        if concrete.is_error() {
+            return true;
+        }
+        self.env.impls.iter().any(|imp| {
+            imp.trait_name.as_deref() == Some(trait_name)
+                && super::env::tys_equal(&imp.self_ty, concrete)
+        })
     }
 
     /// After body checking, walk every recorded type and resolve any
@@ -1024,6 +1062,17 @@ impl<'a, 'b> Checker<'a, 'b> {
             return Ok(Ty::Error);
         }
 
+        // A `dyn Trait` receiver dispatches dynamically. The method must
+        // be one of the trait's own methods; its signature comes from the
+        // trait declaration with `Self` standing for the erased concrete
+        // type. The return type is the trait method's return type.
+        if let Ty::Dyn {
+            name: trait_name, ..
+        } = &recv_stripped
+        {
+            return self.check_dyn_method_call(trait_name, name, args, span);
+        }
+
         // Built in methods first (Option/Result/List/String). These are
         // matched directly against the resolved receiver shape; their
         // signatures already substitute the element type.
@@ -1159,6 +1208,58 @@ impl<'a, 'b> Checker<'a, 'b> {
             self.unify(pt, &a, &arg.span)?;
         }
         Ok(substitute(&sig.ret, &full))
+    }
+
+    /// Check a method call whose receiver is a `dyn Trait` value. The
+    /// method must belong to the trait. Argument types are checked against
+    /// the trait method's declared parameter types (with `Self` left
+    /// abstract, which is sound because object-safe methods never use
+    /// `Self` outside the receiver). The result is the method's return
+    /// type, with any `Self` return collapsed to the trait object type so
+    /// the value stays usable.
+    fn check_dyn_method_call(
+        &mut self,
+        trait_name: &str,
+        method: &str,
+        args: &[Expr],
+        span: &Span,
+    ) -> Result<Ty, RavenError> {
+        let sig = self
+            .env
+            .traits
+            .values()
+            .find(|t| t.name == trait_name)
+            .and_then(|t| t.methods.get(method).cloned());
+        let Some(sig) = sig else {
+            return Err(RavenError::ty(
+                TypeError::UndefinedMethod {
+                    receiver_ty: format!("dyn {}", trait_name),
+                    method: method.to_string(),
+                },
+                span.clone(),
+            ));
+        };
+        let user_params: Vec<Ty> = sig
+            .params
+            .iter()
+            .filter(|t| !matches!(t, Ty::SelfTy(_)))
+            .cloned()
+            .collect();
+        if user_params.len() != args.len() {
+            return Err(RavenError::ty(
+                TypeError::WrongArity {
+                    func: method.to_string(),
+                    expected: user_params.len(),
+                    actual: args.len(),
+                },
+                span.clone(),
+            ));
+        }
+        for (pt, arg) in user_params.iter().zip(args.iter()) {
+            let a = self.check_expr(arg)?;
+            self.unify(pt, &a, &arg.span)?;
+        }
+        Ok(sig.ret.clone())
     }
 
     fn check_field(&mut self, receiver: &Expr, name: &str, span: &Span) -> Result<Ty, RavenError> {

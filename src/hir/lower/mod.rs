@@ -149,9 +149,14 @@ fn lower_decl(decl: &Decl, cx: &LowerCtx<'_>) -> Result<Option<HirItem>, RavenEr
             }))
         }
         DeclKind::Trait(t) => {
+            // A trait method's `Self` is abstract. The trait's HIR body is
+            // never lowered to MIR (only concrete impl methods are), so a
+            // placeholder `Self` type lets `self` receivers and any `Self`
+            // annotations resolve without a concrete implementing type.
+            let abstract_self = Ty::Error;
             let mut methods = Vec::with_capacity(t.members.len());
             for m in &t.members {
-                methods.push(lower_function(m, None, &t.generics, cx)?);
+                methods.push(lower_function(m, Some(&abstract_self), &t.generics, cx)?);
             }
             Ok(Some(HirItem {
                 span: decl.span.clone(),
@@ -177,6 +182,7 @@ fn lower_decl(decl: &Decl, cx: &LowerCtx<'_>) -> Result<Option<HirItem>, RavenEr
                 span: decl.span.clone(),
                 kind: HirItemKind::Impl(HirImpl {
                     self_name,
+                    self_ty,
                     trait_name,
                     methods,
                     span: i.span.clone(),

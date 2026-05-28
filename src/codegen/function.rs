@@ -44,7 +44,10 @@ pub fn cranelift_ty(ty: &MirType, ptr: CType) -> Option<CType> {
         | MirType::Option(_)
         | MirType::Result(_, _)
         | MirType::List(_)
-        | MirType::Function { .. } => Some(ptr),
+        | MirType::Function { .. }
+        // A `dyn Trait` value is a single GC pointer to a boxed fat
+        // pointer `{ data, vtable }`; see the heap layout note below.
+        | MirType::Dyn { .. } => Some(ptr),
     }
 }
 
@@ -321,6 +324,19 @@ fn lower_rvalue(
         MirRvalue::ClosureCreate { fn_name, captures } => {
             lower_closure_create(cx, builder, fn_name, captures, slots)
         }
+        MirRvalue::DynCoerce {
+            value,
+            concrete_ty,
+            trait_name,
+            methods,
+        } => lower_dyn_coerce(cx, builder, value, concrete_ty, trait_name, methods, slots),
+        MirRvalue::VirtualCall {
+            receiver,
+            slot,
+            args,
+            param_tys,
+            ret_ty,
+        } => lower_virtual_call(cx, builder, receiver, *slot, args, param_tys, ret_ty, slots),
         MirRvalue::IndexAccess { .. } | MirRvalue::ArrayLit { .. } => {
             Err(CodegenError::Unsupported(format!(
                 "rvalue not supported in MVP backend: {:?}",
@@ -343,6 +359,8 @@ fn rvalue_kind(r: &MirRvalue) -> &'static str {
         MirRvalue::ArrayLit { .. } => "ArrayLit",
         MirRvalue::Cast { .. } => "Cast",
         MirRvalue::ClosureCreate { .. } => "ClosureCreate",
+        MirRvalue::DynCoerce { .. } => "DynCoerce",
+        MirRvalue::VirtualCall { .. } => "VirtualCall",
     }
 }
 
@@ -721,6 +739,124 @@ fn lower_closure_create(
     let inst = builder
         .ins()
         .call(new_ref, &[fn_ptr, zero32, zero32, zero32, zero32]);
+    Ok(builder.inst_results(inst).first().copied())
+}
+
+/// Lower a `dyn Trait` unsizing coercion.
+///
+/// A trait object is a single GC pointer to a boxed two-slot fat pointer
+/// `{ data, vtable }`. This allocates the box through the struct value
+/// constructor (so the GC traces it like any aggregate), stores the
+/// concrete value in slot 0 (a traced pointer), and the address of the
+/// `(concrete_type, trait)` vtable in slot 1 (a static pointer). The
+/// box's descriptor marks only slot 0 as a GC pointer, so the collector
+/// follows the data word and leaves the static vtable word alone.
+#[allow(clippy::too_many_arguments)]
+fn lower_dyn_coerce(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    value: &MirOperand,
+    concrete_ty: &MirType,
+    trait_name: &str,
+    methods: &[String],
+    slots: &[LocalSlot],
+) -> Result<RValue, CodegenError> {
+    let ptr = cx.pointer_type();
+
+    // Evaluate the concrete data value first; it is a GC pointer (every
+    // struct or enum the front end coerces is a heap value).
+    let data = require_value(
+        lower_operand(cx, builder, value, slots)?,
+        "dyn coerce value",
+    )?;
+    let data = widen_to_slot(builder, Some(data), ptr);
+
+    // Build the vtable for this (concrete_type, trait) pair. The method
+    // symbols are the concrete type's implementations, in trait order.
+    let vtable_key = format!("{}${}", concrete_ty.mangle(), trait_name);
+    let method_symbols: Vec<String> = methods
+        .iter()
+        .map(|m| concrete_ty.method_symbol(m))
+        .collect();
+    let vtable_id = cx.intern_vtable(&vtable_key, &method_symbols)?;
+    let vtable_ref = cx.module().declare_data_in_func(vtable_id, builder.func);
+    let vtable_ptr = builder.ins().symbol_value(ptr, vtable_ref);
+
+    // The box is a two-slot struct value: slot 0 = data (GC pointer),
+    // slot 1 = vtable (static). The descriptor marks only slot 0, keyed
+    // by the trait object's mangled name so every coercion to the same
+    // `dyn Trait` shares the descriptor.
+    let box_key = format!("dyn_{}", trait_name);
+    let type_id = cx.intern_descriptor(&box_key, 0b01);
+    let obj = call_struct_new(cx, builder, 2, type_id, ptr);
+    let base = call_struct_fields(cx, builder, obj, ptr);
+    builder
+        .ins()
+        .store(MemFlags::new(), data, base, layout::slot_offset(0));
+    builder
+        .ins()
+        .store(MemFlags::new(), vtable_ptr, base, layout::slot_offset(1));
+    Ok(Some(obj))
+}
+
+/// Lower a virtual call through a `dyn Trait` receiver.
+///
+/// Loads the data and vtable words from the receiver's fat pointer box,
+/// loads the method pointer at `slot` from the vtable, and emits an
+/// indirect call with the data word as the receiver plus the arguments.
+#[allow(clippy::too_many_arguments)]
+fn lower_virtual_call(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    receiver: &MirOperand,
+    slot: usize,
+    args: &[MirOperand],
+    param_tys: &[MirType],
+    ret_ty: &MirType,
+    slots: &[LocalSlot],
+) -> Result<RValue, CodegenError> {
+    let ptr = cx.pointer_type();
+    let box_ptr = require_value(
+        lower_operand(cx, builder, receiver, slots)?,
+        "virtual call receiver",
+    )?;
+    let base = call_struct_fields(cx, builder, box_ptr, ptr);
+    // Slot 0: the data pointer (the erased receiver). Slot 1: the vtable.
+    let data = builder
+        .ins()
+        .load(ptr, MemFlags::new(), base, layout::slot_offset(0));
+    let vtable = builder
+        .ins()
+        .load(ptr, MemFlags::new(), base, layout::slot_offset(1));
+    // Load the method pointer from the vtable's slot.
+    let method_ptr = builder.ins().load(
+        ptr,
+        MemFlags::new(),
+        vtable,
+        (slot as i32) * (ptr.bytes() as i32),
+    );
+
+    // Build the indirect call signature: the receiver (a pointer) plus
+    // each non-receiver parameter, returning the method's return type.
+    let mut sig = Signature::new(cx.module().target_config().default_call_conv);
+    sig.params.push(cranelift_codegen::ir::AbiParam::new(ptr));
+    for pt in param_tys {
+        if let Some(t) = cranelift_ty(pt, ptr) {
+            sig.params.push(cranelift_codegen::ir::AbiParam::new(t));
+        }
+    }
+    if let Some(t) = cranelift_ty(ret_ty, ptr) {
+        sig.returns.push(cranelift_codegen::ir::AbiParam::new(t));
+    }
+    let sig_ref = builder.import_signature(sig);
+
+    let mut call_args = vec![data];
+    for a in args {
+        if let Some(v) = lower_operand(cx, builder, a, slots)? {
+            call_args.push(v);
+        }
+    }
+    let inst = builder.ins().call_indirect(sig_ref, method_ptr, &call_args);
     Ok(builder.inst_results(inst).first().copied())
 }
 

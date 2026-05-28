@@ -6,6 +6,7 @@
 //! stay tied to the resolver output and pass through as a passive list.
 
 use crate::span::Span;
+use crate::tycheck::Ty;
 
 use super::expr::{HirBlock, HirExpr};
 use super::ty::HirTy;
@@ -93,6 +94,9 @@ pub struct HirTrait {
 pub struct HirImpl {
     /// The implementing type's source-level name (for diagnostics).
     pub self_name: String,
+    /// The resolved implementing type. The MIR pass mangles it to build
+    /// each method's symbol so per-type methods get unique names.
+    pub self_ty: Ty,
     /// `Some(trait_name)` for a trait impl, `None` for an inherent impl.
     pub trait_name: Option<String>,
     pub methods: Vec<HirFn>,

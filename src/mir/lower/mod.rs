@@ -61,6 +61,12 @@ pub struct LowerCx<'a> {
     pub pending_calls: Vec<(DeclId, Vec<Ty>)>,
     /// Struct and enum declaration tables for field and variant lookup.
     pub decls: &'a DeclTables<'a>,
+    /// Set when control flow diverged (a `return`, `break`, or `continue`
+    /// closed the current block and rolled a fresh dead block). The
+    /// function finalizer uses this to mark a trailing empty block as
+    /// `Unreachable` rather than falsely treating a real empty-bodied
+    /// function (for example `fun f() -> Int = 1`) as dead.
+    pub diverged: bool,
 }
 
 impl LowerCx<'_> {
@@ -154,6 +160,7 @@ pub fn lower_function(
         loops: Vec::new(),
         pending_calls: Vec::new(),
         decls,
+        diverged: false,
     };
 
     let body = hir
@@ -166,10 +173,12 @@ pub fn lower_function(
     let result = stmt::lower_block(&mut cx, body);
 
     if !cx.builder.is_closed(cx.current) {
-        if cx.builder.is_empty_open(cx.current) {
-            // The body's final action was a `return` which closed its
-            // own block and rolled a fresh dead one. Leave the dead
-            // block as `Unreachable` to keep the dump tidy.
+        if cx.diverged && cx.builder.is_empty_open(cx.current) {
+            // The body's final action was a `return` (or `break` /
+            // `continue`) which closed its own block and rolled a fresh
+            // dead one. Mark the dead block `Unreachable` to keep the dump
+            // tidy. A non-diverged empty block carries a real tail value
+            // (for example `fun f() -> Int = 1`) and must return it.
             cx.builder
                 .close_block(cx.current, super::ir::MirTerminator::Unreachable);
         } else {

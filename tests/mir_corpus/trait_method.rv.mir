@@ -10,14 +10,14 @@
     (bb0
       (assign _1 (struct-create Counter 41))
       (assign _0 (use _1))
-      (assign _2 (call "bump" _0))
+      (assign _2 (call "Counter$bump" _0))
       (return _2)
     )
     (bb1
       (unreachable)
     )
   )
-  (fn "bump" origin="bump" ret=Int
+  (fn "Counter$bump" origin="bump" ret=Int
     (params (_0: Counter "self"))
     (locals
       (_0 Counter "self" param=true)

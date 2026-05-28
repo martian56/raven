@@ -105,14 +105,24 @@ fn walk_trait(
     scope: &mut ScopeStack,
     map: &mut ResolutionMap,
 ) -> Result<(), RavenError> {
-    scope.push(ScopeKind::Function);
+    // A trait body is an implicit `Self`-bearing context: methods may
+    // take `self`, annotate parameters as `Self`, and reference `Self`
+    // in their signatures, exactly like an `impl` block. Push an `Impl`
+    // frame and bind `Self` so those uses resolve rather than reporting
+    // `SelfOutsideImpl`.
+    scope.push(ScopeKind::Impl);
+    let _ = scope.insert("Self", Binding::SelfType, t.span.clone());
     push_generics(scope, &t.generics, &t.span)?;
     for member in &t.members {
-        scope.push(ScopeKind::Function);
+        scope.push(ScopeKind::Impl);
         push_generics(scope, &member.generics, &member.span)?;
         for p in &member.params {
-            scope.insert_shadowing(&p.name, Binding::Param(p.span.clone()), p.span.clone());
-            walk_type(&p.ty, scope, map)?;
+            if p.name == "self" {
+                scope.insert_shadowing("self", Binding::SelfValue, p.span.clone());
+            } else {
+                scope.insert_shadowing(&p.name, Binding::Param(p.span.clone()), p.span.clone());
+                walk_type(&p.ty, scope, map)?;
+            }
         }
         if let Some(r) = &member.ret {
             walk_type(r, scope, map)?;

@@ -85,22 +85,24 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             receiver,
             name,
             args,
+        } => lower_method_call(cx, receiver, name, args, ty),
+        HirExprKind::DynCoerce {
+            value,
+            trait_name,
+            methods,
+            concrete_ty,
         } => {
-            let recv = lower_expr(cx, receiver);
-            let mut arg_ops = vec![recv];
-            for a in args {
-                arg_ops.push(lower_expr(cx, a));
-            }
-            let dst = cx.builder.fresh_temp("mcall", ty);
+            let v = lower_expr(cx, value);
+            let concrete = mir_ty(concrete_ty, cx.subst);
+            let dst = cx.builder.fresh_temp("dyn", ty);
             cx.builder.assign(
                 cx.current,
                 dst,
-                MirRvalue::Call {
-                    callee: MirFnRef {
-                        mangled: name.clone(),
-                        origin: None,
-                    },
-                    args: arg_ops,
+                MirRvalue::DynCoerce {
+                    value: v,
+                    concrete_ty: concrete,
+                    trait_name: trait_name.clone(),
+                    methods: methods.clone(),
                 },
             );
             MirOperand::Copy(dst)
@@ -144,6 +146,7 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             // so subsequent statements still have a target.
             let dead = cx.builder.new_block();
             cx.current = dead;
+            cx.diverged = true;
             MirOperand::Const(MirConstant::Unit)
         }
         HirExprKind::Break(value) => {
@@ -163,6 +166,7 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             }
             let dead = cx.builder.new_block();
             cx.current = dead;
+            cx.diverged = true;
             MirOperand::Const(MirConstant::Unit)
         }
         HirExprKind::Continue => {
@@ -177,6 +181,7 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             }
             let dead = cx.builder.new_block();
             cx.current = dead;
+            cx.diverged = true;
             MirOperand::Const(MirConstant::Unit)
         }
         HirExprKind::Interpolate(parts) => lower_interpolate(cx, parts, ty),
@@ -330,6 +335,8 @@ fn lower_if(
     }
 
     cx.current = cont_bb;
+    // The merge block is reachable even if one branch diverged.
+    cx.diverged = false;
     MirOperand::Copy(result)
 }
 
@@ -361,6 +368,7 @@ fn lower_loop(cx: &mut LowerCx<'_>, body: &HirBlock, ty: MirType) -> MirOperand 
     cx.loops.pop();
 
     cx.current = cont;
+    cx.diverged = false;
     MirOperand::Copy(result)
 }
 
@@ -399,6 +407,7 @@ fn lower_while(cx: &mut LowerCx<'_>, cond: &HirExpr, body: &HirBlock, _ty: MirTy
     cx.loops.pop();
 
     cx.current = cont;
+    cx.diverged = false;
     MirOperand::Const(MirConstant::Unit)
 }
 
@@ -527,6 +536,66 @@ fn call_ref_from_callee(_cx: &mut LowerCx<'_>, callee: &HirExpr) -> MirFnRef {
             origin: None,
         },
     }
+}
+
+/// Lower a method call. A concrete receiver dispatches statically to the
+/// per-type method symbol `<RecvType>$<method>`. A `dyn Trait` receiver
+/// dispatches virtually through the receiver's vtable.
+fn lower_method_call(
+    cx: &mut LowerCx<'_>,
+    receiver: &HirExpr,
+    name: &str,
+    args: &[HirExpr],
+    ty: MirType,
+) -> MirOperand {
+    let recv_ty = mir_ty(&receiver.ty, cx.subst);
+    if let MirType::Dyn { methods, .. } = &recv_ty {
+        // Virtual dispatch: the slot index is the method's position in the
+        // trait's declaration order, which the dyn type carries.
+        let slot = methods.iter().position(|m| m == name).unwrap_or(0);
+        let recv = lower_expr(cx, receiver);
+        let mut arg_ops = Vec::with_capacity(args.len());
+        let mut param_tys = Vec::with_capacity(args.len());
+        for a in args {
+            param_tys.push(mir_ty(&a.ty, cx.subst));
+            arg_ops.push(lower_expr(cx, a));
+        }
+        let dst = cx.builder.fresh_temp("vcall", ty.clone());
+        cx.builder.assign(
+            cx.current,
+            dst,
+            MirRvalue::VirtualCall {
+                receiver: recv,
+                slot,
+                args: arg_ops,
+                param_tys,
+                ret_ty: ty,
+            },
+        );
+        return MirOperand::Copy(dst);
+    }
+
+    // Static dispatch: build the per-type method symbol from the receiver
+    // type so it matches the impl method's definition symbol.
+    let symbol = recv_ty.method_symbol(name);
+    let recv = lower_expr(cx, receiver);
+    let mut arg_ops = vec![recv];
+    for a in args {
+        arg_ops.push(lower_expr(cx, a));
+    }
+    let dst = cx.builder.fresh_temp("mcall", ty);
+    cx.builder.assign(
+        cx.current,
+        dst,
+        MirRvalue::Call {
+            callee: MirFnRef {
+                mangled: symbol,
+                origin: None,
+            },
+            args: arg_ops,
+        },
+    );
+    MirOperand::Copy(dst)
 }
 
 /// Resolve a field's slot index from the receiver's struct type and the
