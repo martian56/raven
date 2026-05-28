@@ -9,22 +9,6 @@ fun println(s: String) {
     __io_println_str(s)
 }
 
-fun print_int(n: Int) {
-    __io_print_str("${n}")
-}
-
-fun println_int(n: Int) {
-    __io_println_str("${n}")
-}
-
-fun int_to_string(n: Int) -> String {
-    "${n}"
-}
-
-fun bool_to_string(b: Bool) -> String {
-    "${b}"
-}
-
 // Print `prompt` with no trailing newline, then read one line from stdin
 // without its newline. Empty at end of input.
 fun input(prompt: String) -> String {

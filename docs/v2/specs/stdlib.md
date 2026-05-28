@@ -81,11 +81,11 @@ for a `println(...)` call that bound to the bundled function.
 The working import form for a bundled module is the selective import:
 
 ```raven
-import std/io { println, println_int }
+import std/io { println }
 ```
 
-The resolver binds each selector (`println`, `println_int`) directly to
-the namespaced function (`std.io.println`, `std.io.println_int`). The call
+The resolver binds each selector (`println`) directly to the namespaced
+function (`std.io.println`). The call
 site `println("hi")` is then an ordinary call to a known function, which
 the type checker, HIR, MIR, and codegen handle with no member access
 machinery. An explicit selector binding wins over a builtin of the same
@@ -141,29 +141,24 @@ primitive adds one intrinsic and one runtime symbol the same way.
 
 * `print(s: String)`: write `s` with no trailing newline.
 * `println(s: String)`: write `s` followed by a newline.
-* `print_int(n: Int)`: write the base ten rendering of `n`, no newline.
-* `println_int(n: Int)`: write the base ten rendering of `n`, plus a newline.
-* `int_to_string(n: Int) -> String`: render an `Int` as a `String`.
-* `bool_to_string(b: Bool) -> String`: render a `Bool` as `"true"` / `"false"`.
 * `input(prompt: String) -> String`: print `prompt` (no newline), read one
   line from stdin, and return it without the trailing newline.
 * `read_line() -> String`: read one line from stdin, newline stripped.
 
-The integer and conversion functions are built on string interpolation
-(`"${n}"`), which the compiler already lowers to the runtime integer to
-string and bool to string conversions. The module thus needs no separate
-integer intrinsics.
+To print a non-string value, interpolate it (`println("${n}")`) or use the
+builtin `print`, which accepts any `ToString` value. The module keeps no
+type-specific print variants.
 
 ## Relationship to the print builtins
 
-The compiler keeps `print` and `print_int` as global builtins for
-convenience (used by examples and quick programs without an import). For
-historical reasons those builtins append a newline. `std/io` is the
-blessed user facing surface: its `print` writes with no newline and its
-`println` adds one, which is the conventional split. Because an explicit
-import binds over a builtin, a program that imports `std/io`'s `print`
-gets the module's no newline behavior; a program that does not import it
-keeps the builtin.
+The compiler keeps a global `print` builtin for convenience (used by
+examples and quick programs without an import). It accepts any `ToString`
+value and appends a newline. `std/io` is the explicit surface: its `print`
+writes with no newline and its `println` adds one, the conventional split.
+Because an explicit import binds over a builtin, a program that imports
+`std/io`'s `print` gets the module's no newline behavior; a program that
+does not import it keeps the builtin. (A separate `print_int` builtin also
+still exists and is slated for removal now that `print` covers integers.)
 
 ## How later modules plug in
 
