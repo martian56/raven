@@ -20,7 +20,10 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::ast::{DeclKind, File, ImportSource};
+use crate::ast::{
+    Block, DeclKind, ElseBranch, Expr, ExprKind, File, FunctionBody, ImportSource, LambdaBody,
+    MatchArm, Stmt, StmtKind, StrFragment,
+};
 use crate::error::{RavenError, ResolveError};
 use crate::lexer::Lexer;
 use crate::parser::parse;
@@ -29,7 +32,10 @@ use crate::parser::parse;
 /// path under `std/`. A `std/io` import maps to the `"io"` entry. The
 /// list grows as later modules (issues #72 to #80) land; each adds one
 /// `include_str!` row here.
-pub const BUNDLED_MODULES: &[(&str, &str)] = &[("io", include_str!("../../stdlib/std/io.rv"))];
+pub const BUNDLED_MODULES: &[(&str, &str)] = &[
+    ("io", include_str!("../../stdlib/std/io.rv")),
+    ("string", include_str!("../../stdlib/std/string.rv")),
+];
 
 /// The separator used when namespacing a bundled function name. The
 /// resulting name (for example `std.io.println`) is unwritable by a user
@@ -83,8 +89,24 @@ pub fn expand_with_stdlib(user: &File) -> Result<File, RavenError> {
             .map_err(|e| bundled_error(module, format!("lex: {e}")))?;
         let module_file =
             parse(&tokens).map_err(|e| bundled_error(module, format!("parse: {e}")))?;
+
+        // Collect the module's own top level function names so a call to
+        // a sibling function (for example `trim` calling `is_space_byte`)
+        // can be rewritten to the namespaced name. The declarations are
+        // renamed below; without rewriting the call sites a sibling call
+        // would resolve to a bare name that no longer exists.
+        let siblings: BTreeSet<String> = module_file
+            .items
+            .iter()
+            .filter_map(|d| match &d.kind {
+                DeclKind::Function(f) => Some(f.name.clone()),
+                _ => None,
+            })
+            .collect();
+
         for mut decl in module_file.items {
             if let DeclKind::Function(f) = &mut decl.kind {
+                rewrite_fn_body_calls(&mut f.body, module, &siblings);
                 f.name = mangle_stdlib_fn(module, &f.name);
             }
             combined_items.push(decl);
@@ -101,6 +123,160 @@ pub fn expand_with_stdlib(user: &File) -> Result<File, RavenError> {
         items: combined_items,
         span: user.span.clone(),
     })
+}
+
+/// Rewrite every reference to a sibling stdlib function inside a bundled
+/// module's function body to its namespaced name.
+///
+/// A bundled module declares free functions that call one another by
+/// their bare names (for example `index_of` calls `matches_at`). The
+/// declarations are renamed to `std.<module>.<name>`, so a call site must
+/// use the same namespaced name to resolve. This walk renames any bare
+/// identifier whose name is one of the module's own functions; local
+/// variables and parameters never share a name with a sibling function in
+/// the bundled sources, so the rename is unambiguous.
+fn rewrite_fn_body_calls(body: &mut FunctionBody, module: &str, siblings: &BTreeSet<String>) {
+    match body {
+        FunctionBody::Block(block) => rewrite_block(block, module, siblings),
+        FunctionBody::Expr(expr) => rewrite_expr(expr, module, siblings),
+        FunctionBody::None => {}
+    }
+}
+
+fn rewrite_block(block: &mut Block, module: &str, siblings: &BTreeSet<String>) {
+    for stmt in &mut block.stmts {
+        rewrite_stmt(stmt, module, siblings);
+    }
+    if let Some(trailing) = &mut block.trailing {
+        rewrite_expr(trailing, module, siblings);
+    }
+}
+
+fn rewrite_stmt(stmt: &mut Stmt, module: &str, siblings: &BTreeSet<String>) {
+    match &mut stmt.kind {
+        StmtKind::Let { init, .. } => {
+            if let Some(e) = init {
+                rewrite_expr(e, module, siblings);
+            }
+        }
+        StmtKind::Return(e) | StmtKind::Break(e) => {
+            if let Some(e) = e {
+                rewrite_expr(e, module, siblings);
+            }
+        }
+        StmtKind::Defer(e) | StmtKind::Expr(e) => rewrite_expr(e, module, siblings),
+        StmtKind::Assign { target, value, .. } => {
+            rewrite_expr(target, module, siblings);
+            rewrite_expr(value, module, siblings);
+        }
+        StmtKind::Continue => {}
+    }
+}
+
+fn rewrite_expr(expr: &mut Expr, module: &str, siblings: &BTreeSet<String>) {
+    match &mut expr.kind {
+        ExprKind::Ident { name, .. } => {
+            if siblings.contains(name) {
+                *name = mangle_stdlib_fn(module, name);
+            }
+        }
+        ExprKind::InterpolatedString(fragments) => {
+            for frag in fragments {
+                if let StrFragment::Expr(e) = frag {
+                    rewrite_expr(e, module, siblings);
+                }
+            }
+        }
+        ExprKind::Array(items) | ExprKind::Tuple(items) => {
+            for e in items {
+                rewrite_expr(e, module, siblings);
+            }
+        }
+        ExprKind::StructLit { fields, .. } => {
+            for f in fields {
+                rewrite_expr(&mut f.value, module, siblings);
+            }
+        }
+        ExprKind::Paren(inner) | ExprKind::Try(inner) => rewrite_expr(inner, module, siblings),
+        ExprKind::Block(block) => rewrite_block(block, module, siblings),
+        ExprKind::Unary { operand, .. } => rewrite_expr(operand, module, siblings),
+        ExprKind::Binary { lhs, rhs, .. } => {
+            rewrite_expr(lhs, module, siblings);
+            rewrite_expr(rhs, module, siblings);
+        }
+        ExprKind::Range { start, end, .. } => {
+            rewrite_expr(start, module, siblings);
+            rewrite_expr(end, module, siblings);
+        }
+        ExprKind::Call { callee, args } => {
+            rewrite_expr(callee, module, siblings);
+            for a in args {
+                rewrite_expr(a, module, siblings);
+            }
+        }
+        ExprKind::MethodCall { receiver, args, .. } => {
+            rewrite_expr(receiver, module, siblings);
+            for a in args {
+                rewrite_expr(a, module, siblings);
+            }
+        }
+        ExprKind::Field { receiver, .. } => rewrite_expr(receiver, module, siblings),
+        ExprKind::Index { receiver, index } => {
+            rewrite_expr(receiver, module, siblings);
+            rewrite_expr(index, module, siblings);
+        }
+        ExprKind::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
+            rewrite_expr(cond, module, siblings);
+            rewrite_block(then_branch, module, siblings);
+            if let Some(else_branch) = else_branch {
+                match else_branch.as_mut() {
+                    ElseBranch::If(e) => rewrite_expr(e, module, siblings),
+                    ElseBranch::Block(b) => rewrite_block(b, module, siblings),
+                }
+            }
+        }
+        ExprKind::Match { scrutinee, arms } => {
+            rewrite_expr(scrutinee, module, siblings);
+            for arm in arms.iter_mut() {
+                rewrite_match_arm(arm, module, siblings);
+            }
+        }
+        ExprKind::Loop(block) => rewrite_block(block, module, siblings),
+        ExprKind::While { cond, body } => {
+            rewrite_expr(cond, module, siblings);
+            rewrite_block(body, module, siblings);
+        }
+        ExprKind::For { iter, body, .. } => {
+            rewrite_expr(iter, module, siblings);
+            rewrite_block(body, module, siblings);
+        }
+        ExprKind::Lambda { body, .. } => match body {
+            LambdaBody::Block(b) => rewrite_block(b, module, siblings),
+            LambdaBody::Expr(e) => rewrite_expr(e, module, siblings),
+        },
+        // Leaf literals and the `self`/`Self` keywords carry no nested
+        // expressions to rewrite.
+        ExprKind::Int(_)
+        | ExprKind::Float(_)
+        | ExprKind::Bool(_)
+        | ExprKind::Str(_)
+        | ExprKind::BlockStr(_)
+        | ExprKind::Char(_)
+        | ExprKind::CStr(_)
+        | ExprKind::SelfLower
+        | ExprKind::SelfUpper => {}
+    }
+}
+
+fn rewrite_match_arm(arm: &mut MatchArm, module: &str, siblings: &BTreeSet<String>) {
+    if let Some(guard) = &mut arm.guard {
+        rewrite_expr(guard, module, siblings);
+    }
+    rewrite_expr(&mut arm.body, module, siblings);
 }
 
 /// Build a resolve error for a bundled module that failed to load. A
@@ -138,6 +314,98 @@ mod tests {
     fn io_module_is_bundled() {
         assert!(bundled_source("io").is_some());
         assert!(bundled_source("nope").is_none());
+    }
+
+    #[test]
+    fn string_module_is_bundled() {
+        assert!(bundled_source("string").is_some());
+    }
+
+    #[test]
+    fn intra_module_sibling_calls_are_namespaced() {
+        // `std/string`'s `trim` calls its sibling `is_space_byte`. After
+        // expansion the call site must reference the namespaced name so it
+        // resolves to the renamed declaration. Collect every identifier in
+        // `trim`'s body and assert the sibling call was renamed.
+        let user = parse_src("import std/string { trim }\nfun main() {}\n");
+        let combined = expand_with_stdlib(&user).expect("expand");
+        let trim_fn = combined
+            .items
+            .iter()
+            .find_map(|d| match &d.kind {
+                DeclKind::Function(f) if f.name == "std.string.trim" => Some(f),
+                _ => None,
+            })
+            .expect("std.string.trim present");
+        let mut idents = Vec::new();
+        if let FunctionBody::Block(b) = &trim_fn.body {
+            collect_block_idents(b, &mut idents);
+        } else {
+            panic!("trim has a block body");
+        }
+        assert!(
+            idents.iter().any(|n| n == "std.string.is_space_byte"),
+            "trim body should call the namespaced sibling, got: {idents:?}"
+        );
+        assert!(
+            !idents.iter().any(|n| n == "is_space_byte"),
+            "no bare sibling call should remain, got: {idents:?}"
+        );
+    }
+
+    fn collect_block_idents(block: &Block, out: &mut Vec<String>) {
+        for stmt in &block.stmts {
+            match &stmt.kind {
+                StmtKind::Let { init: Some(e), .. } => collect_expr_idents(e, out),
+                StmtKind::Return(Some(e)) | StmtKind::Expr(e) => collect_expr_idents(e, out),
+                StmtKind::Assign { target, value, .. } => {
+                    collect_expr_idents(target, out);
+                    collect_expr_idents(value, out);
+                }
+                _ => {}
+            }
+        }
+        if let Some(t) = &block.trailing {
+            collect_expr_idents(t, out);
+        }
+    }
+
+    fn collect_expr_idents(expr: &Expr, out: &mut Vec<String>) {
+        match &expr.kind {
+            ExprKind::Ident { name, .. } => out.push(name.clone()),
+            ExprKind::Call { callee, args } => {
+                collect_expr_idents(callee, out);
+                for a in args {
+                    collect_expr_idents(a, out);
+                }
+            }
+            ExprKind::Binary { lhs, rhs, .. } => {
+                collect_expr_idents(lhs, out);
+                collect_expr_idents(rhs, out);
+            }
+            ExprKind::Unary { operand, .. } => collect_expr_idents(operand, out),
+            ExprKind::Paren(e) => collect_expr_idents(e, out),
+            ExprKind::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
+                collect_expr_idents(cond, out);
+                collect_block_idents(then_branch, out);
+                if let Some(eb) = else_branch {
+                    match eb.as_ref() {
+                        ElseBranch::If(e) => collect_expr_idents(e, out),
+                        ElseBranch::Block(b) => collect_block_idents(b, out),
+                    }
+                }
+            }
+            ExprKind::While { cond, body } => {
+                collect_expr_idents(cond, out);
+                collect_block_idents(body, out);
+            }
+            ExprKind::Block(b) => collect_block_idents(b, out),
+            _ => {}
+        }
     }
 
     #[test]

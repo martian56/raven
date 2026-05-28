@@ -1095,10 +1095,147 @@ fn lower_intrinsic(
             builder.ins().call(local_ref, &[v]);
             Ok(None)
         }
+        intrinsics::STR_LEN => {
+            // `raven_string_len` returns a u32; the bundled source treats
+            // the result as a native `Int` (i64), so zero-extend it.
+            if args.len() != 1 {
+                return Err(CodegenError::Unsupported(format!(
+                    "__str_len intrinsic expects 1 arg, got {}",
+                    args.len()
+                )));
+            }
+            let s = require_value(
+                lower_operand(cx, builder, &args[0], slots)?,
+                "__str_len argument",
+            )?;
+            let func_id = cx
+                .runtime_id(intrinsics::RUNTIME_STRING_LEN)
+                .expect("string-len runtime symbol declared at module init");
+            let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
+            let inst = builder.ins().call(local_ref, &[s]);
+            let len_u32 = builder.inst_results(inst)[0];
+            Ok(Some(builder.ins().uextend(types::I64, len_u32)))
+        }
+        intrinsics::STR_BYTE_AT => {
+            // `raven_string_byte_at(String ptr, index: usize) -> i32`.
+            // The index is a native `Int` (i64); reduce it to pointer
+            // width for the ABI, and sign-extend the i32 result back to a
+            // native `Int` so the -1 sentinel survives.
+            if args.len() != 2 {
+                return Err(CodegenError::Unsupported(format!(
+                    "__str_byte_at intrinsic expects 2 args, got {}",
+                    args.len()
+                )));
+            }
+            let s = require_value(
+                lower_operand(cx, builder, &args[0], slots)?,
+                "__str_byte_at string argument",
+            )?;
+            let idx = require_value(
+                lower_operand(cx, builder, &args[1], slots)?,
+                "__str_byte_at index argument",
+            )?;
+            let idx = to_pointer_width(builder, idx, cx.pointer_type());
+            let func_id = cx
+                .runtime_id(intrinsics::RUNTIME_STRING_BYTE_AT)
+                .expect("string-byte-at runtime symbol declared at module init");
+            let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
+            let inst = builder.ins().call(local_ref, &[s, idx]);
+            let byte_i32 = builder.inst_results(inst)[0];
+            Ok(Some(builder.ins().sextend(types::I64, byte_i32)))
+        }
+        intrinsics::STR_SUBSTRING => {
+            // `raven_string_substring(String ptr, start, end) -> String`.
+            // Both indices are native `Int` reduced to pointer width.
+            if args.len() != 3 {
+                return Err(CodegenError::Unsupported(format!(
+                    "__str_substring intrinsic expects 3 args, got {}",
+                    args.len()
+                )));
+            }
+            let s = require_value(
+                lower_operand(cx, builder, &args[0], slots)?,
+                "__str_substring string argument",
+            )?;
+            let start = require_value(
+                lower_operand(cx, builder, &args[1], slots)?,
+                "__str_substring start argument",
+            )?;
+            let end = require_value(
+                lower_operand(cx, builder, &args[2], slots)?,
+                "__str_substring end argument",
+            )?;
+            let start = to_pointer_width(builder, start, cx.pointer_type());
+            let end = to_pointer_width(builder, end, cx.pointer_type());
+            let func_id = cx
+                .runtime_id(intrinsics::RUNTIME_STRING_SUBSTRING)
+                .expect("string-substring runtime symbol declared at module init");
+            let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
+            let inst = builder.ins().call(local_ref, &[s, start, end]);
+            Ok(builder.inst_results(inst).first().copied())
+        }
+        intrinsics::STR_FROM_BYTE => {
+            // `raven_string_from_byte(byte: i32) -> String`. The argument
+            // is a native `Int`; reduce it to i32 for the ABI.
+            if args.len() != 1 {
+                return Err(CodegenError::Unsupported(format!(
+                    "__str_from_byte intrinsic expects 1 arg, got {}",
+                    args.len()
+                )));
+            }
+            let b = require_value(
+                lower_operand(cx, builder, &args[0], slots)?,
+                "__str_from_byte argument",
+            )?;
+            let b_i32 = builder.ins().ireduce(types::I32, b);
+            let func_id = cx
+                .runtime_id(intrinsics::RUNTIME_STRING_FROM_BYTE)
+                .expect("string-from-byte runtime symbol declared at module init");
+            let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
+            let inst = builder.ins().call(local_ref, &[b_i32]);
+            Ok(builder.inst_results(inst).first().copied())
+        }
+        intrinsics::STR_CONCAT_FN => {
+            // `raven_string_concat(String ptr, String ptr) -> String`.
+            if args.len() != 2 {
+                return Err(CodegenError::Unsupported(format!(
+                    "__str_concat intrinsic expects 2 args, got {}",
+                    args.len()
+                )));
+            }
+            let a = require_value(
+                lower_operand(cx, builder, &args[0], slots)?,
+                "__str_concat first argument",
+            )?;
+            let b = require_value(
+                lower_operand(cx, builder, &args[1], slots)?,
+                "__str_concat second argument",
+            )?;
+            let func_id = cx
+                .runtime_id(intrinsics::RUNTIME_STRING_CONCAT)
+                .expect("string-concat runtime symbol declared at module init");
+            let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
+            let inst = builder.ins().call(local_ref, &[a, b]);
+            Ok(builder.inst_results(inst).first().copied())
+        }
         _ => Err(CodegenError::Unsupported(format!(
             "unknown intrinsic: {}",
             mangled
         ))),
+    }
+}
+
+/// Reduce or extend a native `Int` (i64) value to the platform pointer
+/// width so it can be passed where the runtime ABI expects a `usize`.
+/// On a 64-bit target the value passes through unchanged.
+fn to_pointer_width(builder: &mut FunctionBuilder<'_>, v: Value, ptr: CType) -> Value {
+    let got = builder.func.dfg.value_type(v);
+    if got == ptr {
+        v
+    } else if ptr.bytes() < got.bytes() {
+        builder.ins().ireduce(ptr, v)
+    } else {
+        builder.ins().sextend(ptr, v)
     }
 }
 
