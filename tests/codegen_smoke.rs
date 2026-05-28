@@ -260,6 +260,18 @@ fn list_string_program_compiles_and_runs() {
     compile_link_run_and_check("list_strings.rv", "raven\nbird\n3\n", &runtime);
 }
 
+#[test]
+fn mutation_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Field and index assignment end to end. `self.n = self.n + 1` inside
+    // a method mutates the heap struct, observed after the call: two bumps
+    // plus `c.n = c.n + 5` make 7. `xs[1] = 99` overwrites a list element,
+    // read back as 99. Prints 7 then 99.
+    compile_link_run_and_check("mutation.rv", "7\n99\n", &runtime);
+}
+
 /// Return the runtime staticlib when a linker and the staticlib are both
 /// present, or skip with a diagnostic. Shared by every smoke case so the
 /// skip behavior stays identical.
