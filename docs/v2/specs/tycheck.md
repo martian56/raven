@@ -132,6 +132,10 @@ Method dispatch is statically resolved. When the user writes `r.m(...)` and `r: 
 
 A method call on a value of `Self` type inside an `impl` block resolves through the implementing type. Each impl's generic parameters get fresh inference variables and the substituted `self_ty` is unified against the receiver, so a generic impl such as `impl<T> List<T>` matches a concrete `List<Int>` receiver and the method's `T` binds to `Int`.
 
+### Associated functions
+
+When the receiver of `r.m(...)` is a bare type reference (a struct or enum binding, or a built-in type name) rather than a value, the call is an associated function call `Type.func(args)`. The named function on that type must have no `self`. The implementing type fixes the impl's generic parameters: explicit arguments (`Set<Int>.new()`) bind them directly, otherwise they are inference variables solved from later use. Arguments are checked against the function's parameters (there is no `self` to drop), and the result is its declared return type with the impl's parameters substituted. See `docs/v2/specs/associated-functions.md`.
+
 ### `impl` on built in types
 
 An `impl` block may target a built in type, not just a user struct or enum:

@@ -210,6 +210,18 @@ fn builtin_method_program_compiles_and_runs() {
 }
 
 #[test]
+fn assoc_fn_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Associated functions (Type.func()): `Counter.new()` and
+    // `Counter.with(41)` call the receiverless functions declared in the
+    // impl block, dispatched statically to `Counter$new` and
+    // `Counter$with` with no receiver argument. Prints 0 then 41.
+    compile_link_run_and_check("assoc_fn.rv", "0\n41\n", &runtime);
+}
+
+#[test]
 fn collections_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

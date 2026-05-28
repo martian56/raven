@@ -143,6 +143,15 @@ pub enum HirExprKind {
         name: String,
         args: Vec<HirExpr>,
     },
+    /// `Type.func(args)`: an associated function call with no receiver.
+    /// `self_ty` is the implementing type the function is declared on,
+    /// used by MIR to build the per-type symbol and (for a generic type)
+    /// queue the right instantiation.
+    AssocCall {
+        self_ty: HirTy,
+        name: String,
+        args: Vec<HirExpr>,
+    },
     Field {
         receiver: Box<HirExpr>,
         name: String,

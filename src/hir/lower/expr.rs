@@ -226,15 +226,33 @@ pub(crate) fn lower_expr(
             args,
             ..
         } => {
-            let r = lower_expr(receiver, &Ty::Error, cx)?;
-            let mut lowered = Vec::with_capacity(args.len());
-            for a in args {
-                lowered.push(lower_expr(a, &Ty::Error, cx)?);
-            }
-            HirExprKind::MethodCall {
-                receiver: Box::new(r),
-                name: name.clone(),
-                args: lowered,
+            // `Type.func(args)` lowers to a receiverless associated call.
+            // The type checker recorded the implementing type at the
+            // receiver span; its presence as a type reference (not a value)
+            // is what the type checker used to route this as an associated
+            // function call.
+            if is_type_ref_receiver(receiver, cx) {
+                let self_ty = cx.ty_at(&receiver.span);
+                let mut lowered = Vec::with_capacity(args.len());
+                for a in args {
+                    lowered.push(lower_expr(a, &Ty::Error, cx)?);
+                }
+                HirExprKind::AssocCall {
+                    self_ty,
+                    name: name.clone(),
+                    args: lowered,
+                }
+            } else {
+                let r = lower_expr(receiver, &Ty::Error, cx)?;
+                let mut lowered = Vec::with_capacity(args.len());
+                for a in args {
+                    lowered.push(lower_expr(a, &Ty::Error, cx)?);
+                }
+                HirExprKind::MethodCall {
+                    receiver: Box::new(r),
+                    name: name.clone(),
+                    args: lowered,
+                }
             }
         }
         ExprKind::Field { receiver, name } => {
@@ -1126,6 +1144,25 @@ fn is_builtin_print(callee: &Expr, cx: &LowerCtx<'_>) -> bool {
         return false;
     };
     name == "print" && cx.fn_name_at(&callee.span).is_none()
+}
+
+/// Whether a method call's receiver is a bare type reference, marking the
+/// call as an associated function call (`Type.func(args)`). Mirrors the
+/// type checker's `type_ref_receiver`: an `Ident` bound to a struct or
+/// enum declaration, or an unbound built-in type name.
+fn is_type_ref_receiver(receiver: &Expr, cx: &LowerCtx<'_>) -> bool {
+    use crate::resolve::Binding;
+    let ExprKind::Ident { name, .. } = &receiver.kind else {
+        return false;
+    };
+    match cx.resolved.map.lookup(&receiver.span) {
+        Some(Binding::Struct(_)) | Some(Binding::Enum(_)) => true,
+        Some(_) => false,
+        None => matches!(
+            name.as_str(),
+            "Int" | "Float" | "Bool" | "String" | "Char" | "Unit" | "Array" | "List" | "Vec"
+        ),
+    }
 }
 
 /// Wrap an interpolation part in a `to_string()` method call when its

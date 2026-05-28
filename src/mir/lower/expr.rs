@@ -101,6 +101,11 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             name,
             args,
         } => lower_method_call(cx, receiver, name, args, ty),
+        HirExprKind::AssocCall {
+            self_ty,
+            name,
+            args,
+        } => lower_assoc_call(cx, self_ty, name, args, ty),
         HirExprKind::DynCoerce {
             value,
             trait_name,
@@ -987,6 +992,36 @@ fn lower_method_call(
         arg_ops.push(lower_expr(cx, a));
     }
     let dst = cx.builder.fresh_temp("mcall", ty);
+    cx.builder.assign(
+        cx.current,
+        dst,
+        MirRvalue::Call {
+            callee: MirFnRef {
+                mangled: symbol,
+                origin: None,
+            },
+            args: arg_ops,
+        },
+    );
+    MirOperand::Copy(dst)
+}
+
+/// Lower an associated function call `Type.func(args)`. Like a static
+/// method call but with no receiver argument. The per-type symbol comes
+/// from the named implementing type; a generic type's instantiation is
+/// queued the same way a generic method's is.
+fn lower_assoc_call(
+    cx: &mut LowerCx<'_>,
+    self_ty: &crate::tycheck::Ty,
+    name: &str,
+    args: &[HirExpr],
+    ty: MirType,
+) -> MirOperand {
+    let recv_ty = mir_ty(self_ty, cx.subst);
+    let symbol = queue_generic_method(cx, self_ty, name, args)
+        .unwrap_or_else(|| recv_ty.method_symbol(name));
+    let arg_ops: Vec<MirOperand> = args.iter().map(|a| lower_expr(cx, a)).collect();
+    let dst = cx.builder.fresh_temp("acall", ty);
     cx.builder.assign(
         cx.current,
         dst,

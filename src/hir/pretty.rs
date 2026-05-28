@@ -323,6 +323,25 @@ fn pretty_expr(buf: &mut String, expr: &HirExpr, depth: usize) {
             indent(buf, depth);
             buf.push_str(")\n");
         }
+        HirExprKind::AssocCall {
+            self_ty,
+            name,
+            args,
+        } => {
+            writeln!(
+                buf,
+                "(assoc-call {} on={} ty={}",
+                quote(name),
+                self_ty,
+                expr.ty
+            )
+            .unwrap();
+            for a in args {
+                pretty_expr(buf, a, depth + 1);
+            }
+            indent(buf, depth);
+            buf.push_str(")\n");
+        }
         HirExprKind::Field { receiver, name } => {
             writeln!(buf, "(field-access {} ty={}", quote(name), expr.ty).unwrap();
             pretty_expr(buf, receiver, depth + 1);

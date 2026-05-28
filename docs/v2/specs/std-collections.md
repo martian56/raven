@@ -6,23 +6,31 @@ trait. `List<T>` is built into the language (literals, indexing, `len`,
 
 ## Import
 
-The collection types are used by method, but their constructors are free
-functions, so a selective import binds them:
+The idiomatic constructor is the associated function `new()` on each type,
+called as `Type.new()`. A plain `import std/collections` is enough, since
+the call resolves the function on the named type rather than an imported
+name:
 
 ```raven
-import std/collections { empty_set, empty_map }
+import std/collections
 
 fun main() {
-    let s = empty_set()
+    let s = Set.new()
     s.add(1)
-    let m = empty_map()
+    let m = Map.new()
     m.set("a", 10)
 }
 ```
 
-Importing the module also merges the `Set` and `Map` `impl` blocks, so the
-methods resolve by receiver type. Element and key/value types are inferred
-from the first use (`s.add(1)` fixes `Set<Int>`).
+Importing the module merges the `Set` and `Map` `impl` blocks, so both the
+constructors and the instance methods resolve by type. Element and
+key/value types are inferred from the first use (`s.add(1)` fixes
+`Set<Int>`). Where no later use pins them, write the type arguments on the
+call: `Set<Int>.new()`.
+
+The free functions `empty_set()` and `empty_map()` remain available for a
+selective import (`import std/collections { empty_set, empty_map }`) and
+behave identically to `Set.new()` and `Map.new()`.
 
 ## Set<T: Eq>
 
