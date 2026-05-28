@@ -375,9 +375,11 @@ that only consult MIR lowering do not depend on a linker.
 
 ## Out of scope (tracked by follow up issues)
 
-* Trait object (`dyn Trait`) dispatch through vtables (issue #66). Static
-  trait method calls are already monomorphized by MIR into direct calls
-  and work today.
+* ~~Trait object (`dyn Trait`) dispatch through vtables (issue #66).~~
+  Implemented: a trait object is a boxed fat pointer, vtables are emitted
+  as read-only data, and a `dyn` method call dispatches through the
+  vtable. See `docs/v2/specs/dyn-trait.md`. Static trait method calls are
+  monomorphized by MIR into direct calls.
 * Calling closure values and capturing closures (lambda body lifting and
   capture analysis); non-capturing closure allocation is supported.
 * `defer` ordering and runtime hooks (issue #68).
