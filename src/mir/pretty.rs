@@ -200,6 +200,30 @@ fn pretty_rvalue(buf: &mut String, r: &MirRvalue) {
             }
             buf.push(')');
         }
+        MirRvalue::DynCoerce {
+            value,
+            concrete_ty,
+            trait_name,
+            ..
+        } => {
+            write!(buf, "(dyn-coerce {} from={} ", trait_name, concrete_ty).unwrap();
+            pretty_operand(buf, value);
+            buf.push(')');
+        }
+        MirRvalue::VirtualCall {
+            receiver,
+            slot,
+            args,
+            ..
+        } => {
+            write!(buf, "(vcall slot={} ", slot).unwrap();
+            pretty_operand(buf, receiver);
+            for a in args {
+                buf.push(' ');
+                pretty_operand(buf, a);
+            }
+            buf.push(')');
+        }
     }
 }
 

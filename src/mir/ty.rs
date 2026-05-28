@@ -118,6 +118,21 @@ impl MirType {
             MirType::Dyn { name, .. } => format!("dyn_{}", name),
         }
     }
+
+    /// The mangled symbol for a method `method` implemented for this type.
+    /// Both the impl method definition and a static or virtual call site
+    /// agree on this name, so a per-type method has a unique symbol even
+    /// when several types implement a method of the same name.
+    pub fn method_symbol(&self, method: &str) -> String {
+        method_symbol(&self.mangle(), method)
+    }
+}
+
+/// Build the mangled symbol for `method` on a type whose mangled name is
+/// `type_mangle`. Used by HIR (defining impl method symbols) and MIR
+/// (resolving a call site), which must agree on the name.
+pub fn method_symbol(type_mangle: &str, method: &str) -> String {
+    format!("{}${}", type_mangle, method)
 }
 
 impl fmt::Display for MirType {

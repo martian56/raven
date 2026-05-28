@@ -291,7 +291,28 @@ pub(crate) fn lower_expr(
             }
         }
     };
-    Ok(HirExpr { kind, ty, span })
+    let inner = HirExpr { kind, ty, span };
+    // If the type checker recorded a `dyn Trait` coercion at this site,
+    // wrap the concrete value in a `DynCoerce` node so MIR materializes
+    // the fat pointer. The wrapper's type is the trait object type.
+    if let Some(c) = cx.typed.types.lookup_coercion(&inner.span) {
+        let dyn_ty = Ty::Dyn {
+            name: c.trait_name.clone(),
+            methods: c.methods.clone(),
+        };
+        let coerce_span = inner.span.clone();
+        return Ok(HirExpr {
+            kind: HirExprKind::DynCoerce {
+                trait_name: c.trait_name.clone(),
+                methods: c.methods.clone(),
+                concrete_ty: c.concrete_ty.clone(),
+                value: Box::new(inner),
+            },
+            ty: dyn_ty,
+            span: coerce_span,
+        });
+    }
+    Ok(inner)
 }
 
 fn lower_unop(op: UnaryOp) -> HirUnaryOp {

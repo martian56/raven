@@ -125,6 +125,35 @@ pub enum MirRvalue {
         fn_name: String,
         captures: Vec<MirOperand>,
     },
+    /// Unsize a concrete value to a `dyn Trait` value. The back end
+    /// allocates a two-slot fat pointer `{ data, vtable }`: slot 0 holds
+    /// the concrete value (`value`), slot 1 holds the address of the
+    /// `(concrete_type, trait)` vtable. The result is a single GC pointer.
+    DynCoerce {
+        value: MirOperand,
+        /// The concrete source type, used to pick and emit the vtable.
+        concrete_ty: MirType,
+        /// The target trait's short name.
+        trait_name: String,
+        /// The trait's method names in declaration order (vtable slots).
+        methods: Vec<String>,
+    },
+    /// Dynamic dispatch through a `dyn Trait` value. The back end loads
+    /// the data and vtable words from the receiver's fat pointer box,
+    /// loads the method pointer at `slot` from the vtable, and indirect
+    /// calls it with the data word as the receiver plus `args`.
+    VirtualCall {
+        receiver: MirOperand,
+        /// The dispatched method's vtable slot index (trait method order).
+        slot: usize,
+        /// The remaining (non-receiver) arguments.
+        args: Vec<MirOperand>,
+        /// Cranelift signature shape: the non-receiver parameter types
+        /// and the return type, so the back end can build the indirect
+        /// call signature.
+        param_tys: Vec<MirType>,
+        ret_ty: MirType,
+    },
 }
 
 /// One statement inside a basic block.

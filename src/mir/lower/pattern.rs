@@ -45,6 +45,7 @@ pub fn lower_match(
     }
 
     cx.current = cont;
+    cx.diverged = false;
     MirOperand::Copy(result_local)
 }
 

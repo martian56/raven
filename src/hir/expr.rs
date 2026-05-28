@@ -208,4 +208,18 @@ pub enum HirExprKind {
         ret: HirTy,
         body: HirBlock,
     },
+
+    /// Unsize a concrete value to a `dyn Trait` value. Synthesized by HIR
+    /// lowering at each coercion site the type checker recorded. The
+    /// inner expression's type is the concrete type; this node's type is
+    /// the `dyn Trait` target.
+    DynCoerce {
+        value: Box<HirExpr>,
+        /// The target trait's short name.
+        trait_name: String,
+        /// The trait's method names in declaration order (vtable slots).
+        methods: Vec<String>,
+        /// The concrete source type being coerced.
+        concrete_ty: HirTy,
+    },
 }
