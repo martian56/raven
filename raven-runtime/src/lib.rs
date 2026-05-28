@@ -20,15 +20,17 @@ pub mod object;
 pub use gc::{
     raven_gc_alloc, raven_gc_bytes_allocated, raven_gc_collect, raven_gc_enter_frame,
     raven_gc_leave_frame, raven_gc_live_objects, raven_gc_pop_roots, raven_gc_push_root,
+    raven_struct_register,
 };
 pub use object::{
     raven_box_new, raven_box_payload, raven_closure_captures, raven_closure_fn_ptr,
     raven_closure_new, raven_list_elements, raven_list_len, raven_list_new, raven_list_push,
     raven_map_bucket_count, raven_map_buckets, raven_map_new, raven_set_bucket_count,
     raven_set_buckets, raven_set_new, raven_string_bytes, raven_string_concat, raven_string_len,
-    raven_string_new, Box as RavenBox, Closure as RavenClosure, List as RavenList, Map as RavenMap,
-    MapEntry, ObjectHeader, Set as RavenSet, SetEntry, String as RavenString, GC_MARK_BIT,
-    OBJECT_ALIGN, TAG_BOX, TAG_CLOSURE, TAG_LIST, TAG_MAP, TAG_SET, TAG_STRING,
+    raven_string_new, raven_struct_fields, raven_struct_new, Box as RavenBox,
+    Closure as RavenClosure, List as RavenList, Map as RavenMap, MapEntry, ObjectHeader,
+    Set as RavenSet, SetEntry, String as RavenString, GC_MARK_BIT, OBJECT_ALIGN, TAG_BOX,
+    TAG_CLOSURE, TAG_LIST, TAG_MAP, TAG_SET, TAG_STRING, TAG_STRUCT,
 };
 
 use std::alloc::{self, Layout};
@@ -149,10 +151,69 @@ pub extern "C" fn raven_println_str(ptr: *const u8, len: usize) {
     let _ = handle.write_all(b"\n");
 }
 
+/// Write a signed 64-bit integer to standard output in base ten,
+/// followed by a single `\n`.
+///
+/// This is the integer companion of `raven_println_str`. The back-end
+/// wires the built-in `print_int(Int)` free function to this symbol so a
+/// program can observe a computed integer without a string conversion.
+#[no_mangle]
+pub extern "C" fn raven_println_int(value: i64) {
+    let stdout = io::stdout();
+    let mut handle = stdout.lock();
+    // Format into a small stack buffer to avoid a heap allocation.
+    let mut buf = itoa_buf();
+    let s = format_i64(value, &mut buf);
+    let _ = handle.write_all(s.as_bytes());
+    let _ = handle.write_all(b"\n");
+}
+
+/// A stack buffer large enough for any base-ten `i64` plus a sign.
+fn itoa_buf() -> [u8; 20] {
+    [0u8; 20]
+}
+
+/// Format `value` into `buf` and return the written slice as a string.
+/// Twenty bytes hold the widest `i64` (`-9223372036854775808`).
+fn format_i64(value: i64, buf: &mut [u8; 20]) -> &str {
+    // Work with the unsigned magnitude to handle i64::MIN safely.
+    let negative = value < 0;
+    let mut magnitude = value.unsigned_abs();
+    let mut pos = buf.len();
+    loop {
+        pos -= 1;
+        buf[pos] = b'0' + (magnitude % 10) as u8;
+        magnitude /= 10;
+        if magnitude == 0 {
+            break;
+        }
+    }
+    if negative {
+        pos -= 1;
+        buf[pos] = b'-';
+    }
+    // SAFETY: the bytes written are ASCII digits and an optional '-'.
+    unsafe { std::str::from_utf8_unchecked(&buf[pos..]) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::mem::{align_of, size_of};
+
+    #[test]
+    fn format_i64_handles_edges() {
+        let mut buf = itoa_buf();
+        assert_eq!(format_i64(0, &mut buf), "0");
+        let mut buf = itoa_buf();
+        assert_eq!(format_i64(7, &mut buf), "7");
+        let mut buf = itoa_buf();
+        assert_eq!(format_i64(-7, &mut buf), "-7");
+        let mut buf = itoa_buf();
+        assert_eq!(format_i64(i64::MAX, &mut buf), "9223372036854775807");
+        let mut buf = itoa_buf();
+        assert_eq!(format_i64(i64::MIN, &mut buf), "-9223372036854775808");
+    }
 
     #[test]
     fn object_header_is_sixteen_bytes() {
@@ -176,7 +237,15 @@ mod tests {
 
     #[test]
     fn tag_constants_are_distinct_and_dense() {
-        let tags = [TAG_STRING, TAG_LIST, TAG_MAP, TAG_SET, TAG_CLOSURE, TAG_BOX];
+        let tags = [
+            TAG_STRING,
+            TAG_LIST,
+            TAG_MAP,
+            TAG_SET,
+            TAG_CLOSURE,
+            TAG_BOX,
+            TAG_STRUCT,
+        ];
         for (i, t) in tags.iter().enumerate() {
             assert_eq!(*t as usize, i + 1, "tag {i} should be {}", i + 1);
         }

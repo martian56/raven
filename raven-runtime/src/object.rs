@@ -18,6 +18,7 @@ pub mod list;
 pub mod map;
 pub mod set;
 pub mod string;
+pub mod structval;
 
 pub use boxed::{raven_box_new, raven_box_payload, Box, BOX_PAYLOAD_OFFSET};
 pub use closure::{raven_closure_captures, raven_closure_fn_ptr, raven_closure_new, Closure};
@@ -27,6 +28,7 @@ pub use set::{raven_set_bucket_count, raven_set_buckets, raven_set_new, Set, Set
 pub use string::{
     raven_string_bytes, raven_string_concat, raven_string_len, raven_string_new, String,
 };
+pub use structval::{raven_struct_fields, raven_struct_new, STRUCT_FIELDS_OFFSET, STRUCT_FIELD_SLOT};
 
 /// Alignment, in bytes, used for every heap object the runtime
 /// allocates. The header itself is 4-byte aligned, but objects are
@@ -57,6 +59,12 @@ pub const TAG_CLOSURE: u32 = 0x05;
 
 /// Generic heap box. Reserved for trait-object payloads (issue #66).
 pub const TAG_BOX: u32 = 0x06;
+
+/// User-defined struct value. `len` is the field count; `cap` carries
+/// the per-type descriptor id the collector looks up to find which field
+/// slots hold GC pointers. The fields follow the header, one 8-byte slot
+/// each, in declaration order.
+pub const TAG_STRUCT: u32 = 0x07;
 
 /// Bit 0 of `ObjectHeader.gc_bits`: the mark bit the tracing collector
 /// sets during the mark phase and clears during sweep. The remaining
@@ -144,6 +152,11 @@ pub(crate) unsafe fn object_body_layout(header: *const ObjectHeader) -> (usize, 
                 boxed::box_total_size(payload_size),
                 boxed::box_align(OBJECT_ALIGN as u32),
             )
+        }
+        TAG_STRUCT => {
+            // SAFETY: a live struct header carries its field count in `len`.
+            let field_count = unsafe { (*header).len };
+            (structval::struct_total_size(field_count), structval::struct_align())
         }
         // An unknown tag should never reach the collector. Treat it as a
         // bare header so freeing at least releases the body.

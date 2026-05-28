@@ -16,13 +16,15 @@
 //! simply keeps the global state sound under Rust's aliasing rules
 //! without a lock.
 
+use crate::object::structval::{STRUCT_FIELDS_OFFSET, STRUCT_FIELD_SLOT};
 use crate::object::{
     free_object_buffers, object_body_layout, Closure, List, Map, ObjectHeader, Set, TAG_BOX,
-    TAG_CLOSURE, TAG_LIST, TAG_MAP, TAG_SET,
+    TAG_CLOSURE, TAG_LIST, TAG_MAP, TAG_SET, TAG_STRUCT,
 };
 use crate::object::{MapEntry, SetEntry, BOX_PAYLOAD_OFFSET};
 use crate::{raven_alloc, raven_dealloc};
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 
 /// A registered root: the address of a stack slot that holds a GC
 /// pointer (or null). The collector reads the slot's current value at
@@ -55,6 +57,14 @@ thread_local! {
     /// allocation that would carry `bytes_allocated` past this. Reset
     /// after each collection to a multiple of the surviving live bytes.
     static THRESHOLD: Cell<usize> = const { Cell::new(INITIAL_THRESHOLD) };
+
+    /// Per-struct-type GC pointer descriptors. The key is the type id the
+    /// back-end assigns to each monomorphic struct type; the value is a
+    /// bitmask where bit `i` is set when field slot `i` holds a GC
+    /// pointer the collector must trace. The back-end registers every
+    /// struct type once at program startup, before any struct is built.
+    static STRUCT_DESCRIPTORS: RefCell<HashMap<u32, u64>> =
+        RefCell::new(HashMap::new());
 }
 
 /// Initial and floor collection threshold in bytes (1 MiB).
@@ -135,6 +145,30 @@ pub extern "C" fn raven_gc_leave_frame() {
             roots.truncate(target);
         });
     }
+}
+
+/// Register a struct type's GC pointer descriptor.
+///
+/// `type_id` is the small integer id the back-end assigns to one
+/// monomorphic struct type; `ptr_mask` has bit `i` set when field slot
+/// `i` holds a GC pointer the collector traces. Registering the same id
+/// twice overwrites the prior descriptor, which is harmless because the
+/// back-end always registers the same mask for a given id. The back-end
+/// emits these calls in the program entry point before any struct is
+/// allocated, so every struct the collector ever sees has a descriptor.
+#[no_mangle]
+pub extern "C" fn raven_struct_register(type_id: u32, ptr_mask: u64) {
+    STRUCT_DESCRIPTORS.with(|d| {
+        d.borrow_mut().insert(type_id, ptr_mask);
+    });
+}
+
+/// Look up a struct type's GC pointer descriptor. Returns zero (no
+/// pointer fields) when the id was never registered, so an unregistered
+/// struct is traced conservatively as having no pointers rather than
+/// crashing the collector.
+fn struct_descriptor(type_id: u32) -> u64 {
+    STRUCT_DESCRIPTORS.with(|d| d.borrow().get(&type_id).copied().unwrap_or(0))
 }
 
 /// Number of root slots currently registered. Test and diagnostic aid.
@@ -374,6 +408,21 @@ unsafe fn trace_object(object: *mut ObjectHeader, work: &mut Vec<*mut ObjectHead
             if flag != 0 {
                 let payload = (object as *const u8).wrapping_add(BOX_PAYLOAD_OFFSET);
                 visit_slot(payload as *const *mut u8, work);
+            }
+        }
+        TAG_STRUCT => {
+            // SAFETY: tag confirms the struct layout. `len` is the field
+            // count and `cap` is the per-type descriptor id.
+            let (field_count, type_id) = unsafe { ((*object).len, (*object).cap) };
+            let mask = struct_descriptor(type_id);
+            if mask != 0 {
+                let fields = (object as *const u8).wrapping_add(STRUCT_FIELDS_OFFSET);
+                for i in 0..field_count as usize {
+                    if mask & (1u64 << i) != 0 {
+                        let slot = fields.wrapping_add(i * STRUCT_FIELD_SLOT);
+                        visit_slot(slot as *const *mut u8, work);
+                    }
+                }
             }
         }
         // TAG_STRING and unknown tags own no GC pointers.
@@ -733,6 +782,60 @@ mod collector_tests {
             assert_eq!(raven_gc_live_objects(), 2);
             raven_gc_collect();
             assert_eq!(raven_gc_live_objects(), 2);
+            raven_gc_pop_roots(1);
+            raven_gc_collect();
+            assert_eq!(raven_gc_live_objects(), 0);
+        });
+    }
+
+    #[test]
+    fn struct_traces_gc_pointer_fields() {
+        isolated(|| {
+            use crate::object::raven_struct_new;
+            // Type 1 has two fields: slot 0 is a scalar Int, slot 1 is a
+            // GC pointer (bit 1 set).
+            raven_struct_register(1, 0b10);
+            let inner = raven_string_new(4);
+            let s = raven_struct_new(2, 1);
+            assert!(!inner.is_null() && !s.is_null());
+            // SAFETY: store a scalar in slot 0 and the pointer in slot 1.
+            unsafe {
+                let fields = crate::object::raven_struct_fields(s) as *mut *mut u8;
+                fields.add(0).write(0xDEAD_BEEF as *mut u8);
+                fields.add(1).write(inner as *mut u8);
+            }
+            let mut slot: *mut u8 = s as *mut u8;
+            raven_gc_push_root(&mut slot as *mut *mut u8);
+            // struct + string both live.
+            assert_eq!(raven_gc_live_objects(), 2);
+            raven_gc_collect();
+            // The scalar slot's pointer-looking integer is not traced, but
+            // the string in the pointer slot survives transitively.
+            assert_eq!(raven_gc_live_objects(), 2);
+            raven_gc_pop_roots(1);
+            raven_gc_collect();
+            assert_eq!(raven_gc_live_objects(), 0);
+        });
+    }
+
+    #[test]
+    fn struct_with_no_pointer_fields_traces_nothing() {
+        isolated(|| {
+            use crate::object::raven_struct_new;
+            // Type 2 has two scalar fields (empty mask).
+            raven_struct_register(2, 0);
+            let s = raven_struct_new(2, 2);
+            // SAFETY: fill both slots with pointer-looking integers that
+            // must not be traced.
+            unsafe {
+                let fields = crate::object::raven_struct_fields(s) as *mut u64;
+                fields.add(0).write(0xDEAD_BEEF_DEAD_BEEF);
+                fields.add(1).write(0x1);
+            }
+            let mut slot: *mut u8 = s as *mut u8;
+            raven_gc_push_root(&mut slot as *mut *mut u8);
+            raven_gc_collect();
+            assert_eq!(raven_gc_live_objects(), 1);
             raven_gc_pop_roots(1);
             raven_gc_collect();
             assert_eq!(raven_gc_live_objects(), 0);
