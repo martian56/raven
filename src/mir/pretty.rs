@@ -146,7 +146,7 @@ fn pretty_rvalue(buf: &mut String, r: &MirRvalue) {
             }
             buf.push(')');
         }
-        MirRvalue::StructCreate { ty, fields } => {
+        MirRvalue::StructCreate { ty, fields, .. } => {
             write!(buf, "(struct-create {}", ty).unwrap();
             for f in fields {
                 buf.push(' ');
@@ -158,6 +158,7 @@ fn pretty_rvalue(buf: &mut String, r: &MirRvalue) {
             ty,
             variant,
             payload,
+            ..
         } => {
             write!(buf, "(enum-create {} variant={}", ty, variant).unwrap();
             for p in payload {

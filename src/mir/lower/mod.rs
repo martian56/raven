@@ -14,7 +14,7 @@ pub mod stmt;
 
 use std::collections::HashMap;
 
-use crate::hir::HirFn;
+use crate::hir::{HirEnum, HirFn, HirStruct};
 use crate::resolve::DeclId;
 use crate::tycheck::ty::ParamId;
 use crate::tycheck::Ty;
@@ -25,6 +25,16 @@ use super::ty::MirType;
 
 /// Mapping from a generic parameter to its concrete substitute.
 pub type SubstMap = HashMap<ParamId, Ty>;
+
+/// Declaration tables the expression lowering consults to resolve
+/// struct field offsets and enum variant payloads. Keyed by the source
+/// type name, which is stable through monomorphization for the
+/// non-generic types the MVP supports.
+#[derive(Clone, Default)]
+pub struct DeclTables<'a> {
+    pub structs: HashMap<String, &'a HirStruct>,
+    pub enums: HashMap<String, &'a HirEnum>,
+}
 
 /// Mapping from a source identifier name to its current MIR local.
 /// Re-binding shadows the previous entry.
@@ -49,6 +59,8 @@ pub struct LowerCx<'a> {
     /// Calls that the monomorphizer should specialize once the function
     /// finishes lowering. Each entry is `(decl_id, concrete_type_args)`.
     pub pending_calls: Vec<(DeclId, Vec<Ty>)>,
+    /// Struct and enum declaration tables for field and variant lookup.
+    pub decls: &'a DeclTables<'a>,
 }
 
 impl LowerCx<'_> {
@@ -121,6 +133,7 @@ pub fn lower_function(
     mangled: String,
     hir: &HirFn,
     subst: &SubstMap,
+    decls: &DeclTables<'_>,
 ) -> (MirFunction, Vec<(DeclId, Vec<Ty>)>) {
     let ret_ty = mir_ty(&hir.ret, subst);
     let mut builder = FunctionBuilder::new(mangled, hir.name.clone(), ret_ty, hir.span.clone());
@@ -140,6 +153,7 @@ pub fn lower_function(
         scopes: vec![param_scope],
         loops: Vec::new(),
         pending_calls: Vec::new(),
+        decls,
     };
 
     let body = hir

@@ -72,6 +72,7 @@ pub(crate) fn lower_expr(
         ExprKind::Char(c) => HirExprKind::Char(*c),
         ExprKind::SelfLower => HirExprKind::SelfValue,
         ExprKind::SelfUpper => HirExprKind::Ident("Self".into()),
+        ExprKind::Ident { name, .. } if name == "None" => HirExprKind::NoneCtor,
         ExprKind::Ident { name, .. } => HirExprKind::Ident(name.clone()),
         ExprKind::Array(items) => {
             let elem_hint = match &ty {
@@ -127,6 +128,28 @@ pub(crate) fn lower_expr(
             }
         }
         ExprKind::Call { callee, args } => {
+            // Recognize the built in enum constructors `Some(x)`, `Ok(x)`,
+            // and `Err(x)` so they lower to typed constructor nodes (and
+            // then to `EnumCreate` in MIR) rather than ordinary calls.
+            if let ExprKind::Ident { name, .. } = &callee.kind {
+                if args.len() == 1 {
+                    match name.as_str() {
+                        "Some" => {
+                            let inner = lower_expr(&args[0], &Ty::Error, cx)?;
+                            return Ok(make_expr(HirExprKind::SomeCtor(Box::new(inner)), ty, span));
+                        }
+                        "Ok" => {
+                            let inner = lower_expr(&args[0], &Ty::Error, cx)?;
+                            return Ok(make_expr(HirExprKind::OkCtor(Box::new(inner)), ty, span));
+                        }
+                        "Err" => {
+                            let inner = lower_expr(&args[0], &Ty::Error, cx)?;
+                            return Ok(make_expr(HirExprKind::ErrCtor(Box::new(inner)), ty, span));
+                        }
+                        _ => {}
+                    }
+                }
+            }
             let c = lower_expr(callee, &Ty::Error, cx)?;
             let mut lowered = Vec::with_capacity(args.len());
             for a in args {
