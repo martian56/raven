@@ -33,9 +33,17 @@ use crate::parser::parse;
 /// list grows as later modules (issues #72 to #80) land; each adds one
 /// `include_str!` row here.
 pub const BUNDLED_MODULES: &[(&str, &str)] = &[
+    ("core", include_str!("../../stdlib/std/core.rv")),
     ("io", include_str!("../../stdlib/std/io.rv")),
     ("string", include_str!("../../stdlib/std/string.rv")),
 ];
+
+/// The prelude module that is implicitly imported into every program.
+/// Its traits (`ToString`, `Eq`, `Ord`, `Hash`, `Iterator`) and their
+/// built-in impls are always in scope, so a user writes neither an
+/// `import std/core` line nor an explicit `impl` for the built-in types.
+/// See `docs/v2/specs/core-traits.md`.
+pub const PRELUDE_MODULE: &str = "core";
 
 /// The separator used when namespacing a bundled function name. The
 /// resulting name (for example `std.io.println`) is unwritable by a user
@@ -68,6 +76,12 @@ pub fn bundled_source(module_path: &str) -> Option<&'static str> {
 /// merges the modules it can load.
 pub fn expand_with_stdlib(user: &File) -> Result<File, RavenError> {
     let mut wanted: BTreeSet<String> = BTreeSet::new();
+    // The prelude (`std/core`) is implicitly imported into every program,
+    // so its traits and built-in impls are always in scope without an
+    // `import std/core` line. It is merged first; a `BTreeSet` keeps the
+    // module order stable and deduplicates against any later explicit
+    // import of the same module.
+    wanted.insert(PRELUDE_MODULE.to_string());
     for decl in &user.items {
         if let DeclKind::Import(import) = &decl.kind {
             if let ImportSource::Std(segments) = &import.source {
@@ -449,10 +463,29 @@ mod tests {
     }
 
     #[test]
-    fn no_std_import_leaves_file_unchanged() {
+    fn no_std_import_still_merges_the_prelude() {
+        // Even with no explicit `import std/...`, the prelude (`std/core`)
+        // is implicitly merged so its traits and built-in impls are always
+        // in scope. The combined file therefore holds the prelude items
+        // plus the user's, and the user's own items still trail.
         let user = parse_src("fun main() {}\n");
         let combined = expand_with_stdlib(&user).expect("expand");
-        assert_eq!(combined.items.len(), user.items.len());
+        assert!(
+            combined.items.len() > user.items.len(),
+            "the prelude should add items, got {} (user had {})",
+            combined.items.len(),
+            user.items.len()
+        );
+        // The user's `main` is preserved and trails the prelude.
+        assert!(matches!(
+            combined.items.last().map(|d| &d.kind),
+            Some(DeclKind::Function(f)) if f.name == "main"
+        ));
+        // The prelude declares the `ToString` trait.
+        assert!(combined
+            .items
+            .iter()
+            .any(|d| matches!(&d.kind, DeclKind::Trait(t) if t.name == "ToString")));
     }
 
     #[test]
