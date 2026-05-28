@@ -1,0 +1,92 @@
+// std/path: POSIX-style path manipulation on `/` separators. Pure string
+// work over the `__str_*` byte intrinsics; Windows `\` handling is out of
+// scope. Separator `/` is byte 47, `.` is byte 46.
+
+// Byte index of the last `/`, or -1 when none.
+fun last_slash(p: String) -> Int {
+    let i = __str_len(p) - 1
+    while i >= 0 {
+        if __str_byte_at(p, i) == 47 {
+            return i
+        }
+        i = i - 1
+    }
+    return -1
+}
+
+fun join(a: String, b: String) -> String {
+    let na = __str_len(a)
+    let nb = __str_len(b)
+    if na == 0 {
+        return b
+    }
+    if nb == 0 {
+        return a
+    }
+    let a_slash = __str_byte_at(a, na - 1) == 47
+    let b_slash = __str_byte_at(b, 0) == 47
+    if a_slash {
+        if b_slash {
+            return __str_concat(a, __str_substring(b, 1, nb))
+        }
+        return __str_concat(a, b)
+    }
+    if b_slash {
+        return __str_concat(a, b)
+    }
+    return __str_concat(__str_concat(a, "/"), b)
+}
+
+fun basename(p: String) -> String {
+    let i = last_slash(p)
+    if i < 0 {
+        return p
+    }
+    return __str_substring(p, i + 1, __str_len(p))
+}
+
+fun dirname(p: String) -> String {
+    let i = last_slash(p)
+    if i < 0 {
+        return "."
+    }
+    if i == 0 {
+        return "/"
+    }
+    return __str_substring(p, 0, i)
+}
+
+// Substring after the last `.` in the basename, or "" when none. A leading
+// dot (a dotfile such as ".gitignore") is not an extension.
+fun extension(p: String) -> String {
+    let base = basename(p)
+    let n = __str_len(base)
+    let i = n - 1
+    while i > 0 {
+        if __str_byte_at(base, i) == 46 {
+            return __str_substring(base, i + 1, n)
+        }
+        i = i - 1
+    }
+    return ""
+}
+
+fun stem(p: String) -> String {
+    let base = basename(p)
+    let n = __str_len(base)
+    let i = n - 1
+    while i > 0 {
+        if __str_byte_at(base, i) == 46 {
+            return __str_substring(base, 0, i)
+        }
+        i = i - 1
+    }
+    return base
+}
+
+fun is_absolute(p: String) -> Bool {
+    if __str_len(p) == 0 {
+        return false
+    }
+    return __str_byte_at(p, 0) == 47
+}

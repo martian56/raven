@@ -78,6 +78,7 @@ pub const STDLIB_MODULES: &[&str] = &[
     "cmp",
     "string",
     "math",
+    "path",
     "fs",
     "net",
     "http",

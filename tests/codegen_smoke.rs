@@ -225,6 +225,24 @@ fn collections_program_compiles_and_runs() {
 }
 
 #[test]
+fn path_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // std/path POSIX `/` manipulation in pure Raven over the `__str_*` byte
+    // intrinsics: join collapses a trailing separator, basename/dirname split
+    // on the last `/` (dirname of a bare name is "."), extension/stem split on
+    // the last `.` of the basename (a name with no dot has an empty
+    // extension), and is_absolute tests a leading `/`. Prints a/b/c.txt twice,
+    // c.txt, a/b, ".", txt, c, an empty line, then absolute.
+    compile_link_run_and_check(
+        "use_path.rv",
+        "a/b/c.txt\na/b/c.txt\nc.txt\na/b\n.\ntxt\nc\n\nabsolute\n",
+        &runtime,
+    );
+}
+
+#[test]
 fn cmp_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
