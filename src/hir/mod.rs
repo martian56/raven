@@ -19,7 +19,10 @@ pub mod ty;
 #[cfg(test)]
 mod tests;
 
-pub use decl::{HirEnum, HirFn, HirImpl, HirItem, HirItemKind, HirStruct, HirTrait, HirVariant};
+pub use decl::{
+    HirEnum, HirExtern, HirExternFn, HirFn, HirImpl, HirItem, HirItemKind, HirStruct, HirTrait,
+    HirVariant,
+};
 pub use expr::{HirArm, HirBinaryOp, HirBlock, HirExpr, HirExprKind, HirUnaryOp, InterpolPart};
 pub use lower::lower_file;
 pub use pattern::{HirFieldPat, HirLiteralPat, HirPattern, HirPatternKind};

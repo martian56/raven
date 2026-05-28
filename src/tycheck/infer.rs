@@ -330,6 +330,13 @@ fn unify_inner(cx: &mut InferCtx, a: &Ty, b: &Ty, span: &Span) -> Result<(), Rav
                 Err(mismatch(a, b, span))
             }
         }
+        // Two opaque typed pointers unify when their pointee types do.
+        // The other FFI primitives are handled by the `a == b`
+        // short-circuit at the top; a CStr against a CInt, or any FFI
+        // type against a native type, falls through to the mismatch.
+        (Ty::Ffi(super::ty::FfiTy::CPtr(x)), Ty::Ffi(super::ty::FfiTy::CPtr(y))) => {
+            unify_inner(cx, x, y, span)
+        }
         _ => Err(mismatch(a, b, span)),
     }
 }

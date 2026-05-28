@@ -71,6 +71,22 @@ fn pretty_item(buf: &mut String, item: &HirItem, depth: usize) {
             indent(buf, depth);
             buf.push_str(")\n");
         }
+        HirItemKind::Extern(e) => {
+            writeln!(buf, "(extern {}", quote(&e.abi)).unwrap();
+            for item in &e.items {
+                indent(buf, depth + 1);
+                write!(buf, "(extern-fn {} params=(", quote(&item.name)).unwrap();
+                for (i, p) in item.params.iter().enumerate() {
+                    if i > 0 {
+                        buf.push(' ');
+                    }
+                    write!(buf, "{}", p).unwrap();
+                }
+                writeln!(buf, ") ret={})", item.ret).unwrap();
+            }
+            indent(buf, depth);
+            buf.push_str(")\n");
+        }
         HirItemKind::Opaque(s) => {
             writeln!(buf, "(opaque {})", quote(s)).unwrap();
         }

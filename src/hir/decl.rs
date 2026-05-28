@@ -38,9 +38,32 @@ pub enum HirItemKind {
         ty: HirTy,
         init: Option<HirExpr>,
     },
-    /// Import or extern blocks pass through opaquely. Lowering does not
-    /// touch them.
+    /// An `extern "ABI" { ... }` block with its resolved foreign
+    /// function signatures. The codegen back end declares each as an
+    /// imported C-ABI symbol.
+    Extern(HirExtern),
+    /// Import blocks pass through opaquely. Lowering does not touch them.
     Opaque(String),
+}
+
+/// An extern block in HIR, carrying resolved signatures.
+#[derive(Debug, Clone)]
+pub struct HirExtern {
+    /// The ABI string, for example `"C"`.
+    pub abi: String,
+    pub items: Vec<HirExternFn>,
+    pub span: Span,
+}
+
+/// One foreign function signature in an extern block. The symbol is the
+/// raw C name; the parameter and return types are resolved FFI types the
+/// back end maps to C ABI machine types.
+#[derive(Debug, Clone)]
+pub struct HirExternFn {
+    pub name: String,
+    pub params: Vec<HirTy>,
+    pub ret: HirTy,
+    pub span: Span,
 }
 
 /// A function (or method) declaration in HIR.

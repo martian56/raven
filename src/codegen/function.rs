@@ -16,8 +16,8 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::Module;
 
 use crate::mir::{
-    MirBinOp, MirBlock, MirBlockId, MirConstant, MirFnRef, MirFunction, MirLocal, MirOperand,
-    MirRvalue, MirStatement, MirTerminator, MirType, MirUnOp,
+    MirBinOp, MirBlock, MirBlockId, MirConstant, MirFfiTy, MirFnRef, MirFunction, MirLocal,
+    MirOperand, MirRvalue, MirStatement, MirTerminator, MirType, MirUnOp,
 };
 
 use super::context::ModuleCx;
@@ -48,6 +48,15 @@ pub fn cranelift_ty(ty: &MirType, ptr: CType) -> Option<CType> {
         // A `dyn Trait` value is a single GC pointer to a boxed fat
         // pointer `{ data, vtable }`; see the heap layout note below.
         | MirType::Dyn { .. } => Some(ptr),
+        // C FFI primitives map to their C ABI machine types. `CInt` is a
+        // 32-bit C `int`; `CLong`, `CSize`, `CStr`, and `CPtr<T>` are all
+        // pointer-width on the 64-bit targets Raven supports. See
+        // `docs/v2/specs/ffi.md`.
+        MirType::Ffi(ffi) => Some(match ffi {
+            MirFfiTy::CInt => types::I32,
+            MirFfiTy::CLong => types::I64,
+            MirFfiTy::CSize | MirFfiTy::CStr | MirFfiTy::CPtr(_) => ptr,
+        }),
     }
 }
 
@@ -411,6 +420,16 @@ fn lower_constant(
             let fref = cx.module().declare_func_in_func(func_id, builder.func);
             let inst = builder.ins().call(fref, &[bytes_ptr, len_val]);
             Ok(Some(builder.inst_results(inst)[0]))
+        }
+        MirConstant::CStr(s) => {
+            // A C string literal lowers to the address of a static,
+            // read-only, null-terminated byte buffer: a `*const c_char`.
+            // No heap allocation and no runtime call; the pointer is
+            // handed straight to the C function.
+            let id = cx.intern_cstring(s.as_bytes())?;
+            let local_id = cx.module().declare_data_in_func(id, builder.func);
+            let ptr = cx.pointer_type();
+            Ok(Some(builder.ins().symbol_value(ptr, local_id)))
         }
     }
 }
@@ -937,16 +956,53 @@ fn lower_call(
     let func_id = cx.function_id(&callee.mangled).ok_or_else(|| {
         CodegenError::Unsupported(format!("unresolved callee: {}", callee.mangled))
     })?;
+    // When the callee is a foreign C function, coerce each argument to
+    // its declared C ABI machine width. A native `Int` passed to a `CInt`
+    // parameter is an i64 value that must be reduced to i32 to match the
+    // imported signature; an `Int` to a `CLong`/`CSize` is already i64.
+    let extern_param_tys: Option<Vec<MirType>> =
+        cx.extern_params(&callee.mangled).map(|s| s.to_vec());
     let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
     let mut arg_vals = Vec::with_capacity(args.len());
-    for a in args {
+    for (i, a) in args.iter().enumerate() {
         if let Some(v) = lower_operand(cx, builder, a, slots)? {
+            let v = match &extern_param_tys {
+                Some(tys) => match tys.get(i) {
+                    Some(pt) => coerce_to_param(builder, v, pt, cx.pointer_type()),
+                    None => v,
+                },
+                None => v,
+            };
             arg_vals.push(v);
         }
     }
     let inst = builder.ins().call(local_ref, &arg_vals);
     let results = builder.inst_results(inst);
     Ok(results.first().copied())
+}
+
+/// Reconcile an argument value's machine type with the type the callee's
+/// parameter expects. Used for foreign C calls, where a native `Int`
+/// (i64) may need reducing to a narrower C integer (`CInt` is i32) or a
+/// scalar may need widening to pointer width. Equal widths pass through.
+fn coerce_to_param(
+    builder: &mut FunctionBuilder<'_>,
+    v: Value,
+    param: &MirType,
+    ptr: CType,
+) -> Value {
+    let Some(want) = cranelift_ty(param, ptr) else {
+        return v;
+    };
+    let got = builder.func.dfg.value_type(v);
+    if got == want || !got.is_int() || !want.is_int() {
+        return v;
+    }
+    if want.bytes() < got.bytes() {
+        builder.ins().ireduce(want, v)
+    } else {
+        builder.ins().sextend(want, v)
+    }
 }
 
 fn lower_intrinsic(
@@ -983,6 +1039,20 @@ fn lower_intrinsic(
                 lower_operand(cx, builder, &args[0], slots)?,
                 "print_int argument",
             )?;
+            // `raven_println_int` takes an i64. A native `Int` is already
+            // i64; a C FFI integer may be narrower (`CInt` is i32) or the
+            // same width (`CLong`/`CSize`). Sign-extend a narrower value
+            // so a negative C `int` prints correctly.
+            let v = {
+                let got = builder.func.dfg.value_type(v);
+                if got == types::I64 {
+                    v
+                } else if got.is_int() && got.bytes() < types::I64.bytes() {
+                    builder.ins().sextend(types::I64, v)
+                } else {
+                    v
+                }
+            };
             let func_id = cx
                 .runtime_id(intrinsics::RUNTIME_PRINTLN_INT)
                 .expect("runtime imports declared at module init");

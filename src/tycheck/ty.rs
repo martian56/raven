@@ -74,6 +74,43 @@ impl std::hash::Hash for ParamId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InferVarId(pub u32);
 
+/// A C FFI primitive type.
+///
+/// These are the foreign-function interface types recognized by the
+/// type checker for use in `extern "C"` blocks. They are deliberately
+/// kept distinct from the native Raven types (`Int`, `String`) so a
+/// program cannot accidentally pass a native value where the C ABI
+/// expects a foreign one. The codegen back end maps each to a concrete
+/// Cranelift ABI type. See `docs/v2/specs/ffi.md`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum FfiTy {
+    /// C `int`, 32-bit on the ABIs Raven targets. Maps to `i32`.
+    CInt,
+    /// C `long`, 64-bit on the ABIs Raven targets. Maps to `i64`.
+    CLong,
+    /// C `size_t`, pointer-width unsigned. Maps to a pointer-width int.
+    CSize,
+    /// `*const c_char`: a pointer to a null-terminated byte buffer.
+    /// Maps to a pointer-width int.
+    CStr,
+    /// An opaque typed pointer `CPtr<T>`. Maps to a pointer-width int.
+    /// The pointee type is carried for documentation and future
+    /// conversions; the v2.0 back end treats it as an opaque pointer.
+    CPtr(Box<Ty>),
+}
+
+impl fmt::Display for FfiTy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FfiTy::CInt => f.write_str("CInt"),
+            FfiTy::CLong => f.write_str("CLong"),
+            FfiTy::CSize => f.write_str("CSize"),
+            FfiTy::CStr => f.write_str("CStr"),
+            FfiTy::CPtr(inner) => write!(f, "CPtr<{}>", inner),
+        }
+    }
+}
+
 /// A resolved internal type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Ty {
@@ -116,6 +153,9 @@ pub enum Ty {
     /// `Self` inside an `impl` block, bound to the implementing type.
     /// The contained type is the implementing type for convenience.
     SelfTy(Box<Ty>),
+    /// A C FFI primitive type (`CInt`, `CStr`, `CPtr<T>`, ...). Used in
+    /// `extern "C"` signatures and `c"..."` literals.
+    Ffi(FfiTy),
     /// A declared generic parameter.
     Param(ParamId),
     /// An inference variable.
@@ -149,6 +189,7 @@ impl Ty {
             Ty::Result(a, b) => a.has_var() || b.has_var(),
             Ty::Struct { args, .. } | Ty::Enum { args, .. } => args.iter().any(|t| t.has_var()),
             Ty::Function { params, ret } => params.iter().any(|t| t.has_var()) || ret.has_var(),
+            Ty::Ffi(FfiTy::CPtr(inner)) => inner.has_var(),
             Ty::Dyn { .. } => false,
             _ => false,
         }
@@ -193,6 +234,7 @@ impl fmt::Display for Ty {
             }
             Ty::Dyn { name, .. } => write!(f, "dyn {}", name),
             Ty::SelfTy(inner) => write!(f, "Self/* = {} */", inner),
+            Ty::Ffi(ffi) => write!(f, "{}", ffi),
             Ty::Param(p) => f.write_str(&p.name),
             Ty::Var(v) => write!(f, "?{}", v.0),
             Ty::Error => f.write_str("<error>"),

@@ -115,6 +115,72 @@ fn compiles_print_intrinsic_call() {
 }
 
 #[test]
+fn compiles_extern_c_call_with_cstring_literal() {
+    let src = r#"
+        extern "C" {
+            fun strlen(s: CStr) -> CSize
+        }
+        fun main() {
+            let n = strlen(c"hello")
+            print_int(n)
+        }
+    "#;
+    let prog = compile(src);
+    // The program records the foreign function in its extern table.
+    assert!(
+        prog.externs.iter().any(|e| e.name == "strlen"),
+        "MIR program should declare the extern strlen"
+    );
+    // The call site lowers to a direct call to the raw C symbol name.
+    let main = prog
+        .functions
+        .iter()
+        .find(|f| f.origin == "main")
+        .expect("main function");
+    let calls_strlen = main
+        .blocks
+        .iter()
+        .flat_map(|b| b.statements.iter())
+        .any(|s| {
+            matches!(
+                s,
+                MirStatement::Assign {
+                    rvalue: MirRvalue::Call { callee, .. },
+                    ..
+                } if callee.mangled == "strlen"
+            )
+        });
+    assert!(calls_strlen, "MIR should contain a call to strlen");
+
+    let object = compile_program(&prog).expect("codegen extern call");
+    assert!(object.len() > 64);
+    // The c-string literal lands in the data section, null-terminated.
+    assert!(
+        contains_bytes(&object, b"hello\0"),
+        "object should contain the null-terminated c-string bytes"
+    );
+}
+
+#[test]
+fn compiles_extern_c_call_with_int_literal() {
+    // A non-pointer FFI type: abs(CInt) -> CInt called on a negative
+    // literal. Exercises the i64-to-i32 argument coercion at the call.
+    let src = r#"
+        extern "C" {
+            fun abs(x: CInt) -> CInt
+        }
+        fun main() {
+            let n = abs(-7)
+            print_int(n)
+        }
+    "#;
+    let prog = compile(src);
+    assert!(prog.externs.iter().any(|e| e.name == "abs"));
+    let object = compile_program(&prog).expect("codegen extern abs");
+    assert!(object.len() > 64);
+}
+
+#[test]
 fn compiles_float_arithmetic() {
     let prog = compile("fun mix(x: Float, y: Float) -> Float { return x * y + 1.0 }");
     let object = compile_program(&prog).expect("codegen float");

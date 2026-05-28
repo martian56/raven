@@ -420,3 +420,53 @@ fn ty_display_does_not_panic() {
     let t = Ty::List(Box::new(Ty::Option(Box::new(Ty::Int))));
     assert_eq!(format!("{}", t), "List<Option<Int>>");
 }
+
+#[test]
+fn extern_decl_and_cstr_literal_call_checks() {
+    // An extern signature with FFI types, called on a `c"..."` literal.
+    check(
+        "extern \"C\" {\n    fun strlen(s: CStr) -> CSize\n}\nfun main() {\n    let n = strlen(c\"hello\")\n    print_int(n)\n}\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn extern_int_param_accepts_int_literal() {
+    // A native Int literal is accepted where an integer FFI type (CInt)
+    // is expected, so `abs(-7)` checks.
+    check(
+        "extern \"C\" {\n    fun abs(x: CInt) -> CInt\n}\nfun main() {\n    let n = abs(-7)\n    print_int(n)\n}\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn cstring_alias_resolves_to_cstr() {
+    // `CString` is accepted as an alias for `CStr` so older signatures
+    // keep checking.
+    check(
+        "extern \"C\" {\n    fun puts(s: CString) -> CInt\n}\nfun main() {\n    let _ = puts(c\"hi\")\n}\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn passing_native_string_to_cstr_is_rejected() {
+    // A heap `String` is not a `CStr`: String-to-CStr conversion is
+    // deferred (issue #80), so this is a clear type error.
+    let err = check(
+        "extern \"C\" {\n    fun strlen(s: CStr) -> CSize\n}\nfun main() {\n    let s = \"hi\"\n    let _ = strlen(s)\n}\n",
+    )
+    .unwrap_err();
+    assert!(matches!(err, RavenError::Type(_, _, _)));
+}
+
+#[test]
+fn ffi_type_mismatch_is_rejected() {
+    // A `c"..."` (CStr) where a CInt is expected is rejected.
+    let err = check(
+        "extern \"C\" {\n    fun abs(x: CInt) -> CInt\n}\nfun main() {\n    let _ = abs(c\"oops\")\n}\n",
+    )
+    .unwrap_err();
+    assert!(matches!(err, RavenError::Type(_, _, _)));
+}

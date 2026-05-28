@@ -118,6 +118,7 @@ pub fn compile_to_object(
 
     let mut cx = ModuleCx::new(module);
     cx.declare_runtime_imports()?;
+    cx.declare_externs(program)?;
     cx.declare_functions(program)?;
     cx.define_functions(program)?;
 

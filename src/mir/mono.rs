@@ -41,6 +41,7 @@ type SymbolIndex = HashMap<DeclId, String>;
 /// Run the full monomorphization pass.
 pub fn monomorphize(hir: &HirProgram) -> Result<MirProgram, RavenError> {
     let mut program = MirProgram::new();
+    program.externs = collect_externs(hir);
     let (index, roots, symbols) = collect_roots(hir);
     let decls = collect_decls(hir);
 
@@ -70,6 +71,26 @@ pub fn monomorphize(hir: &HirProgram) -> Result<MirProgram, RavenError> {
     }
 
     Ok(program)
+}
+
+/// Collect every foreign function from the HIR's extern blocks, lowering
+/// each resolved signature to ground MIR types. The back end declares
+/// these as imported C-ABI symbols.
+fn collect_externs(hir: &HirProgram) -> Vec<super::ir::MirExternFn> {
+    use super::ty::MirType;
+    let mut out = Vec::new();
+    for item in &hir.items {
+        if let HirItemKind::Extern(ext) = &item.kind {
+            for f in &ext.items {
+                out.push(super::ir::MirExternFn {
+                    name: f.name.clone(),
+                    params: f.params.iter().map(MirType::from_ty).collect(),
+                    ret: MirType::from_ty(&f.ret),
+                });
+            }
+        }
+    }
+    out
 }
 
 /// Index every struct and enum declaration by its source name so the

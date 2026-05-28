@@ -237,6 +237,7 @@ fn pretty_operand(buf: &mut String, op: &MirOperand) {
             MirConstant::Float(v) => write!(buf, "{}", v).unwrap(),
             MirConstant::Str(s) => buf.push_str(&quote(s)),
             MirConstant::Char(c) => buf.push_str(&quote(&c.to_string())),
+            MirConstant::CStr(s) => write!(buf, "c{}", quote(s)).unwrap(),
         },
     }
 }
