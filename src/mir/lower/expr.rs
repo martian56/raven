@@ -471,8 +471,7 @@ fn lower_interpolate(cx: &mut LowerCx<'_>, parts: &[InterpolPart], ty: MirType) 
     // is uniformly a local holding a heap String.
     if operands.len() == 1 {
         let dst = cx.builder.fresh_temp("interp", ty);
-        cx.builder
-            .assign(cx.current, dst, MirRvalue::Use(first));
+        cx.builder.assign(cx.current, dst, MirRvalue::Use(first));
         return MirOperand::Copy(dst);
     }
 

@@ -548,9 +548,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             ExprKind::Float(_) => Ok(Ty::Float),
             ExprKind::Bool(_) => Ok(Ty::Bool),
             ExprKind::Str(_) | ExprKind::BlockStr(_) | ExprKind::CStr(_) => Ok(Ty::Str),
-            ExprKind::InterpolatedString(fragments) => {
-                self.check_interpolated_string(fragments)
-            }
+            ExprKind::InterpolatedString(fragments) => self.check_interpolated_string(fragments),
             ExprKind::Char(_) => Ok(Ty::Char),
             ExprKind::SelfLower => Ok(self
                 .self_ty

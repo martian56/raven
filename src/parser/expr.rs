@@ -440,7 +440,10 @@ impl Parser {
     fn string_literal_expr(&self, decoded: String, span: Span) -> ParseResult<Expr> {
         let fragments = split_interpolation(&decoded, &span)?;
         // Collapse to a plain string when no embedded expression survived.
-        if fragments.iter().all(|f| matches!(f, StrFragment::Literal(_))) {
+        if fragments
+            .iter()
+            .all(|f| matches!(f, StrFragment::Literal(_)))
+        {
             let mut buf = String::new();
             for f in &fragments {
                 if let StrFragment::Literal(s) = f {
@@ -1104,9 +1107,7 @@ fn split_interpolation(decoded: &str, span: &Span) -> ParseResult<Vec<StrFragmen
             }
             if depth != 0 {
                 return Err(RavenError::parse(
-                    ParseError::Custom(
-                        "unterminated `${` interpolation in string literal".into(),
-                    ),
+                    ParseError::Custom("unterminated `${` interpolation in string literal".into()),
                     span.clone(),
                 ));
             }
@@ -1117,9 +1118,7 @@ fn split_interpolation(decoded: &str, span: &Span) -> ParseResult<Vec<StrFragmen
             let snippet = &decoded[start..j];
             if snippet.trim().is_empty() {
                 return Err(RavenError::parse(
-                    ParseError::Custom(
-                        "empty `${}` interpolation in string literal".into(),
-                    ),
+                    ParseError::Custom("empty `${}` interpolation in string literal".into()),
                     span.clone(),
                 ));
             }
@@ -1147,11 +1146,7 @@ fn split_interpolation(decoded: &str, span: &Span) -> ParseResult<Vec<StrFragmen
 /// that cannot collide with real source spans. Parse errors are
 /// re-anchored to the literal's span so the diagnostic points the reader
 /// at the offending string.
-fn parse_interpolation_snippet(
-    snippet: &str,
-    span: &Span,
-    frag_index: usize,
-) -> ParseResult<Expr> {
+fn parse_interpolation_snippet(snippet: &str, span: &Span, frag_index: usize) -> ParseResult<Expr> {
     let synthetic = std::path::PathBuf::from(format!(
         "{}<interp:{}:{}>",
         span.file.display(),
