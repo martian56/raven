@@ -4,84 +4,84 @@
 
 Provide a useful string-utility surface for Raven v2 programs: case
 mapping, length and access, search, transforms, and validation. The
-module is bundled Raven source compiled into the program the same way
-`std/io` is (see `stdlib.md`). It is written in pure Raven on top of a
-small set of byte-level compiler intrinsics, so most of the logic
+surface is method-first: every operation is a method on `String`, defined
+in an `impl String` block in bundled Raven source compiled into the
+program the same way `std/io` is (see `stdlib.md`). It is written on top
+of a small set of byte-level compiler intrinsics, so most of the logic
 dogfoods the language itself.
 
 ## Import
 
-`std/string` uses the selective-import form the resolver supports:
+`std/string` is method-first, so there are no free names to import
+selectively. A bare module import merges its `impl String` block into the
+program; the methods are then resolved by the receiver type:
 
 ```raven
-import std/string { to_upper, trim, contains, repeat }
-```
+import std/string
 
-Each selector binds the bare name to the namespaced function
-(`std.string.to_upper`, ...) the compiler merges into the program. The
-aliased `import std/string as s` form with `s.member(...)` access is not
-supported, the same limitation `std/io` documents.
+fun main() {
+    print("hello".to_upper())
+}
+```
 
 ## Byte versus codepoint semantics
 
 Every function in this module is byte oriented. Indices, lengths, and
 slices count UTF-8 bytes, not Unicode code points or grapheme clusters.
 
-* `length(s)` returns the byte count. A string of multi-byte characters
-  reports a length larger than its visible character count: `length("é")`
+* `s.length()` returns the byte count. A string of multi-byte characters
+  reports a length larger than its visible character count: `"é".length()`
   is 2 because `é` is the two bytes `0xC3 0xA9` in UTF-8.
-* `char_at(s, i)` and `substring(s, start, end)` cut on byte boundaries.
+* `s.char_at(i)` and `s.substring(start, end)` cut on byte boundaries.
   Cutting through the middle of a multi-byte character yields a string
   whose bytes are not valid UTF-8; that is the caller's responsibility.
-* `index_of`, `contains`, `starts_with`, `ends_with`, and `replace`
-  compare whole byte sequences, so they work correctly on multi-byte
-  text as long as the needle and haystack are themselves valid UTF-8
-  (the common case). `contains("café", "fé")` is true because the byte
-  sequence of `fé` occurs in `café`.
-* `to_upper` and `to_lower` map only ASCII letters (`A`..`Z` <->
+* `s.index_of`, `s.contains`, `s.starts_with`, `s.ends_with`, and
+  `s.replace` compare whole byte sequences, so they work correctly on
+  multi-byte text as long as the needle and haystack are themselves valid
+  UTF-8 (the common case). `"café".contains("fé")` is true because the
+  byte sequence of `fé` occurs in `café`.
+* `s.to_upper()` and `s.to_lower()` map only ASCII letters (`A`..`Z` <->
   `a`..`z`); every other byte, including the bytes of a multi-byte
   character, passes through unchanged.
-* `trim` and `is_blank` treat the ASCII whitespace set (space, tab,
-  newline, carriage return, vertical tab, form feed) as whitespace.
+* `s.trim()` and `s.is_blank()` treat the ASCII whitespace set (space,
+  tab, newline, carriage return, vertical tab, form feed) as whitespace.
 
 This byte model keeps v2.0 small and predictable. Code-point and
 grapheme-aware operations are deferred (see Out of scope).
 
 ## The std/string surface
 
-`stdlib/std/string.rv` exports:
+`stdlib/std/string.rv` defines `impl String` with these methods (each
+takes `self`):
 
-* `length(s: String) -> Int`: byte length of `s`.
-* `is_empty(s: String) -> Bool`: true when `s` has zero bytes.
-* `char_at(s: String, i: Int) -> String`: the `i`-th byte as a one-byte
-  string; out of range yields the empty string.
-* `substring(s: String, start: Int, end: Int) -> String`: the half-open
-  byte range `[start, end)`, with bounds clamped to `0..length(s)` and a
-  `start` past `end` yielding the empty string.
-* `concat(a: String, b: String) -> String`: join two strings.
-* `to_upper(s: String) -> String`, `to_lower(s: String) -> String`:
-  ASCII case mapping.
-* `trim(s: String) -> String`: remove leading and trailing ASCII
-  whitespace; interior whitespace is kept.
-* `is_blank(s: String) -> Bool`: true when `s` is empty or all ASCII
-  whitespace.
-* `repeat(s: String, n: Int) -> String`: `s` repeated `n` times; a non
-  positive `n` yields the empty string.
-* `index_of(s: String, needle: String) -> Int`: byte index of the first
-  occurrence of `needle`, or `-1` when absent; an empty `needle` returns
-  `0`.
-* `contains(s: String, needle: String) -> Bool`: true when `needle`
-  occurs anywhere in `s`.
-* `starts_with(s: String, prefix: String) -> Bool`,
-  `ends_with(s: String, suffix: String) -> Bool`: prefix and suffix
-  tests; an empty prefix or suffix always matches.
-* `replace(s: String, from: String, to: String) -> String`: replace
-  every non-overlapping occurrence of `from` with `to`, scanning left to
-  right; an empty `from` returns `s` unchanged so the scan terminates.
+* `length() -> Int`: byte length.
+* `is_empty() -> Bool`: true when the string has zero bytes.
+* `char_at(i: Int) -> String`: the `i`-th byte as a one-byte string; out
+  of range yields the empty string.
+* `substring(start: Int, end: Int) -> String`: the half-open byte range
+  `[start, end)`, with bounds clamped to `0..length()` and a `start` past
+  `end` yielding the empty string.
+* `concat(other: String) -> String`: join two strings.
+* `to_upper() -> String`, `to_lower() -> String`: ASCII case mapping.
+* `trim() -> String`: remove leading and trailing ASCII whitespace;
+  interior whitespace is kept.
+* `is_blank() -> Bool`: true when empty or all ASCII whitespace.
+* `repeat(n: Int) -> String`: repeated `n` times; a non-positive `n`
+  yields the empty string.
+* `matches_at(needle: String, at: Int) -> Bool`: true when `needle`'s
+  bytes occur starting at byte index `at`.
+* `index_of(needle: String) -> Int`: byte index of the first occurrence
+  of `needle`, or `-1` when absent; an empty `needle` returns `0`.
+* `contains(needle: String) -> Bool`: true when `needle` occurs anywhere.
+* `starts_with(prefix: String) -> Bool`, `ends_with(suffix: String) ->
+  Bool`: prefix and suffix tests; an empty prefix or suffix always
+  matches.
+* `replace(from: String, to: String) -> String`: replace every
+  non-overlapping occurrence of `from` with `to`, scanning left to right;
+  an empty `from` returns the string unchanged so the scan terminates.
 
-Two helpers, `is_space_byte` and `matches_at`, are also exported because
-the bundled module calls them internally; they are documented but not
-part of the intended public surface.
+A free helper `is_space_byte(b: Int) -> Bool` classifies an ASCII
+whitespace byte; the methods call it internally.
 
 ## Intrinsic boundary
 
@@ -125,16 +125,13 @@ would not change this surface.
 
 ## Intra-module call resolution
 
-Unlike `std/io`, the `std/string` functions call one another (for
-example `trim` calls `is_space_byte`, and `index_of` calls
-`matches_at`). The stdlib expansion renames each declared function to
-`std.string.<name>` and, so a sibling call still resolves, rewrites any
-call-site identifier inside a bundled function body that names a sibling
-function to the same namespaced name. Local variables and parameters in
-the bundled sources never share a name with a sibling function, so the
-rewrite is unambiguous. This is implemented in `src/resolve/stdlib.rs`
-and is general: any later bundled module whose functions call each other
-benefits without extra work.
+Methods call each other through `self` (for example `contains` calls
+`self.index_of`, which calls `self.matches_at`), resolved by the receiver
+type. A method also calls the free helper `is_space_byte`; the stdlib
+expansion renames each declared free function to `std.string.<name>` and
+rewrites sibling free-function call sites inside bundled bodies to the
+same namespaced name, so the helper resolves from within a method body.
+This is implemented in `src/resolve/stdlib.rs`.
 
 ## Out of scope
 

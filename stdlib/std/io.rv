@@ -1,56 +1,38 @@
-// std/io: the standard input and output module.
-//
-// This is bundled Raven source compiled into the program when a user
-// writes `import std/io { ... }`. The functions are ordinary Raven, with
-// the operations that cannot be written in safe Raven (writing bytes to
-// stdout, reading a line from stdin) expressed through a small set of
-// compiler intrinsics whose names begin with `__io_`. Those intrinsics
-// are recognized by the compiler and lowered to the matching
-// `raven-runtime` C ABI symbols. See `docs/v2/specs/stdlib.md`.
+// std/io: standard input and output. The `__io_*` intrinsics are lowered
+// by the compiler to the raven-runtime C ABI symbols.
 
-// Write `s` to standard output with no trailing newline.
 fun print(s: String) {
     __io_print_str(s)
 }
 
-// Write `s` to standard output followed by a single newline.
 fun println(s: String) {
     __io_println_str(s)
 }
 
-// Write the base-ten rendering of `n` to standard output with no
-// trailing newline. Built on string interpolation, which the compiler
-// lowers to the runtime integer-to-string conversion.
 fun print_int(n: Int) {
     __io_print_str("${n}")
 }
 
-// Write the base-ten rendering of `n` followed by a single newline.
 fun println_int(n: Int) {
     __io_println_str("${n}")
 }
 
-// Render an `Int` as a `String`. A thin wrapper over interpolation so
-// callers have a named conversion without writing `"${n}"` by hand.
 fun int_to_string(n: Int) -> String {
     "${n}"
 }
 
-// Render a `Bool` as a `String` ("true" or "false").
 fun bool_to_string(b: Bool) -> String {
     "${b}"
 }
 
-// Print `prompt` (no trailing newline), then read one line from standard
-// input and return it without the trailing newline. At end of input the
-// returned `String` is empty.
+// Print `prompt` with no trailing newline, then read one line from stdin
+// without its newline. Empty at end of input.
 fun input(prompt: String) -> String {
     __io_print_str(prompt)
     __io_read_line()
 }
 
-// Read one line from standard input and return it without the trailing
-// newline. At end of input the returned `String` is empty.
+// Read one line from stdin without its newline. Empty at end of input.
 fun read_line() -> String {
     __io_read_line()
 }

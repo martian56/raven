@@ -1,12 +1,9 @@
 // golden:skip
-// A method defined on the built in `String` type inside the bundled
-// std/string module, called from user code. Importing the module merges
-// its `impl String` block into the program; the `shout` method is then
-// resolved by the receiver's type, not by an imported name, so calling
-// "hi".shout() dispatches to the stdlib method and prints HI.
-import std/string { to_upper }
+// Importing std/string merges its `impl String` block; the method is
+// resolved by the receiver type, not by an imported name.
+import std/string
 import std/io { println }
 
 fun main() {
-    println("hi".shout())
+    println("hi".to_upper())
 }
