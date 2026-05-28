@@ -210,7 +210,6 @@ the result type; the surface form does not appear at HIR level.
 * User-defined `Iterator` trait protocol. Built-in iteration over
   `List<T>` and ranges only.
 * Closure capture analysis (defer to MIR).
-* `defer` lowering: tracked in a follow-up issue.
 * C FFI lowering.
 * `dyn Trait` virtual dispatch.
 * Or-patterns and nested or-pattern lowering.
