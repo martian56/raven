@@ -236,6 +236,21 @@ fn core_trait_prelude_program_compiles_and_runs() {
 }
 
 #[test]
+fn generic_struct_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Generic struct monomorphization end to end. `Box<T>` is instantiated
+    // at Int and String, exercising the per-instantiation struct layout and
+    // GC pointer descriptor (the String slot is a traced pointer, the Int
+    // slot is opaque). The concrete `impl Box<Int>` method `get` and the
+    // generic `impl<T> Box<T>` method `unwrap`, specialized at T = Int and
+    // T = String, both resolve to per-instantiation symbols. Prints 42, 42,
+    // 7, then raven.
+    compile_link_run_and_check("generic_struct.rv", "42\n42\n7\nraven\n", &runtime);
+}
+
+#[test]
 fn list_int_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
