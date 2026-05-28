@@ -28,7 +28,9 @@ pub use set::{raven_set_bucket_count, raven_set_buckets, raven_set_new, Set, Set
 pub use string::{
     raven_string_bytes, raven_string_concat, raven_string_len, raven_string_new, String,
 };
-pub use structval::{raven_struct_fields, raven_struct_new, STRUCT_FIELDS_OFFSET, STRUCT_FIELD_SLOT};
+pub use structval::{
+    raven_struct_fields, raven_struct_new, STRUCT_FIELDS_OFFSET, STRUCT_FIELD_SLOT,
+};
 
 /// Alignment, in bytes, used for every heap object the runtime
 /// allocates. The header itself is 4-byte aligned, but objects are
@@ -156,7 +158,10 @@ pub(crate) unsafe fn object_body_layout(header: *const ObjectHeader) -> (usize, 
         TAG_STRUCT => {
             // SAFETY: a live struct header carries its field count in `len`.
             let field_count = unsafe { (*header).len };
-            (structval::struct_total_size(field_count), structval::struct_align())
+            (
+                structval::struct_total_size(field_count),
+                structval::struct_align(),
+            )
         }
         // An unknown tag should never reach the collector. Treat it as a
         // bare header so freeing at least releases the body.

@@ -610,9 +610,9 @@ fn is_builtin_type_name(name: &str) -> bool {
 /// Builtin constructor identifiers. These appear in expressions
 /// (`None`, `Some(x)`, `Ok(v)`, `Err(e)`) and are recognized by the
 /// type checker. The resolver bypasses scope lookup for them so they
-/// can be used without an explicit import. `print` is treated the
-/// same way: it is a built in free function intrinsic whose call site
-/// is wired to the runtime by the codegen back end.
+/// can be used without an explicit import. `print` and `print_int` are
+/// treated the same way: they are built in free function intrinsics
+/// whose call sites are wired to the runtime by the codegen back end.
 fn is_builtin_ctor_name(name: &str) -> bool {
-    matches!(name, "None" | "Some" | "Ok" | "Err" | "print")
+    matches!(name, "None" | "Some" | "Ok" | "Err" | "print" | "print_int")
 }
