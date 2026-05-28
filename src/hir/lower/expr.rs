@@ -505,19 +505,45 @@ fn ctor_pat(name: &str, elements: Vec<HirPattern>, span: Span) -> HirPattern {
     }
 }
 
-/// Lower a `for pat in iter { body }` into:
+/// Lower a `for pat in iter { body }` into a concrete counter loop.
+///
+/// Two iterable forms are supported here without any iterator object:
+///
+/// * A range `start..end` (exclusive) or `start..=end` (inclusive) is
+///   lowered to a counter loop over the half-open or closed integer
+///   interval. The endpoints are each evaluated once into a local.
+/// * A `List<T>` value is lowered to an index loop driven by the list's
+///   `len()` and element indexing (issue #138). The list expression is
+///   evaluated once into a local.
+///
+/// Both forms produce the same shape:
 ///
 /// ```text
 /// {
-///     let __iter = IterNew(iter);
+///     let __start = <start>;          // range: start; list: 0
+///     let __end = <end>;              // range: end;   list: __list.len()
+///     let __i = __start;
+///     let __first = true;
 ///     loop {
-///         match IterNext(__iter) {
-///             Some(pat) => body,
-///             None => break,
-///         }
+///         // The increment sits at the top of the loop body so that a
+///         // user `continue` (which jumps to the loop header) still
+///         // advances the counter before the next iteration. The
+///         // `__first` flag skips the increment on the very first pass so
+///         // the counter starts at `__start`.
+///         if __first { __first = false } else { __i = __i + 1 }
+///         if __i >= __end { break }   // `>` for an inclusive range
+///         let pat = __i;              // range: __i; list: __list[__i]
+///         <body>
 ///     }
 /// }
 /// ```
+///
+/// `break` exits to the loop continuation as usual, and `continue`
+/// re-enters the loop header, which is the increment-and-test step, so
+/// it never skips the counter advance. Iteration over any type other
+/// than a range or a `List<T>` is rejected by the type checker before
+/// lowering, so the arbitrary-iterator path (the `Iterator` trait, issue
+/// #119) does not reach here.
 fn lower_for(
     pat: &crate::ast::Pattern,
     iter: &Expr,
@@ -526,82 +552,255 @@ fn lower_for(
     span: &Span,
     cx: &LowerCtx<'_>,
 ) -> Result<HirExpr, RavenError> {
-    let iter_expr = lower_expr(iter, &Ty::Error, cx)?;
-    let element_ty = match &iter_expr.ty {
+    // A `start..end` / `start..=end` source range lowers to a counter
+    // loop directly from its endpoints; any other iterable is treated as
+    // a list value driven by `len()` and indexing.
+    if let ExprKind::Range {
+        start,
+        end,
+        inclusive,
+    } = &iter.kind
+    {
+        let start_lowered = lower_expr(start, &Ty::Int, cx)?;
+        let end_lowered = lower_expr(end, &Ty::Int, cx)?;
+        return Ok(lower_counter_for(
+            pat,
+            start_lowered,
+            end_lowered,
+            *inclusive,
+            None,
+            Ty::Int,
+            body,
+            span,
+            cx,
+        ));
+    }
+
+    let list_expr = lower_expr(iter, &Ty::Error, cx)?;
+    let element_ty = match list_expr.ty.strip_self() {
         Ty::List(t) => (**t).clone(),
         _ => Ty::Error,
     };
-    let body_block = lower_block_to_block(body, &Ty::Unit, cx)?;
-    let iter_name = cx.fresh("iter");
-    let iter_ty = iter_expr.ty.clone();
-    let iter_let = let_stmt(
-        &iter_name,
-        iter_ty.clone(),
+    let list_ty = list_expr.ty.clone();
+    let list_name = cx.fresh("list");
+    let list_let = let_stmt(&list_name, list_ty.clone(), list_expr, span.clone());
+
+    // start = 0, end = __list.len(), element = __list[__i].
+    let start_lowered = make_expr(HirExprKind::Int(0), Ty::Int, span.clone());
+    let len_recv = ident_expr(&list_name, list_ty, span.clone());
+    let end_lowered = make_expr(
+        HirExprKind::MethodCall {
+            receiver: Box::new(len_recv),
+            name: "len".into(),
+            args: Vec::new(),
+        },
+        Ty::Int,
+        span.clone(),
+    );
+    let counter_loop = lower_counter_for(
+        pat,
+        start_lowered,
+        end_lowered,
+        false,
+        Some(&list_name),
+        element_ty,
+        body,
+        span,
+        cx,
+    );
+    let block = HirBlock {
+        stmts: vec![list_let],
+        tail: Some(Box::new(counter_loop)),
+        ty: Ty::Unit,
+        span: span.clone(),
+    };
+    Ok(make_expr(HirExprKind::Block(block), Ty::Unit, span.clone()))
+}
+
+/// Build the counter-loop body shared by the range and list for-loop
+/// forms. `start`/`end` are the already-lowered bounds, `inclusive`
+/// selects `>` over `>=` for the break test, and `list_name` (when
+/// `Some`) makes the per-iteration binding `__list[__i]` instead of the
+/// raw counter `__i`. `element_ty` is the loop variable's type.
+#[allow(clippy::too_many_arguments)]
+fn lower_counter_for(
+    pat: &crate::ast::Pattern,
+    start: HirExpr,
+    end: HirExpr,
+    inclusive: bool,
+    list_name: Option<&str>,
+    element_ty: Ty,
+    body: &AstBlock,
+    span: &Span,
+    cx: &LowerCtx<'_>,
+) -> HirExpr {
+    let i_name = cx.fresh("i");
+    let end_name = cx.fresh("end");
+    let first_name = cx.fresh("first");
+
+    let end_let = let_stmt(&end_name, Ty::Int, end, span.clone());
+    let i_let = let_stmt(&i_name, Ty::Int, start, span.clone());
+    let first_let = let_stmt(
+        &first_name,
+        Ty::Bool,
+        make_expr(HirExprKind::Bool(true), Ty::Bool, span.clone()),
+        span.clone(),
+    );
+
+    // if __first { __first = false } else { __i = __i + 1 }
+    let set_first_false = assign_stmt(
+        HirAssignTarget::Ident {
+            name: first_name.clone(),
+            span: span.clone(),
+        },
+        make_expr(HirExprKind::Bool(false), Ty::Bool, span.clone()),
+        span.clone(),
+    );
+    let inc = assign_stmt(
+        HirAssignTarget::Ident {
+            name: i_name.clone(),
+            span: span.clone(),
+        },
         make_expr(
-            HirExprKind::IterNew(Box::new(iter_expr)),
-            iter_ty.clone(),
+            HirExprKind::Binary {
+                op: HirBinaryOp::Add,
+                lhs: Box::new(ident_expr(&i_name, Ty::Int, span.clone())),
+                rhs: Box::new(make_expr(HirExprKind::Int(1), Ty::Int, span.clone())),
+            },
+            Ty::Int,
             span.clone(),
         ),
         span.clone(),
     );
-    let iter_ref = ident_expr(&iter_name, iter_ty.clone(), span.clone());
-    let next_expr = make_expr(
-        HirExprKind::IterNext(Box::new(iter_ref)),
-        Ty::Option(Box::new(element_ty.clone())),
-        span.clone(),
-    );
-
-    let some_pat = HirPattern {
-        kind: HirPatternKind::Constructor {
-            name: Some("Some".to_string()),
-            elements: vec![lower_pattern(pat, cx)?],
-        },
-        span: span.clone(),
-    };
-    let none_pat = HirPattern {
-        kind: HirPatternKind::Constructor {
-            name: Some("None".to_string()),
-            elements: Vec::new(),
-        },
-        span: span.clone(),
-    };
-    let some_arm = HirArm {
-        pattern: some_pat,
-        guard: None,
-        body: make_expr(HirExprKind::Block(body_block), Ty::Unit, span.clone()),
-        span: span.clone(),
-    };
-    let none_arm = HirArm {
-        pattern: none_pat,
-        guard: None,
-        body: make_expr(HirExprKind::Break(None), Ty::Error, span.clone()),
-        span: span.clone(),
-    };
-    let match_expr = make_expr(
-        HirExprKind::Match {
-            scrutinee: Box::new(next_expr),
-            arms: vec![some_arm, none_arm],
+    let advance = make_expr(
+        HirExprKind::If {
+            cond: Box::new(ident_expr(&first_name, Ty::Bool, span.clone())),
+            then_block: block_of_stmt(set_first_false, span),
+            else_block: Some(block_of_stmt(inc, span)),
         },
         Ty::Unit,
         span.clone(),
     );
+
+    // if __i >= __end { break }   (or `>` for an inclusive range)
+    let break_op = if inclusive {
+        HirBinaryOp::Gt
+    } else {
+        HirBinaryOp::Ge
+    };
+    let break_cond = make_expr(
+        HirExprKind::Binary {
+            op: break_op,
+            lhs: Box::new(ident_expr(&i_name, Ty::Int, span.clone())),
+            rhs: Box::new(ident_expr(&end_name, Ty::Int, span.clone())),
+        },
+        Ty::Bool,
+        span.clone(),
+    );
+    let break_stmt = HirStmt {
+        kind: HirStmtKind::Expr(make_expr(HirExprKind::Break(None), Ty::Error, span.clone())),
+        span: span.clone(),
+    };
+    let break_guard = make_expr(
+        HirExprKind::If {
+            cond: Box::new(break_cond),
+            then_block: HirBlock {
+                stmts: vec![break_stmt],
+                tail: None,
+                ty: Ty::Unit,
+                span: span.clone(),
+            },
+            else_block: None,
+        },
+        Ty::Unit,
+        span.clone(),
+    );
+
+    // The per-iteration element: `__list[__i]` for a list, else `__i`.
+    let element_init = match list_name {
+        Some(name) => make_expr(
+            HirExprKind::Index {
+                receiver: Box::new(ident_expr(
+                    name,
+                    Ty::List(Box::new(element_ty.clone())),
+                    span.clone(),
+                )),
+                index: Box::new(ident_expr(&i_name, Ty::Int, span.clone())),
+            },
+            element_ty.clone(),
+            span.clone(),
+        ),
+        None => ident_expr(&i_name, element_ty.clone(), span.clone()),
+    };
+
+    // The pattern binding is the loop variable. The basic `for x in ...`
+    // form binds a single name; richer destructuring patterns are
+    // type-checked but reuse the same `let pat = element` machinery, so
+    // a simple binding pattern lowers to a plain `let`.
+    let bind_name = pattern_binding_name(pat).unwrap_or_else(|| cx.fresh("loopvar"));
+    let bind_let = let_stmt(&bind_name, element_ty, element_init, span.clone());
+
+    // The user body becomes the trailing statements of the loop body.
+    let body_block = lower_block_to_block(body, &Ty::Unit, cx).unwrap_or_else(|_| HirBlock {
+        stmts: Vec::new(),
+        tail: None,
+        ty: Ty::Unit,
+        span: span.clone(),
+    });
+    let body_expr = make_expr(HirExprKind::Block(body_block), Ty::Unit, span.clone());
+
     let loop_block = HirBlock {
-        stmts: vec![HirStmt {
-            kind: HirStmtKind::Expr(match_expr),
-            span: span.clone(),
-        }],
+        stmts: vec![
+            HirStmt {
+                kind: HirStmtKind::Expr(advance),
+                span: span.clone(),
+            },
+            HirStmt {
+                kind: HirStmtKind::Expr(break_guard),
+                span: span.clone(),
+            },
+            bind_let,
+            HirStmt {
+                kind: HirStmtKind::Expr(body_expr),
+                span: span.clone(),
+            },
+        ],
         tail: None,
         ty: Ty::Unit,
         span: span.clone(),
     };
     let loop_expr = make_expr(HirExprKind::Loop(loop_block), Ty::Unit, span.clone());
+
     let block = HirBlock {
-        stmts: vec![iter_let],
+        stmts: vec![end_let, i_let, first_let],
         tail: Some(Box::new(loop_expr)),
         ty: Ty::Unit,
         span: span.clone(),
     };
-    Ok(make_expr(HirExprKind::Block(block), Ty::Unit, span.clone()))
+    make_expr(HirExprKind::Block(block), Ty::Unit, span.clone())
+}
+
+/// Wrap a single statement in a block whose value is `Unit`. Used for the
+/// `if`/`else` arms of the for-loop counter advance.
+fn block_of_stmt(stmt: HirStmt, span: &Span) -> HirBlock {
+    HirBlock {
+        stmts: vec![stmt],
+        tail: None,
+        ty: Ty::Unit,
+        span: span.clone(),
+    }
+}
+
+/// Extract the single binding name from a `for` loop pattern, when the
+/// pattern is a plain binding (`for x in ...`). Returns `None` for
+/// wildcard or richer patterns so the caller can synthesize a fresh
+/// loop-variable name instead.
+fn pattern_binding_name(pat: &crate::ast::Pattern) -> Option<String> {
+    use crate::ast::PatternKind;
+    match &pat.kind {
+        PatternKind::Ident(name) => Some(name.clone()),
+        _ => None,
+    }
 }
 
 /// Lower a compound assignment `target op= value` into a flat

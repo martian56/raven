@@ -6,21 +6,66 @@
       )
       (stmt-expr
                 (block ty=()
-          (let "__hir_iter_0" ty=List<Int>
-            (iter-new ty=List<Int>
-              (ident "xs" ty=List<Int>)
-            )
+          (let "__hir_list_0" ty=List<Int>
+            (ident "xs" ty=List<Int>)
           )
           (tail
-            (loop ty=()
-              (body ty=()
-                (stmt-expr
-                  (match ty=()
-                    (iter-next ty=Option<Int>
-                      (ident "__hir_iter_0" ty=List<Int>)
+                        (block ty=()
+              (let "__hir_end_2" ty=Int
+                (method-call "len" ty=Int
+                  (ident "__hir_list_0" ty=List<Int>)
+                )
+              )
+              (let "__hir_i_1" ty=Int
+                (int 0 ty=Int)
+              )
+              (let "__hir_first_3" ty=Bool
+                (bool true ty=Bool)
+              )
+              (tail
+                (loop ty=()
+                  (body ty=()
+                    (stmt-expr
+                      (if ty=()
+                        (ident "__hir_first_3" ty=Bool)
+                        (then ty=()
+                          (assign
+                            (target-ident "__hir_first_3")
+                            (bool false ty=Bool)
+                          )
+                        )
+                        (else ty=()
+                          (assign
+                            (target-ident "__hir_i_1")
+                            (binary + ty=Int
+                              (ident "__hir_i_1" ty=Int)
+                              (int 1 ty=Int)
+                            )
+                          )
+                        )
+                      )
                     )
-                    (arm
-                      (pat Some(x))
+                    (stmt-expr
+                      (if ty=()
+                        (binary >= ty=Bool
+                          (ident "__hir_i_1" ty=Int)
+                          (ident "__hir_end_2" ty=Int)
+                        )
+                        (then ty=()
+                          (stmt-expr
+                            (break ty=<error>
+                            )
+                          )
+                        )
+                      )
+                    )
+                    (let "x" ty=Int
+                      (index ty=Int
+                        (ident "__hir_list_0" ty=List<Int>)
+                        (ident "__hir_i_1" ty=Int)
+                      )
+                    )
+                    (stmt-expr
                                             (block ty=()
                         (assign
                           (target-ident "total")
@@ -29,11 +74,6 @@
                             (ident "x" ty=Int)
                           )
                         )
-                      )
-                    )
-                    (arm
-                      (pat None())
-                      (break ty=<error>
                       )
                     )
                   )
