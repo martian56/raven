@@ -17,10 +17,11 @@
 pub mod object;
 
 pub use object::{
-    raven_list_elements, raven_list_len, raven_list_new, raven_list_push, raven_string_bytes,
-    raven_string_concat, raven_string_len, raven_string_new, List as RavenList, ObjectHeader,
-    String as RavenString, OBJECT_ALIGN, TAG_BOX, TAG_CLOSURE, TAG_LIST, TAG_MAP, TAG_SET,
-    TAG_STRING,
+    raven_list_elements, raven_list_len, raven_list_new, raven_list_push, raven_map_bucket_count,
+    raven_map_buckets, raven_map_new, raven_set_bucket_count, raven_set_buckets, raven_set_new,
+    raven_string_bytes, raven_string_concat, raven_string_len, raven_string_new, List as RavenList,
+    Map as RavenMap, MapEntry, ObjectHeader, Set as RavenSet, SetEntry, String as RavenString,
+    OBJECT_ALIGN, TAG_BOX, TAG_CLOSURE, TAG_LIST, TAG_MAP, TAG_SET, TAG_STRING,
 };
 
 use std::alloc::{self, Layout};
