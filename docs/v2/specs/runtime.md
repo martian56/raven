@@ -114,7 +114,8 @@ also Rust.
   passthrough. A bump or slab allocator is issue #64.
 * Garbage collection. `gc_bits` is reserved but unused.
 * Full object layouts for `String`, `List`, `Map`, `Set`, `Closure`.
-  Only the shared header is fixed. Per-kind layouts are issue #65.
+  This scaffold fixes only the shared header; the per-kind layouts land
+  with issue #65 and are documented in `docs/v2/specs/object-layout.md`.
 * Trait object dispatch tables. The `BOX` tag exists as a placeholder;
   the actual vtable shape lands in issue #66.
 * Async, threading, FFI safety beyond the stated symbols.
