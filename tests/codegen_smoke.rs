@@ -82,6 +82,19 @@ fn closure_arg_program_compiles_and_runs() {
 }
 
 #[test]
+fn closure_generic_call_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A generic function (`identity<T>`) reachable only through a closure
+    // body. The lifted closure body's call to `identity` is the sole call
+    // site, so the monomorphizer must pick it up from the lifted body to
+    // emit the `identity$Int` instantiation. apply(f, 41) computes
+    // identity(41) + 1, printing 42.
+    compile_link_run_and_check("closure_generic_call.rv", "42\n", &runtime);
+}
+
+#[test]
 fn dyn_dispatch_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

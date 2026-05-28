@@ -305,6 +305,13 @@ the rest of the body references captures as ordinary locals. A capture
 that is a GC pointer, once read into a body local, is rooted by the lifted
 body's own shadow-stack frame like any other GC local.
 
+A lifted body is lowered exactly like an ordinary function body, so any
+generic function it calls is specialized at the call site and contributes
+its `(decl, substitution)` to the monomorphization worklist. Those pending
+calls travel up through the enclosing function into the worklist, so a
+generic function reachable only through a closure body is still
+instantiated for the concrete type arguments seen inside that body.
+
 #### Invoking a closure value
 
 A call whose callee is a value of function type (an in-scope local of
