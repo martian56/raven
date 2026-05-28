@@ -150,7 +150,7 @@ Calling `emit_statement` appends to the current block; calling
 | `Return(v)`   | Lower `v`, then close the current block with `Return(local)` |
 | `Break(v)`    | Optional value written to the enclosing loop's result local, then `Goto continuation` |
 | `Continue`    | `Goto header` of the enclosing loop |
-| `Interpolate` | Concatenation through a synthetic `__concat_string` runtime call |
+| `Interpolate` | Left-folded chain of `__raven_str_concat` calls; each non-String part is first converted with its per-type to-string intrinsic (`__raven_int_to_string`, `__raven_bool_to_string`, `__raven_float_to_string`, `__raven_char_to_string`). Literal-text parts are string constants the back-end promotes to heap Strings. An empty interpolation yields an empty String. |
 | `RangeNew`    | `StructCreate` of the built-in `Range` struct (or a runtime call when codegen needs it) |
 | `IterNew`     | `Call { callee: __iter_new, args: [source] }` |
 | `IterNext`    | `Call { callee: __iter_next, args: [iter] }` |

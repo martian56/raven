@@ -435,24 +435,94 @@ fn lower_while(cx: &mut LowerCx<'_>, cond: &HirExpr, body: &HirBlock, _ty: MirTy
     MirOperand::Const(MirConstant::Unit)
 }
 
+/// Desugar an interpolated string into a left-folded chain of runtime
+/// string concatenations. Each part is first turned into a heap `String`
+/// operand: a literal-text part is a string constant (codegen promotes
+/// it to a heap String), and an embedded-expression part is converted
+/// with the per-type `to_string` intrinsic selected from its static
+/// type (a `String` part needs no conversion). The parts are then folded
+/// with `__raven_str_concat` so
+/// `["a", x, "b"]` becomes `concat(concat("a", to_string(x)), "b")`.
+///
+/// An empty interpolation, or one with no parts, still yields a valid
+/// (empty) `String`.
 fn lower_interpolate(cx: &mut LowerCx<'_>, parts: &[InterpolPart], ty: MirType) -> MirOperand {
-    let mut args: Vec<MirOperand> = Vec::with_capacity(parts.len());
+    // Build the per-part String operands first.
+    let mut operands: Vec<MirOperand> = Vec::with_capacity(parts.len());
     for p in parts {
         match p {
-            InterpolPart::Text(s) => args.push(MirOperand::Const(MirConstant::Str(s.clone()))),
-            InterpolPart::Expr(e) => args.push(lower_expr(cx, e)),
+            InterpolPart::Text(s) => operands.push(MirOperand::Const(MirConstant::Str(s.clone()))),
+            InterpolPart::Expr(e) => operands.push(stringify_part(cx, e)),
         }
     }
-    let dst = cx.builder.fresh_temp("interp", ty);
+
+    // No parts: produce an empty heap String.
+    let Some(first) = operands.first().cloned() else {
+        let dst = cx.builder.fresh_temp("interp", ty);
+        cx.builder.assign(
+            cx.current,
+            dst,
+            MirRvalue::Use(MirOperand::Const(MirConstant::Str(String::new()))),
+        );
+        return MirOperand::Copy(dst);
+    };
+
+    // A single part is already a String; bind it to a temp so the result
+    // is uniformly a local holding a heap String.
+    if operands.len() == 1 {
+        let dst = cx.builder.fresh_temp("interp", ty);
+        cx.builder
+            .assign(cx.current, dst, MirRvalue::Use(first));
+        return MirOperand::Copy(dst);
+    }
+
+    // Left-fold: acc = concat(acc, next).
+    let mut acc = first;
+    for next in operands.into_iter().skip(1) {
+        let dst = cx.builder.fresh_temp("concat", MirType::Str);
+        cx.builder.assign(
+            cx.current,
+            dst,
+            MirRvalue::Call {
+                callee: MirFnRef {
+                    mangled: super::super::intrinsics::STR_CONCAT.into(),
+                    origin: None,
+                },
+                args: vec![acc, next],
+            },
+        );
+        acc = MirOperand::Copy(dst);
+    }
+    acc
+}
+
+/// Lower an embedded interpolation expression and convert it to a heap
+/// `String`. A `String`-typed expression is used as-is; the other
+/// interpolatable scalars (`Int`, `Bool`, `Float`, `Char`) are routed
+/// through their `to_string` runtime intrinsic. The type checker has
+/// already rejected any other type, so an unexpected type here is a
+/// lowering bug; we fall back to using the value directly.
+fn stringify_part(cx: &mut LowerCx<'_>, e: &HirExpr) -> MirOperand {
+    let value = lower_expr(cx, e);
+    let part_ty = mir_ty(&e.ty, cx.subst);
+    let intrinsic = match part_ty {
+        MirType::Str => return value,
+        MirType::Int => super::super::intrinsics::INT_TO_STRING,
+        MirType::Bool => super::super::intrinsics::BOOL_TO_STRING,
+        MirType::Float => super::super::intrinsics::FLOAT_TO_STRING,
+        MirType::Char => super::super::intrinsics::CHAR_TO_STRING,
+        _ => return value,
+    };
+    let dst = cx.builder.fresh_temp("tostr", MirType::Str);
     cx.builder.assign(
         cx.current,
         dst,
         MirRvalue::Call {
             callee: MirFnRef {
-                mangled: "__concat_string".into(),
+                mangled: intrinsic.into(),
                 origin: None,
             },
-            args,
+            args: vec![value],
         },
     );
     MirOperand::Copy(dst)
