@@ -26,7 +26,7 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
         HirExprKind::Bool(b) => MirOperand::Const(MirConstant::Bool(*b)),
         HirExprKind::Str(s) => MirOperand::Const(MirConstant::Str(s.clone())),
         HirExprKind::Char(c) => MirOperand::Const(MirConstant::Char(*c)),
-        HirExprKind::CStr(s) => MirOperand::Const(MirConstant::Str(s.clone())),
+        HirExprKind::CStr(s) => MirOperand::Const(MirConstant::CStr(s.clone())),
         HirExprKind::Unit => MirOperand::Const(MirConstant::Unit),
         HirExprKind::Ident(name) => match cx.lookup(name) {
             Some(local) => MirOperand::Copy(local),

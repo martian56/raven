@@ -40,6 +40,10 @@ pub struct ModuleCx {
     functions: HashMap<String, FuncId>,
     /// Runtime intrinsic function ids keyed by their C symbol name.
     runtime: HashMap<&'static str, FuncId>,
+    /// Parameter types of each declared extern C function, keyed by its
+    /// raw C symbol name. A call site uses these to coerce each argument
+    /// to the C ABI machine width before the direct call.
+    extern_params: HashMap<String, Vec<MirType>>,
     /// Interned string literal data ids keyed by the literal's bytes.
     strings: BTreeMap<Vec<u8>, DataId>,
     /// Counter for unique data symbol names.
@@ -87,6 +91,7 @@ impl ModuleCx {
             module,
             functions: HashMap::new(),
             runtime: HashMap::new(),
+            extern_params: HashMap::new(),
             strings: BTreeMap::new(),
             string_counter: 0,
             main_entry: None,
@@ -231,6 +236,33 @@ impl ModuleCx {
         Ok(id)
     }
 
+    /// Intern a C string literal as a static, read-only,
+    /// null-terminated byte buffer and return its data id.
+    ///
+    /// The literal's bytes are stored verbatim with a trailing `\0`
+    /// appended, matching the `*const c_char` a C function expects.
+    /// Identical literals (after null termination) share one symbol.
+    /// The interning table is keyed by the null-terminated bytes, which
+    /// never collides with a plain string literal of the same text
+    /// because that literal interns its bytes without the terminator.
+    pub fn intern_cstring(&mut self, text: &[u8]) -> Result<DataId, CodegenError> {
+        let mut bytes = text.to_vec();
+        bytes.push(0);
+        if let Some(id) = self.strings.get(&bytes) {
+            return Ok(*id);
+        }
+        let name = format!("__raven_cstr_{}", self.string_counter);
+        self.string_counter += 1;
+        let id = self
+            .module
+            .declare_data(&name, Linkage::Local, false, false)?;
+        let mut desc = DataDescription::new();
+        desc.define(bytes.clone().into_boxed_slice());
+        self.module.define_data(id, &desc)?;
+        self.strings.insert(bytes, id);
+        Ok(id)
+    }
+
     /// Declare the runtime C ABI symbols the backend can call into.
     ///
     /// The heap-value lowering needs the string and integer print
@@ -349,6 +381,51 @@ impl ModuleCx {
         let id = self.module.declare_function(symbol, Linkage::Import, sig)?;
         self.runtime.insert(symbol, id);
         Ok(())
+    }
+
+    /// Declare every foreign function from the program's `extern`
+    /// blocks as an imported C-ABI symbol.
+    ///
+    /// The signature uses each parameter's and the return's C ABI
+    /// machine type (`CInt` -> i32, pointers -> pointer width) under the
+    /// module's default calling convention, which is the platform C ABI.
+    /// The symbol is recorded in the function table under its raw C name
+    /// so a `Call` to that name resolves to the import; the linker
+    /// satisfies it from the CRT (for `strlen`, `abs`, ...) or a library
+    /// supplied on the link line. See `docs/v2/specs/ffi.md`.
+    pub fn declare_externs(&mut self, program: &MirProgram) -> Result<(), CodegenError> {
+        let ptr = self.pointer_type();
+        for ext in &program.externs {
+            // A foreign function may be declared but never called; only
+            // the symbols a call site references need to resolve at link
+            // time, but declaring all of them is harmless and keeps the
+            // table complete for diagnostics.
+            if self.functions.contains_key(&ext.name) {
+                continue;
+            }
+            let mut sig = self.module.make_signature();
+            for p in &ext.params {
+                if let Some(t) = super::function::cranelift_ty(p, ptr) {
+                    sig.params.push(AbiParam::new(t));
+                }
+            }
+            if let Some(t) = super::function::cranelift_ty(&ext.ret, ptr) {
+                sig.returns.push(AbiParam::new(t));
+            }
+            let id = self
+                .module
+                .declare_function(&ext.name, Linkage::Import, &sig)?;
+            self.functions.insert(ext.name.clone(), id);
+            self.extern_params
+                .insert(ext.name.clone(), ext.params.clone());
+        }
+        Ok(())
+    }
+
+    /// Parameter types of a declared extern C function, if `name` names
+    /// one. Used by a call site to coerce arguments to the C ABI width.
+    pub fn extern_params(&self, name: &str) -> Option<&[MirType]> {
+        self.extern_params.get(name).map(|v| v.as_slice())
     }
 
     /// Declare every MIR function ahead of body emission so that calls

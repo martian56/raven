@@ -6,8 +6,26 @@
 //! substitute before any MIR is built, so MIR types are always ground.
 
 use crate::resolve::DeclId;
-use crate::tycheck::Ty;
+use crate::tycheck::{FfiTy, Ty};
 use std::fmt;
+
+/// Ground C FFI primitive type carried through MIR. Mirrors
+/// [`FfiTy`](crate::tycheck::FfiTy) without the inference-only cases;
+/// the codegen back end maps each to a concrete Cranelift ABI type.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MirFfiTy {
+    /// C `int`. Codegen maps it to `i32`.
+    CInt,
+    /// C `long`. Codegen maps it to `i64`.
+    CLong,
+    /// C `size_t`. Codegen maps it to a pointer-width int.
+    CSize,
+    /// `*const c_char`. Codegen maps it to a pointer-width int.
+    CStr,
+    /// `CPtr<T>`, an opaque pointer. Codegen maps it to a pointer-width
+    /// int. The pointee mangle is kept for symbol uniqueness only.
+    CPtr(Box<MirType>),
+}
 
 /// Ground type used inside MIR.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -43,6 +61,10 @@ pub enum MirType {
         name: String,
         methods: Vec<String>,
     },
+    /// A C FFI primitive type. Carried so the back end can pick the
+    /// matching Cranelift ABI type for an `extern "C"` parameter,
+    /// return, or `c"..."` literal.
+    Ffi(MirFfiTy),
 }
 
 impl MirType {
@@ -84,6 +106,7 @@ impl MirType {
                 methods: methods.clone(),
             },
             Ty::SelfTy(inner) => MirType::from_ty(inner),
+            Ty::Ffi(ffi) => MirType::Ffi(MirFfiTy::from_ffi(ffi)),
             Ty::Error => MirType::Unit,
             Ty::Param(_) | Ty::Var(_) => MirType::Unit,
         }
@@ -116,6 +139,7 @@ impl MirType {
                 format!("Fn_{}", parts.join("_"))
             }
             MirType::Dyn { name, .. } => format!("dyn_{}", name),
+            MirType::Ffi(ffi) => ffi.mangle(),
         }
     }
 
@@ -172,6 +196,43 @@ impl fmt::Display for MirType {
                 write!(f, ") -> {}", ret)
             }
             MirType::Dyn { name, .. } => write!(f, "dyn {}", name),
+            MirType::Ffi(ffi) => write!(f, "{}", ffi),
+        }
+    }
+}
+
+impl MirFfiTy {
+    /// Build a ground MIR FFI type from a checker FFI type.
+    pub fn from_ffi(ffi: &FfiTy) -> Self {
+        match ffi {
+            FfiTy::CInt => MirFfiTy::CInt,
+            FfiTy::CLong => MirFfiTy::CLong,
+            FfiTy::CSize => MirFfiTy::CSize,
+            FfiTy::CStr => MirFfiTy::CStr,
+            FfiTy::CPtr(inner) => MirFfiTy::CPtr(Box::new(MirType::from_ty(inner))),
+        }
+    }
+
+    /// Identifier-safe mangling for use inside symbol names.
+    pub fn mangle(&self) -> String {
+        match self {
+            MirFfiTy::CInt => "CInt".into(),
+            MirFfiTy::CLong => "CLong".into(),
+            MirFfiTy::CSize => "CSize".into(),
+            MirFfiTy::CStr => "CStr".into(),
+            MirFfiTy::CPtr(inner) => format!("CPtr_{}", inner.mangle()),
+        }
+    }
+}
+
+impl fmt::Display for MirFfiTy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MirFfiTy::CInt => f.write_str("CInt"),
+            MirFfiTy::CLong => f.write_str("CLong"),
+            MirFfiTy::CSize => f.write_str("CSize"),
+            MirFfiTy::CStr => f.write_str("CStr"),
+            MirFfiTy::CPtr(inner) => write!(f, "CPtr<{}>", inner),
         }
     }
 }

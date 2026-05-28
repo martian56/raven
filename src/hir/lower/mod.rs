@@ -23,7 +23,10 @@ use crate::tycheck::{
     Ty, TypeEnv, TypedFile,
 };
 
-use super::decl::{HirEnum, HirFn, HirImpl, HirItem, HirItemKind, HirStruct, HirTrait, HirVariant};
+use super::decl::{
+    HirEnum, HirExtern, HirExternFn, HirFn, HirImpl, HirItem, HirItemKind, HirStruct, HirTrait,
+    HirVariant,
+};
 use super::HirProgram;
 
 /// Lower a type-checked file into a `HirProgram`.
@@ -229,10 +232,38 @@ fn lower_decl(decl: &Decl, cx: &LowerCtx<'_>) -> Result<Option<HirItem>, RavenEr
             span: decl.span.clone(),
             kind: HirItemKind::Opaque("import".into()),
         })),
-        DeclKind::Extern(_) => Ok(Some(HirItem {
-            span: decl.span.clone(),
-            kind: HirItemKind::Opaque("extern".into()),
-        })),
+        DeclKind::Extern(ext) => {
+            // Resolve each foreign signature's parameter and return types
+            // so codegen can declare the symbol with its C ABI shape.
+            // Extern functions never have generic parameters, so an empty
+            // scope is correct.
+            let scope = scope_from_params(&[]);
+            let mut items = Vec::with_capacity(ext.items.len());
+            for item in &ext.items {
+                let mut params = Vec::with_capacity(item.params.len());
+                for p in &item.params {
+                    params.push(resolve_ty_for_decl(&p.ty, cx, &scope)?);
+                }
+                let ret = match &item.ret {
+                    Some(t) => resolve_ty_for_decl(t, cx, &scope)?,
+                    None => Ty::Unit,
+                };
+                items.push(HirExternFn {
+                    name: item.name.clone(),
+                    params,
+                    ret,
+                    span: item.span.clone(),
+                });
+            }
+            Ok(Some(HirItem {
+                span: decl.span.clone(),
+                kind: HirItemKind::Extern(HirExtern {
+                    abi: ext.abi.clone(),
+                    items,
+                    span: ext.span.clone(),
+                }),
+            }))
+        }
     }
 }
 

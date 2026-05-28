@@ -20,11 +20,11 @@ pub mod ty;
 mod tests;
 
 pub use ir::{
-    MirBinOp, MirBlock, MirBlockId, MirConstant, MirFnRef, MirFunction, MirLocal, MirLocalDecl,
-    MirOperand, MirProgram, MirRvalue, MirStatement, MirTerminator, MirUnOp,
+    MirBinOp, MirBlock, MirBlockId, MirConstant, MirExternFn, MirFnRef, MirFunction, MirLocal,
+    MirLocalDecl, MirOperand, MirProgram, MirRvalue, MirStatement, MirTerminator, MirUnOp,
 };
 pub use pretty::pretty_program;
-pub use ty::MirType;
+pub use ty::{MirFfiTy, MirType};
 
 use crate::error::RavenError;
 use crate::hir::HirProgram;

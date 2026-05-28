@@ -59,6 +59,11 @@ pub enum MirConstant {
     Float(f64),
     Str(String),
     Char(char),
+    /// A C string literal `c"..."`. Lowered by the back end to a pointer
+    /// to a static, read-only, null-terminated byte buffer rather than a
+    /// heap `String`. The stored text excludes the trailing `\0`, which
+    /// codegen appends.
+    CStr(String),
 }
 
 /// One operand: either a copy of a local or a constant.
@@ -228,16 +233,34 @@ impl MirFunction {
     }
 }
 
-/// One full MIR program: a flat list of monomorphic functions.
+/// A foreign function declared in an `extern "C"` block. The back end
+/// declares each as an imported C-ABI symbol; a call site referencing
+/// `name` resolves to it. Foreign functions have no Raven body.
+#[derive(Debug, Clone)]
+pub struct MirExternFn {
+    /// The raw C symbol name, used verbatim as the link-time symbol.
+    pub name: String,
+    /// Parameter types in declaration order.
+    pub params: Vec<MirType>,
+    /// Return type, or `MirType::Unit` for a `void` return.
+    pub ret: MirType,
+}
+
+/// One full MIR program: a flat list of monomorphic functions plus the
+/// foreign functions declared in `extern` blocks.
 #[derive(Debug, Clone)]
 pub struct MirProgram {
     pub functions: Vec<MirFunction>,
+    /// Foreign functions declared in `extern "C"` blocks. Declared as
+    /// imported symbols by the back end and resolved at link time.
+    pub externs: Vec<MirExternFn>,
 }
 
 impl MirProgram {
     pub fn new() -> Self {
         Self {
             functions: Vec::new(),
+            externs: Vec::new(),
         }
     }
 }
