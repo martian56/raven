@@ -257,6 +257,22 @@ fn test_program_compiles_and_runs() {
 }
 
 #[test]
+fn hash_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // std/hash non-cryptographic hashes: fnv1a, djb2, hash_int, and combine
+    // are deterministic (equal inputs hash equal) and input-sensitive
+    // (different inputs differ; combine is order-sensitive). The booleans
+    // print true, true, false, true, true, false, true, false.
+    compile_link_run_and_check(
+        "use_hash.rv",
+        "true\ntrue\nfalse\ntrue\ntrue\nfalse\ntrue\nfalse\n",
+        &runtime,
+    );
+}
+
+#[test]
 fn string_eq_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
