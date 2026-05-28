@@ -68,6 +68,13 @@ pub struct MethodEntry {
     /// `self`. May carry `Ty::Param`. Matched against the concrete
     /// argument types to bind any method-level parameters.
     pub params: Vec<Ty>,
+    /// The method's own generic parameters, in declaration order: those
+    /// the method introduces (`fun mapped<U>`) that do not appear in the
+    /// implementing type. They are encoded into the mangled symbol so two
+    /// instantiations of the method at different method-level type
+    /// arguments do not collide. Empty for a method whose only generic
+    /// parameters come from the implementing type.
+    pub method_params: Vec<ParamId>,
     /// True when the method's declared types carry any `Ty::Param`, so it
     /// must be specialized at each call site. A concrete-receiver method
     /// is `false` and is reached through its own root instead.
@@ -220,6 +227,33 @@ pub fn mono_symbol(base: &str, generic_params: &[ParamId], subst: &SubstMap) -> 
     }
     let mut s = base.to_string();
     for p in generic_params {
+        let concrete = subst.get(p).cloned().unwrap_or(Ty::Error);
+        s.push('$');
+        s.push_str(&MirType::from_ty(&concrete).mangle());
+    }
+    s
+}
+
+/// Compute the monomorphized symbol for a method instantiation. The base
+/// is the concrete implementing type's mangle followed by `$<method>`
+/// (`Box_Int$mapped`). When the method introduces its own generic
+/// parameters that do not appear in the implementing type (a method-level
+/// `<U>`, distinct from the impl's `<T>`), each is appended as
+/// `$<MangledType>` in declaration order, so two instantiations of the
+/// same method at different method-level type arguments get distinct
+/// symbols (`Box_Int$mapped$Int` and `Box_Int$mapped$Bool`). The call
+/// site and the worklist both call this so they agree on every
+/// instantiation's name. The implementing type's own arguments are
+/// already encoded by `concrete_self_mangle`, so only the method-level
+/// parameters contribute a suffix here.
+pub fn method_mono_symbol(
+    concrete_self_mangle: &str,
+    method: &str,
+    method_params: &[ParamId],
+    subst: &SubstMap,
+) -> String {
+    let mut s = super::ty::method_symbol(concrete_self_mangle, method);
+    for p in method_params {
         let concrete = subst.get(p).cloned().unwrap_or(Ty::Error);
         s.push('$');
         s.push_str(&MirType::from_ty(&concrete).mangle());
