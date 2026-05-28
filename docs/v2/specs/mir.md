@@ -201,10 +201,36 @@ while let Some(item) = worklist.pop():
 return MirProgram { functions: output }
 ```
 
-Generic methods on `impl` blocks are looked up by `(self_type, method_name)`
-in a table built once at the start of the pass; the lookup result is
-the same generic `HirFn`, which the worklist then specializes with the
-caller's concrete type arguments.
+Generic methods on `impl` blocks are looked up by method name in a table
+built once at the start of the pass (`MethodIndex`); each entry carries
+the implementing type as written on the `impl` (which may carry the
+impl's `Ty::Param`s, for example `Box<T>`). At a method call site, the
+declared implementing type is matched against the concrete receiver type
+to build the substitution, and the entry whose substituted implementing
+type equals the receiver is queued for the worklist. The worklist
+specializes the same generic `HirFn` with that substitution.
+
+### Generic structs
+
+A generic struct (`struct Box<T> { value: T }`) is monomorphized at each
+struct-literal use site. The literal's resolved type carries the concrete
+type arguments; matching the struct declaration's generic parameters
+against those arguments builds a per-instantiation substitution that
+grounds every field type. A `Box<Int>` lays out an `Int` slot and a
+`Box<String>` lays out a traced `String` slot. The instantiation is not a
+separate MIR function: the layout and the per-instantiation GC pointer
+descriptor are computed by the back end from the ground field types
+carried on the `MirType::Struct` (see `codegen.md`). Because each
+instantiation's `MirType::Struct` carries distinct concrete arguments, the
+back end mangles each to a distinct descriptor name (`Box_Int`,
+`Box_String`) with the right pointer mask.
+
+A generic method's `self` and other declared types reference the impl's
+generic parameters. The HIR lowering resolves those parameters with the
+impl block as their owner span (matching how the implementing type
+resolves them and how the type checker scopes them), so a method that
+returns the impl's `T` and the impl's `Self<T>` agree on one `ParamId`
+and the call-site substitution grounds both consistently.
 
 ### Caching
 
@@ -232,6 +258,15 @@ swap$Int$String             (swap::<Int, String>)
 Vec_push$Int                (impl Vec<Int>::push)
 ```
 
+A method instantiation is named `<implementing_type_mangle>$<method>`,
+where the implementing type mangle already carries the concrete type
+arguments. A generic method specialized at `Box<Int>` and the call to it
+both name `Box_Int$unwrap`; a `Box<String>` instantiation names
+`Box_Str$unwrap`. Because the implementing type's mangle already
+distinguishes instantiations, a method takes no extra `$<typearg>` suffix.
+The call site recomputes the same name from the concrete receiver type, so
+the definition and the call always agree.
+
 The PR's golden tests pin the exact spelling so future changes are
 visible in diffs.
 
@@ -243,6 +278,13 @@ visible in diffs.
   concrete functions during type checking; `dyn` lowering is issue #66.
 * Async, generators, drop tracking, borrow analysis.
 * Cross-file monomorphization: the v2 pipeline still operates per file.
+* Method-level generic parameters that do not appear in the implementing
+  type (for example `impl Box<Int> { fun map<U>(self, f) -> U }`). The
+  call-site symbol is derived from the receiver type alone, so two
+  instantiations at different `U` would collide on one symbol. Generic
+  parameters that come from the implementing type (`impl<T> Box<T>`) are
+  fully supported because the implementing type's mangle distinguishes
+  them.
 
 ## Test coverage
 

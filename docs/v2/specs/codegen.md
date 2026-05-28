@@ -271,6 +271,34 @@ through a pointer, a `self.field = ...` write inside a method mutates the
 object the caller still holds, so the change is observed after the call
 returns.
 
+### Per-instantiation struct descriptors (generic structs)
+
+A generic struct (`struct Box<T> { value: T }`) is monomorphized in MIR
+lowering, which grounds each field type per instantiation (see `mir.md`).
+The back end needs no separate code path: each instantiation arrives as a
+`StructCreate` whose `ty` is a distinct `MirType::Struct` carrying the
+concrete type arguments and whose `field_tys` are the ground field types.
+
+Two consequences follow from the uniform 8-byte slot model:
+
+* The slot layout is identical across instantiations. Every field, scalar
+  or GC pointer, occupies one 8-byte slot, so `Box<Int>` and
+  `Box<String>` have the same field count and the same offsets. No
+  per-instantiation offset table is needed.
+* The GC pointer descriptor differs per instantiation. The descriptor is
+  keyed by the mangled type name (`intern_descriptor(ty.mangle(), mask)`),
+  and a generic struct's instantiations mangle distinctly (`Box_Int`,
+  `Box_Str`). Each interns its own descriptor id with its own pointer
+  mask: `Box_Int` has mask `0` (the `Int` slot is opaque to the
+  collector), while `Box_Str` has bit 0 set (the `String` slot is a traced
+  pointer). The program entry shim registers every interned descriptor, so
+  the collector traces each instantiation's slots correctly.
+
+Because the mangle and mask are derived from the ground field types the
+MIR lowering already produced, the existing `lower_struct_create` path
+handles generic structs without change; monomorphization is what makes the
+field types concrete.
+
 ### Enum construction and dispatch
 
 An enum value reuses the struct value layout. Slot 0 holds the variant
