@@ -1,18 +1,11 @@
 //! Source spans for the v2 compiler.
-//!
-//! A `Span` is a half open byte range into a single source file, paired with
-//! the 1 indexed line and column of its start position for human readable
-//! error display. The `file` field is an `Arc<PathBuf>` so spans can be
-//! cloned cheaply and passed through the pipeline without lifetime knots.
 
 use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-/// A half open byte range `[start, end)` inside a source file.
-///
-/// `line` and `col` refer to the first character of the span and use 1
-/// indexed counting (line 1, column 1 is the very first character).
+/// A half open byte range `[start, end)` inside a source file. `line`/`col` are
+/// 1 indexed and refer to the span's start.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Span {
     pub file: Arc<PathBuf>,
@@ -23,7 +16,6 @@ pub struct Span {
 }
 
 impl Span {
-    /// Construct a span from explicit components.
     pub fn new(file: Arc<PathBuf>, start: usize, end: usize, line: u32, col: u32) -> Self {
         Span {
             file,
@@ -34,8 +26,7 @@ impl Span {
         }
     }
 
-    /// A zero width span at `offset` on the given line and column. Used for
-    /// EOF tokens and synthetic positions.
+    /// A zero width span, used for EOF tokens and synthetic positions.
     pub fn point(file: Arc<PathBuf>, offset: usize, line: u32, col: u32) -> Self {
         Span {
             file,
@@ -46,12 +37,10 @@ impl Span {
         }
     }
 
-    /// Length in bytes.
     pub fn len(&self) -> usize {
         self.end.saturating_sub(self.start)
     }
 
-    /// True if the span covers zero bytes (e.g., EOF).
     pub fn is_empty(&self) -> bool {
         self.end == self.start
     }

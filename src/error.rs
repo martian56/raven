@@ -1,12 +1,4 @@
 //! Compiler errors with colored source pointers.
-//!
-//! `RavenError` is the top level error enum for every compiler stage. Lex
-//! and parse errors are populated; resolve, type, and runtime errors land
-//! as new variants when the corresponding stages are built.
-//!
-//! `RavenError::display(source)` renders a multi line message: a red header,
-//! the offending source line, a row of red carets under the bad span, and an
-//! optional dim hint line.
 
 use std::fmt;
 
@@ -28,7 +20,6 @@ pub enum LexError {
     /// A malformed `\u{...}` or `\x..` escape.
     InvalidUnicodeEscape,
     /// A numeric literal could not be parsed (overflow, empty digits, etc.).
-    /// The string carries the failing lexeme for diagnostics.
     InvalidNumber(String),
     /// A `'...'` char literal was empty, multi character, or unterminated.
     InvalidCharLit(String),
@@ -50,33 +41,23 @@ impl fmt::Display for LexError {
 }
 
 /// Parsing errors raised by the recursive descent parser.
-///
-/// Most errors render as "expected X, found Y" with the span pointing at
-/// the offending token. Specific variants exist for common shapes so that
-/// downstream tooling can match on them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    /// The next token did not match what the parser expected. `expected`
-    /// describes the syntactic category (e.g. "`{`", "type", "identifier")
-    /// and `found` quotes the actual token kind.
-    UnexpectedToken { expected: String, found: String },
-    /// End of file reached while expecting more input.
-    UnexpectedEof { expected: String },
-    /// The left hand side of an assignment is not a valid place
-    /// expression.
+    UnexpectedToken {
+        expected: String,
+        found: String,
+    },
+    UnexpectedEof {
+        expected: String,
+    },
     InvalidAssignmentTarget,
     /// Comparison operators are not chainable: `a < b < c` is rejected.
     ChainedComparison,
-    /// A struct or enum literal repeats a field name.
     DuplicateField(String),
-    /// An `import` directive that the parser could not interpret.
     InvalidImportPath,
     /// Tuple syntax is parsed but not yet supported in v2.0.
     UnsupportedTuple,
-    /// A pattern fragment that cannot be parsed.
     InvalidPattern(String),
-    /// A bespoke error message for situations that do not fit the
-    /// dedicated variants above.
     Custom(String),
 }
 
@@ -112,26 +93,22 @@ impl fmt::Display for ParseError {
     }
 }
 
-/// Name resolution errors raised by the resolver.
-///
-/// All variants carry the offending span on the outer `RavenError::Resolve`
-/// wrapper; payload data here is just enough to format a human readable
-/// message. See `docs/v2/specs/resolver.md` for the full catalog.
+/// Name resolution errors. See `docs/v2/specs/resolver.md` for the full catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolveError {
-    /// An identifier could not be found in any enclosing scope.
     UnresolvedName(String),
-    /// Two declarations with the same name appear in the same scope.
     /// `first_span` points at the original declaration so the renderer can
-    /// surface both locations if it chooses.
-    DuplicateDeclaration { name: String, first_span: Span },
-    /// An import path could not be resolved to a target.
+    /// surface both locations.
+    DuplicateDeclaration {
+        name: String,
+        first_span: Span,
+    },
     UnresolvedImport(String),
-    /// The import graph contains a cycle that reaches the given path.
     CyclicImport(String),
-    /// A name is visible from multiple import sources at the same scope.
-    AmbiguousName { name: String, candidates: Vec<Span> },
-    /// `self` or `Self` used outside an `impl` block.
+    AmbiguousName {
+        name: String,
+        candidates: Vec<Span>,
+    },
     SelfOutsideImpl,
 }
 
@@ -160,65 +137,58 @@ impl fmt::Display for ResolveError {
     }
 }
 
-/// Type checking errors raised by the type checker.
-///
-/// Wrapped in `RavenError::Type(error, span, hint)` and rendered by the
-/// shared error formatter. See `docs/v2/specs/tycheck.md` for the full
-/// catalog and which language constructs raise each variant.
+/// Type checking errors. See `docs/v2/specs/tycheck.md` for the full catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeError {
-    /// The actual type does not match the expected type at this position.
-    TypeMismatch { expected: String, actual: String },
-    /// A struct does not declare the field named here.
-    UndefinedField { struct_name: String, field: String },
-    /// The receiver type does not expose a method with this name.
-    UndefinedMethod { receiver_ty: String, method: String },
-    /// More than one impl provides a method with this name on the
-    /// receiver type. `candidates` lists the source spellings of the
-    /// providing impls so the diagnostic can quote them back.
+    TypeMismatch {
+        expected: String,
+        actual: String,
+    },
+    UndefinedField {
+        struct_name: String,
+        field: String,
+    },
+    UndefinedMethod {
+        receiver_ty: String,
+        method: String,
+    },
     AmbiguousMethod {
         receiver_ty: String,
         method: String,
         candidates: Vec<String>,
     },
-    /// A function or method is called with the wrong number of
-    /// arguments.
     WrongArity {
         func: String,
         expected: usize,
         actual: usize,
     },
-    /// A `match` expression does not cover every variant of the
-    /// scrutinee, and lacks a wildcard arm.
-    NonExhaustiveMatch { missing: Vec<String> },
-    /// A `match` arm is fully shadowed by an earlier arm.
+    NonExhaustiveMatch {
+        missing: Vec<String>,
+    },
     RedundantPattern,
-    /// A type path could not be resolved to a known type.
     UnknownType(String),
-    /// Inference reached a binding or expression whose type could not
-    /// be determined from context. The user should annotate.
     CannotInferType,
-    /// The occurs check rejected unifying a variable with a type that
-    /// transitively contains it (`?T` with `List<?T>`).
-    OccursCheck { var: String, ty: String },
-    /// A type does not satisfy a required trait bound.
-    BoundNotSatisfied { ty: String, trait_name: String },
-    /// A generic declaration was instantiated with the wrong number of
-    /// type arguments.
+    /// Occurs check: a variable cannot unify with a type that contains it
+    /// (`?T` with `List<?T>`).
+    OccursCheck {
+        var: String,
+        ty: String,
+    },
+    BoundNotSatisfied {
+        ty: String,
+        trait_name: String,
+    },
     GenericArityMismatch {
         decl: String,
         expected: usize,
         actual: usize,
     },
-    /// Two or more impl blocks claim the same `(type, trait)` pair.
     OverlappingImpls {
         ty: String,
         trait_name: String,
         candidates: Vec<String>,
     },
-    /// A call expression's callee is not a callable type.
     NotCallable(String),
-    /// A bespoke message for shapes without a dedicated variant.
     Custom(String),
 }
 
