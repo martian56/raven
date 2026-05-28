@@ -95,8 +95,8 @@ fn integer_literals_in_all_four_bases_with_underscores() {
 
 #[test]
 fn float_literals_with_and_without_exponent() {
-    let toks = lex("3.14 1.0e10 6.022e-23 1E+3 1e10");
-    let expected = [3.14_f64, 1.0e10, 6.022e-23, 1.0e3, 1.0e10];
+    let toks = lex("3.25 1.0e10 6.022e-23 1E+3 1e10");
+    let expected = [3.25_f64, 1.0e10, 6.022e-23, 1.0e3, 1.0e10];
     let nums: Vec<f64> = toks
         .iter()
         .filter_map(|t| match t.kind {

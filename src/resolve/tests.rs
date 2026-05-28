@@ -5,8 +5,6 @@
 //! coverage section. Module local tests (scope mechanics, item
 //! collection, import resolution) live next to their modules.
 
-#![cfg(test)]
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
