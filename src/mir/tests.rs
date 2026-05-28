@@ -476,6 +476,63 @@ fn invoking_a_closure_value_emits_closure_call() {
 }
 
 #[test]
+fn generic_call_inside_closure_body_is_monomorphized() {
+    // Regression for #135: a generic function reachable only through a
+    // closure body must still be instantiated. `identity<T>` is called
+    // only from the lifted lambda `f`, so its `identity$Int` instance is
+    // queued only if the lifted body's pending generic call sites reach
+    // the monomorphization worklist. Before the fix those calls were
+    // dropped and no instance was emitted, leaving an unresolved callee.
+    let prog = compile(
+        r#"
+        fun identity<T>(x: T) -> T = x
+
+        fun apply(f: fun(Int) -> Int, x: Int) -> Int {
+            return f(x)
+        }
+
+        fun main() {
+            let f = fun(x: Int) -> Int = identity(x) + 1
+            print_int(apply(f, 41))
+        }
+    "#,
+    );
+    // The concrete instantiation appears under its mangled symbol.
+    assert!(
+        prog.functions.iter().any(|f| f.name == "identity$Int"),
+        "expected the identity$Int instantiation in the monomorphized program, got {:?}",
+        prog.functions
+            .iter()
+            .map(|f| f.name.as_str())
+            .collect::<Vec<_>>()
+    );
+    // The lifted closure body that drives the instantiation is present
+    // and calls the mangled symbol directly.
+    let lifted = prog
+        .functions
+        .iter()
+        .find(|f| f.name.contains("$closure$"))
+        .expect("a lifted closure body function");
+    let calls_identity_instance = lifted
+        .blocks
+        .iter()
+        .flat_map(|b| b.statements.iter())
+        .any(|s| {
+            matches!(
+                s,
+                MirStatement::Assign {
+                    rvalue: MirRvalue::Call { callee, .. },
+                    ..
+                } if callee.mangled == "identity$Int"
+            )
+        });
+    assert!(
+        calls_identity_instance,
+        "the lifted closure body calls the identity$Int instance"
+    );
+}
+
+#[test]
 fn gc_pointer_captures_are_ordered_first() {
     // A closure capturing both a scalar (`k`) and a GC pointer (`s`)
     // places the GC pointer capture first so the runtime's leading
