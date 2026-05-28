@@ -63,9 +63,15 @@ pub fn monomorphize(hir: &HirProgram) -> Result<MirProgram, RavenError> {
             .unwrap_or_else(|| hir_fn.name.clone());
         let subst = build_subst(hir_fn, &args);
         let mangled = mangle_name(&base, &args);
-        let (mir_fn, pending) = lower_function(mangled, hir_fn, &subst, &decls);
-        program.functions.push(mir_fn);
-        for next in pending {
+        let lowered = lower_function(mangled, hir_fn, &subst, &decls);
+        program.functions.push(lowered.func);
+        // Lifted closure bodies are already monomorphic standalone
+        // functions; add them directly so codegen can resolve each
+        // closure's function pointer.
+        for lifted in lowered.lifted {
+            program.functions.push(lifted);
+        }
+        for next in lowered.pending {
             worklist.push(next);
         }
     }
