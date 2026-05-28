@@ -184,7 +184,7 @@ pub fn collect_declarations(
 /// list. The trait bounds are captured by name (the resolver already
 /// validated that they point at trait declarations).
 fn collect_generic_params(params: &[GenericParam], owner: &Span) -> Vec<GenericParamSig> {
-    params
+    let mut sigs: Vec<GenericParamSig> = params
         .iter()
         .enumerate()
         .map(|(i, p)| {
@@ -202,10 +202,66 @@ fn collect_generic_params(params: &[GenericParam], owner: &Span) -> Vec<GenericP
             GenericParamSig {
                 id: ParamId::new(owner, i, p.name.clone()),
                 bounds,
+                // Filled below once every sibling parameter id is known.
+                bound_args: Vec::new(),
                 span: p.span.clone(),
             }
         })
-        .collect()
+        .collect();
+    // Resolve the type arguments of each bound against a scope built from
+    // the sibling parameters in this same list. A bound such as
+    // `S: Iterator<T>` references the sibling `T`, so the scope must hold
+    // every parameter before any bound is resolved. Arguments that are
+    // bare parameter names or built-in primitives resolve without needing
+    // the type environment; anything else (an unresolvable argument) is
+    // recorded as `Ty::Error` and simply leaves the trait parameter
+    // abstract, which is the prior behavior.
+    let mut scope = GenericScope::new();
+    scope.push();
+    push_generics_into_scope(&mut scope, &sigs);
+    for (i, p) in params.iter().enumerate() {
+        let mut per_bound: Vec<Vec<Ty>> = Vec::with_capacity(p.bounds.len());
+        for b in &p.bounds {
+            let seg_args = b.segments.last().map(|s| &s.generics);
+            let args = match seg_args {
+                Some(gens) => gens
+                    .iter()
+                    .map(|g| resolve_bound_arg(g, &scope))
+                    .collect::<Vec<_>>(),
+                None => Vec::new(),
+            };
+            per_bound.push(args);
+        }
+        sigs[i].bound_args = per_bound;
+    }
+    sigs
+}
+
+/// Resolve one type argument of a trait bound to a [`Ty`] using only the
+/// lexical scope of the surrounding generic parameter list. Parameter
+/// names and built-in primitives resolve directly; anything requiring a
+/// type-environment lookup is left as `Ty::Error` so the caller falls
+/// back to leaving the trait parameter abstract.
+fn resolve_bound_arg(ty: &Type, scope: &GenericScope) -> Ty {
+    match &ty.kind {
+        TypeKind::Path(p) => {
+            let head = &p.segments[0];
+            if let Some(id) = scope.lookup(&head.name) {
+                return Ty::Param(id.clone());
+            }
+            match head.name.as_str() {
+                "Int" => Ty::Int,
+                "Float" => Ty::Float,
+                "Bool" => Ty::Bool,
+                "Char" => Ty::Char,
+                "String" => Ty::Str,
+                "Unit" => Ty::Unit,
+                _ => Ty::Error,
+            }
+        }
+        TypeKind::Unit => Ty::Unit,
+        _ => Ty::Error,
+    }
 }
 
 fn push_generics_into_scope(scope: &mut GenericScope, params: &[GenericParamSig]) {

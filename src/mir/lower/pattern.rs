@@ -32,7 +32,12 @@ pub fn lower_match(
     result_ty: MirType,
 ) -> MirOperand {
     let scrut_op = super::expr::lower_expr(cx, scrutinee);
-    let scrut_ty = scrutinee.ty.clone();
+    // Apply the monomorphization substitution so a scrutinee whose type
+    // mentions a generic parameter (for example `Option<T>` returned by a
+    // bound iterator's `next`) yields concrete payload-binding types. Using
+    // the raw HIR type would leave `T` abstract, which lowers to a unit
+    // slot and produces a type mismatch in the generated code.
+    let scrut_ty = super::substitute(&scrutinee.ty, cx.subst);
     let result_local = cx.builder.fresh_temp("match", result_ty);
     let cont = cx.builder.new_block();
 

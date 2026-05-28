@@ -70,7 +70,14 @@ fn run_build(rest: &[String]) -> Result<(), DriverError> {
     let typed =
         check_file(&resolved).map_err(|e| DriverError::Frontend(format!("tycheck: {}", e)))?;
     let hir = lower_file(&typed).map_err(|e| DriverError::Frontend(format!("hir: {}", e)))?;
+    if std::env::var("RAVEN_DUMP_HIR").is_ok() {
+        eprintln!("{}", raven::hir::pretty_program(&hir));
+    }
     let mir = lower_program(&hir).map_err(|e| DriverError::Frontend(format!("mir: {}", e)))?;
+
+    if std::env::var("RAVEN_DUMP_MIR").is_ok() {
+        eprintln!("{}", raven::mir::pretty::pretty_program(&mir));
+    }
 
     // Back end.
     let object_bytes = codegen::compile_program(&mir).map_err(DriverError::from)?;

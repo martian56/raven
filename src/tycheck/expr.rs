@@ -223,7 +223,7 @@ struct Checker<'a, 'b> {
     /// its [`ParamId`]. A method call on a value of type `Ty::Param(p)`
     /// looks up `p`'s bounds here to find the trait that declares the
     /// called method (bound-driven trait method dispatch).
-    param_bounds: HashMap<ParamId, Vec<String>>,
+    param_bounds: HashMap<ParamId, Vec<(String, Vec<Ty>)>>,
     /// Inference context for this body. Holds variables, their
     /// solutions, and any pending trait bounds.
     infer: InferCtx,
@@ -287,7 +287,16 @@ impl<'a, 'b> Checker<'a, 'b> {
     fn record_param_bounds(&mut self, params: &[GenericParamSig]) {
         for p in params {
             if !p.bounds.is_empty() {
-                self.param_bounds.insert(p.id.clone(), p.bounds.clone());
+                let entries: Vec<(String, Vec<Ty>)> = p
+                    .bounds
+                    .iter()
+                    .enumerate()
+                    .map(|(i, name)| {
+                        let args = p.bound_args.get(i).cloned().unwrap_or_default();
+                        (name.clone(), args)
+                    })
+                    .collect();
+                self.param_bounds.insert(p.id.clone(), entries);
             }
         }
     }
@@ -411,7 +420,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                 let ok = self
                     .param_bounds
                     .get(p)
-                    .map(|bs| bs.iter().any(|b| b == "ToString"))
+                    .map(|bs| bs.iter().any(|(name, _)| name == "ToString"))
                     .unwrap_or(false);
                 if ok {
                     Ok(())
@@ -718,19 +727,34 @@ impl<'a, 'b> Checker<'a, 'b> {
                 body,
             } => {
                 let iter_ty = self.check_expr(iter)?;
-                let elem = match iter_ty.strip_self() {
+                let resolved = self.infer.resolve(&iter_ty);
+                let elem = match resolved.strip_self() {
                     Ty::List(t) => *t.clone(),
                     Ty::Error => Ty::Error,
                     other => {
-                        return Err(RavenError::ty(
-                            TypeError::Custom(format!(
-                                "cannot iterate over `{}`; expected a `List<T>`",
-                                other
-                            )),
-                            iter.span.clone(),
-                        ));
+                        // Any value whose type implements `Iterator<T>`
+                        // (resolved by finding a `next` method returning
+                        // `Option<T>`) can drive a `for` loop. The HIR
+                        // desugars this to a `loop` that calls `next`.
+                        match self.iterator_elem_ty(other, &iter.span) {
+                            Some(t) => t,
+                            None => {
+                                return Err(RavenError::ty(
+                                    TypeError::Custom(format!(
+                                        "cannot iterate over `{}`; expected a `List<T>` or a type implementing `Iterator<T>`",
+                                        other
+                                    )),
+                                    iter.span.clone(),
+                                ));
+                            }
+                        }
                     }
                 };
+                let elem = self.infer.resolve(&elem);
+                // Record the resolved element type at the pattern span so
+                // HIR lowering can type the loop binding without redoing
+                // method resolution (used by the iterator-driven path).
+                self.record(&pat.span, elem.clone());
                 pattern::bind(pat, &elem, self.env, &mut self.locals)?;
                 self.check_block(body)?;
                 Ok(Ty::Unit)
@@ -755,6 +779,19 @@ impl<'a, 'b> Checker<'a, 'b> {
         generics: &[crate::ast::Type],
         span: &Span,
     ) -> Result<Ty, RavenError> {
+        // A bare `None` carries an unknown element type. Use a fresh
+        // inference variable so it unifies with whatever concrete
+        // `Option<T>` the surrounding context fixes (for example the other
+        // arm of a `match`). Typing it as `Option<Error>` would swallow the
+        // unification and leave the element type unresolved. `Some`, `Ok`,
+        // and `Err` reach the checker as calls, so `None` is the only bare
+        // constructor identifier handled here. This is checked before the
+        // binding lookup because `None` is a built-in constructor with no
+        // user declaration to bind to.
+        if name == "None" {
+            let v = self.infer.fresh(span.clone());
+            return Ok(Ty::Option(Box::new(Ty::Var(v))));
+        }
         if let Some(binding) = self.resolved.map.lookup(span).cloned() {
             // Resolve any explicit type arguments first. We pass them
             // through to the instantiation step below.
@@ -763,8 +800,6 @@ impl<'a, 'b> Checker<'a, 'b> {
                 explicit_args.push(self.resolve_ast_ty(g)?);
             }
             self.type_of_binding(&binding, span, &explicit_args)
-        } else if let Some(t) = recognize_constructor_ident(name) {
-            Ok(t)
         } else {
             Err(RavenError::ty(
                 TypeError::Custom(format!("identifier `{}` has no type binding", name)),
@@ -1443,6 +1478,39 @@ impl<'a, 'b> Checker<'a, 'b> {
         Ok(substitute(&sig.ret, &full))
     }
 
+    /// If `recv` has a `next(self) -> Option<T>` method (from any impl,
+    /// trait or inherent), return the element type `T`. This is how a
+    /// `for` loop discovers that an arbitrary value is iterable: the
+    /// `Iterator<T>` trait declares exactly that method, and concrete
+    /// adapter structs implement it. Returns `None` when no matching
+    /// `next` method resolves to an `Option`.
+    fn iterator_elem_ty(&mut self, recv: &Ty, span: &Span) -> Option<Ty> {
+        let impls_snapshot = self.env.impls.clone();
+        for imp in impls_snapshot.iter() {
+            let Some(msig) = imp.methods.get("next") else {
+                continue;
+            };
+            // Substitute fresh inference vars for the impl's generics, then
+            // unify the impl's self type against the receiver. A successful
+            // unification fixes those vars, so the substituted return type
+            // becomes concrete.
+            let mut subst: HashMap<ParamId, Ty> = HashMap::new();
+            for p in &imp.generics {
+                let v = self.infer.fresh(span.clone());
+                subst.insert(p.id.clone(), Ty::Var(v));
+            }
+            let impl_self = substitute(&imp.self_ty, &subst);
+            if self.infer.unify(&impl_self, recv, span).is_err() {
+                continue;
+            }
+            let ret = self.infer.resolve(&substitute(&msig.ret, &subst));
+            if let Ty::Option(elem) = ret.strip_self() {
+                return Some((**elem).clone());
+            }
+        }
+        None
+    }
+
     /// Check a method call whose receiver is a `dyn Trait` value. The
     /// method must belong to the trait. Argument types are checked against
     /// the trait method's declared parameter types (with `Self` left
@@ -1513,18 +1581,35 @@ impl<'a, 'b> Checker<'a, 'b> {
         let recv_ty = Ty::Param(param.clone());
         let bounds = self.param_bounds.get(param).cloned().unwrap_or_default();
         // Find a bound trait whose declaration carries the called method.
+        // Alongside the method signature, build a substitution that maps
+        // the trait's own generic parameters to the type arguments named
+        // in the bound. For a bound `S: Iterator<Int>` calling `next`,
+        // `Iterator`'s declared `T` maps to `Int`, so the method's return
+        // `Option<T>` resolves to `Option<Int>` instead of staying
+        // abstract. Without this, the trait parameter leaks out as a fresh
+        // `Param` that cannot unify with the concrete element type.
         let mut found: Option<FnSig> = None;
-        for trait_name in &bounds {
-            let sig = self
+        let mut trait_subst: HashMap<ParamId, Ty> = HashMap::new();
+        for (trait_name, bound_args) in &bounds {
+            let trait_sig = self
                 .env
                 .traits
                 .values()
                 .find(|t| &t.name == trait_name)
-                .and_then(|t| t.methods.get(name).cloned());
-            if let Some(sig) = sig {
-                found = Some(sig);
-                break;
+                .cloned();
+            let Some(trait_sig) = trait_sig else {
+                continue;
+            };
+            let Some(msig) = trait_sig.methods.get(name).cloned() else {
+                continue;
+            };
+            for (tp, arg) in trait_sig.generics.iter().zip(bound_args.iter()) {
+                if !matches!(arg, Ty::Error) {
+                    trait_subst.insert(tp.id.clone(), arg.clone());
+                }
             }
+            found = Some(msig);
+            break;
         }
         let Some(sig) = found else {
             // The method is on no bound trait. If the parameter has no
@@ -1537,9 +1622,10 @@ impl<'a, 'b> Checker<'a, 'b> {
                     param.name
                 )
             } else {
+                let names: Vec<&str> = bounds.iter().map(|(n, _)| n.as_str()).collect();
                 format!(
                     "none of the bounds `{}` on `{}` declare a method `{}`",
-                    bounds.join(" + "),
+                    names.join(" + "),
                     param.name,
                     name
                 )
@@ -1555,12 +1641,13 @@ impl<'a, 'b> Checker<'a, 'b> {
         };
 
         // Substitute every `Self` placeholder in the trait method's
-        // signature with the receiver's parameter type.
+        // signature with the receiver's parameter type, and the trait's
+        // own generic parameters with the bound's type arguments.
         let user_params: Vec<Ty> = sig
             .params
             .iter()
             .filter(|t| !matches!(t, Ty::SelfTy(_)))
-            .map(|t| substitute_self(t, &recv_ty))
+            .map(|t| substitute(&substitute_self(t, &recv_ty), &trait_subst))
             .collect();
         if user_params.len() != args.len() {
             return Err(RavenError::ty(
@@ -1576,7 +1663,10 @@ impl<'a, 'b> Checker<'a, 'b> {
             let a = self.check_expr(arg)?;
             self.unify(pt, &a, &arg.span)?;
         }
-        Ok(substitute_self(&sig.ret, &recv_ty))
+        Ok(substitute(
+            &substitute_self(&sig.ret, &recv_ty),
+            &trait_subst,
+        ))
     }
 
     fn check_field(&mut self, receiver: &Expr, name: &str, span: &Span) -> Result<Ty, RavenError> {
@@ -1906,7 +1996,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                 let ok = self
                     .param_bounds
                     .get(p)
-                    .map(|bs| bs.iter().any(|b| b == "ToString"))
+                    .map(|bs| bs.iter().any(|(name, _)| name == "ToString"))
                     .unwrap_or(false);
                 if ok {
                     continue;
@@ -2070,14 +2160,4 @@ fn is_int_ffi(ty: &Ty) -> bool {
 
 fn ty_custom(msg: &str, span: &Span) -> RavenError {
     RavenError::ty(TypeError::Custom(msg.into()), span.clone())
-}
-
-/// Recognize the bare constructor identifier `None` when the resolver
-/// could not bind it. `Some`, `Ok`, `Err` reach the type checker as
-/// calls; only `None` is a bare identifier.
-fn recognize_constructor_ident(name: &str) -> Option<Ty> {
-    match name {
-        "None" => Some(Ty::Option(Box::new(Ty::Error))),
-        _ => None,
-    }
 }
