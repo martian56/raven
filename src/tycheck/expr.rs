@@ -1265,6 +1265,17 @@ impl<'a, 'b> Checker<'a, 'b> {
                 self.unify(&Ty::Str, &arg_ty, &args[0].span)?;
                 Ok(Ty::Unit)
             }
+            "__panic" => {
+                // Internal `__panic(msg: String)` intrinsic. The bundled
+                // `std/test` source calls it to abort on a failed assertion;
+                // the back end lowers it to the runtime `raven_panic`. It
+                // never returns at runtime, but is typed as `Unit` so a call
+                // is a valid statement.
+                self.check_intrinsic_arity(name, args, 1, span)?;
+                let arg_ty = self.check_expr(&args[0])?;
+                self.unify(&Ty::Str, &arg_ty, &args[0].span)?;
+                Ok(Ty::Unit)
+            }
             "__io_read_line" => {
                 if !args.is_empty() {
                     return Err(RavenError::ty(

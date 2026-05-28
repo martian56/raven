@@ -245,6 +245,18 @@ fn error_program_compiles_and_runs() {
 }
 
 #[test]
+fn test_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // std/test assertions in a passing program: assert, assert_msg,
+    // assert_true, assert_false, assert_eq_int, and assert_eq_str all hold,
+    // so no assertion calls the runtime panic. The program reaches the
+    // final line and exits zero, printing `all passed`.
+    compile_link_run_and_check("use_test.rv", "all passed\n", &runtime);
+}
+
+#[test]
 fn string_eq_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
