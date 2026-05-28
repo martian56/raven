@@ -24,7 +24,7 @@ use super::collect::{resolve_ty, scope_from_params, GenericScope};
 use super::env::{FnSig, GenericParamSig, TypeEnv};
 use super::infer::{substitute, InferCtx};
 use super::pattern;
-use super::ty::{ParamId, Ty};
+use super::ty::{FfiTy, ParamId, Ty};
 use super::unify::assignable;
 use super::TypeMap;
 
@@ -547,7 +547,11 @@ impl<'a, 'b> Checker<'a, 'b> {
             ExprKind::Int(_) => Ok(Ty::Int),
             ExprKind::Float(_) => Ok(Ty::Float),
             ExprKind::Bool(_) => Ok(Ty::Bool),
-            ExprKind::Str(_) | ExprKind::BlockStr(_) | ExprKind::CStr(_) => Ok(Ty::Str),
+            ExprKind::Str(_) | ExprKind::BlockStr(_) => Ok(Ty::Str),
+            // A `c"..."` literal is a C string: a pointer to a static
+            // null-terminated byte buffer. It types as the FFI `CStr`
+            // type so it can be passed where a C function expects one.
+            ExprKind::CStr(_) => Ok(Ty::Ffi(FfiTy::CStr)),
             ExprKind::InterpolatedString(fragments) => self.check_interpolated_string(fragments),
             ExprKind::Char(_) => Ok(Ty::Char),
             ExprKind::SelfLower => Ok(self
@@ -947,6 +951,20 @@ impl<'a, 'b> Checker<'a, 'b> {
         }
         for (param_ty, arg) in params.iter().zip(args.iter()) {
             let a = self.check_expr(arg)?;
+            // An integer C FFI parameter (`CInt`, `CLong`, `CSize`)
+            // accepts a native `Int`, so an integer literal or expression
+            // can be passed to a C function (for example `abs(-7)`). The
+            // back end converts the i64 to the parameter's machine width
+            // at the call. A `c"..."` literal is already typed `CStr`, so
+            // it unifies directly with a `CStr` parameter. Any other
+            // mismatch falls through to the normal unify diagnostic.
+            let resolved_param = self.infer.resolve(param_ty);
+            let resolved_arg = self.infer.resolve(&a);
+            if is_int_ffi(resolved_param.strip_self())
+                && matches!(resolved_arg.strip_self(), Ty::Int)
+            {
+                continue;
+            }
             self.unify(param_ty, &a, &arg.span)?;
         }
         Ok(ret)
@@ -1023,7 +1041,11 @@ impl<'a, 'b> Checker<'a, 'b> {
                 // Built in `print_int(n: Int)` intrinsic. The codegen
                 // backend recognizes the mangled name and emits a call
                 // to the runtime's `raven_println_int` ABI symbol so a
-                // program can observe a computed integer.
+                // program can observe a computed integer. The integer C
+                // FFI types (`CInt`, `CLong`, `CSize`) are also accepted
+                // so the result of a C call (for example `strlen`) can be
+                // printed directly; the back end widens narrower ones to
+                // the i64 the runtime expects.
                 if args.len() != 1 {
                     return Err(RavenError::ty(
                         TypeError::WrongArity {
@@ -1035,7 +1057,14 @@ impl<'a, 'b> Checker<'a, 'b> {
                     ));
                 }
                 let arg_ty = self.check_expr(&args[0])?;
-                self.unify(&Ty::Int, &arg_ty, &args[0].span)?;
+                let resolved = self.infer.resolve(&arg_ty);
+                let is_int_ffi = matches!(
+                    resolved.strip_self(),
+                    Ty::Ffi(FfiTy::CInt) | Ty::Ffi(FfiTy::CLong) | Ty::Ffi(FfiTy::CSize)
+                );
+                if !is_int_ffi {
+                    self.unify(&Ty::Int, &arg_ty, &args[0].span)?;
+                }
                 Ok(Ty::Unit)
             }
             other => Err(RavenError::ty(
@@ -1692,6 +1721,15 @@ fn describe_callee(expr: &Expr) -> String {
         ExprKind::Ident { name, .. } => name.clone(),
         _ => "<expression>".to_string(),
     }
+}
+
+/// True for the integer C FFI types (`CInt`, `CLong`, `CSize`). A native
+/// `Int` may be passed where one of these is expected at a C call.
+fn is_int_ffi(ty: &Ty) -> bool {
+    matches!(
+        ty,
+        Ty::Ffi(FfiTy::CInt) | Ty::Ffi(FfiTy::CLong) | Ty::Ffi(FfiTy::CSize)
+    )
 }
 
 fn ty_custom(msg: &str, span: &Span) -> RavenError {

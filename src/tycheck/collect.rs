@@ -19,7 +19,7 @@ use super::env::{
     EnumSig, FieldSig, FnSig, GenericParamSig, ImplSig, StructSig, TraitSig, TypeEnv,
     VariantPayloadSig, VariantSig,
 };
-use super::ty::{ParamId, Ty};
+use super::ty::{FfiTy, ParamId, Ty};
 
 /// A small lexical scope of generic parameters introduced by an
 /// enclosing declaration. Layered as a stack of frames so methods
@@ -560,6 +560,17 @@ fn resolve_type_path(
         "List" | "Array" | "Vec" => {
             let inner = expect_one_generic(head, resolved, env, self_ty, scope)?;
             return Ok(Ty::List(Box::new(inner)));
+        }
+        "CInt" => return ok_zero_generics(head, Ty::Ffi(FfiTy::CInt)),
+        "CLong" => return ok_zero_generics(head, Ty::Ffi(FfiTy::CLong)),
+        "CSize" => return ok_zero_generics(head, Ty::Ffi(FfiTy::CSize)),
+        // `CStr` is the spec name; `CString` is accepted as an alias so
+        // older `extern` signatures keep checking. Both denote a pointer
+        // to a null-terminated byte buffer.
+        "CStr" | "CString" => return ok_zero_generics(head, Ty::Ffi(FfiTy::CStr)),
+        "CPtr" => {
+            let inner = expect_one_generic(head, resolved, env, self_ty, scope)?;
+            return Ok(Ty::Ffi(FfiTy::CPtr(Box::new(inner))));
         }
         "Self" => {
             return self_ty

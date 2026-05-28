@@ -44,7 +44,7 @@ pub use env::{
     EnumSig, FieldSig, FnSig, GenericParamSig, ImplSig, StructSig, TraitSig, TypeEnv,
     VariantPayloadSig, VariantSig,
 };
-pub use ty::Ty;
+pub use ty::{FfiTy, Ty};
 
 /// One recorded `dyn Trait` unsizing coercion.
 ///

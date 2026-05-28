@@ -624,6 +624,11 @@ fn is_builtin_type_name(name: &str) -> bool {
             | "Vec"
             | "List"
             | "CString"
+            | "CStr"
+            | "CInt"
+            | "CLong"
+            | "CSize"
+            | "CPtr"
             | "Any"
     )
 }
