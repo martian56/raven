@@ -330,9 +330,18 @@ fn lower_rvalue(
         MirRvalue::FieldAccess { base, index } => {
             lower_field_access(cx, builder, base, *index, slots)
         }
-        MirRvalue::ClosureCreate { fn_name, captures } => {
-            lower_closure_create(cx, builder, fn_name, captures, slots)
-        }
+        MirRvalue::ClosureCreate {
+            fn_name,
+            captures,
+            capture_tys,
+        } => lower_closure_create(cx, builder, fn_name, captures, capture_tys, slots),
+        MirRvalue::EnvLoad { env, slot, ty } => lower_env_load(cx, builder, env, *slot, ty, slots),
+        MirRvalue::ClosureCall {
+            closure,
+            args,
+            param_tys,
+            ret_ty,
+        } => lower_closure_call(cx, builder, closure, args, param_tys, ret_ty, slots),
         MirRvalue::DynCoerce {
             value,
             concrete_ty,
@@ -368,6 +377,8 @@ fn rvalue_kind(r: &MirRvalue) -> &'static str {
         MirRvalue::ArrayLit { .. } => "ArrayLit",
         MirRvalue::Cast { .. } => "Cast",
         MirRvalue::ClosureCreate { .. } => "ClosureCreate",
+        MirRvalue::EnvLoad { .. } => "EnvLoad",
+        MirRvalue::ClosureCall { .. } => "ClosureCall",
         MirRvalue::DynCoerce { .. } => "DynCoerce",
         MirRvalue::VirtualCall { .. } => "VirtualCall",
     }
@@ -732,29 +743,34 @@ fn lower_field_access(
     Ok(Some(raw))
 }
 
-/// Lower a closure construction. The MVP supports the non-capturing
-/// shape the front end currently emits: a `Closure` object wrapping the
-/// lifted body's function pointer with an empty capture buffer.
-/// Capturing closures require front-end capture analysis and a lifted
-/// body function, tracked separately.
+/// Width in bytes of one capture slot in the closure env. Every capture,
+/// scalar or GC pointer, occupies one pointer-width slot, so the env is a
+/// uniform array of pointer-width words. The lifted body and the indirect
+/// call agree on this layout.
+const CAPTURE_SLOT: i32 = 8;
+
+/// Lower a closure construction.
+///
+/// Allocates a `Closure` object sized for the captured environment,
+/// stores the lifted body's function pointer, and copies each captured
+/// value into its env slot. Captures are by value: the value at
+/// closure-creation time is copied into the env. For a GC-managed value
+/// the copied value is the same pointer, so the captured object aliases
+/// the original. Capture analysis orders GC-pointer captures first, so
+/// the leading `capture_ptr_count` slots are the traced GC pointers the
+/// collector follows through the closure descriptor.
 fn lower_closure_create(
     cx: &mut ModuleCx,
     builder: &mut FunctionBuilder<'_>,
     fn_name: &str,
     captures: &[MirOperand],
-    _slots: &[LocalSlot],
+    capture_tys: &[MirType],
+    slots: &[LocalSlot],
 ) -> Result<RValue, CodegenError> {
-    if !captures.is_empty() {
-        return Err(CodegenError::Unsupported(
-            "capturing closures are not yet lowered; only non-capturing lambdas are supported"
-                .into(),
-        ));
-    }
     let ptr = cx.pointer_type();
-    // Resolve the lifted body's function pointer. The front end emits a
-    // placeholder name until lambda body lifting lands; without a real
-    // function to point at, a null function pointer is stored so the
-    // object is still well formed and the program links.
+    // Resolve the lifted body's function pointer. A missing function is a
+    // lowering bug, but keep the program well formed with a null pointer
+    // rather than aborting the whole build.
     let fn_ptr = match cx.function_id(fn_name) {
         Some(id) => {
             let fref = cx.module().declare_func_in_func(id, builder.func);
@@ -762,14 +778,136 @@ fn lower_closure_create(
         }
         None => builder.ins().iconst(ptr, 0),
     };
+
+    // Evaluate every capture operand before the allocation so their
+    // values are in registers; each operand is a copy of an already
+    // rooted local or a constant.
+    let mut capture_vals = Vec::with_capacity(captures.len());
+    for c in captures {
+        let v = lower_operand(cx, builder, c, slots)?;
+        capture_vals.push(widen_to_slot(builder, v, ptr));
+    }
+
+    let count = captures.len() as i64;
+    let capture_size = (captures.len() as i32) * CAPTURE_SLOT;
+    let ptr_count = capture_tys
+        .iter()
+        .filter(|t| layout::is_gc_pointer(t))
+        .count() as i64;
+    let align: i64 = if captures.is_empty() { 0 } else { 8 };
+
     let new_id = cx
         .runtime_id(intrinsics::RUNTIME_CLOSURE_NEW)
         .expect("closure new declared at module init");
     let new_ref = cx.module().declare_func_in_func(new_id, builder.func);
-    let zero32 = builder.ins().iconst(types::I32, 0);
+    let size_v = builder.ins().iconst(types::I32, capture_size as i64);
+    let align_v = builder.ins().iconst(types::I32, align);
+    let count_v = builder.ins().iconst(types::I32, count);
+    let ptr_count_v = builder.ins().iconst(types::I32, ptr_count);
     let inst = builder
         .ins()
-        .call(new_ref, &[fn_ptr, zero32, zero32, zero32, zero32]);
+        .call(new_ref, &[fn_ptr, size_v, align_v, count_v, ptr_count_v]);
+    let closure = builder.inst_results(inst)[0];
+
+    // Copy each capture value into its env slot. The env base is the
+    // closure's owned capture buffer.
+    if !captures.is_empty() {
+        let captures_id = cx
+            .runtime_id(intrinsics::RUNTIME_CLOSURE_CAPTURES)
+            .expect("closure captures declared at module init");
+        let captures_ref = cx.module().declare_func_in_func(captures_id, builder.func);
+        let env_inst = builder.ins().call(captures_ref, &[closure]);
+        let env_base = builder.inst_results(env_inst)[0];
+        for (i, v) in capture_vals.into_iter().enumerate() {
+            builder
+                .ins()
+                .store(MemFlags::new(), v, env_base, (i as i32) * CAPTURE_SLOT);
+        }
+    }
+
+    Ok(Some(closure))
+}
+
+/// Lower an env load: read a capture from the lifted body's env pointer.
+/// The env is the function's leading parameter (a raw pointer-width
+/// value); slot `slot` lives at byte offset `slot * CAPTURE_SLOT`. The
+/// word is loaded pointer-width and narrowed back to the capture's
+/// machine type (a `Float` or narrow scalar capture is reinterpreted by
+/// `store_local`).
+fn lower_env_load(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    env: &MirOperand,
+    slot: usize,
+    _ty: &MirType,
+    slots: &[LocalSlot],
+) -> Result<RValue, CodegenError> {
+    let ptr = cx.pointer_type();
+    let env_base = require_value(lower_operand(cx, builder, env, slots)?, "env load base")?;
+    let raw = builder
+        .ins()
+        .load(ptr, MemFlags::new(), env_base, (slot as i32) * CAPTURE_SLOT);
+    Ok(Some(raw))
+}
+
+/// Lower a closure-value call: dispatch indirectly through a `Closure`
+/// object. Loads the function pointer and the capture env from the
+/// closure, then emits an indirect call passing the env as the leading
+/// argument followed by the user arguments. The lifted body's signature
+/// is `(env_ptr, <user params...>) -> ret`.
+#[allow(clippy::too_many_arguments)]
+fn lower_closure_call(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    closure: &MirOperand,
+    args: &[MirOperand],
+    param_tys: &[MirType],
+    ret_ty: &MirType,
+    slots: &[LocalSlot],
+) -> Result<RValue, CodegenError> {
+    let ptr = cx.pointer_type();
+    let closure_ptr = require_value(
+        lower_operand(cx, builder, closure, slots)?,
+        "closure call receiver",
+    )?;
+
+    // Load the function pointer from the closure.
+    let fn_ptr_id = cx
+        .runtime_id(intrinsics::RUNTIME_CLOSURE_FN_PTR)
+        .expect("closure fn ptr declared at module init");
+    let fn_ptr_ref = cx.module().declare_func_in_func(fn_ptr_id, builder.func);
+    let fn_inst = builder.ins().call(fn_ptr_ref, &[closure_ptr]);
+    let fn_ptr = builder.inst_results(fn_inst)[0];
+
+    // Load the capture env base from the closure (null when no captures).
+    let captures_id = cx
+        .runtime_id(intrinsics::RUNTIME_CLOSURE_CAPTURES)
+        .expect("closure captures declared at module init");
+    let captures_ref = cx.module().declare_func_in_func(captures_id, builder.func);
+    let env_inst = builder.ins().call(captures_ref, &[closure_ptr]);
+    let env_base = builder.inst_results(env_inst)[0];
+
+    // Build the indirect signature: the env pointer plus each user
+    // parameter, returning the closure's return type.
+    let mut sig = Signature::new(cx.module().target_config().default_call_conv);
+    sig.params.push(cranelift_codegen::ir::AbiParam::new(ptr));
+    for pt in param_tys {
+        if let Some(t) = cranelift_ty(pt, ptr) {
+            sig.params.push(cranelift_codegen::ir::AbiParam::new(t));
+        }
+    }
+    if let Some(t) = cranelift_ty(ret_ty, ptr) {
+        sig.returns.push(cranelift_codegen::ir::AbiParam::new(t));
+    }
+    let sig_ref = builder.import_signature(sig);
+
+    let mut call_args = vec![env_base];
+    for a in args {
+        if let Some(v) = lower_operand(cx, builder, a, slots)? {
+            call_args.push(v);
+        }
+    }
+    let inst = builder.ins().call_indirect(sig_ref, fn_ptr, &call_args);
     Ok(builder.inst_results(inst).first().copied())
 }
 
