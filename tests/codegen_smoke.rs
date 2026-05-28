@@ -59,6 +59,17 @@ fn closure_value_program_compiles_and_runs() {
     compile_link_run_and_check("closure_value.rv", "42\n", &runtime);
 }
 
+#[test]
+fn dyn_dispatch_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Two concrete types are coerced to `dyn Speak` and dispatched
+    // through their vtables: Dog.sound() is 1, Cat.sound() is 2, each on
+    // its own line.
+    compile_link_run_and_check("dyn_dispatch.rv", "1\n2\n", &runtime);
+}
+
 /// Return the runtime staticlib when a linker and the staticlib are both
 /// present, or skip with a diagnostic. Shared by every smoke case so the
 /// skip behavior stays identical.
