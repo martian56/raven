@@ -111,7 +111,7 @@ lifetimes); `Nop` is also a no op.
 | `Call { callee, args }` | Loads each argument from its slot, declares the callee through `cranelift-module`, emits `call` with the resulting `FuncRef`, stores the return value. |
 | `StructCreate`, `EnumCreate`, `FieldAccess`, `ClosureCreate`, `EnvLoad`, `ClosureCall` | Lowered. See the heap value and closure sections below. |
 | `Cast` | Integer and float conversions through `sextend`, `ireduce`, `fcvt_from_sint`, `fcvt_to_sint_sat`. |
-| `IndexAccess`, `ArrayLit` | Deferred to the stdlib collection issues. |
+| `ArrayLit`, `IndexAccess`, `ListMethod` | Lowered. See the List section below. |
 
 ## Terminator lowering
 
@@ -334,6 +334,87 @@ runtime's closure-tracing arm reads `capture_ptr_count` and traces the
 leading pointer slots, which is why capture analysis places GC-pointer
 captures first.
 
+### Lists
+
+A `List<T>` value is a single GC pointer to a heap `List` object (header,
+`element_size`, `element_align`, `elements_are_gc_ptrs`, and an owned
+element buffer; see `docs/v2/specs/object-layout.md`). Codegen stores
+every element in a uniform eight-byte slot, the same slot width struct
+and enum fields use, so `element_size == element_align == 8` for all
+element types. Scalars narrower than eight bytes are widened on store and
+narrowed on load; a GC pointer is already eight bytes. The
+`elements_are_gc_ptrs` flag is set from the static element type
+(`layout::is_gc_pointer`): nonzero for heap element types (`String`,
+`List`, `Map`, `Set`, struct, enum, closure, `Box`, `dyn`) and zero for
+the scalars (`Int`, `Float`, `Bool`, `Char`). The flag is independent of
+the slot size: an eight-byte `Int` slot is not a pointer, while an
+eight-byte `String` slot is.
+
+#### Element representation and the GC-pointer flag
+
+The flag drives the collector's element tracing. The runtime's
+`TAG_LIST` arm reads `elements_are_gc_ptrs` and, when nonzero, traces the
+first `len` pointer slots of the buffer; when zero, the buffer is opaque
+scalar bytes and is not traced. So a `List<String>` keeps its elements
+reachable, and a `List<Int>` never misreads an integer as a pointer.
+
+#### `ArrayLit`
+
+`[a, b, c]` (MIR `ArrayLit { ty, elements }`, where `ty` is `List<T>`)
+lowers to:
+
+1. Evaluate every element operand into a register and widen each to an
+   eight-byte slot value.
+2. `raven_list_new(8, 8, len, gc_ptrs)` to allocate the list, where
+   `gc_ptrs` is the element type's GC-pointer flag.
+3. For each element, write the widened value into a one-slot scratch
+   stack slot and call `raven_list_push(list, scratch_addr)`, which
+   copies the eight bytes into the list (growing the buffer when needed).
+
+The result is the list pointer.
+
+#### `IndexAccess`
+
+`xs[i]` (MIR `IndexAccess { base, index }`) lowers to:
+
+1. Load the element count with `raven_list_len(list)` and the buffer base
+   with `raven_list_elements(list)`.
+2. Bounds-check the index: an unsigned `i < len` compare. On the
+   out-of-bounds path, call `raven_panic("list index out of bounds")`
+   (which writes the message to stderr and exits 101) and `trap`; the
+   in-bounds path continues.
+3. Load the eight-byte slot at `base + i * 8`. The loaded value is
+   pointer-width and is narrowed to the destination local's machine type
+   on store (a `Float` or narrow scalar element is reinterpreted there).
+
+#### List methods
+
+The built-in `List<T>` methods are recognized during MIR lowering and
+routed to a `ListMethod { op, receiver, arg, elem_ty }` rvalue (rather
+than to an unresolved per-type method symbol), so codegen has the element
+type at hand. The mapping to runtime calls:
+
+| Method | Lowering |
+|--------|----------|
+| `len(self) -> Int` | `raven_list_len`, zero-extended to `Int`. |
+| `is_empty(self) -> Bool` | `raven_list_len` compared `== 0`. |
+| `push(self, x)` | Widen `x` to an eight-byte slot, spill it, call `raven_list_push`. `List` is a heap object, so the push mutates the shared object through the pointer and every alias observes the new element; the list pointer itself is unchanged across a buffer grow. |
+| `pop(self) -> T` | `raven_list_pop(list, out)` copies the last element into a scratch slot and shrinks the list, returning a success flag; a zero flag (empty list) calls `raven_panic` and traps, otherwise the scratch slot is loaded as the result. |
+| `get(self, i) -> T` | `raven_list_get(list, i, out)` copies the element at `i` into a scratch slot, returning a success flag; a zero flag (out of range) calls `raven_panic` and traps, otherwise the scratch slot is loaded as the result. |
+
+`pop` and `get` return the element type `T` directly (the type checker's
+built-in `List` signatures), so an empty `pop` or an out-of-range `get`
+panics rather than returning a sentinel, matching the index bounds check.
+
+#### GC
+
+A `List` local is a GC pointer rooted in the function's shadow-stack
+frame like any other GC local, so a collection during list building still
+sees the list rooted. Because the list object roots its own elements
+through `elements_are_gc_ptrs`, a pushed GC-pointer element stays
+reachable for as long as it is in the list, and a popped element is no
+longer traced once `len` drops below its slot.
+
 ## GC root frames
 
 The collector finds its roots through a shadow stack the back end
@@ -478,8 +559,11 @@ that only consult MIR lowering do not depend on a linker.
   section above.
 * `defer` ordering and runtime hooks (issue #68).
 * String interpolation (issue #69) and C FFI (issue #70).
-* Rich stdlib collection methods (`push`, `get`, and so on) beyond
-  constructing values (issues #71 onwards).
+* ~~`List<T>` literals, indexing, and the built-in methods (`len`,
+  `is_empty`, `push`, `pop`, `get`).~~ Implemented: see the Lists section
+  above.
+* `Map` and `Set` literals and methods, and richer iterator pipelines
+  built on the collections (issues #71 onwards).
 * Cross platform installer packaging (issue #92).
 
 ## Test coverage
@@ -494,8 +578,12 @@ that only consult MIR lowering do not depend on a linker.
   prints `7`), `option_sum.rv` (Option construction and matching, prints
   `104`), `closure_value.rv` (a non-capturing closure allocation, prints
   `42`), `closure_capture.rv` (a returned closure capturing a local by
-  value, prints `15` then `42`), and `closure_arg.rv` (a capturing closure
-  passed as an argument and invoked indirectly, prints `21`). Each gates
+  value, prints `15` then `42`), `closure_arg.rv` (a capturing closure
+  passed as an argument and invoked indirectly, prints `21`),
+  `list_ops.rv` (list literals, indexing, `len`, and `push` over `Int`
+  elements, prints `3`, `20`, `4`, `40`), and `list_strings.rv` (a list
+  of heap `String` elements exercising the GC-pointer element path,
+  prints `raven`, `bird`, `3`). Each gates
   on linker and runtime staticlib presence and
   emits an `eprintln!` plus a successful exit only when one is missing;
   on a correctly configured host it links and runs the program for real.
