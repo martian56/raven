@@ -15,6 +15,11 @@ fun empty_set<T: Eq>() -> Set<T> {
 }
 
 impl<T: Eq> Set<T> {
+    fun new() -> Set<T> {
+        let items: List<T> = []
+        return Set { items: items }
+    }
+
     fun len(self) -> Int {
         return self.items.len()
     }
@@ -72,6 +77,12 @@ fun empty_map<K: Eq, V>() -> Map<K, V> {
 }
 
 impl<K: Eq, V> Map<K, V> {
+    fun new() -> Map<K, V> {
+        let keys: List<K> = []
+        let values: List<V> = []
+        return Map { keys: keys, values: values }
+    }
+
     fun len(self) -> Int {
         return self.keys.len()
     }

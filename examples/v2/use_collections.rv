@@ -1,9 +1,9 @@
 // golden:skip
-import std/collections { empty_set, empty_map }
+import std/collections
 import std/io { println }
 
 fun main() {
-    let s = empty_set()
+    let s = Set.new()
     s.add(1)
     s.add(2)
     s.add(2)
@@ -12,7 +12,7 @@ fun main() {
     s.remove(2)
     print(s.contains(2))
 
-    let m = empty_map()
+    let m = Map.new()
     m.set("a", 10)
     m.set("b", 20)
     m.set("a", 99)

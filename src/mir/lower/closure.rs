@@ -348,6 +348,11 @@ fn collect_free_expr(
                 collect_free_expr(a, bound, seen, out);
             }
         }
+        HirExprKind::AssocCall { args, .. } => {
+            for a in args {
+                collect_free_expr(a, bound, seen, out);
+            }
+        }
         HirExprKind::Field { receiver, .. } => collect_free_expr(receiver, bound, seen, out),
         HirExprKind::Index { receiver, index } => {
             collect_free_expr(receiver, bound, seen, out);

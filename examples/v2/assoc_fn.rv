@@ -1,0 +1,25 @@
+// Associated functions (Type.func()) as the idiomatic constructor.
+//
+// `Counter.new()` and `Counter.with(41)` call the receiverless functions
+// declared in the impl block, dispatched statically to the per-type
+// symbols `Counter$new` and `Counter$with`. Prints 0 then 41.
+struct Counter {
+    n: Int
+}
+
+impl Counter {
+    fun new() -> Counter {
+        return Counter { n: 0 }
+    }
+
+    fun with(start: Int) -> Counter {
+        return Counter { n: start }
+    }
+}
+
+fun main() {
+    let a = Counter.new()
+    let b = Counter.with(41)
+    print(a.n)
+    print(b.n)
+}

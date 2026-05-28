@@ -139,6 +139,7 @@ Calling `emit_statement` appends to the current block; calling
 | `Ident`       | `Assign { tmp, Use(Copy(local)) }` |
 | `Call`        | Lower callee and args to operands, emit `Assign { tmp, Call { callee, args } }` |
 | `MethodCall`  | Receiver becomes the first arg, otherwise identical to `Call` |
+| `AssocCall`   | Associated function call `Type.func(args)`: a `Call` to the per-type symbol `<TypeMangle>$<func>` with no receiver argument. The named implementing type fixes a generic type's instantiation, queued like a generic method's. |
 | `Field`       | `FieldAccess { base, index }` (index resolved from struct decl) |
 | `Index`       | `IndexAccess { base, index }` |
 | `StructLit`   | Lower fields in declaration order, then `StructCreate` |

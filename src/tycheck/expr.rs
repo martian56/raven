@@ -1368,6 +1368,18 @@ impl<'a, 'b> Checker<'a, 'b> {
         args: &[Expr],
         span: &Span,
     ) -> Result<Ty, RavenError> {
+        // `Type.func(args)`: when the receiver is a type name (a struct or
+        // enum, or a built-in type), this is an associated function call,
+        // not an instance method call. The named function on that type has
+        // no `self`. Distinguished from an instance call by the receiver
+        // being a bare type reference rather than a value.
+        if let Some(type_ref) = self.type_ref_receiver(receiver)? {
+            // Record the named type at the receiver span so HIR lowering
+            // can read the concrete implementing type for the static call.
+            self.record(&receiver.span, type_ref.clone());
+            return self.check_assoc_fn_call(&type_ref, name, args, span);
+        }
+
         let recv_ty = self.check_expr(receiver)?;
         let recv_resolved = self.infer.resolve(&recv_ty);
         let recv_stripped = recv_resolved.strip_self().clone();
@@ -1507,6 +1519,131 @@ impl<'a, 'b> Checker<'a, 'b> {
             },
             span.clone(),
         ))
+    }
+
+    /// If `receiver` is a bare reference to a type name (a struct or enum
+    /// binding, or a built-in type identifier), resolve it to that type.
+    /// This marks the call as an associated function call. A value
+    /// receiver (a local, parameter, field, or any non-type expression)
+    /// returns `None` so it stays an instance method call.
+    fn type_ref_receiver(&mut self, receiver: &Expr) -> Result<Option<Ty>, RavenError> {
+        let ExprKind::Ident { name, generics } = &receiver.kind else {
+            return Ok(None);
+        };
+        // A built-in type name with no resolver binding (`Int`, `String`,
+        // `Array`, ...) resolves to its concrete type with the explicit
+        // generic arguments applied.
+        let Some(binding) = self.resolved.map.lookup(&receiver.span).cloned() else {
+            if let Some(ty) = self.builtin_type_ref(name, generics, &receiver.span)? {
+                return Ok(Some(ty));
+            }
+            return Ok(None);
+        };
+        match binding {
+            Binding::Struct(_) | Binding::Enum(_) => {
+                let mut explicit = Vec::with_capacity(generics.len());
+                for g in generics {
+                    explicit.push(self.resolve_ast_ty(g)?);
+                }
+                Ok(Some(self.type_of_binding(
+                    &binding,
+                    &receiver.span,
+                    &explicit,
+                )?))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// Resolve a built-in type name to its `Ty` for an associated function
+    /// receiver. Returns `None` for a name that is not a built-in type, so
+    /// a value identifier still flows to instance dispatch.
+    fn builtin_type_ref(
+        &mut self,
+        name: &str,
+        generics: &[crate::ast::Type],
+        span: &Span,
+    ) -> Result<Option<Ty>, RavenError> {
+        let mut args = Vec::with_capacity(generics.len());
+        for g in generics {
+            args.push(self.resolve_ast_ty(g)?);
+        }
+        let ty = match name {
+            "Int" => Ty::Int,
+            "Float" => Ty::Float,
+            "Bool" => Ty::Bool,
+            "String" => Ty::Str,
+            "Char" => Ty::Char,
+            "Unit" => Ty::Unit,
+            "Array" | "List" | "Vec" => {
+                let elem = args.into_iter().next().unwrap_or(Ty::Error);
+                Ty::List(Box::new(elem))
+            }
+            _ => return Ok(None),
+        };
+        let _ = span;
+        Ok(Some(ty))
+    }
+
+    /// Check an associated function call `Type.func(args)`. Finds an impl
+    /// on the named type with a `name` function that has no `self`, checks
+    /// the arguments against its parameters, and returns its declared
+    /// return type with the impl's generic parameters instantiated.
+    fn check_assoc_fn_call(
+        &mut self,
+        type_ty: &Ty,
+        name: &str,
+        args: &[Expr],
+        span: &Span,
+    ) -> Result<Ty, RavenError> {
+        let impls_snapshot = self.env.impls.clone();
+        let mut matches: Vec<(FnSig, HashMap<ParamId, Ty>)> = Vec::new();
+        for imp in impls_snapshot.iter() {
+            let mut subst: HashMap<ParamId, Ty> = HashMap::new();
+            for p in &imp.generics {
+                let v = self.infer.fresh(span.clone());
+                for b in &p.bounds {
+                    self.infer.add_bound(v, b.clone(), span.clone());
+                }
+                subst.insert(p.id.clone(), Ty::Var(v));
+            }
+            let impl_self = substitute(&imp.self_ty, &subst);
+            if self.infer.unify(&impl_self, type_ty, span).is_err() {
+                continue;
+            }
+            let Some(msig) = imp.methods.get(name) else {
+                continue;
+            };
+            if msig.has_self {
+                continue;
+            }
+            matches.push((msig.clone(), subst));
+        }
+        match matches.len() {
+            0 => Err(RavenError::ty(
+                TypeError::UndefinedMethod {
+                    receiver_ty: format!("{}", type_ty),
+                    method: name.to_string(),
+                },
+                span.clone(),
+            )
+            .with_hint(format!(
+                "no associated function `{}` on type `{}`",
+                name, type_ty
+            ))),
+            1 => {
+                let (sig, subst) = matches.into_iter().next().unwrap();
+                self.apply_method_call(&sig, &subst, args, name, span)
+            }
+            _ => Err(RavenError::ty(
+                TypeError::AmbiguousMethod {
+                    receiver_ty: format!("{}", type_ty),
+                    method: name.to_string(),
+                    candidates: vec!["<associated>".to_string()],
+                },
+                span.clone(),
+            )),
+        }
     }
 
     fn apply_method_call(
