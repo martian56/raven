@@ -145,11 +145,17 @@ impl Parser {
     }
 }
 
-/// True when `expr` is a syntactically valid assignment target:
-/// identifier, field access, or index, possibly nested.
+/// True when `expr` is a syntactically valid assignment target.
+///
+/// A target is a place rooted in a name: a plain identifier or `self`,
+/// optionally followed by any chain of field accesses (`a.b.c`) and
+/// indexes (`xs[i]`, `obj.items[k]`). Literals, calls, and other value
+/// producing expressions are rejected. The receiver of a field or index
+/// in a target position is itself a target, so nesting is checked
+/// recursively.
 fn is_valid_lvalue(expr: &Expr) -> bool {
     match &expr.kind {
-        ExprKind::Ident { .. } => true,
+        ExprKind::Ident { .. } | ExprKind::SelfLower => true,
         ExprKind::Field { receiver, .. } => is_valid_lvalue(receiver),
         ExprKind::Index { receiver, .. } => is_valid_lvalue(receiver),
         ExprKind::Paren(inner) => is_valid_lvalue(inner),

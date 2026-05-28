@@ -345,6 +345,56 @@ fn invalid_assignment_target_errors() {
     );
 }
 
+#[test]
+fn call_result_is_not_an_assignment_target() {
+    let err = parse_err("fun f() { g() = 3 }\n");
+    assert!(
+        matches!(
+            err,
+            RavenError::Parse(ParseError::InvalidAssignmentTarget, _, _)
+        ),
+        "got: {}",
+        err
+    );
+}
+
+/// Pull the statements out of the first function's block body.
+fn fn_body_stmts(f: &crate::ast::File) -> &[crate::ast::Stmt] {
+    let DeclKind::Function(fun) = &f.items[0].kind else {
+        panic!("first item is not a function");
+    };
+    let FunctionBody::Block(b) = &fun.body else {
+        panic!("function body is not a block");
+    };
+    &b.stmts
+}
+
+#[test]
+fn self_is_a_valid_field_assignment_target() {
+    let f = parse_ok("impl T { fun m(self) { self.n = 1 } }\n");
+    let DeclKind::Impl(block) = &f.items[0].kind else {
+        panic!("first item is not an impl");
+    };
+    let fun = &block.items[0];
+    let FunctionBody::Block(b) = &fun.body else {
+        panic!("method body is not a block");
+    };
+    let StmtKind::Assign { target, .. } = &b.stmts[0].kind else {
+        panic!("first statement is not an assignment");
+    };
+    assert!(matches!(target.kind, ExprKind::Field { .. }));
+}
+
+#[test]
+fn field_and_index_chains_are_valid_targets() {
+    // ident.field, ident[index], and a nested chain on top of both.
+    let f = parse_ok("fun f() { a.b = 1\n xs[i] = 2\n obj.items[k] = 3 }\n");
+    let stmts = fn_body_stmts(&f);
+    assert!(matches!(stmts[0].kind, StmtKind::Assign { .. }));
+    assert!(matches!(stmts[1].kind, StmtKind::Assign { .. }));
+    assert!(matches!(stmts[2].kind, StmtKind::Assign { .. }));
+}
+
 // ----- functions, types, generics -----
 
 #[test]
