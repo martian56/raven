@@ -22,9 +22,17 @@ pub const FIELDS_OFFSET: i32 = 16;
 pub const FIELD_SLOT: i32 = 8;
 
 /// Byte offset of field slot `index` (zero based) from the start of the
-/// value.
+/// value (the object header). Used when addressing from the object base.
 pub fn field_offset(index: usize) -> i32 {
     FIELDS_OFFSET + (index as i32) * FIELD_SLOT
+}
+
+/// Byte offset of field slot `index` (zero based) relative to the field
+/// base pointer returned by `raven_struct_fields`, which already points
+/// past the header. This is what the load and store paths use, since
+/// they address from the field base, not the object base.
+pub fn slot_offset(index: usize) -> i32 {
+    (index as i32) * FIELD_SLOT
 }
 
 /// Whether a value of `ty` is a GC pointer the collector must trace.

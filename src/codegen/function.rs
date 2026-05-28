@@ -612,7 +612,7 @@ fn lower_struct_create(
     for (i, v) in field_vals.into_iter().enumerate() {
         builder
             .ins()
-            .store(MemFlags::new(), v, base, layout::field_offset(i));
+            .store(MemFlags::new(), v, base, layout::slot_offset(i));
     }
     Ok(Some(obj))
 }
@@ -652,12 +652,12 @@ fn lower_enum_create(
     let disc = builder.ins().iconst(ptr, variant as i64);
     builder
         .ins()
-        .store(MemFlags::new(), disc, base, layout::field_offset(0));
+        .store(MemFlags::new(), disc, base, layout::slot_offset(0));
     // Slots 1..: the payload.
     for (i, v) in payload_vals.into_iter().enumerate() {
         builder
             .ins()
-            .store(MemFlags::new(), v, base, layout::field_offset(i + 1));
+            .store(MemFlags::new(), v, base, layout::slot_offset(i + 1));
     }
     Ok(Some(obj))
 }
@@ -679,7 +679,7 @@ fn lower_field_access(
     // field is reinterpreted there).
     let raw = builder
         .ins()
-        .load(ptr, MemFlags::new(), fields, layout::field_offset(index));
+        .load(ptr, MemFlags::new(), fields, layout::slot_offset(index));
     Ok(Some(raw))
 }
 
@@ -958,7 +958,7 @@ fn lower_switch_enum(
     // The discriminant is stored in slot 0 as a pointer-width integer.
     let disc = builder
         .ins()
-        .load(ptr, MemFlags::new(), fields, layout::field_offset(0));
+        .load(ptr, MemFlags::new(), fields, layout::slot_offset(0));
 
     // Split the targets into a cascade and a fall-through block. With an
     // explicit otherwise every target is compared and the otherwise block

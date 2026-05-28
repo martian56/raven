@@ -148,13 +148,19 @@ fn build_object(source: &str, path: &Path) -> Result<Vec<u8>, String> {
 }
 
 fn workdir() -> PathBuf {
+    // A process-wide atomic counter makes each tempdir unique even when
+    // several smoke tests run in parallel and start within the same
+    // nanosecond, so one test's cleanup never deletes another's binary.
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
     let mut p = std::env::temp_dir();
     let pid = std::process::id();
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    p.push(format!("raven-smoke-{}-{}", pid, stamp));
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+    p.push(format!("raven-smoke-{}-{}-{}", pid, stamp, seq));
     std::fs::create_dir_all(&p).expect("create tempdir");
     p
 }
