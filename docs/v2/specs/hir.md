@@ -43,7 +43,7 @@ translation pass that buys nothing for the desugarings in scope.
 
 | AST node                          | HIR equivalent                                          |
 |-----------------------------------|---------------------------------------------------------|
-| `ExprKind::For { pat, iter, body }` | Lowered to `Loop` containing a `Match` on iterator `next` |
+| `ExprKind::For { pat, iter, body }` | Lowered to a counter `Loop` over a range, or an index `Loop` over a `List<T>` |
 | `ExprKind::Try(inner)`            | Lowered to `Match` on `Ok/Err` (or `Some/None`)         |
 | `ExprKind::InterpolatedString(fragments)` | `Interpolate { parts: Vec<InterpolPart> }`      |
 | `ExprKind::Range { ... }`         | `RangeNew { start, end, inclusive }`                    |
@@ -61,28 +61,74 @@ source range.
 
 ### `for x in iter` loops
 
+The type checker accepts `for` only over a `List<T>` value or an integer
+range (which it shapes as `List<Int>`). HIR lowers each of these two
+built-in iterable forms directly to a concrete counter loop, so no
+iterator object, `RangeNew`, or `IterNext` reaches MIR or codegen.
+
+A range loop over `start..end` (exclusive) or `start..=end` (inclusive)
+lowers to a counter over the integer interval. The endpoints are each
+evaluated once into a local:
+
 ```
-for pat in iter { body }
+for x in start..end { body }
 ```
 
-becomes a `loop` over an iterator handle:
+becomes:
 
 ```
-let __iter = IterNew(iter);
+let __end = end;
+let __i = start;
+let __first = true;
 loop {
-    match IterNext(__iter) {
-        Some(pat) => body,
-        None      => break,
-    }
+    if __first { __first = false } else { __i = __i + 1 }
+    if __i >= __end { break }   // `>` for the inclusive form
+    let x = __i;
+    body
 }
 ```
 
-`IterNew` and `IterNext` are HIR built-ins. The type checker already
-accepts `for` only over `List<T>`. For `List<T>` they map to a hidden
-index counter; for `Range`/`RangeInclusive` (which the type checker
-currently shapes as `List<Int>`) they map to integer increments. User
-defined iterators are a follow up: a future PR adds the `Iterator`
-trait and threads it through the lowering.
+A list loop over a `List<T>` value lowers to an index loop. The list
+expression is evaluated once into a local, and the per-iteration binding
+reads `__list[__i]` using the built-in list length and indexing:
+
+```
+for x in list { body }
+```
+
+becomes:
+
+```
+let __list = list;
+let __end = __list.len();
+let __i = 0;
+let __first = true;
+loop {
+    if __first { __first = false } else { __i = __i + 1 }
+    if __i >= __end { break }
+    let x = __list[__i];
+    body
+}
+```
+
+The increment sits at the top of the loop body, guarded by a `__first`
+flag that skips it on the first pass so the counter starts at the lower
+bound. This placement is what makes `break` and `continue` behave: a
+user `break` exits to the loop continuation as usual, and a user
+`continue` re-enters the loop header, which is the increment-and-test
+step, so it always advances the counter before the next iteration rather
+than skipping it (which would loop forever). The body is the trailing
+statement of the loop, after the binding.
+
+Only a plain binding pattern (`for x in ...`) is bound by name. Richer
+destructuring patterns are type-checked upstream and reuse the same
+`let pat = element` machinery; a future change can expand them in place.
+
+Iteration over any other type is rejected by the type checker with a
+clear diagnostic before lowering runs, so no codegen-time failure is
+possible. User-defined iterators (`for x in <any Iterator>`) are out of
+scope here and are generalized by the `Iterator` trait work in issue
+#119, which will thread a trait-based protocol through this lowering.
 
 ### `?` operator
 
@@ -126,8 +172,12 @@ a..b       becomes RangeNew { start: a, end: b, inclusive: false }
 a..=b      becomes RangeNew { start: a, end: b, inclusive: true  }
 ```
 
-`Range` is treated as a built-in iterable in HIR. Its element type is
-`Int` (the type checker enforces integer bounds).
+A bare range expression (one not in the `iter` position of a `for`)
+lowers to `RangeNew`. Its element type is `Int` (the type checker
+enforces integer bounds). A range used directly as a `for` loop's
+iterable never produces a `RangeNew`: the for-loop lowering reads the
+range endpoints straight off the AST and emits the counter loop above,
+so `RangeNew` carries no iteration responsibility.
 
 ### Compound assignment
 
@@ -212,8 +262,9 @@ the result type; the surface form does not appear at HIR level.
 
 ## Out of scope
 
-* User-defined `Iterator` trait protocol. Built-in iteration over
-  `List<T>` and ranges only.
+* User-defined `Iterator` trait protocol (issue #119). Built-in
+  iteration over `List<T>` and integer ranges only, lowered to concrete
+  counter and index loops.
 * Closure capture analysis (defer to MIR).
 * C FFI lowering.
 * `dyn Trait` virtual dispatch.
