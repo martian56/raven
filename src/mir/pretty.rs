@@ -187,6 +187,27 @@ fn pretty_rvalue(buf: &mut String, r: &MirRvalue) {
             }
             buf.push(')');
         }
+        MirRvalue::ListMethod {
+            op,
+            receiver,
+            arg,
+            elem_ty,
+        } => {
+            let name = match op {
+                crate::mir::ir::ListMethodOp::Len => "len",
+                crate::mir::ir::ListMethodOp::IsEmpty => "is_empty",
+                crate::mir::ir::ListMethodOp::Push => "push",
+                crate::mir::ir::ListMethodOp::Pop => "pop",
+                crate::mir::ir::ListMethodOp::Get => "get",
+            };
+            write!(buf, "(list.{} {} ", name, elem_ty).unwrap();
+            pretty_operand(buf, receiver);
+            if let Some(a) = arg {
+                buf.push(' ');
+                pretty_operand(buf, a);
+            }
+            buf.push(')');
+        }
         MirRvalue::Cast { operand, target } => {
             buf.push_str("(cast ");
             pretty_operand(buf, operand);

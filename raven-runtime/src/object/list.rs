@@ -144,6 +144,70 @@ pub extern "C" fn raven_list_push(l: *mut List, payload: *const u8) {
     }
 }
 
+/// Remove and return the last element of the list.
+///
+/// Copies `element_size` bytes from the slot at index `header.len - 1`
+/// into `out`, then decrements `header.len`. The freed slot keeps its
+/// bytes; the collector only traces the first `len` slots, so a removed
+/// GC pointer is no longer reachable through the list once `len` drops.
+///
+/// Returns `1` on success and `0` when the list is empty (in which case
+/// `out` is not written). Also returns `0` when `l` or `out` is null.
+#[no_mangle]
+pub extern "C" fn raven_list_pop(l: *mut List, out: *mut u8) -> u32 {
+    if l.is_null() || out.is_null() {
+        return 0;
+    }
+    // SAFETY: caller passes a pointer obtained from a constructor.
+    let (len, elem_size) = unsafe { ((*l).header.len, (*l).element_size) };
+    if len == 0 {
+        return 0;
+    }
+    let new_len = len - 1;
+    if elem_size == 0 {
+        // Zero-sized elements never copy; just drop the count.
+        // SAFETY: bumping a counter on a live header.
+        unsafe { (*l).header.len = new_len };
+        return 1;
+    }
+    // SAFETY: the slot at `new_len` holds `elem_size` initialised bytes.
+    unsafe {
+        let src = (*l).elements.add((new_len as usize) * (elem_size as usize));
+        ptr::copy_nonoverlapping(src, out, elem_size as usize);
+        (*l).header.len = new_len;
+    }
+    1
+}
+
+/// Read the element at `index` into `out` without removing it.
+///
+/// Copies `element_size` bytes from the slot at `index` into `out`.
+/// Returns `1` on success and `0` when `index` is out of range
+/// (`index >= header.len`), in which case `out` is not written. Also
+/// returns `0` when `l` or `out` is null.
+#[no_mangle]
+pub extern "C" fn raven_list_get(l: *const List, index: u32, out: *mut u8) -> u32 {
+    if l.is_null() || out.is_null() {
+        return 0;
+    }
+    // SAFETY: caller passes a pointer obtained from a constructor.
+    let (len, elem_size) = unsafe { ((*l).header.len, (*l).element_size) };
+    if index >= len {
+        return 0;
+    }
+    if elem_size == 0 {
+        // Zero-sized elements have nothing to copy; the index is valid.
+        return 1;
+    }
+    // SAFETY: `index < len`, so the slot holds `elem_size` initialised
+    // bytes.
+    unsafe {
+        let src = (*l).elements.add((index as usize) * (elem_size as usize));
+        ptr::copy_nonoverlapping(src, out, elem_size as usize);
+    }
+    1
+}
+
 /// Size of the in-memory `List` object.
 pub(crate) const fn size_of_list() -> usize {
     std::mem::size_of::<List>()
@@ -345,11 +409,68 @@ mod tests {
     }
 
     #[test]
+    fn pop_returns_last_and_shrinks() {
+        let l = raven_list_new(8, 8, 0, 0);
+        for v in [10u64, 20, 30] {
+            raven_list_push(l, &v as *const u64 as *const u8);
+        }
+        let mut out: u64 = 0;
+        // Pop returns 30, then 20, then 10, shrinking each time.
+        assert_eq!(raven_list_pop(l, &mut out as *mut u64 as *mut u8), 1);
+        assert_eq!(out, 30);
+        assert_eq!(raven_list_len(l), 2);
+        assert_eq!(raven_list_pop(l, &mut out as *mut u64 as *mut u8), 1);
+        assert_eq!(out, 20);
+        assert_eq!(raven_list_pop(l, &mut out as *mut u64 as *mut u8), 1);
+        assert_eq!(out, 10);
+        assert_eq!(raven_list_len(l), 0);
+        // A pop on the empty list reports failure and leaves `out` alone.
+        out = 999;
+        assert_eq!(raven_list_pop(l, &mut out as *mut u64 as *mut u8), 0);
+        assert_eq!(out, 999);
+        unsafe { drop_list_for_test(l) };
+    }
+
+    #[test]
+    fn get_reads_in_range_only() {
+        let l = raven_list_new(8, 8, 0, 0);
+        for v in [7u64, 8, 9] {
+            raven_list_push(l, &v as *const u64 as *const u8);
+        }
+        let mut out: u64 = 0;
+        assert_eq!(raven_list_get(l, 0, &mut out as *mut u64 as *mut u8), 1);
+        assert_eq!(out, 7);
+        assert_eq!(raven_list_get(l, 2, &mut out as *mut u64 as *mut u8), 1);
+        assert_eq!(out, 9);
+        // Get does not remove: length is unchanged.
+        assert_eq!(raven_list_len(l), 3);
+        // Out-of-range index reports failure and leaves `out` alone.
+        out = 555;
+        assert_eq!(raven_list_get(l, 3, &mut out as *mut u64 as *mut u8), 0);
+        assert_eq!(out, 555);
+        unsafe { drop_list_for_test(l) };
+    }
+
+    #[test]
     fn null_accessors_are_safe() {
         assert_eq!(raven_list_len(std::ptr::null()), 0);
         assert!(raven_list_elements(std::ptr::null()).is_null());
         // Null inputs must not crash.
         raven_list_push(std::ptr::null_mut(), std::ptr::null());
+        let mut out: u64 = 0;
+        assert_eq!(
+            raven_list_pop(std::ptr::null_mut(), &mut out as *mut u64 as *mut u8),
+            0
+        );
+        assert_eq!(
+            raven_list_get(std::ptr::null(), 0, &mut out as *mut u64 as *mut u8),
+            0
+        );
+        // A null out pointer with a live list is also a no-op failure.
+        let l = raven_list_new(8, 8, 0, 0);
+        assert_eq!(raven_list_pop(l, std::ptr::null_mut()), 0);
+        assert_eq!(raven_list_get(l, 0, std::ptr::null_mut()), 0);
+        unsafe { drop_list_for_test(l) };
     }
 
     /// Test-only deallocator: unregister the object from the collector

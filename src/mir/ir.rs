@@ -50,6 +50,26 @@ pub enum MirUnOp {
     Ref,
 }
 
+/// A built-in method on `List<T>`. The front end resolves these against
+/// the receiver type rather than a user `impl`, so the lowering routes
+/// them to a [`MirRvalue::ListMethod`] carrying the element type the
+/// back end needs to size slots and pick the GC-pointer flag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ListMethodOp {
+    /// `len(self) -> Int`: the element count.
+    Len,
+    /// `is_empty(self) -> Bool`: `len == 0`.
+    IsEmpty,
+    /// `push(self, x)`: append `x`, mutating the shared heap object.
+    Push,
+    /// `pop(self) -> T`: remove and return the last element. Panics when
+    /// the list is empty.
+    Pop,
+    /// `get(self, i) -> T`: read the element at `i`. Panics when `i` is
+    /// out of range.
+    Get,
+}
+
 /// A compile-time constant.
 #[derive(Debug, Clone, PartialEq)]
 pub enum MirConstant {
@@ -121,6 +141,18 @@ pub enum MirRvalue {
     ArrayLit {
         ty: MirType,
         elements: Vec<MirOperand>,
+    },
+    /// A built-in `List<T>` method call. The receiver is the list value;
+    /// `arg` carries the single extra operand for `push` (the pushed
+    /// value) and `get` (the index), and is `None` for `len`, `is_empty`,
+    /// and `pop`. `elem_ty` is the element type `T`, which the back end
+    /// uses to size element slots uniformly and to decide whether the
+    /// elements are GC pointers.
+    ListMethod {
+        op: ListMethodOp,
+        receiver: MirOperand,
+        arg: Option<MirOperand>,
+        elem_ty: MirType,
     },
     Cast {
         operand: MirOperand,

@@ -20,8 +20,9 @@ pub mod ty;
 mod tests;
 
 pub use ir::{
-    MirBinOp, MirBlock, MirBlockId, MirConstant, MirExternFn, MirFnRef, MirFunction, MirLocal,
-    MirLocalDecl, MirOperand, MirProgram, MirRvalue, MirStatement, MirTerminator, MirUnOp,
+    ListMethodOp, MirBinOp, MirBlock, MirBlockId, MirConstant, MirExternFn, MirFnRef, MirFunction,
+    MirLocal, MirLocalDecl, MirOperand, MirProgram, MirRvalue, MirStatement, MirTerminator,
+    MirUnOp,
 };
 pub use pretty::pretty_program;
 pub use ty::{MirFfiTy, MirType};

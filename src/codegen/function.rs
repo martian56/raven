@@ -16,8 +16,8 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::Module;
 
 use crate::mir::{
-    MirBinOp, MirBlock, MirBlockId, MirConstant, MirFfiTy, MirFnRef, MirFunction, MirLocal,
-    MirOperand, MirRvalue, MirStatement, MirTerminator, MirType, MirUnOp,
+    ListMethodOp, MirBinOp, MirBlock, MirBlockId, MirConstant, MirFfiTy, MirFnRef, MirFunction,
+    MirLocal, MirOperand, MirRvalue, MirStatement, MirTerminator, MirType, MirUnOp,
 };
 
 use super::context::ModuleCx;
@@ -355,32 +355,16 @@ fn lower_rvalue(
             param_tys,
             ret_ty,
         } => lower_virtual_call(cx, builder, receiver, *slot, args, param_tys, ret_ty, slots),
-        MirRvalue::IndexAccess { .. } | MirRvalue::ArrayLit { .. } => {
-            Err(CodegenError::Unsupported(format!(
-                "rvalue not supported in MVP backend: {:?}",
-                rvalue_kind(rvalue)
-            )))
+        MirRvalue::ArrayLit { ty, elements } => lower_array_lit(cx, builder, ty, elements, slots),
+        MirRvalue::IndexAccess { base, index } => {
+            lower_index_access(cx, builder, base, index, slots)
         }
-    }
-}
-
-fn rvalue_kind(r: &MirRvalue) -> &'static str {
-    match r {
-        MirRvalue::Use(_) => "Use",
-        MirRvalue::BinaryOp(..) => "BinaryOp",
-        MirRvalue::UnaryOp(..) => "UnaryOp",
-        MirRvalue::Call { .. } => "Call",
-        MirRvalue::StructCreate { .. } => "StructCreate",
-        MirRvalue::EnumCreate { .. } => "EnumCreate",
-        MirRvalue::FieldAccess { .. } => "FieldAccess",
-        MirRvalue::IndexAccess { .. } => "IndexAccess",
-        MirRvalue::ArrayLit { .. } => "ArrayLit",
-        MirRvalue::Cast { .. } => "Cast",
-        MirRvalue::ClosureCreate { .. } => "ClosureCreate",
-        MirRvalue::EnvLoad { .. } => "EnvLoad",
-        MirRvalue::ClosureCall { .. } => "ClosureCall",
-        MirRvalue::DynCoerce { .. } => "DynCoerce",
-        MirRvalue::VirtualCall { .. } => "VirtualCall",
+        MirRvalue::ListMethod {
+            op,
+            receiver,
+            arg,
+            elem_ty,
+        } => lower_list_method(cx, builder, *op, receiver, arg.as_ref(), elem_ty, slots),
     }
 }
 
@@ -741,6 +725,336 @@ fn lower_field_access(
         .ins()
         .load(ptr, MemFlags::new(), fields, layout::slot_offset(index));
     Ok(Some(raw))
+}
+
+/// Width in bytes of one `List` element slot. Every element, scalar or GC
+/// pointer, occupies one pointer-width slot, the same uniform width
+/// struct and enum fields use. Scalars narrower than a pointer are
+/// widened on store and narrowed on load; a GC pointer is already this
+/// wide. Keeping a single slot width means indexing is a plain
+/// `base + i * ELEMENT_SLOT` and the collector's element tracing walks
+/// pointer-sized slots. See `docs/v2/specs/object-layout.md`.
+const ELEMENT_SLOT: i64 = 8;
+
+/// Lower a `List<T>` literal `[a, b, c]`.
+///
+/// Allocates a `List` sized for the element count, then appends each
+/// evaluated element through `raven_list_push`. The element slot is a
+/// uniform eight bytes (`element_size == element_align == ELEMENT_SLOT`);
+/// `elements_are_gc_ptrs` is set from the static element type so the
+/// collector traces pointer elements and treats scalar buffers as opaque
+/// bytes. Each element value is widened to a pointer-width slot, spilled
+/// to a one-slot scratch buffer, and the buffer's address is handed to
+/// `raven_list_push`, which copies the eight bytes into the list.
+fn lower_array_lit(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    ty: &MirType,
+    elements: &[MirOperand],
+    slots: &[LocalSlot],
+) -> Result<RValue, CodegenError> {
+    let ptr = cx.pointer_type();
+    let elem_ty = match ty {
+        MirType::List(inner) => inner.as_ref(),
+        // The front end only ever types an array literal as `List<T>`; a
+        // mismatch is a lowering bug, so fall back to a scalar element so
+        // the build stays well formed.
+        _ => &MirType::Int,
+    };
+    let gc_ptrs = layout::is_gc_pointer(elem_ty);
+
+    // Evaluate every element before the allocation so their values are in
+    // registers; each operand is a copy of an already-rooted local or a
+    // constant. The list is built right after, and each push copies the
+    // spilled value in, so no element pointer is left dangling across a
+    // collection the allocation may trigger.
+    let mut elem_vals = Vec::with_capacity(elements.len());
+    for e in elements {
+        let v = lower_operand(cx, builder, e, slots)?;
+        elem_vals.push(widen_to_slot(builder, v, ptr));
+    }
+
+    let list = call_list_new(cx, builder, elements.len() as i64, gc_ptrs);
+
+    // One reusable scratch slot the size of a single element; each push
+    // writes the next value into it and passes its address.
+    let scratch = builder.create_sized_stack_slot(StackSlotData::new(
+        StackSlotKind::ExplicitSlot,
+        ELEMENT_SLOT as u32,
+    ));
+    let scratch_addr = builder.ins().stack_addr(ptr, scratch, 0);
+    let push_id = cx
+        .runtime_id(intrinsics::RUNTIME_LIST_PUSH)
+        .expect("list push declared at module init");
+    for v in elem_vals {
+        builder.ins().stack_store(v, scratch, 0);
+        let push_ref = cx.module().declare_func_in_func(push_id, builder.func);
+        builder.ins().call(push_ref, &[list, scratch_addr]);
+    }
+    Ok(Some(list))
+}
+
+/// Lower `xs[i]`.
+///
+/// Loads the element buffer base and the length from the list, bounds
+/// checks `i` (an out-of-range index calls `raven_panic`), then loads the
+/// eight-byte element slot at `base + i * ELEMENT_SLOT`. The result is a
+/// pointer-width value; `store_local` narrows it to the destination
+/// local's machine type (a `Float` or narrow scalar element is
+/// reinterpreted there).
+fn lower_index_access(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    base: &MirOperand,
+    index: &MirOperand,
+    slots: &[LocalSlot],
+) -> Result<RValue, CodegenError> {
+    let ptr = cx.pointer_type();
+    let list = require_value(lower_operand(cx, builder, base, slots)?, "index base")?;
+    let idx = require_value(lower_operand(cx, builder, index, slots)?, "index value")?;
+    // The index is a native `Int` (i64); take it to pointer width for the
+    // address arithmetic and the unsigned bounds compare.
+    let idx = to_pointer_width(builder, idx, ptr);
+
+    let len = call_list_len(cx, builder, list, ptr);
+    emit_bounds_check(cx, builder, idx, len, "list index out of bounds");
+
+    let elements = call_list_elements(cx, builder, list);
+    let slot_size = builder.ins().iconst(ptr, ELEMENT_SLOT);
+    let offset = builder.ins().imul(idx, slot_size);
+    let addr = builder.ins().iadd(elements, offset);
+    let raw = builder.ins().load(ptr, MemFlags::new(), addr, 0);
+    Ok(Some(raw))
+}
+
+/// Lower a built-in `List<T>` method to its runtime call.
+///
+/// `len`/`is_empty` read the count; `push` appends through the shared
+/// heap object (mutating it in place, so every alias observes the new
+/// element); `pop`/`get` copy an element into a scratch slot and panic
+/// when the list is empty or the index is out of range, matching the
+/// element-returning method signatures the type checker assigns.
+fn lower_list_method(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    op: ListMethodOp,
+    receiver: &MirOperand,
+    arg: Option<&MirOperand>,
+    _elem_ty: &MirType,
+    slots: &[LocalSlot],
+) -> Result<RValue, CodegenError> {
+    let ptr = cx.pointer_type();
+    let list = require_value(
+        lower_operand(cx, builder, receiver, slots)?,
+        "list receiver",
+    )?;
+    match op {
+        ListMethodOp::Len => {
+            // `raven_list_len` returns a u32; `call_list_len` already
+            // widens it to pointer width, and `to_int64` reconciles it
+            // with the native `Int` (i64) the destination local expects.
+            let raw = call_list_len(cx, builder, list, ptr);
+            Ok(Some(to_int64(builder, raw)))
+        }
+        ListMethodOp::IsEmpty => {
+            let len = call_list_len(cx, builder, list, ptr);
+            let zero = builder.ins().iconst(ptr, 0);
+            // The result is a `Bool` (i8) in the value model.
+            let cmp = builder.ins().icmp(IntCC::Equal, len, zero);
+            Ok(Some(cmp))
+        }
+        ListMethodOp::Push => {
+            let value = require_value(
+                lower_operand(cx, builder, arg.expect("push has one argument"), slots)?,
+                "list push value",
+            )?;
+            let value = widen_to_slot(builder, Some(value), ptr);
+            let scratch = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                ELEMENT_SLOT as u32,
+            ));
+            builder.ins().stack_store(value, scratch, 0);
+            let scratch_addr = builder.ins().stack_addr(ptr, scratch, 0);
+            let push_id = cx
+                .runtime_id(intrinsics::RUNTIME_LIST_PUSH)
+                .expect("list push declared at module init");
+            let push_ref = cx.module().declare_func_in_func(push_id, builder.func);
+            builder.ins().call(push_ref, &[list, scratch_addr]);
+            Ok(None)
+        }
+        ListMethodOp::Pop => {
+            let scratch = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                ELEMENT_SLOT as u32,
+            ));
+            let scratch_addr = builder.ins().stack_addr(ptr, scratch, 0);
+            let pop_id = cx
+                .runtime_id(intrinsics::RUNTIME_LIST_POP)
+                .expect("list pop declared at module init");
+            let pop_ref = cx.module().declare_func_in_func(pop_id, builder.func);
+            let inst = builder.ins().call(pop_ref, &[list, scratch_addr]);
+            let ok = builder.inst_results(inst)[0];
+            emit_status_check(cx, builder, ok, "pop from empty list");
+            let raw = builder.ins().stack_load(ptr, scratch, 0);
+            Ok(Some(raw))
+        }
+        ListMethodOp::Get => {
+            let idx = require_value(
+                lower_operand(cx, builder, arg.expect("get has one argument"), slots)?,
+                "list get index",
+            )?;
+            // `raven_list_get` takes a u32 index; reduce the native Int.
+            let idx32 = narrow_to_u32(builder, idx);
+            let scratch = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                ELEMENT_SLOT as u32,
+            ));
+            let scratch_addr = builder.ins().stack_addr(ptr, scratch, 0);
+            let get_id = cx
+                .runtime_id(intrinsics::RUNTIME_LIST_GET)
+                .expect("list get declared at module init");
+            let get_ref = cx.module().declare_func_in_func(get_id, builder.func);
+            let inst = builder.ins().call(get_ref, &[list, idx32, scratch_addr]);
+            let ok = builder.inst_results(inst)[0];
+            emit_status_check(cx, builder, ok, "list index out of bounds");
+            let raw = builder.ins().stack_load(ptr, scratch, 0);
+            Ok(Some(raw))
+        }
+    }
+}
+
+/// Emit `raven_list_new(ELEMENT_SLOT, ELEMENT_SLOT, cap, gc_ptrs) ->
+/// List` and return the list pointer.
+fn call_list_new(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    cap: i64,
+    gc_ptrs: bool,
+) -> Value {
+    let new_id = cx
+        .runtime_id(intrinsics::RUNTIME_LIST_NEW)
+        .expect("list new declared at module init");
+    let new_ref = cx.module().declare_func_in_func(new_id, builder.func);
+    let size = builder.ins().iconst(types::I32, ELEMENT_SLOT);
+    let align = builder.ins().iconst(types::I32, ELEMENT_SLOT);
+    let cap = builder.ins().iconst(types::I32, cap);
+    let flag = builder
+        .ins()
+        .iconst(types::I32, if gc_ptrs { 1 } else { 0 });
+    let inst = builder.ins().call(new_ref, &[size, align, cap, flag]);
+    builder.inst_results(inst)[0]
+}
+
+/// Emit `raven_list_len(list) -> u32` and return the count zero-extended
+/// to pointer width for address arithmetic and comparisons.
+fn call_list_len(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    list: Value,
+    ptr: CType,
+) -> Value {
+    let len_id = cx
+        .runtime_id(intrinsics::RUNTIME_LIST_LEN)
+        .expect("list len declared at module init");
+    let len_ref = cx.module().declare_func_in_func(len_id, builder.func);
+    let inst = builder.ins().call(len_ref, &[list]);
+    let len_u32 = builder.inst_results(inst)[0];
+    builder.ins().uextend(ptr, len_u32)
+}
+
+/// Emit `raven_list_elements(list) -> ptr` and return the buffer base.
+fn call_list_elements(cx: &mut ModuleCx, builder: &mut FunctionBuilder<'_>, list: Value) -> Value {
+    let id = cx
+        .runtime_id(intrinsics::RUNTIME_LIST_ELEMENTS)
+        .expect("list elements declared at module init");
+    let fref = cx.module().declare_func_in_func(id, builder.func);
+    let inst = builder.ins().call(fref, &[list]);
+    builder.inst_results(inst)[0]
+}
+
+/// Branch on an unsigned `index < len` check, calling `raven_panic` with
+/// `message` on the out-of-bounds path and continuing otherwise.
+fn emit_bounds_check(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    index: Value,
+    len: Value,
+    message: &str,
+) {
+    let in_bounds = builder.ins().icmp(IntCC::UnsignedLessThan, index, len);
+    emit_status_check(cx, builder, in_bounds, message);
+}
+
+/// Branch on a nonzero `ok` flag, calling `raven_panic` with `message`
+/// when it is zero and continuing on the success path. Used both by the
+/// index bounds check and by the `pop`/`get` runtime status results.
+fn emit_status_check(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    ok: Value,
+    message: &str,
+) {
+    let panic_block = builder.create_block();
+    let continue_block = builder.create_block();
+    builder
+        .ins()
+        .brif(ok, continue_block, &[], panic_block, &[]);
+
+    // The panic path: write the message bytes and terminate. The block is
+    // sealed immediately since it has the single predecessor above.
+    builder.switch_to_block(panic_block);
+    builder.seal_block(panic_block);
+    emit_panic(cx, builder, message);
+    builder
+        .ins()
+        .trap(cranelift_codegen::ir::TrapCode::UnreachableCodeReached);
+
+    builder.switch_to_block(continue_block);
+    builder.seal_block(continue_block);
+}
+
+/// Emit a `raven_panic(msg_ptr, msg_len)` call for a static message.
+fn emit_panic(cx: &mut ModuleCx, builder: &mut FunctionBuilder<'_>, message: &str) {
+    let ptr = cx.pointer_type();
+    let bytes = message.as_bytes();
+    let id = cx
+        .intern_string(bytes)
+        .expect("panic message interns as static bytes");
+    let local_id = cx.module().declare_data_in_func(id, builder.func);
+    let msg_ptr = builder.ins().symbol_value(ptr, local_id);
+    let msg_len = builder.ins().iconst(ptr, bytes.len() as i64);
+    let panic_id = cx
+        .runtime_id(intrinsics::RUNTIME_PANIC)
+        .expect("panic declared at module init");
+    let panic_ref = cx.module().declare_func_in_func(panic_id, builder.func);
+    builder.ins().call(panic_ref, &[msg_ptr, msg_len]);
+}
+
+/// Widen or pass through an integer value to i64 (a native `Int`).
+fn to_int64(builder: &mut FunctionBuilder<'_>, v: Value) -> Value {
+    let got = builder.func.dfg.value_type(v);
+    if got == types::I64 {
+        v
+    } else if got.is_int() && got.bytes() < types::I64.bytes() {
+        builder.ins().uextend(types::I64, v)
+    } else {
+        v
+    }
+}
+
+/// Reduce a native `Int` (i64) value to a u32 for a runtime ABI that
+/// takes a `u32` index. A value already i32-wide passes through.
+fn narrow_to_u32(builder: &mut FunctionBuilder<'_>, v: Value) -> Value {
+    let got = builder.func.dfg.value_type(v);
+    if got == types::I32 {
+        v
+    } else if got.is_int() && got.bytes() > types::I32.bytes() {
+        builder.ins().ireduce(types::I32, v)
+    } else if got.is_int() {
+        builder.ins().uextend(types::I32, v)
+    } else {
+        v
+    }
 }
 
 /// Width in bytes of one capture slot in the closure env. Every capture,

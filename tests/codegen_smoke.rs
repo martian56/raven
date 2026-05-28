@@ -235,6 +235,31 @@ fn core_trait_prelude_program_compiles_and_runs() {
     compile_link_run_and_check("trait_tostring.rv", "42\ntrue\n(3, 4)\n", &runtime);
 }
 
+#[test]
+fn list_int_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // List literals, indexing, and the built-in methods over scalar
+    // elements: `[10, 20, 30]` is allocated, `len` reads 3, `xs[1]` reads
+    // 20, `push(40)` mutates the shared heap object, then `len` reads 4
+    // and `xs[3]` reads the appended 40.
+    compile_link_run_and_check("list_ops.rv", "3\n20\n4\n40\n", &runtime);
+}
+
+#[test]
+fn list_string_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A list of heap String values, exercising the GC-pointer element
+    // path: each element slot holds a traced pointer the collector
+    // follows, so the strings stay reachable through the list. Pushing
+    // "bird" then indexing words[0] and words[2] prints raven and bird,
+    // and `len` reads 3.
+    compile_link_run_and_check("list_strings.rv", "raven\nbird\n3\n", &runtime);
+}
+
 /// Return the runtime staticlib when a linker and the staticlib are both
 /// present, or skip with a diagnostic. Shared by every smoke case so the
 /// skip behavior stays identical.

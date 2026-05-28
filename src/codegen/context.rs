@@ -311,6 +311,35 @@ impl ModuleCx {
         sig = self.make_sig(&[], &[]);
         self.declare_runtime(intrinsics::RUNTIME_GC_LEAVE_FRAME, &sig)?;
 
+        // raven_list_new(element_size: u32, element_align: u32, cap: u32,
+        //                elements_are_gc_ptrs: u32) -> List ptr
+        sig = self.make_sig(&[i32t, i32t, i32t, i32t], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_LIST_NEW, &sig)?;
+
+        // raven_list_len(List ptr) -> u32
+        sig = self.make_sig(&[ptr], &[i32t]);
+        self.declare_runtime(intrinsics::RUNTIME_LIST_LEN, &sig)?;
+
+        // raven_list_elements(List ptr) -> byte ptr
+        sig = self.make_sig(&[ptr], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_LIST_ELEMENTS, &sig)?;
+
+        // raven_list_push(List ptr, payload ptr)
+        sig = self.make_sig(&[ptr, ptr], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_LIST_PUSH, &sig)?;
+
+        // raven_list_pop(List ptr, out ptr) -> u32
+        sig = self.make_sig(&[ptr, ptr], &[i32t]);
+        self.declare_runtime(intrinsics::RUNTIME_LIST_POP, &sig)?;
+
+        // raven_list_get(List ptr, index: u32, out ptr) -> u32
+        sig = self.make_sig(&[ptr, i32t, ptr], &[i32t]);
+        self.declare_runtime(intrinsics::RUNTIME_LIST_GET, &sig)?;
+
+        // raven_panic(msg ptr, len: usize) -> ! (no Cranelift return)
+        sig = self.make_sig(&[ptr, ptr], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_PANIC, &sig)?;
+
         // raven_closure_new(fn_ptr, size: u32, align: u32, count: u32,
         //                   ptr_count: u32) -> ptr
         sig = self.make_sig(&[ptr, i32t, i32t, i32t, i32t], &[ptr]);
