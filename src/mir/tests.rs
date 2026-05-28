@@ -180,26 +180,25 @@ fn struct_create_emitted_for_struct_literal() {
 }
 
 #[test]
-fn option_some_lowers_to_call_or_enum_create() {
-    // User-written `Some(x)` reaches HIR as a regular `Call`; the
-    // dedicated `SomeCtor` form is only synthesized by `?` desugaring.
-    // MIR therefore emits a call to the constructor by name. Once
-    // codegen lowers Option natively, the test will tighten.
+fn option_some_lowers_to_enum_create() {
+    // User-written `Some(x)` is recognized as the built in Option
+    // constructor and lowers to an `EnumCreate`, so codegen can build the
+    // heap value directly rather than calling an undefined `Some` symbol.
     let src = r#"
         fun maybe() -> Option<Int> { return Some(42) }
     "#;
     let prog = compile(src);
     let f = find_fn(&prog, "maybe");
-    let saw_call = f.blocks.iter().flat_map(|b| b.statements.iter()).any(|s| {
+    let saw_enum = f.blocks.iter().flat_map(|b| b.statements.iter()).any(|s| {
         matches!(
             s,
             MirStatement::Assign {
-                rvalue: MirRvalue::Call { .. },
+                rvalue: MirRvalue::EnumCreate { variant: 0, .. },
                 ..
             }
         )
     });
-    assert!(saw_call, "expected a call for Some(42)");
+    assert!(saw_enum, "expected EnumCreate for Some(42)");
 }
 
 #[test]

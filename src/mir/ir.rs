@@ -89,15 +89,24 @@ pub enum MirRvalue {
     },
     StructCreate {
         ty: MirType,
+        /// Field operands in declaration order.
         fields: Vec<MirOperand>,
+        /// Field types in declaration order, parallel to `fields`. The
+        /// back-end uses these to decide which field slots hold GC
+        /// pointers when it builds the struct's GC descriptor.
+        field_tys: Vec<MirType>,
     },
     EnumCreate {
         ty: MirType,
         variant: usize,
         payload: Vec<MirOperand>,
+        /// Payload types, parallel to `payload`. The back-end uses these
+        /// to decide which payload slots hold GC pointers.
+        payload_tys: Vec<MirType>,
     },
     FieldAccess {
         base: MirOperand,
+        /// Field slot index in declaration order.
         index: usize,
     },
     IndexAccess {

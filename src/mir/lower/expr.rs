@@ -66,13 +66,7 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
                 .assign(cx.current, dst, MirRvalue::ArrayLit { ty, elements });
             MirOperand::Copy(dst)
         }
-        HirExprKind::StructLit { name: _, fields } => {
-            let ops: Vec<MirOperand> = fields.iter().map(|(_, e)| lower_expr(cx, e)).collect();
-            let dst = cx.builder.fresh_temp("struct", ty.clone());
-            cx.builder
-                .assign(cx.current, dst, MirRvalue::StructCreate { ty, fields: ops });
-            MirOperand::Copy(dst)
-        }
+        HirExprKind::StructLit { name, fields } => lower_struct_lit(cx, name, fields, ty),
         HirExprKind::Call { callee, args } => {
             let callee_ref = call_ref_from_callee(cx, callee);
             let arg_ops: Vec<MirOperand> = args.iter().map(|a| lower_expr(cx, a)).collect();
@@ -252,6 +246,7 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
                     ty,
                     variant: 1,
                     payload: Vec::new(),
+                    payload_tys: Vec::new(),
                 },
             );
             MirOperand::Copy(dst)
@@ -437,6 +432,7 @@ fn enum_ctor_unary(
     variant: usize,
     ty: MirType,
 ) -> MirOperand {
+    let payload_ty = mir_ty(&inner.ty, cx.subst);
     let payload = vec![lower_expr(cx, inner)];
     let dst = cx.builder.fresh_temp("enum", ty.clone());
     cx.builder.assign(
@@ -446,6 +442,72 @@ fn enum_ctor_unary(
             ty,
             variant,
             payload,
+            payload_tys: vec![payload_ty],
+        },
+    );
+    MirOperand::Copy(dst)
+}
+
+/// Lower a struct literal. Reorders the source-order field initializers
+/// into the struct's declaration order so the field slot offsets match
+/// what `FieldAccess` reads, and records each field's concrete type so
+/// the back-end can build the GC pointer descriptor.
+fn lower_struct_lit(
+    cx: &mut LowerCx<'_>,
+    name: &str,
+    fields: &[(String, HirExpr)],
+    ty: MirType,
+) -> MirOperand {
+    // Declaration order from the struct table, when available. Generic
+    // structs are out of scope for the MVP, so the source name keys the
+    // single monomorphic declaration directly.
+    let decl_order: Option<Vec<(String, MirType)>> = cx.decls.structs.get(name).map(|s| {
+        s.fields
+            .iter()
+            .map(|(fname, fty, _)| (fname.clone(), mir_ty(fty, cx.subst)))
+            .collect()
+    });
+
+    let (ops, field_tys): (Vec<MirOperand>, Vec<MirType>) = match decl_order {
+        Some(order) => {
+            // For each declared field, find the matching initializer and
+            // lower it. The type checker has already verified every field
+            // is initialized exactly once.
+            let mut ops = Vec::with_capacity(order.len());
+            let mut tys = Vec::with_capacity(order.len());
+            for (fname, fty) in &order {
+                let init = fields
+                    .iter()
+                    .find(|(n, _)| n == fname)
+                    .map(|(_, e)| e)
+                    .expect("type checker guarantees every field is initialized");
+                ops.push(lower_expr(cx, init));
+                tys.push(fty.clone());
+            }
+            (ops, tys)
+        }
+        None => {
+            // No declaration in scope (should not happen for a checked
+            // program). Fall back to source order with operand-derived
+            // types so codegen still has something concrete.
+            let mut ops = Vec::with_capacity(fields.len());
+            let mut tys = Vec::with_capacity(fields.len());
+            for (_, e) in fields {
+                tys.push(mir_ty(&e.ty, cx.subst));
+                ops.push(lower_expr(cx, e));
+            }
+            (ops, tys)
+        }
+    };
+
+    let dst = cx.builder.fresh_temp("struct", ty.clone());
+    cx.builder.assign(
+        cx.current,
+        dst,
+        MirRvalue::StructCreate {
+            ty,
+            fields: ops,
+            field_tys,
         },
     );
     MirOperand::Copy(dst)
@@ -467,11 +529,28 @@ fn call_ref_from_callee(_cx: &mut LowerCx<'_>, callee: &HirExpr) -> MirFnRef {
     }
 }
 
-/// Best-effort field index lookup. The receiver's HIR type tells us
-/// which struct to consult; without a generics database here we just
-/// emit `0` as a placeholder for indices we cannot resolve. Codegen
-/// derives the layout from the struct declaration, not from this hint.
-fn field_index_from_ty(_ty: &crate::tycheck::Ty, _cx: &LowerCx<'_>, _name: &str) -> usize {
+/// Resolve a field's slot index from the receiver's struct type and the
+/// field name. The index is the field's position in declaration order,
+/// which matches the slot offset the struct constructor writes. Falls
+/// back to `0` only when the receiver is not a known struct (which a
+/// checked program never produces).
+fn field_index_from_ty(ty: &crate::tycheck::Ty, cx: &LowerCx<'_>, name: &str) -> usize {
+    use crate::tycheck::Ty;
+    let struct_name = match ty {
+        Ty::Struct { name, .. } => Some(name.as_str()),
+        Ty::SelfTy(inner) => match inner.as_ref() {
+            Ty::Struct { name, .. } => Some(name.as_str()),
+            _ => None,
+        },
+        _ => None,
+    };
+    if let Some(sname) = struct_name {
+        if let Some(decl) = cx.decls.structs.get(sname) {
+            if let Some(idx) = decl.fields.iter().position(|(fname, _, _)| fname == name) {
+                return idx;
+            }
+        }
+    }
     0
 }
 

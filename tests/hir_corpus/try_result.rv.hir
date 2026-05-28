@@ -3,8 +3,7 @@
     (body ty=()
       (stmt-expr
         (return ty=<error>
-          (call ty=Result<Int, <error>>
-            (ident "Ok" ty=<error>)
+          (ok ty=Result<Int, <error>>
             (int 1 ty=Int)
           )
         )
@@ -35,8 +34,7 @@
       )
       (stmt-expr
         (return ty=<error>
-          (call ty=Result<Int, <error>>
-            (ident "Ok" ty=<error>)
+          (ok ty=Result<Int, <error>>
             (binary + ty=Int
               (ident "v" ty=Int)
               (int 1 ty=Int)

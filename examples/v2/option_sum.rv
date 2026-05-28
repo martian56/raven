@@ -1,0 +1,15 @@
+// Build Option values on the heap, match on them, and read the payload.
+// unwrap_or(Some(5), 0) is 5 and unwrap_or(None, 99) is 99, so the sum
+// printed is 104.
+fun unwrap_or(x: Option<Int>, fallback: Int) -> Int {
+    return match x {
+        None -> fallback,
+        Some(n) -> n,
+    }
+}
+
+fun main() {
+    let present = unwrap_or(Some(5), 0)
+    let missing = unwrap_or(None, 99)
+    print_int(present + missing)
+}

@@ -16,6 +16,7 @@
 pub mod context;
 pub mod function;
 pub mod intrinsics;
+pub mod layout;
 pub mod linker;
 
 #[cfg(test)]

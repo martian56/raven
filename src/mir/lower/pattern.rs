@@ -263,7 +263,9 @@ fn bind_pattern(cx: &mut LowerCx<'_>, pat: &HirPattern, scrut_ty: &Ty, scrut: &M
             cx.bind(name.clone(), local);
         }
         HirPatternKind::Constructor { elements, .. } => {
-            // Each element binds the payload at its positional index.
+            // Each element binds the payload at its positional index. The
+            // enum value stores its discriminant in slot 0, so payload
+            // field `i` lives in slot `i + 1`.
             for (i, element) in elements.iter().enumerate() {
                 match &element.kind {
                     HirPatternKind::Binding(name) => {
@@ -275,7 +277,7 @@ fn bind_pattern(cx: &mut LowerCx<'_>, pat: &HirPattern, scrut_ty: &Ty, scrut: &M
                             local,
                             MirRvalue::FieldAccess {
                                 base: scrut.clone(),
-                                index: i,
+                                index: i + 1,
                             },
                         );
                         cx.bind(name.clone(), local);
@@ -301,7 +303,7 @@ fn bind_pattern(cx: &mut LowerCx<'_>, pat: &HirPattern, scrut_ty: &Ty, scrut: &M
                             local,
                             MirRvalue::FieldAccess {
                                 base: scrut.clone(),
-                                index: i,
+                                index: i + 1,
                             },
                         );
                         cx.bind(name.clone(), local);
@@ -317,7 +319,7 @@ fn bind_pattern(cx: &mut LowerCx<'_>, pat: &HirPattern, scrut_ty: &Ty, scrut: &M
                         local,
                         MirRvalue::FieldAccess {
                             base: scrut.clone(),
-                            index: i,
+                            index: i + 1,
                         },
                     );
                     cx.bind(field.name.clone(), local);

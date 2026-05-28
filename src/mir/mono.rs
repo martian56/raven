@@ -23,7 +23,7 @@ use crate::resolve::DeclId;
 use crate::tycheck::Ty;
 
 use super::ir::MirProgram;
-use super::lower::{lower_function, SubstMap};
+use super::lower::{lower_function, DeclTables, SubstMap};
 
 /// One entry in the monomorphization worklist.
 type Item = (DeclId, Vec<Ty>);
@@ -36,6 +36,7 @@ type HirIndex<'a> = HashMap<DeclId, &'a HirFn>;
 pub fn monomorphize(hir: &HirProgram) -> Result<MirProgram, RavenError> {
     let mut program = MirProgram::new();
     let (index, roots) = collect_roots(hir);
+    let decls = collect_decls(hir);
 
     let mut seen: HashSet<(DeclId, Vec<MangleKey>)> = HashSet::new();
     let mut worklist: Vec<Item> = roots;
@@ -51,7 +52,7 @@ pub fn monomorphize(hir: &HirProgram) -> Result<MirProgram, RavenError> {
         };
         let subst = build_subst(hir_fn, &args);
         let mangled = mangle_name(&hir_fn.name, &args);
-        let (mir_fn, pending) = lower_function(mangled, hir_fn, &subst);
+        let (mir_fn, pending) = lower_function(mangled, hir_fn, &subst, &decls);
         program.functions.push(mir_fn);
         for next in pending {
             worklist.push(next);
@@ -59,6 +60,24 @@ pub fn monomorphize(hir: &HirProgram) -> Result<MirProgram, RavenError> {
     }
 
     Ok(program)
+}
+
+/// Index every struct and enum declaration by its source name so the
+/// expression lowering can resolve field offsets and variant payloads.
+fn collect_decls(hir: &HirProgram) -> DeclTables<'_> {
+    let mut tables = DeclTables::default();
+    for item in &hir.items {
+        match &item.kind {
+            HirItemKind::Struct(s) => {
+                tables.structs.insert(s.name.clone(), s);
+            }
+            HirItemKind::Enum(e) => {
+                tables.enums.insert(e.name.clone(), e);
+            }
+            _ => {}
+        }
+    }
+    tables
 }
 
 /// Collect every top-level function plus impl methods. Returns the

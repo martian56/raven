@@ -24,59 +24,114 @@ use raven::tycheck::check_file;
 
 #[test]
 fn hello_world_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    compile_link_run_and_check("hello.rv", "Hello, Raven!\n", &runtime);
+}
+
+#[test]
+fn struct_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Point { x: 3, y: 4 } built on the heap, passed by reference, and
+    // summed through field access: prints 7.
+    compile_link_run_and_check("point.rv", "7\n", &runtime);
+}
+
+#[test]
+fn enum_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Option values matched and unwrapped: 5 + 99 prints 104.
+    compile_link_run_and_check("option_sum.rv", "104\n", &runtime);
+}
+
+#[test]
+fn closure_value_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A non-capturing lambda is allocated as a closure object; the
+    // program prints 42 to show the allocation and GC root frame run.
+    compile_link_run_and_check("closure_value.rv", "42\n", &runtime);
+}
+
+/// Return the runtime staticlib when a linker and the staticlib are both
+/// present, or skip with a diagnostic. Shared by every smoke case so the
+/// skip behavior stays identical.
+fn supported_runtime() -> Option<RuntimeStaticLib> {
     if !linker::linker_available() {
         eprintln!(
             "codegen_smoke: skipping, no linker available for the host. \
              Install the MSVC C++ build tools on windows-msvc, a 64-bit \
              MinGW-w64 on windows-gnu, or a `cc` driver on Unix."
         );
-        return;
+        return None;
     }
-    let runtime = match locate_runtime() {
-        Some(r) => r,
+    match locate_runtime() {
+        Some(r) => Some(r),
         None => {
             eprintln!(
                 "codegen_smoke: skipping, raven_runtime staticlib not built. \
                  Run `cargo build -p raven-runtime` to produce it."
             );
-            return;
+            None
         }
-    };
+    }
+}
 
+/// Compile `examples/v2/<name>`, link it with the runtime, run it, and
+/// assert its stdout equals `expected`. Panics on any failure on a
+/// supported host so a regression is loud.
+fn compile_link_run_and_check(name: &str, expected: &str, runtime: &RuntimeStaticLib) {
     let source_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("examples")
         .join("v2")
-        .join("hello.rv");
-    let source = std::fs::read_to_string(&source_path).expect("read hello.rv");
+        .join(name);
+    let source =
+        std::fs::read_to_string(&source_path).unwrap_or_else(|e| panic!("read {}: {}", name, e));
 
     let object_bytes = match build_object(&source, &source_path) {
         Ok(b) => b,
-        Err(e) => panic!("frontend or codegen failed: {}", e),
+        Err(e) => panic!("frontend or codegen failed for {}: {}", name, e),
     };
 
     let tmp = workdir();
-    let object_path = tmp.join("hello.o");
+    let stem = Path::new(name).file_stem().unwrap().to_string_lossy();
+    let object_path = tmp.join(format!("{}.o", stem));
     std::fs::write(&object_path, &object_bytes).expect("write object");
-    let binary = tmp.join(if cfg!(windows) { "hello.exe" } else { "hello" });
+    let binary = tmp.join(if cfg!(windows) {
+        format!("{}.exe", stem)
+    } else {
+        stem.to_string()
+    });
 
-    // A linker was found above, so a link failure here is a real
-    // regression on a supported host, not a reason to skip.
-    if let Err(e) = linker::link(&object_path, &runtime, &binary) {
+    if let Err(e) = linker::link(&object_path, runtime, &binary) {
         cleanup(&tmp);
-        panic!("linker failed to produce an executable: {}", e);
+        panic!("linker failed to produce an executable for {}: {}", name, e);
     }
 
-    let output = Command::new(&binary).output().expect("run hello binary");
+    let output = Command::new(&binary)
+        .output()
+        .unwrap_or_else(|e| panic!("run {} binary: {}", name, e));
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     cleanup(&tmp);
     assert!(
         output.status.success(),
-        "hello binary exited non zero: status={:?} stderr={}",
+        "{} binary exited non zero: status={:?} stderr={}",
+        name,
         output.status,
         stderr
     );
-    assert_eq!(stdout, "Hello, Raven!\n", "unexpected stdout: {:?}", stdout);
+    assert_eq!(
+        stdout, expected,
+        "unexpected stdout for {}: {:?}",
+        name, stdout
+    );
 }
 
 fn build_object(source: &str, path: &Path) -> Result<Vec<u8>, String> {
@@ -93,13 +148,19 @@ fn build_object(source: &str, path: &Path) -> Result<Vec<u8>, String> {
 }
 
 fn workdir() -> PathBuf {
+    // A process-wide atomic counter makes each tempdir unique even when
+    // several smoke tests run in parallel and start within the same
+    // nanosecond, so one test's cleanup never deletes another's binary.
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
     let mut p = std::env::temp_dir();
     let pid = std::process::id();
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    p.push(format!("raven-smoke-{}-{}", pid, stamp));
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+    p.push(format!("raven-smoke-{}-{}-{}", pid, stamp, seq));
     std::fs::create_dir_all(&p).expect("create tempdir");
     p
 }

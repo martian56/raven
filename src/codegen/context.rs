@@ -21,6 +21,14 @@ use super::function::FunctionLowering;
 use super::intrinsics;
 use super::CodegenError;
 
+/// One registered struct or enum type: the descriptor id passed to
+/// `raven_struct_register` and the GC pointer bitmask for its slots.
+#[derive(Clone, Copy)]
+pub struct StructDescriptor {
+    pub type_id: u32,
+    pub ptr_mask: u64,
+}
+
 /// Per module Cranelift state.
 ///
 /// The struct deliberately keeps the `ObjectModule` private; every
@@ -41,6 +49,13 @@ pub struct ModuleCx {
     /// function is in the symbol table. `None` when the program has no
     /// `main` (for example a unit test compiling a fragment).
     main_entry: Option<MainEntry>,
+    /// Struct and enum type descriptors keyed by a stable type name.
+    /// Each distinct heap aggregate type gets one descriptor id; the
+    /// `main` shim registers every descriptor with the collector before
+    /// running the program so a struct is always traceable.
+    descriptors: HashMap<String, StructDescriptor>,
+    /// Counter handing out the next struct descriptor id.
+    next_type_id: u32,
 }
 
 /// The exported `main` shim plus the Raven `main` it dispatches to.
@@ -68,7 +83,54 @@ impl ModuleCx {
             strings: BTreeMap::new(),
             string_counter: 0,
             main_entry: None,
+            descriptors: HashMap::new(),
+            next_type_id: 0,
         }
+    }
+
+    /// Return the descriptor id for an aggregate type, assigning a fresh
+    /// id and recording its GC pointer mask the first time the type is
+    /// seen. `name` is a stable per-type key (the mangled type name);
+    /// `mask` is the same for every occurrence of a given type, so a
+    /// later call with the same name keeps the first id.
+    pub fn intern_descriptor(&mut self, name: &str, mask: u64) -> u32 {
+        if let Some(d) = self.descriptors.get(name) {
+            return d.type_id;
+        }
+        let type_id = self.next_type_id;
+        self.next_type_id += 1;
+        self.descriptors.insert(
+            name.to_string(),
+            StructDescriptor {
+                type_id,
+                ptr_mask: mask,
+            },
+        );
+        type_id
+    }
+
+    /// Like `intern_descriptor`, but unions `mask` into an existing
+    /// descriptor rather than keeping the first one. Used for enum types,
+    /// whose variants are constructed independently: a value's traced
+    /// pointer slots are the union of every variant's payload pointers,
+    /// so the collector traces the active variant's pointers whichever
+    /// it is. (A variant only ever populates its own payload slots; the
+    /// inactive slots are zero and trace harmlessly.)
+    pub fn merge_descriptor(&mut self, name: &str, mask: u64) -> u32 {
+        if let Some(d) = self.descriptors.get_mut(name) {
+            d.ptr_mask |= mask;
+            return d.type_id;
+        }
+        let type_id = self.next_type_id;
+        self.next_type_id += 1;
+        self.descriptors.insert(
+            name.to_string(),
+            StructDescriptor {
+                type_id,
+                ptr_mask: mask,
+            },
+        );
+        type_id
     }
 
     /// Borrow the underlying Cranelift module for low level operations.
@@ -116,23 +178,85 @@ impl ModuleCx {
 
     /// Declare the runtime C ABI symbols the backend can call into.
     ///
-    /// Only `raven_println_str` is declared by default; the rest are
-    /// reserved for future intrinsic wiring and are pulled in lazily
-    /// to keep the import table minimal.
+    /// The heap-value lowering needs the string and integer print
+    /// helpers, the struct value constructor and accessor, the GC root
+    /// frame and struct descriptor registration entry points, and the
+    /// closure constructor and accessors. They are all declared up front
+    /// so any function body can reference them.
     pub fn declare_runtime_imports(&mut self) -> Result<(), CodegenError> {
         let ptr = self.pointer_type();
-        let sig_print = {
-            let mut s = self.module.make_signature();
-            s.params.push(AbiParam::new(ptr));
-            s.params.push(AbiParam::new(ptr));
-            s
-        };
-        let id = self.module.declare_function(
-            intrinsics::RUNTIME_PRINTLN_STR,
-            Linkage::Import,
-            &sig_print,
-        )?;
-        self.runtime.insert(intrinsics::RUNTIME_PRINTLN_STR, id);
+        let i32t = types::I32;
+        let i64t = types::I64;
+
+        // raven_println_str(ptr, len)
+        let mut sig = self.make_sig(&[ptr, ptr], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_PRINTLN_STR, &sig)?;
+
+        // raven_println_int(i64)
+        sig = self.make_sig(&[i64t], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_PRINTLN_INT, &sig)?;
+
+        // raven_struct_new(field_count: u32, type_id: u32) -> ptr
+        sig = self.make_sig(&[i32t, i32t], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_STRUCT_NEW, &sig)?;
+
+        // raven_struct_fields(ptr) -> ptr
+        sig = self.make_sig(&[ptr], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_STRUCT_FIELDS, &sig)?;
+
+        // raven_struct_register(type_id: u32, ptr_mask: u64)
+        sig = self.make_sig(&[i32t, i64t], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_STRUCT_REGISTER, &sig)?;
+
+        // raven_gc_enter_frame(roots: ptr, count: usize)
+        sig = self.make_sig(&[ptr, ptr], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_GC_ENTER_FRAME, &sig)?;
+
+        // raven_gc_leave_frame()
+        sig = self.make_sig(&[], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_GC_LEAVE_FRAME, &sig)?;
+
+        // raven_closure_new(fn_ptr, size: u32, align: u32, count: u32,
+        //                   ptr_count: u32) -> ptr
+        sig = self.make_sig(&[ptr, i32t, i32t, i32t, i32t], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_CLOSURE_NEW, &sig)?;
+
+        // raven_closure_fn_ptr(ptr) -> ptr
+        sig = self.make_sig(&[ptr], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_CLOSURE_FN_PTR, &sig)?;
+
+        // raven_closure_captures(ptr) -> ptr
+        sig = self.make_sig(&[ptr], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_CLOSURE_CAPTURES, &sig)?;
+
+        Ok(())
+    }
+
+    /// Build a Cranelift signature from parameter and return types under
+    /// the module's default calling convention.
+    fn make_sig(
+        &self,
+        params: &[cranelift_codegen::ir::Type],
+        returns: &[cranelift_codegen::ir::Type],
+    ) -> Signature {
+        let mut s = self.module.make_signature();
+        for p in params {
+            s.params.push(AbiParam::new(*p));
+        }
+        for r in returns {
+            s.returns.push(AbiParam::new(*r));
+        }
+        s
+    }
+
+    /// Declare one imported runtime symbol and record its id.
+    fn declare_runtime(
+        &mut self,
+        symbol: &'static str,
+        sig: &Signature,
+    ) -> Result<(), CodegenError> {
+        let id = self.module.declare_function(symbol, Linkage::Import, sig)?;
+        self.runtime.insert(symbol, id);
         Ok(())
     }
 
@@ -206,12 +330,29 @@ impl ModuleCx {
         };
 
         let callee = self.module.declare_func_in_func(raven_main, &mut ctx.func);
+        // Collect descriptors and the registration symbol before the
+        // builder borrows the function, so the closure below only needs
+        // the resolved references.
+        let descriptors: Vec<StructDescriptor> = self.descriptors.values().copied().collect();
+        let register_id = self.runtime_id(intrinsics::RUNTIME_STRUCT_REGISTER);
+        let register_ref =
+            register_id.map(|id| self.module.declare_func_in_func(id, &mut ctx.func));
         let mut builder_ctx = FunctionBuilderContext::new();
         {
             let mut builder = FunctionBuilder::new(&mut ctx.func, &mut builder_ctx);
             let block = builder.create_block();
             builder.switch_to_block(block);
             builder.seal_block(block);
+            // Register every struct and enum descriptor with the
+            // collector before running the program, so any value the
+            // program builds is traceable from its first allocation.
+            if let Some(reg) = register_ref {
+                for d in &descriptors {
+                    let id = builder.ins().iconst(types::I32, d.type_id as i64);
+                    let mask = builder.ins().iconst(types::I64, d.ptr_mask as i64);
+                    builder.ins().call(reg, &[id, mask]);
+                }
+            }
             // The Raven `main` returns unit, so there is no result value
             // to forward; the call is emitted purely for its effects.
             builder.ins().call(callee, &[]);

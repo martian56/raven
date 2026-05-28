@@ -1,0 +1,9 @@
+// A non-capturing lambda is allocated as a closure object on the heap.
+// Calling closure values (indirect dispatch through the function
+// pointer) and capturing closures are tracked separately, so this
+// program only builds the closure value and prints a sentinel to show
+// the allocation and GC root frame run without crashing.
+fun main() {
+    let f = fun(x: Int) -> Int = x + 1
+    print_int(42)
+}
