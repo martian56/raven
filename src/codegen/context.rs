@@ -340,6 +340,19 @@ impl ModuleCx {
         sig = self.make_sig(&[ptr], &[i32t]);
         self.declare_runtime(intrinsics::RUNTIME_STRING_LEN, &sig)?;
 
+        // raven_string_byte_at(String ptr, index: usize) -> i32
+        sig = self.make_sig(&[ptr, ptr], &[i32t]);
+        self.declare_runtime(intrinsics::RUNTIME_STRING_BYTE_AT, &sig)?;
+
+        // raven_string_substring(String ptr, start: usize, end: usize)
+        //   -> String ptr
+        sig = self.make_sig(&[ptr, ptr, ptr], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_STRING_SUBSTRING, &sig)?;
+
+        // raven_string_from_byte(byte: i32) -> String ptr
+        sig = self.make_sig(&[i32t], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_STRING_FROM_BYTE, &sig)?;
+
         // raven_string_concat(String ptr, String ptr) -> String ptr
         sig = self.make_sig(&[ptr, ptr], &[ptr]);
         self.declare_runtime(intrinsics::RUNTIME_STRING_CONCAT, &sig)?;

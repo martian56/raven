@@ -1100,11 +1100,76 @@ impl<'a, 'b> Checker<'a, 'b> {
                 }
                 Ok(Ty::Str)
             }
+            // Internal stdlib string intrinsics. The bundled `std/string`
+            // source calls these byte-level primitives; the codegen back
+            // end recognizes the mangled names and emits the matching
+            // runtime calls. The leading `__str_` marks them internal.
+            "__str_len" => {
+                self.check_intrinsic_arity(name, args, 1, span)?;
+                let s = self.check_expr(&args[0])?;
+                self.unify(&Ty::Str, &s, &args[0].span)?;
+                Ok(Ty::Int)
+            }
+            "__str_byte_at" => {
+                self.check_intrinsic_arity(name, args, 2, span)?;
+                let s = self.check_expr(&args[0])?;
+                self.unify(&Ty::Str, &s, &args[0].span)?;
+                let i = self.check_expr(&args[1])?;
+                self.unify(&Ty::Int, &i, &args[1].span)?;
+                Ok(Ty::Int)
+            }
+            "__str_substring" => {
+                self.check_intrinsic_arity(name, args, 3, span)?;
+                let s = self.check_expr(&args[0])?;
+                self.unify(&Ty::Str, &s, &args[0].span)?;
+                let start = self.check_expr(&args[1])?;
+                self.unify(&Ty::Int, &start, &args[1].span)?;
+                let end = self.check_expr(&args[2])?;
+                self.unify(&Ty::Int, &end, &args[2].span)?;
+                Ok(Ty::Str)
+            }
+            "__str_from_byte" => {
+                self.check_intrinsic_arity(name, args, 1, span)?;
+                let b = self.check_expr(&args[0])?;
+                self.unify(&Ty::Int, &b, &args[0].span)?;
+                Ok(Ty::Str)
+            }
+            "__str_concat" => {
+                self.check_intrinsic_arity(name, args, 2, span)?;
+                let a = self.check_expr(&args[0])?;
+                self.unify(&Ty::Str, &a, &args[0].span)?;
+                let b = self.check_expr(&args[1])?;
+                self.unify(&Ty::Str, &b, &args[1].span)?;
+                Ok(Ty::Str)
+            }
             other => Err(RavenError::ty(
                 TypeError::Custom(format!("identifier `{}` has no type binding", other)),
                 span.clone(),
             )),
         }
+    }
+
+    /// Reject a stdlib intrinsic call whose argument count differs from
+    /// `expected`, with the same `WrongArity` diagnostic the other
+    /// intrinsic arms use.
+    fn check_intrinsic_arity(
+        &self,
+        name: &str,
+        args: &[Expr],
+        expected: usize,
+        span: &Span,
+    ) -> Result<(), RavenError> {
+        if args.len() != expected {
+            return Err(RavenError::ty(
+                TypeError::WrongArity {
+                    func: name.to_string(),
+                    expected,
+                    actual: args.len(),
+                },
+                span.clone(),
+            ));
+        }
+        Ok(())
     }
 
     fn check_method_call(

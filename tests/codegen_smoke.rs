@@ -139,6 +139,29 @@ fn std_io_program_compiles_and_runs() {
     compile_link_run_and_check("use_io.rv", "Hello from std/io!\n42\n", &runtime);
 }
 
+#[test]
+fn std_string_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // The std/string module end to end: `import std/string { ... }` merges
+    // the bundled source (which builds its utilities in pure Raven on top
+    // of the `__str_*` byte intrinsics) into the program, namespaced as
+    // `std.string.*`. Exercises case mapping, trim, repeat, replace,
+    // substring, contains, and index_of, with the last two observed
+    // through println and println_int.
+    let expected = "HELLO\n\
+                    world\n\
+                    spaced\n\
+                    ababab\n\
+                    a+b+c\n\
+                    ave\n\
+                    contains: yes\n\
+                    2\n\
+                    -1\n";
+    compile_link_run_and_check("use_string.rv", expected, &runtime);
+}
+
 /// Return the runtime staticlib when a linker and the staticlib are both
 /// present, or skip with a diagnostic. Shared by every smoke case so the
 /// skip behavior stays identical.

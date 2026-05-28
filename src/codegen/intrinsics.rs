@@ -23,6 +23,27 @@ pub const IO_PRINTLN_STR: &str = "__io_println_str";
 /// `__io_read_line() -> String` reads one line from stdin (no newline).
 pub const IO_READ_LINE: &str = "__io_read_line";
 
+/// Internal stdlib string intrinsics. The bundled `std/string` source
+/// calls these byte-level primitives to build the higher-level utilities
+/// (case mapping, search, trim, ...) in pure Raven. The leading `__str_`
+/// marks them internal; a user calls the exported `std/string` functions
+/// instead. See `docs/v2/specs/std-string.md`.
+///
+/// `__str_len(s: String) -> Int` returns the byte length of `s`.
+pub const STR_LEN: &str = "__str_len";
+/// `__str_byte_at(s: String, i: Int) -> Int` returns the byte at index
+/// `i` as a value in `0..=255`, or `-1` when `i` is out of range.
+pub const STR_BYTE_AT: &str = "__str_byte_at";
+/// `__str_substring(s: String, start: Int, end: Int) -> String` returns
+/// the half-open byte range `[start, end)` of `s` (bounds clamped).
+pub const STR_SUBSTRING: &str = "__str_substring";
+/// `__str_from_byte(b: Int) -> String` builds a one-byte `String` from
+/// the low eight bits of `b`.
+pub const STR_FROM_BYTE: &str = "__str_from_byte";
+/// `__str_concat(a: String, b: String) -> String` concatenates two
+/// strings into a fresh `String`.
+pub const STR_CONCAT_FN: &str = "__str_concat";
+
 /// Runtime C symbol the `print` intrinsic dispatches to.
 pub const RUNTIME_PRINTLN_STR: &str = "raven_println_str";
 
@@ -44,6 +65,15 @@ pub const RUNTIME_STRING_BYTES: &str = "raven_string_bytes";
 
 /// Runtime C symbol returning a heap `String`'s byte length.
 pub const RUNTIME_STRING_LEN: &str = "raven_string_len";
+
+/// Runtime C symbol returning the byte at an index (or -1 out of range).
+pub const RUNTIME_STRING_BYTE_AT: &str = "raven_string_byte_at";
+
+/// Runtime C symbol returning a clamped half-open byte sub-range.
+pub const RUNTIME_STRING_SUBSTRING: &str = "raven_string_substring";
+
+/// Runtime C symbol building a one-byte `String` from a byte value.
+pub const RUNTIME_STRING_FROM_BYTE: &str = "raven_string_from_byte";
 
 /// Runtime C symbols backing the interpolation desugaring intrinsics.
 /// Each MIR mangled name on the left dispatches to the runtime symbol on
@@ -98,6 +128,15 @@ pub const RUNTIME_CLOSURE_CAPTURES: &str = "raven_closure_captures";
 pub fn is_intrinsic(mangled: &str) -> bool {
     matches!(
         mangled,
-        PRINT | PRINT_INT | IO_PRINT_STR | IO_PRINTLN_STR | IO_READ_LINE
+        PRINT
+            | PRINT_INT
+            | IO_PRINT_STR
+            | IO_PRINTLN_STR
+            | IO_READ_LINE
+            | STR_LEN
+            | STR_BYTE_AT
+            | STR_SUBSTRING
+            | STR_FROM_BYTE
+            | STR_CONCAT_FN
     )
 }

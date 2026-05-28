@@ -1,0 +1,23 @@
+// golden:skip
+// Import the bundled std/string module and exercise its functions. The
+// selective import binds each name to the namespaced stdlib function the
+// compiler merges into the program. std/io provides println for output
+// and println_int to observe an Int result.
+import std/string { to_upper, to_lower, trim, repeat, contains, index_of, replace, substring }
+import std/io { println, println_int }
+
+fun main() {
+    println(to_upper("hello"))
+    println(to_lower("WORLD"))
+    println(trim("  spaced  "))
+    println(repeat("ab", 3))
+    println(replace("a-b-c", "-", "+"))
+    println(substring("raven", 1, 4))
+    if contains("hello world", "world") {
+        println("contains: yes")
+    } else {
+        println("contains: no")
+    }
+    println_int(index_of("hello", "llo"))
+    println_int(index_of("hello", "zzz"))
+}

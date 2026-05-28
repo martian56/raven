@@ -644,11 +644,12 @@ fn is_builtin_type_name(name: &str) -> bool {
 /// treated the same way: they are built in free function intrinsics
 /// whose call sites are wired to the runtime by the codegen back end.
 ///
-/// The `__io_*` names are internal stdlib intrinsics: the bundled
-/// `std/io` source calls them to reach the runtime's byte-level I/O
-/// symbols. The leading `__` marks them internal; users do not write
-/// them directly (they use `std/io`'s exported functions). They bypass
-/// scope lookup the same way the print builtins do.
+/// The `__io_*` and `__str_*` names are internal stdlib intrinsics: the
+/// bundled `std/io` and `std/string` sources call them to reach the
+/// runtime's byte-level symbols. The leading `__` marks them internal;
+/// users do not write them directly (they use the modules' exported
+/// functions). They bypass scope lookup the same way the print builtins
+/// do.
 fn is_builtin_ctor_name(name: &str) -> bool {
     matches!(
         name,
@@ -661,5 +662,10 @@ fn is_builtin_ctor_name(name: &str) -> bool {
             | "__io_print_str"
             | "__io_println_str"
             | "__io_read_line"
+            | "__str_len"
+            | "__str_byte_at"
+            | "__str_substring"
+            | "__str_from_byte"
+            | "__str_concat"
     )
 }

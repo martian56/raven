@@ -156,6 +156,68 @@ pub extern "C" fn raven_string_from_bytes(ptr: *const u8, len: usize) -> *mut St
     out
 }
 
+/// Return the byte at index `i` of `s` as a value in `0..=255`, or `-1`
+/// when `i` is out of range (or `s` is null). The index is a byte
+/// offset, not a code point or grapheme index; see the `std/string`
+/// spec for the byte-vs-codepoint semantics.
+///
+/// Backs the `__str_byte_at` compiler intrinsic, which the bundled
+/// `std/string` source uses to scan a string byte by byte.
+#[no_mangle]
+pub extern "C" fn raven_string_byte_at(s: *const String, i: usize) -> i32 {
+    let len = raven_string_len(s) as usize;
+    if i >= len {
+        return -1;
+    }
+    let bytes = raven_string_bytes(s);
+    if bytes.is_null() {
+        return -1;
+    }
+    // SAFETY: `i < len` and the buffer holds `len` valid bytes.
+    let byte = unsafe { *bytes.add(i) };
+    byte as i32
+}
+
+/// Allocate a fresh `String` holding the half-open byte range
+/// `[start, end)` of `s`. The bounds are clamped to `0..=len` and a
+/// `start` past `end` yields an empty string, so the function never
+/// reads out of range. The range is in bytes; slicing through the
+/// middle of a multi-byte UTF-8 sequence produces a string whose bytes
+/// are not valid UTF-8, which the byte-oriented `std/string` surface
+/// documents as the caller's responsibility.
+///
+/// Backs the `__str_substring` compiler intrinsic.
+#[no_mangle]
+pub extern "C" fn raven_string_substring(
+    s: *const String,
+    start: usize,
+    end: usize,
+) -> *mut String {
+    let len = raven_string_len(s) as usize;
+    let start = start.min(len);
+    let end = end.min(len);
+    if start >= end {
+        return raven_string_new(0);
+    }
+    let bytes = raven_string_bytes(s);
+    if bytes.is_null() {
+        return raven_string_new(0);
+    }
+    // SAFETY: `start < end <= len`, so the source range is in bounds.
+    unsafe { raven_string_from_bytes(bytes.add(start), end - start) }
+}
+
+/// Allocate a fresh one-byte `String` from the low eight bits of
+/// `byte`. Used by the `std/string` case-mapping and builder paths to
+/// turn a computed byte value back into a string before concatenation.
+///
+/// Backs the `__str_from_byte` compiler intrinsic.
+#[no_mangle]
+pub extern "C" fn raven_string_from_byte(byte: i32) -> *mut String {
+    let b = (byte & 0xff) as u8;
+    raven_string_from_bytes(&b as *const u8, 1)
+}
+
 /// Allocate a GC `String` whose bytes are the decimal rendering of a
 /// signed 64-bit integer. Negatives carry a leading `-`; zero renders
 /// as `0`.
@@ -449,6 +511,52 @@ mod tests {
             drop_string_for_test(a);
             drop_string_for_test(euro);
             drop_string_for_test(invalid);
+        }
+    }
+
+    #[test]
+    fn byte_at_returns_byte_or_minus_one() {
+        let s = raven_string_from_bytes(b"abc".as_ptr(), 3);
+        assert_eq!(raven_string_byte_at(s, 0), b'a' as i32);
+        assert_eq!(raven_string_byte_at(s, 2), b'c' as i32);
+        assert_eq!(raven_string_byte_at(s, 3), -1);
+        assert_eq!(raven_string_byte_at(s, 99), -1);
+        assert_eq!(raven_string_byte_at(std::ptr::null(), 0), -1);
+        unsafe { drop_string_for_test(s) };
+    }
+
+    #[test]
+    fn substring_extracts_clamped_range() {
+        let s = raven_string_from_bytes(b"hello".as_ptr(), 5);
+        let mid = raven_string_substring(s, 1, 4);
+        assert_eq!(read(mid), "ell");
+        // Bounds are clamped, and start past end yields empty.
+        let tail = raven_string_substring(s, 3, 99);
+        assert_eq!(read(tail), "lo");
+        let empty = raven_string_substring(s, 4, 2);
+        assert_eq!(read(empty), "");
+        let whole = raven_string_substring(s, 0, 5);
+        assert_eq!(read(whole), "hello");
+        unsafe {
+            drop_string_for_test(s);
+            drop_string_for_test(mid);
+            drop_string_for_test(tail);
+            drop_string_for_test(empty);
+            drop_string_for_test(whole);
+        }
+    }
+
+    #[test]
+    fn from_byte_builds_one_byte_string() {
+        let a = raven_string_from_byte(b'Z' as i32);
+        assert_eq!(read(a), "Z");
+        assert_eq!(raven_string_len(a), 1);
+        // Only the low eight bits are used.
+        let masked = raven_string_from_byte(0x141); // low byte is 0x41 = 'A'
+        assert_eq!(read(masked), "A");
+        unsafe {
+            drop_string_for_test(a);
+            drop_string_for_test(masked);
         }
     }
 
