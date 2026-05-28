@@ -134,26 +134,45 @@ other code runs so subsequent reads can use the uniform slot path.
 ## Print intrinsic
 
 The MIR call site `Call { callee: MirFnRef { mangled: "print", .. } }`
-is recognized as an intrinsic. The codegen:
+is recognized as an intrinsic. It produces a `(pointer, length)` pair
+for its single argument and calls `raven_println_str(ptr, len)`, which
+prints the slice and writes a trailing newline. The pointer width is
+whatever `module.target_config().pointer_type()` reports (i64 on every
+supported host).
 
-1. Pulls the single argument operand. If it is `Const(Str s)`, the bytes
-   are interned into the per module string table, producing a pair of
-   constants: the address of the bytes and the length in bytes.
-2. Declares `raven_println_str` with signature `fn(ptr: i64, len: i64)`.
-   The pointer width is whatever `module.target_config().pointer_type()`
-   reports; the description here uses i64 because every supported host
-   is 64 bit.
-3. Emits a `call` with the two constants as arguments. The runtime
-   prints the slice and writes a trailing newline.
+The argument can be a string in one of two shapes:
+
+1. A bare string literal (`Const(Str s)`). The bytes are interned into
+   the per module string table and the call receives the address of the
+   bytes plus the compile-time byte length. This is the allocation-free
+   fast path so `print("literal")` never touches the heap.
+2. Any other `Str` value (a `let`-bound string, a returned string, an
+   interpolation result). It is a heap `String` pointer, so the codegen
+   calls `raven_string_bytes` and `raven_string_len` on it to read the
+   byte buffer pointer and length (the `u32` length is widened to
+   pointer width for the ABI), then calls `raven_println_str`.
 
 The string table is a `BTreeMap<Vec<u8>, DataId>` keyed by the bytes, so
 identical literals share a single allocation in the object file. Each
 data symbol is named `__raven_str_<n>` for stable diagnostic output.
 
-When the print argument is a non literal `Str` value, the codegen emits
-an `Unreachable` and the driver reports a `print: non literal string
-not supported` diagnostic. Literal printing is enough to get hello
-world running; the full string type lands with issue #65.
+## String values
+
+A string constant used as a *value* (assigned to a local, passed to a
+function, concatenated, interpolated) is promoted to a heap `String`:
+the codegen interns the bytes, then calls `raven_string_from_bytes(ptr,
+len)` to allocate a GC-managed `String` object. Every `Str`-typed local
+therefore holds a real GC pointer, so the GC root frame traces it and
+the runtime string functions can consume it directly. Only the bare
+`print("literal")` argument keeps the static fast path.
+
+String interpolation lowers (in MIR) to a chain of runtime calls that
+the back-end recognizes by mangled name and routes to the runtime:
+`__raven_str_concat` to `raven_string_concat`, and the per-type
+conversions `__raven_int_to_string`, `__raven_bool_to_string`,
+`__raven_float_to_string`, and `__raven_char_to_string` to their
+matching `raven_*_to_string` symbols. Each returns a heap `String`
+pointer that flows like any other string value.
 
 ### `print_int` intrinsic
 

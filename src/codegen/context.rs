@@ -284,6 +284,42 @@ impl ModuleCx {
         sig = self.make_sig(&[ptr], &[ptr]);
         self.declare_runtime(intrinsics::RUNTIME_CLOSURE_CAPTURES, &sig)?;
 
+        // String value support for interpolation and the generalized
+        // print path.
+        let f64t = types::F64;
+
+        // raven_string_from_bytes(ptr, len) -> String ptr
+        sig = self.make_sig(&[ptr, ptr], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_STRING_FROM_BYTES, &sig)?;
+
+        // raven_string_bytes(String ptr) -> byte ptr
+        sig = self.make_sig(&[ptr], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_STRING_BYTES, &sig)?;
+
+        // raven_string_len(String ptr) -> u32
+        sig = self.make_sig(&[ptr], &[i32t]);
+        self.declare_runtime(intrinsics::RUNTIME_STRING_LEN, &sig)?;
+
+        // raven_string_concat(String ptr, String ptr) -> String ptr
+        sig = self.make_sig(&[ptr, ptr], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_STRING_CONCAT, &sig)?;
+
+        // raven_int_to_string(i64) -> String ptr
+        sig = self.make_sig(&[i64t], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_INT_TO_STRING, &sig)?;
+
+        // raven_bool_to_string(i8) -> String ptr
+        sig = self.make_sig(&[types::I8], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_BOOL_TO_STRING, &sig)?;
+
+        // raven_float_to_string(f64) -> String ptr
+        sig = self.make_sig(&[f64t], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_FLOAT_TO_STRING, &sig)?;
+
+        // raven_char_to_string(u32) -> String ptr
+        sig = self.make_sig(&[i32t], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_CHAR_TO_STRING, &sig)?;
+
         Ok(())
     }
 
