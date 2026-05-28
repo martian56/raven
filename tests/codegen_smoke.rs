@@ -103,6 +103,29 @@ fn defer_early_return_program_compiles_and_runs() {
     compile_link_run_and_check("defer_early_return.rv", "9\n8\n9\n", &runtime);
 }
 
+#[test]
+fn ffi_strlen_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // C FFI end to end: `extern "C" { fun strlen(s: CStr) -> CSize }` is
+    // declared as an imported symbol, resolved against the CRT at link
+    // time, and called on the C string literal `c"hello"` (a static
+    // null-terminated buffer). strlen counts 5 bytes; prints 5.
+    compile_link_run_and_check("ffi_strlen.rv", "5\n", &runtime);
+}
+
+#[test]
+fn ffi_abs_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A non-pointer FFI type: `abs(x: CInt) -> CInt` takes and returns a
+    // 32-bit C int. The negative literal -7 is reduced to i32 at the
+    // call; abs(-7) is 7.
+    compile_link_run_and_check("ffi_abs.rv", "7\n", &runtime);
+}
+
 /// Return the runtime staticlib when a linker and the staticlib are both
 /// present, or skip with a diagnostic. Shared by every smoke case so the
 /// skip behavior stays identical.
