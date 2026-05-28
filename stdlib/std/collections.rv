@@ -1,0 +1,132 @@
+// std/collections: Set and Map over keys that implement Eq.
+//
+// Lookup is a linear scan using the Eq bound, so operations are O(n). A
+// hash-backed implementation using the runtime bucket layout is a planned
+// optimization that will not change this surface. `List<T>` is built into
+// the language and needs no import.
+
+struct Set<T: Eq> {
+    items: List<T>,
+}
+
+fun empty_set<T: Eq>() -> Set<T> {
+    let items: List<T> = []
+    return Set { items: items }
+}
+
+impl<T: Eq> Set<T> {
+    fun len(self) -> Int {
+        return self.items.len()
+    }
+
+    fun is_empty(self) -> Bool {
+        return self.items.len() == 0
+    }
+
+    fun index_of(self, x: T) -> Int {
+        let i = 0
+        let n = self.items.len()
+        while i < n {
+            if self.items[i].equals(x) {
+                return i
+            }
+            i = i + 1
+        }
+        return -1
+    }
+
+    fun contains(self, x: T) -> Bool {
+        return self.index_of(x) >= 0
+    }
+
+    // Add `x` if it is not already present.
+    fun add(self, x: T) {
+        if self.index_of(x) < 0 {
+            self.items.push(x)
+        }
+    }
+
+    // Remove `x` if present, returning whether it was. Order is not
+    // preserved: the last element fills the removed slot.
+    fun remove(self, x: T) -> Bool {
+        let idx = self.index_of(x)
+        if idx < 0 {
+            return false
+        }
+        let last = self.items.len() - 1
+        self.items[idx] = self.items[last]
+        self.items.pop()
+        return true
+    }
+}
+
+struct Map<K: Eq, V> {
+    keys: List<K>,
+    values: List<V>,
+}
+
+fun empty_map<K: Eq, V>() -> Map<K, V> {
+    let keys: List<K> = []
+    let values: List<V> = []
+    return Map { keys: keys, values: values }
+}
+
+impl<K: Eq, V> Map<K, V> {
+    fun len(self) -> Int {
+        return self.keys.len()
+    }
+
+    fun is_empty(self) -> Bool {
+        return self.keys.len() == 0
+    }
+
+    fun index_of(self, k: K) -> Int {
+        let i = 0
+        let n = self.keys.len()
+        while i < n {
+            if self.keys[i].equals(k) {
+                return i
+            }
+            i = i + 1
+        }
+        return -1
+    }
+
+    fun has(self, k: K) -> Bool {
+        return self.index_of(k) >= 0
+    }
+
+    fun get(self, k: K) -> Option<V> {
+        let idx = self.index_of(k)
+        if idx < 0 {
+            return None
+        }
+        return Some(self.values[idx])
+    }
+
+    // Insert `k` with `v`, or overwrite the value if `k` is present.
+    fun set(self, k: K, v: V) {
+        let idx = self.index_of(k)
+        if idx < 0 {
+            self.keys.push(k)
+            self.values.push(v)
+        } else {
+            self.values[idx] = v
+        }
+    }
+
+    // Remove `k` if present, returning whether it was. Order is not
+    // preserved.
+    fun remove(self, k: K) -> Bool {
+        let idx = self.index_of(k)
+        if idx < 0 {
+            return false
+        }
+        let last = self.keys.len() - 1
+        self.keys[idx] = self.keys[last]
+        self.values[idx] = self.values[last]
+        self.keys.pop()
+        self.values.pop()
+        return true
+    }
+}

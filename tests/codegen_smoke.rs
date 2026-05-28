@@ -210,6 +210,21 @@ fn builtin_method_program_compiles_and_runs() {
 }
 
 #[test]
+fn collections_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // std/collections Set<T: Eq> and Map<K: Eq, V>: dedup add, contains,
+    // remove on the set; insert, overwrite, get, has on the map. Prints
+    // 2, true, false, 2, 99, false.
+    compile_link_run_and_check(
+        "use_collections.rv",
+        "2\ntrue\nfalse\n2\n99\nfalse\n",
+        &runtime,
+    );
+}
+
+#[test]
 fn stdlib_string_method_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
