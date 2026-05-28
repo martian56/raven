@@ -545,9 +545,11 @@ fn lower_interpolate(cx: &mut LowerCx<'_>, parts: &[InterpolPart], ty: MirType) 
 /// Lower an embedded interpolation expression and convert it to a heap
 /// `String`. A `String`-typed expression is used as-is; the other
 /// interpolatable scalars (`Int`, `Bool`, `Float`, `Char`) are routed
-/// through their `to_string` runtime intrinsic. The type checker has
-/// already rejected any other type, so an unexpected type here is a
-/// lowering bug; we fall back to using the value directly.
+/// through their `to_string` runtime intrinsic. Any non-scalar part
+/// (a generic `T: ToString` or a user type with a `ToString` impl) was
+/// already rewritten into a `to_string()` method call during HIR
+/// lowering, so it arrives here typed `String` and takes the as-is path;
+/// the catch-all is unreachable in practice and uses the value directly.
 fn stringify_part(cx: &mut LowerCx<'_>, e: &HirExpr) -> MirOperand {
     let value = lower_expr(cx, e);
     let part_ty = mir_ty(&e.ty, cx.subst);

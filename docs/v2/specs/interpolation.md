@@ -91,7 +91,8 @@ An unterminated `${` or an empty `${}` is a parse error.
 ## Type rules
 
 An interpolated string has type `String`. Each embedded expression must
-have a type with a known text rendering. The supported set is:
+have a type with a text rendering. The built-in scalars render through a
+dedicated per-type conversion:
 
 | Embedded type | Conversion |
 |---------------|------------|
@@ -101,19 +102,29 @@ have a type with a known text rendering. The supported set is:
 | `Float`       | default `{}` rendering (so `7.0` renders `7`) |
 | `Char`        | the single Unicode scalar value |
 
-Any other embedded type is a type error with a hint that points the user
-at converting to a `String` first, for example a struct value cannot be
-interpolated until it has a string conversion. The type checker records
-each fragment expression's resolved type so the lowering pass can pick
-the right conversion.
+Any other embedded type renders through its `ToString` impl. This covers
+a user type that implements `ToString` (`${point}`) and a generic
+parameter bounded by `ToString` (`fun show<T: ToString>(x: T) = "${x}"`),
+where the bound supplies `to_string` and each monomorphization picks the
+concrete impl. A type that is neither a built-in scalar nor a `ToString`
+implementor is a type error with a hint to implement `ToString` or
+convert to a `String` first. The type checker records each fragment
+expression's resolved type so the lowering pass can pick the right
+conversion.
 
 ## HIR desugaring
 
 HIR lowering walks the AST fragments and produces a structured
 `Interpolate { parts: Vec<InterpolPart> }` node. A `Literal` fragment
 becomes `Text(String)`; an `Expr` fragment is lowered like any other
-expression into `Expr(HirExpr)`, carrying its static type. HIR keeps the
-structured form so the concat strategy stays a lowering concern.
+expression into `Expr(HirExpr)`, carrying its static type. A part whose
+static type is a built-in scalar (or `String`) is kept as-is for the
+per-type fast path. A part of any other type (a generic `T: ToString` or
+a user type with a `ToString` impl) is rewritten into a `to_string()`
+method call during HIR lowering, so it arrives at MIR already typed
+`String`; that call routes through the ordinary bound/method dispatch and
+monomorphizes per call site. HIR keeps the structured form so the concat
+strategy stays a lowering concern.
 
 MIR lowering performs the desugaring. It turns each part into a heap
 `String` operand and folds them left to right:
@@ -125,8 +136,10 @@ concat(concat("sum is ", int_to_string(a + b)), "!")
 ```
 
 A `String` part needs no conversion. An `Int`, `Bool`, `Float`, or
-`Char` part is routed through its per-type to-string intrinsic. Literal
-text parts are string constants the back-end promotes to heap Strings.
+`Char` part is routed through its per-type to-string intrinsic. A part of
+any other type is already a `to_string()` call result (a `String`) from
+HIR lowering, so it too needs no conversion here. Literal text parts are
+string constants the back-end promotes to heap Strings.
 An empty interpolation yields an empty `String`; a single part binds
 straight to a result temporary.
 
@@ -171,9 +184,9 @@ work.
 
 ## Out of scope
 
-* Interpolating struct, enum, list, map, or function values. These need
-  a user-facing string conversion (a future `Display`-style trait) and
-  raise a type error today.
+* Interpolating an enum, list, map, or function value that does not
+  implement `ToString`. A type with a `ToString` impl interpolates; one
+  without still raises a type error.
 * Format specifiers or alignment (`${x:04}` style). The `${...}` body is
   a plain expression with no formatting mini-language.
 * Reusing one parsed snippet across passes by source byte offset. The
