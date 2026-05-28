@@ -1028,6 +1028,41 @@ fn lower_intrinsic(
             builder.ins().call(local_ref, &[ptr_val, len_val]);
             Ok(None)
         }
+        intrinsics::IO_PRINT_STR | intrinsics::IO_PRINTLN_STR => {
+            if args.len() != 1 {
+                return Err(CodegenError::Unsupported(format!(
+                    "{} intrinsic expects 1 arg, got {}",
+                    mangled,
+                    args.len()
+                )));
+            }
+            let (ptr_val, len_val) = lower_string_arg(cx, builder, &args[0], slots)?;
+            let symbol = if mangled == intrinsics::IO_PRINTLN_STR {
+                intrinsics::RUNTIME_PRINTLN_STR
+            } else {
+                intrinsics::RUNTIME_PRINT_STR
+            };
+            let func_id = cx
+                .runtime_id(symbol)
+                .expect("runtime imports declared at module init");
+            let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
+            builder.ins().call(local_ref, &[ptr_val, len_val]);
+            Ok(None)
+        }
+        intrinsics::IO_READ_LINE => {
+            if !args.is_empty() {
+                return Err(CodegenError::Unsupported(format!(
+                    "__io_read_line intrinsic expects 0 args, got {}",
+                    args.len()
+                )));
+            }
+            let func_id = cx
+                .runtime_id(intrinsics::RUNTIME_READ_LINE)
+                .expect("runtime imports declared at module init");
+            let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
+            let inst = builder.ins().call(local_ref, &[]);
+            Ok(builder.inst_results(inst).first().copied())
+        }
         intrinsics::PRINT_INT => {
             if args.len() != 1 {
                 return Err(CodegenError::Unsupported(format!(

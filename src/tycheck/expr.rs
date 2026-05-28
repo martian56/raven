@@ -1067,6 +1067,39 @@ impl<'a, 'b> Checker<'a, 'b> {
                 }
                 Ok(Ty::Unit)
             }
+            // Internal stdlib I/O intrinsics. The bundled `std/io` source
+            // calls these to reach the runtime's byte-level output and
+            // input symbols; the codegen back end recognizes the mangled
+            // names and emits the matching runtime calls. They are not a
+            // user-facing surface (the leading `__` marks them internal).
+            "__io_print_str" | "__io_println_str" => {
+                if args.len() != 1 {
+                    return Err(RavenError::ty(
+                        TypeError::WrongArity {
+                            func: name.to_string(),
+                            expected: 1,
+                            actual: args.len(),
+                        },
+                        span.clone(),
+                    ));
+                }
+                let arg_ty = self.check_expr(&args[0])?;
+                self.unify(&Ty::Str, &arg_ty, &args[0].span)?;
+                Ok(Ty::Unit)
+            }
+            "__io_read_line" => {
+                if !args.is_empty() {
+                    return Err(RavenError::ty(
+                        TypeError::WrongArity {
+                            func: name.to_string(),
+                            expected: 0,
+                            actual: args.len(),
+                        },
+                        span.clone(),
+                    ));
+                }
+                Ok(Ty::Str)
+            }
             other => Err(RavenError::ty(
                 TypeError::Custom(format!("identifier `{}` has no type binding", other)),
                 span.clone(),

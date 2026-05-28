@@ -11,8 +11,26 @@ pub const PRINT: &str = "print";
 /// MIR mangled name produced by the front end for a `print_int(n)` call.
 pub const PRINT_INT: &str = "print_int";
 
+/// Internal stdlib I/O intrinsics. The bundled `std/io` source calls
+/// these to reach the runtime's byte-level I/O symbols; the leading
+/// `__io_` marks them internal (a user uses `std/io`'s exported
+/// functions instead). See `docs/v2/specs/stdlib.md`.
+///
+/// `__io_print_str(s: String)` writes the bytes of `s` with no newline.
+pub const IO_PRINT_STR: &str = "__io_print_str";
+/// `__io_println_str(s: String)` writes the bytes of `s` plus a newline.
+pub const IO_PRINTLN_STR: &str = "__io_println_str";
+/// `__io_read_line() -> String` reads one line from stdin (no newline).
+pub const IO_READ_LINE: &str = "__io_read_line";
+
 /// Runtime C symbol the `print` intrinsic dispatches to.
 pub const RUNTIME_PRINTLN_STR: &str = "raven_println_str";
+
+/// Runtime C symbol writing bytes to stdout with no trailing newline.
+pub const RUNTIME_PRINT_STR: &str = "raven_print_str";
+
+/// Runtime C symbol reading one line from stdin into a heap `String`.
+pub const RUNTIME_READ_LINE: &str = "raven_read_line";
 
 /// Runtime C symbol the `print_int` intrinsic dispatches to.
 pub const RUNTIME_PRINTLN_INT: &str = "raven_println_int";
@@ -78,5 +96,8 @@ pub const RUNTIME_CLOSURE_CAPTURES: &str = "raven_closure_captures";
 
 /// True when `mangled` is one of the recognized intrinsics.
 pub fn is_intrinsic(mangled: &str) -> bool {
-    matches!(mangled, PRINT | PRINT_INT)
+    matches!(
+        mangled,
+        PRINT | PRINT_INT | IO_PRINT_STR | IO_PRINTLN_STR | IO_READ_LINE
+    )
 }
