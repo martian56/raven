@@ -1,55 +1,26 @@
-// std/core: the language prelude.
-//
-// This module is auto-imported into every program (the compiler merges
-// it before resolution; no `import std/core` is written by the user). It
-// declares the small set of core traits that make the standard library
-// polymorphic, and implements them for the built-in scalar types and
-// String. See `docs/v2/specs/core-traits.md`.
-//
-// The built-in `ToString` impls render through string interpolation
-// (`"${self}"`), which the compiler lowers to the per-type runtime
-// conversions (`raven_int_to_string`, and so on). That keeps a single
-// source of truth for scalar rendering: the runtime owns the digits,
-// the trait owns the dispatch. `Eq`, `Ord`, and `Hash` are written in
-// pure Raven on top of the language operators and the byte-level string
-// intrinsics, so no new runtime symbol is required.
+// std/core: the prelude, auto-imported into every program. See
+// docs/v2/specs/core-traits.md.
 
-// Convert a value to its textual form. The basis of generic printing and
-// of string interpolation for user types.
 trait ToString {
     fun to_string(self) -> String
 }
 
-// Structural equality. `equals` is reflexive, symmetric, and transitive
-// for the built-in impls below.
 trait Eq {
     fun equals(self, other: Self) -> Bool
 }
 
-// Total ordering. `compare` returns a negative `Int` when `self` sorts
-// before `other`, zero when they are equal, and a positive `Int` when
-// `self` sorts after `other`.
 trait Ord {
+    // Negative when self < other, zero when equal, positive when self > other.
     fun compare(self, other: Self) -> Int
 }
 
-// A stable hash of a value, suitable for hash maps and sets. Types that
-// implement `Hash` should also implement `Eq` so that equal values hash
-// equally.
 trait Hash {
     fun hash(self) -> Int
 }
 
-// A source of values produced one at a time. `next` returns `Some(v)`
-// while values remain and `None` once the sequence is exhausted. The
-// element type is a generic parameter on the trait (Raven does not have
-// associated types yet); the lazy adapter pipeline that builds on this
-// trait is specified separately in `std/iter`.
 trait Iterator<T> {
     fun next(self) -> Option<T>
 }
-
-// ----- ToString for the built-in scalar types -----
 
 impl ToString for Int {
     fun to_string(self) -> String = "${self}"
@@ -189,15 +160,7 @@ impl Ord for String {
     }
 }
 
-// ----- Hash for the built-in types -----
-//
-// The scalar hashes are plain value mixes. The string hash is a
-// polynomial rolling hash over the byte sequence (multiplier 31), the
-// same family of non-crypto hash the runtime uses for its maps and sets.
-// Integer multiplication wraps in two's complement, which is the wanted
-// behavior for a hash mix. `Hash for Char` is deferred until a Char to
-// Int primitive lands (see `docs/v2/specs/core-traits.md`).
-
+// Hash for Char is deferred until a Char-to-Int primitive lands.
 impl Hash for Int {
     fun hash(self) -> Int = self
 }

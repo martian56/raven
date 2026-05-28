@@ -1,33 +1,9 @@
-// std/iter: lazy, single-pass iterator adapters.
+// std/iter: lazy, single-pass iterator adapters over the Iterator trait.
+// See docs/v2/specs/std-iter.md.
 //
-// This is bundled Raven source compiled into the program when a user
-// writes `import std/iter { ... }`. It builds on the `Iterator<T>` trait
-// from std/core (auto-imported), which declares a single method:
-//
-//     fun next(self) -> Option<T>
-//
-// An adapter is a small struct that stores its source iterator (and,
-// where applicable, a captured closure) and implements `Iterator`. Its
-// `next` pulls from the source on demand, so a chain such as
-//
-//     list.iter().map(f).filter(g)
-//
-// performs no work until the result is driven by a `for` loop or a
-// consumer such as `collect`. Each adapter is monomorphized at its
-// concrete source and element types, and the stored closures are called
-// through statically known function-pointer slots, so a finished
-// pipeline runs in a single pass with no per-stage allocation. See
-// `docs/v2/specs/std-iter.md` for the full design, the chaining
-// ergonomics, and the deliberate limitations.
-//
-// Generic parameter order note: a bound that mentions a sibling
-// parameter (for example `S: Iterator<T>`) must appear after that
-// parameter in the list, so every adapter lists its element types first
-// and its bounded source type last.
+// A bound that mentions a sibling parameter (`S: Iterator<T>`) must come
+// after it, so each adapter lists element types before its source type.
 
-// ----- ListIter: the bridge from a List into the iterator world -----
-
-// Iterates a `List<T>` by index. `iter()` on a `List<T>` returns this.
 struct ListIter<T> {
     items: List<T>,
     pos: Int,
