@@ -284,8 +284,32 @@ fn bind_import(
     id: ImportId,
     scope: &mut ScopeStack,
 ) -> Result<(), RavenError> {
+    // The module name a `std/<module>` import resolves to, used to find
+    // the bundled functions the resolver merged ahead of this pass. When
+    // present, a selector binds directly to the namespaced function so
+    // the rest of the pipeline sees `println` as an ordinary call to a
+    // known function rather than a deferred import member.
+    let std_module: Option<&str> = match &resolved.target {
+        ImportTarget::StdlibModule { segments } => segments.first().map(|s| s.as_str()),
+        _ => None,
+    };
+
     if !import.selectors.is_empty() {
         for name in &import.selectors {
+            // For a bundled stdlib module, bind the selector to the
+            // namespaced function the resolver merged into the module
+            // scope. Fall back to the deferred `ImportedItem` binding when
+            // the function is not present (an unknown selector, or a
+            // resolver run that did not merge the bundle, as in unit
+            // tests that call `resolve_imports` directly).
+            if let Some(module) = std_module {
+                let mangled = super::stdlib::mangle_stdlib_fn(module, name);
+                if let Some(entry) = scope.lookup(&mangled) {
+                    let binding = entry.binding.clone();
+                    scope.insert(name, binding, import.span.clone())?;
+                    continue;
+                }
+            }
             scope.insert(
                 name,
                 Binding::ImportedItem {

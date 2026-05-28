@@ -21,7 +21,7 @@ use raven::hir::lower_file;
 use raven::lexer::Lexer;
 use raven::mir::lower_program;
 use raven::parser::parse;
-use raven::resolve::{resolve_file, FsLoader};
+use raven::resolve::{expand_with_stdlib, resolve_file, FsLoader};
 use raven::tycheck::check_file;
 
 fn main() -> ExitCode {
@@ -58,6 +58,12 @@ fn run_build(rest: &[String]) -> Result<(), DriverError> {
         .tokenize()
         .map_err(|e| DriverError::Frontend(format!("lex: {}", e)))?;
     let file = parse(&tokens).map_err(|e| DriverError::Frontend(format!("parse: {}", e)))?;
+    // Merge any imported bundled stdlib modules (for example `std/io`)
+    // into the program before resolving. The combined file owns the
+    // stdlib functions plus the user's items, so the single-file pipeline
+    // compiles and links them all together. See `docs/v2/specs/stdlib.md`.
+    let file =
+        expand_with_stdlib(&file).map_err(|e| DriverError::Frontend(format!("stdlib: {}", e)))?;
     let mut loader = FsLoader;
     let resolved = resolve_file(&file, &mut loader)
         .map_err(|e| DriverError::Frontend(format!("resolve: {}", e)))?;

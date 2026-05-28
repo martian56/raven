@@ -35,7 +35,7 @@ pub use object::{
 };
 
 use std::alloc::{self, Layout};
-use std::io::{self, Write};
+use std::io::{self, BufRead, Write};
 use std::process;
 use std::slice;
 
@@ -150,6 +150,32 @@ pub extern "C" fn raven_println_str(ptr: *const u8, len: usize) {
         let _ = handle.write_all(bytes);
     }
     let _ = handle.write_all(b"\n");
+}
+
+/// Read one line from standard input and return it as a heap `String`.
+///
+/// The trailing line terminator is stripped: a final `\n` is dropped,
+/// and a preceding `\r` (Windows `\r\n`) is dropped with it. At end of
+/// input (no bytes read) an empty `String` is returned, so a caller can
+/// always treat the result as a valid `String` pointer.
+///
+/// Returns null only when the underlying `String` allocation fails.
+#[no_mangle]
+pub extern "C" fn raven_read_line() -> *mut object::String {
+    let mut line = std::string::String::new();
+    let stdin = io::stdin();
+    // A read error or clean EOF both leave `line` as the bytes gathered
+    // so far (empty at a clean EOF); either way we hand back a String.
+    let _ = stdin.lock().read_line(&mut line);
+    // Strip the trailing newline and an optional preceding carriage
+    // return so callers see the line content without the terminator.
+    if line.ends_with('\n') {
+        line.pop();
+        if line.ends_with('\r') {
+            line.pop();
+        }
+    }
+    object::raven_string_from_bytes(line.as_ptr(), line.len())
 }
 
 /// Write a signed 64-bit integer to standard output in base ten,

@@ -279,6 +279,14 @@ impl ModuleCx {
         let mut sig = self.make_sig(&[ptr, ptr], &[]);
         self.declare_runtime(intrinsics::RUNTIME_PRINTLN_STR, &sig)?;
 
+        // raven_print_str(ptr, len)
+        sig = self.make_sig(&[ptr, ptr], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_PRINT_STR, &sig)?;
+
+        // raven_read_line() -> String ptr
+        sig = self.make_sig(&[], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_READ_LINE, &sig)?;
+
         // raven_println_int(i64)
         sig = self.make_sig(&[i64t], &[]);
         self.declare_runtime(intrinsics::RUNTIME_PRINTLN_INT, &sig)?;
