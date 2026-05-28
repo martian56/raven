@@ -75,6 +75,7 @@ pub const STDLIB_MODULES: &[&str] = &[
     "io",
     "iter",
     "collections",
+    "cmp",
     "string",
     "math",
     "fs",

@@ -1,0 +1,89 @@
+// std/cmp: ordering and sorting over the prelude `Ord` trait.
+
+fun min<T: Ord>(a: T, b: T) -> T {
+    if a.compare(b) <= 0 {
+        return a
+    }
+    return b
+}
+
+fun max<T: Ord>(a: T, b: T) -> T {
+    if a.compare(b) >= 0 {
+        return a
+    }
+    return b
+}
+
+fun clamp<T: Ord>(x: T, lo: T, hi: T) -> T {
+    if x.compare(lo) < 0 {
+        return lo
+    }
+    if x.compare(hi) > 0 {
+        return hi
+    }
+    return x
+}
+
+// Selection sort by an explicit comparator, building a new list. O(n^2).
+fun sorted_by<T>(xs: List<T>, cmp: fun(T, T) -> Int) -> List<T> {
+    let out: List<T> = []
+    let i = 0
+    let n = xs.len()
+    while i < n {
+        out.push(xs[i])
+        i = i + 1
+    }
+    let a = 0
+    while a < n {
+        let lo = a
+        let b = a + 1
+        while b < n {
+            if cmp(out[b], out[lo]) < 0 {
+                lo = b
+            }
+            b = b + 1
+        }
+        let tmp = out[a]
+        out[a] = out[lo]
+        out[lo] = tmp
+        a = a + 1
+    }
+    return out
+}
+
+fun sort<T: Ord>(xs: List<T>) -> List<T> {
+    let by = fun(a: T, b: T) -> Int = a.compare(b)
+    return sorted_by(xs, by)
+}
+
+fun max_of<T: Ord>(xs: List<T>) -> Option<T> {
+    let n = xs.len()
+    if n == 0 {
+        return None
+    }
+    let best = xs[0]
+    let i = 1
+    while i < n {
+        if xs[i].compare(best) > 0 {
+            best = xs[i]
+        }
+        i = i + 1
+    }
+    return Some(best)
+}
+
+fun min_of<T: Ord>(xs: List<T>) -> Option<T> {
+    let n = xs.len()
+    if n == 0 {
+        return None
+    }
+    let best = xs[0]
+    let i = 1
+    while i < n {
+        if xs[i].compare(best) < 0 {
+            best = xs[i]
+        }
+        i = i + 1
+    }
+    return Some(best)
+}
