@@ -83,20 +83,34 @@ pub fn bundled_source(module_path: &str) -> Option<&'static str> {
 /// the import pass to report as `UnresolvedImport`; this function only
 /// merges the modules it can load.
 pub fn expand_with_stdlib(user: &File) -> Result<File, RavenError> {
+    // Modules to merge, collected to a fixed point. A module enters the
+    // set from the user file's `std/...` imports or from a bundled
+    // module's own `import std/...` line. The set deduplicates, so each
+    // module merges exactly once and an import cycle (A imports B imports
+    // A) just resolves to both being present once with no infinite loop.
     let mut wanted: BTreeSet<String> = BTreeSet::new();
     // The prelude (`std/core`) is implicitly imported into every program,
     // so its traits and built-in impls are always in scope without an
-    // `import std/core` line. It is merged first; a `BTreeSet` keeps the
-    // module order stable and deduplicates against any later explicit
-    // import of the same module.
+    // `import std/core` line. It seeds the set; a `BTreeSet` keeps the
+    // module order stable and deduplicates against any later import of the
+    // same module (so the prelude never merges twice).
     wanted.insert(PRELUDE_MODULE.to_string());
-    for decl in &user.items {
-        if let DeclKind::Import(import) = &decl.kind {
-            if let ImportSource::Std(segments) = &import.source {
-                if let Some(head) = segments.first() {
-                    if bundled_source(head).is_some() {
-                        wanted.insert(head.clone());
-                    }
+    collect_std_module_imports(user, &mut wanted);
+
+    // Follow each bundled module's own `std/...` imports to a fixed point.
+    // A worklist over the not-yet-scanned modules terminates because every
+    // discovered module is added to `wanted` (a set) at most once and only
+    // unscanned modules are pushed.
+    let mut to_scan: Vec<String> = wanted.iter().cloned().collect();
+    while let Some(module) = to_scan.pop() {
+        let module_file = parse_bundled_module(&module)?;
+        let before = wanted.len();
+        collect_std_module_imports(&module_file, &mut wanted);
+        if wanted.len() != before {
+            // New modules appeared; queue only the freshly added ones.
+            for m in &wanted {
+                if !to_scan.contains(m) {
+                    to_scan.push(m.clone());
                 }
             }
         }
@@ -104,13 +118,7 @@ pub fn expand_with_stdlib(user: &File) -> Result<File, RavenError> {
 
     let mut combined_items = Vec::new();
     for module in &wanted {
-        let source = bundled_source(module).expect("module presence checked above");
-        let virtual_path = PathBuf::from(format!("<bundled>/std/{module}.rv"));
-        let tokens = Lexer::new(source.to_string(), virtual_path.clone())
-            .tokenize()
-            .map_err(|e| bundled_error(module, format!("lex: {e}")))?;
-        let module_file =
-            parse(&tokens).map_err(|e| bundled_error(module, format!("parse: {e}")))?;
+        let module_file = parse_bundled_module(module)?;
 
         // Collect the module's own top level function names so a call to
         // a sibling function (for example `trim` calling `is_space_byte`)
@@ -127,6 +135,13 @@ pub fn expand_with_stdlib(user: &File) -> Result<File, RavenError> {
             .collect();
 
         for mut decl in module_file.items {
+            // A bundled module's own `import std/...` declarations are
+            // consumed by this expander (the imported module is merged
+            // separately); they must not leak into the combined file as
+            // import items, which is why they are dropped here.
+            if matches!(&decl.kind, DeclKind::Import(_)) {
+                continue;
+            }
             match &mut decl.kind {
                 DeclKind::Function(f) => {
                     rewrite_fn_body_calls(&mut f.body, module, &siblings);
@@ -162,6 +177,33 @@ pub fn expand_with_stdlib(user: &File) -> Result<File, RavenError> {
         items: combined_items,
         span: user.span.clone(),
     })
+}
+
+/// Add every bundled `std/<module>` imported by `file` to `wanted`. Only
+/// imports that name a known bundled module are added; an unknown module
+/// is left for the import pass to report.
+fn collect_std_module_imports(file: &File, wanted: &mut BTreeSet<String>) {
+    for decl in &file.items {
+        if let DeclKind::Import(import) = &decl.kind {
+            if let ImportSource::Std(segments) = &import.source {
+                if let Some(head) = segments.first() {
+                    if bundled_source(head).is_some() {
+                        wanted.insert(head.clone());
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Lex and parse one bundled module's embedded source.
+fn parse_bundled_module(module: &str) -> Result<File, RavenError> {
+    let source = bundled_source(module).expect("module presence checked by caller");
+    let virtual_path = PathBuf::from(format!("<bundled>/std/{module}.rv"));
+    let tokens = Lexer::new(source.to_string(), virtual_path)
+        .tokenize()
+        .map_err(|e| bundled_error(module, format!("lex: {e}")))?;
+    parse(&tokens).map_err(|e| bundled_error(module, format!("parse: {e}")))
 }
 
 /// Rewrite every reference to a sibling stdlib function inside a bundled
@@ -506,6 +548,50 @@ mod tests {
             .items
             .iter()
             .any(|d| matches!(&d.kind, DeclKind::Trait(t) if t.name == "ToString")));
+    }
+
+    #[test]
+    fn transitive_std_import_merges_dependency_once() {
+        // `std/path` imports `std/string`. A user importing only `std/path`
+        // must still get `std/string`'s items merged (so path's `String`
+        // method calls resolve), and exactly once.
+        let user = parse_src("import std/path { basename }\nfun main() {}\n");
+        let combined = expand_with_stdlib(&user).expect("expand");
+
+        // `std/string` declares the free helper `is_space_byte`; it must be
+        // present under its namespaced name exactly once.
+        let string_helper = mangle_stdlib_fn("string", "is_space_byte");
+        let count = combined
+            .items
+            .iter()
+            .filter(|d| matches!(&d.kind, DeclKind::Function(f) if f.name == string_helper))
+            .count();
+        assert_eq!(count, 1, "std/string must merge exactly once");
+
+        // `std/string`'s `impl String` methods (resolved by type) must be
+        // present so path's `p.length()` etc. resolve.
+        let has_length = combined.items.iter().any(|d| {
+            matches!(
+                &d.kind,
+                DeclKind::Impl(imp) if imp.items.iter().any(|m| m.name == "length")
+            )
+        });
+        assert!(has_length, "std/string impl methods must be merged");
+
+        // The bundled module's own `import std/string` line must not leak
+        // into the combined file as an import item. The only std import
+        // present should be the user's own `import std/path`.
+        let leaked_string_import = combined.items.iter().any(|d| match &d.kind {
+            DeclKind::Import(i) => matches!(
+                &i.source,
+                ImportSource::Std(s) if s.first().map(|x| x.as_str()) == Some("string")
+            ),
+            _ => false,
+        });
+        assert!(
+            !leaked_string_import,
+            "a bundled module's std import must be stripped from the merged file"
+        );
     }
 
     #[test]

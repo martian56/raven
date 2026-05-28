@@ -55,6 +55,33 @@ When the program imports a bundled module, the compiler:
 A module is loaded once. Duplicate imports of the same `std/<module>` (in
 the same program, or selecting different names) merge a single copy.
 
+## Transitive bundled imports
+
+A bundled module may itself `import std/<other>` to build on another
+bundled module (for example `std/path` builds on `std/string`'s `String`
+methods). Stdlib expansion follows these imports transitively:
+
+1. The set of modules to merge is seeded from the prelude and the user
+   file's `std/...` imports.
+2. Each bundled module's source is scanned for its own `import std/...`
+   lines, and any bundled module named there is added to the set. The
+   scan repeats to a fixed point.
+3. The set deduplicates by module name, so every module (including the
+   prelude) merges exactly once even when reached through several import
+   paths. An import cycle (A imports B, B imports A) simply resolves to
+   both being present once: the fixed-point loop terminates because a
+   module is added to the set at most once and only newly added modules
+   are queued for scanning.
+
+A bundled module's own `import std/...` declarations are consumed by the
+expander, not emitted: they are stripped from the combined file so the
+resolver never sees a stdlib module's internal import as an import item.
+A method that one bundled module calls on a built-in type (for example
+`p.length()` in `std/path`) resolves by the receiver's type once the
+defining module's `impl` is merged, so no selector is needed. Cross-module
+free-function calls would still need the namespaced name; the present
+modules use type-dispatched methods across module boundaries.
+
 ## Multi module compilation and namespacing
 
 The driver builds one combined `ast::File` whose `items` are the bundled
