@@ -1,0 +1,12 @@
+// A capturing closure: make_adder returns a closure that captures the
+// local `n` by value. Invoking the returned closure value adds the
+// captured amount to its argument. Prints 15 then 42.
+fun make_adder(n: Int) -> fun(Int) -> Int {
+    return fun(x: Int) -> Int = x + n
+}
+
+fun main() {
+    let add10 = make_adder(10)
+    print_int(add10(5))
+    print_int(add10(32))
+}
