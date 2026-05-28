@@ -850,7 +850,7 @@ fn lower_method_call(
 /// which matches the slot offset the struct constructor writes. Falls
 /// back to `0` only when the receiver is not a known struct (which a
 /// checked program never produces).
-fn field_index_from_ty(ty: &crate::tycheck::Ty, cx: &LowerCx<'_>, name: &str) -> usize {
+pub(super) fn field_index_from_ty(ty: &crate::tycheck::Ty, cx: &LowerCx<'_>, name: &str) -> usize {
     use crate::tycheck::Ty;
     let struct_name = match ty {
         Ty::Struct { name, .. } => Some(name.as_str()),

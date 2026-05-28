@@ -112,6 +112,22 @@ fn pretty_stmt(buf: &mut String, s: &MirStatement, depth: usize) {
             pretty_rvalue(buf, rvalue);
             buf.push_str(")\n");
         }
+        MirStatement::StoreField { base, index, value } => {
+            buf.push_str("(store-field ");
+            pretty_operand(buf, base);
+            write!(buf, " #{} ", index).unwrap();
+            pretty_operand(buf, value);
+            buf.push_str(")\n");
+        }
+        MirStatement::StoreIndex { base, index, value } => {
+            buf.push_str("(store-index ");
+            pretty_operand(buf, base);
+            buf.push(' ');
+            pretty_operand(buf, index);
+            buf.push(' ');
+            pretty_operand(buf, value);
+            buf.push_str(")\n");
+        }
         MirStatement::StorageLive(l) => writeln!(buf, "(storage-live _{})", l.0).unwrap(),
         MirStatement::StorageDead(l) => writeln!(buf, "(storage-dead _{})", l.0).unwrap(),
         MirStatement::Nop => writeln!(buf, "(nop)").unwrap(),

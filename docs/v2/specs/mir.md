@@ -57,6 +57,8 @@ a `u32` index into `MirFunction::blocks`. Both are dense and stable.
 ```text
 MirStatement:
     Assign  { dst: MirLocal, rvalue: MirRvalue }
+    StoreField { base: MirOperand, index: usize, value: MirOperand }
+    StoreIndex { base: MirOperand, index: MirOperand, value: MirOperand }
     StorageLive(MirLocal)
     StorageDead(MirLocal)
     Nop

@@ -86,9 +86,41 @@ slot, and from that point treats parameters and locals uniformly.
 
 Per block: every `MirStatement::Assign` translates into a recipe that
 reads its operand locals into Cranelift values, performs the operation,
-and writes the result back to the destination slot. `StorageLive` and
+and writes the result back to the destination slot. `StoreField` and
+`StoreIndex` write a value through a heap object pointer rather than into
+a local slot; see the assignment section below. `StorageLive` and
 `StorageDead` are no ops in the MVP (the future allocator may grow real
 lifetimes); `Nop` is also a no op.
+
+## Assignment targets and store statements
+
+An assignment target (an lvalue) is a place rooted in a name. The parser
+accepts a plain identifier, `self`, and any chain of field accesses
+(`a.b.c`) and indexes (`xs[i]`, `obj.items[k]`) built on top of those.
+Genuine value expressions (literals, calls, arithmetic) are rejected with
+an "invalid assignment target" parse error. The grammar is checked
+recursively: the receiver of a field or index in a target position is
+itself a target.
+
+HIR lowering maps each target to one of three shapes. A plain identifier
+(or bare `self`, which binds by the fixed name `self`) becomes a local
+assignment, lowered to `MirStatement::Assign` writing the local's slot. A
+field target lowers to `MirStatement::StoreField { base, index, value }`,
+and an index target to `MirStatement::StoreIndex { base, index, value }`.
+A `self.field = ...` write is just a field target whose base is the
+`self` receiver. Compound assignment (`+=` and friends) desugars to a
+read of the same place, a binary op, and a plain store, evaluating a
+field or index base into a fresh local so it is not evaluated twice.
+
+A store does not introduce a new GC root. The store's `base` is an
+already-rooted GC pointer (a local in the function's root frame, or the
+`self` parameter), and the stored value becomes reachable through that
+live container the moment it is written. Overwriting a slot simply drops
+the container's last reference to the old value; the collector reclaims
+it on a later cycle. The new value is held by the live container, so it
+survives the next collection. This is the same reasoning the struct
+constructor and `list.push` already rely on. See the GC root frame
+section below.
 
 ## Operand and rvalue lowering
 
@@ -226,6 +258,18 @@ aligned. See `docs/v2/specs/object-layout.md`.
 loaded value: a `Float` field's bits are reinterpreted with `bitcast`,
 a narrow scalar is reduced. The MIR lowering resolves `index` to the
 field's position in declaration order, so creation and access agree.
+
+`StoreField { base, index, value }` is the write mirror of
+`FieldAccess`. It evaluates `base` to the object pointer, widens `value`
+to the 8-byte slot width (a scalar is zero extended, a `Float`'s bits are
+reinterpreted), calls `raven_struct_fields` for the field base, and
+`store`s the value at `8 * index` from that base (the same slot a
+`FieldAccess` reads). The MIR lowering resolves `index` from the
+receiver's struct declaration order, so a read and a write of the same
+field address the same slot. Because a struct is a heap object reached
+through a pointer, a `self.field = ...` write inside a method mutates the
+object the caller still holds, so the change is observed after the call
+returns.
 
 ### Enum construction and dispatch
 
@@ -386,6 +430,17 @@ The result is the list pointer.
 3. Load the eight-byte slot at `base + i * 8`. The loaded value is
    pointer-width and is narrowed to the destination local's machine type
    on store (a `Float` or narrow scalar element is reinterpreted there).
+
+#### `StoreIndex`
+
+`xs[i] = v` (MIR `StoreIndex { base, index, value }`) is the write
+mirror of `IndexAccess`. It evaluates `base` to the list pointer and
+widens `value` to the eight-byte slot width, loads the length and buffer
+base, bounds-checks `i` with the same unsigned `i < len` compare (calling
+`raven_panic("list index out of bounds")` and trapping on the
+out-of-bounds path), then `store`s the value at `base + i * 8`. `List` is
+a heap object, so the write mutates the shared list through the pointer
+and every alias observes the overwritten element.
 
 #### List methods
 

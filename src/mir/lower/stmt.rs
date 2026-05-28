@@ -27,44 +27,24 @@ pub fn lower_stmt(cx: &mut LowerCx<'_>, stmt: &HirStmt) {
                 }
             }
             HirAssignTarget::Field { recv, name } => {
-                // The store itself is recorded as a synthetic call so
-                // codegen has a single hook. A proper place-expression
-                // lowering belongs to the codegen issue.
+                // `recv.name = value` lowers to a real field store: the
+                // back end writes `value` into the struct's field slot at
+                // `index`, the same slot a `FieldAccess` reads. The slot
+                // index comes from the receiver's struct declaration order,
+                // identical to the field-read lowering.
+                let index = super::expr::field_index_from_ty(&recv.ty, cx, name);
                 let base = super::expr::lower_expr(cx, recv);
                 let v = super::expr::lower_expr(cx, value);
-                let dst = cx
-                    .builder
-                    .fresh_temp("store_field", super::super::ty::MirType::Unit);
-                cx.builder.assign(
-                    cx.current,
-                    dst,
-                    MirRvalue::Call {
-                        callee: super::super::ir::MirFnRef {
-                            mangled: format!("__store_field${}", name),
-                            origin: None,
-                        },
-                        args: vec![base, v],
-                    },
-                );
+                cx.builder.store_field(cx.current, base, index, v);
             }
             HirAssignTarget::Index { recv, index } => {
+                // `recv[index] = value` lowers to a real element store:
+                // the back end bounds-checks `index` and writes `value`
+                // into the list slot, mirroring the index-read lowering.
                 let base = super::expr::lower_expr(cx, recv);
                 let idx = super::expr::lower_expr(cx, index);
                 let v = super::expr::lower_expr(cx, value);
-                let dst = cx
-                    .builder
-                    .fresh_temp("store_index", super::super::ty::MirType::Unit);
-                cx.builder.assign(
-                    cx.current,
-                    dst,
-                    MirRvalue::Call {
-                        callee: super::super::ir::MirFnRef {
-                            mangled: "__store_index".into(),
-                            origin: None,
-                        },
-                        args: vec![base, idx, v],
-                    },
-                );
+                cx.builder.store_index(cx.current, base, idx, v);
             }
         },
         HirStmtKind::Defer(e) => {

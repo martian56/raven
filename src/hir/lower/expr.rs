@@ -618,10 +618,16 @@ pub(crate) fn lower_compound_assign(
     let target_ty = cx.ty_at(&target.span);
     let value_lowered = lower_expr(value, &target_ty, cx)?;
     match &target.kind {
-        ExprKind::Ident { name, .. } => {
-            // x op= v  ->  x = x op v
+        // A plain identifier, or `self` as a bare target. Both bind by a
+        // name string (`self` uses the fixed `self` key). `x op= v`
+        // becomes `x = x op v` with the load reading the same name.
+        ExprKind::Ident { .. } | ExprKind::SelfLower => {
+            let name = match &target.kind {
+                ExprKind::Ident { name, .. } => name.clone(),
+                _ => "self".to_string(),
+            };
             let load = make_expr(
-                HirExprKind::Ident(name.clone()),
+                target_kind_for_name(&target.kind, &name),
                 target_ty.clone(),
                 target.span.clone(),
             );
@@ -636,7 +642,7 @@ pub(crate) fn lower_compound_assign(
             );
             Ok(vec![assign_stmt(
                 HirAssignTarget::Ident {
-                    name: name.clone(),
+                    name,
                     span: target.span.clone(),
                 },
                 combined,
@@ -736,6 +742,16 @@ pub(crate) fn lower_compound_assign(
     }
 }
 
+/// Build the HIR load kind for a name-rooted compound-assignment target.
+/// A `self` receiver loads through `SelfValue` so MIR resolves the fixed
+/// `self` local; any other name loads as a plain identifier reference.
+fn target_kind_for_name(kind: &ExprKind, name: &str) -> HirExprKind {
+    match kind {
+        ExprKind::SelfLower => HirExprKind::SelfValue,
+        _ => HirExprKind::Ident(name.to_string()),
+    }
+}
+
 /// Convenience used by `lower_stmt::lower_assign_plain` to build a HIR
 /// statement.
 pub(crate) fn build_plain_assign(target: HirAssignTarget, value: HirExpr, span: Span) -> HirStmt {
@@ -751,6 +767,13 @@ pub(crate) fn lower_assign_target(
     match &expr.kind {
         ExprKind::Ident { name, .. } => Ok(HirAssignTarget::Ident {
             name: name.clone(),
+            span: expr.span.clone(),
+        }),
+        // `self` as a bare target is the method receiver local; it binds
+        // by the fixed name `self`, the same key MIR lowering uses to
+        // look it up. Reassigning the receiver itself is rare but valid.
+        ExprKind::SelfLower => Ok(HirAssignTarget::Ident {
+            name: "self".to_string(),
             span: expr.span.clone(),
         }),
         ExprKind::Field { receiver, name } => {

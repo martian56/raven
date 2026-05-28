@@ -226,7 +226,31 @@ pub enum MirRvalue {
 /// One statement inside a basic block.
 #[derive(Debug, Clone)]
 pub enum MirStatement {
-    Assign { dst: MirLocal, rvalue: MirRvalue },
+    Assign {
+        dst: MirLocal,
+        rvalue: MirRvalue,
+    },
+    /// Store `value` into field slot `index` of the struct or enum object
+    /// `base` points to. The back end loads the object's field base
+    /// pointer (the same base `FieldAccess` reads from) and writes the
+    /// value at the slot's byte offset. `base` is an already-rooted GC
+    /// pointer, so the written value becomes reachable through it; no new
+    /// root is needed.
+    StoreField {
+        base: MirOperand,
+        /// Field slot index in declaration order.
+        index: usize,
+        value: MirOperand,
+    },
+    /// Store `value` into element slot `index` of the `List` object
+    /// `base` points to. The back end bounds-checks `index` against the
+    /// list length (panicking on an out-of-range index, matching the read
+    /// path) and writes the value at `base + index * element_size`.
+    StoreIndex {
+        base: MirOperand,
+        index: MirOperand,
+        value: MirOperand,
+    },
     StorageLive(MirLocal),
     StorageDead(MirLocal),
     Nop,
