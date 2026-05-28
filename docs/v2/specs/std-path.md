@@ -2,8 +2,10 @@
 
 Path string manipulation on the POSIX `/` separator. Every function is
 pure string work: no filesystem access, no allocation beyond the returned
-`String`. The functions are built in Raven on the `__str_*` byte
-intrinsics, so the module has no dependency on `std/string`.
+`String`. The functions are built in Raven on `std/string`'s `String`
+methods (`length`, `substring`, `concat`, `char_at`, `starts_with`,
+`ends_with`); the module `import std/string` and lets stdlib expansion
+merge it transitively.
 
 ## Model
 

@@ -229,8 +229,8 @@ fn path_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
     };
-    // std/path POSIX `/` manipulation in pure Raven over the `__str_*` byte
-    // intrinsics: join collapses a trailing separator, basename/dirname split
+    // std/path POSIX `/` manipulation built on std/string's `String` methods
+    // (a bundled module importing another): join collapses a trailing separator, basename/dirname split
     // on the last `/` (dirname of a bare name is "."), extension/stem split on
     // the last `.` of the basename (a name with no dot has an empty
     // extension), and is_absolute tests a leading `/`. Prints a/b/c.txt twice,

@@ -1,12 +1,13 @@
-// std/path: POSIX-style path manipulation on `/` separators. Pure string
-// work over the `__str_*` byte intrinsics; Windows `\` handling is out of
-// scope. Separator `/` is byte 47, `.` is byte 46.
+// std/path: POSIX-style path manipulation on `/` separators. Built on the
+// `String` methods from std/string. Windows `\` handling is out of scope.
+
+import std/string
 
 // Byte index of the last `/`, or -1 when none.
 fun last_slash(p: String) -> Int {
-    let i = __str_len(p) - 1
+    let i = p.length() - 1
     while i >= 0 {
-        if __str_byte_at(p, i) == 47 {
+        if p.char_at(i).starts_with("/") {
             return i
         }
         i = i - 1
@@ -15,26 +16,24 @@ fun last_slash(p: String) -> Int {
 }
 
 fun join(a: String, b: String) -> String {
-    let na = __str_len(a)
-    let nb = __str_len(b)
-    if na == 0 {
+    if a.length() == 0 {
         return b
     }
-    if nb == 0 {
+    if b.length() == 0 {
         return a
     }
-    let a_slash = __str_byte_at(a, na - 1) == 47
-    let b_slash = __str_byte_at(b, 0) == 47
+    let a_slash = a.ends_with("/")
+    let b_slash = b.starts_with("/")
     if a_slash {
         if b_slash {
-            return __str_concat(a, __str_substring(b, 1, nb))
+            return a.concat(b.substring(1, b.length()))
         }
-        return __str_concat(a, b)
+        return a.concat(b)
     }
     if b_slash {
-        return __str_concat(a, b)
+        return a.concat(b)
     }
-    return __str_concat(__str_concat(a, "/"), b)
+    return a.concat("/").concat(b)
 }
 
 fun basename(p: String) -> String {
@@ -42,7 +41,7 @@ fun basename(p: String) -> String {
     if i < 0 {
         return p
     }
-    return __str_substring(p, i + 1, __str_len(p))
+    return p.substring(i + 1, p.length())
 }
 
 fun dirname(p: String) -> String {
@@ -53,18 +52,18 @@ fun dirname(p: String) -> String {
     if i == 0 {
         return "/"
     }
-    return __str_substring(p, 0, i)
+    return p.substring(0, i)
 }
 
 // Substring after the last `.` in the basename, or "" when none. A leading
 // dot (a dotfile such as ".gitignore") is not an extension.
 fun extension(p: String) -> String {
     let base = basename(p)
-    let n = __str_len(base)
+    let n = base.length()
     let i = n - 1
     while i > 0 {
-        if __str_byte_at(base, i) == 46 {
-            return __str_substring(base, i + 1, n)
+        if base.char_at(i).starts_with(".") {
+            return base.substring(i + 1, n)
         }
         i = i - 1
     }
@@ -73,11 +72,11 @@ fun extension(p: String) -> String {
 
 fun stem(p: String) -> String {
     let base = basename(p)
-    let n = __str_len(base)
+    let n = base.length()
     let i = n - 1
     while i > 0 {
-        if __str_byte_at(base, i) == 46 {
-            return __str_substring(base, 0, i)
+        if base.char_at(i).starts_with(".") {
+            return base.substring(0, i)
         }
         i = i - 1
     }
@@ -85,8 +84,5 @@ fun stem(p: String) -> String {
 }
 
 fun is_absolute(p: String) -> Bool {
-    if __str_len(p) == 0 {
-        return false
-    }
-    return __str_byte_at(p, 0) == 47
+    return p.starts_with("/")
 }
