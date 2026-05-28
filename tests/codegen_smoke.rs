@@ -225,6 +225,26 @@ fn collections_program_compiles_and_runs() {
 }
 
 #[test]
+fn error_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // std/error end to end: the `Error` value type, its `ToString` impl
+    // (so `print(e)` renders the message), `with_context` chaining, and the
+    // generic free helpers over the built-in `Result<T, E>` (`is_ok`,
+    // `is_err`, `unwrap_or`, `ok`) matched through `match r { Ok(v) ->
+    // ..., Err(e) -> ... }`. divide(10, 2) prints 5; is_ok and is_err on
+    // an Err print false and true; unwrap_or of an Err returns the default
+    // -1; the Err's message is "divide by zero"; with_context prefixes
+    // "save config: disk full"; and ok(divide(8, 4)) is Some(2).
+    compile_link_run_and_check(
+        "use_error.rv",
+        "5\nfalse\ntrue\n-1\ndivide by zero\nsave config: disk full\n2\n",
+        &runtime,
+    );
+}
+
+#[test]
 fn string_eq_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
