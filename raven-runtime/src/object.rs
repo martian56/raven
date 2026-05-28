@@ -11,8 +11,10 @@
 //! See `docs/v2/specs/runtime.md` for the contract and
 //! `docs/v2/specs/object-layout.md` for per-kind payload layouts.
 
+pub mod list;
 pub mod string;
 
+pub use list::{raven_list_elements, raven_list_len, raven_list_new, raven_list_push, List};
 pub use string::{
     raven_string_bytes, raven_string_concat, raven_string_len, raven_string_new, String,
 };
