@@ -207,6 +207,20 @@ conversions `__raven_int_to_string`, `__raven_bool_to_string`,
 matching `raven_*_to_string` symbols. Each returns a heap `String`
 pointer that flows like any other string value.
 
+### String equality
+
+`==` and `!=` on `String` compare contents, not object identity. A plain
+`BinaryOp(Eq/Ne)` would emit an `icmp` on the two `String` pointers,
+which would report two distinct heap objects as unequal even when their
+bytes match. To avoid that, MIR lowering special-cases `==`/`!=` whose
+left operand is `String`: it emits a `Call` to the `__raven_str_eq`
+intrinsic, which the back-end routes to `raven_string_eq(a, b) -> i8`
+(the runtime compares lengths, then bytes). `==` uses the `i8` result
+directly; `!=` lowers an extra `UnaryOp(Not)` over it. `Int`, `Float`,
+`Bool`, and `Char` operands are unaffected and keep the `icmp`/`fcmp`
+value compare above. Comparison of user structs and enums is not
+special-cased and remains an identity (pointer) compare.
+
 ### `print_int` intrinsic
 
 `print_int(n: Int)` is the integer companion of `print`. It is a built

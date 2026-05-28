@@ -1,0 +1,11 @@
+import std/string
+fun main() {
+    let c = "f".concat("oo")
+    print("foo" == c)        // true
+    print("foo" != c)        // false
+    print("foo" == "bar")    // false
+    print("abc" != "abd")    // true
+    print(1 == 1)            // true  (Int unaffected)
+    print(2 == 3)            // false
+    print(true == true)      // true
+}

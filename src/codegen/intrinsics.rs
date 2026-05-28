@@ -84,12 +84,19 @@ pub const RUNTIME_BOOL_TO_STRING: &str = "raven_bool_to_string";
 pub const RUNTIME_FLOAT_TO_STRING: &str = "raven_float_to_string";
 pub const RUNTIME_CHAR_TO_STRING: &str = "raven_char_to_string";
 
-/// Map a MIR interpolation intrinsic mangled name to the runtime C
+/// Runtime C symbol comparing two `String` values by content. Backs the
+/// `==`/`!=` operators on `String`.
+pub const RUNTIME_STRING_EQ: &str = "raven_string_eq";
+
+/// Map a MIR string-runtime intrinsic mangled name to the runtime C
 /// symbol it lowers to, or `None` when `mangled` is not one of them.
-pub fn interpolation_runtime_symbol(mangled: &str) -> Option<&'static str> {
+/// These intrinsics share one call shape: each operand lowers to an
+/// ordinary value and the call returns a single result.
+pub fn string_runtime_symbol(mangled: &str) -> Option<&'static str> {
     use crate::mir::intrinsics as mir_intr;
     Some(match mangled {
         mir_intr::STR_CONCAT => RUNTIME_STRING_CONCAT,
+        mir_intr::STR_EQ => RUNTIME_STRING_EQ,
         mir_intr::INT_TO_STRING => RUNTIME_INT_TO_STRING,
         mir_intr::BOOL_TO_STRING => RUNTIME_BOOL_TO_STRING,
         mir_intr::FLOAT_TO_STRING => RUNTIME_FLOAT_TO_STRING,

@@ -178,6 +178,41 @@ pub extern "C" fn raven_string_byte_at(s: *const String, i: usize) -> i32 {
     byte as i32
 }
 
+/// Compare two strings by content. Returns `1` when both hold the same
+/// bytes (and same length), `0` otherwise. Either pointer may be null,
+/// in which case it is treated as the empty string, so two nulls are
+/// equal and a null equals an empty string.
+///
+/// Backs the `==`/`!=` operators on `String`, which compare contents
+/// rather than object identity.
+#[no_mangle]
+pub extern "C" fn raven_string_eq(a: *const String, b: *const String) -> i8 {
+    if a == b {
+        return 1;
+    }
+    let a_len = raven_string_len(a) as usize;
+    let b_len = raven_string_len(b) as usize;
+    if a_len != b_len {
+        return 0;
+    }
+    if a_len == 0 {
+        return 1;
+    }
+    let a_bytes = raven_string_bytes(a);
+    let b_bytes = raven_string_bytes(b);
+    if a_bytes.is_null() || b_bytes.is_null() {
+        return 0;
+    }
+    // SAFETY: both buffers hold `a_len == b_len` valid bytes.
+    let (a_slice, b_slice) = unsafe {
+        (
+            std::slice::from_raw_parts(a_bytes, a_len),
+            std::slice::from_raw_parts(b_bytes, b_len),
+        )
+    };
+    (a_slice == b_slice) as i8
+}
+
 /// Allocate a fresh `String` holding the half-open byte range
 /// `[start, end)` of `s`. The bounds are clamped to `0..=len` and a
 /// `start` past `end` yields an empty string, so the function never
@@ -523,6 +558,38 @@ mod tests {
         assert_eq!(raven_string_byte_at(s, 99), -1);
         assert_eq!(raven_string_byte_at(std::ptr::null(), 0), -1);
         unsafe { drop_string_for_test(s) };
+    }
+
+    #[test]
+    fn string_eq_compares_contents_not_identity() {
+        let a = raven_string_from_bytes(b"foo".as_ptr(), 3);
+        let b = raven_string_from_bytes(b"f".as_ptr(), 1);
+        let oo = raven_string_from_bytes(b"oo".as_ptr(), 2);
+        let c = raven_string_concat(b, oo);
+        // Distinct objects, same bytes: equal.
+        assert_eq!(raven_string_eq(a, c), 1);
+        // Same pointer: equal.
+        assert_eq!(raven_string_eq(a, a), 1);
+        // Different length and different bytes: not equal.
+        let bar = raven_string_from_bytes(b"bar".as_ptr(), 3);
+        let abcd = raven_string_from_bytes(b"abcd".as_ptr(), 4);
+        assert_eq!(raven_string_eq(a, bar), 0);
+        assert_eq!(raven_string_eq(a, abcd), 0);
+        // Null is the empty string: two nulls equal, null vs empty equal,
+        // null vs non-empty not equal.
+        let empty = raven_string_new(0);
+        assert_eq!(raven_string_eq(std::ptr::null(), std::ptr::null()), 1);
+        assert_eq!(raven_string_eq(std::ptr::null(), empty), 1);
+        assert_eq!(raven_string_eq(std::ptr::null(), a), 0);
+        unsafe {
+            drop_string_for_test(a);
+            drop_string_for_test(b);
+            drop_string_for_test(oo);
+            drop_string_for_test(c);
+            drop_string_for_test(bar);
+            drop_string_for_test(abcd);
+            drop_string_for_test(empty);
+        }
     }
 
     #[test]
