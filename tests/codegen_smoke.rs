@@ -117,6 +117,19 @@ fn interpolation_program_compiles_and_runs() {
 }
 
 #[test]
+fn generic_interpolation_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Interpolating a part whose static type is not a built-in scalar. A
+    // generic `${x}` for `T: ToString` and a `${Point}` (user `ToString`
+    // impl) are rendered through `to_string`, while the surrounding scalar
+    // parts keep the per-type fast path. `show` is monomorphized at Int,
+    // Bool, and Point. Prints `n=42`, `ok=true`, then `p=(3, 4)`.
+    compile_link_run_and_check("generic_interp.rv", "n=42\nok=true\np=(3, 4)\n", &runtime);
+}
+
+#[test]
 fn defer_order_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
