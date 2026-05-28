@@ -27,6 +27,29 @@ use super::ty::MirType;
 /// Mapping from a generic parameter to its concrete substitute.
 pub type SubstMap = HashMap<ParamId, Ty>;
 
+/// One free function's shape, used at a call site to specialize a
+/// generic call. The declared parameter and return types may contain
+/// `Ty::Param`; unifying them against the concrete argument types at a
+/// call site yields the substitution for that instantiation.
+#[derive(Clone)]
+pub struct FnEntry {
+    /// The function's monomorphization decl id, matching `collect_roots`.
+    pub decl: DeclId,
+    /// Declared parameter types, in order (may contain `Ty::Param`).
+    pub params: Vec<Ty>,
+    /// Declared return type (may contain `Ty::Param`).
+    pub ret: Ty,
+    /// The function's generic parameters in declaration order. Empty for
+    /// a non-generic function. The order fixes the mangled-name suffix so
+    /// the call site and the worklist agree on each instantiation's name.
+    pub generic_params: Vec<ParamId>,
+}
+
+/// Index of free functions by their source name, consulted when lowering
+/// a call so a generic callee is specialized to a per-instantiation
+/// symbol. Built once by the monomorphization driver.
+pub type FnIndex = HashMap<String, FnEntry>;
+
 /// Declaration tables the expression lowering consults to resolve
 /// struct field offsets and enum variant payloads. Keyed by the source
 /// type name, which is stable through monomorphization for the
@@ -35,6 +58,8 @@ pub type SubstMap = HashMap<ParamId, Ty>;
 pub struct DeclTables<'a> {
     pub structs: HashMap<String, &'a HirStruct>,
     pub enums: HashMap<String, &'a HirEnum>,
+    /// Free-function index used to specialize generic calls.
+    pub functions: FnIndex,
 }
 
 /// Mapping from a source identifier name to its current MIR local.
@@ -58,8 +83,10 @@ pub struct LowerCx<'a> {
     pub scopes: Vec<Scope>,
     pub loops: Vec<LoopFrame>,
     /// Calls that the monomorphizer should specialize once the function
-    /// finishes lowering. Each entry is `(decl_id, concrete_type_args)`.
-    pub pending_calls: Vec<(DeclId, Vec<Ty>)>,
+    /// finishes lowering. Each entry is `(decl_id, substitution)`, where
+    /// the substitution maps the callee's generic parameters to the
+    /// concrete types derived at this call site.
+    pub pending_calls: Vec<(DeclId, SubstMap)>,
     /// Struct and enum declaration tables for field and variant lookup.
     pub decls: &'a DeclTables<'a>,
     /// Set when control flow diverged (a `return`, `break`, or `continue`
@@ -148,6 +175,24 @@ impl LowerCx<'_> {
     }
 }
 
+/// Compute the monomorphized symbol for an instantiation: the base
+/// symbol followed by `$<MangledType>` for each generic parameter, in
+/// declaration order. A non-generic function (empty `generic_params`)
+/// keeps its base symbol. The call site and the worklist both call this
+/// so they agree on every instantiation's name.
+pub fn mono_symbol(base: &str, generic_params: &[ParamId], subst: &SubstMap) -> String {
+    if generic_params.is_empty() {
+        return base.to_string();
+    }
+    let mut s = base.to_string();
+    for p in generic_params {
+        let concrete = subst.get(p).cloned().unwrap_or(Ty::Error);
+        s.push('$');
+        s.push_str(&MirType::from_ty(&concrete).mangle());
+    }
+    s
+}
+
 /// Apply the monomorphization substitution to a single type, walking
 /// recursively. Inference variables are flattened to `Unit` (the type
 /// checker should not leave any vars in HIR types, but we guard).
@@ -190,7 +235,7 @@ pub fn mir_ty(ty: &Ty, subst: &SubstMap) -> MirType {
 /// closure body functions produced while lowering lambda expressions.
 pub struct LoweredFunction {
     pub func: MirFunction,
-    pub pending: Vec<(DeclId, Vec<Ty>)>,
+    pub pending: Vec<(DeclId, SubstMap)>,
     pub lifted: Vec<MirFunction>,
 }
 

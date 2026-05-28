@@ -74,7 +74,7 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             if is_closure_value_callee(cx, callee) {
                 return lower_closure_call(cx, callee, args, ty);
             }
-            let callee_ref = call_ref_from_callee(cx, callee);
+            let callee_ref = call_ref_from_callee(cx, callee, args);
             let arg_ops: Vec<MirOperand> = args.iter().map(|a| lower_expr(cx, a)).collect();
             let dst = cx.builder.fresh_temp("call", ty);
             cx.builder.assign(
@@ -612,18 +612,98 @@ fn lower_struct_lit(
 }
 
 /// Turn the callee expression of a `HirExprKind::Call` into a
-/// `MirFnRef`. For bare identifiers we just borrow the name; resolving
-/// to a `DeclId` and queueing a monomorphization happens in `mono`.
-fn call_ref_from_callee(_cx: &mut LowerCx<'_>, callee: &HirExpr) -> MirFnRef {
-    match &callee.kind {
-        HirExprKind::Ident(name) => MirFnRef {
-            mangled: name.clone(),
-            origin: None,
-        },
-        _ => MirFnRef {
+/// `MirFnRef`. A bare identifier naming a generic free function is
+/// specialized here: the callee's declared parameter types (which carry
+/// `Ty::Param`) are matched against the concrete argument types to build
+/// the substitution, the per-instantiation symbol is computed, and the
+/// instantiation is queued for the monomorphizer. A non-generic callee
+/// keeps its source name.
+fn call_ref_from_callee(cx: &mut LowerCx<'_>, callee: &HirExpr, args: &[HirExpr]) -> MirFnRef {
+    let HirExprKind::Ident(name) = &callee.kind else {
+        return MirFnRef {
             mangled: "__indirect_call".into(),
             origin: None,
-        },
+        };
+    };
+    let Some(entry) = cx.decls.functions.get(name).cloned() else {
+        // Not a known free function (a builtin intrinsic or constructor):
+        // keep the bare name for the back end to recognize.
+        return MirFnRef {
+            mangled: name.clone(),
+            origin: None,
+        };
+    };
+    if entry.generic_params.is_empty() {
+        return MirFnRef {
+            mangled: name.clone(),
+            origin: None,
+        };
+    }
+    // Build the substitution by matching each callee parameter type
+    // (which carries the callee's own `Ty::Param`s) against the concrete
+    // argument type. The argument type has the enclosing function's
+    // substitution applied first so a caller's own `Ty::Param` is already
+    // ground; the callee's `Ty::Param`s are left intact so `match_param`
+    // can bind them. The two parameter spaces never collide because a
+    // `ParamId` carries its owner span.
+    let mut subst: super::SubstMap = super::SubstMap::new();
+    for (decl_ty, arg) in entry.params.iter().zip(args.iter()) {
+        let got = super::substitute(&arg.ty, cx.subst);
+        match_param(decl_ty, &got, &mut subst);
+    }
+    let mangled = super::mono_symbol(name, &entry.generic_params, &subst);
+    cx.pending_calls.push((entry.decl, subst));
+    MirFnRef {
+        mangled,
+        origin: None,
+    }
+}
+
+/// Match a declared type against a concrete type, recording the concrete
+/// substitute for every `Ty::Param` encountered. A structural walk: when
+/// the declared side is a `Ty::Param`, bind it to the concrete side;
+/// otherwise descend into matching shapes. Mismatched shapes are ignored
+/// (a checked program never produces one, and a partial match still
+/// yields a usable substitution).
+fn match_param(
+    decl: &crate::tycheck::Ty,
+    concrete: &crate::tycheck::Ty,
+    out: &mut super::SubstMap,
+) {
+    use crate::tycheck::Ty;
+    match (decl, concrete) {
+        (Ty::Param(p), c) => {
+            out.entry(p.clone()).or_insert_with(|| c.clone());
+        }
+        (Ty::Option(a), Ty::Option(b))
+        | (Ty::List(a), Ty::List(b))
+        | (Ty::SelfTy(a), Ty::SelfTy(b)) => match_param(a, b, out),
+        (Ty::Result(a1, a2), Ty::Result(b1, b2)) => {
+            match_param(a1, b1, out);
+            match_param(a2, b2, out);
+        }
+        (Ty::Struct { args: a, .. }, Ty::Struct { args: b, .. })
+        | (Ty::Enum { args: a, .. }, Ty::Enum { args: b, .. }) => {
+            for (x, y) in a.iter().zip(b.iter()) {
+                match_param(x, y, out);
+            }
+        }
+        (
+            Ty::Function {
+                params: ap,
+                ret: ar,
+            },
+            Ty::Function {
+                params: bp,
+                ret: br,
+            },
+        ) => {
+            for (x, y) in ap.iter().zip(bp.iter()) {
+                match_param(x, y, out);
+            }
+            match_param(ar, br, out);
+        }
+        _ => {}
     }
 }
 

@@ -164,6 +164,11 @@ fn check_function(
 
     let mut cx =
         Checker::new(resolved, env, types, self_ty.cloned(), ret_ty.clone()).with_scope(full_scope);
+    // Record the trait bounds of every in-scope generic parameter (the
+    // enclosing impl's plus this function's own) so a method call on a
+    // `Ty::Param` value can resolve through its bound.
+    cx.record_param_bounds(extra_generics);
+    cx.record_param_bounds(&f_params);
 
     // Bind parameters into the local scope. The resolver records
     // `Binding::Param(span)` for parameter sites; we mirror that key.
@@ -214,6 +219,11 @@ struct Checker<'a, 'b> {
     /// Lexical scope of generic parameters from the enclosing
     /// declaration (impl + method).
     generic_scope: GenericScope,
+    /// Trait bounds declared on each in-scope generic parameter, keyed by
+    /// its [`ParamId`]. A method call on a value of type `Ty::Param(p)`
+    /// looks up `p`'s bounds here to find the trait that declares the
+    /// called method (bound-driven trait method dispatch).
+    param_bounds: HashMap<ParamId, Vec<String>>,
     /// Inference context for this body. Holds variables, their
     /// solutions, and any pending trait bounds.
     infer: InferCtx,
@@ -261,6 +271,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             return_ty,
             locals: HashMap::new(),
             generic_scope: GenericScope::new(),
+            param_bounds: HashMap::new(),
             infer: InferCtx::new(),
         }
     }
@@ -268,6 +279,17 @@ impl<'a, 'b> Checker<'a, 'b> {
     fn with_scope(mut self, scope: GenericScope) -> Self {
         self.generic_scope = scope;
         self
+    }
+
+    /// Record the trait bounds declared on a set of generic parameters so
+    /// a method call on a `Ty::Param` value can find the trait that
+    /// declares the called method.
+    fn record_param_bounds(&mut self, params: &[GenericParamSig]) {
+        for p in params {
+            if !p.bounds.is_empty() {
+                self.param_bounds.insert(p.id.clone(), p.bounds.clone());
+            }
+        }
     }
 
     /// Convenience: resolve an AST type using the current generic scope.
@@ -365,6 +387,61 @@ impl<'a, 'b> Checker<'a, 'b> {
             imp.trait_name.as_deref() == Some(trait_name)
                 && super::env::tys_equal(&imp.self_ty, concrete)
         })
+    }
+
+    /// Require that a value of type `ty` can be rendered to a `String`
+    /// through the `ToString` trait, for the built-in `print`. A
+    /// `String` passes directly. A generic-parameter type passes when one
+    /// of its bounds is `ToString`. Any other concrete type passes when
+    /// it has a `ToString` impl (the auto-imported built-in impls cover
+    /// the scalars; a user type provides its own). An inference variable
+    /// records a pending `ToString` bound so the constraint is checked
+    /// once the variable resolves. `Error` is accepted to avoid cascades.
+    fn require_to_string(&mut self, ty: &Ty, span: &Span) -> Result<(), RavenError> {
+        let resolved = self.infer.resolve(ty);
+        let stripped = resolved.strip_self().clone();
+        match &stripped {
+            Ty::Str | Ty::Error => Ok(()),
+            Ty::Var(v) => {
+                self.infer
+                    .add_bound(*v, "ToString".to_string(), span.clone());
+                Ok(())
+            }
+            Ty::Param(p) => {
+                let ok = self
+                    .param_bounds
+                    .get(p)
+                    .map(|bs| bs.iter().any(|b| b == "ToString"))
+                    .unwrap_or(false);
+                if ok {
+                    Ok(())
+                } else {
+                    Err(RavenError::ty(
+                        TypeError::BoundNotSatisfied {
+                            ty: p.name.clone(),
+                            trait_name: "ToString".to_string(),
+                        },
+                        span.clone(),
+                    )
+                    .with_hint(format!(
+                        "add a `ToString` bound to print a `{}` value: `{}: ToString`",
+                        p.name, p.name
+                    )))
+                }
+            }
+            other if self.implements_trait(other, "ToString") => Ok(()),
+            other => Err(RavenError::ty(
+                TypeError::BoundNotSatisfied {
+                    ty: format!("{}", other),
+                    trait_name: "ToString".to_string(),
+                },
+                span.clone(),
+            )
+            .with_hint(format!(
+                "values of type `{}` cannot be printed; implement `ToString` for it",
+                other
+            ))),
+        }
     }
 
     /// After body checking, walk every recorded type and resolve any
@@ -1020,9 +1097,14 @@ impl<'a, 'b> Checker<'a, 'b> {
                 Ok(Ty::Result(Box::new(Ty::Error), Box::new(e)))
             }
             "print" => {
-                // Built in `print(s: String)` intrinsic. The codegen
-                // backend recognizes the mangled name and emits a call
-                // to the runtime's `raven_println_str` ABI symbol.
+                // The built-in `print` accepts any value whose type
+                // implements `ToString`. A `String` is written directly
+                // (the allocation-free literal fast path stays available);
+                // any other `ToString` value is rendered through its
+                // `to_string` method, inserted during HIR lowering. The
+                // codegen back end recognizes the mangled `print` name and
+                // emits the runtime's `raven_println_str` ABI call on the
+                // resulting String.
                 if args.len() != 1 {
                     return Err(RavenError::ty(
                         TypeError::WrongArity {
@@ -1034,7 +1116,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                     ));
                 }
                 let arg_ty = self.check_expr(&args[0])?;
-                self.unify(&Ty::Str, &arg_ty, &args[0].span)?;
+                self.require_to_string(&arg_ty, &args[0].span)?;
                 Ok(Ty::Unit)
             }
             "print_int" => {
@@ -1199,6 +1281,16 @@ impl<'a, 'b> Checker<'a, 'b> {
         } = &recv_stripped
         {
             return self.check_dyn_method_call(trait_name, name, args, span);
+        }
+
+        // A receiver of generic-parameter type `T` dispatches through one
+        // of `T`'s trait bounds. The method must be declared by a bound
+        // trait; its signature is the template, with every `Self` (the
+        // receiver and any `other: Self` parameter) substituted by `T`.
+        // Monomorphization later resolves `T` to a concrete type at each
+        // call site and rewrites the call to that type's impl symbol.
+        if let Ty::Param(param) = &recv_stripped {
+            return self.check_bound_method_call(param, name, args, span);
         }
 
         // User declared `impl` methods are searched first, including
@@ -1401,6 +1493,90 @@ impl<'a, 'b> Checker<'a, 'b> {
             self.unify(pt, &a, &arg.span)?;
         }
         Ok(sig.ret.clone())
+    }
+
+    /// Resolve a method call whose receiver has generic-parameter type
+    /// `param` (for example `x.to_string()` where `x: T` and `T:
+    /// ToString`). The method must be declared by one of `param`'s trait
+    /// bounds. The trait method signature is the template: every `Self`
+    /// (the `self` receiver and any `Self`-typed parameter or return) is
+    /// substituted by `Ty::Param(param)` so argument and result types
+    /// stay tied to the type parameter. The concrete impl is selected
+    /// during monomorphization once `param` is known at each call site.
+    fn check_bound_method_call(
+        &mut self,
+        param: &ParamId,
+        name: &str,
+        args: &[Expr],
+        span: &Span,
+    ) -> Result<Ty, RavenError> {
+        let recv_ty = Ty::Param(param.clone());
+        let bounds = self.param_bounds.get(param).cloned().unwrap_or_default();
+        // Find a bound trait whose declaration carries the called method.
+        let mut found: Option<FnSig> = None;
+        for trait_name in &bounds {
+            let sig = self
+                .env
+                .traits
+                .values()
+                .find(|t| &t.name == trait_name)
+                .and_then(|t| t.methods.get(name).cloned());
+            if let Some(sig) = sig {
+                found = Some(sig);
+                break;
+            }
+        }
+        let Some(sig) = found else {
+            // The method is on no bound trait. If the parameter has no
+            // bounds at all the message points at the missing bound;
+            // otherwise it is a genuine "no such method" on the bounds.
+            let hint = if bounds.is_empty() {
+                format!(
+                    "`{}` has no trait bound; add a bound such as `{}: ToString` to call methods on it",
+                    param.name,
+                    param.name
+                )
+            } else {
+                format!(
+                    "none of the bounds `{}` on `{}` declare a method `{}`",
+                    bounds.join(" + "),
+                    param.name,
+                    name
+                )
+            };
+            return Err(RavenError::ty(
+                TypeError::UndefinedMethod {
+                    receiver_ty: param.name.to_string(),
+                    method: name.to_string(),
+                },
+                span.clone(),
+            )
+            .with_hint(hint));
+        };
+
+        // Substitute every `Self` placeholder in the trait method's
+        // signature with the receiver's parameter type.
+        let user_params: Vec<Ty> = sig
+            .params
+            .iter()
+            .filter(|t| !matches!(t, Ty::SelfTy(_)))
+            .map(|t| substitute_self(t, &recv_ty))
+            .collect();
+        if user_params.len() != args.len() {
+            return Err(RavenError::ty(
+                TypeError::WrongArity {
+                    func: name.to_string(),
+                    expected: user_params.len(),
+                    actual: args.len(),
+                },
+                span.clone(),
+            ));
+        }
+        for (pt, arg) in user_params.iter().zip(args.iter()) {
+            let a = self.check_expr(arg)?;
+            self.unify(pt, &a, &arg.span)?;
+        }
+        Ok(substitute_self(&sig.ret, &recv_ty))
     }
 
     fn check_field(&mut self, receiver: &Expr, name: &str, span: &Span) -> Result<Ty, RavenError> {
@@ -1699,10 +1875,12 @@ impl<'a, 'b> Checker<'a, 'b> {
     }
 
     /// Type an interpolated string literal. The whole literal has type
-    /// `String`. Every embedded `${expr}` must resolve to a type that
-    /// can be converted to a string: `String` (identity), `Int`, `Bool`,
-    /// `Float`, or `Char`. Any other type is rejected with a hint that
-    /// points the user at converting to a `String` first.
+    /// `String`. Every embedded `${expr}` must resolve to a type that can
+    /// be converted to a string. The built-in scalars (`String`, `Int`,
+    /// `Bool`, `Float`, `Char`) convert through their per-type runtime
+    /// rendering; any other type converts through its `ToString` impl, so
+    /// a user struct that implements `ToString` interpolates. A type with
+    /// neither is rejected with a hint to implement `ToString`.
     ///
     /// Each embedded expression is checked through `check_expr`, which
     /// records its resolved type under its (synthetic, per-fragment)
@@ -1719,19 +1897,34 @@ impl<'a, 'b> Checker<'a, 'b> {
                 // Eat the cascade; an earlier error was already reported.
                 continue;
             }
-            if !is_interpolatable(stripped) {
-                return Err(RavenError::ty(
-                    TypeError::Custom(format!(
-                        "values of type `{}` cannot be interpolated into a string",
-                        resolved
-                    )),
-                    e.span.clone(),
-                )
-                .with_hint(format!(
-                    "only `String`, `Int`, `Bool`, `Float`, and `Char` interpolate today; convert the `{}` value to a `String` first",
-                    resolved
-                )));
+            // The built-in scalars convert through their dedicated runtime
+            // rendering. Any other type must implement `ToString`.
+            if is_interpolatable(stripped) {
+                continue;
             }
+            if let Ty::Param(p) = stripped {
+                let ok = self
+                    .param_bounds
+                    .get(p)
+                    .map(|bs| bs.iter().any(|b| b == "ToString"))
+                    .unwrap_or(false);
+                if ok {
+                    continue;
+                }
+            } else if self.implements_trait(stripped, "ToString") {
+                continue;
+            }
+            return Err(RavenError::ty(
+                TypeError::Custom(format!(
+                    "values of type `{}` cannot be interpolated into a string",
+                    resolved
+                )),
+                e.span.clone(),
+            )
+            .with_hint(format!(
+                "implement `ToString` for `{}` to interpolate it, or convert it to a `String` first",
+                resolved
+            )));
         }
         Ok(Ty::Str)
     }
@@ -1742,6 +1935,38 @@ impl<'a, 'b> Checker<'a, 'b> {
 /// `raven_*_to_string` conversions wired up in codegen.
 fn is_interpolatable(ty: &Ty) -> bool {
     matches!(ty, Ty::Str | Ty::Int | Ty::Bool | Ty::Float | Ty::Char)
+}
+
+/// Replace every `Self` placeholder in `ty` with `target`. Used when a
+/// trait method signature is applied to a generic-parameter receiver: a
+/// `Self`-typed parameter or return becomes the receiver's type. Walks
+/// the type structurally so a `Self` nested in `Option<Self>` and the
+/// like is substituted too.
+fn substitute_self(ty: &Ty, target: &Ty) -> Ty {
+    match ty {
+        Ty::SelfTy(_) => target.clone(),
+        Ty::Option(t) => Ty::Option(Box::new(substitute_self(t, target))),
+        Ty::List(t) => Ty::List(Box::new(substitute_self(t, target))),
+        Ty::Result(a, b) => Ty::Result(
+            Box::new(substitute_self(a, target)),
+            Box::new(substitute_self(b, target)),
+        ),
+        Ty::Struct { id, name, args } => Ty::Struct {
+            id: *id,
+            name: name.clone(),
+            args: args.iter().map(|a| substitute_self(a, target)).collect(),
+        },
+        Ty::Enum { id, name, args } => Ty::Enum {
+            id: *id,
+            name: name.clone(),
+            args: args.iter().map(|a| substitute_self(a, target)).collect(),
+        },
+        Ty::Function { params, ret } => Ty::Function {
+            params: params.iter().map(|a| substitute_self(a, target)).collect(),
+            ret: Box::new(substitute_self(ret, target)),
+        },
+        other => other.clone(),
+    }
 }
 
 /// Type rules for binary operators. Exposed so the assignment helper

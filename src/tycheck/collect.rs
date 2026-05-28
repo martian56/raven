@@ -307,13 +307,21 @@ fn fill_trait(
         .unwrap_or_default();
     push_generics_into_scope(&mut scope, &trait_generics);
 
+    // Inside a trait declaration `Self` denotes the (not yet known)
+    // implementing type. It resolves to an abstract `Ty::SelfTy(Error)`,
+    // the same placeholder the `self` receiver already carries here. The
+    // bound-driven method dispatch substitutes every `SelfTy` in a trait
+    // method signature with the concrete receiver type at the call site,
+    // so `equals(self, other: Self)` on a `T: Eq` with `T = Int` checks
+    // `other` against `Int`.
+    let trait_self = Ty::Error;
     let mut methods = HashMap::new();
     let mut method_order = Vec::with_capacity(t.members.len());
     for member in &t.members {
         scope.push();
         let m_generics = collect_generic_params(&member.generics, &member.span);
         push_generics_into_scope(&mut scope, &m_generics);
-        let sig = collect_fn_sig(member, resolved, env, None, &scope, m_generics)?;
+        let sig = collect_fn_sig(member, resolved, env, Some(&trait_self), &scope, m_generics)?;
         scope.pop();
         method_order.push(member.name.clone());
         methods.insert(member.name.clone(), sig);

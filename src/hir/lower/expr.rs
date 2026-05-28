@@ -78,9 +78,13 @@ pub(crate) fn lower_expr(
                     crate::ast::StrFragment::Expr(e) => {
                         // Each fragment was parsed as a real expression and
                         // type-checked under its own span, so it lowers like
-                        // any other value. Lowering to MIR turns each part
-                        // into a per-type to-string conversion and a concat.
-                        parts.push(InterpolPart::Expr(lower_expr(e, &Ty::Str, cx)?));
+                        // any other value. The built-in scalars (and a
+                        // `String`) lower to MIR per-type to-string
+                        // conversions and a concat. Any other type is
+                        // routed through its `ToString` impl here, so the
+                        // MIR part is already a `String`.
+                        let lowered = lower_expr(e, &Ty::Str, cx)?;
+                        parts.push(InterpolPart::Expr(to_string_if_needed(lowered)));
                     }
                 }
             }
@@ -180,6 +184,36 @@ pub(crate) fn lower_expr(
             let mut lowered = Vec::with_capacity(args.len());
             for a in args {
                 lowered.push(lower_expr(a, &Ty::Error, cx)?);
+            }
+            // The built-in `print`/`println` accept any `ToString` value:
+            // a non-`String` argument is routed through its `to_string`
+            // method first, so `print(42)` and `print(point)` render
+            // through the trait. The conversion is a `MethodCall`, which
+            // MIR lowers to the value's per-type `to_string` symbol (and
+            // monomorphization resolves a generic-parameter receiver to
+            // the concrete impl). A `String` argument is left untouched so
+            // the allocation-free literal fast path in codegen still runs.
+            // Only the built-in (resolver-unbound) `print`/`println`
+            // qualifies; an imported `std/io` function keeps its own
+            // String-typed signature.
+            if is_builtin_print(callee, cx) && lowered.len() == 1 {
+                let arg = lowered.pop().expect("one argument checked above");
+                let needs_conversion = !matches!(arg.ty.strip_self(), Ty::Str | Ty::Error);
+                let arg = if needs_conversion {
+                    let arg_span = arg.span.clone();
+                    HirExpr {
+                        kind: HirExprKind::MethodCall {
+                            receiver: Box::new(arg),
+                            name: "to_string".into(),
+                            args: Vec::new(),
+                        },
+                        ty: Ty::Str,
+                        span: arg_span,
+                    }
+                } else {
+                    arg
+                };
+                lowered.push(arg);
             }
             HirExprKind::Call {
                 callee: Box::new(c),
@@ -732,5 +766,42 @@ pub(crate) fn lower_assign_target(
             Ok(HirAssignTarget::Index { recv: r, index: i })
         }
         _ => Err(super::ty_error("invalid assignment target", &expr.span)),
+    }
+}
+
+/// True when a call's callee is the built-in `print`: a bare identifier
+/// of that name that the resolver left unbound (so it reaches the
+/// compiler's print intrinsic rather than an imported `std/io`
+/// function). The built-in form accepts any `ToString` value; an
+/// imported `print` keeps its own String-typed signature.
+fn is_builtin_print(callee: &Expr, cx: &LowerCtx<'_>) -> bool {
+    let ExprKind::Ident { name, .. } = &callee.kind else {
+        return false;
+    };
+    name == "print" && cx.fn_name_at(&callee.span).is_none()
+}
+
+/// Wrap an interpolation part in a `to_string()` method call when its
+/// type is neither a `String` nor one of the built-in scalars that have
+/// a dedicated runtime rendering. The type checker has already verified
+/// such a part implements `ToString`. A scalar or `String` part is left
+/// as is so MIR keeps the allocation-light per-type conversion path.
+fn to_string_if_needed(part: HirExpr) -> HirExpr {
+    let scalar = matches!(
+        part.ty.strip_self(),
+        Ty::Str | Ty::Int | Ty::Bool | Ty::Float | Ty::Char | Ty::Error
+    );
+    if scalar {
+        return part;
+    }
+    let span = part.span.clone();
+    HirExpr {
+        kind: HirExprKind::MethodCall {
+            receiver: Box::new(part),
+            name: "to_string".into(),
+            args: Vec::new(),
+        },
+        ty: Ty::Str,
+        span,
     }
 }
