@@ -261,6 +261,19 @@ fn list_string_program_compiles_and_runs() {
 }
 
 #[test]
+fn for_loop_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // For loops over a range and a list, lowered to counter and index
+    // loops. The range loop sums 0..5 to 10, the list loop sums [3, 5, 7]
+    // to 15, and the third loop exercises break and continue: continue
+    // still advances the counter, so 0..10 minus the i == 5 skip and the
+    // i == 8 break counts 7 iterations. Prints 10, 15, 7.
+    compile_link_run_and_check("for_loops.rv", "10\n15\n7\n", &runtime);
+}
+
+#[test]
 fn mutation_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

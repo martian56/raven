@@ -81,30 +81,129 @@ fn range_lowers_to_range_new() {
 }
 
 #[test]
-fn for_lowers_to_loop_with_match() {
-    let p = lower("fun f() -> () { for x in [1, 2, 3] { } }");
+fn for_over_list_lowers_to_index_loop() {
+    // `for v in xs` lowers to a block that binds the list once, then a
+    // counter loop that drives the index from 0 to `xs.len()` and binds
+    // each element by indexing. No iterator object is produced.
+    let p = lower("fun f() -> () { for v in [1, 2, 3] { } }");
     let f = only_fn(&p, "f");
     let body = f.body.as_ref().expect("body");
-    // After lowering, the body holds a block containing the desugared
-    // for loop. The for can show up either as a statement-expression
-    // or as the trailing tail; tolerate both.
-    let target = if !body.stmts.is_empty() {
-        match &body.stmts[0].kind {
-            HirStmtKind::Expr(e) => e.clone(),
-            other => panic!("expected expr stmt, got {:?}", other),
-        }
-    } else {
-        let tail = body.tail.as_ref().expect("either stmt or tail");
-        (**tail).clone()
-    };
-    match &target.kind {
+    let desugared = first_for_block(body);
+    // The desugared form binds the list (`let __list = ...`) and tails
+    // into the counter-loop block.
+    match &desugared.kind {
         HirExprKind::Block(inner) => {
-            assert!(matches!(inner.stmts[0].kind, HirStmtKind::Let { .. }));
-            let tail = inner.tail.as_ref().expect("tail loop");
-            assert!(matches!(tail.kind, HirExprKind::Loop(_)));
+            assert!(
+                matches!(inner.stmts[0].kind, HirStmtKind::Let { .. }),
+                "list value is bound once before the loop"
+            );
+            let tail = inner.tail.as_ref().expect("counter-loop block tail");
+            assert_counter_loop(tail);
         }
         other => panic!("expected block after for desugaring, got {:?}", other),
     }
+    // The lowering must no longer mint any iterator/range intrinsic.
+    assert!(!hir_uses_iterator_intrinsics(&p));
+}
+
+#[test]
+fn for_over_range_lowers_to_counter_loop() {
+    // `for x in 0..3` lowers straight to a counter loop over the integer
+    // interval, with no range object and no iterator intrinsic.
+    let p = lower("fun f() -> () { for x in 0..3 { } }");
+    let f = only_fn(&p, "f");
+    let body = f.body.as_ref().expect("body");
+    let desugared = first_for_block(body);
+    assert_counter_loop(desugared);
+    assert!(!hir_uses_iterator_intrinsics(&p));
+}
+
+/// Pull the desugared `for` expression out of a function body. The `for`
+/// shows up either as a statement-expression or as the trailing tail.
+fn first_for_block(body: &crate::hir::expr::HirBlock) -> &crate::hir::expr::HirExpr {
+    if let Some(stmt) = body
+        .stmts
+        .iter()
+        .find(|s| matches!(s.kind, HirStmtKind::Expr(_)))
+    {
+        match &stmt.kind {
+            HirStmtKind::Expr(e) => return e,
+            _ => unreachable!(),
+        }
+    }
+    body.tail.as_ref().expect("for as stmt or tail")
+}
+
+/// Assert the given expression is a counter-loop block: a block whose
+/// tail is a `Loop` whose body's first statement is the increment-and-
+/// guard `if` (the advance step a `continue` re-enters).
+fn assert_counter_loop(expr: &crate::hir::expr::HirExpr) {
+    let HirExprKind::Block(block) = &expr.kind else {
+        panic!("expected counter-loop block, got {:?}", expr.kind);
+    };
+    let tail = block.tail.as_ref().expect("loop tail");
+    let HirExprKind::Loop(loop_body) = &tail.kind else {
+        panic!("expected Loop tail, got {:?}", tail.kind);
+    };
+    // The first loop-body statement is the `if __first { ... } else { __i
+    // = __i + 1 }` advance, so a `continue` (which re-enters the loop
+    // header) always runs the increment before the next iteration.
+    match &loop_body.stmts[0].kind {
+        HirStmtKind::Expr(e) => assert!(
+            matches!(e.kind, HirExprKind::If { .. }),
+            "loop body starts with the advance-step `if`"
+        ),
+        other => panic!("expected advance `if` first, got {:?}", other),
+    }
+}
+
+/// True when any HIR expression in the program is one of the iterator or
+/// range intrinsics that the for-loop lowering must no longer emit.
+fn hir_uses_iterator_intrinsics(p: &HirProgram) -> bool {
+    fn block_uses(b: &crate::hir::expr::HirBlock) -> bool {
+        b.stmts.iter().any(|s| stmt_uses(&s.kind))
+            || b.tail.as_ref().is_some_and(|e| expr_uses(&e.kind))
+    }
+    fn stmt_uses(s: &HirStmtKind) -> bool {
+        match s {
+            HirStmtKind::Let { init, .. } => expr_uses(&init.kind),
+            HirStmtKind::Expr(e) => expr_uses(&e.kind),
+            HirStmtKind::Assign { value, .. } => expr_uses(&value.kind),
+            HirStmtKind::Defer(e) => expr_uses(&e.kind),
+        }
+    }
+    fn expr_uses(k: &HirExprKind) -> bool {
+        match k {
+            HirExprKind::IterNew(_) | HirExprKind::IterNext(_) | HirExprKind::RangeNew { .. } => {
+                true
+            }
+            HirExprKind::Block(b) => block_uses(b),
+            HirExprKind::Loop(b) => block_uses(b),
+            HirExprKind::While { cond, body } => expr_uses(&cond.kind) || block_uses(body),
+            HirExprKind::If {
+                cond,
+                then_block,
+                else_block,
+            } => {
+                expr_uses(&cond.kind)
+                    || block_uses(then_block)
+                    || else_block.as_ref().is_some_and(block_uses)
+            }
+            HirExprKind::Paren(e) => expr_uses(&e.kind),
+            HirExprKind::Binary { lhs, rhs, .. } => expr_uses(&lhs.kind) || expr_uses(&rhs.kind),
+            HirExprKind::Index { receiver, index } => {
+                expr_uses(&receiver.kind) || expr_uses(&index.kind)
+            }
+            HirExprKind::MethodCall { receiver, args, .. } => {
+                expr_uses(&receiver.kind) || args.iter().any(|a| expr_uses(&a.kind))
+            }
+            _ => false,
+        }
+    }
+    p.items.iter().any(|item| match &item.kind {
+        HirItemKind::Function(f) => f.body.as_ref().is_some_and(block_uses),
+        _ => false,
+    })
 }
 
 #[test]
