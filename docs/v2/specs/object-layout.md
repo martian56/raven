@@ -293,6 +293,47 @@ typed: a `List<Int>` may store `Int` inline (when codegen specialises it)
 or as a `Box<Int>` pointer slot (when monomorphisation falls back to a
 generic body, e.g. a method on `List<T>` taking a `T` by value).
 
+## Struct (and enum) value
+
+A user-defined struct value, and an enum value, share one shape: the
+header followed by uniform 8-byte field slots in declaration order.
+
+```c
+struct StructValue {
+    ObjectHeader header;     // tag = TAG_STRUCT, len = field count, cap = type id
+    u64          fields[];   // one 8-byte slot per field, declaration order
+};
+```
+
+Field offsets on 64-bit:
+
+| offset      | size | field            |
+| ----------: | ---: | ---------------- |
+| 0           | 16   | header           |
+| 16          | 8    | field 0          |
+| 24          | 8    | field 1          |
+| 16 + 8 * i  | 8    | field i          |
+
+* Alignment: `OBJECT_ALIGN` (8). The total body size is
+  `16 + 8 * field_count`, already 8-byte aligned.
+* `header.tag = TAG_STRUCT`. `header.len` is the field count.
+* `header.cap` carries the per-type descriptor id. Two structs with the
+  same tag have different field shapes, so the collector cannot infer the
+  pointer fields from the tag. The back end assigns each monomorphic
+  struct (and enum) type a small integer id and registers a GC pointer
+  bitmask for it through `raven_struct_register` before any value is
+  built; the collector looks the mask up by `header.cap`.
+* Each field occupies one 8-byte slot regardless of its type: an `Int`
+  or `Float` fits exactly, a `Bool` or `Char` is widened into the slot,
+  and a heap value is a single pointer. A slot holds a GC pointer exactly
+  when its bit is set in the type's registered mask.
+
+An enum value uses the same shape with slot 0 reserved for the variant
+discriminant (a pointer-width integer) and slots `1..` holding the active
+variant's payload. The registered mask therefore shifts each payload
+pointer to slot `i + 1`, and is the union of every variant's payload
+pointers (an inactive variant's slots are zero and trace harmlessly).
+
 ## Constructor APIs
 
 Every constructor is `#[no_mangle] pub extern "C"`. Every constructor
@@ -320,6 +361,9 @@ opaque and only ever passes back through accessors.
 | `raven_closure_captures` | `fn(c: *const Closure) -> *mut u8` | Returns the captures buffer. |
 | `raven_box_new` | `fn(payload_size: u32, payload_align: u32, payload_is_gc_ptr: u32) -> *mut Box` | Allocates a `Box` whose payload is `payload_size` bytes aligned to `payload_align`, with the payload GC-pointer flag. Payload is zero-filled. |
 | `raven_box_payload` | `fn(b: *const Box) -> *mut u8` | Returns a pointer to the inline payload at `BOX_PAYLOAD_OFFSET` (offset 24). |
+| `raven_struct_new` | `fn(field_count: u32, type_id: u32) -> *mut ObjectHeader` | Allocates a struct (or enum) value with `field_count` zero-filled 8-byte field slots, tagged `TAG_STRUCT`, recording `type_id` in `header.cap`. |
+| `raven_struct_fields` | `fn(s: *const ObjectHeader) -> *mut u8` | Returns a pointer to the first field slot, at `STRUCT_FIELDS_OFFSET` (offset 16). |
+| `raven_struct_register` | `fn(type_id: u32, ptr_mask: u64)` | Registers a struct or enum type's GC pointer descriptor: bit `i` set means field slot `i` holds a traced GC pointer. Called from the program entry shim before any value is built. Lives in the collector; see `docs/v2/specs/gc.md`. |
 
 Each constructor routes its object-body allocation through
 `raven_gc_alloc` so the collector tracks every object, and allocates its
@@ -341,15 +385,13 @@ flags. The pointers each layout owns are:
 | `TAG_SET` | `buckets` at offset 24, then for each non-empty bucket `element` at entry offset 8 | `elements_are_gc_ptrs` gates tracing. A bucket is non-empty when `element != null`. |
 | `TAG_CLOSURE` | `captures` at offset 24 | The first `capture_ptr_count` pointer-sized capture slots are traced; the rest of the record is scalar. |
 | `TAG_BOX` | payload at offset 24 | When `payload_is_gc_ptr != 0` the single payload pointer is traced; otherwise the payload is a scalar. |
+| `TAG_STRUCT` | field slots at offset 16 | The collector looks up the per-type bitmask by `header.cap` and traces each of the `header.len` slots whose bit is set. An unregistered id traces nothing. Enum values store the discriminant in slot 0 (never a pointer) and payload in later slots. |
 
 The marking, sweeping, and threshold logic live in `docs/v2/specs/gc.md`
 and `raven-runtime/src/gc.rs`.
 
 ## Out of scope
 
-* Codegen integration. Issue #67 wires field loads and stores through the
-  offsets pinned here, and emits the shadow-stack root frames defined in
-  `docs/v2/specs/gc.md`.
 * Trait object fat pointers. The `BOX` tag is the storage shape; the
   vtable layout is issue #66.
 * Full stdlib over these layouts (string methods, list iteration, map
@@ -368,6 +410,8 @@ and `raven-runtime/src/gc.rs`.
   * `raven_string_concat` produces a string whose bytes equal the
     concatenation of its inputs.
   * `raven_list_push` grows the buffer and preserves earlier elements.
+  * `STRUCT_FIELDS_OFFSET == 16`, `STRUCT_FIELD_SLOT == 8`, and a struct
+    value zero-fills its slots and tags itself `TAG_STRUCT`.
 * Integration tests in `raven-runtime/tests/object_layouts.rs`:
   * Construct and read back every layout through the C ABI surface, so
     the staticlib's exported symbols stay reachable.

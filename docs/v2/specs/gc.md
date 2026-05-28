@@ -192,6 +192,33 @@ overflow the native stack.
 | `TAG_SET` | `buckets` at offset 24; for each non-empty bucket `element` at entry offset 8 | `elements_are_gc_ptrs` gates tracing. A slot is non-empty when `element != null`. |
 | `TAG_CLOSURE` | `captures` at offset 24 | The capture record holds `capture_ptr_count` leading pointer slots that the closure-lowering pass places first. Each non-null leading slot is traced; the remaining capture bytes are scalars and are not traced. |
 | `TAG_BOX` | payload at offset 16, when `payload_is_gc_ptr != 0` | A box that wraps a heap value stores a single pointer at offset 16 and is traced; a box that wraps a scalar is opaque. |
+| `TAG_STRUCT` | field slots at offset 16, gated by the per-type descriptor | The collector looks up a GC pointer bitmask by `header.cap` (the type id) and traces each of the `header.len` slots whose bit is set. An unregistered id is treated as having no pointers. Enum values reserve slot 0 for the discriminant. |
+
+### Struct descriptors
+
+Unlike the collection layouts, a struct cannot carry its pointer-kind
+flags inline, because two structs sharing `TAG_STRUCT` have different
+field shapes and the mask would bloat every instance. Instead the back
+end registers a per-type descriptor with the collector:
+
+```c
+// type_id: the small integer id the back end assigns one per
+//   monomorphic struct (or enum) type, stored in the value's header.cap.
+// ptr_mask: bit i set means field slot i holds a traced GC pointer.
+void raven_struct_register(uint32_t type_id, uint64_t ptr_mask);
+```
+
+```rust
+pub extern "C" fn raven_struct_register(type_id: u32, ptr_mask: u64);
+```
+
+The back end emits one `raven_struct_register` call per type in the
+program entry shim, before running `main`, so every struct or enum value
+is traceable from its first allocation. Registering the same id twice is
+harmless (the back end always supplies the same or a wider mask for a
+given id; enum types union their variants' masks). The descriptors live
+in a thread-local map alongside the shadow stack, consistent with the
+single-threaded collector model.
 
 ### Why the layouts carry pointer-kind flags
 
