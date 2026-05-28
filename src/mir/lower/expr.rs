@@ -74,7 +74,7 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             if is_closure_value_callee(cx, callee) {
                 return lower_closure_call(cx, callee, args, ty);
             }
-            let callee_ref = call_ref_from_callee(cx, callee, args);
+            let callee_ref = call_ref_from_callee(cx, callee, args, &expr.ty);
             let arg_ops: Vec<MirOperand> = args.iter().map(|a| lower_expr(cx, a)).collect();
             let dst = cx.builder.fresh_temp("call", ty);
             cx.builder.assign(
@@ -656,7 +656,12 @@ fn lower_struct_lit(
 /// the substitution, the per-instantiation symbol is computed, and the
 /// instantiation is queued for the monomorphizer. A non-generic callee
 /// keeps its source name.
-fn call_ref_from_callee(cx: &mut LowerCx<'_>, callee: &HirExpr, args: &[HirExpr]) -> MirFnRef {
+fn call_ref_from_callee(
+    cx: &mut LowerCx<'_>,
+    callee: &HirExpr,
+    args: &[HirExpr],
+    result_ty: &crate::tycheck::Ty,
+) -> MirFnRef {
     let HirExprKind::Ident(name) = &callee.kind else {
         return MirFnRef {
             mangled: "__indirect_call".into(),
@@ -689,6 +694,16 @@ fn call_ref_from_callee(cx: &mut LowerCx<'_>, callee: &HirExpr, args: &[HirExpr]
         let got = super::substitute(&arg.ty, cx.subst);
         match_param(decl_ty, &got, &mut subst);
     }
+    // Also match the declared return type against the call's resolved
+    // result type. A generic parameter that appears only in the return
+    // type or in a bound (for example `T` in
+    // `collect<T, S: Iterator<T>>(it: S) -> List<T>`, where `T` is never a
+    // parameter) cannot be bound from the arguments alone. The type
+    // checker already inferred it (the call site's result type is
+    // concrete, `List<Int>`), so matching `List<T>` against it recovers
+    // the binding the monomorphizer needs.
+    let concrete_result = super::substitute(result_ty, cx.subst);
+    match_param(&entry.ret, &concrete_result, &mut subst);
     let mangled = super::mono_symbol(name, &entry.generic_params, &subst);
     cx.pending_calls.push((entry.decl, subst));
     MirFnRef {
