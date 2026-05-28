@@ -19,7 +19,7 @@ use raven::hir::lower_file;
 use raven::lexer::Lexer;
 use raven::mir::lower_program;
 use raven::parser::parse;
-use raven::resolve::{resolve_file, FsLoader};
+use raven::resolve::{expand_with_stdlib, resolve_file, FsLoader};
 use raven::tycheck::check_file;
 
 #[test]
@@ -126,6 +126,19 @@ fn ffi_abs_program_compiles_and_runs() {
     compile_link_run_and_check("ffi_abs.rv", "7\n", &runtime);
 }
 
+#[test]
+fn std_io_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // The first stdlib module end to end: `import std/io { println,
+    // println_int }` merges the bundled `std/io` source into the program,
+    // namespaced as `std.io.*`. The selectors bind to those functions,
+    // which call the internal `__io_*` intrinsics wired to the runtime.
+    // Prints the greeting then 42.
+    compile_link_run_and_check("use_io.rv", "Hello from std/io!\n42\n", &runtime);
+}
+
 /// Return the runtime staticlib when a linker and the staticlib are both
 /// present, or skip with a diagnostic. Shared by every smoke case so the
 /// skip behavior stays identical.
@@ -206,6 +219,9 @@ fn build_object(source: &str, path: &Path) -> Result<Vec<u8>, String> {
         .tokenize()
         .map_err(|e| format!("lex: {}", e))?;
     let file = parse(&tokens).map_err(|e| format!("parse: {}", e))?;
+    // Mirror the driver: merge any imported bundled stdlib modules before
+    // resolving. A program with no `std/` imports is unchanged.
+    let file = expand_with_stdlib(&file).map_err(|e| format!("stdlib: {}", e))?;
     let mut loader = FsLoader;
     let resolved = resolve_file(&file, &mut loader).map_err(|e| format!("resolve: {}", e))?;
     let typed = check_file(&resolved).map_err(|e| format!("tycheck: {}", e))?;

@@ -1,0 +1,10 @@
+// golden:skip
+// Import the bundled std/io module and use its functions. The selective
+// import binds `println` and `println_int` to the namespaced stdlib
+// functions the compiler merges into the program. Prints two lines.
+import std/io { println, println_int }
+
+fun main() {
+    println("Hello from std/io!")
+    println_int(40 + 2)
+}
