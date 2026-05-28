@@ -50,6 +50,10 @@ pub fn is_gc_pointer(ty: &MirType) -> bool {
             | MirType::Result(_, _)
             | MirType::List(_)
             | MirType::Function { .. }
+            // A `dyn Trait` value is a single GC pointer to its boxed fat
+            // pointer; the collector traces the box, which in turn traces
+            // the data word it holds.
+            | MirType::Dyn { .. }
     )
 }
 

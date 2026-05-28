@@ -83,6 +83,78 @@ fn unknown_field_is_error() {
     }
 }
 
+const DYN_SPEAK: &str = concat!(
+    "trait Speak { fun sound(self) -> Int }\n",
+    "struct Dog {}\n",
+    "struct Cat {}\n",
+    "impl Speak for Dog { fun sound(self) -> Int = 1 }\n",
+    "impl Speak for Cat { fun sound(self) -> Int = 2 }\n",
+);
+
+#[test]
+fn dyn_argument_coercion_and_dispatch_check() {
+    let src = format!(
+        "{DYN_SPEAK}\
+         fun describe(s: dyn Speak) -> Int = s.sound()\n\
+         fun main() {{\n    let d = Dog {{}}\n    print_int(describe(d))\n}}\n"
+    );
+    check(&src).unwrap();
+}
+
+#[test]
+fn dyn_let_coercion_checks() {
+    let src = format!(
+        "{DYN_SPEAK}\
+         fun main() {{\n    let s: dyn Speak = Cat {{}}\n    print_int(s.sound())\n}}\n"
+    );
+    check(&src).unwrap();
+}
+
+#[test]
+fn dyn_coercion_of_non_implementor_is_error() {
+    let src = format!(
+        "{DYN_SPEAK}\
+         struct Rock {{}}\n\
+         fun describe(s: dyn Speak) -> Int = s.sound()\n\
+         fun main() {{\n    print_int(describe(Rock {{}}))\n}}\n"
+    );
+    let err = check(&src).unwrap_err();
+    assert!(matches!(err, RavenError::Type(_, _, _)));
+}
+
+#[test]
+fn dyn_unknown_trait_method_is_error() {
+    let src = format!(
+        "{DYN_SPEAK}\
+         fun describe(s: dyn Speak) -> Int = s.bark()\n"
+    );
+    let err = check(&src).unwrap_err();
+    match err {
+        RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::UndefinedMethod { .. })),
+        other => panic!("expected UndefinedMethod, got {:?}", other),
+    }
+}
+
+#[test]
+fn dyn_of_non_object_safe_generic_method_is_error() {
+    // A generic method makes the trait non-object-safe.
+    let src = concat!(
+        "trait Maker { fun make<T>(self, x: T) -> Int }\n",
+        "fun describe(m: dyn Maker) -> Int = 0\n",
+    );
+    let err = check(src).unwrap_err();
+    match err {
+        RavenError::Type(b, _, _) => match *b {
+            TypeError::Custom(msg) => assert!(
+                msg.contains("not object-safe") || msg.contains("object-safe"),
+                "unexpected message: {msg}"
+            ),
+            other => panic!("expected Custom object-safety error, got {:?}", other),
+        },
+        other => panic!("expected TypeError, got {:?}", other),
+    }
+}
+
 #[test]
 fn array_literal_unifies_element_types() {
     check("fun f() -> Int {\n    let xs = [1, 2, 3]\n    return xs.len()\n}\n").unwrap();

@@ -104,6 +104,7 @@ pub fn collect_declarations(
                         name: t.name.clone(),
                         generics,
                         methods: HashMap::new(),
+                        method_order: Vec::new(),
                         span: t.span.clone(),
                     },
                 );
@@ -307,17 +308,65 @@ fn fill_trait(
     push_generics_into_scope(&mut scope, &trait_generics);
 
     let mut methods = HashMap::new();
+    let mut method_order = Vec::with_capacity(t.members.len());
     for member in &t.members {
         scope.push();
         let m_generics = collect_generic_params(&member.generics, &member.span);
         push_generics_into_scope(&mut scope, &m_generics);
         let sig = collect_fn_sig(member, resolved, env, None, &scope, m_generics)?;
         scope.pop();
+        method_order.push(member.name.clone());
         methods.insert(member.name.clone(), sig);
     }
     let entry = env.traits.get_mut(&id).expect("trait sig pre populated");
     entry.methods = methods;
+    entry.method_order = method_order;
     Ok(())
+}
+
+/// Report whether a trait is object-safe and, if not, why. A trait is
+/// object-safe in this subset when none of its methods are generic and
+/// none take `Self` by value in a non-receiver parameter position. The
+/// returned `Err` string is a user-facing reason for the diagnostic.
+pub fn object_safety_violation(sig: &TraitSig) -> Option<String> {
+    for name in &sig.method_order {
+        let Some(m) = sig.methods.get(name) else {
+            continue;
+        };
+        if !m.generics.is_empty() {
+            return Some(format!(
+                "method `{}` is generic; methods with type parameters are not object-safe",
+                name
+            ));
+        }
+        // The receiver `self` is `Ty::SelfTy(..)` and is allowed. Any
+        // other parameter that mentions `Self` by value is not object
+        // safe in this subset.
+        for (i, p) in m.params.iter().enumerate() {
+            let is_receiver = i == 0 && matches!(p, Ty::SelfTy(_));
+            if !is_receiver && ty_mentions_self(p) {
+                return Some(format!(
+                    "method `{}` takes `Self` by value in a non-receiver position, which is not object-safe",
+                    name
+                ));
+            }
+        }
+    }
+    None
+}
+
+/// Whether a resolved type mentions the `Self` type anywhere.
+fn ty_mentions_self(ty: &Ty) -> bool {
+    match ty {
+        Ty::SelfTy(_) => true,
+        Ty::Option(t) | Ty::List(t) => ty_mentions_self(t),
+        Ty::Result(a, b) => ty_mentions_self(a) || ty_mentions_self(b),
+        Ty::Struct { args, .. } | Ty::Enum { args, .. } => args.iter().any(ty_mentions_self),
+        Ty::Function { params, ret } => {
+            params.iter().any(ty_mentions_self) || ty_mentions_self(ret)
+        }
+        _ => false,
+    }
 }
 
 fn fill_impl(i: &Impl, resolved: &ResolvedFile<'_>, env: &mut TypeEnv) -> Result<(), RavenError> {
@@ -407,19 +456,7 @@ pub fn resolve_ty(
             Ok(Ty::Option(Box::new(t)))
         }
         TypeKind::Path(p) => resolve_type_path(p, resolved, env, self_ty, scope),
-        TypeKind::Dyn(p) => {
-            // `dyn Trait` is parsed but not yet supported by the type
-            // checker. The resolver has already bound the trait name;
-            // we surface a clear error here so users see a hint rather
-            // than a panic. The receiving issue #66 will replace this.
-            Err(RavenError::ty(
-                TypeError::Custom(format!(
-                    "`dyn {}` trait objects are not yet supported by the type checker",
-                    type_path_name(p)
-                )),
-                p.span.clone(),
-            ))
-        }
+        TypeKind::Dyn(p) => resolve_dyn(p, resolved, env),
         TypeKind::Function { params, ret } => {
             let mut ps = Vec::with_capacity(params.len());
             for p in params {
@@ -432,6 +469,52 @@ pub fn resolve_ty(
             })
         }
     }
+}
+
+/// Resolve a `dyn Trait` type expression. The head segment must bind to
+/// a trait declaration; the trait must be object-safe. The produced
+/// [`Ty::Dyn`] carries the trait's method order so later passes lay out
+/// the vtable in a stable slot order.
+fn resolve_dyn(
+    path: &TypePath,
+    resolved: &ResolvedFile<'_>,
+    env: &TypeEnv,
+) -> Result<Ty, RavenError> {
+    let head = &path.segments[0];
+    let name = &head.name;
+    let binding = resolved
+        .map
+        .lookup(&head.span)
+        .ok_or_else(|| RavenError::ty(TypeError::UnknownType(name.clone()), head.span.clone()))?;
+    let trait_id = match binding {
+        Binding::Trait(id) => *id,
+        _ => {
+            return Err(RavenError::ty(
+                TypeError::Custom(format!(
+                    "`dyn {}` requires a trait; `{}` is not a trait",
+                    name, name
+                )),
+                head.span.clone(),
+            ));
+        }
+    };
+    let sig = env
+        .traits
+        .get(&trait_id)
+        .ok_or_else(|| RavenError::ty(TypeError::UnknownType(name.clone()), head.span.clone()))?;
+    if let Some(reason) = object_safety_violation(sig) {
+        return Err(RavenError::ty(
+            TypeError::Custom(format!(
+                "`dyn {}` is not allowed: {}. Consider a generic bound `<T: {}>` instead",
+                name, reason, name
+            )),
+            head.span.clone(),
+        ));
+    }
+    Ok(Ty::Dyn {
+        name: sig.name.clone(),
+        methods: sig.method_order.clone(),
+    })
 }
 
 fn resolve_type_path(

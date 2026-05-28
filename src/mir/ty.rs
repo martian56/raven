@@ -35,6 +35,14 @@ pub enum MirType {
         params: Vec<MirType>,
         ret: Box<MirType>,
     },
+    /// A `dyn Trait` trait object. Lowered as a single GC pointer to a
+    /// boxed two-slot fat pointer `{ data, vtable }`. `name` is the
+    /// trait's short name and `methods` is the trait's method order, used
+    /// by the back end to lay out vtables and pick a dispatch slot.
+    Dyn {
+        name: String,
+        methods: Vec<String>,
+    },
 }
 
 impl MirType {
@@ -71,6 +79,10 @@ impl MirType {
                 params: params.iter().map(MirType::from_ty).collect(),
                 ret: Box::new(MirType::from_ty(ret)),
             },
+            Ty::Dyn { name, methods } => MirType::Dyn {
+                name: name.clone(),
+                methods: methods.clone(),
+            },
             Ty::SelfTy(inner) => MirType::from_ty(inner),
             Ty::Error => MirType::Unit,
             Ty::Param(_) | Ty::Var(_) => MirType::Unit,
@@ -103,6 +115,7 @@ impl MirType {
                 parts.push(ret.mangle());
                 format!("Fn_{}", parts.join("_"))
             }
+            MirType::Dyn { name, .. } => format!("dyn_{}", name),
         }
     }
 }
@@ -143,6 +156,7 @@ impl fmt::Display for MirType {
                 }
                 write!(f, ") -> {}", ret)
             }
+            MirType::Dyn { name, .. } => write!(f, "dyn {}", name),
         }
     }
 }

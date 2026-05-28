@@ -44,7 +44,10 @@ pub fn cranelift_ty(ty: &MirType, ptr: CType) -> Option<CType> {
         | MirType::Option(_)
         | MirType::Result(_, _)
         | MirType::List(_)
-        | MirType::Function { .. } => Some(ptr),
+        | MirType::Function { .. }
+        // A `dyn Trait` value is a single GC pointer to a boxed fat
+        // pointer `{ data, vtable }`; see the heap layout note below.
+        | MirType::Dyn { .. } => Some(ptr),
     }
 }
 

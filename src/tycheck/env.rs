@@ -108,6 +108,10 @@ pub struct TraitSig {
     pub name: String,
     pub generics: Vec<GenericParamSig>,
     pub methods: HashMap<String, FnSig>,
+    /// Method names in declaration order. The vtable slot order for
+    /// `dyn Trait` dispatch follows this list, so the slot index of a
+    /// method is its position here.
+    pub method_order: Vec<String>,
     pub span: Span,
 }
 

@@ -109,6 +109,10 @@ pub enum Ty {
     List(Box<Ty>),
     /// A function value type: `fun(A, B) -> C`.
     Function { params: Vec<Ty>, ret: Box<Ty> },
+    /// A `dyn Trait` trait object. `name` is the trait's short name and
+    /// `methods` is the trait's method names in declaration order, which
+    /// fixes the vtable slot order used by dynamic dispatch.
+    Dyn { name: String, methods: Vec<String> },
     /// `Self` inside an `impl` block, bound to the implementing type.
     /// The contained type is the implementing type for convenience.
     SelfTy(Box<Ty>),
@@ -145,6 +149,7 @@ impl Ty {
             Ty::Result(a, b) => a.has_var() || b.has_var(),
             Ty::Struct { args, .. } | Ty::Enum { args, .. } => args.iter().any(|t| t.has_var()),
             Ty::Function { params, ret } => params.iter().any(|t| t.has_var()) || ret.has_var(),
+            Ty::Dyn { .. } => false,
             _ => false,
         }
     }
@@ -186,6 +191,7 @@ impl fmt::Display for Ty {
                 }
                 write!(f, ") -> {}", ret)
             }
+            Ty::Dyn { name, .. } => write!(f, "dyn {}", name),
             Ty::SelfTy(inner) => write!(f, "Self/* = {} */", inner),
             Ty::Param(p) => f.write_str(&p.name),
             Ty::Var(v) => write!(f, "?{}", v.0),
