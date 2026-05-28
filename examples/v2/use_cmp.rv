@@ -1,0 +1,21 @@
+// golden:skip
+import std/cmp { sort, max, min, max_of, min_of, clamp }
+import std/io { println }
+
+fun main() {
+    print(min(3, 7))
+    print(max(3, 7))
+    print(clamp(12, 0, 10))
+    let xs = [5, 2, 8, 1, 9, 3]
+    let s = sort(xs)
+    print(s[0])
+    print(s[5])
+    match max_of(xs) {
+        Some(v) -> print(v)
+        None -> print(0)
+    }
+    match min_of(xs) {
+        Some(v) -> print(v)
+        None -> print(0)
+    }
+}

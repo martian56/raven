@@ -225,6 +225,18 @@ fn collections_program_compiles_and_runs() {
 }
 
 #[test]
+fn cmp_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // std/cmp ordering and sorting over the prelude `Ord` trait: min, max,
+    // clamp, a selection sort that returns a new ascending list, and the
+    // max_of/min_of reductions returning Option. Prints 3, 7, 10, then the
+    // sorted first 1 and last 9, then max_of 9 and min_of 1.
+    compile_link_run_and_check("use_cmp.rv", "3\n7\n10\n1\n9\n9\n1\n", &runtime);
+}
+
+#[test]
 fn stdlib_string_method_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
