@@ -1,0 +1,28 @@
+// structs, enums with all payload kinds, traits, and impls
+
+struct Point{x:Int,y:Int}
+
+struct Empty {}
+
+enum Shape{
+    Circle(Float),
+    Rect(w:Float,h:Float),
+    Nothing,
+}
+
+trait Area{
+    fun area(self)->Float
+    fun name(self)->String = "shape"
+}
+
+impl Area for Point{
+    fun area(self)->Float{
+        return 0.0
+    }
+}
+
+impl<T> Wrapper<T> {
+    fun get(self) -> T {
+        return self.value
+    }
+}

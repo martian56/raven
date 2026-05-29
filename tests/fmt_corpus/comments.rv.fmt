@@ -1,0 +1,13 @@
+// a leading file comment
+
+// describes the constant
+const N: Int = 3
+
+fun first() {
+    let x = 1 // trailing on a statement
+    // standalone before return
+    return
+}
+
+// extra blank lines above this comment should collapse
+fun second() {}

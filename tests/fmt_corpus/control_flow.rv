@@ -1,0 +1,39 @@
+// if-expression, match with guards, while, loop, for, defer, break/continue
+
+fun classify(x: Int) -> String {
+    let label = if x < 0 {
+        "neg"
+    } else if x == 0 {
+        "zero"
+    } else {
+        "pos"
+    }
+    return label
+}
+
+fun sign(x: Int) -> Int {
+    return match x {
+        0 -> 0,
+        n if n > 0 -> 1,
+        _ -> -1,
+    }
+}
+
+fun count() -> Int {
+    let total = 0
+    for i in 0..10 {
+        if i == 5 {
+            continue
+        }
+        total += i
+    }
+    let n = 0
+    while n < 3 {
+        n += 1
+    }
+    loop {
+        break
+    }
+    defer cleanup()
+    return total
+}

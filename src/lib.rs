@@ -21,6 +21,7 @@ pub mod ast;
 pub mod codegen;
 pub mod driver;
 pub mod error;
+pub mod format;
 pub mod hir;
 pub mod lexer;
 pub mod lock;
