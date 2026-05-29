@@ -25,7 +25,7 @@ use crate::error::RavenError;
 pub use bindings::{
     Binding, DeclId, ImportId, ImportTarget, ResolutionMap, ResolvedImport, UseKey,
 };
-pub use imports::{FsLoader, LoadedSource, SourceLoader, STDLIB_MODULES};
+pub use imports::{FsLoader, GithubPath, LoadedSource, SourceLoader, STDLIB_MODULES};
 pub use scope::{Scope, ScopeKind, ScopeStack};
 pub use stdlib::{expand_with_stdlib, mangle_stdlib_fn};
 
