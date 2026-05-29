@@ -4,9 +4,10 @@
 //! by cloning the named tag or branch into a cache shared across
 //! projects. The cache lives at `<cache_root>/<host>/<user>/<repo>@<version>`.
 //!
-//! Version-constraint resolution (semver ranges) and the lock file are
-//! out of scope here; see issue #83. This module takes an explicit
-//! `version` string that is a git tag or branch and fetches it.
+//! Version-constraint resolution (semver ranges) is out of scope here.
+//! This module takes an explicit `version` string that is a git tag or
+//! branch and fetches it. The lock file (`rv.lock`) is built on top in
+//! `raven::lock`.
 //!
 //! See `docs/v2/specs/rvpm.md` for the cache layout and clone strategy.
 
@@ -99,8 +100,14 @@ pub fn cache_root() -> PathBuf {
 /// The cache directory for one package version:
 /// `<cache_root>/<host>/<user>/<repo>@<version>`.
 pub fn cache_dir(host: &str, user: &str, repo: &str, version: &str) -> PathBuf {
-    cache_root()
-        .join(host)
+    cache_dir_in(&cache_root(), host, user, repo, version)
+}
+
+/// The cache directory for one package version under an explicit cache
+/// root. Threading the root explicitly lets callers (and tests) avoid the
+/// global `RVPM_CACHE_DIR` environment variable and the races it brings.
+pub fn cache_dir_in(root: &Path, host: &str, user: &str, repo: &str, version: &str) -> PathBuf {
+    root.join(host)
         .join(user)
         .join(format!("{}@{}", repo, version))
 }
@@ -113,7 +120,21 @@ pub fn cache_dir(host: &str, user: &str, repo: &str, version: &str) -> PathBuf {
 /// remote. Otherwise the repository is cloned from
 /// `https://<host>/<user>/<repo>` at the given tag or branch.
 pub fn fetch(host: &str, user: &str, repo: &str, version: &str) -> Result<PathBuf, PkgError> {
-    let dest = cache_dir(host, user, repo, version);
+    fetch_in(&cache_root(), host, user, repo, version)
+}
+
+/// Fetch `host/user/repo` at `version` into an explicit cache root and
+/// return the cache directory. Behaves like [`fetch`] but does not
+/// consult `RVPM_CACHE_DIR`, so callers can isolate the cache without
+/// touching global environment state.
+pub fn fetch_in(
+    root: &Path,
+    host: &str,
+    user: &str,
+    repo: &str,
+    version: &str,
+) -> Result<PathBuf, PkgError> {
+    let dest = cache_dir_in(root, host, user, repo, version);
     if is_populated(&dest) {
         return Ok(dest);
     }
