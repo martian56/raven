@@ -1,0 +1,24 @@
+// golden:skip
+// std/process parent: runs a second compiled Raven program (the child,
+// path from RAVEN_PROC_CHILD) and prints its exit code and stdout, then
+// exercises the spawn-failure Err path on a program that does not exist.
+// The child prints `7\n`, so this prints `0`, then `7`, then `run failed`.
+import std/process { run }
+import std/env { get_env }
+import std/io { print, println }
+
+fun main() {
+    let child = get_env("RAVEN_PROC_CHILD")
+    let no_args: List<String> = []
+    match run(child, no_args) {
+        Ok(out) -> {
+            println("${out.code}")
+            print(out.stdout)
+        },
+        Err(e) -> println("run failed"),
+    }
+    match run("definitely_not_a_real_program_xyz", no_args) {
+        Ok(out) -> println("ran"),
+        Err(e) -> println("run failed"),
+    }
+}

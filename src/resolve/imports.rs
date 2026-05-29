@@ -92,6 +92,7 @@ pub const STDLIB_MODULES: &[&str] = &[
     "time",
     "json",
     "regex",
+    "process",
     "ffi",
 ];
 
