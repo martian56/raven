@@ -1,10 +1,11 @@
 //! Raven v2 compiler entry point.
 //!
-//! Supports two modes:
+//! Supports:
 //!   raven build <source.rv> [-o <output>]
 //!     Compile a single source file to a native executable.
-//!   raven                            (no args)
-//!     Print a placeholder banner. A full REPL lands later.
+//!   raven help | --help | -h     Print usage.
+//!   raven --version | -V         Print the compiler version.
+//!   raven                        Print usage.
 //!
 //! The `build` subcommand runs the entire v2 pipeline (lex, parse,
 //! resolve, type check, HIR, MIR) and feeds the resulting `MirProgram`
@@ -43,11 +44,19 @@ fn main() -> ExitCode {
 
 fn run() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() == 1 {
-        eprintln!("Raven v2: under construction. See docs/v2/ for the roadmap.");
+    let Some(first) = args.get(1) else {
+        print_usage();
         return ExitCode::SUCCESS;
-    }
-    match args[1].as_str() {
+    };
+    match first.as_str() {
+        "help" | "--help" | "-h" => {
+            print_usage();
+            ExitCode::SUCCESS
+        }
+        "--version" | "-V" => {
+            print_version();
+            ExitCode::SUCCESS
+        }
         "build" => match run_build(&args[2..]) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
@@ -56,13 +65,32 @@ fn run() -> ExitCode {
             }
         },
         other => {
-            eprintln!(
-                "raven: unknown subcommand `{}`. Try `raven build <file.rv> -o <output>`.",
-                other
-            );
+            eprintln!("raven: unknown subcommand '{}'", other);
+            eprintln!("Run 'raven help' for usage.");
             ExitCode::from(2)
         }
     }
+}
+
+fn print_version() {
+    println!("raven {}", env!("CARGO_PKG_VERSION"));
+}
+
+fn print_usage() {
+    println!("raven: the Raven compiler");
+    println!();
+    println!("Usage:");
+    println!("  raven <command> [arguments]");
+    println!();
+    println!("Commands:");
+    println!("  build <file.rv> [-o <output>]   Compile a source file to a native executable");
+    println!("  help                            Print this message");
+    println!();
+    println!("Options:");
+    println!("  -h, --help                      Print this message");
+    println!("  -V, --version                   Print the compiler version");
+    println!();
+    println!("To manage packages, use the 'rvpm' command.");
 }
 
 fn run_build(rest: &[String]) -> Result<(), BuildError> {
