@@ -10,6 +10,7 @@
 //! - `hir`: high-level intermediate representation (desugared AST)
 //! - `mir`: mid-level intermediate representation (basic blocks)
 //! - `codegen`: Cranelift IR generation and linking
+//! - `pkg`: rvpm package fetching and the shared content cache
 //! - `driver`: pipeline orchestrator
 //!
 //! Lexer, span, and error infrastructure ship today; the rest land in
@@ -23,6 +24,7 @@ pub mod lexer;
 pub mod manifest;
 pub mod mir;
 pub mod parser;
+pub mod pkg;
 pub mod resolve;
 pub mod span;
 pub mod tycheck;
