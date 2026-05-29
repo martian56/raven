@@ -86,7 +86,7 @@ nav:
     - Language Reference: v2/guide/language-reference.md
     - Standard Library: v2/guide/standard-library.md
     - rvpm: v2/guide/rvpm.md
-    - Migration from v1: v2/guide/migration.md
+    - Migration from v1: v2/migration.md
   - v1 (maintenance):
     - Getting Started:
       - Installation: getting-started/installation.md
