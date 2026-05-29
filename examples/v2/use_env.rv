@@ -1,0 +1,16 @@
+import std/env { get_env_or, has_env, arg_count, os_name }
+import std/io { println }
+
+fun main() {
+    let os = os_name()
+    let known = os == "linux" || os == "windows" || os == "macos"
+    let set = has_env("RAVEN_ENV_TEST")
+    let unset = has_env("RAVEN_DEFINITELY_UNSET_XYZ")
+    let has_arg = arg_count() >= 1
+    println(get_env_or("RAVEN_ENV_TEST", "missing"))
+    println("${set}")
+    println("${unset}")
+    println(get_env_or("RAVEN_DEFINITELY_UNSET_XYZ", "fallback"))
+    println("${has_arg}")
+    println("${known}")
+}

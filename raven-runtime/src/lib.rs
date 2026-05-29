@@ -196,6 +196,111 @@ pub extern "C" fn raven_println_int(value: i64) {
     let _ = handle.write_all(b"\n");
 }
 
+/// Look up an environment variable and return its value as a heap
+/// `String`. Returns an empty `String` when the variable is unset or its
+/// value is not valid UTF-8, so the caller always gets a usable pointer.
+/// Pair with `raven_env_has` to tell unset apart from an empty value.
+///
+/// # Safety
+///
+/// `name` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_env_get(name: *const object::String) -> *mut object::String {
+    let value = env_name(name)
+        .and_then(std::env::var_os)
+        .and_then(|v| v.into_string().ok())
+        .unwrap_or_default();
+    object::raven_string_from_bytes(value.as_ptr(), value.len())
+}
+
+/// Report whether an environment variable is set, regardless of value.
+///
+/// # Safety
+///
+/// `name` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_env_has(name: *const object::String) -> bool {
+    env_name(name).is_some_and(|n| std::env::var_os(n).is_some())
+}
+
+/// Number of process arguments, including the program path at index 0.
+#[no_mangle]
+pub extern "C" fn raven_env_arg_count() -> i64 {
+    std::env::args_os().count() as i64
+}
+
+/// The process argument at `index` as a heap `String`. Index 0 is the
+/// program path. Returns an empty `String` when `index` is out of range
+/// or the argument is not valid UTF-8.
+#[no_mangle]
+pub extern "C" fn raven_env_arg_at(index: i64) -> *mut object::String {
+    let value = usize::try_from(index)
+        .ok()
+        .and_then(|i| std::env::args_os().nth(i))
+        .and_then(|a| a.into_string().ok())
+        .unwrap_or_default();
+    object::raven_string_from_bytes(value.as_ptr(), value.len())
+}
+
+/// Terminate the process with `code`. Does not return.
+#[no_mangle]
+pub extern "C" fn raven_env_exit(code: i64) -> ! {
+    process::exit(code as i32);
+}
+
+/// The target operating system name: "windows", "linux", or "macos".
+/// Falls back to "unknown" on other targets.
+#[no_mangle]
+pub extern "C" fn raven_env_os_name() -> *mut object::String {
+    let name = if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else if cfg!(target_os = "linux") {
+        "linux"
+    } else {
+        "unknown"
+    };
+    object::raven_string_from_bytes(name.as_ptr(), name.len())
+}
+
+/// The target CPU architecture name, for example "x86_64" or "aarch64".
+#[no_mangle]
+pub extern "C" fn raven_env_arch() -> *mut object::String {
+    let arch = if cfg!(target_arch = "x86_64") {
+        "x86_64"
+    } else if cfg!(target_arch = "aarch64") {
+        "aarch64"
+    } else if cfg!(target_arch = "x86") {
+        "x86"
+    } else if cfg!(target_arch = "arm") {
+        "arm"
+    } else {
+        "unknown"
+    };
+    object::raven_string_from_bytes(arch.as_ptr(), arch.len())
+}
+
+/// Borrow a Raven `String` argument as a `&str` for an env lookup.
+///
+/// # Safety
+///
+/// `name` must be a valid `raven_string_from_bytes`-built `String` or
+/// null.
+fn env_name<'a>(name: *const object::String) -> Option<&'a str> {
+    if name.is_null() {
+        return None;
+    }
+    let ptr = object::raven_string_bytes(name);
+    let len = object::raven_string_len(name) as usize;
+    if ptr.is_null() {
+        return Some("");
+    }
+    // SAFETY: a Raven String holds `len` initialized UTF-8 bytes.
+    let bytes = unsafe { slice::from_raw_parts(ptr, len) };
+    std::str::from_utf8(bytes).ok()
+}
+
 /// Reinterpret a signed 64-bit integer as an `f64` by value conversion.
 ///
 /// The v2 surface language has no Int-to-Float cast, so `std/random`
