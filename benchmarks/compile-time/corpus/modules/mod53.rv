@@ -1,0 +1,159 @@
+import std/string
+
+struct Vec2_53 { x: Int, y: Int }
+
+impl Vec2_53 {
+    fun add(self, o: Vec2_53) -> Vec2_53 {
+        return Vec2_53 { x: self.x + o.x, y: self.y + o.y }
+    }
+    fun scale(self, k: Int) -> Vec2_53 {
+        return Vec2_53 { x: self.x * k, y: self.y * k }
+    }
+    fun magnitude_sq(self) -> Int {
+        return self.x * self.x + self.y * self.y
+    }
+}
+
+struct Node_53 { id: Int, weight: Int, label: String }
+
+impl Node_53 {
+    fun heavier(self, other: Node_53) -> Bool {
+        return self.weight > other.weight
+    }
+    fun retag(self, n: String) -> Node_53 {
+        return Node_53 { id: self.id, weight: self.weight, label: n }
+    }
+}
+
+enum Shape_53 {
+    Circle,
+    Square,
+    Triangle,
+    Hexagon,
+}
+
+fun classify_53(s: Shape_53) -> Int {
+    return match s {
+        Circle -> 4,
+        Square -> 4 * 2,
+        Triangle -> 4 * 3,
+        Hexagon -> 4 * 6,
+    }
+}
+
+enum Outcome_53 {
+    Pass,
+    Fail,
+    Skip,
+}
+
+fun grade_53(score: Int) -> Outcome_53 {
+    if score >= 60 {
+        return Outcome_53.Pass
+    }
+    if score >= 30 {
+        return Outcome_53.Skip
+    }
+    return Outcome_53.Fail
+}
+
+fun grade_points_53(o: Outcome_53) -> Int {
+    return match o {
+        Pass -> 100,
+        Fail -> 0,
+        Skip -> 50,
+    }
+}
+
+struct Pair_53<T> { first: T, second: T }
+
+impl<T> Pair_53<T> {
+    fun left(self) -> T = self.first
+    fun right(self) -> T = self.second
+}
+
+struct Wrap_53<T> { inner: T }
+
+impl<T> Wrap_53<T> {
+    fun get(self) -> T = self.inner
+    fun mapped<U>(self, f: fun(T) -> U) -> U = f(self.inner)
+}
+
+trait Score_53 {
+    fun score(self) -> Int
+}
+
+impl Score_53 for Node_53 {
+    fun score(self) -> Int = self.id * 10 + self.weight
+}
+
+impl Score_53 for Vec2_53 {
+    fun score(self) -> Int = self.magnitude_sq()
+}
+
+fun ranked_53<T: Score_53>(x: T) -> Int = x.score()
+
+fun identity_53<T>(x: T) -> T = x
+
+fun maybe_53(n: Int) -> Option<Int> {
+    if n > 4 {
+        return Some(n * 2)
+    }
+    return None
+}
+
+fun unwrap_or_53(x: Option<Int>, fallback: Int) -> Int {
+    return match x {
+        None -> fallback,
+        Some(v) -> v,
+    }
+}
+
+fun accumulate_53(limit: Int) -> Int {
+    let total = 0
+    let i = 0
+    while i < limit {
+        if i % 2 == 0 {
+            total = total + i
+        } else {
+            total = total - 1
+        }
+        i = i + 1
+    }
+    return total
+}
+
+fun sweep_53(limit: Int) -> Int {
+    let total = 0
+    for k in 0..limit {
+        total = total + classify_53(Shape_53.Triangle) + k
+    }
+    return total
+}
+
+fun fib_53(n: Int) -> Int {
+    if n < 2 {
+        return n
+    }
+    return fib_53(n - 1) + fib_53(n - 2)
+}
+
+fun compute_53(seed: Int) -> Int {
+    let v = Vec2_53 { x: seed, y: seed + 4 }
+    let w = v.add(Vec2_53 { x: 2, y: 3 }).scale(2)
+    let node = Node_53 { id: seed, weight: 4, label: "n" }
+    let tagged = node.retag("tagged")
+    let p = Pair_53 { first: w.x, second: w.y }
+    let q = Pair_53 { first: tagged.label, second: "z" }
+    let boxed = Wrap_53 { inner: seed }
+    let doubled = boxed.mapped(fun(x: Int) -> Int = x * 2)
+    let big = boxed.mapped(fun(x: Int) -> Bool = x > 4)
+    let m = unwrap_or_53(maybe_53(seed), 0)
+    let g = grade_points_53(grade_53(seed))
+    let r = ranked_53(tagged) + ranked_53(v)
+    let extra = if big { 1 } else { 0 }
+    return p.left() + p.right() + w.magnitude_sq() + identity_53(doubled)
+        + m + g + r + accumulate_53(4) + sweep_53(4)
+        + fib_53(8) + classify_53(Shape_53.Hexagon) + extra
+        + q.left().length()
+}

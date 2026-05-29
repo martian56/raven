@@ -1,0 +1,159 @@
+import std/string
+
+struct Vec2_19 { x: Int, y: Int }
+
+impl Vec2_19 {
+    fun add(self, o: Vec2_19) -> Vec2_19 {
+        return Vec2_19 { x: self.x + o.x, y: self.y + o.y }
+    }
+    fun scale(self, k: Int) -> Vec2_19 {
+        return Vec2_19 { x: self.x * k, y: self.y * k }
+    }
+    fun magnitude_sq(self) -> Int {
+        return self.x * self.x + self.y * self.y
+    }
+}
+
+struct Node_19 { id: Int, weight: Int, label: String }
+
+impl Node_19 {
+    fun heavier(self, other: Node_19) -> Bool {
+        return self.weight > other.weight
+    }
+    fun retag(self, n: String) -> Node_19 {
+        return Node_19 { id: self.id, weight: self.weight, label: n }
+    }
+}
+
+enum Shape_19 {
+    Circle,
+    Square,
+    Triangle,
+    Hexagon,
+}
+
+fun classify_19(s: Shape_19) -> Int {
+    return match s {
+        Circle -> 19,
+        Square -> 19 * 2,
+        Triangle -> 19 * 3,
+        Hexagon -> 19 * 6,
+    }
+}
+
+enum Outcome_19 {
+    Pass,
+    Fail,
+    Skip,
+}
+
+fun grade_19(score: Int) -> Outcome_19 {
+    if score >= 60 {
+        return Outcome_19.Pass
+    }
+    if score >= 30 {
+        return Outcome_19.Skip
+    }
+    return Outcome_19.Fail
+}
+
+fun grade_points_19(o: Outcome_19) -> Int {
+    return match o {
+        Pass -> 100,
+        Fail -> 0,
+        Skip -> 50,
+    }
+}
+
+struct Pair_19<T> { first: T, second: T }
+
+impl<T> Pair_19<T> {
+    fun left(self) -> T = self.first
+    fun right(self) -> T = self.second
+}
+
+struct Wrap_19<T> { inner: T }
+
+impl<T> Wrap_19<T> {
+    fun get(self) -> T = self.inner
+    fun mapped<U>(self, f: fun(T) -> U) -> U = f(self.inner)
+}
+
+trait Score_19 {
+    fun score(self) -> Int
+}
+
+impl Score_19 for Node_19 {
+    fun score(self) -> Int = self.id * 10 + self.weight
+}
+
+impl Score_19 for Vec2_19 {
+    fun score(self) -> Int = self.magnitude_sq()
+}
+
+fun ranked_19<T: Score_19>(x: T) -> Int = x.score()
+
+fun identity_19<T>(x: T) -> T = x
+
+fun maybe_19(n: Int) -> Option<Int> {
+    if n > 19 {
+        return Some(n * 2)
+    }
+    return None
+}
+
+fun unwrap_or_19(x: Option<Int>, fallback: Int) -> Int {
+    return match x {
+        None -> fallback,
+        Some(v) -> v,
+    }
+}
+
+fun accumulate_19(limit: Int) -> Int {
+    let total = 0
+    let i = 0
+    while i < limit {
+        if i % 2 == 0 {
+            total = total + i
+        } else {
+            total = total - 1
+        }
+        i = i + 1
+    }
+    return total
+}
+
+fun sweep_19(limit: Int) -> Int {
+    let total = 0
+    for k in 0..limit {
+        total = total + classify_19(Shape_19.Triangle) + k
+    }
+    return total
+}
+
+fun fib_19(n: Int) -> Int {
+    if n < 2 {
+        return n
+    }
+    return fib_19(n - 1) + fib_19(n - 2)
+}
+
+fun compute_19(seed: Int) -> Int {
+    let v = Vec2_19 { x: seed, y: seed + 19 }
+    let w = v.add(Vec2_19 { x: 2, y: 3 }).scale(2)
+    let node = Node_19 { id: seed, weight: 19, label: "n" }
+    let tagged = node.retag("tagged")
+    let p = Pair_19 { first: w.x, second: w.y }
+    let q = Pair_19 { first: tagged.label, second: "z" }
+    let boxed = Wrap_19 { inner: seed }
+    let doubled = boxed.mapped(fun(x: Int) -> Int = x * 2)
+    let big = boxed.mapped(fun(x: Int) -> Bool = x > 19)
+    let m = unwrap_or_19(maybe_19(seed), 0)
+    let g = grade_points_19(grade_19(seed))
+    let r = ranked_19(tagged) + ranked_19(v)
+    let extra = if big { 1 } else { 0 }
+    return p.left() + p.right() + w.magnitude_sq() + identity_19(doubled)
+        + m + g + r + accumulate_19(19) + sweep_19(19)
+        + fib_19(8) + classify_19(Shape_19.Hexagon) + extra
+        + q.left().length()
+}

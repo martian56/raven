@@ -1,0 +1,159 @@
+import std/string
+
+struct Vec2_35 { x: Int, y: Int }
+
+impl Vec2_35 {
+    fun add(self, o: Vec2_35) -> Vec2_35 {
+        return Vec2_35 { x: self.x + o.x, y: self.y + o.y }
+    }
+    fun scale(self, k: Int) -> Vec2_35 {
+        return Vec2_35 { x: self.x * k, y: self.y * k }
+    }
+    fun magnitude_sq(self) -> Int {
+        return self.x * self.x + self.y * self.y
+    }
+}
+
+struct Node_35 { id: Int, weight: Int, label: String }
+
+impl Node_35 {
+    fun heavier(self, other: Node_35) -> Bool {
+        return self.weight > other.weight
+    }
+    fun retag(self, n: String) -> Node_35 {
+        return Node_35 { id: self.id, weight: self.weight, label: n }
+    }
+}
+
+enum Shape_35 {
+    Circle,
+    Square,
+    Triangle,
+    Hexagon,
+}
+
+fun classify_35(s: Shape_35) -> Int {
+    return match s {
+        Circle -> 16,
+        Square -> 16 * 2,
+        Triangle -> 16 * 3,
+        Hexagon -> 16 * 6,
+    }
+}
+
+enum Outcome_35 {
+    Pass,
+    Fail,
+    Skip,
+}
+
+fun grade_35(score: Int) -> Outcome_35 {
+    if score >= 60 {
+        return Outcome_35.Pass
+    }
+    if score >= 30 {
+        return Outcome_35.Skip
+    }
+    return Outcome_35.Fail
+}
+
+fun grade_points_35(o: Outcome_35) -> Int {
+    return match o {
+        Pass -> 100,
+        Fail -> 0,
+        Skip -> 50,
+    }
+}
+
+struct Pair_35<T> { first: T, second: T }
+
+impl<T> Pair_35<T> {
+    fun left(self) -> T = self.first
+    fun right(self) -> T = self.second
+}
+
+struct Wrap_35<T> { inner: T }
+
+impl<T> Wrap_35<T> {
+    fun get(self) -> T = self.inner
+    fun mapped<U>(self, f: fun(T) -> U) -> U = f(self.inner)
+}
+
+trait Score_35 {
+    fun score(self) -> Int
+}
+
+impl Score_35 for Node_35 {
+    fun score(self) -> Int = self.id * 10 + self.weight
+}
+
+impl Score_35 for Vec2_35 {
+    fun score(self) -> Int = self.magnitude_sq()
+}
+
+fun ranked_35<T: Score_35>(x: T) -> Int = x.score()
+
+fun identity_35<T>(x: T) -> T = x
+
+fun maybe_35(n: Int) -> Option<Int> {
+    if n > 16 {
+        return Some(n * 2)
+    }
+    return None
+}
+
+fun unwrap_or_35(x: Option<Int>, fallback: Int) -> Int {
+    return match x {
+        None -> fallback,
+        Some(v) -> v,
+    }
+}
+
+fun accumulate_35(limit: Int) -> Int {
+    let total = 0
+    let i = 0
+    while i < limit {
+        if i % 2 == 0 {
+            total = total + i
+        } else {
+            total = total - 1
+        }
+        i = i + 1
+    }
+    return total
+}
+
+fun sweep_35(limit: Int) -> Int {
+    let total = 0
+    for k in 0..limit {
+        total = total + classify_35(Shape_35.Triangle) + k
+    }
+    return total
+}
+
+fun fib_35(n: Int) -> Int {
+    if n < 2 {
+        return n
+    }
+    return fib_35(n - 1) + fib_35(n - 2)
+}
+
+fun compute_35(seed: Int) -> Int {
+    let v = Vec2_35 { x: seed, y: seed + 16 }
+    let w = v.add(Vec2_35 { x: 2, y: 3 }).scale(2)
+    let node = Node_35 { id: seed, weight: 16, label: "n" }
+    let tagged = node.retag("tagged")
+    let p = Pair_35 { first: w.x, second: w.y }
+    let q = Pair_35 { first: tagged.label, second: "z" }
+    let boxed = Wrap_35 { inner: seed }
+    let doubled = boxed.mapped(fun(x: Int) -> Int = x * 2)
+    let big = boxed.mapped(fun(x: Int) -> Bool = x > 16)
+    let m = unwrap_or_35(maybe_35(seed), 0)
+    let g = grade_points_35(grade_35(seed))
+    let r = ranked_35(tagged) + ranked_35(v)
+    let extra = if big { 1 } else { 0 }
+    return p.left() + p.right() + w.magnitude_sq() + identity_35(doubled)
+        + m + g + r + accumulate_35(16) + sweep_35(16)
+        + fib_35(8) + classify_35(Shape_35.Hexagon) + extra
+        + q.left().length()
+}

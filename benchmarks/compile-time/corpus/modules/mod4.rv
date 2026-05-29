@@ -1,0 +1,159 @@
+import std/string
+
+struct Vec2_4 { x: Int, y: Int }
+
+impl Vec2_4 {
+    fun add(self, o: Vec2_4) -> Vec2_4 {
+        return Vec2_4 { x: self.x + o.x, y: self.y + o.y }
+    }
+    fun scale(self, k: Int) -> Vec2_4 {
+        return Vec2_4 { x: self.x * k, y: self.y * k }
+    }
+    fun magnitude_sq(self) -> Int {
+        return self.x * self.x + self.y * self.y
+    }
+}
+
+struct Node_4 { id: Int, weight: Int, label: String }
+
+impl Node_4 {
+    fun heavier(self, other: Node_4) -> Bool {
+        return self.weight > other.weight
+    }
+    fun retag(self, n: String) -> Node_4 {
+        return Node_4 { id: self.id, weight: self.weight, label: n }
+    }
+}
+
+enum Shape_4 {
+    Circle,
+    Square,
+    Triangle,
+    Hexagon,
+}
+
+fun classify_4(s: Shape_4) -> Int {
+    return match s {
+        Circle -> 6,
+        Square -> 6 * 2,
+        Triangle -> 6 * 3,
+        Hexagon -> 6 * 6,
+    }
+}
+
+enum Outcome_4 {
+    Pass,
+    Fail,
+    Skip,
+}
+
+fun grade_4(score: Int) -> Outcome_4 {
+    if score >= 60 {
+        return Outcome_4.Pass
+    }
+    if score >= 30 {
+        return Outcome_4.Skip
+    }
+    return Outcome_4.Fail
+}
+
+fun grade_points_4(o: Outcome_4) -> Int {
+    return match o {
+        Pass -> 100,
+        Fail -> 0,
+        Skip -> 50,
+    }
+}
+
+struct Pair_4<T> { first: T, second: T }
+
+impl<T> Pair_4<T> {
+    fun left(self) -> T = self.first
+    fun right(self) -> T = self.second
+}
+
+struct Wrap_4<T> { inner: T }
+
+impl<T> Wrap_4<T> {
+    fun get(self) -> T = self.inner
+    fun mapped<U>(self, f: fun(T) -> U) -> U = f(self.inner)
+}
+
+trait Score_4 {
+    fun score(self) -> Int
+}
+
+impl Score_4 for Node_4 {
+    fun score(self) -> Int = self.id * 10 + self.weight
+}
+
+impl Score_4 for Vec2_4 {
+    fun score(self) -> Int = self.magnitude_sq()
+}
+
+fun ranked_4<T: Score_4>(x: T) -> Int = x.score()
+
+fun identity_4<T>(x: T) -> T = x
+
+fun maybe_4(n: Int) -> Option<Int> {
+    if n > 6 {
+        return Some(n * 2)
+    }
+    return None
+}
+
+fun unwrap_or_4(x: Option<Int>, fallback: Int) -> Int {
+    return match x {
+        None -> fallback,
+        Some(v) -> v,
+    }
+}
+
+fun accumulate_4(limit: Int) -> Int {
+    let total = 0
+    let i = 0
+    while i < limit {
+        if i % 2 == 0 {
+            total = total + i
+        } else {
+            total = total - 1
+        }
+        i = i + 1
+    }
+    return total
+}
+
+fun sweep_4(limit: Int) -> Int {
+    let total = 0
+    for k in 0..limit {
+        total = total + classify_4(Shape_4.Triangle) + k
+    }
+    return total
+}
+
+fun fib_4(n: Int) -> Int {
+    if n < 2 {
+        return n
+    }
+    return fib_4(n - 1) + fib_4(n - 2)
+}
+
+fun compute_4(seed: Int) -> Int {
+    let v = Vec2_4 { x: seed, y: seed + 6 }
+    let w = v.add(Vec2_4 { x: 2, y: 3 }).scale(2)
+    let node = Node_4 { id: seed, weight: 6, label: "n" }
+    let tagged = node.retag("tagged")
+    let p = Pair_4 { first: w.x, second: w.y }
+    let q = Pair_4 { first: tagged.label, second: "z" }
+    let boxed = Wrap_4 { inner: seed }
+    let doubled = boxed.mapped(fun(x: Int) -> Int = x * 2)
+    let big = boxed.mapped(fun(x: Int) -> Bool = x > 6)
+    let m = unwrap_or_4(maybe_4(seed), 0)
+    let g = grade_points_4(grade_4(seed))
+    let r = ranked_4(tagged) + ranked_4(v)
+    let extra = if big { 1 } else { 0 }
+    return p.left() + p.right() + w.magnitude_sq() + identity_4(doubled)
+        + m + g + r + accumulate_4(6) + sweep_4(6)
+        + fib_4(8) + classify_4(Shape_4.Hexagon) + extra
+        + q.left().length()
+}
