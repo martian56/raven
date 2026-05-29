@@ -165,7 +165,10 @@ Suffix         := "." Identifier [ TypeArgs ] [ "(" ArgList ")" ]
 Primary       := Literal
               | Identifier [ TypeArgs ] [ StructLit ]
               | "(" Expr ")"
-              | "[" ExprList "]"
+              | "[" ExprList "]"            // list literal
+              | "[" MapEntries "]"          // map literal
+              | "[" ":" "]"                 // empty map
+              | SetLit
               | "{" Block "}"
               | IfExpr | MatchExpr | LoopExpr | WhileExpr | ForExpr | LambdaExpr
               | "self" | "Self"
@@ -173,6 +176,8 @@ Literal       := IntLit | FloatLit | BoolLit | StringLit | BlockStringLit | Char
 StructLit     := "{" [ FieldInit { Separator FieldInit }* [ Separator ] ] "}"
 FieldInit     := Identifier ":" Expr
               | Identifier
+SetLit        := "{" Expr { "," Expr }* [ "," ] "}"   // at least one element
+MapEntries    := Expr ":" Expr { "," Expr ":" Expr }* [ "," ]
 ArgList       := [ Expr { "," Expr }* [ "," ] ]
 ExprList      := [ Expr { "," Expr }* [ "," ] ]
 ```
@@ -198,6 +203,17 @@ Both `if` and `match` are expressions and have a value. `while` and `for` evalua
 #### Lambda shorthand
 
 `{ x, y -> body }` is a closure whose parameter types are inferred. The parser distinguishes shorthand lambdas from plain block expressions by looking ahead for an `Arrow` token (`->`) at the same brace depth before a statement separator. If found, the brace introduces a shorthand lambda; otherwise it is a block expression. A `{}` empty brace is always a block (the unit value).
+
+#### Set and map literals
+
+A set literal is `{ e1, e2, ... }`: a brace around one or more comma-separated expressions. A map literal is `[ k1: v1, k2: v2, ... ]`: a bracket around one or more comma-separated `key: value` pairs. Both lower to the bundled `std/collections` constructors (`Set.new()` plus `add` per element, `Map.new()` plus `set` per pair), so the literal needs `import std/collections` in scope. The parser produces dedicated `ExprKind::SetLit` and `ExprKind::MapLit` nodes; the desugaring to constructors happens during HIR lowering.
+
+Disambiguation rules:
+
+- Brace `{ ... }`. The parser first checks for a shorthand lambda (an `->` at brace depth 1 before a separator). Failing that, it checks for a set literal: a set is a brace whose first element is an expression followed, at brace depth 1, by a `,` before any statement separator (`;` or newline) or the closing `}`. A leading statement keyword (`let`, `return`, `break`, `continue`) marks a block immediately. A single-element `{ x }` (no comma) stays a block whose tail expression is `x`, preserving existing block behavior, so a single-element set is written `{x,}`. An empty `{}` is a block; an empty set is `Set.new()`.
+- Bracket `[ ... ]`. The empty `[]` is an empty list and `[:]` is an empty map. Otherwise the parser reads the first element expression, then looks at the next top-level token: a `:` makes it a map literal (the first element was a key), anything else makes it a list literal. So `[1, 2, 3]` is a list and `["a": 1]` is a map.
+
+These rules do not change how blocks, struct literals, `match` arm bodies, or `if`/`while`/`for` bodies parse: a set literal requires the comma form, and a map literal requires a top-level `:`, neither of which those forms produce.
 
 #### Patterns
 

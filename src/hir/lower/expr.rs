@@ -115,6 +115,8 @@ pub(crate) fn lower_expr(
             }
             HirExprKind::Array(out)
         }
+        ExprKind::SetLit(items) => return lower_set_lit(items, &ty, &span, cx),
+        ExprKind::MapLit(pairs) => return lower_map_lit(pairs, &ty, &span, cx),
         ExprKind::Tuple(_) => {
             // The parser produces tuples but the resolver/tycheck
             // reject them; this branch should not run in practice.
@@ -437,6 +439,140 @@ pub(crate) fn lower_expr(
         });
     }
     Ok(inner)
+}
+
+/// Lower a set literal `{e1, e2, ...}` to a block that builds the set
+/// with the `Set.new()` associated constructor and one `add` call per
+/// element:
+///
+/// ```text
+/// { let __set = Set.new(); __set.add(e1); __set.add(e2); ...; __set }
+/// ```
+///
+/// The set type comes from the type checker (recorded at the literal's
+/// span), so `Set.new()` is an `AssocCall` on that concrete `Set<T>` and
+/// each `add` is an ordinary method call. Monomorphization resolves both
+/// to the element type's impl symbols, exactly as for hand-written code.
+fn lower_set_lit(
+    items: &[Expr],
+    set_ty: &Ty,
+    span: &Span,
+    cx: &LowerCtx<'_>,
+) -> Result<HirExpr, RavenError> {
+    let elem_ty = match set_ty.strip_self() {
+        Ty::Struct { args, .. } => args.first().cloned().unwrap_or(Ty::Error),
+        _ => Ty::Error,
+    };
+    let name = cx.fresh("set");
+    let ctor = make_expr(
+        HirExprKind::AssocCall {
+            self_ty: set_ty.clone(),
+            name: "new".into(),
+            args: Vec::new(),
+        },
+        set_ty.clone(),
+        span.clone(),
+    );
+    let mut stmts = vec![let_stmt(&name, set_ty.clone(), ctor, span.clone())];
+    for it in items {
+        let value = lower_expr(it, &elem_ty, cx)?;
+        let recv = ident_expr(&name, set_ty.clone(), it.span.clone());
+        let add = make_expr(
+            HirExprKind::MethodCall {
+                receiver: Box::new(recv),
+                name: "add".into(),
+                args: vec![value],
+            },
+            Ty::Unit,
+            it.span.clone(),
+        );
+        stmts.push(HirStmt {
+            kind: HirStmtKind::Expr(add),
+            span: it.span.clone(),
+        });
+    }
+    let tail = ident_expr(&name, set_ty.clone(), span.clone());
+    let block = HirBlock {
+        stmts,
+        tail: Some(Box::new(tail)),
+        ty: set_ty.clone(),
+        span: span.clone(),
+    };
+    Ok(make_expr(
+        HirExprKind::Block(block),
+        set_ty.clone(),
+        span.clone(),
+    ))
+}
+
+/// Lower a map literal `[k1: v1, ...]` (and the empty `[:]`) to a block
+/// that builds the map with the `Map.new()` associated constructor and
+/// one `set` call per pair:
+///
+/// ```text
+/// { let __map = Map.new(); __map.set(k1, v1); ...; __map }
+/// ```
+fn lower_map_lit(
+    pairs: &[(Expr, Expr)],
+    map_ty: &Ty,
+    span: &Span,
+    cx: &LowerCtx<'_>,
+) -> Result<HirExpr, RavenError> {
+    let (key_ty, val_ty) = match map_ty.strip_self() {
+        Ty::Struct { args, .. } => (
+            args.first().cloned().unwrap_or(Ty::Error),
+            args.get(1).cloned().unwrap_or(Ty::Error),
+        ),
+        _ => (Ty::Error, Ty::Error),
+    };
+    let name = cx.fresh("map");
+    let ctor = make_expr(
+        HirExprKind::AssocCall {
+            self_ty: map_ty.clone(),
+            name: "new".into(),
+            args: Vec::new(),
+        },
+        map_ty.clone(),
+        span.clone(),
+    );
+    let mut stmts = vec![let_stmt(&name, map_ty.clone(), ctor, span.clone())];
+    for (k, v) in pairs {
+        let pair_span = Span::new(
+            k.span.file.clone(),
+            k.span.start.min(v.span.start),
+            k.span.end.max(v.span.end),
+            k.span.line,
+            k.span.col,
+        );
+        let key = lower_expr(k, &key_ty, cx)?;
+        let value = lower_expr(v, &val_ty, cx)?;
+        let recv = ident_expr(&name, map_ty.clone(), pair_span.clone());
+        let set = make_expr(
+            HirExprKind::MethodCall {
+                receiver: Box::new(recv),
+                name: "set".into(),
+                args: vec![key, value],
+            },
+            Ty::Unit,
+            pair_span.clone(),
+        );
+        stmts.push(HirStmt {
+            kind: HirStmtKind::Expr(set),
+            span: pair_span,
+        });
+    }
+    let tail = ident_expr(&name, map_ty.clone(), span.clone());
+    let block = HirBlock {
+        stmts,
+        tail: Some(Box::new(tail)),
+        ty: map_ty.clone(),
+        span: span.clone(),
+    };
+    Ok(make_expr(
+        HirExprKind::Block(block),
+        map_ty.clone(),
+        span.clone(),
+    ))
 }
 
 fn lower_unop(op: UnaryOp) -> HirUnaryOp {

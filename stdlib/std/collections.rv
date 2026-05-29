@@ -9,6 +9,8 @@ struct Set<T: Eq> {
     items: List<T>,
 }
 
+// Superseded by the set literal `{a, b}` and `Set.new()`. Kept for
+// selective imports.
 fun empty_set<T: Eq>() -> Set<T> {
     let items: List<T> = []
     return Set { items: items }
@@ -70,6 +72,8 @@ struct Map<K: Eq, V> {
     values: List<V>,
 }
 
+// Superseded by the map literal `["a": 1]` (and `[:]`) and `Map.new()`.
+// Kept for selective imports.
 fun empty_map<K: Eq, V>() -> Map<K, V> {
     let keys: List<K> = []
     let values: List<V> = []

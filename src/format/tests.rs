@@ -210,3 +210,33 @@ fn dollar_brace_in_plain_string_escaped() {
     let out = fmt("fun f()->String{return \"\\${x}\"}");
     assert!(out.contains("\\${x}"));
 }
+
+#[test]
+fn set_literal_round_trips() {
+    let out = fmt("fun f(){let s={1,2,  3}}");
+    assert_eq!(out, "fun f() {\n    let s = {1, 2, 3}\n}\n");
+}
+
+#[test]
+fn single_element_set_keeps_one_element() {
+    let out = fmt("fun f(){let s={1,}}");
+    assert_eq!(out, "fun f() {\n    let s = {1,}\n}\n");
+}
+
+#[test]
+fn map_literal_round_trips() {
+    let out = fmt("fun f(){let m=[\"a\":1,\"b\":2]}");
+    assert_eq!(out, "fun f() {\n    let m = [\"a\": 1, \"b\": 2]\n}\n");
+}
+
+#[test]
+fn empty_map_literal_round_trips() {
+    let out = fmt("fun f(){let m=[:]}");
+    assert_eq!(out, "fun f() {\n    let m = [:]\n}\n");
+}
+
+#[test]
+fn empty_list_stays_a_list() {
+    let out = fmt("fun f(){let e=[]}");
+    assert_eq!(out, "fun f() {\n    let e = []\n}\n");
+}

@@ -537,3 +537,58 @@ fn ffi_type_mismatch_is_rejected() {
     .unwrap_err();
     assert!(matches!(err, RavenError::Type(_, _, _)));
 }
+
+#[test]
+fn set_literal_type_checks() {
+    check_with_prelude(
+        "import std/collections\nfun main() {\n    let s: Set<Int> = {1, 2, 2}\n    let _ = s.len()\n}\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn set_literal_infers_element_type() {
+    check_with_prelude(
+        "import std/collections\nfun main() {\n    let s = {1, 2, 3}\n    let _ = s.contains(2)\n}\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn map_literal_type_checks_and_infers() {
+    check_with_prelude(
+        "import std/collections\nfun main() {\n    let m = [\"a\": 1, \"b\": 2]\n    let _ = m.get(\"a\")\n}\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn map_literal_infers_bool_values() {
+    check_with_prelude(
+        "import std/collections\nfun main() {\n    let m = [\"x\": true]\n    let _ = m.has(\"x\")\n}\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn empty_map_literal_type_checks_with_annotation() {
+    check_with_prelude(
+        "import std/collections\nfun main() {\n    let m: Map<String, Int> = [:]\n    let _ = m.len()\n}\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn set_literal_requires_collections_import() {
+    // A set literal lowers to the bundled `Set` type; without the
+    // collections module in scope there is no `Set` declaration, so the
+    // literal is a type error.
+    let err = check_with_prelude("fun main() {\n    let s = {1, 2}\n}\n").unwrap_err();
+    assert!(matches!(err, RavenError::Type(_, _, _)), "got: {}", err);
+}
+
+#[test]
+fn map_literal_requires_collections_import() {
+    let err = check_with_prelude("fun main() {\n    let m = [\"a\": 1]\n}\n").unwrap_err();
+    assert!(matches!(err, RavenError::Type(_, _, _)), "got: {}", err);
+}

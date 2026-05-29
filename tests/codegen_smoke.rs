@@ -341,6 +341,24 @@ fn collections_program_compiles_and_runs() {
 }
 
 #[test]
+fn collection_literals_compile_and_run() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Set and map literal syntax (issue #156). `{1, 2, 2, 3}` dedups to a
+    // 3-element Set; `contains` reports membership. An un-annotated set
+    // infers its element type. `["a": 1, "b": 2]` builds a 2-entry Map;
+    // `get` returns Some/None. Map values infer (String to Bool). The
+    // empty-map form `[:]` builds an empty Map. Prints
+    // 3, true, false, 3, 2, 1, -1, 2, true, 0.
+    compile_link_run_and_check(
+        "use_collection_literals.rv",
+        "3\ntrue\nfalse\n3\n2\n1\n-1\n2\ntrue\n0\n",
+        &runtime,
+    );
+}
+
+#[test]
 fn selective_bundled_type_import_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

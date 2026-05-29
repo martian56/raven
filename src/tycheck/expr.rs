@@ -698,6 +698,8 @@ impl<'a, 'b> Checker<'a, 'b> {
             ExprKind::Paren(inner) => self.check_expr(inner),
             ExprKind::Ident { name, generics } => self.check_ident(name, generics, &expr.span),
             ExprKind::Array(items) => self.check_array(items, &expr.span),
+            ExprKind::SetLit(items) => self.check_set_lit(items, &expr.span),
+            ExprKind::MapLit(pairs) => self.check_map_lit(pairs, &expr.span),
             ExprKind::Tuple(_) => Err(RavenError::ty(
                 TypeError::Custom("tuple expressions are not yet supported".into()),
                 expr.span.clone(),
@@ -1068,6 +1070,73 @@ impl<'a, 'b> Checker<'a, 'b> {
             self.unify(&first, &t, &it.span)?;
         }
         Ok(Ty::List(Box::new(first)))
+    }
+
+    /// Find a struct declaration by its source name and build a fresh
+    /// instantiation `Ty::Struct` whose type arguments are inference
+    /// variables carrying the declaration's trait bounds. Used by the set
+    /// and map literals, which name the bundled `Set` and `Map` types. A
+    /// missing declaration means the collections module is not in scope.
+    fn instantiate_named_struct(
+        &mut self,
+        name: &str,
+        span: &Span,
+    ) -> Result<(crate::resolve::DeclId, Vec<Ty>), RavenError> {
+        let found = self
+            .env
+            .structs
+            .iter()
+            .find(|(_, s)| s.name == name)
+            .map(|(id, s)| (*id, s.generics.clone()));
+        let Some((id, generics)) = found else {
+            return Err(RavenError::ty(
+                TypeError::Custom(format!(
+                    "`{}` literal requires the collections module; add `import std/collections`",
+                    name
+                )),
+                span.clone(),
+            ));
+        };
+        let args = self.instantiate_type_args(&generics, &[], span, name)?;
+        Ok((id, args))
+    }
+
+    /// Check a set literal `{e1, e2, ...}`. The result is `Set<T>` where
+    /// `T` unifies with every element type. The `Eq` bound on `Set`'s type
+    /// parameter rides along on the fresh argument variable.
+    fn check_set_lit(&mut self, items: &[Expr], span: &Span) -> Result<Ty, RavenError> {
+        let (id, args) = self.instantiate_named_struct("Set", span)?;
+        let elem = args.first().cloned().unwrap_or(Ty::Error);
+        for it in items {
+            let t = self.check_expr(it)?;
+            self.unify(&elem, &t, &it.span)?;
+        }
+        Ok(Ty::Struct {
+            id,
+            name: "Set".to_string(),
+            args,
+        })
+    }
+
+    /// Check a map literal `[k1: v1, ...]` (and the empty `[:]`). The
+    /// result is `Map<K, V>` where `K` unifies with every key type and `V`
+    /// with every value type. The `Eq` bound on `Map`'s key parameter
+    /// rides along on the fresh key argument variable.
+    fn check_map_lit(&mut self, pairs: &[(Expr, Expr)], span: &Span) -> Result<Ty, RavenError> {
+        let (id, args) = self.instantiate_named_struct("Map", span)?;
+        let key_ty = args.first().cloned().unwrap_or(Ty::Error);
+        let val_ty = args.get(1).cloned().unwrap_or(Ty::Error);
+        for (k, v) in pairs {
+            let kt = self.check_expr(k)?;
+            self.unify(&key_ty, &kt, &k.span)?;
+            let vt = self.check_expr(v)?;
+            self.unify(&val_ty, &vt, &v.span)?;
+        }
+        Ok(Ty::Struct {
+            id,
+            name: "Map".to_string(),
+            args,
+        })
     }
 
     fn check_unary(&mut self, op: UnaryOp, operand: &Expr) -> Result<Ty, RavenError> {

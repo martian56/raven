@@ -62,6 +62,15 @@ pub enum ExprKind {
     },
     /// `[a, b, c]` array literal.
     Array(Vec<Expr>),
+    /// `{a, b, c}` set literal. Always at least one element (an empty set
+    /// is written `Set.new()` and a single-element `{x}` is a block). The
+    /// HIR lowers this to a `Set.new()` constructor plus one `add` call
+    /// per element.
+    SetLit(Vec<Expr>),
+    /// `[k1: v1, k2: v2]` map literal. The empty map is the distinct `[:]`
+    /// form, which still lowers here with no pairs. The HIR lowers this to
+    /// a `Map.new()` constructor plus one `set` call per pair.
+    MapLit(Vec<(Expr, Expr)>),
     /// `(a, b, c)` tuple literal. Always at least two elements. The
     /// parser produces this and the resolver rejects it until tuples
     /// land; see `docs/v2/specs/parser.md`.

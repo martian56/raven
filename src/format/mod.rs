@@ -758,6 +758,26 @@ impl Printer<'_> {
                 let parts = self.expr_list(items, base);
                 format!("({})", parts.join(", "))
             }
+            ExprKind::SetLit(items) => {
+                let parts = self.expr_list(items, base);
+                // A single-element set keeps a trailing comma so it does
+                // not re-parse as a one-expression block `{ x }`.
+                if parts.len() == 1 {
+                    format!("{{{},}}", parts[0])
+                } else {
+                    format!("{{{}}}", parts.join(", "))
+                }
+            }
+            ExprKind::MapLit(pairs) => {
+                if pairs.is_empty() {
+                    return "[:]".to_string();
+                }
+                let parts: Vec<String> = pairs
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", self.expr_at(k, base), self.expr_at(v, base)))
+                    .collect();
+                format!("[{}]", parts.join(", "))
+            }
             ExprKind::Paren(inner) => {
                 let inner = self.expr_at(inner, base);
                 format!("({})", inner)
