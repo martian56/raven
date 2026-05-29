@@ -55,6 +55,7 @@ pub const BUNDLED_MODULES: &[(&str, &str)] = &[
     ("net", include_str!("../../stdlib/std/net.rv")),
     ("http", include_str!("../../stdlib/std/http.rv")),
     ("json", include_str!("../../stdlib/std/json.rv")),
+    ("regex", include_str!("../../stdlib/std/regex.rv")),
     ("test", include_str!("../../stdlib/std/test.rv")),
 ];
 
@@ -482,6 +483,11 @@ mod tests {
     #[test]
     fn json_module_is_bundled() {
         assert!(bundled_source("json").is_some());
+    }
+
+    #[test]
+    fn regex_module_is_bundled() {
+        assert!(bundled_source("regex").is_some());
     }
 
     #[test]

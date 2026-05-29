@@ -1,0 +1,44 @@
+import std/regex { compile }
+
+fun main() {
+    match compile("a+") {
+        Ok(re) -> {
+            print(re.is_match("xaaay"))
+            match re.find("xaaay") {
+                Some(m) -> print(m),
+                None -> print("none"),
+            }
+            match re.find("zzz") {
+                Some(m) -> print(m),
+                None -> print("none"),
+            }
+            let parts = re.split("xaaayaz")
+            print_int(parts.len())
+            print(parts[0])
+            print(parts[1])
+            print(parts[2])
+            re.free()
+        },
+        Err(e) -> print("compile failed"),
+    }
+    match compile("(\\d+)-(\\d+)") {
+        Ok(re) -> {
+            let all = re.find_all("12-345 and 67-8")
+            print_int(all.len())
+            print(all[0])
+            print(all[1])
+            let caps = re.captures("12-345")
+            print_int(caps.len())
+            print(caps[0])
+            print(caps[1])
+            print(caps[2])
+            print(re.replace_all("a 12-345 b", "$2-$1"))
+            re.free()
+        },
+        Err(e) -> print("compile failed"),
+    }
+    match compile("(") {
+        Ok(re) -> print("ok"),
+        Err(e) -> print("compile failed"),
+    }
+}

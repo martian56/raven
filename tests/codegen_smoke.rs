@@ -969,6 +969,38 @@ fn json_program_compiles_and_runs() {
     compile_link_run_and_check("use_json.rv", expected, &runtime);
 }
 
+#[test]
+fn regex_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // std/regex end to end, backed by the Rust regex crate through the
+    // runtime handle registry. Every line is deterministic: `a+` matches
+    // "xaaay" (true) and finds "aaa", a non-match returns None (none),
+    // and splitting "xaaayaz" yields 3 pieces x/y/z. The `(\d+)-(\d+)`
+    // pattern finds 2 matches (12-345, 67-8), captures 3 groups of the
+    // first match (12-345, 12, 345), and replace_all with "$2-$1" swaps
+    // the groups to "a 345-12 b". An invalid pattern "(" takes the Err
+    // path, printing "compile failed".
+    let expected = "true\n\
+                    aaa\n\
+                    none\n\
+                    3\n\
+                    x\n\
+                    y\n\
+                    z\n\
+                    2\n\
+                    12-345\n\
+                    67-8\n\
+                    3\n\
+                    12-345\n\
+                    12\n\
+                    345\n\
+                    a 345-12 b\n\
+                    compile failed\n";
+    compile_link_run_and_check("use_regex.rv", expected, &runtime);
+}
+
 /// Return the runtime staticlib when a linker and the staticlib are both
 /// present, or skip with a diagnostic. Shared by every smoke case so the
 /// skip behavior stays identical.
