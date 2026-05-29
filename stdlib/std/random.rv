@@ -1,0 +1,92 @@
+// std/random: a seeded pseudo-random generator using splitmix64.
+//
+// `Rng.new(seed)` is deterministic: the same seed yields the same
+// sequence, which is the reproducibility guarantee. `Rng.from_entropy()`
+// seeds from a runtime time/pid source for a non-reproducible stream.
+// See docs/v2/specs/std-random.md.
+//
+// Raven Int is i64 and arithmetic wraps two's-complement, so splitmix64's
+// unsigned add and multiply map directly onto `+` and `*`. The `>>`
+// operator is arithmetic (sign-propagating), so the finalizer's logical
+// right shifts go through `ushr` below.
+
+extern "C" {
+    fun raven_int_to_float(x: Int) -> Float
+    fun raven_random_entropy() -> Int
+}
+
+// Logical (zero-filling) right shift of a 64-bit value by `n` in 1..63.
+// Masks off the high `n` bits the arithmetic `>>` would sign-fill.
+fun ushr(x: Int, n: Int) -> Int {
+    let mask = (1 << (64 - n)) - 1
+    return (x >> n) & mask
+}
+
+struct Rng {
+    state: Int,
+}
+
+impl Rng {
+    fun new(seed: Int) -> Rng {
+        return Rng { state: seed }
+    }
+
+    fun from_entropy() -> Rng {
+        return Rng { state: raven_random_entropy() }
+    }
+
+    // splitmix64: advance the state, then finalize the old sum.
+    fun next_int(self) -> Int {
+        self.state = self.state + -7046029254386353131
+        let z = self.state
+        let a = (z ^ ushr(z, 30)) * -4658895280553007687
+        let b = (a ^ ushr(a, 27)) * -7723592293110705685
+        return b ^ ushr(b, 31)
+    }
+
+    // Uniform-ish in the half-open interval [lo, hi). Uses a modulo,
+    // which carries a small bias when (hi - lo) does not divide the 2^63
+    // value range; for typical small ranges the bias is negligible.
+    // Assumes lo < hi; if lo >= hi the result is lo.
+    fun gen_range(self, lo: Int, hi: Int) -> Int {
+        if lo >= hi {
+            return lo
+        }
+        let span = hi - lo
+        // Force a non-negative magnitude before the modulo.
+        let r = ushr(self.next_int(), 1)
+        return lo + (r % span)
+    }
+
+    // In [0.0, 1.0): the top 53 bits of a draw scaled by 2^-53, which is
+    // the full f64 mantissa precision.
+    fun next_float(self) -> Float {
+        let bits = ushr(self.next_int(), 11)
+        return raven_int_to_float(bits) / raven_int_to_float(9007199254740992)
+    }
+
+    fun next_bool(self) -> Bool {
+        return (self.next_int() & 1) == 1
+    }
+
+    fun choice<T>(self, xs: List<T>) -> Option<T> {
+        let n = xs.len()
+        if n == 0 {
+            return None
+        }
+        let i = self.gen_range(0, n)
+        return Some(xs.get(i))
+    }
+
+    // In-place Fisher-Yates shuffle.
+    fun shuffle<T>(self, xs: List<T>) {
+        let i = xs.len() - 1
+        while i > 0 {
+            let j = self.gen_range(0, i + 1)
+            let tmp = xs[i]
+            xs[i] = xs[j]
+            xs[j] = tmp
+            i = i - 1
+        }
+    }
+}

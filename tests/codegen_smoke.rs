@@ -544,6 +544,24 @@ fn encoding_program_compiles_and_runs() {
     );
 }
 
+#[test]
+fn random_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // std/random seeded splitmix64 PRNG. Every printed line is a
+    // structural check that is deterministic given the fixed seeds: two
+    // Rng.new(42) agree on their first two draws, gen_range(0, 10) stays
+    // in range across 100 draws, next_float lands in [0.0, 1.0), choice
+    // returns an element of a small list and None on an empty list, and
+    // shuffle preserves the length and element sum. Prints nine `true`.
+    compile_link_run_and_check(
+        "use_random.rv",
+        "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n",
+        &runtime,
+    );
+}
+
 /// Return the runtime staticlib when a linker and the staticlib are both
 /// present, or skip with a diagnostic. Shared by every smoke case so the
 /// skip behavior stays identical.
