@@ -314,6 +314,10 @@ fn resolve_local_import(
     })
 }
 
+/// A function that namespaces a bare selector name to the symbol the
+/// expander merged it under (`std.<module>.<name>` or `loc.<hash>.<name>`).
+type Mangle = Box<dyn Fn(&str) -> String>;
+
 /// Insert the alias and any selector names into `scope`.
 fn bind_import(
     import: &Import,
@@ -321,39 +325,58 @@ fn bind_import(
     id: ImportId,
     scope: &mut ScopeStack,
 ) -> Result<(), RavenError> {
-    // The module name a `std/<module>` import resolves to, used to find
-    // the bundled functions the resolver merged ahead of this pass. When
-    // present, a selector binds directly to the namespaced function so
-    // the rest of the pipeline sees `println` as an ordinary call to a
-    // known function rather than a deferred import member.
-    let std_module: Option<&str> = match &resolved.target {
-        ImportTarget::StdlibModule { segments } => segments.first().map(|s| s.as_str()),
-        _ => None,
+    // The namespaced prefix a selective import resolves against, used to
+    // find the functions the expander merged ahead of this pass. A bundled
+    // `std/<module>` import maps to `std.<module>.<name>`; a local
+    // `./<file>` import maps to `loc.<hash>.<name>` keyed by the loaded
+    // module's canonical path. When the namespaced function is present, the
+    // selector binds directly to it so the rest of the pipeline sees the
+    // bare name as an ordinary call to a known function rather than a
+    // deferred import member. The same namespacing key is computed by the
+    // expander when it merges the module, so the two always agree.
+    let mangle: Option<Mangle> = match &resolved.target {
+        ImportTarget::StdlibModule { segments } => segments.first().map(|m| {
+            let module = m.clone();
+            Box::new(move |name: &str| super::stdlib::mangle_stdlib_fn(&module, name)) as Mangle
+        }),
+        ImportTarget::LocalModule { canonical_path, .. } => {
+            let key = super::stdlib::local_module_key(canonical_path);
+            Some(Box::new(move |name: &str| {
+                super::stdlib::mangle_local_fn(&key, name)
+            }))
+        }
+        ImportTarget::ExternalPackage { .. } => None,
     };
 
     if !import.selectors.is_empty() {
         for name in &import.selectors {
-            // For a bundled stdlib module, bind the selector to the
-            // namespaced function the resolver merged into the module
-            // scope. Fall back to the deferred `ImportedItem` binding when
-            // the function is not present (an unknown selector, or a
-            // resolver run that did not merge the bundle, as in unit
-            // tests that call `resolve_imports` directly).
-            if let Some(module) = std_module {
-                let mangled = super::stdlib::mangle_stdlib_fn(module, name);
+            // Bind the selector to the namespaced function the expander
+            // merged into the module scope. Fall back to the deferred
+            // `ImportedItem` binding when the function is not present (an
+            // unknown selector, a TYPE name which keeps its own un
+            // namespaced name, or a resolver run that did not merge the
+            // module, as in unit tests that call `resolve_imports`
+            // directly).
+            if let Some(mangle) = &mangle {
+                let mangled = mangle(name);
                 if let Some(entry) = scope.lookup(&mangled) {
                     let binding = entry.binding.clone();
                     scope.insert(name, binding, import.span.clone())?;
                     continue;
                 }
-                // A bundled module may export an `extern "C"` function
-                // (for example `std/math` binding libm's `sqrt`). Externs
-                // keep their bare C name, so the merged declaration is
-                // already in module scope under the selector's name. The
-                // selector therefore needs no new binding.
+                // A type (struct, enum, trait) merged from the module keeps
+                // its own name, and a bundled module may export an
+                // `extern "C"` function under its bare C name. In both cases
+                // the merged declaration is already in module scope under
+                // the selector's name, so the selector needs no new binding.
                 if matches!(
                     scope.lookup(name).map(|e| &e.binding),
-                    Some(Binding::Extern { .. })
+                    Some(
+                        Binding::Extern { .. }
+                            | Binding::Struct(_)
+                            | Binding::Enum(_)
+                            | Binding::Trait(_)
+                    )
                 ) {
                     continue;
                 }

@@ -31,6 +31,19 @@ fn hello_world_compiles_and_runs() {
 }
 
 #[test]
+fn multifile_local_imports_compile_and_run() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // `main.rv` selectively imports a function and a struct from a sibling
+    // `helper.rv` (`./helper`). The expander merges the local module into
+    // the program, so the imported `greet` call, the imported `Counter`
+    // type, and its `bumped` method all compile and link. Prints the
+    // greeting then 42.
+    compile_link_run_and_check("multifile/main.rv", "hi raven\n42\n", &runtime);
+}
+
+#[test]
 fn struct_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

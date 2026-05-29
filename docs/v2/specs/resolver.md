@@ -105,9 +105,59 @@ Three shapes are produced by the parser as `ImportSource`:
 
 2. **`"github.com/<user>/<repo>[/<sub>]"`** (`ImportSource::Quoted` with a leading `github.com/` host). Parsed into `ImportTarget::ExternalPackage { host, user, repo, subpath }`. Fetching is deferred to `rvpm`; the resolver records the target and continues. The alias (or last path segment if no alias) is bound as `ImportAlias`.
 
-3. **`"./<path>"` or `"../<path>"`** (relative path strings). The resolver asks the `SourceLoader` to read the file relative to the importing file's directory. If the loader returns content, the resolver lexes, parses, and recursively resolves it, then records `ImportTarget::LocalModule { resolved_path, module }` and merges the inner file's top level names into the outer scope under the alias. If the loader cannot find the file, raise `UnresolvedImport`. The resolver tracks an in progress set of canonical paths and raises `CyclicImport` if it would recurse into a path it is already resolving.
+3. **`"./<path>"` or `"../<path>"`** (relative path strings). The resolver asks the `SourceLoader` to read the file relative to the importing file's directory. If the loader returns content, the resolver lexes, parses, and recursively resolves it, then records `ImportTarget::LocalModule { canonical_path, module_names }`. If the loader cannot find the file, raise `UnresolvedImport`. The resolver tracks an in progress set of canonical paths and raises `CyclicImport` if it would recurse into a path it is already resolving. The imported module's DECLARATIONS are merged into the program ahead of resolution by `expand_with_stdlib`; see "Local multi-module compilation" below.
 
 If the import provides selectors (`import std/io { println, eprintln }`), each selector becomes an `ImportedItem` binding in the module scope. Otherwise the import binds a single alias (the `as` name, or the last path segment as a fallback). Duplicate aliases or selectors raise `DuplicateDeclaration`. Conflicting imports of the same name from different sources raise `AmbiguousName`.
+
+## Local multi-module compilation
+
+A program split across files (an entry that imports `./helper`, which may
+import `./util`, and so on) is compiled by merging the imported local
+modules into one combined `File` before the single-file pipeline runs. The
+merge happens in `expand_with_stdlib` (`src/resolve/stdlib.rs`), the same
+pass that merges bundled stdlib modules, so local and bundled modules share
+one merge core.
+
+How a local module is merged:
+
+* The expander discovers every `./` or `../` import reachable from the
+  entry, transitively, reading each file through the `SourceLoader`
+  relative to the importing file. Modules are deduplicated by canonical
+  path, so a module imported from several places (a diamond) merges once.
+  A cycle (a module that imports itself directly or transitively) is broken
+  gracefully: each module is loaded once and the back edge is ignored, the
+  same fixed point behavior the bundled set uses. The recursive import pass
+  still reports a true `CyclicImport` for a self-referential graph through
+  its in-progress path set.
+* A local module's top level FUNCTIONS are namespaced to `loc.<hash>.<name>`,
+  where `<hash>` is a stable hash of the module's canonical path
+  (`local_module_key`). The `.` makes the name unwritable by a user, so a
+  namespaced local function never collides with a user declaration. Sibling
+  calls inside the module and calls to names the module selectively imports
+  from other modules are rewritten to the matching namespaced symbols, so a
+  transitive call resolves to its dependency's merged function.
+* STRUCT, ENUM, and TRAIT types from a local module merge under their own
+  (un-namespaced) names, exactly the way bundled types like `Map` merge.
+  This means two local modules that both define a type named `Foo` collide.
+  That limitation mirrors the existing stdlib-type behavior (issues #178 and
+  #184) and is not addressed here.
+* `impl` blocks merge with their method names intact, dispatched by receiver
+  type; their bodies' sibling and imported-name calls are rewritten like a
+  free function's.
+
+The importer side agrees by construction. `bind_import`
+(`src/resolve/imports.rs`) recomputes the same `loc.<hash>.<name>` key from
+the loaded module's canonical path and binds a selective import
+(`import "./helper" { greet }`) directly to the merged function symbol, so
+the type checker sees `greet` as an ordinary call to a known function. A
+selector that names a merged TYPE resolves to the un-namespaced type that is
+already in module scope; no rebinding is needed.
+
+The module-source loading sits behind the `SourceLoader` abstraction
+(bundled `include_str!` source for stdlib, filesystem for local modules).
+External `github.com/...` packages (issue #85) resolve their source from the
+rvpm cache and then reuse this same merge: the seam is a new source backend,
+not a new merge path.
 
 ## SourceLoader trait
 

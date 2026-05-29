@@ -27,7 +27,7 @@ pub use bindings::{
 };
 pub use imports::{FsLoader, GithubPath, LoadedSource, SourceLoader, STDLIB_MODULES};
 pub use scope::{Scope, ScopeKind, ScopeStack};
-pub use stdlib::{expand_with_stdlib, mangle_stdlib_fn};
+pub use stdlib::{expand_with_stdlib, local_module_key, mangle_local_fn, mangle_stdlib_fn};
 
 /// The resolver output for a single file.
 ///
