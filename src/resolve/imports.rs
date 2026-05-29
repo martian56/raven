@@ -175,20 +175,45 @@ fn resolve_one_import(
 }
 
 fn parse_github_path(s: &str) -> Option<ImportTarget> {
-    let rest = s.strip_prefix("github.com/")?;
-    let mut parts = rest.split('/');
-    let user = parts.next()?.to_string();
-    let repo = parts.next()?.to_string();
-    let subpath: Vec<String> = parts.map(|s| s.to_string()).collect();
-    if user.is_empty() || repo.is_empty() {
-        return None;
-    }
+    let parts = GithubPath::parse(s)?;
     Some(ImportTarget::ExternalPackage {
-        host: "github.com".to_string(),
-        user,
-        repo,
-        subpath,
+        host: parts.host,
+        user: parts.user,
+        repo: parts.repo,
+        subpath: parts.subpath,
     })
+}
+
+/// The components of a `github.com/<user>/<repo>[/<sub>...]` import or
+/// dependency path. Shared by the resolver and the rvpm manifest parser
+/// so both agree on what a valid package identity looks like.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GithubPath {
+    pub host: String,
+    pub user: String,
+    pub repo: String,
+    pub subpath: Vec<String>,
+}
+
+impl GithubPath {
+    /// Parse a `github.com/<user>/<repo>[/<sub>...]` string. Returns
+    /// `None` when the prefix is missing or `user`/`repo` are empty.
+    pub fn parse(s: &str) -> Option<GithubPath> {
+        let rest = s.strip_prefix("github.com/")?;
+        let mut parts = rest.split('/');
+        let user = parts.next()?.to_string();
+        let repo = parts.next()?.to_string();
+        let subpath: Vec<String> = parts.map(|s| s.to_string()).collect();
+        if user.is_empty() || repo.is_empty() || subpath.iter().any(|s| s.is_empty()) {
+            return None;
+        }
+        Some(GithubPath {
+            host: "github.com".to_string(),
+            user,
+            repo,
+            subpath,
+        })
+    }
 }
 
 fn resolve_local_import(

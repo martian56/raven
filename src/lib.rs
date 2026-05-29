@@ -20,6 +20,7 @@ pub mod codegen;
 pub mod error;
 pub mod hir;
 pub mod lexer;
+pub mod manifest;
 pub mod mir;
 pub mod parser;
 pub mod resolve;

@@ -23,6 +23,14 @@ categories = ["development-tools", "command-line-utilities"]
 # Packaging metadata (deb / rpm / wix) intentionally omitted while v2 is under construction.
 # It will be repopulated alongside the v2 tooling work once the stdlib and rvpm shape settle.
 
+[[bin]]
+name = "raven"
+path = "src/main.rs"
+
+[[bin]]
+name = "rvpm"
+path = "src/bin/rvpm.rs"
+
 [dependencies]
 # Cranelift is the codegen backend (issue #63).
 cranelift-codegen = "0.108"
@@ -35,6 +43,9 @@ cranelift-object = "0.108"
 cc = "1.2"
 # Supplies the host target triple to key linker selection.
 target-lexicon = "0.12"
+# rv.toml manifest parsing for the rvpm package manager.
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
 
 [profile.release]
 opt-level = 3
