@@ -260,6 +260,21 @@ fn cyclic_local_imports_are_reported() {
 }
 
 #[test]
+fn selective_bundled_type_import_does_not_double_declare() {
+    // A selective import of a bundled type (`import std/collections { Map }`)
+    // must not collide with the merged type declaration the expander adds
+    // under the same name (issue #184). The expander merges `Map`/`Set`
+    // under their own names; the selector must bind to the merged type
+    // rather than introduce a second declaration.
+    let user = parse_src(
+        "import std/collections { Map, Set }\nfun main() { let m = Map.new() let s = Set.new() }\n",
+        "main.rv",
+    );
+    let combined = super::expand_with_stdlib(&user).expect("expand");
+    super::resolve_file(&combined, &mut NoLoader).expect("selective type import resolves");
+}
+
+#[test]
 fn unknown_stdlib_module_is_unresolved() {
     let file = parse_src("import std/nonsense\n", "main.rv");
     let err = resolve_file(&file, &mut NoLoader).unwrap_err();

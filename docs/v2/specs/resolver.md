@@ -137,10 +137,11 @@ How a local module is merged:
   from other modules are rewritten to the matching namespaced symbols, so a
   transitive call resolves to its dependency's merged function.
 * STRUCT, ENUM, and TRAIT types from a local module merge under their own
-  (un-namespaced) names, exactly the way bundled types like `Map` merge.
-  This means two local modules that both define a type named `Foo` collide.
-  That limitation mirrors the existing stdlib-type behavior (issues #178 and
-  #184) and is not addressed here.
+  (un-namespaced) names, exactly the way bundled types like `Map` merge. A
+  selective import of such a type (`import std/collections { Map }`) binds to
+  that single merged declaration rather than introducing a second one, so the
+  name is not declared twice. Two modules that each define a type with the
+  same name still collide, because a type carries no namespace.
 * `impl` blocks merge with their method names intact, dispatched by receiver
   type; their bodies' sibling and imported-name calls are rewritten like a
   free function's.

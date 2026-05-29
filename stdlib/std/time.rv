@@ -6,7 +6,7 @@
 // boundary. Parsing is fallible and returns Result<Int, Error> through the
 // runtime's thread-local last-error slot. See docs/v2/specs/std-time.md.
 
-import std/error
+import std/error { error_kind }
 
 struct Date {
     year: Int,
@@ -84,7 +84,7 @@ fun format_timestamp(ts: Int, pattern: String) -> String {
 fun parse_timestamp(text: String, pattern: String) -> Result<Int, Error> {
     let ts = raven_time_parse(text, pattern)
     if raven_time_last_error().length() > 0 {
-        return Err(Error { kind: "time", message: "parse: ".concat(raven_time_last_error()) })
+        return Err(error_kind("time", "parse: ".concat(raven_time_last_error())))
     }
     return Ok(ts)
 }

@@ -8,7 +8,7 @@
 // path through the runtime's thread-local last-error slot, tagged with
 // kind "http". See docs/v2/specs/std-http.md.
 
-import std/error
+import std/error { error_kind }
 
 struct HttpResponse {
     status_code: Int,
@@ -32,7 +32,7 @@ extern "C" {
 // An Error tagged with kind "http", its message a context prefix joined to
 // the runtime's last-error text.
 fun http_error(ctx: String) -> Error {
-    return Error { kind: "http", message: ctx.concat(": ").concat(raven_http_last_error()) }
+    return error_kind("http", ctx.concat(": ").concat(raven_http_last_error()))
 }
 
 // Run a request and assemble an HttpResponse, or an Err on transport

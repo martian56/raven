@@ -341,6 +341,19 @@ fn collections_program_compiles_and_runs() {
 }
 
 #[test]
+fn selective_bundled_type_import_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A selective import of the bundled types `Map` and `Set`
+    // (`import std/collections { Map, Set }`) must bind each name to the
+    // merged type without declaring it twice (issue #184). The set dedups
+    // to 2; the map has one key whose value was overwritten to 99. Prints
+    // 2, 1, 99.
+    compile_link_run_and_check("use_collections_selective.rv", "2\n1\n99\n", &runtime);
+}
+
+#[test]
 fn error_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
