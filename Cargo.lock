@@ -557,6 +557,7 @@ dependencies = [
  "sha2",
  "target-lexicon",
  "toml",
+ "toml_edit",
 ]
 
 [[package]]

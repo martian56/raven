@@ -248,5 +248,88 @@ rvpm lock
 It loads `rv.toml` from the current directory. If `rv.lock` exists and
 covers every dependency, it validates the lock against the cache.
 Otherwise it resolves the full transitive set fresh and writes `rv.lock`.
-The full add/install/update UX lands in later releases; `rvpm lock` is a
-direct way to exercise generation and validation.
+`rvpm lock` is a direct way to exercise generation and validation; the
+day to day workflow uses `add`, `install`, and `update` below.
+
+# Dependency commands (add, install, update)
+
+`rvpm add`, `rvpm install`, and `rvpm update` are the day to day
+dependency workflow. They wire `raven::manifest`, `raven::pkg`, and
+`raven::lock` together. The orchestration lives in `raven::ops`
+(`src/ops/mod.rs`); the `rvpm` binary stays thin and calls it. Each
+operation has an `_in(..., cache_root)` variant that takes an explicit
+cache root so it can be tested against a pre-seeded temporary cache
+without the global `RVPM_CACHE_DIR` override.
+
+All three resolve against the literal-ref constraint model: a
+`[dependencies]` value in `rv.toml` is the git tag or branch to fetch, so
+the resolved version equals the constraint as written (see
+"Version-constraint scope" above). Range based selection is future work.
+
+## rvpm add
+
+```
+rvpm add github.com/<user>/<repo>[@<version>]
+```
+
+`add` records the dependency in `rv.toml` under `[dependencies]`, then
+resolves the manifest and writes `rv.lock`, populating the cache.
+
+- The key is the `github.com/<user>/<repo>` path. The optional
+  `@<version>` is the git ref recorded as the constraint.
+- When `@<version>` is omitted, the placeholder constraint `"latest"` is
+  recorded. Real latest-tag resolution is future work, so a placeholder
+  constraint will not resolve until a concrete ref is supplied. Prefer
+  passing `@<version>`.
+- An existing entry for the same package is updated in place, not
+  duplicated. When the recorded version changes, the command reports the
+  previous and new versions. When it is identical, nothing changes.
+
+The manifest edit preserves the rest of the file, including comments,
+because it is applied with `toml_edit`. After the edit the new text is
+re-parsed with `Manifest::from_toml_str` as a guard; the written
+`rv.toml` is always a valid manifest.
+
+The edit is applied before resolution. If resolution then fails (for
+example a placeholder constraint, or a ref absent from the cache and the
+remote), the `rv.toml` edit still persists but `rv.lock` is not written.
+Re-run `add` or `install` with a resolvable ref to complete the lock.
+
+## rvpm install
+
+```
+rvpm install
+```
+
+`install` re-resolves `rv.toml` against `rv.lock` and fills the cache.
+
+- When `rv.lock` exists and covers every direct dependency in `rv.toml`,
+  the lock is validated: each pinned entry is fetched and its tree hash is
+  recomputed and compared. A mismatch aborts with the hash-mismatch error
+  and a non-zero exit, naming the package; the lock is not rewritten.
+- When `rv.lock` is missing, or does not cover the manifest, the full
+  transitive set is resolved fresh and `rv.lock` is written.
+
+`install` prints what happened (validated N packages, or resolved N
+packages and wrote `rv.lock`).
+
+## rvpm update
+
+```
+rvpm update [github.com/<user>/<repo>]
+```
+
+`update` re-resolves `rv.toml` and rewrites `rv.lock`.
+
+- With no package path, every entry is re-resolved from `rv.toml` and the
+  whole lock is rewritten.
+- With a package path, only that dependency's subgraph is re-resolved; its
+  lock entry and its transitive entries are refreshed while the rest of
+  the lock is preserved. The path must already be a dependency in
+  `rv.toml`; otherwise the command reports an error and exits non-zero.
+
+Under the literal-ref model, "update" picks up a ref that was edited in
+`rv.toml`: change the constraint, then run `update` (optionally naming the
+package) to bump the pinned version and hash in the lock. When range based
+constraints land, `update` will choose a newer ref within the range while
+`rv.toml` keeps the range; that selection is future work.

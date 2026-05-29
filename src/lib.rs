@@ -25,6 +25,7 @@ pub mod lexer;
 pub mod lock;
 pub mod manifest;
 pub mod mir;
+pub mod ops;
 pub mod parser;
 pub mod pkg;
 pub mod resolve;
