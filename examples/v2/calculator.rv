@@ -1,0 +1,22 @@
+// A non-interactive calculator over a fixed set of operations, mirroring
+// the v1 simple_calculator demo without the interactive input.
+fun apply(op: String, a: Float, b: Float) -> Float {
+    if op == "+" {
+        a + b
+    } else if op == "-" {
+        a - b
+    } else if op == "*" {
+        a * b
+    } else {
+        a / b
+    }
+}
+
+fun main() {
+    let a = 10.0
+    let b = 5.0
+    print(apply("+", a, b))
+    print(apply("-", a, b))
+    print(apply("*", a, b))
+    print(apply("/", a, b))
+}

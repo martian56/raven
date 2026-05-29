@@ -1,0 +1,38 @@
+// Named enums matched to their string forms, mirroring the v1 enum demo.
+enum HttpStatus {
+    Ok,
+    NotFound,
+    InternalError,
+    BadRequest,
+}
+
+enum UserRole {
+    Admin,
+    User,
+    Guest,
+}
+
+fun status_name(s: HttpStatus) -> String {
+    return match s {
+        Ok -> "Ok",
+        NotFound -> "NotFound",
+        InternalError -> "InternalError",
+        BadRequest -> "BadRequest",
+    }
+}
+
+fun role_name(r: UserRole) -> String {
+    return match r {
+        Admin -> "Admin",
+        User -> "User",
+        Guest -> "Guest",
+    }
+}
+
+fun main() {
+    print(status_name(HttpStatus.Ok))
+    print(status_name(HttpStatus.NotFound))
+    print(status_name(HttpStatus.InternalError))
+    print(role_name(UserRole.Admin))
+    print(role_name(UserRole.Guest))
+}

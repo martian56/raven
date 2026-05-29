@@ -1,0 +1,19 @@
+// A deterministic tour of the standard library: integer math helpers and
+// String utilities. Avoids time and randomness so the output is fixed.
+import std/math { abs_int, min_int, max_int, pow_int }
+import std/string
+
+fun main() {
+    print("=== Math ===")
+    print_int(abs_int(-10))
+    print_int(min_int(-10, 15))
+    print_int(max_int(-10, 15))
+    print_int(pow_int(2, 8))
+
+    print("=== String ===")
+    print("  hello world  ".trim())
+    print("raven".to_upper())
+    print("RAVEN".to_lower())
+    print("ab".repeat(3))
+    print("a-b-c".replace("-", "+"))
+}

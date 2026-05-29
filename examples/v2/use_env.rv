@@ -1,3 +1,4 @@
+// golden:skip
 import std/env { get_env_or, has_env, arg_count, os_name }
 import std/io { println }
 

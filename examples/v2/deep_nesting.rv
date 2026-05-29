@@ -1,3 +1,4 @@
+// golden:skip
 // Regression guard for a deeply nested expression. Lowering recurses
 // with the nesting depth, so this overflowed the default 1 MB stack
 // before the compiler moved its work onto a large-stack thread.

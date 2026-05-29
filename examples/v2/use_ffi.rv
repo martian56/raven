@@ -1,3 +1,4 @@
+// golden:skip
 // std/ffi: convert a runtime Raven String to a C string and call libc.
 // strlen counts the bytes of "hello" (5). strcmp returns 0 for equal
 // strings and a nonzero value otherwise. from_cstr round-trips a CStr

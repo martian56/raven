@@ -1,0 +1,24 @@
+// Boolean operators and comparisons driving conditionals.
+fun main() {
+    let ready = true
+    let permitted = false
+    if ready && permitted {
+        print("Go ahead")
+    } else {
+        print("Wait")
+    }
+
+    let x = 10
+    let y = 20
+    if x < y {
+        print("x is less than y")
+    }
+
+    if x == 10 && y == 20 {
+        print("Both conditions are true")
+    }
+
+    if ready || permitted {
+        print("At least one is true")
+    }
+}

@@ -1,3 +1,4 @@
+// golden:skip
 import std/regex { compile }
 
 fun main() {

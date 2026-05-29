@@ -14,3 +14,7 @@ node_modules/* linguist-vendored
 
 # Examples
 examples/* linguist-detectable=true
+
+# Golden baselines are diffed byte for byte across platforms: keep LF.
+*.rv.out text eol=lf
+*.rv text eol=lf
