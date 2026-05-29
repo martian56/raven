@@ -593,6 +593,60 @@ fn fmt_program_compiles_and_runs() {
     compile_link_run_and_check("use_fmt.rv", expected, &runtime);
 }
 
+#[test]
+fn env_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // std/env environment, args, and platform info. The asserted output is
+    // driven only by the env var this test sets plus structural booleans, so
+    // it is identical on every host: get_env_or returns the set value, a set
+    // and an unset variable report true/false, get_env_or falls back when
+    // unset, arg_count is at least one, and os_name is one of the known set.
+    let name = "use_env.rv";
+    let source_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join("v2")
+        .join(name);
+    let source =
+        std::fs::read_to_string(&source_path).unwrap_or_else(|e| panic!("read {}: {}", name, e));
+    let object_bytes = match build_object(&source, &source_path) {
+        Ok(b) => b,
+        Err(e) => panic!("frontend or codegen failed for {}: {}", name, e),
+    };
+    let tmp = workdir();
+    let object_path = tmp.join("use_env.o");
+    std::fs::write(&object_path, &object_bytes).expect("write object");
+    let binary = tmp.join(if cfg!(windows) {
+        "use_env.exe"
+    } else {
+        "use_env"
+    });
+    if let Err(e) = linker::link(&object_path, &runtime, &binary) {
+        cleanup(&tmp);
+        panic!("linker failed to produce an executable for {}: {}", name, e);
+    }
+    let output = Command::new(&binary)
+        .env("RAVEN_ENV_TEST", "hello-env")
+        .env_remove("RAVEN_DEFINITELY_UNSET_XYZ")
+        .output()
+        .unwrap_or_else(|e| panic!("run {} binary: {}", name, e));
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    cleanup(&tmp);
+    assert!(
+        output.status.success(),
+        "use_env binary exited non zero: status={:?} stderr={}",
+        output.status,
+        stderr
+    );
+    assert_eq!(
+        stdout, "hello-env\ntrue\nfalse\nfallback\ntrue\ntrue\n",
+        "unexpected stdout for use_env: {:?}",
+        stdout
+    );
+}
+
 /// Return the runtime staticlib when a linker and the staticlib are both
 /// present, or skip with a diagnostic. Shared by every smoke case so the
 /// skip behavior stays identical.
