@@ -71,6 +71,49 @@ fn closure_capture_program_compiles_and_runs() {
 }
 
 #[test]
+fn deeply_nested_expression_does_not_overflow() {
+    // Regression for issue #172: lowering recurses with expression
+    // nesting, so a deeply nested expression overflowed the default
+    // stack until the compiler moved its work onto a large-stack thread.
+    // This case must drive the real `raven` binary (not the in-process
+    // pipeline used by the other smoke cases) because the large stack is
+    // provided by the binary's worker thread, not the test thread.
+    let Some(_runtime) = supported_runtime() else {
+        return;
+    };
+    let source_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join("v2")
+        .join("deep_nesting.rv");
+    let tmp = workdir();
+    let binary = tmp.join(if cfg!(windows) {
+        "deep_nesting.exe"
+    } else {
+        "deep_nesting"
+    });
+    let build = Command::new(env!("CARGO_BIN_EXE_raven"))
+        .arg("build")
+        .arg(&source_path)
+        .arg("-o")
+        .arg(&binary)
+        .output()
+        .expect("run raven build");
+    assert!(
+        build.status.success(),
+        "raven build crashed or failed on deep nesting: status={:?} stderr={}",
+        build.status,
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new(&binary)
+        .output()
+        .expect("run deep_nesting binary");
+    let stdout = String::from_utf8_lossy(&run.stdout).into_owned();
+    cleanup(&tmp);
+    assert!(run.status.success(), "deep_nesting binary exited non zero");
+    assert_eq!(stdout, "250\n", "unexpected stdout: {:?}", stdout);
+}
+
+#[test]
 fn closure_arg_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
