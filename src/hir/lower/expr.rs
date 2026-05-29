@@ -158,6 +158,24 @@ pub(crate) fn lower_expr(
             }
         }
         ExprKind::Call { callee, args } => {
+            // `EnumName.Variant(args)` lowers to an `EnumCreate`. The
+            // callee is a `Field` whose receiver is the enum name.
+            if let ExprKind::Field { receiver, name } = &callee.kind {
+                if let Some(variant) = enum_variant_index(receiver, name, cx) {
+                    let mut lowered = Vec::with_capacity(args.len());
+                    for a in args {
+                        lowered.push(lower_expr(a, &Ty::Error, cx)?);
+                    }
+                    return Ok(make_expr(
+                        HirExprKind::EnumCreate {
+                            variant,
+                            args: lowered,
+                        },
+                        ty,
+                        span,
+                    ));
+                }
+            }
             // Recognize the built in enum constructors `Some(x)`, `Ok(x)`,
             // and `Err(x)` so they lower to typed constructor nodes (and
             // then to `EnumCreate` in MIR) rather than ordinary calls.
@@ -226,6 +244,23 @@ pub(crate) fn lower_expr(
             args,
             ..
         } => {
+            // `EnumName.Variant(args)` constructs a payload variant. The
+            // parser shapes it as a method call, so it is recognized here
+            // before associated-call routing.
+            if let Some(variant) = enum_variant_index(receiver, name, cx) {
+                let mut lowered = Vec::with_capacity(args.len());
+                for a in args {
+                    lowered.push(lower_expr(a, &Ty::Error, cx)?);
+                }
+                return Ok(make_expr(
+                    HirExprKind::EnumCreate {
+                        variant,
+                        args: lowered,
+                    },
+                    ty,
+                    span,
+                ));
+            }
             // `Type.func(args)` lowers to a receiverless associated call.
             // The type checker recorded the implementing type at the
             // receiver span; its presence as a type reference (not a value)
@@ -256,10 +291,19 @@ pub(crate) fn lower_expr(
             }
         }
         ExprKind::Field { receiver, name } => {
-            let r = lower_expr(receiver, &Ty::Error, cx)?;
-            HirExprKind::Field {
-                receiver: Box::new(r),
-                name: name.clone(),
+            // `EnumName.Variant` with no payload is a unit-variant
+            // construction, not a field access.
+            if let Some(variant) = enum_variant_index(receiver, name, cx) {
+                HirExprKind::EnumCreate {
+                    variant,
+                    args: Vec::new(),
+                }
+            } else {
+                let r = lower_expr(receiver, &Ty::Error, cx)?;
+                HirExprKind::Field {
+                    receiver: Box::new(r),
+                    name: name.clone(),
+                }
             }
         }
         ExprKind::Index { receiver, index } => {
@@ -294,9 +338,11 @@ pub(crate) fn lower_expr(
         }
         ExprKind::Match { scrutinee, arms } => {
             let s = lower_expr(scrutinee, &Ty::Error, cx)?;
+            let scrut_ty = s.ty.clone();
             let mut lowered = Vec::with_capacity(arms.len());
             for arm in arms {
-                let pattern = lower_pattern(&arm.pattern, cx)?;
+                let mut pattern = lower_pattern(&arm.pattern, cx)?;
+                reclassify_unit_variant(&mut pattern, &scrut_ty, cx);
                 let guard = match &arm.guard {
                     Some(g) => Some(lower_expr(g, &Ty::Bool, cx)?),
                     None => None,
@@ -1163,6 +1209,49 @@ fn is_type_ref_receiver(receiver: &Expr, cx: &LowerCtx<'_>) -> bool {
             "Int" | "Float" | "Bool" | "String" | "Char" | "Unit" | "Array" | "List" | "Vec"
         ),
     }
+}
+
+/// Rewrite a bare-identifier match pattern into a unit-variant
+/// constructor when the scrutinee is a user enum that declares a unit
+/// variant by that name. The resolver binds every bare pattern ident as
+/// a fresh binding; only the scrutinee type (known here) disambiguates a
+/// nullary variant from a binding. The type checker performs the same
+/// reconciliation, so this keeps HIR and tycheck in step.
+fn reclassify_unit_variant(pat: &mut HirPattern, scrut_ty: &Ty, cx: &LowerCtx<'_>) {
+    let HirPatternKind::Binding(name) = &pat.kind else {
+        return;
+    };
+    let Ty::Enum { name: ename, .. } = scrut_ty.strip_self() else {
+        return;
+    };
+    let Some(decl) = cx.env.enums.values().find(|e| &e.name == ename) else {
+        return;
+    };
+    let is_unit_variant = decl.variants.iter().any(|v| {
+        v.name == *name && matches!(v.payload, crate::tycheck::env::VariantPayloadSig::Unit)
+    });
+    if is_unit_variant {
+        pat.kind = HirPatternKind::Constructor {
+            name: Some(name.clone()),
+            elements: Vec::new(),
+        };
+    }
+}
+
+/// If `receiver` is a bare enum name and `name` is one of its variants,
+/// return that variant's index in declaration order. Returns `None` for
+/// any other receiver (an ordinary struct field access, for example), so
+/// the caller leaves that path untouched.
+fn enum_variant_index(receiver: &Expr, name: &str, cx: &LowerCtx<'_>) -> Option<usize> {
+    use crate::resolve::Binding;
+    let ExprKind::Ident { .. } = &receiver.kind else {
+        return None;
+    };
+    let Some(Binding::Enum(id)) = cx.resolved.map.lookup(&receiver.span) else {
+        return None;
+    };
+    let sig = cx.env.enums.get(id)?;
+    sig.variant(name).map(|(idx, _)| idx)
 }
 
 /// Wrap an interpolation part in a `to_string()` method call when its

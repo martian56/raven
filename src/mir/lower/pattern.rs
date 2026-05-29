@@ -78,7 +78,7 @@ fn lower_enum_match(
     }
 
     for (i, arm) in arms.iter().enumerate() {
-        match variant_index_of(&arm.pattern, scrut_ty) {
+        match variant_index_of(&arm.pattern, scrut_ty, cx) {
             Some(idx) => targets.push((idx, arm_blocks[i])),
             None => otherwise = Some(arm_blocks[i]),
         }
@@ -233,7 +233,7 @@ fn lower_fallback_match(
 /// Variant index of a constructor pattern against an enum-like type.
 /// Returns `None` for wildcard, binding, or unrecognized cases (the
 /// caller treats those as the `otherwise` arm).
-fn variant_index_of(pat: &HirPattern, scrut_ty: &Ty) -> Option<usize> {
+fn variant_index_of(pat: &HirPattern, scrut_ty: &Ty, cx: &LowerCx<'_>) -> Option<usize> {
     let name = match &pat.kind {
         HirPatternKind::Constructor { name: Some(n), .. } => n,
         HirPatternKind::Struct { name, .. } => name,
@@ -250,7 +250,10 @@ fn variant_index_of(pat: &HirPattern, scrut_ty: &Ty) -> Option<usize> {
             "Err" => Some(1),
             _ => None,
         },
-        Ty::Enum { .. } => None,
+        Ty::Enum { name: ename, .. } => {
+            let decl = cx.decls.enums.get(ename)?;
+            decl.variants.iter().position(|v| v.name == *name)
+        }
         _ => None,
     }
 }
@@ -268,14 +271,17 @@ fn bind_pattern(cx: &mut LowerCx<'_>, pat: &HirPattern, scrut_ty: &Ty, scrut: &M
                 .assign(cx.current, local, MirRvalue::Use(scrut.clone()));
             cx.bind(name.clone(), local);
         }
-        HirPatternKind::Constructor { elements, .. } => {
+        HirPatternKind::Constructor {
+            elements,
+            name: variant,
+        } => {
             // Each element binds the payload at its positional index. The
             // enum value stores its discriminant in slot 0, so payload
             // field `i` lives in slot `i + 1`.
             for (i, element) in elements.iter().enumerate() {
                 match &element.kind {
                     HirPatternKind::Binding(name) => {
-                        let payload_ty = payload_type_at(scrut_ty, i);
+                        let payload_ty = payload_type_at(scrut_ty, variant.as_deref(), i, cx);
                         let mty = MirType::from_ty(&payload_ty);
                         let local = cx.builder.named_local(name.clone(), mty);
                         cx.builder.assign(
@@ -297,13 +303,13 @@ fn bind_pattern(cx: &mut LowerCx<'_>, pat: &HirPattern, scrut_ty: &Ty, scrut: &M
                 }
             }
         }
-        HirPatternKind::Struct { fields, .. } => {
+        HirPatternKind::Struct { fields, name } => {
             for (i, field) in fields.iter().enumerate() {
+                let payload_ty = payload_type_at(scrut_ty, Some(name), i, cx);
+                let mty = MirType::from_ty(&payload_ty);
                 if let Some(p) = &field.pattern {
-                    if let HirPatternKind::Binding(name) = &p.kind {
-                        let payload_ty = payload_type_at(scrut_ty, i);
-                        let mty = MirType::from_ty(&payload_ty);
-                        let local = cx.builder.named_local(name.clone(), mty);
+                    if let HirPatternKind::Binding(bname) = &p.kind {
+                        let local = cx.builder.named_local(bname.clone(), mty);
                         cx.builder.assign(
                             cx.current,
                             local,
@@ -312,13 +318,11 @@ fn bind_pattern(cx: &mut LowerCx<'_>, pat: &HirPattern, scrut_ty: &Ty, scrut: &M
                                 index: i + 1,
                             },
                         );
-                        cx.bind(name.clone(), local);
+                        cx.bind(bname.clone(), local);
                     }
                 } else {
                     // Shorthand `{ name }` binds the field name to a
                     // local of the same name.
-                    let payload_ty = payload_type_at(scrut_ty, i);
-                    let mty = MirType::from_ty(&payload_ty);
                     let local = cx.builder.named_local(field.name.clone(), mty);
                     cx.builder.assign(
                         cx.current,
@@ -335,11 +339,25 @@ fn bind_pattern(cx: &mut LowerCx<'_>, pat: &HirPattern, scrut_ty: &Ty, scrut: &M
     }
 }
 
-fn payload_type_at(scrut_ty: &Ty, index: usize) -> Ty {
+fn payload_type_at(scrut_ty: &Ty, variant: Option<&str>, index: usize, cx: &LowerCx<'_>) -> Ty {
     match scrut_ty {
         Ty::Option(inner) if index == 0 => (**inner).clone(),
         Ty::Result(t, _) if index == 0 => (**t).clone(),
         Ty::Result(_, e) if index == 1 => (**e).clone(),
+        Ty::Enum { name, .. } => {
+            let Some(vname) = variant else {
+                return Ty::Error;
+            };
+            let Some(decl) = cx.decls.enums.get(name) else {
+                return Ty::Error;
+            };
+            decl.variants
+                .iter()
+                .find(|v| v.name == vname)
+                .and_then(|v| v.fields.get(index))
+                .map(|(_, ty, _)| ty.clone())
+                .unwrap_or(Ty::Error)
+        }
         _ => Ty::Error,
     }
 }

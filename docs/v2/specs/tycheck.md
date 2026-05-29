@@ -132,6 +132,12 @@ Method dispatch is statically resolved. When the user writes `r.m(...)` and `r: 
 
 A method call on a value of `Self` type inside an `impl` block resolves through the implementing type. Each impl's generic parameters get fresh inference variables and the substituted `self_ty` is unified against the receiver, so a generic impl such as `impl<T> List<T>` matches a concrete `List<Int>` receiver and the method's `T` binds to `Int`.
 
+### Enum variant construction
+
+A user enum variant is constructed with a qualified name: `EnumName.Variant` for a unit variant and `EnumName.Variant(args)` for a payload variant. When the receiver of a field access or call is an `Ident` bound to an enum and the name is one of its variants, the checker treats it as construction rather than a field access or an associated function call. A unit variant types as the enum directly; a payload variant types as a constructor function whose parameters are the payload types and whose result is the enum, so the surrounding call applies and checks the arguments. For a generic enum the declared generic parameters become fresh inference variables, solved from the argument types and the surrounding expected type, the same way generic struct fields are substituted.
+
+Bare-name construction (`Red`, `Circle(2.0)`) is not supported yet and is a follow-up; it needs expected-type disambiguation. Match patterns are unchanged and keep using bare variant names. Struct-shaped variants (`Variant { field: ... }`) are not yet constructible.
+
 ### Associated functions
 
 When the receiver of `r.m(...)` is a bare type reference (a struct or enum binding, or a built-in type name) rather than a value, the call is an associated function call `Type.func(args)`. The named function on that type must have no `self`. The implementing type fixes the impl's generic parameters: explicit arguments (`Set<Int>.new()`) bind them directly, otherwise they are inference variables solved from later use. Arguments are checked against the function's parameters (there is no `self` to drop), and the result is its declared return type with the impl's parameters substituted. See `docs/v2/specs/associated-functions.md`.
