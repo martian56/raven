@@ -2,10 +2,10 @@
 fun main() {
     let x = 10
     let y = 5
-    print_int(x + y)
-    print_int(x - y)
-    print_int(x * y)
-    print_int(x / y)
+    print(x + y)
+    print(x - y)
+    print(x * y)
+    print(x / y)
 
     let a = 3.14
     let b = 2.0

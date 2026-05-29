@@ -8,9 +8,6 @@
 /// MIR mangled name produced by the front end for a `print(s)` call.
 pub const PRINT: &str = "print";
 
-/// MIR mangled name produced by the front end for a `print_int(n)` call.
-pub const PRINT_INT: &str = "print_int";
-
 /// Internal stdlib I/O intrinsics. The bundled `std/io` source calls
 /// these to reach the runtime's byte-level I/O symbols; the leading
 /// `__io_` marks them internal (a user uses `std/io`'s exported
@@ -58,9 +55,6 @@ pub const RUNTIME_PRINT_STR: &str = "raven_print_str";
 
 /// Runtime C symbol reading one line from stdin into a heap `String`.
 pub const RUNTIME_READ_LINE: &str = "raven_read_line";
-
-/// Runtime C symbol the `print_int` intrinsic dispatches to.
-pub const RUNTIME_PRINTLN_INT: &str = "raven_println_int";
 
 /// Runtime C symbol building a heap `String` from a byte slice. Used to
 /// promote a string literal into a heap `String` value.
@@ -171,7 +165,6 @@ pub fn is_intrinsic(mangled: &str) -> bool {
     matches!(
         mangled,
         PRINT
-            | PRINT_INT
             | IO_PRINT_STR
             | IO_PRINTLN_STR
             | IO_READ_LINE

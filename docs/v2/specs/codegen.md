@@ -7,7 +7,7 @@ with the `raven-runtime` staticlib through the host toolchain linker, and
 produce an executable. The backend reuses Cranelift for instruction
 selection and register allocation. The covered surface is primitives,
 binary and unary operators, branches, switches, function calls with
-static dispatch, returns, the `print` and `print_int` intrinsics, and
+static dispatch, returns, the `print` intrinsic, and
 heap value construction: structs, enums (including `Option` and
 `Result`), field access, enum dispatch, and closures (capturing,
 returned, passed, and invoked through their value), all with garbage
@@ -221,23 +221,19 @@ directly; `!=` lowers an extra `UnaryOp(Not)` over it. `Int`, `Float`,
 value compare above. Comparison of user structs and enums is not
 special-cased and remains an identity (pointer) compare.
 
-### `print_int` intrinsic
+### Printing C integer FFI values
 
-`print_int(n: Int)` is the integer companion of `print`. It is a built
-in free function recognized by the resolver allowlist and the type
-checker the same way `print` is, with the signature `fn(Int) -> Unit`.
-The codegen recognizes the mangled name `print_int`, loads its single
-`Int` operand, and emits a `call` to the runtime symbol
-`raven_println_int(value: i64)`, which formats the value in base ten and
-writes it followed by a newline. This gives programs a way to observe a
-computed integer without a string conversion, which is what the
-struct and enum smoke programs use to print their results.
-
-The decision to add a dedicated `print_int` rather than a general
-`Int.to_string()` keeps the heap value work focused: `to_string`
-implies a `String` builder and the full string object machinery, while
-`print_int` is one runtime symbol and one intrinsic arm. A richer
-stringification path lands with the string and stdlib issues.
+The integer C FFI types (`CInt`, `CLong`, `CSize`) have no `ToString`
+impl of their own; they reach `print` and string interpolation by
+widening to `Int`. The type checker accepts them where `ToString` is
+required, and MIR lowering rewrites the `to_string` call (inserted for a
+`print` argument or an interpolation fragment) on an FFI integer receiver
+into a `Cast` to `Int` followed by the `__raven_int_to_string` intrinsic.
+The cast sign-extends a narrower value (`CInt` is i32); `CLong` and
+`CSize` are already pointer-width and pass through. `CSize` is rendered as
+a signed `Int`, correct for realistic sizes (below 2^63). Reusing the
+`Int` to-string path means no dedicated integer print symbol or intrinsic
+arm.
 
 ## Heap value layout and lowering
 

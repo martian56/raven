@@ -14,7 +14,7 @@ fun main() {
                 None -> print("none"),
             }
             let parts = re.split("xaaayaz")
-            print_int(parts.len())
+            print(parts.len())
             print(parts[0])
             print(parts[1])
             print(parts[2])
@@ -25,11 +25,11 @@ fun main() {
     match compile("(\\d+)-(\\d+)") {
         Ok(re) -> {
             let all = re.find_all("12-345 and 67-8")
-            print_int(all.len())
+            print(all.len())
             print(all[0])
             print(all[1])
             let caps = re.captures("12-345")
-            print_int(caps.len())
+            print(caps.len())
             print(caps[0])
             print(caps[1])
             print(caps[2])

@@ -184,8 +184,9 @@ value and appends a newline. `std/io` is the explicit surface: its `print`
 writes with no newline and its `println` adds one, the conventional split.
 Because an explicit import binds over a builtin, a program that imports
 `std/io`'s `print` gets the module's no newline behavior; a program that
-does not import it keeps the builtin. (A separate `print_int` builtin also
-still exists and is slated for removal now that `print` covers integers.)
+does not import it keeps the builtin. The builtin `print` covers integers
+through `Int`'s `ToString`, and the integer C FFI types reach it by
+widening to `Int`.
 
 ## How later modules plug in
 

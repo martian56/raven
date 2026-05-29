@@ -5,5 +5,5 @@
 // the allocation and GC root frame run without crashing.
 fun main() {
     let f = fun(x: Int) -> Int = x + 1
-    print_int(42)
+    print(42)
 }

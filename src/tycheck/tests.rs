@@ -24,6 +24,20 @@ fn check(src: &str) -> Result<(), RavenError> {
     check_file(&resolved).map(|_| ())
 }
 
+/// Like `check`, but merges the bundled prelude first so `print` of a
+/// scalar resolves through its `ToString` impl. Tests that print need
+/// this, since `print` requires the prelude's `impl ToString for Int`.
+fn check_with_prelude(src: &str) -> Result<(), RavenError> {
+    let tokens = Lexer::new(src.to_string(), PathBuf::from("t.rv"))
+        .tokenize()
+        .expect("lex");
+    let file = parse(&tokens).expect("parse");
+    let file = crate::resolve::expand_with_stdlib(&file)?;
+    let mut loader = NoLoader;
+    let resolved = resolve_file(&file, &mut loader)?;
+    check_file(&resolved).map(|_| ())
+}
+
 #[test]
 fn arithmetic_int_is_int() {
     check("fun f() -> Int = 1 + 2 * 3\n").unwrap();
@@ -107,18 +121,18 @@ fn dyn_argument_coercion_and_dispatch_check() {
     let src = format!(
         "{DYN_SPEAK}\
          fun describe(s: dyn Speak) -> Int = s.sound()\n\
-         fun main() {{\n    let d = Dog {{}}\n    print_int(describe(d))\n}}\n"
+         fun main() {{\n    let d = Dog {{}}\n    print(describe(d))\n}}\n"
     );
-    check(&src).unwrap();
+    check_with_prelude(&src).unwrap();
 }
 
 #[test]
 fn dyn_let_coercion_checks() {
     let src = format!(
         "{DYN_SPEAK}\
-         fun main() {{\n    let s: dyn Speak = Cat {{}}\n    print_int(s.sound())\n}}\n"
+         fun main() {{\n    let s: dyn Speak = Cat {{}}\n    print(s.sound())\n}}\n"
     );
-    check(&src).unwrap();
+    check_with_prelude(&src).unwrap();
 }
 
 #[test]
@@ -127,7 +141,7 @@ fn dyn_coercion_of_non_implementor_is_error() {
         "{DYN_SPEAK}\
          struct Rock {{}}\n\
          fun describe(s: dyn Speak) -> Int = s.sound()\n\
-         fun main() {{\n    print_int(describe(Rock {{}}))\n}}\n"
+         fun main() {{\n    print(describe(Rock {{}}))\n}}\n"
     );
     let err = check(&src).unwrap_err();
     assert!(matches!(err, RavenError::Type(_, _, _)));
@@ -478,7 +492,7 @@ fn ty_display_does_not_panic() {
 fn extern_decl_and_cstr_literal_call_checks() {
     // An extern signature with FFI types, called on a `c"..."` literal.
     check(
-        "extern \"C\" {\n    fun strlen(s: CStr) -> CSize\n}\nfun main() {\n    let n = strlen(c\"hello\")\n    print_int(n)\n}\n",
+        "extern \"C\" {\n    fun strlen(s: CStr) -> CSize\n}\nfun main() {\n    let n = strlen(c\"hello\")\n    print(n)\n}\n",
     )
     .unwrap();
 }
@@ -488,7 +502,7 @@ fn extern_int_param_accepts_int_literal() {
     // A native Int literal is accepted where an integer FFI type (CInt)
     // is expected, so `abs(-7)` checks.
     check(
-        "extern \"C\" {\n    fun abs(x: CInt) -> CInt\n}\nfun main() {\n    let n = abs(-7)\n    print_int(n)\n}\n",
+        "extern \"C\" {\n    fun abs(x: CInt) -> CInt\n}\nfun main() {\n    let n = abs(-7)\n    print(n)\n}\n",
     )
     .unwrap();
 }

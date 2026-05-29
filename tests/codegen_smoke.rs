@@ -214,7 +214,7 @@ fn defer_order_program_compiles_and_runs() {
         return;
     };
     // Two defers run in reverse declaration order at the return: the
-    // function schedules print_int(1) then print_int(2), so the program
+    // function schedules print(1) then print(2), so the program
     // prints 2 then 1.
     compile_link_run_and_check("defer_order.rv", "2\n1\n", &runtime);
 }
@@ -270,11 +270,11 @@ fn std_io_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
     };
-    // The first stdlib module end to end: `import std/io { println,
-    // println_int }` merges the bundled `std/io` source into the program,
-    // namespaced as `std.io.*`. The selectors bind to those functions,
-    // which call the internal `__io_*` intrinsics wired to the runtime.
-    // Prints the greeting then 42.
+    // The first stdlib module end to end: `import std/io { println }`
+    // merges the bundled `std/io` source into the program, namespaced as
+    // `std.io.*`. The selector binds to that function, which calls the
+    // internal `__io_*` intrinsics wired to the runtime. The second line
+    // prints an interpolated integer. Prints the greeting then 42.
     compile_link_run_and_check("use_io.rv", "Hello from std/io!\n42\n", &runtime);
 }
 
@@ -288,7 +288,7 @@ fn std_string_program_compiles_and_runs() {
     // of the `__str_*` byte intrinsics) into the program, namespaced as
     // `std.string.*`. Exercises case mapping, trim, repeat, replace,
     // substring, contains, and index_of, with the last two observed
-    // through println and println_int.
+    // through println of interpolated integers.
     let expected = "HELLO\n\
                     world\n\
                     spaced\n\

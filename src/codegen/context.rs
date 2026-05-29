@@ -287,10 +287,6 @@ impl ModuleCx {
         sig = self.make_sig(&[], &[ptr]);
         self.declare_runtime(intrinsics::RUNTIME_READ_LINE, &sig)?;
 
-        // raven_println_int(i64)
-        sig = self.make_sig(&[i64t], &[]);
-        self.declare_runtime(intrinsics::RUNTIME_PRINTLN_INT, &sig)?;
-
         // raven_struct_new(field_count: u32, type_id: u32) -> ptr
         sig = self.make_sig(&[i32t, i32t], &[ptr]);
         self.declare_runtime(intrinsics::RUNTIME_STRUCT_NEW, &sig)?;

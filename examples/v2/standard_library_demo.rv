@@ -5,10 +5,10 @@ import std/string
 
 fun main() {
     print("=== Math ===")
-    print_int(abs_int(-10))
-    print_int(min_int(-10, 15))
-    print_int(max_int(-10, 15))
-    print_int(pow_int(2, 8))
+    print(abs_int(-10))
+    print(min_int(-10, 15))
+    print(max_int(-10, 15))
+    print(pow_int(2, 8))
 
     print("=== String ===")
     print("  hello world  ".trim())

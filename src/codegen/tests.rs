@@ -122,7 +122,7 @@ fn compiles_extern_c_call_with_cstring_literal() {
         }
         fun main() {
             let n = strlen(c"hello")
-            print_int(n)
+            print(n)
         }
     "#;
     let prog = compile(src);
@@ -171,7 +171,7 @@ fn compiles_extern_c_call_with_int_literal() {
         }
         fun main() {
             let n = abs(-7)
-            print_int(n)
+            print(n)
         }
     "#;
     let prog = compile(src);

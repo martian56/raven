@@ -7,5 +7,5 @@ fun main() {
     words.push("bird")
     print(words[0])       // raven
     print(words[2])       // bird
-    print_int(words.len()) // 3
+    print(words.len()) // 3
 }

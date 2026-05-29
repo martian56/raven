@@ -51,7 +51,7 @@ A call uses the foreign name directly:
 ```raven
 fun main() {
     let n = strlen(c"hello")
-    print_int(n)
+    print(n)
 }
 ```
 
@@ -126,8 +126,9 @@ A mismatch (for example a `c"..."` where a `CInt` is expected, or a
 the argument's span.
 
 The return type flows out as the call's type. An integer FFI return
-(`CInt`, `CLong`, `CSize`) may be handed to `print_int`, which observes
-it directly; a narrower one is sign-extended to i64 first.
+(`CInt`, `CLong`, `CSize`) satisfies `ToString`: it widens to `Int` (a
+narrower one is sign-extended) and renders through the `Int` to-string
+path, so `print(n)` and `"${n}"` both observe a C call result directly.
 
 ## Codegen
 

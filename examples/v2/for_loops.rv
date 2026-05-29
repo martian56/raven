@@ -6,7 +6,7 @@ fun main() {
     for x in 0..5 {
         sum = sum + x
     }
-    print_int(sum)            // 10
+    print(sum)            // 10
 
     // List loop: sum the three elements 3 + 5 + 7 = 15.
     let xs = [3, 5, 7]
@@ -14,7 +14,7 @@ fun main() {
     for v in xs {
         total = total + v
     }
-    print_int(total)          // 15
+    print(total)          // 15
 
     // break and continue: continue still advances the counter. Over
     // 0..10 we skip i == 5 with continue and stop at i == 8 with break,
@@ -29,5 +29,5 @@ fun main() {
         }
         count = count + 1
     }
-    print_int(count)          // 7
+    print(count)          // 7
 }

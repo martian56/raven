@@ -8,5 +8,5 @@ fun apply(f: fun(Int) -> Int, x: Int) -> Int {
 fun main() {
     let factor = 3
     let triple = fun(x: Int) -> Int = x * factor
-    print_int(apply(triple, 7))
+    print(apply(triple, 7))
 }

@@ -5,5 +5,5 @@ impl Int {
 }
 
 fun main() {
-    print_int(21.doubled())
+    print(21.doubled())
 }

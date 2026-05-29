@@ -12,7 +12,7 @@ use super::super::ir::{
     ListMethodOp, MirBinOp, MirBlockId, MirConstant, MirFnRef, MirLocal, MirOperand, MirRvalue,
     MirStatement, MirTerminator, MirUnOp,
 };
-use super::super::ty::MirType;
+use super::super::ty::{MirFfiTy, MirType};
 use super::{mir_ty, stmt, LoopFrame, LowerCx};
 
 /// Lower an expression to an operand. Side effects appear in the
@@ -942,6 +942,42 @@ fn lower_method_call(
     ty: MirType,
 ) -> MirOperand {
     let recv_ty = mir_ty(&receiver.ty, cx.subst);
+
+    // The integer C FFI types have no `ToString` impl of their own. A
+    // `to_string` call on one (inserted by HIR lowering for a `print`
+    // argument or an interpolation fragment) widens the value to `Int`
+    // and renders through the `Int` to-string runtime intrinsic. The
+    // widening is a sign extension (`CInt` is i32; `CLong`/`CSize` are
+    // already pointer-width and pass through). `CSize` is treated as a
+    // signed `Int`, correct for realistic sizes (below 2^63).
+    if name == "to_string" {
+        if let MirType::Ffi(MirFfiTy::CInt | MirFfiTy::CLong | MirFfiTy::CSize) = &recv_ty {
+            let recv = lower_expr(cx, receiver);
+            let widened = cx.builder.fresh_temp("ffiwiden", MirType::Int);
+            cx.builder.assign(
+                cx.current,
+                widened,
+                MirRvalue::Cast {
+                    operand: recv,
+                    target: MirType::Int,
+                },
+            );
+            let dst = cx.builder.fresh_temp("tostr", MirType::Str);
+            cx.builder.assign(
+                cx.current,
+                dst,
+                MirRvalue::Call {
+                    callee: MirFnRef {
+                        mangled: super::super::intrinsics::INT_TO_STRING.into(),
+                        origin: None,
+                    },
+                    args: vec![MirOperand::Copy(widened)],
+                },
+            );
+            return MirOperand::Copy(dst);
+        }
+    }
+
     if let MirType::Dyn { methods, .. } = &recv_ty {
         // Virtual dispatch: the slot index is the method's position in the
         // trait's declaration order, which the dyn type carries.

@@ -2,9 +2,9 @@
 // Compiling and running this prints 3, 20, 4, 40 on their own lines.
 fun main() {
     let xs = [10, 20, 30]
-    print_int(xs.len())   // 3
-    print_int(xs[1])      // 20
+    print(xs.len())   // 3
+    print(xs[1])      // 20
     xs.push(40)
-    print_int(xs.len())   // 4
-    print_int(xs[3])      // 40
+    print(xs.len())   // 4
+    print(xs[3])      // 40
 }

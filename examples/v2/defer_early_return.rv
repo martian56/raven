@@ -3,14 +3,14 @@
 // The second defer is registered after the early return, so a run that
 // takes the early path never schedules it.
 //
-// f(true)  reaches only `defer print_int(9)`  -> prints 9
+// f(true)  reaches only `defer print(9)`  -> prints 9
 // f(false) reaches both, LIFO at the return    -> prints 8 then 9
 fun f(early: Bool) -> Int {
-    defer print_int(9)
+    defer print(9)
     if early {
         return 1
     }
-    defer print_int(8)
+    defer print(8)
     return 2
 }
 

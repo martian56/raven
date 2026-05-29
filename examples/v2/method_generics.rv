@@ -18,6 +18,6 @@ fun main() {
     let b = Box { value: 21 }
     let doubled = b.mapped(fun(x: Int) -> Int = x * 2)
     let is_big = b.mapped(fun(x: Int) -> Bool = x > 10)
-    print_int(doubled)
+    print(doubled)
     print(is_big)
 }

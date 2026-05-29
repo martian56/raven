@@ -91,18 +91,18 @@ expressions registered so far in declaration order.
 
 ```
 fun f(early: Bool) -> Int {
-    defer print_int(9)      // push 9         -> defers = [9]
+    defer print(9)      // push 9         -> defers = [9]
     if early {
         return 1            // emit [9] reversed -> print 9; return 1
     }
-    defer print_int(8)      // push 8         -> defers = [9, 8]
+    defer print(8)      // push 8         -> defers = [9, 8]
     return 2                // emit [9, 8] reversed -> print 8, print 9; return 2
 }
 ```
 
 The MIR has two return-bearing blocks. The early-return block contains
-`print_int(9); return 1`. The fall-through block contains
-`print_int(8); print_int(9); return 2`. So `f(true)` prints `9` and
+`print(9); return 1`. The fall-through block contains
+`print(8); print(9); return 2`. So `f(true)` prints `9` and
 `f(false)` prints `8` then `9`. The corresponding executable confirms
 this on a real run.
 
@@ -110,13 +110,13 @@ For the classic ordering case:
 
 ```
 fun demo() -> Int {
-    defer print_int(1)      // defers = [1]
-    defer print_int(2)      // defers = [1, 2]
+    defer print(1)      // defers = [1]
+    defer print(2)      // defers = [1, 2]
     return 0                // emit reversed: print 2, print 1; return 0
 }
 ```
 
-The single return block is `print_int(2); print_int(1); return 0`, so the
+The single return block is `print(2); print(1); return 0`, so the
 program prints `2` then `1`.
 
 ## Interaction with `?`

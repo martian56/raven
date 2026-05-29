@@ -417,6 +417,11 @@ impl<'a, 'b> Checker<'a, 'b> {
         let stripped = resolved.strip_self().clone();
         match &stripped {
             Ty::Str | Ty::Error => Ok(()),
+            // The integer C FFI types have no `ToString` impl of their own;
+            // they widen to `Int` at the use site (HIR lowering inserts the
+            // cast) and render through the `Int` to-string path, so a C call
+            // result such as `strlen(c"hi")` can be printed or interpolated.
+            t if is_int_ffi(t) => Ok(()),
             Ty::Var(v) => {
                 self.infer
                     .add_bound(*v, "ToString".to_string(), span.clone());
@@ -1221,36 +1226,6 @@ impl<'a, 'b> Checker<'a, 'b> {
                 }
                 let arg_ty = self.check_expr(&args[0])?;
                 self.require_to_string(&arg_ty, &args[0].span)?;
-                Ok(Ty::Unit)
-            }
-            "print_int" => {
-                // Built in `print_int(n: Int)` intrinsic. The codegen
-                // backend recognizes the mangled name and emits a call
-                // to the runtime's `raven_println_int` ABI symbol so a
-                // program can observe a computed integer. The integer C
-                // FFI types (`CInt`, `CLong`, `CSize`) are also accepted
-                // so the result of a C call (for example `strlen`) can be
-                // printed directly; the back end widens narrower ones to
-                // the i64 the runtime expects.
-                if args.len() != 1 {
-                    return Err(RavenError::ty(
-                        TypeError::WrongArity {
-                            func: "print_int".into(),
-                            expected: 1,
-                            actual: args.len(),
-                        },
-                        span.clone(),
-                    ));
-                }
-                let arg_ty = self.check_expr(&args[0])?;
-                let resolved = self.infer.resolve(&arg_ty);
-                let is_int_ffi = matches!(
-                    resolved.strip_self(),
-                    Ty::Ffi(FfiTy::CInt) | Ty::Ffi(FfiTy::CLong) | Ty::Ffi(FfiTy::CSize)
-                );
-                if !is_int_ffi {
-                    self.unify(&Ty::Int, &arg_ty, &args[0].span)?;
-                }
                 Ok(Ty::Unit)
             }
             // Internal stdlib I/O intrinsics. The bundled `std/io` source
@@ -2325,6 +2300,11 @@ impl<'a, 'b> Checker<'a, 'b> {
             // The built-in scalars convert through their dedicated runtime
             // rendering. Any other type must implement `ToString`.
             if is_interpolatable(stripped) {
+                continue;
+            }
+            // The integer C FFI types widen to `Int` and render through the
+            // `Int` to-string path (HIR lowering inserts the cast).
+            if is_int_ffi(stripped) {
                 continue;
             }
             if let Ty::Param(p) = stripped {

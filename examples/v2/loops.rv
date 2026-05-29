@@ -2,11 +2,11 @@
 fun main() {
     let i = 0
     while i < 5 {
-        print_int(i)
+        print(i)
         i = i + 1
     }
 
     for j in 0..5 {
-        print_int(j)
+        print(j)
     }
 }
