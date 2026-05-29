@@ -50,6 +50,17 @@ fn enum_program_compiles_and_runs() {
 }
 
 #[test]
+fn enum_construction_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // User enum variants constructed in expression position and matched.
+    // `Color.Green` (unit) prints `green`; `Shape.Circle(2.0)` and
+    // `Shape.Square(3.0)` (payload) print 12 and 9.
+    compile_link_run_and_check("enum_construct.rv", "green\n12\n9\n", &runtime);
+}
+
+#[test]
 fn closure_value_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

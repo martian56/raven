@@ -210,6 +210,14 @@ pub enum HirExprKind {
     SomeCtor(Box<HirExpr>),
     /// `None` constructor literal.
     NoneCtor,
+    /// A user enum variant construction `EnumName.Variant(args)`. The
+    /// result type (the enum, with concrete type arguments) lives on the
+    /// `HirExpr.ty`. `variant` is the variant's index in declaration
+    /// order, matching what patterns and codegen use.
+    EnumCreate {
+        variant: usize,
+        args: Vec<HirExpr>,
+    },
 
     // ----- lambda -----
     Lambda {

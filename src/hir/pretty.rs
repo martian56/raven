@@ -470,6 +470,14 @@ fn pretty_expr(buf: &mut String, expr: &HirExpr, depth: usize) {
             buf.push_str(")\n");
         }
         HirExprKind::NoneCtor => writeln!(buf, "(none ty={})", expr.ty).unwrap(),
+        HirExprKind::EnumCreate { variant, args } => {
+            writeln!(buf, "(enum-create variant={} ty={}", variant, expr.ty).unwrap();
+            for a in args {
+                pretty_expr(buf, a, depth + 1);
+            }
+            indent(buf, depth);
+            buf.push_str(")\n");
+        }
         HirExprKind::Lambda { params, ret, body } => {
             write!(buf, "(lambda ret={} params=(", ret).unwrap();
             for (i, (name, ty, _)) in params.iter().enumerate() {

@@ -179,6 +179,28 @@ iterable never produces a `RangeNew`: the for-loop lowering reads the
 range endpoints straight off the AST and emits the counter loop above,
 so `RangeNew` carries no iteration responsibility.
 
+### Enum variant construction
+
+A user enum variant is built in expression position with a qualified
+name:
+
+```
+EnumName.Variant          unit variant
+EnumName.Variant(args)    payload variant
+```
+
+Both forms lower to `EnumCreate { variant, args }`, where `variant` is
+the variant's index in declaration order (the same index patterns and
+codegen use) and the node's `ty` is the enum type with its concrete type
+arguments. The built-in `Some`, `Ok`, `Err`, and `None` keep their own
+constructor nodes (`SomeCtor`, `OkCtor`, `ErrCtor`, `NoneCtor`), which
+MIR lowers to the same `EnumCreate` rvalue.
+
+Bare-name construction (`Red`, `Circle(2.0)`) is not supported yet; it
+needs expected-type disambiguation and is a follow-up. Match patterns
+are unchanged and continue to use bare variant names (`match c { Red ->
+... }`).
+
 ### Compound assignment
 
 ```

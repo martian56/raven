@@ -21,7 +21,7 @@ use crate::span::Span;
 
 use super::builtin;
 use super::collect::{resolve_ty, scope_from_params, GenericScope};
-use super::env::{FnSig, GenericParamSig, TypeEnv};
+use super::env::{FnSig, GenericParamSig, TypeEnv, VariantPayloadSig};
 use super::infer::{substitute, InferCtx};
 use super::pattern;
 use super::ty::InferVarId;
@@ -1368,6 +1368,33 @@ impl<'a, 'b> Checker<'a, 'b> {
         args: &[Expr],
         span: &Span,
     ) -> Result<Ty, RavenError> {
+        // `EnumName.Variant(args)` constructs a payload variant. The
+        // parser shapes this as a method call, so it is recognized here
+        // (before associated-function routing) when the receiver is an
+        // enum name and the called name is one of its variants.
+        if let Some(ctor_ty) = self.try_enum_variant_ctor(receiver, name, &receiver.span)? {
+            let (params, ret) = match ctor_ty {
+                Ty::Function { params, ret } => (params, *ret),
+                // A unit variant called with arguments: report the arity.
+                other => (Vec::new(), other),
+            };
+            if params.len() != args.len() {
+                return Err(RavenError::ty(
+                    TypeError::WrongArity {
+                        func: format!("{}", ret),
+                        expected: params.len(),
+                        actual: args.len(),
+                    },
+                    span.clone(),
+                ));
+            }
+            for (param_ty, arg) in params.iter().zip(args.iter()) {
+                let a = self.check_expr(arg)?;
+                self.unify(param_ty, &a, &arg.span)?;
+            }
+            return Ok(ret);
+        }
+
         // `Type.func(args)`: when the receiver is a type name (a struct or
         // enum, or a built-in type), this is an associated function call,
         // not an instance method call. The named function on that type has
@@ -1898,6 +1925,12 @@ impl<'a, 'b> Checker<'a, 'b> {
     }
 
     fn check_field(&mut self, receiver: &Expr, name: &str, span: &Span) -> Result<Ty, RavenError> {
+        // `EnumName.Variant` constructs a variant. Intercept before
+        // checking the receiver as a value: a bare enum name is a type,
+        // not a value, so `check_expr(receiver)` cannot type it.
+        if let Some(ty) = self.try_enum_variant_ctor(receiver, name, span)? {
+            return Ok(ty);
+        }
         let recv = self.check_expr(receiver)?;
         let recv_resolved = self.infer.resolve(&recv);
         let stripped = recv_resolved.strip_self().clone();
@@ -1939,6 +1972,72 @@ impl<'a, 'b> Checker<'a, 'b> {
             Ty::Error => Ok(Ty::Error),
             other => Err(RavenError::ty(
                 TypeError::Custom(format!("type `{}` has no field `{}`", other, name)),
+                span.clone(),
+            )),
+        }
+    }
+
+    /// If `receiver` is a bare enum name and `name` is one of its
+    /// variants, return the type produced by constructing it.
+    ///
+    /// A unit variant yields the enum type directly. A payload variant
+    /// yields a function type whose parameters are the payload types and
+    /// whose result is the enum type, so the surrounding `check_call`
+    /// applies the arguments. For a generic enum the declared generic
+    /// parameters become fresh inference variables, solved by unification
+    /// against the argument types and the surrounding expected type.
+    ///
+    /// Returns `None` when the receiver is not an enum name, so ordinary
+    /// struct field access is left untouched.
+    fn try_enum_variant_ctor(
+        &mut self,
+        receiver: &Expr,
+        name: &str,
+        span: &Span,
+    ) -> Result<Option<Ty>, RavenError> {
+        let ExprKind::Ident { .. } = &receiver.kind else {
+            return Ok(None);
+        };
+        let Some(Binding::Enum(id)) = self.resolved.map.lookup(&receiver.span).cloned() else {
+            return Ok(None);
+        };
+        let sig = self
+            .env
+            .enums
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| ty_custom("enum signature missing", span))?;
+        let Some((_, variant)) = sig.variant(name) else {
+            return Err(RavenError::ty(
+                TypeError::Custom(format!("enum `{}` has no variant `{}`", sig.name, name)),
+                span.clone(),
+            ));
+        };
+        // Fresh inference variables for the enum's generic parameters.
+        let args = self.instantiate_type_args(&sig.generics, &[], span, &sig.name)?;
+        let mut subst: HashMap<ParamId, Ty> = HashMap::new();
+        for (p, a) in sig.generics.iter().zip(args.iter()) {
+            subst.insert(p.id.clone(), a.clone());
+        }
+        let enum_ty = Ty::Enum {
+            id,
+            name: sig.name.clone(),
+            args,
+        };
+        match &variant.payload {
+            VariantPayloadSig::Unit => Ok(Some(enum_ty)),
+            VariantPayloadSig::Tuple(tys) => {
+                let params = tys.iter().map(|t| substitute(t, &subst)).collect();
+                Ok(Some(Ty::Function {
+                    params,
+                    ret: Box::new(enum_ty),
+                }))
+            }
+            VariantPayloadSig::Struct(_) => Err(RavenError::ty(
+                TypeError::Custom(format!(
+                    "variant `{}` has named fields; struct-variant construction is not yet supported",
+                    name
+                )),
                 span.clone(),
             )),
         }

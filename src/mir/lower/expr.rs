@@ -270,6 +270,26 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
         HirExprKind::OkCtor(inner) => enum_ctor_unary(cx, inner, "Ok", 0, ty),
         HirExprKind::ErrCtor(inner) => enum_ctor_unary(cx, inner, "Err", 1, ty),
         HirExprKind::SomeCtor(inner) => enum_ctor_unary(cx, inner, "Some", 0, ty),
+        HirExprKind::EnumCreate { variant, args } => {
+            let mut payload = Vec::with_capacity(args.len());
+            let mut payload_tys = Vec::with_capacity(args.len());
+            for a in args {
+                payload_tys.push(mir_ty(&a.ty, cx.subst));
+                payload.push(lower_expr(cx, a));
+            }
+            let dst = cx.builder.fresh_temp("enum", ty.clone());
+            cx.builder.assign(
+                cx.current,
+                dst,
+                MirRvalue::EnumCreate {
+                    ty,
+                    variant: *variant,
+                    payload,
+                    payload_tys,
+                },
+            );
+            MirOperand::Copy(dst)
+        }
         HirExprKind::NoneCtor => {
             let dst = cx.builder.fresh_temp("none", ty.clone());
             cx.builder.assign(
