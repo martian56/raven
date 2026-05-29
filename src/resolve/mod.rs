@@ -27,7 +27,10 @@ pub use bindings::{
 };
 pub use imports::{FsLoader, GithubPath, LoadedSource, SourceLoader, STDLIB_MODULES};
 pub use scope::{Scope, ScopeKind, ScopeStack};
-pub use stdlib::{expand_with_stdlib, local_module_key, mangle_local_fn, mangle_stdlib_fn};
+pub use stdlib::{
+    expand_with_stdlib, expand_with_stdlib_ctx, external_module_key, local_module_key,
+    mangle_external_fn, mangle_local_fn, mangle_stdlib_fn, PackageContext,
+};
 
 /// The resolver output for a single file.
 ///
@@ -50,6 +53,18 @@ pub fn resolve_file<'a>(
     file: &'a File,
     loader: &mut dyn SourceLoader,
 ) -> Result<ResolvedFile<'a>, RavenError> {
+    resolve_file_ctx(file, loader, None)
+}
+
+/// Resolve `file` like [`resolve_file`], additionally binding external
+/// (`github.com/...`) import selectors to the `ext.`-namespaced symbols
+/// the expander merged from the rvpm cache. When `ctx` is `None`, external
+/// imports stay deferred exactly as before.
+pub fn resolve_file_ctx<'a>(
+    file: &'a File,
+    loader: &mut dyn SourceLoader,
+    ctx: Option<&PackageContext>,
+) -> Result<ResolvedFile<'a>, RavenError> {
     let mut scope = ScopeStack::new();
     let mut map = ResolutionMap::new();
     let mut imports_out = Vec::new();
@@ -61,7 +76,14 @@ pub fn resolve_file<'a>(
 
     // Pass 1b: resolve imports and merge their bindings into the same
     // module scope.
-    imports::resolve_imports(file, &mut scope, loader, &mut imports_out, &mut in_progress)?;
+    imports::resolve_imports_ctx(
+        file,
+        &mut scope,
+        loader,
+        &mut imports_out,
+        &mut in_progress,
+        ctx,
+    )?;
     map.imports = imports_out;
 
     // Pass 2: walk every body, binding identifier uses.

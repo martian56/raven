@@ -155,9 +155,18 @@ already in module scope; no rebinding is needed.
 
 The module-source loading sits behind the `SourceLoader` abstraction
 (bundled `include_str!` source for stdlib, filesystem for local modules).
-External `github.com/...` packages (issue #85) resolve their source from the
-rvpm cache and then reuse this same merge: the seam is a new source backend,
-not a new merge path.
+External `github.com/...` packages resolve their source from the rvpm cache
+and then reuse this same merge: the seam is a new source backend, not a new
+merge path. An external import's source is located through the project's
+`rv.lock` (which pins each `github.com/<user>/<repo>` to a version) and the
+rvpm cache directory for that version, then namespaced under
+`ext.<host>.<user>.<repo>.<hash>` and merged through `merge_module_items`,
+transitively pulling in the external package's own dependencies. The cache
+root and the loaded lock are carried by a `PackageContext` threaded into
+`expand_with_stdlib_ctx` and `resolve_file_ctx`; without it (a single-file
+`raven build`) an external import stays deferred. See the build/run and
+external-import sections of `docs/v2/specs/rvpm.md` for the entry-file,
+output-path, and subpath conventions.
 
 ## SourceLoader trait
 

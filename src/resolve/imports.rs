@@ -110,13 +110,28 @@ pub fn resolve_imports(
     out_imports: &mut Vec<ResolvedImport>,
     in_progress: &mut HashSet<PathBuf>,
 ) -> Result<(), RavenError> {
+    resolve_imports_ctx(file, scope, loader, out_imports, in_progress, None)
+}
+
+/// Resolve every import like [`resolve_imports`], binding external import
+/// selectors against `ctx` (the rvpm cache plus the project lock) so they
+/// resolve to the `ext.`-namespaced symbols the expander merged. When
+/// `ctx` is `None`, external imports stay deferred.
+pub fn resolve_imports_ctx(
+    file: &File,
+    scope: &mut ScopeStack,
+    loader: &mut dyn SourceLoader,
+    out_imports: &mut Vec<ResolvedImport>,
+    in_progress: &mut HashSet<PathBuf>,
+    ctx: Option<&super::stdlib::PackageContext>,
+) -> Result<(), RavenError> {
     for decl in &file.items {
         let DeclKind::Import(import) = &decl.kind else {
             continue;
         };
         let id = ImportId(out_imports.len());
         let resolved = resolve_one_import(import, &decl.span, loader, in_progress, id)?;
-        bind_import(import, &resolved, id, scope)?;
+        bind_import(import, &resolved, id, scope, ctx)?;
         out_imports.push(resolved);
     }
     Ok(())
@@ -324,6 +339,7 @@ fn bind_import(
     resolved: &ResolvedImport,
     id: ImportId,
     scope: &mut ScopeStack,
+    ctx: Option<&super::stdlib::PackageContext>,
 ) -> Result<(), RavenError> {
     // The namespaced prefix a selective import resolves against, used to
     // find the functions the expander merged ahead of this pass. A bundled
@@ -345,7 +361,27 @@ fn bind_import(
                 super::stdlib::mangle_local_fn(&key, name)
             }))
         }
-        ImportTarget::ExternalPackage { .. } => None,
+        ImportTarget::ExternalPackage {
+            host,
+            user,
+            repo,
+            subpath,
+        } => {
+            // Bind external selectors to the `ext.`-namespaced symbols the
+            // expander merged from the cache, computed from the resolved
+            // source path. Without a package context the import stays
+            // deferred (no mangle).
+            let source = format!("github.com/{}/{}", user, repo);
+            match ctx.and_then(|c| c.external_source_path(&source, subpath)) {
+                Some(src_path) => {
+                    let key = super::stdlib::external_module_key(host, user, repo, &src_path);
+                    Some(Box::new(move |name: &str| {
+                        super::stdlib::mangle_external_fn(&key, name)
+                    }))
+                }
+                None => None,
+            }
+        }
     };
 
     if !import.selectors.is_empty() {

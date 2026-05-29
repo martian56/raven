@@ -19,6 +19,7 @@
 
 pub mod ast;
 pub mod codegen;
+pub mod driver;
 pub mod error;
 pub mod hir;
 pub mod lexer;
