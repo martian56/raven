@@ -147,7 +147,7 @@ Calling `emit_statement` appends to the current block; calling
 | `Array`       | Lower elements, then `ArrayLit` |
 | `Block`       | Lower stmts in order; the optional tail expression's local is the block's result |
 | `If`          | Cond into a local, `SwitchInt` to two arm blocks, each writes to a join local, both `Goto` the continuation block |
-| `Match`       | Discriminant into a local, then `SwitchEnum` for enum scrutinees or chained `SwitchInt` for integer literals; arm blocks bind patterns and `Goto` the continuation |
+| `Match`       | Discriminant into a local, then `SwitchEnum` for enum scrutinees or chained `SwitchInt` for integer literals; arm blocks bind patterns and `Goto` the continuation. The scrutinee type is taken after stripping a method receiver's `SelfTy` wrapper, so matching on `self` dispatches and projects payloads identically to the same enum value passed as a parameter |
 | `Loop`        | Header block contains the body; `break` desugars to `Goto continuation`, `continue` to `Goto header` |
 | `While`       | Header block tests cond with `SwitchInt`; true branch is the body and tail-jumps to header; false branch is the continuation |
 | `Return(v)`   | Lower `v`, then close the current block with `Return(local)` |

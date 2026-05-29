@@ -36,8 +36,13 @@ pub fn lower_match(
     // mentions a generic parameter (for example `Option<T>` returned by a
     // bound iterator's `next`) yields concrete payload-binding types. Using
     // the raw HIR type would leave `T` abstract, which lowers to a unit
-    // slot and produces a type mismatch in the generated code.
-    let scrut_ty = super::substitute(&scrutinee.ty, cx.subst);
+    // slot and produces a type mismatch in the generated code. Strip the
+    // `SelfTy(T)` wrapper a method receiver carries so the match dispatches
+    // on the underlying enum and projects payloads the same way a plain
+    // value scrutinee does.
+    let scrut_ty = super::substitute(&scrutinee.ty, cx.subst)
+        .strip_self()
+        .clone();
     let result_local = cx.builder.fresh_temp("match", result_ty);
     let cont = cx.builder.new_block();
 
