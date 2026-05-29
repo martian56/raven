@@ -1,0 +1,81 @@
+import std/collections
+
+// Exercises the hash-backed Set and Map past their initial 8 buckets so
+// resize and rehash run, plus deliberate collisions and removal.
+
+fun main() {
+    // Insert 0..60 into a Set<Int>, with every value added twice. The set
+    // dedups, forcing several resizes (8 buckets, load factor 0.75).
+    let s = Set.new()
+    let i = 0
+    while i < 60 {
+        s.add(i)
+        s.add(i)
+        i = i + 1
+    }
+    print(s.len())
+    print(s.contains(0))
+    print(s.contains(59))
+    print(s.contains(60))
+
+    // Remove the even values; odd ones stay.
+    let r = 0
+    while r < 60 {
+        s.remove(r)
+        r = r + 2
+    }
+    print(s.len())
+    print(s.contains(2))
+    print(s.contains(3))
+
+    // Map<Int, Int> with keys that collide under the small table:
+    // multiples of 8 share a bucket before resize.
+    let m = Map.new()
+    let k = 0
+    while k < 50 {
+        m.set(k, k * 10)
+        k = k + 1
+    }
+    print(m.len())
+    match m.get(0) {
+        Some(v) -> print(v)
+        None -> print(-1)
+    }
+    match m.get(49) {
+        Some(v) -> print(v)
+        None -> print(-1)
+    }
+    match m.get(50) {
+        Some(v) -> print(v)
+        None -> print(-1)
+    }
+
+    // Overwrite an existing key: length is unchanged, value updates.
+    m.set(7, 7777)
+    print(m.len())
+    match m.get(7) {
+        Some(v) -> print(v)
+        None -> print(-1)
+    }
+
+    // Remove a key, then confirm has/get reflect it.
+    print(m.remove(7))
+    print(m.has(7))
+    print(m.remove(7))
+
+    // String keys with collisions: short strings into the same table.
+    let sm = Map.new()
+    sm.set("alpha", 1)
+    sm.set("beta", 2)
+    sm.set("gamma", 3)
+    sm.set("alpha", 11)
+    print(sm.len())
+    match sm.get("alpha") {
+        Some(v) -> print(v)
+        None -> print(-1)
+    }
+    match sm.get("delta") {
+        Some(v) -> print(v)
+        None -> print(-1)
+    }
+}

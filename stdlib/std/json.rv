@@ -500,8 +500,8 @@ fun stringify(value: JsonValue) -> String {
         },
         Object(map) -> {
             let out = "{"
-            let keys = map.keys
-            let values = map.values
+            let keys = map.keys()
+            let values = map.values()
             let i = 0
             let n = keys.len()
             while i < n {

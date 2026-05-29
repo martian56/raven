@@ -27,10 +27,10 @@ A generic implementing type's associated function may return the generic
 type:
 
 ```raven
-impl<T: Eq> Set<T> {
+impl<T: Eq + Hash> Set<T> {
     fun new() -> Set<T> {
-        let items: List<T> = []
-        return Set { items: items }
+        let buckets: List<List<T>> = []
+        return Set { buckets: buckets, count: 0 }
     }
 }
 ```

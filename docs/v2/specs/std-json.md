@@ -22,10 +22,9 @@ Construct variants with the qualified form (`JsonValue.Null`,
 `JsonValue.Array(list)`, `JsonValue.Object(map)`). Match with the bare
 variant names (`Null`, `Bool(b)`, `Number(n)`, ...).
 
-`Object` uses `std/collections` `Map<String, JsonValue>`. The Map stores
-parallel `keys` and `values` lists, so members keep insertion order. The
-serializer reads `map.keys` and `map.values` directly to emit members in
-that order.
+`Object` uses `std/collections` `Map<String, JsonValue>`. The serializer
+reads `map.keys()` and `map.values()` to emit members; their order follows
+the Map hash-bucket layout, not insertion order.
 
 ## Numbers are Float
 

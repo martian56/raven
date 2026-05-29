@@ -1,147 +1,301 @@
-// std/collections: Set and Map over keys that implement Eq.
+// std/collections: hash-backed Set and Map over keys that implement
+// `Eq + Hash`.
 //
-// Lookup is a linear scan using the Eq bound, so operations are O(n). A
-// hash-backed implementation using the runtime bucket layout is a planned
-// optimization that will not change this surface. `List<T>` is built into
-// the language and needs no import.
+// Storage is an array of buckets (a `List` of `List`s). A key is placed
+// in `bucket_index(key) = ((key.hash() % n) + n) % n`, where `n` is the
+// bucket count; the double-modulo keeps the index non-negative even when
+// `hash()` returns a negative `Int` (the `Int` hash is the value itself,
+// and the `String` hash can overflow). Lookup, insert, and remove hash
+// the key, then linearly scan the one matching bucket with `Eq`, which is
+// O(1) average. The table starts with 8 buckets and doubles, rehashing
+// every entry, once the load factor (count / bucket count) passes 0.75.
+//
+// `Hash` is implemented for Int, Bool, and String (see std/core); any user
+// type with `Eq + Hash` impls works as a key. Char and Float do not yet
+// implement `Hash`, so they cannot be keys. `List<T>` is built into the
+// language and needs no import.
 
-struct Set<T: Eq> {
-    items: List<T>,
+struct Set<T: Eq + Hash> {
+    buckets: List<List<T>>,
+    count: Int,
 }
 
 // Superseded by the set literal `{a, b}` and `Set.new()`. Kept for
 // selective imports.
-fun empty_set<T: Eq>() -> Set<T> {
-    let items: List<T> = []
-    return Set { items: items }
+fun empty_set<T: Eq + Hash>() -> Set<T> {
+    return Set.new()
 }
 
-impl<T: Eq> Set<T> {
+impl<T: Eq + Hash> Set<T> {
     fun new() -> Set<T> {
-        let items: List<T> = []
-        return Set { items: items }
+        let buckets: List<List<T>> = []
+        let i = 0
+        while i < 8 {
+            let b: List<T> = []
+            buckets.push(b)
+            i = i + 1
+        }
+        return Set { buckets: buckets, count: 0 }
     }
 
     fun len(self) -> Int {
-        return self.items.len()
+        return self.count
     }
 
     fun is_empty(self) -> Bool {
-        return self.items.len() == 0
+        return self.count == 0
     }
 
-    fun index_of(self, x: T) -> Int {
-        let i = 0
-        let n = self.items.len()
-        while i < n {
-            if self.items[i].equals(x) {
-                return i
-            }
-            i = i + 1
-        }
-        return -1
+    fun bucket_index(self, x: T) -> Int {
+        let n = self.buckets.len()
+        let h = x.hash() % n
+        return (h + n) % n
     }
 
     fun contains(self, x: T) -> Bool {
-        return self.index_of(x) >= 0
+        let bucket = self.buckets[self.bucket_index(x)]
+        let i = 0
+        let n = bucket.len()
+        while i < n {
+            if bucket[i].equals(x) {
+                return true
+            }
+            i = i + 1
+        }
+        return false
     }
 
     // Add `x` if it is not already present.
     fun add(self, x: T) {
-        if self.index_of(x) < 0 {
-            self.items.push(x)
+        let bucket = self.buckets[self.bucket_index(x)]
+        let i = 0
+        let n = bucket.len()
+        while i < n {
+            if bucket[i].equals(x) {
+                return
+            }
+            i = i + 1
+        }
+        bucket.push(x)
+        self.count = self.count + 1
+        if self.count * 4 > self.buckets.len() * 3 {
+            self.grow()
         }
     }
 
-    // Remove `x` if present, returning whether it was. Order is not
-    // preserved: the last element fills the removed slot.
+    // Remove `x` if present, returning whether it was. Order within a
+    // bucket is not preserved: the last entry fills the removed slot.
     fun remove(self, x: T) -> Bool {
-        let idx = self.index_of(x)
-        if idx < 0 {
-            return false
+        let bucket = self.buckets[self.bucket_index(x)]
+        let i = 0
+        let n = bucket.len()
+        while i < n {
+            if bucket[i].equals(x) {
+                let last = bucket.len() - 1
+                bucket[i] = bucket[last]
+                bucket.pop()
+                self.count = self.count - 1
+                return true
+            }
+            i = i + 1
         }
-        let last = self.items.len() - 1
-        self.items[idx] = self.items[last]
-        self.items.pop()
-        return true
+        return false
+    }
+
+    fun grow(self) {
+        let new_count = self.buckets.len() * 2
+        let fresh: List<List<T>> = []
+        let i = 0
+        while i < new_count {
+            let b: List<T> = []
+            fresh.push(b)
+            i = i + 1
+        }
+        let bi = 0
+        let nb = self.buckets.len()
+        while bi < nb {
+            let bucket = self.buckets[bi]
+            let j = 0
+            let m = bucket.len()
+            while j < m {
+                let x = bucket[j]
+                let h = x.hash() % new_count
+                let target = (h + new_count) % new_count
+                fresh[target].push(x)
+                j = j + 1
+            }
+            bi = bi + 1
+        }
+        self.buckets = fresh
     }
 }
 
-struct Map<K: Eq, V> {
-    keys: List<K>,
-    values: List<V>,
+struct Entry<K, V> {
+    key: K,
+    value: V,
+}
+
+struct Map<K: Eq + Hash, V> {
+    buckets: List<List<Entry<K, V>>>,
+    count: Int,
 }
 
 // Superseded by the map literal `["a": 1]` (and `[:]`) and `Map.new()`.
 // Kept for selective imports.
-fun empty_map<K: Eq, V>() -> Map<K, V> {
-    let keys: List<K> = []
-    let values: List<V> = []
-    return Map { keys: keys, values: values }
+fun empty_map<K: Eq + Hash, V>() -> Map<K, V> {
+    return Map.new()
 }
 
-impl<K: Eq, V> Map<K, V> {
+impl<K: Eq + Hash, V> Map<K, V> {
     fun new() -> Map<K, V> {
-        let keys: List<K> = []
-        let values: List<V> = []
-        return Map { keys: keys, values: values }
+        let buckets: List<List<Entry<K, V>>> = []
+        let i = 0
+        while i < 8 {
+            let b: List<Entry<K, V>> = []
+            buckets.push(b)
+            i = i + 1
+        }
+        return Map { buckets: buckets, count: 0 }
     }
 
     fun len(self) -> Int {
-        return self.keys.len()
+        return self.count
     }
 
     fun is_empty(self) -> Bool {
-        return self.keys.len() == 0
+        return self.count == 0
     }
 
-    fun index_of(self, k: K) -> Int {
-        let i = 0
-        let n = self.keys.len()
-        while i < n {
-            if self.keys[i].equals(k) {
-                return i
-            }
-            i = i + 1
-        }
-        return -1
+    fun bucket_index(self, k: K) -> Int {
+        let n = self.buckets.len()
+        let h = k.hash() % n
+        return (h + n) % n
     }
 
     fun has(self, k: K) -> Bool {
-        return self.index_of(k) >= 0
+        let bucket = self.buckets[self.bucket_index(k)]
+        let i = 0
+        let n = bucket.len()
+        while i < n {
+            if bucket[i].key.equals(k) {
+                return true
+            }
+            i = i + 1
+        }
+        return false
     }
 
     fun get(self, k: K) -> Option<V> {
-        let idx = self.index_of(k)
-        if idx < 0 {
-            return None
+        let bucket = self.buckets[self.bucket_index(k)]
+        let i = 0
+        let n = bucket.len()
+        while i < n {
+            if bucket[i].key.equals(k) {
+                return Some(bucket[i].value)
+            }
+            i = i + 1
         }
-        return Some(self.values[idx])
+        return None
     }
 
     // Insert `k` with `v`, or overwrite the value if `k` is present.
     fun set(self, k: K, v: V) {
-        let idx = self.index_of(k)
-        if idx < 0 {
-            self.keys.push(k)
-            self.values.push(v)
-        } else {
-            self.values[idx] = v
+        let bucket = self.buckets[self.bucket_index(k)]
+        let i = 0
+        let n = bucket.len()
+        while i < n {
+            if bucket[i].key.equals(k) {
+                bucket[i].value = v
+                return
+            }
+            i = i + 1
+        }
+        bucket.push(Entry { key: k, value: v })
+        self.count = self.count + 1
+        if self.count * 4 > self.buckets.len() * 3 {
+            self.grow()
         }
     }
 
-    // Remove `k` if present, returning whether it was. Order is not
-    // preserved.
-    fun remove(self, k: K) -> Bool {
-        let idx = self.index_of(k)
-        if idx < 0 {
-            return false
+    // All keys across every bucket, in unspecified order.
+    fun keys(self) -> List<K> {
+        let out: List<K> = []
+        let bi = 0
+        let nb = self.buckets.len()
+        while bi < nb {
+            let bucket = self.buckets[bi]
+            let j = 0
+            let m = bucket.len()
+            while j < m {
+                out.push(bucket[j].key)
+                j = j + 1
+            }
+            bi = bi + 1
         }
-        let last = self.keys.len() - 1
-        self.keys[idx] = self.keys[last]
-        self.values[idx] = self.values[last]
-        self.keys.pop()
-        self.values.pop()
-        return true
+        return out
+    }
+
+    // All values across every bucket, in the same order as `keys()`.
+    fun values(self) -> List<V> {
+        let out: List<V> = []
+        let bi = 0
+        let nb = self.buckets.len()
+        while bi < nb {
+            let bucket = self.buckets[bi]
+            let j = 0
+            let m = bucket.len()
+            while j < m {
+                out.push(bucket[j].value)
+                j = j + 1
+            }
+            bi = bi + 1
+        }
+        return out
+    }
+
+    // Remove `k` if present, returning whether it was. Order within a
+    // bucket is not preserved.
+    fun remove(self, k: K) -> Bool {
+        let bucket = self.buckets[self.bucket_index(k)]
+        let i = 0
+        let n = bucket.len()
+        while i < n {
+            if bucket[i].key.equals(k) {
+                let last = bucket.len() - 1
+                bucket[i] = bucket[last]
+                bucket.pop()
+                self.count = self.count - 1
+                return true
+            }
+            i = i + 1
+        }
+        return false
+    }
+
+    fun grow(self) {
+        let new_count = self.buckets.len() * 2
+        let fresh: List<List<Entry<K, V>>> = []
+        let i = 0
+        while i < new_count {
+            let b: List<Entry<K, V>> = []
+            fresh.push(b)
+            i = i + 1
+        }
+        let bi = 0
+        let nb = self.buckets.len()
+        while bi < nb {
+            let bucket = self.buckets[bi]
+            let j = 0
+            let m = bucket.len()
+            while j < m {
+                let e = bucket[j]
+                let h = e.key.hash() % new_count
+                let target = (h + new_count) % new_count
+                fresh[target].push(e)
+                j = j + 1
+            }
+            bi = bi + 1
+        }
+        self.buckets = fresh
     }
 }

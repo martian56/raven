@@ -1,8 +1,9 @@
 # std/collections Spec
 
-Generic `Set<T>` and `Map<K, V>` over keys that implement the prelude `Eq`
-trait. `List<T>` is built into the language (literals, indexing, `len`,
-`push`, `pop`, `get`) and needs no import.
+Generic `Set<T>` and `Map<K, V>` over keys that implement the prelude
+`Eq + Hash` traits. Storage is a hash-bucket layout, so lookup, insert, and
+remove are O(1) average. `List<T>` is built into the language (literals,
+indexing, `len`, `push`, `pop`, `get`) and needs no import.
 
 ## Import
 
@@ -66,24 +67,24 @@ Grammar and disambiguation:
 
 Element, key, and value types are inferred from the literal contents
 (`{1, 2}` is `Set<Int>`; `["x": true]` is `Map<String, Bool>`). The set's
-`T` and the map's `K` must implement `Eq`, the same bound the types carry.
-The desugaring is the same constructor-plus-insert sequence as hand-written
-code: `{a, b}` builds `Set.new()` then `add(a); add(b)`, and `[k: v]`
-builds `Map.new()` then `set(k, v)`.
+`T` and the map's `K` must implement `Eq + Hash`, the same bound the types
+carry. The desugaring is the same constructor-plus-insert sequence as
+hand-written code: `{a, b}` builds `Set.new()` then `add(a); add(b)`, and
+`[k: v]` builds `Map.new()` then `set(k, v)`.
 
-## Set<T: Eq>
+## Set<T: Eq + Hash>
 
 | Method | Result | Notes |
 |---|---|---|
 | `len()` | `Int` | element count |
 | `is_empty()` | `Bool` | |
-| `contains(x)` | `Bool` | linear scan via `Eq` |
+| `contains(x)` | `Bool` | hash to a bucket, scan it via `Eq` |
 | `add(x)` | | adds only if absent |
 | `remove(x)` | `Bool` | whether it was present; order not preserved |
 
 Construct with a set literal `{1, 2}`, `Set.new()`, or `empty_set()`.
 
-## Map<K: Eq, V>
+## Map<K: Eq + Hash, V>
 
 | Method | Result | Notes |
 |---|---|---|
@@ -92,26 +93,53 @@ Construct with a set literal `{1, 2}`, `Set.new()`, or `empty_set()`.
 | `has(k)` | `Bool` | |
 | `get(k)` | `Option<V>` | `None` when absent |
 | `set(k, v)` | | inserts or overwrites |
+| `keys()` | `List<K>` | every key, hash-bucket order |
+| `values()` | `List<V>` | every value, aligned with `keys()` |
 | `remove(k)` | `Bool` | whether it was present; order not preserved |
 
 Construct with a map literal `["a": 1]` (or `[:]` for an empty map),
-`Map.new()`, or `empty_map()`. Keys and values are stored in parallel
-`List`s.
+`Map.new()`, or `empty_map()`.
+
+## Hash-bucket layout
+
+Both types store entries in an array of buckets, a `List` of `List`s
+(each `Map` entry is a small `Entry { key, value }`). A key goes in
+
+```
+bucket_index(key) = ((key.hash() % n) + n) % n
+```
+
+where `n` is the bucket count. `hash()` may return a negative `Int` (the
+`Int` hash is the value itself, and the `String` hash can overflow), so the
+double modulo maps it back to a non-negative index rather than relying on
+the sign of `%` on a negative operand. Lookup, insert, and remove hash the
+key, index the one matching bucket, and linearly scan that small bucket
+with `Eq`.
+
+The table starts with 8 buckets (a power of two). When the load factor
+(`count / bucket_count`) passes 0.75 after an insert, the bucket array
+doubles and every entry is rehashed into the larger array. Iteration order
+(`keys()`, `values()`, `Map` stringify in std/json) therefore follows the
+current bucket layout, not insertion order.
 
 ## Complexity
 
-Lookup, insert, and remove are O(n): each scans the keys comparing through
-`Eq`. This keeps the module small and dependency-free while exercising
-generics, trait bounds, and `List`. Backing `Map`/`Set` with the runtime
-hash-bucket layout (which already exists with FNV hashing) for O(1)
-average operations is a planned optimization that will not change this
-surface; it depends on the `Hash` trait being wired through the bucket
-intrinsics.
+Lookup, insert, and remove are O(1) average: a key hashes directly to its
+bucket, and buckets stay short under the 0.75 load factor. A resize is O(n)
+in the entry count but amortizes to O(1) per insert.
+
+## Supported key types
+
+`Hash` is implemented for `Int`, `Bool`, and `String` (see
+`docs/v2/specs/core-traits.md`), and any user type that implements both
+`Eq` and `Hash` works as a key or element. `Char` and `Float` do not yet
+implement `Hash` (`Char` waits on a char-to-int primitive, and a `Float`
+hash is deferred), so `Set<Char>`, `Set<Float>`, and maps keyed on them do
+not satisfy the bound.
 
 ## Out of scope
 
-- Hash-backed storage (the optimization noted above).
 - Ordered variants and `Deque<T>`.
-- Iteration over a `Set`/`Map` (waits on returning a `List` of entries or
-  an iterator adapter).
+- A `Set`/`Map` iterator adapter (the eager `keys()`/`values()` lists cover
+  current iteration needs).
 - Set algebra (union, intersection, difference).
