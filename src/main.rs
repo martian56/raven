@@ -24,7 +24,29 @@ use raven::parser::parse;
 use raven::resolve::{expand_with_stdlib, resolve_file, FsLoader};
 use raven::tycheck::check_file;
 
+/// Stack size for the compiler worker thread.
+///
+/// Lowering, type checking, and codegen recurse on the structure of the
+/// program, so a deeply nested expression drives the recursion as deep
+/// as the nesting. The default main-thread stack (1 MB on Windows) is
+/// too small for ordinary nesting in debug builds, where stack frames
+/// are large. Run the work on a thread with a generous stack instead,
+/// the same approach rustc takes. The reservation is virtual address
+/// space; the OS commits pages only as they are touched.
+const COMPILER_STACK_SIZE: usize = 512 * 1024 * 1024;
+
 fn main() -> ExitCode {
+    let worker = std::thread::Builder::new()
+        .stack_size(COMPILER_STACK_SIZE)
+        .spawn(run)
+        .expect("spawn compiler worker thread");
+    match worker.join() {
+        Ok(code) => code,
+        Err(_) => ExitCode::from(101),
+    }
+}
+
+fn run() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 1 {
         eprintln!("Raven v2: under construction. See docs/v2/ for the roadmap.");
