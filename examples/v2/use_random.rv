@@ -1,0 +1,54 @@
+// golden:skip
+import std/random
+
+fun main() {
+    let a = Rng.new(42)
+    let b = Rng.new(42)
+    print(a.next_int() == b.next_int())
+    print(a.next_int() == b.next_int())
+
+    let r = Rng.new(7)
+    let in_range = true
+    let k = 0
+    while k < 100 {
+        let v = r.gen_range(0, 10)
+        if v < 0 {
+            in_range = false
+        }
+        if v >= 10 {
+            in_range = false
+        }
+        k = k + 1
+    }
+    print(in_range)
+
+    let bg = Rng.new(1)
+    let f = bg.next_float()
+    print(f >= 0.0)
+    print(f < 1.0)
+
+    let cg = Rng.new(3)
+    let picks: List<Int> = [10, 20, 30]
+    match cg.choice(picks) {
+        Some(v) -> print(v >= 10),
+        None -> print(false),
+    }
+
+    let empty: List<Int> = []
+    match cg.choice(empty) {
+        Some(v) -> print(false),
+        None -> print(true),
+    }
+
+    let sg = Rng.new(99)
+    let xs: List<Int> = [1, 2, 3, 4, 5]
+    sg.shuffle(xs)
+    print(xs.len() == 5)
+    let sum = 0
+    let i = 0
+    while i < xs.len() {
+        sum = sum + xs[i]
+        i = i + 1
+    }
+    print(sum == 15)
+}

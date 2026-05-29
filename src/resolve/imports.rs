@@ -78,6 +78,7 @@ pub const STDLIB_MODULES: &[&str] = &[
     "cmp",
     "hash",
     "encoding",
+    "random",
     "string",
     "math",
     "path",

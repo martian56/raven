@@ -196,6 +196,35 @@ pub extern "C" fn raven_println_int(value: i64) {
     let _ = handle.write_all(b"\n");
 }
 
+/// Reinterpret a signed 64-bit integer as an `f64` by value conversion.
+///
+/// The v2 surface language has no Int-to-Float cast, so `std/random`
+/// binds this symbol through `extern "C"` to build a `Float` in
+/// `[0.0, 1.0)` from generated bits.
+#[no_mangle]
+pub extern "C" fn raven_int_to_float(value: i64) -> f64 {
+    value as f64
+}
+
+/// Return a non-deterministic 64-bit seed for entropy seeding.
+///
+/// Mixes a high-resolution timestamp with the process id through a
+/// splitmix64 finalizer so distinct calls differ. This is a seed source,
+/// not a cryptographic random generator.
+#[no_mangle]
+pub extern "C" fn raven_random_entropy() -> i64 {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let mut z = nanos ^ (u64::from(process::id()) << 32);
+    z = z.wrapping_add(0x9E3779B97F4A7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+    z = z ^ (z >> 31);
+    z as i64
+}
+
 /// A stack buffer large enough for any base-ten `i64` plus a sign.
 fn itoa_buf() -> [u8; 20] {
     [0u8; 20]
