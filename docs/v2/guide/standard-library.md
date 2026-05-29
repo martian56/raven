@@ -62,12 +62,14 @@ fun main() {
 
 ## std/collections
 
-Generic `Set<T: Eq>` and `Map<K: Eq, V>`, built with `Set.new()` and
-`Map.new()`. Import the whole module.
+Generic hash-backed `Set<T: Eq + Hash>` and `Map<K: Eq + Hash, V>`, built
+with `Set.new()` and `Map.new()`. Operations are O(1) average. Import the
+whole module. Keys must implement `Eq + Hash` (`Int`, `Bool`, `String`, or
+a user type with both impls; `Char` and `Float` are not yet hashable).
 
 - `Set`: `add`, `remove`, `contains`, `len`, `is_empty`.
 - `Map`: `set(k, v)`, `get(k) -> Option<V>`, `has(k)`, `remove(k)`,
-  `len`, `is_empty`.
+  `keys()`, `values()`, `len`, `is_empty`.
 
 ```raven
 import std/collections

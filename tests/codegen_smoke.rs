@@ -341,12 +341,30 @@ fn collections_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
     };
-    // std/collections Set<T: Eq> and Map<K: Eq, V>: dedup add, contains,
-    // remove on the set; insert, overwrite, get, has on the map. Prints
-    // 2, true, false, 2, 99, false.
+    // std/collections hash-backed Set<T: Eq + Hash> and Map<K: Eq + Hash,
+    // V>: dedup add, contains, remove on the set; insert, overwrite, get,
+    // has on the map. Prints 2, true, false, 2, 99, false.
     compile_link_run_and_check(
         "use_collections.rv",
         "2\ntrue\nfalse\n2\n99\nfalse\n",
+        &runtime,
+    );
+}
+
+#[test]
+fn hash_collections_resize_and_collisions() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // The hash-backed Set and Map grow past their initial 8 buckets (load
+    // factor 0.75), rehashing every entry. 60 unique ints survive dedup;
+    // removing the 30 evens leaves 30. A Map of 50 int keys answers get
+    // correctly across resizes, overwrite keeps len, remove updates has.
+    // A String-keyed map dedups an overwritten key. Prints the sequence
+    // below.
+    compile_link_run_and_check(
+        "use_hash_collections.rv",
+        "60\ntrue\ntrue\nfalse\n30\nfalse\ntrue\n50\n0\n490\n-1\n50\n7777\ntrue\nfalse\nfalse\n3\n11\n-1\n",
         &runtime,
     );
 }
@@ -1025,8 +1043,8 @@ fn json_program_compiles_and_runs() {
     };
     // std/json parse and stringify end to end. A nested object with an
     // array value round trips through parse then compact stringify,
-    // preserving insertion key order and rendering the whole-number Float 1
-    // as `1`. A string with a `\n` escape and a `A` unicode escape
+    // rendering the whole-number Float 1 as `1`. Object key order follows
+    // the hash-bucket layout. A string with a `\n` escape and a `A` unicode escape
     // decodes (the escape becomes the literal A) and re-serializes with the
     // newline re-escaped. A malformed object takes the Err path. Prints the
     // compact object, the re-escaped string, then `parse failed`.
