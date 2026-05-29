@@ -1,0 +1,8 @@
+import "./helper" { greet, Counter }
+import std/io { println }
+
+fun main() {
+    println(greet("raven"))
+    let c = Counter { value: 41 }
+    println(c.bumped().value.to_string())
+}

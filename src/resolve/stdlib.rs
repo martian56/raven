@@ -16,17 +16,21 @@
 //!
 //! See `docs/v2/specs/stdlib.md` for the full mechanism.
 
-use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::collections::hash_map::DefaultHasher;
+use std::collections::{BTreeSet, HashMap};
+use std::hash::{Hash, Hasher};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::ast::{
-    Block, DeclKind, ElseBranch, Expr, ExprKind, File, FunctionBody, ImportSource, LambdaBody,
-    MatchArm, Stmt, StmtKind, StrFragment,
+    Block, Decl, DeclKind, ElseBranch, Expr, ExprKind, File, FunctionBody, ImportSource,
+    LambdaBody, MatchArm, Stmt, StmtKind, StrFragment,
 };
 use crate::error::{RavenError, ResolveError};
 use crate::lexer::Lexer;
 use crate::parser::parse;
+
+use super::imports::{FsLoader, SourceLoader};
 
 /// The embedded source of one bundled stdlib module, keyed by its module
 /// path under `std/`. A `std/io` import maps to the `"io"` entry. The
@@ -78,6 +82,25 @@ pub fn mangle_stdlib_fn(module: &str, name: &str) -> String {
     format!("std{sep}{module}{sep}{name}", sep = NAMESPACE_SEP)
 }
 
+/// Build a stable namespacing key for a local module from its canonical
+/// path: `loc.<hash>`. The hash is computed from the canonical path
+/// string with `DefaultHasher`, whose seed is fixed, so the same path
+/// always yields the same key within a compile and across runs. The
+/// importer's selector binding (`bind_import`) recomputes this key from
+/// the same canonical path, so the merged declaration and the bound name
+/// agree. The `.` in the key is unwritable by a user, so a namespaced
+/// local function never collides with a user declaration.
+pub fn local_module_key(canonical_path: &Path) -> String {
+    let mut hasher = DefaultHasher::new();
+    canonical_path.to_string_lossy().hash(&mut hasher);
+    format!("loc{sep}{:016x}", hasher.finish(), sep = NAMESPACE_SEP)
+}
+
+/// Build the mangled name of a local module function: `loc.<hash>.<name>`.
+pub fn mangle_local_fn(key: &str, name: &str) -> String {
+    format!("{key}{sep}{name}", sep = NAMESPACE_SEP)
+}
+
 /// Look up the embedded source for a bundled module by its `std/` path.
 pub fn bundled_source(module_path: &str) -> Option<&'static str> {
     BUNDLED_MODULES
@@ -112,6 +135,16 @@ pub fn expand_with_stdlib(user: &File) -> Result<File, RavenError> {
     wanted.insert(PRELUDE_MODULE.to_string());
     collect_std_module_imports(user, &mut wanted);
 
+    // Load every local `./`/`../` module reachable from the user file,
+    // transitively, before computing the bundled set: a local module may
+    // itself `import std/...`, and those bundled modules must merge too so
+    // the local module's own calls resolve.
+    let mut loader = FsLoader;
+    let local_modules = load_local_modules(user, &mut loader)?;
+    for module_file in &local_modules {
+        collect_std_module_imports(module_file, &mut wanted);
+    }
+
     // Follow each bundled module's own `std/...` imports to a fixed point.
     // A worklist over the not-yet-scanned modules terminates because every
     // discovered module is added to `wanted` (a set) at most once and only
@@ -132,54 +165,30 @@ pub fn expand_with_stdlib(user: &File) -> Result<File, RavenError> {
     }
 
     let mut combined_items = Vec::new();
+    let bundled_path = PathBuf::from("<bundled>");
     for module in &wanted {
         let module_file = parse_bundled_module(module)?;
-
-        // Collect the module's own top level function names so a call to
-        // a sibling function (for example `trim` calling `is_space_byte`)
-        // can be rewritten to the namespaced name. The declarations are
-        // renamed below; without rewriting the call sites a sibling call
-        // would resolve to a bare name that no longer exists.
-        let siblings: BTreeSet<String> = module_file
-            .items
-            .iter()
-            .filter_map(|d| match &d.kind {
-                DeclKind::Function(f) => Some(f.name.clone()),
-                _ => None,
-            })
-            .collect();
-
-        for mut decl in module_file.items {
-            // A bundled module's own `import std/...` declarations are
-            // consumed by this expander (the imported module is merged
-            // separately); they must not leak into the combined file as
-            // import items, which is why they are dropped here.
-            if matches!(&decl.kind, DeclKind::Import(_)) {
-                continue;
-            }
-            match &mut decl.kind {
-                DeclKind::Function(f) => {
-                    rewrite_fn_body_calls(&mut f.body, module, &siblings);
-                    f.name = mangle_stdlib_fn(module, &f.name);
-                }
-                DeclKind::Impl(i) => {
-                    // An `impl` on a built in type (for example
-                    // `impl String { ... }`) keeps its method names: a
-                    // method is dispatched by the receiver's type through
-                    // the per type symbol `<RecvType>$<method>`, not by a
-                    // free function name, so it never collides with user
-                    // code and needs no namespacing. Its body, however,
-                    // may call sibling free functions of the same module,
-                    // which were renamed above; rewrite those call sites
-                    // the same way a free function body is rewritten.
-                    for m in &mut i.items {
-                        rewrite_fn_body_calls(&mut m.body, module, &siblings);
-                    }
-                }
-                _ => {}
-            }
-            combined_items.push(decl);
+        // The module's own functions rename to `std.<module>.<name>`, plus
+        // any names it selectively imports from another module. A bundled
+        // module imports other modules without selectors, so the import
+        // part is normally empty, but the same code path serves both.
+        let mut rename = import_rename_map(&module_file, &bundled_path, &mut loader);
+        for name in top_level_fn_names(&module_file) {
+            rename.insert(name.clone(), mangle_stdlib_fn(module, &name));
         }
+        merge_module_items(module_file.items, &rename, &mut combined_items);
+    }
+
+    // Merge the local modules loaded above through the same merge core,
+    // with a path derived namespace instead of the `std.<module>.` one.
+    for module_file in local_modules {
+        let importing = (*module_file.span.file).clone();
+        let key = local_module_key(&importing);
+        let mut rename = import_rename_map(&module_file, &importing, &mut loader);
+        for name in top_level_fn_names(&module_file) {
+            rename.insert(name.clone(), mangle_local_fn(&key, &name));
+        }
+        merge_module_items(module_file.items, &rename, &mut combined_items);
     }
 
     // The user's items follow the stdlib items so user DeclIds shift by a
@@ -211,6 +220,201 @@ fn collect_std_module_imports(file: &File, wanted: &mut BTreeSet<String>) {
     }
 }
 
+/// Merge one module's items into `combined`, renaming free functions and
+/// rewriting call sites through `rename`. The `rename` map carries the
+/// module's own functions (bare name to its `std.<mod>.` or `loc.<hash>.`
+/// namespaced name) plus every name the module selectively imports from
+/// another merged module (so a transitive call resolves to the dependency's
+/// namespaced symbol). Shared by the bundled and local paths; the only
+/// difference between them is the namespace the rename map uses and where
+/// the source comes from (bundled `include_str!` versus the filesystem). A
+/// future external package backend (issue #85) plugs in here by supplying
+/// the source from the rvpm cache and reusing this same merge.
+fn merge_module_items(
+    items: Vec<Decl>,
+    rename: &HashMap<String, String>,
+    combined: &mut Vec<Decl>,
+) {
+    for mut decl in items {
+        // A module's own `import ...` declarations are consumed by the
+        // expander (the imported module is merged separately); they must
+        // not leak into the combined file as import items.
+        if matches!(&decl.kind, DeclKind::Import(_)) {
+            continue;
+        }
+        match &mut decl.kind {
+            DeclKind::Function(f) => {
+                rewrite_fn_body_calls(&mut f.body, rename);
+                if let Some(replacement) = rename.get(&f.name) {
+                    f.name = replacement.clone();
+                }
+            }
+            DeclKind::Impl(i) => {
+                // An `impl` on a type keeps its method names: a method is
+                // dispatched by the receiver's type, not by a free function
+                // name, so it never collides and needs no namespacing. Its
+                // body may call sibling free functions of the same module,
+                // which were renamed above; rewrite those call sites.
+                for m in &mut i.items {
+                    rewrite_fn_body_calls(&mut m.body, rename);
+                }
+            }
+            // Struct, enum, and trait types merge under their own names,
+            // the same way bundled types like `Map` do. Two local modules
+            // that both define a type named `Foo` therefore collide; this
+            // mirrors the existing stdlib type behavior (issues #178/#184).
+            _ => {}
+        }
+        combined.push(decl);
+    }
+}
+
+/// Load every local `./` or `../` module reachable from `user`,
+/// transitively, returning each parsed file exactly once. Each returned
+/// file's `span.file` is its canonical path, so a later caller can derive
+/// the namespacing key from the same path the import binder uses.
+///
+/// Modules are deduplicated by canonical path, so a module imported from
+/// several places loads once. A cycle (a module that imports itself
+/// directly or transitively) is broken gracefully: each module is loaded
+/// once and the back edge is ignored, mirroring the bundled set's fixed
+/// point behavior. A missing file is left for the import resolution pass
+/// to report with a precise span; this function only loads what it can.
+fn load_local_modules(user: &File, loader: &mut dyn SourceLoader) -> Result<Vec<File>, RavenError> {
+    let mut to_load: Vec<(PathBuf, String)> = local_import_targets(user);
+    let mut loaded_paths: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut out: Vec<File> = Vec::new();
+
+    while let Some((importing, target)) = to_load.pop() {
+        let Some(loaded) = loader.load(&importing, &target) else {
+            continue;
+        };
+        if !loaded_paths.insert(loaded.canonical_path.clone()) {
+            continue;
+        }
+
+        let tokens = Lexer::new(loaded.source.clone(), loaded.canonical_path.clone())
+            .tokenize()
+            .map_err(|e| local_error(&loaded.canonical_path, format!("lex: {e}")))?;
+        let module_file = parse(&tokens)
+            .map_err(|e| local_error(&loaded.canonical_path, format!("parse: {e}")))?;
+
+        for (_, dep) in local_import_targets(&module_file) {
+            to_load.push((loaded.canonical_path.clone(), dep));
+        }
+        out.push(module_file);
+    }
+
+    Ok(out)
+}
+
+/// Build the rename entries a merged module needs for the names it
+/// selectively imports from OTHER modules. A `import std/io { println }`
+/// maps `println` to `std.io.println`; a `import "./b" { base }` maps
+/// `base` to `loc.<hashB>.base`, where the hash is keyed by `./b`'s
+/// canonical path resolved relative to `importing`. The resolver does not
+/// rebind these names (the import decls were stripped from the merged
+/// file), so the call sites inside the module body must be rewritten here.
+/// A whole module import (no selectors) introduces no free name to rename.
+fn import_rename_map(
+    file: &File,
+    importing: &Path,
+    loader: &mut dyn SourceLoader,
+) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for decl in &file.items {
+        let DeclKind::Import(import) = &decl.kind else {
+            continue;
+        };
+        if import.selectors.is_empty() {
+            continue;
+        }
+        match &import.source {
+            ImportSource::Std(segments) => {
+                if let Some(module) = segments.first() {
+                    if let Ok(target) = parse_bundled_module(module) {
+                        let fns = top_level_fn_names(&target);
+                        for name in &import.selectors {
+                            // Only functions are namespaced; a type keeps its
+                            // own name (see `merge_module_items`), so a type
+                            // selector needs no rename.
+                            if fns.contains(name) {
+                                map.insert(name.clone(), mangle_stdlib_fn(module, name));
+                            }
+                        }
+                    }
+                }
+            }
+            ImportSource::Quoted(path) => {
+                if !(path.starts_with("./") || path.starts_with("../")) {
+                    continue;
+                }
+                if let Some(loaded) = loader.load(importing, path) {
+                    if let Some(target) = parse_loaded(&loaded.source, &loaded.canonical_path) {
+                        let key = local_module_key(&loaded.canonical_path);
+                        let fns = top_level_fn_names(&target);
+                        for name in &import.selectors {
+                            if fns.contains(name) {
+                                map.insert(name.clone(), mangle_local_fn(&key, name));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    map
+}
+
+/// The set of top level free function names declared in `file`.
+fn top_level_fn_names(file: &File) -> BTreeSet<String> {
+    file.items
+        .iter()
+        .filter_map(|d| match &d.kind {
+            DeclKind::Function(f) => Some(f.name.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Lex and parse a loaded local source, returning `None` on any error
+/// (the import resolution pass reports the precise diagnostic).
+fn parse_loaded(source: &str, canonical_path: &Path) -> Option<File> {
+    let tokens = Lexer::new(source.to_string(), canonical_path.to_path_buf())
+        .tokenize()
+        .ok()?;
+    parse(&tokens).ok()
+}
+
+/// Collect the `(importing_path, target)` pairs for every local `./` or
+/// `../` import declared in `file`. The importing path is the file's own
+/// path, so the loader resolves the target relative to it.
+fn local_import_targets(file: &File) -> Vec<(PathBuf, String)> {
+    let importing = (*file.span.file).clone();
+    let mut out = Vec::new();
+    for decl in &file.items {
+        if let DeclKind::Import(import) = &decl.kind {
+            if let ImportSource::Quoted(path) = &import.source {
+                if path.starts_with("./") || path.starts_with("../") {
+                    out.push((importing.clone(), path.clone()));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Build a resolve error for a local module that failed to load. The lex
+/// or parse error is anchored at the start of the offending file.
+fn local_error(path: &Path, detail: String) -> RavenError {
+    let span = crate::span::Span::point(Arc::new(path.to_path_buf()), 0, 1, 1);
+    RavenError::resolve(
+        ResolveError::UnresolvedImport(path.display().to_string()),
+        span,
+    )
+    .with_hint(format!("local module failed to load: {detail}"))
+}
+
 /// Lex and parse one bundled module's embedded source.
 fn parse_bundled_module(module: &str) -> Result<File, RavenError> {
     let source = bundled_source(module).expect("module presence checked by caller");
@@ -231,128 +435,128 @@ fn parse_bundled_module(module: &str) -> Result<File, RavenError> {
 /// identifier whose name is one of the module's own functions; local
 /// variables and parameters never share a name with a sibling function in
 /// the bundled sources, so the rename is unambiguous.
-fn rewrite_fn_body_calls(body: &mut FunctionBody, module: &str, siblings: &BTreeSet<String>) {
+fn rewrite_fn_body_calls(body: &mut FunctionBody, rename: &HashMap<String, String>) {
     match body {
-        FunctionBody::Block(block) => rewrite_block(block, module, siblings),
-        FunctionBody::Expr(expr) => rewrite_expr(expr, module, siblings),
+        FunctionBody::Block(block) => rewrite_block(block, rename),
+        FunctionBody::Expr(expr) => rewrite_expr(expr, rename),
         FunctionBody::None => {}
     }
 }
 
-fn rewrite_block(block: &mut Block, module: &str, siblings: &BTreeSet<String>) {
+fn rewrite_block(block: &mut Block, rename: &HashMap<String, String>) {
     for stmt in &mut block.stmts {
-        rewrite_stmt(stmt, module, siblings);
+        rewrite_stmt(stmt, rename);
     }
     if let Some(trailing) = &mut block.trailing {
-        rewrite_expr(trailing, module, siblings);
+        rewrite_expr(trailing, rename);
     }
 }
 
-fn rewrite_stmt(stmt: &mut Stmt, module: &str, siblings: &BTreeSet<String>) {
+fn rewrite_stmt(stmt: &mut Stmt, rename: &HashMap<String, String>) {
     match &mut stmt.kind {
         StmtKind::Let { init, .. } => {
             if let Some(e) = init {
-                rewrite_expr(e, module, siblings);
+                rewrite_expr(e, rename);
             }
         }
         StmtKind::Return(e) | StmtKind::Break(e) => {
             if let Some(e) = e {
-                rewrite_expr(e, module, siblings);
+                rewrite_expr(e, rename);
             }
         }
-        StmtKind::Defer(e) | StmtKind::Expr(e) => rewrite_expr(e, module, siblings),
+        StmtKind::Defer(e) | StmtKind::Expr(e) => rewrite_expr(e, rename),
         StmtKind::Assign { target, value, .. } => {
-            rewrite_expr(target, module, siblings);
-            rewrite_expr(value, module, siblings);
+            rewrite_expr(target, rename);
+            rewrite_expr(value, rename);
         }
         StmtKind::Continue => {}
     }
 }
 
-fn rewrite_expr(expr: &mut Expr, module: &str, siblings: &BTreeSet<String>) {
+fn rewrite_expr(expr: &mut Expr, rename: &HashMap<String, String>) {
     match &mut expr.kind {
         ExprKind::Ident { name, .. } => {
-            if siblings.contains(name) {
-                *name = mangle_stdlib_fn(module, name);
+            if let Some(replacement) = rename.get(name) {
+                *name = replacement.clone();
             }
         }
         ExprKind::InterpolatedString(fragments) => {
             for frag in fragments {
                 if let StrFragment::Expr(e) = frag {
-                    rewrite_expr(e, module, siblings);
+                    rewrite_expr(e, rename);
                 }
             }
         }
         ExprKind::Array(items) | ExprKind::Tuple(items) => {
             for e in items {
-                rewrite_expr(e, module, siblings);
+                rewrite_expr(e, rename);
             }
         }
         ExprKind::StructLit { fields, .. } => {
             for f in fields {
-                rewrite_expr(&mut f.value, module, siblings);
+                rewrite_expr(&mut f.value, rename);
             }
         }
-        ExprKind::Paren(inner) | ExprKind::Try(inner) => rewrite_expr(inner, module, siblings),
-        ExprKind::Block(block) => rewrite_block(block, module, siblings),
-        ExprKind::Unary { operand, .. } => rewrite_expr(operand, module, siblings),
+        ExprKind::Paren(inner) | ExprKind::Try(inner) => rewrite_expr(inner, rename),
+        ExprKind::Block(block) => rewrite_block(block, rename),
+        ExprKind::Unary { operand, .. } => rewrite_expr(operand, rename),
         ExprKind::Binary { lhs, rhs, .. } => {
-            rewrite_expr(lhs, module, siblings);
-            rewrite_expr(rhs, module, siblings);
+            rewrite_expr(lhs, rename);
+            rewrite_expr(rhs, rename);
         }
         ExprKind::Range { start, end, .. } => {
-            rewrite_expr(start, module, siblings);
-            rewrite_expr(end, module, siblings);
+            rewrite_expr(start, rename);
+            rewrite_expr(end, rename);
         }
         ExprKind::Call { callee, args } => {
-            rewrite_expr(callee, module, siblings);
+            rewrite_expr(callee, rename);
             for a in args {
-                rewrite_expr(a, module, siblings);
+                rewrite_expr(a, rename);
             }
         }
         ExprKind::MethodCall { receiver, args, .. } => {
-            rewrite_expr(receiver, module, siblings);
+            rewrite_expr(receiver, rename);
             for a in args {
-                rewrite_expr(a, module, siblings);
+                rewrite_expr(a, rename);
             }
         }
-        ExprKind::Field { receiver, .. } => rewrite_expr(receiver, module, siblings),
+        ExprKind::Field { receiver, .. } => rewrite_expr(receiver, rename),
         ExprKind::Index { receiver, index } => {
-            rewrite_expr(receiver, module, siblings);
-            rewrite_expr(index, module, siblings);
+            rewrite_expr(receiver, rename);
+            rewrite_expr(index, rename);
         }
         ExprKind::If {
             cond,
             then_branch,
             else_branch,
         } => {
-            rewrite_expr(cond, module, siblings);
-            rewrite_block(then_branch, module, siblings);
+            rewrite_expr(cond, rename);
+            rewrite_block(then_branch, rename);
             if let Some(else_branch) = else_branch {
                 match else_branch.as_mut() {
-                    ElseBranch::If(e) => rewrite_expr(e, module, siblings),
-                    ElseBranch::Block(b) => rewrite_block(b, module, siblings),
+                    ElseBranch::If(e) => rewrite_expr(e, rename),
+                    ElseBranch::Block(b) => rewrite_block(b, rename),
                 }
             }
         }
         ExprKind::Match { scrutinee, arms } => {
-            rewrite_expr(scrutinee, module, siblings);
+            rewrite_expr(scrutinee, rename);
             for arm in arms.iter_mut() {
-                rewrite_match_arm(arm, module, siblings);
+                rewrite_match_arm(arm, rename);
             }
         }
-        ExprKind::Loop(block) => rewrite_block(block, module, siblings),
+        ExprKind::Loop(block) => rewrite_block(block, rename),
         ExprKind::While { cond, body } => {
-            rewrite_expr(cond, module, siblings);
-            rewrite_block(body, module, siblings);
+            rewrite_expr(cond, rename);
+            rewrite_block(body, rename);
         }
         ExprKind::For { iter, body, .. } => {
-            rewrite_expr(iter, module, siblings);
-            rewrite_block(body, module, siblings);
+            rewrite_expr(iter, rename);
+            rewrite_block(body, rename);
         }
         ExprKind::Lambda { body, .. } => match body {
-            LambdaBody::Block(b) => rewrite_block(b, module, siblings),
-            LambdaBody::Expr(e) => rewrite_expr(e, module, siblings),
+            LambdaBody::Block(b) => rewrite_block(b, rename),
+            LambdaBody::Expr(e) => rewrite_expr(e, rename),
         },
         // Leaf literals and the `self`/`Self` keywords carry no nested
         // expressions to rewrite.
@@ -368,11 +572,11 @@ fn rewrite_expr(expr: &mut Expr, module: &str, siblings: &BTreeSet<String>) {
     }
 }
 
-fn rewrite_match_arm(arm: &mut MatchArm, module: &str, siblings: &BTreeSet<String>) {
+fn rewrite_match_arm(arm: &mut MatchArm, rename: &HashMap<String, String>) {
     if let Some(guard) = &mut arm.guard {
-        rewrite_expr(guard, module, siblings);
+        rewrite_expr(guard, rename);
     }
-    rewrite_expr(&mut arm.body, module, siblings);
+    rewrite_expr(&mut arm.body, rename);
 }
 
 /// Build a resolve error for a bundled module that failed to load. A
@@ -694,5 +898,130 @@ mod tests {
             .filter(|d| matches!(&d.kind, DeclKind::Function(f) if f.name == "std.io.println"))
             .count();
         assert_eq!(println_count, 1);
+    }
+
+    #[test]
+    fn local_key_is_stable_per_path() {
+        let a = PathBuf::from("/tmp/helper.rv");
+        let b = PathBuf::from("/tmp/other.rv");
+        assert_eq!(local_module_key(&a), local_module_key(&a));
+        assert_ne!(local_module_key(&a), local_module_key(&b));
+        let key = local_module_key(&a);
+        assert!(key.starts_with("loc."));
+        assert_eq!(mangle_local_fn(&key, "greet"), format!("{key}.greet"));
+    }
+
+    /// Write `files` (relative name to source) into a fresh temp dir and
+    /// return the dir and the absolute path of `entry`.
+    fn write_temp_project(files: &[(&str, &str)], entry: &str) -> (PathBuf, PathBuf) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "raven_stdlib_test_{}_{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        for (name, src) in files {
+            std::fs::write(dir.join(name), src).expect("write");
+        }
+        let entry_path = dir.join(entry);
+        (dir, entry_path)
+    }
+
+    fn parse_at(src: &str, path: &Path) -> File {
+        let tokens = Lexer::new(src.to_string(), path.to_path_buf())
+            .tokenize()
+            .expect("lex");
+        parse(&tokens).expect("parse")
+    }
+
+    #[test]
+    fn local_module_functions_are_merged_and_namespaced() {
+        let (dir, entry) = write_temp_project(
+            &[
+                (
+                    "helper.rv",
+                    "fun greet(name: String) -> String { return name }\n",
+                ),
+                ("main.rv", "import \"./helper\" { greet }\nfun main() {}\n"),
+            ],
+            "main.rv",
+        );
+        let canon = dir.join("helper.rv").canonicalize().expect("canon");
+        let user = parse_at("import \"./helper\" { greet }\nfun main() {}\n", &entry);
+        let combined = expand_with_stdlib(&user).expect("expand");
+        let key = local_module_key(&canon);
+        let mangled = mangle_local_fn(&key, "greet");
+        let present = combined
+            .items
+            .iter()
+            .any(|d| matches!(&d.kind, DeclKind::Function(f) if f.name == mangled));
+        assert!(present, "local function should merge under {mangled}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn local_module_struct_keeps_its_own_name() {
+        let (dir, entry) = write_temp_project(
+            &[
+                ("shapes.rv", "struct Point { x: Int }\n"),
+                ("main.rv", "import \"./shapes\" { Point }\nfun main() {}\n"),
+            ],
+            "main.rv",
+        );
+        let user = parse_at("import \"./shapes\" { Point }\nfun main() {}\n", &entry);
+        let combined = expand_with_stdlib(&user).expect("expand");
+        let has_point = combined
+            .items
+            .iter()
+            .any(|d| matches!(&d.kind, DeclKind::Struct(s) if s.name == "Point"));
+        assert!(has_point, "a local struct merges under its own name");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn transitive_local_imports_merge_and_rewrite_calls() {
+        let (dir, entry) = write_temp_project(
+            &[
+                ("b.rv", "fun base() -> Int { return 1 }\n"),
+                (
+                    "a.rv",
+                    "import \"./b\" { base }\nfun via() -> Int { return base() }\n",
+                ),
+                ("main.rv", "import \"./a\" { via }\nfun main() {}\n"),
+            ],
+            "main.rv",
+        );
+        let canon_b = dir.join("b.rv").canonicalize().expect("canon b");
+        let user = parse_at("import \"./a\" { via }\nfun main() {}\n", &entry);
+        let combined = expand_with_stdlib(&user).expect("expand");
+
+        // `a::via` calls `base`, imported from `./b`. The merged `via` body
+        // must reference `b`'s namespaced symbol, not the bare name.
+        let key_b = local_module_key(&canon_b);
+        let base_mangled = mangle_local_fn(&key_b, "base");
+        let via = combined
+            .items
+            .iter()
+            .filter_map(|d| match &d.kind {
+                DeclKind::Function(f) if f.name.ends_with(".via") => Some(f),
+                _ => None,
+            })
+            .next()
+            .expect("via present");
+        let mut idents = Vec::new();
+        collect_fn_body_idents(&via.body, &mut idents);
+        assert!(
+            idents.iter().any(|n| *n == base_mangled),
+            "via should call {base_mangled}, got {idents:?}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn collect_fn_body_idents(body: &FunctionBody, out: &mut Vec<String>) {
+        if let FunctionBody::Block(b) = body {
+            collect_block_idents(b, out);
+        }
     }
 }
