@@ -8,6 +8,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use raven::format::format_source;
 use raven::lock::{self, LockFile, LOCK_FILE_NAME};
 use raven::manifest::init::{init_project, name_from_dir, InitError};
 use raven::manifest::Manifest;
@@ -48,6 +49,7 @@ fn main() -> ExitCode {
         Some("update") => run(cmd_update(&args[1..])),
         Some("build") => run(cmd_build(&args[1..])),
         Some("run") => cmd_run(&args[1..]),
+        Some("fmt") => cmd_fmt(&args[1..]),
         Some(other) => {
             eprintln!("rvpm: unknown subcommand '{}'", other);
             eprintln!("Run 'rvpm help' for usage.");
@@ -206,6 +208,127 @@ fn cmd_run(args: &[String]) -> ExitCode {
     }
 }
 
+/// Format Raven sources in place, or check formatting with `--check`.
+///
+/// With no path arguments, formats every `.rv` file under the project
+/// `src/` directory. With `--check`, no file is written: the command lists
+/// files that are not canonically formatted and exits non-zero if any are.
+fn cmd_fmt(args: &[String]) -> ExitCode {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", fmt_usage());
+        return ExitCode::SUCCESS;
+    }
+    let check = args.iter().any(|a| a == "--check");
+    let paths: Vec<&String> = args.iter().filter(|a| !a.starts_with('-')).collect();
+
+    let files = if paths.is_empty() {
+        match collect_rv_files(PathBuf::from("src")) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("rvpm: {}", e);
+                return ExitCode::from(1);
+            }
+        }
+    } else {
+        let mut acc = Vec::new();
+        for p in &paths {
+            let path = PathBuf::from(p);
+            if path.is_dir() {
+                match collect_rv_files(path) {
+                    Ok(mut f) => acc.append(&mut f),
+                    Err(e) => {
+                        eprintln!("rvpm: {}", e);
+                        return ExitCode::from(1);
+                    }
+                }
+            } else {
+                acc.push(path);
+            }
+        }
+        acc
+    };
+
+    if files.is_empty() {
+        eprintln!("rvpm: no .rv files to format");
+        return ExitCode::from(1);
+    }
+
+    let mut changed: Vec<PathBuf> = Vec::new();
+    let mut errored = false;
+    for path in &files {
+        let src = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("rvpm: {}: {}", path.display(), e);
+                errored = true;
+                continue;
+            }
+        };
+        let formatted = match format_source(&src) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("rvpm: {}: {}", path.display(), e);
+                errored = true;
+                continue;
+            }
+        };
+        if formatted == src {
+            continue;
+        }
+        if check {
+            changed.push(path.clone());
+        } else if let Err(e) = std::fs::write(path, &formatted) {
+            eprintln!("rvpm: {}: {}", path.display(), e);
+            errored = true;
+        } else {
+            println!("formatted {}", path.display());
+        }
+    }
+
+    if errored {
+        return ExitCode::from(1);
+    }
+    if check {
+        if changed.is_empty() {
+            return ExitCode::SUCCESS;
+        }
+        eprintln!("The following files are not formatted:");
+        for p in &changed {
+            eprintln!("  {}", p.display());
+        }
+        return ExitCode::from(1);
+    }
+    ExitCode::SUCCESS
+}
+
+/// Recursively collect `.rv` files under `dir`, sorted for deterministic
+/// output.
+fn collect_rv_files(dir: PathBuf) -> Result<Vec<PathBuf>, String> {
+    if !dir.exists() {
+        return Err(format!("'{}' does not exist", dir.display()));
+    }
+    let mut out = Vec::new();
+    let mut stack = vec![dir];
+    while let Some(d) = stack.pop() {
+        let entries = std::fs::read_dir(&d).map_err(|e| format!("{}: {}", d.display(), e))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().and_then(|s| s.to_str()) == Some("rv") {
+                out.push(path);
+            }
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+fn fmt_usage() -> String {
+    "Usage: rvpm fmt [--check] [paths...]".to_string()
+}
+
 fn build_usage() -> String {
     "Usage: rvpm build".to_string()
 }
@@ -239,6 +362,7 @@ fn print_usage() {
     println!("  update [pkg]   Re-resolve rv.toml and rewrite rv.lock for one package or all");
     println!("  build          Compile src/main.rv to target/raven-out/<name>");
     println!("  run [args]     Build the package then run it, forwarding args");
+    println!("  fmt [paths]    Format .rv files in place (--check to verify only)");
     println!("  fetch <pkg>    Fetch 'github.com/<user>/<repo>@<version>' into the shared cache");
     println!("  lock           Generate or validate rv.lock for the current package");
     println!("  help           Print this message");

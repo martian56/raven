@@ -1,0 +1,14 @@
+// free functions: block body, expression body, generics with bounds
+
+
+fun   add ( a : Int , b : Int ) -> Int {
+return a+b
+}
+
+fun double(x:Int)->Int=x*2
+
+fun id<T : Ord + Clone>(x:T)->T{
+    return x
+}
+
+fun no_args(){}

@@ -1,0 +1,28 @@
+// imports, interpolation, ranges, lambdas, method chains, struct literals,
+// arrays, compound assignment, try operator
+
+import std/io
+import std/collections { Map, Set }
+import "./local" as loc
+
+const LIMIT: Int = 100
+
+fun build() -> Point {
+    let p = Point {
+        x: 1,
+        y: 2,
+    }
+    let q = Point { x: 3, y: 4 }
+    let xs = [1, 2, 3]
+    let g = { x -> x + 1 }
+    let h = fun(a: Int) -> Int = a * a
+    let total = xs.map(g).filter(h).len()
+    let msg = "point at ${p.x}, ${p.y}"
+    let r = 0..=total
+    return p
+}
+
+extern "C" {
+    fun raven_now() -> Int
+    fun raven_sleep(ms: Int)
+}
