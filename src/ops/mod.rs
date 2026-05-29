@@ -16,10 +16,11 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use crate::driver::{self, DriverError};
 use crate::lock::{self, LockError, LockFile, LOCK_FILE_NAME};
 use crate::manifest::{Manifest, ManifestError};
 use crate::pkg;
-use crate::resolve::GithubPath;
+use crate::resolve::{GithubPath, PackageContext};
 
 /// The default constraint written for `rvpm add` when no `@version` is
 /// given. Real latest-tag resolution is future work, so the placeholder is
@@ -49,6 +50,15 @@ pub enum OpError {
     Lock(LockError),
     /// `update` named a package that is not a dependency in `rv.toml`.
     UnknownPackage(String),
+    /// The package entry file (`src/main.rv`) was not found.
+    MissingEntry(PathBuf),
+    /// Compiling or linking the package failed.
+    Build(DriverError),
+    /// Running the produced binary failed to launch.
+    Run {
+        binary: PathBuf,
+        source: std::io::Error,
+    },
 }
 
 impl fmt::Display for OpError {
@@ -67,6 +77,13 @@ impl fmt::Display for OpError {
             OpError::Lock(e) => write!(f, "{}", e),
             OpError::UnknownPackage(p) => {
                 write!(f, "'{}' is not a dependency in rv.toml", p)
+            }
+            OpError::MissingEntry(p) => {
+                write!(f, "package entry file not found: '{}'", p.display())
+            }
+            OpError::Build(e) => write!(f, "{}", e),
+            OpError::Run { binary, source } => {
+                write!(f, "cannot run '{}': {}", binary.display(), source)
             }
         }
     }
@@ -92,6 +109,12 @@ impl From<ManifestError> for OpError {
 impl From<LockError> for OpError {
     fn from(e: LockError) -> Self {
         OpError::Lock(e)
+    }
+}
+
+impl From<DriverError> for OpError {
+    fn from(e: DriverError) -> Self {
+        OpError::Build(e)
     }
 }
 
@@ -308,6 +331,116 @@ pub fn update_in(
             })
         }
     }
+}
+
+/// The conventional package entry source, relative to the project root.
+pub const ENTRY_FILE: &str = "src/main.rv";
+
+/// The output directory for a built package binary, relative to the
+/// project root.
+pub const OUTPUT_DIR: &str = "target/raven-out";
+
+/// The result of a `build`: the path to the produced binary and the lines
+/// to report.
+#[derive(Debug, Clone)]
+pub struct BuildReport {
+    pub binary: PathBuf,
+    pub outcome_lines: Vec<String>,
+}
+
+/// Build the package under `project_dir`, using the default cache root.
+/// See [`build_in`].
+pub fn build(project_dir: &Path) -> Result<BuildReport, OpError> {
+    build_in(project_dir, &pkg::cache_root())
+}
+
+/// Build the package under `project_dir` against `cache_root`.
+///
+/// Ensures dependencies are installed (resolving and writing `rv.lock` if
+/// needed, or validating an existing lock against the cache), then loads
+/// the lock to build a [`PackageContext`] so external (`github.com/...`)
+/// imports resolve through the cache, compiles the entry file
+/// (`src/main.rv`), and writes the binary to
+/// `target/raven-out/<package-name>` (with `.exe` on Windows).
+pub fn build_in(project_dir: &Path, cache_root: &Path) -> Result<BuildReport, OpError> {
+    let manifest_path = project_dir.join(MANIFEST_FILE_NAME);
+    let manifest = Manifest::load(&manifest_path)?;
+
+    // Ensure the lock exists and the cache is populated. `install_in`
+    // validates an up-to-date lock or resolves a fresh one.
+    let (_outcome, _report) = install_in(project_dir, cache_root)?;
+
+    let lock_path = project_dir.join(LOCK_FILE_NAME);
+    let lock = if lock_path.exists() {
+        LockFile::load(&lock_path)?
+    } else {
+        LockFile {
+            version: lock::LOCK_VERSION,
+            packages: Vec::new(),
+        }
+    };
+    let ctx = PackageContext::new(cache_root.to_path_buf(), &lock);
+
+    let entry = project_dir.join(ENTRY_FILE);
+    if !entry.is_file() {
+        return Err(OpError::MissingEntry(entry));
+    }
+
+    let binary = output_binary_path(project_dir, &manifest.package.name);
+    if let Some(parent) = binary.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| OpError::Io {
+            action: "create output directory".to_string(),
+            path: parent.to_path_buf(),
+            source: e,
+        })?;
+    }
+
+    driver::build_binary(&entry, &binary, Some(&ctx))?;
+
+    Ok(BuildReport {
+        binary: binary.clone(),
+        outcome_lines: vec![format!(
+            "Compiled {} to {}",
+            manifest.package.name,
+            binary.display()
+        )],
+    })
+}
+
+/// Build the package then run the produced binary, forwarding `args` to it
+/// and returning its exit code. Uses the default cache root.
+pub fn run_package(project_dir: &Path, args: &[String]) -> Result<i32, OpError> {
+    run_package_in(project_dir, args, &pkg::cache_root())
+}
+
+/// Build the package under `project_dir` against `cache_root`, then run the
+/// produced binary with `args`, returning its exit code.
+pub fn run_package_in(
+    project_dir: &Path,
+    args: &[String],
+    cache_root: &Path,
+) -> Result<i32, OpError> {
+    let report = build_in(project_dir, cache_root)?;
+    let status = std::process::Command::new(&report.binary)
+        .args(args)
+        .status()
+        .map_err(|e| OpError::Run {
+            binary: report.binary.clone(),
+            source: e,
+        })?;
+    Ok(status.code().unwrap_or(1))
+}
+
+/// The output binary path for a package: `target/raven-out/<name>` with
+/// the platform executable extension.
+fn output_binary_path(project_dir: &Path, name: &str) -> PathBuf {
+    let mut p = project_dir.join(OUTPUT_DIR);
+    if cfg!(windows) {
+        p.push(format!("{}.exe", name));
+    } else {
+        p.push(name);
+    }
+    p
 }
 
 /// Build a manifest carrying only the one dependency `key`, reusing the
@@ -660,6 +793,37 @@ mod tests {
         );
         let err = update_in(&proj.root, Some("github.com/acme/bar"), &cache).unwrap_err();
         assert!(matches!(err, OpError::UnknownPackage(_)));
+    }
+
+    #[test]
+    fn build_reports_missing_entry() {
+        // A project with no dependencies and no src/main.rv: install
+        // resolves an empty lock, then build fails on the missing entry
+        // before any compilation or linking is attempted.
+        let proj = TempProject::new("noentry");
+        proj.write_manifest("[package]\nname = \"app\"\nversion = \"0.1.0\"\n");
+        let cache = proj.cache_root();
+        std::fs::create_dir_all(&cache).expect("mkdir cache");
+        let err = build_in(&proj.root, &cache).unwrap_err();
+        match err {
+            OpError::MissingEntry(p) => {
+                assert!(p.ends_with("src/main.rv") || p.ends_with("src\\main.rv"))
+            }
+            other => panic!("expected MissingEntry, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn output_binary_path_uses_package_name() {
+        let p = output_binary_path(Path::new("/proj"), "demo");
+        if cfg!(windows) {
+            assert!(
+                p.ends_with("target/raven-out/demo.exe")
+                    || p.ends_with("target\\raven-out\\demo.exe")
+            );
+        } else {
+            assert!(p.ends_with("target/raven-out/demo"));
+        }
     }
 
     #[test]

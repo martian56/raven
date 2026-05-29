@@ -17,7 +17,7 @@
 //! See `docs/v2/specs/stdlib.md` for the full mechanism.
 
 use std::collections::hash_map::DefaultHasher;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -30,7 +30,7 @@ use crate::error::{RavenError, ResolveError};
 use crate::lexer::Lexer;
 use crate::parser::parse;
 
-use super::imports::{FsLoader, SourceLoader};
+use super::imports::{FsLoader, GithubPath, SourceLoader};
 
 /// The embedded source of one bundled stdlib module, keyed by its module
 /// path under `std/`. A `std/io` import maps to the `"io"` entry. The
@@ -101,6 +101,92 @@ pub fn mangle_local_fn(key: &str, name: &str) -> String {
     format!("{key}{sep}{name}", sep = NAMESPACE_SEP)
 }
 
+/// Build a namespacing key for one external package source file:
+/// `ext.<host>.<user>.<repo>.<hash>`. The host/user/repo segments are
+/// sanitized (any `.` in `host` becomes `_`) so the key has a fixed dot
+/// arity, and a hash of the resolved source file path disambiguates two
+/// files within the same package. As with the local key, the `.` makes
+/// the result unwritable by a user, so an external function never
+/// collides with a user declaration.
+pub fn external_module_key(host: &str, user: &str, repo: &str, source_path: &Path) -> String {
+    let mut hasher = DefaultHasher::new();
+    source_path.to_string_lossy().hash(&mut hasher);
+    let h = host.replace('.', "_");
+    format!(
+        "ext{sep}{h}{sep}{user}{sep}{repo}{sep}{:016x}",
+        hasher.finish(),
+        sep = NAMESPACE_SEP
+    )
+}
+
+/// Build the mangled name of an external package function:
+/// `ext.<host>.<user>.<repo>.<hash>.<name>`.
+pub fn mangle_external_fn(key: &str, name: &str) -> String {
+    format!("{key}{sep}{name}", sep = NAMESPACE_SEP)
+}
+
+/// The package context an external (`github.com/...`) import resolves
+/// against. It pairs the rvpm cache root with the loaded `rv.lock` map
+/// from `github.com/<user>/<repo>` source paths to their pinned version,
+/// so an `import "github.com/user/repo[/sub]"` can be located in the
+/// cache. Bundled and local imports never consult it.
+#[derive(Debug, Clone)]
+pub struct PackageContext {
+    cache_root: PathBuf,
+    /// Map from a `github.com/<user>/<repo>` source to its pinned version.
+    locked_versions: BTreeMap<String, String>,
+}
+
+impl PackageContext {
+    /// Build a context from an explicit cache root and a lock file.
+    pub fn new(cache_root: PathBuf, lock: &crate::lock::LockFile) -> PackageContext {
+        let mut locked_versions = BTreeMap::new();
+        for p in &lock.packages {
+            locked_versions.insert(p.source.clone(), p.version.clone());
+        }
+        PackageContext {
+            cache_root,
+            locked_versions,
+        }
+    }
+
+    /// Resolve the cached `.rv` source file for a `github.com/<user>/<repo>`
+    /// path (the `source` key in the lock) and an import `subpath`.
+    ///
+    /// The bare `github.com/user/repo` import (no subpath) resolves to the
+    /// package's `lib.rv` at the cached root. A `subpath` selects a `.rv`
+    /// file by joining its components and appending `.rv`, so
+    /// `github.com/acme/greet/lib` resolves to `<cachedir>/lib.rv` and
+    /// `github.com/acme/greet/util/text` resolves to
+    /// `<cachedir>/util/text.rv`. Returns the resolved file path, or `None`
+    /// when the package is not pinned in the lock.
+    pub fn external_source_path(&self, source: &str, subpath: &[String]) -> Option<PathBuf> {
+        let version = self.locked_versions.get(source)?;
+        let gh = GithubPath::parse(source)?;
+        let dir = crate::pkg::cache_dir_in(&self.cache_root, &gh.host, &gh.user, &gh.repo, version);
+        let mut file = dir;
+        if subpath.is_empty() {
+            file.push("lib.rv");
+        } else {
+            for seg in &subpath[..subpath.len() - 1] {
+                file.push(seg);
+            }
+            file.push(format!("{}.rv", subpath[subpath.len() - 1]));
+        }
+        Some(file)
+    }
+
+    /// The path to a cached package's own `rv.toml`, used to read its
+    /// transitive dependencies. Returns `None` when the package is not
+    /// pinned in the lock.
+    fn package_manifest_path(&self, source: &str) -> Option<PathBuf> {
+        let version = self.locked_versions.get(source)?;
+        let gh = GithubPath::parse(source)?;
+        let dir = crate::pkg::cache_dir_in(&self.cache_root, &gh.host, &gh.user, &gh.repo, version);
+        Some(dir.join("rv.toml"))
+    }
+}
+
 /// Look up the embedded source for a bundled module by its `std/` path.
 pub fn bundled_source(module_path: &str) -> Option<&'static str> {
     BUNDLED_MODULES
@@ -121,6 +207,25 @@ pub fn bundled_source(module_path: &str) -> Option<&'static str> {
 /// the import pass to report as `UnresolvedImport`; this function only
 /// merges the modules it can load.
 pub fn expand_with_stdlib(user: &File) -> Result<File, RavenError> {
+    expand_with_stdlib_ctx(user, None)
+}
+
+/// Expand `user` like [`expand_with_stdlib`], additionally resolving any
+/// external (`github.com/...`) imports through `ctx` (the rvpm cache plus
+/// the project's `rv.lock`).
+///
+/// When `ctx` is `None`, the behavior is identical to bundled+local
+/// expansion and an external import is left for the import pass to handle
+/// (it stays a deferred `ExternalPackage` target). When `ctx` is
+/// `Some`, each external import's source is read from the cache, parsed,
+/// namespaced under `ext.<host>.<user>.<repo>.<hash>`, and merged through
+/// the same [`merge_module_items`] core the bundled and local paths use.
+/// The external package's own dependencies (from its cached `rv.toml`)
+/// are merged transitively and deduplicated by resolved source path.
+pub fn expand_with_stdlib_ctx(
+    user: &File,
+    ctx: Option<&PackageContext>,
+) -> Result<File, RavenError> {
     // Modules to merge, collected to a fixed point. A module enters the
     // set from the user file's `std/...` imports or from a bundled
     // module's own `import std/...` line. The set deduplicates, so each
@@ -143,6 +248,17 @@ pub fn expand_with_stdlib(user: &File) -> Result<File, RavenError> {
     let local_modules = load_local_modules(user, &mut loader)?;
     for module_file in &local_modules {
         collect_std_module_imports(module_file, &mut wanted);
+    }
+
+    // Load every external (`github.com/...`) package source reachable from
+    // the user file and its local modules, transitively. Each loaded file
+    // may itself `import std/...`, so its bundled modules must merge too.
+    let external_modules = match ctx {
+        Some(ctx) => load_external_modules(user, &local_modules, ctx)?,
+        None => Vec::new(),
+    };
+    for ext in &external_modules {
+        collect_std_module_imports(&ext.file, &mut wanted);
     }
 
     // Follow each bundled module's own `std/...` imports to a fixed point.
@@ -189,6 +305,21 @@ pub fn expand_with_stdlib(user: &File) -> Result<File, RavenError> {
             rename.insert(name.clone(), mangle_local_fn(&key, &name));
         }
         merge_module_items(module_file.items, &rename, &mut combined_items);
+    }
+
+    // Merge the external package sources through the same merge core, with
+    // an `ext.<host>.<user>.<repo>.<hash>` namespace. Each module's rename
+    // map carries its own functions plus the names it selectively imports
+    // from sibling external sources (resolved through the same context).
+    if let Some(ctx) = ctx {
+        for ext in external_modules {
+            let key = external_module_key(&ext.host, &ext.user, &ext.repo, &ext.source_path);
+            let mut rename = external_import_rename_map(&ext.file, ctx);
+            for name in top_level_fn_names(&ext.file) {
+                rename.insert(name.clone(), mangle_external_fn(&key, &name));
+            }
+            merge_module_items(ext.file.items, &rename, &mut combined_items);
+        }
     }
 
     // The user's items follow the stdlib items so user DeclIds shift by a
@@ -364,6 +495,158 @@ fn import_rename_map(
         }
     }
     map
+}
+
+/// One loaded external package source file plus the package identity it
+/// belongs to, so the merge can build its `ext.` namespace key.
+struct ExternalModule {
+    host: String,
+    user: String,
+    repo: String,
+    /// The resolved cache path of the `.rv` source file.
+    source_path: PathBuf,
+    file: File,
+}
+
+/// The components of one external import: the `github.com/<user>/<repo>`
+/// lock source key and the import `subpath`.
+fn external_import_targets(file: &File) -> Vec<(String, Vec<String>)> {
+    let mut out = Vec::new();
+    for decl in &file.items {
+        if let DeclKind::Import(import) = &decl.kind {
+            if let ImportSource::Quoted(path) = &import.source {
+                if let Some(gh) = GithubPath::parse(path) {
+                    let source = format!("github.com/{}/{}", gh.user, gh.repo);
+                    out.push((source, gh.subpath));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Load every external package source reachable from `user` and its
+/// `local_modules`, transitively, returning each parsed file exactly once
+/// (deduplicated by its resolved cache path).
+///
+/// Each import resolves to a `.rv` file in the rvpm cache through `ctx`.
+/// The loaded file's own external imports are followed, and the package's
+/// cached `rv.toml` is read so a bare-package dependency (with no explicit
+/// import of one of its files) still has its declarations available. An
+/// import whose package is not pinned in the lock, or whose source file is
+/// missing, is skipped here; the import resolution pass reports it with a
+/// precise span.
+fn load_external_modules(
+    user: &File,
+    local_modules: &[File],
+    ctx: &PackageContext,
+) -> Result<Vec<ExternalModule>, RavenError> {
+    let mut queue: Vec<(String, Vec<String>)> = external_import_targets(user);
+    for m in local_modules {
+        queue.extend(external_import_targets(m));
+    }
+    let mut loaded_paths: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut out: Vec<ExternalModule> = Vec::new();
+
+    while let Some((source, subpath)) = queue.pop() {
+        let Some(path) = ctx.external_source_path(&source, &subpath) else {
+            continue;
+        };
+        if !loaded_paths.insert(path.clone()) {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let gh = match GithubPath::parse(&source) {
+            Some(gh) => gh,
+            None => continue,
+        };
+
+        let tokens = Lexer::new(text, path.clone())
+            .tokenize()
+            .map_err(|e| external_error(&path, format!("lex: {e}")))?;
+        let module_file =
+            parse(&tokens).map_err(|e| external_error(&path, format!("parse: {e}")))?;
+
+        // Follow this file's own external imports (to sibling files in the
+        // same package or to other packages).
+        for (dep_source, dep_subpath) in external_import_targets(&module_file) {
+            queue.push((dep_source, dep_subpath));
+        }
+        // Read the package's cached manifest and queue each dependency's
+        // entry file so a transitively required package merges even when
+        // only its package root is imported.
+        if let Some(manifest_path) = ctx.package_manifest_path(&source) {
+            if let Ok(manifest) = crate::manifest::Manifest::load(&manifest_path) {
+                for dep in &manifest.dependencies {
+                    queue.push((dep.path.clone(), Vec::new()));
+                }
+            }
+        }
+
+        out.push(ExternalModule {
+            host: gh.host,
+            user: gh.user,
+            repo: gh.repo,
+            source_path: path,
+            file: module_file,
+        });
+    }
+
+    Ok(out)
+}
+
+/// Build the rename entries an external module needs for the names it
+/// selectively imports from OTHER external sources, mapping each selector
+/// to the sibling's `ext.` namespaced symbol. Mirrors [`import_rename_map`]
+/// for the external case. Selectors that name a type keep their own name
+/// and need no rename.
+fn external_import_rename_map(file: &File, ctx: &PackageContext) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for decl in &file.items {
+        let DeclKind::Import(import) = &decl.kind else {
+            continue;
+        };
+        if import.selectors.is_empty() {
+            continue;
+        }
+        let ImportSource::Quoted(path) = &import.source else {
+            continue;
+        };
+        let Some(gh) = GithubPath::parse(path) else {
+            continue;
+        };
+        let source = format!("github.com/{}/{}", gh.user, gh.repo);
+        let Some(src_path) = ctx.external_source_path(&source, &gh.subpath) else {
+            continue;
+        };
+        let Ok(text) = std::fs::read_to_string(&src_path) else {
+            continue;
+        };
+        let Some(target) = parse_loaded(&text, &src_path) else {
+            continue;
+        };
+        let key = external_module_key(&gh.host, &gh.user, &gh.repo, &src_path);
+        let fns = top_level_fn_names(&target);
+        for name in &import.selectors {
+            if fns.contains(name) {
+                map.insert(name.clone(), mangle_external_fn(&key, name));
+            }
+        }
+    }
+    map
+}
+
+/// Build a resolve error for an external package source that failed to
+/// load. The lex or parse error is anchored at the start of the file.
+fn external_error(path: &Path, detail: String) -> RavenError {
+    let span = crate::span::Span::point(Arc::new(path.to_path_buf()), 0, 1, 1);
+    RavenError::resolve(
+        ResolveError::UnresolvedImport(path.display().to_string()),
+        span,
+    )
+    .with_hint(format!("external package source failed to load: {detail}"))
 }
 
 /// The set of top level free function names declared in `file`.
@@ -898,6 +1181,110 @@ mod tests {
             .filter(|d| matches!(&d.kind, DeclKind::Function(f) if f.name == "std.io.println"))
             .count();
         assert_eq!(println_count, 1);
+    }
+
+    #[test]
+    fn external_key_is_stable_and_namespaced() {
+        let p = PathBuf::from("/cache/github.com/acme/greet@v1.0.0/lib.rv");
+        let k1 = external_module_key("github.com", "acme", "greet", &p);
+        let k2 = external_module_key("github.com", "acme", "greet", &p);
+        assert_eq!(k1, k2);
+        assert!(k1.starts_with("ext.github_com.acme.greet."));
+        assert_eq!(mangle_external_fn(&k1, "shout"), format!("{k1}.shout"));
+        // A different source file in the same package yields a distinct key.
+        let other = PathBuf::from("/cache/github.com/acme/greet@v1.0.0/util.rv");
+        assert_ne!(
+            k1,
+            external_module_key("github.com", "acme", "greet", &other)
+        );
+    }
+
+    #[test]
+    fn external_source_path_maps_through_lock() {
+        let lock = crate::lock::LockFile {
+            version: crate::lock::LOCK_VERSION,
+            packages: vec![crate::lock::LockedPackage {
+                source: "github.com/acme/greet".to_string(),
+                version: "v1.0.0".to_string(),
+                hash: "sha256:abc".to_string(),
+            }],
+        };
+        let ctx = PackageContext::new(PathBuf::from("/cache"), &lock);
+
+        // Bare import resolves to lib.rv at the cached package root.
+        let bare = ctx
+            .external_source_path("github.com/acme/greet", &[])
+            .expect("bare path");
+        assert!(bare.ends_with("github.com/acme/greet@v1.0.0/lib.rv"));
+
+        // A single-segment subpath selects <cachedir>/<seg>.rv.
+        let sub = ctx
+            .external_source_path("github.com/acme/greet", &["lib".to_string()])
+            .expect("sub path");
+        assert!(sub.ends_with("github.com/acme/greet@v1.0.0/lib.rv"));
+
+        // A nested subpath joins directories then appends .rv.
+        let nested = ctx
+            .external_source_path(
+                "github.com/acme/greet",
+                &["util".to_string(), "text".to_string()],
+            )
+            .expect("nested path");
+        assert!(nested.ends_with("github.com/acme/greet@v1.0.0/util/text.rv"));
+
+        // An unlocked package resolves to nothing.
+        assert!(ctx
+            .external_source_path("github.com/acme/missing", &[])
+            .is_none());
+    }
+
+    #[test]
+    fn external_function_merges_under_ext_namespace() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let cache = std::env::temp_dir().join(format!(
+            "raven_ext_merge_{}_{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+        let pkg_dir = cache.join("github.com").join("acme").join("greet@v1.0.0");
+        std::fs::create_dir_all(&pkg_dir).expect("mkdir");
+        std::fs::write(
+            pkg_dir.join("rv.toml"),
+            "[package]\nname = \"greet\"\nversion = \"0.1.0\"\n",
+        )
+        .expect("write toml");
+        let src_path = pkg_dir.join("lib.rv");
+        std::fs::write(
+            &src_path,
+            "fun shout(s: String) -> String { return s.concat(\"!\") }\n",
+        )
+        .expect("write src");
+
+        let lock = crate::lock::LockFile {
+            version: crate::lock::LOCK_VERSION,
+            packages: vec![crate::lock::LockedPackage {
+                source: "github.com/acme/greet".to_string(),
+                version: "v1.0.0".to_string(),
+                hash: "sha256:abc".to_string(),
+            }],
+        };
+        let ctx = PackageContext::new(cache.clone(), &lock);
+
+        let user = parse_src(
+            "import \"github.com/acme/greet/lib\" { shout }\nfun main() { print(shout(\"hi\")) }\n",
+        );
+        let combined = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
+
+        let key = external_module_key("github.com", "acme", "greet", &src_path);
+        let mangled = mangle_external_fn(&key, "shout");
+        let present = combined
+            .items
+            .iter()
+            .any(|d| matches!(&d.kind, DeclKind::Function(f) if f.name == mangled));
+        assert!(present, "external shout should merge under {mangled}");
+
+        std::fs::remove_dir_all(&cache).ok();
     }
 
     #[test]

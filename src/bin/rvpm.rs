@@ -46,6 +46,8 @@ fn main() -> ExitCode {
         Some("add") => run(cmd_add(&args[1..])),
         Some("install") => run(cmd_install(&args[1..])),
         Some("update") => run(cmd_update(&args[1..])),
+        Some("build") => run(cmd_build(&args[1..])),
+        Some("run") => cmd_run(&args[1..]),
         Some(other) => {
             eprintln!("rvpm: unknown subcommand '{}'", other);
             eprintln!("Run 'rvpm help' for usage.");
@@ -167,6 +169,51 @@ fn cmd_update(args: &[String]) -> Result<Vec<String>, String> {
     Ok(report.outcome_lines)
 }
 
+/// Build the package in the current directory: ensure dependencies are
+/// installed, then compile `src/main.rv` to `target/raven-out/<name>`.
+fn cmd_build(args: &[String]) -> Result<Vec<String>, String> {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        return Ok(vec![build_usage()]);
+    }
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let report = ops::build(&cwd).map_err(|e| e.to_string())?;
+    Ok(report.outcome_lines)
+}
+
+/// Build the package then run the produced binary, forwarding any args
+/// after `run` to the program and exiting with its code.
+fn cmd_run(args: &[String]) -> ExitCode {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", run_usage());
+        return ExitCode::SUCCESS;
+    }
+    let cwd = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("rvpm: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+    match ops::run_package(&cwd, args) {
+        Ok(code) => {
+            let code: u8 = code.try_into().unwrap_or(1);
+            ExitCode::from(code)
+        }
+        Err(e) => {
+            eprintln!("rvpm: {}", e);
+            ExitCode::from(1)
+        }
+    }
+}
+
+fn build_usage() -> String {
+    "Usage: rvpm build".to_string()
+}
+
+fn run_usage() -> String {
+    "Usage: rvpm run [program arguments]".to_string()
+}
+
 fn add_usage() -> String {
     "Usage: rvpm add github.com/<user>/<repo>[@<version>]".to_string()
 }
@@ -190,11 +237,13 @@ fn print_usage() {
     println!("  add <pkg>      Add a dependency to rv.toml, then resolve and write rv.lock");
     println!("  install        Resolve rv.toml against rv.lock and fill the cache");
     println!("  update [pkg]   Re-resolve rv.toml and rewrite rv.lock for one package or all");
+    println!("  build          Compile src/main.rv to target/raven-out/<name>");
+    println!("  run [args]     Build the package then run it, forwarding args");
     println!("  fetch <pkg>    Fetch 'github.com/<user>/<repo>@<version>' into the shared cache");
     println!("  lock           Generate or validate rv.lock for the current package");
     println!("  help           Print this message");
     println!();
     println!("Package arguments use the 'github.com/<user>/<repo>' form.");
     println!("For 'add', append '@<version>' to pin a git tag or branch; without it");
-    println!("a placeholder constraint is recorded. build and run land in a later release.");
+    println!("a placeholder constraint is recorded.");
 }

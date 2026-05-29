@@ -333,3 +333,97 @@ Under the literal-ref model, "update" picks up a ref that was edited in
 package) to bump the pinned version and hash in the lock. When range based
 constraints land, `update` will choose a newer ref within the range while
 `rv.toml` keeps the range; that selection is future work.
+
+# Build and run (build, run)
+
+`rvpm build` and `rvpm run` compile a package and run it. They drive the
+same compile pipeline the `raven` binary uses (lex, parse, expand, resolve,
+type check, HIR, MIR, Cranelift, link), differing only in that rvpm
+supplies a package context so external (`github.com/...`) imports resolve
+through the rvpm cache. The orchestration lives in `raven::ops`
+(`src/ops/mod.rs`); the reusable pipeline lives in `raven::driver`
+(`src/driver/mod.rs`); the `rvpm` binary stays thin and calls them. Both
+have an `_in(..., cache_root)` variant that takes an explicit cache root so
+they can be tested against a pre-seeded temporary cache without the global
+`RVPM_CACHE_DIR` override.
+
+## Entry file and output path conventions
+
+- The package entry file is `src/main.rv`, relative to the project root
+  (the directory holding `rv.toml`). It must define `fun main()`.
+- The built binary is written to `target/raven-out/<name>`, relative to the
+  project root, where `<name>` is `[package].name`. On Windows the binary
+  has a `.exe` extension (`target/raven-out/<name>.exe`); on other hosts it
+  has no extension.
+
+## External import resolution through the cache
+
+An `import "github.com/<user>/<repo>[/<sub>...]"` in the entry file (or in a
+local or external module reachable from it) resolves to a cached source file
+as follows:
+
+1. The project's `rv.lock` maps the `github.com/<user>/<repo>` source to its
+   pinned `version`. `rvpm build` ensures the lock exists first (see "Ensure
+   installed" below).
+2. `raven::pkg::cache_dir_in(cache_root, "github.com", <user>, <repo>,
+   <version>)` gives the package's cached directory.
+3. The import `subpath` selects the `.rv` file within that directory:
+   - A bare `github.com/<user>/<repo>` (no subpath) resolves to `lib.rv` at
+     the cached package root. This is the package entry convention for a
+     library.
+   - A subpath selects a file by joining its components and appending `.rv`.
+     So `github.com/acme/greet/lib` resolves to `<cachedir>/lib.rv`, and
+     `github.com/acme/greet/util/text` resolves to
+     `<cachedir>/util/text.rv`.
+
+The resolved source is fed through the same merge core the bundled stdlib
+and local module paths use (see `docs/v2/specs/resolver.md`), with an
+external namespace `ext.<host>.<user>.<repo>.<hash>`, where `<hash>` is
+derived from the resolved source path. The external package's own
+dependencies (from its cached `rv.toml`) are merged transitively and
+deduplicated by resolved source path, and an external module's own `import
+std/...` lines pull in the bundled modules it needs. A selective import
+`import "github.com/.../lib" { name }` binds the bare `name` to the
+namespaced symbol, exactly as bundled and local imports do, so the type
+checker finds the merged declaration.
+
+## Package-context plumbing
+
+The package context (the cache root plus the loaded `rv.lock` source-to-
+version map) is `raven::resolve::PackageContext`. It is threaded explicitly
+into the pipeline as an `Option<&PackageContext>`:
+
+- `expand_with_stdlib_ctx(file, ctx)` resolves external imports through the
+  cache when `ctx` is `Some`. `expand_with_stdlib(file)` is the no-context
+  form and behaves exactly as the bundled-plus-local path.
+- `resolve_file_ctx(file, loader, ctx)` binds external selectors to the
+  `ext.`-namespaced symbols. `resolve_file(file, loader)` is the no-context
+  form.
+
+`rvpm build` passes `Some(ctx)`; a plain `raven build` passes `None`, so an
+external import in a single-file `raven build` stays deferred and surfaces
+as an unresolved import. This keeps the single-file build and the codegen
+smoke harness unchanged for bundled and local programs.
+
+## rvpm build
+
+```
+rvpm build
+```
+
+`build` loads `rv.toml`, ensures dependencies are installed (the install
+path: validate an up-to-date `rv.lock` against the cache, or resolve a fresh
+lock and write it, reusing `raven::ops::install`), loads the lock to build
+the package context, then compiles `src/main.rv` to
+`target/raven-out/<name>` and reports the binary path. A missing
+`src/main.rv` is reported and the command exits non-zero.
+
+## rvpm run
+
+```
+rvpm run [program arguments]
+```
+
+`run` builds the package (the same path as `build`), then runs the produced
+binary, forwarding any arguments after `run` to the program and exiting with
+the program's exit code.

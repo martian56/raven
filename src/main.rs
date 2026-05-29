@@ -10,19 +10,14 @@
 //! resolve, type check, HIR, MIR) and feeds the resulting `MirProgram`
 //! to the Cranelift back end. The relocatable object is then linked
 //! with the `raven-runtime` staticlib by the toolchain-aware linker
-//! (MSVC `link.exe` on windows-msvc, `cc` elsewhere).
+//! (MSVC `link.exe` on windows-msvc, `cc` elsewhere). The reusable
+//! pipeline lives in `raven::driver` so `rvpm build` can drive it with a
+//! package context.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use raven::codegen::linker::{self, RuntimeStaticLib};
-use raven::codegen::{self, CodegenError};
-use raven::hir::lower_file;
-use raven::lexer::Lexer;
-use raven::mir::lower_program;
-use raven::parser::parse;
-use raven::resolve::{expand_with_stdlib, resolve_file, FsLoader};
-use raven::tycheck::check_file;
+use raven::driver::{self, DriverError};
 
 /// Stack size for the compiler worker thread.
 ///
@@ -70,56 +65,12 @@ fn run() -> ExitCode {
     }
 }
 
-fn run_build(rest: &[String]) -> Result<(), DriverError> {
+fn run_build(rest: &[String]) -> Result<(), BuildError> {
     let opts = parse_build_args(rest)?;
-    let source = std::fs::read_to_string(&opts.input)
-        .map_err(|e| DriverError::Io(format!("read {}: {}", opts.input.display(), e)))?;
-
-    // Front end.
-    let tokens = Lexer::new(source.clone(), opts.input.clone())
-        .tokenize()
-        .map_err(|e| DriverError::Frontend(format!("lex: {}", e)))?;
-    let file = parse(&tokens).map_err(|e| DriverError::Frontend(format!("parse: {}", e)))?;
-    // Merge any imported bundled stdlib modules (for example `std/io`)
-    // into the program before resolving. The combined file owns the
-    // stdlib functions plus the user's items, so the single-file pipeline
-    // compiles and links them all together. See `docs/v2/specs/stdlib.md`.
-    let file =
-        expand_with_stdlib(&file).map_err(|e| DriverError::Frontend(format!("stdlib: {}", e)))?;
-    let mut loader = FsLoader;
-    let resolved = resolve_file(&file, &mut loader)
-        .map_err(|e| DriverError::Frontend(format!("resolve: {}", e)))?;
-    let typed =
-        check_file(&resolved).map_err(|e| DriverError::Frontend(format!("tycheck: {}", e)))?;
-    let hir = lower_file(&typed).map_err(|e| DriverError::Frontend(format!("hir: {}", e)))?;
-    if std::env::var("RAVEN_DUMP_HIR").is_ok() {
-        eprintln!("{}", raven::hir::pretty_program(&hir));
-    }
-    let mir = lower_program(&hir).map_err(|e| DriverError::Frontend(format!("mir: {}", e)))?;
-
-    if std::env::var("RAVEN_DUMP_MIR").is_ok() {
-        eprintln!("{}", raven::mir::pretty::pretty_program(&mir));
-    }
-
-    // Back end.
-    let object_bytes = codegen::compile_program(&mir).map_err(DriverError::from)?;
-
-    let tmp = tempdir_for_build()?;
-    let object_path = tmp.path().join("raven_program.o");
-    std::fs::write(&object_path, &object_bytes)
-        .map_err(|e| DriverError::Io(format!("write object: {}", e)))?;
-
-    // Locate the runtime staticlib. The driver looks for it in the
-    // standard Cargo target directory next to the compiler binary, the
-    // current working directory's target, and an optional override via
-    // the RAVEN_RUNTIME_LIB environment variable.
-    let runtime = locate_runtime_staticlib()?;
-
-    linker::link(&object_path, &runtime, &opts.output).map_err(DriverError::from)?;
-
-    // Object file lives in a tempdir that is cleaned up on drop.
-    drop(tmp);
-    Ok(())
+    // The single-file `raven build` has no package context, so external
+    // (`github.com/...`) imports stay deferred and surface as unresolved.
+    // Package-aware builds go through `rvpm build`.
+    driver::build_binary(&opts.input, &opts.output, None).map_err(BuildError::Driver)
 }
 
 #[derive(Debug)]
@@ -128,7 +79,7 @@ struct BuildOpts {
     output: PathBuf,
 }
 
-fn parse_build_args(args: &[String]) -> Result<BuildOpts, DriverError> {
+fn parse_build_args(args: &[String]) -> Result<BuildOpts, BuildError> {
     let mut input: Option<PathBuf> = None;
     let mut output: Option<PathBuf> = None;
     let mut i = 0;
@@ -137,22 +88,22 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, DriverError> {
         if a == "-o" || a == "--output" {
             i += 1;
             if i >= args.len() {
-                return Err(DriverError::Args("expected an output path after -o".into()));
+                return Err(BuildError::Args("expected an output path after -o".into()));
             }
             output = Some(PathBuf::from(&args[i]));
-        } else if a.starts_with("-") {
-            return Err(DriverError::Args(format!("unknown flag `{}`", a)));
+        } else if a.starts_with('-') {
+            return Err(BuildError::Args(format!("unknown flag `{}`", a)));
         } else if input.is_none() {
             input = Some(PathBuf::from(a));
         } else {
-            return Err(DriverError::Args(format!(
+            return Err(BuildError::Args(format!(
                 "unexpected positional argument `{}`",
                 a
             )));
         }
         i += 1;
     }
-    let input = input.ok_or_else(|| DriverError::Args("missing input source file".into()))?;
+    let input = input.ok_or_else(|| BuildError::Args("missing input source file".into()))?;
     let output = output.unwrap_or_else(|| default_output_for(&input));
     Ok(BuildOpts { input, output })
 }
@@ -170,112 +121,17 @@ fn default_output_for(input: &Path) -> PathBuf {
     }
 }
 
-fn locate_runtime_staticlib() -> Result<RuntimeStaticLib, DriverError> {
-    if let Ok(p) = std::env::var("RAVEN_RUNTIME_LIB") {
-        let pb = PathBuf::from(p);
-        if pb.is_file() {
-            return Ok(RuntimeStaticLib { path: pb });
-        }
-    }
-    // Search relative to the compiler binary and the current directory.
-    let candidates = candidate_runtime_paths();
-    for c in candidates {
-        if c.is_file() {
-            return Ok(RuntimeStaticLib { path: c });
-        }
-    }
-    Err(DriverError::RuntimeMissing)
-}
-
-fn candidate_runtime_paths() -> Vec<PathBuf> {
-    let lib_name = if cfg!(windows) {
-        "raven_runtime.lib"
-    } else {
-        "libraven_runtime.a"
-    };
-    let mut out = Vec::new();
-    if let Ok(exe) = std::env::current_exe() {
-        for dir in exe.parent().into_iter().flat_map(|d| {
-            [
-                d.to_path_buf(),
-                d.join("deps"),
-                d.parent()
-                    .map(|p| p.to_path_buf())
-                    .unwrap_or(d.to_path_buf()),
-            ]
-        }) {
-            out.push(dir.join(lib_name));
-        }
-    }
-    if let Ok(cwd) = std::env::current_dir() {
-        for sub in [
-            "target/debug",
-            "target/release",
-            "target\\debug",
-            "target\\release",
-        ] {
-            out.push(cwd.join(sub).join(lib_name));
-        }
-    }
-    out
-}
-
-/// Create a temporary directory the driver uses to hold the
-/// intermediate object file. The struct removes the directory on drop.
-fn tempdir_for_build() -> Result<TempDir, DriverError> {
-    let mut base = std::env::temp_dir();
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let pid = std::process::id();
-    base.push(format!("raven-build-{}-{}", pid, stamp));
-    std::fs::create_dir_all(&base)
-        .map_err(|e| DriverError::Io(format!("mkdir {}: {}", base.display(), e)))?;
-    Ok(TempDir { path: base })
-}
-
-struct TempDir {
-    path: PathBuf,
-}
-
-impl TempDir {
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.path);
-    }
-}
-
 #[derive(Debug)]
-enum DriverError {
+enum BuildError {
     Args(String),
-    Io(String),
-    Frontend(String),
-    Codegen(CodegenError),
-    RuntimeMissing,
+    Driver(DriverError),
 }
 
-impl From<CodegenError> for DriverError {
-    fn from(e: CodegenError) -> Self {
-        DriverError::Codegen(e)
-    }
-}
-
-impl std::fmt::Display for DriverError {
+impl std::fmt::Display for BuildError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DriverError::Args(s) => write!(f, "{}", s),
-            DriverError::Io(s) => write!(f, "io: {}", s),
-            DriverError::Frontend(s) => write!(f, "frontend: {}", s),
-            DriverError::Codegen(e) => write!(f, "{}", e),
-            DriverError::RuntimeMissing => f.write_str(
-                "could not locate raven_runtime staticlib; build it with `cargo build -p raven-runtime` or set RAVEN_RUNTIME_LIB",
-            ),
+            BuildError::Args(s) => write!(f, "{}", s),
+            BuildError::Driver(e) => write!(f, "{}", e),
         }
     }
 }
