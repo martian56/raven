@@ -136,11 +136,6 @@ pub struct LowerCx<'a> {
     /// `Unreachable` rather than falsely treating a real empty-bodied
     /// function (for example `fun f() -> Int = 1`) as dead.
     pub diverged: bool,
-    /// Pending deferred expressions, in declaration order. A `defer e`
-    /// statement pushes a clone of `e` here; the deferred work runs in
-    /// reverse (LIFO) order at each block exit and at every `return`.
-    /// See `src/hir` defer lowering and `docs/v2/specs/defer.md`.
-    pub defers: Vec<crate::hir::expr::HirExpr>,
     /// Lifted closure bodies produced while lowering this function. Each
     /// lambda expression lifts its body into a standalone `MirFunction`
     /// whose leading parameter is the capture environment. The functions
@@ -180,39 +175,6 @@ impl LowerCx<'_> {
 
     pub fn pop_scope(&mut self) {
         self.scopes.pop();
-    }
-
-    /// Number of deferred expressions registered so far. A block records
-    /// this on entry so it can flush only the defers added inside it.
-    pub fn defer_mark(&self) -> usize {
-        self.defers.len()
-    }
-
-    /// Emit the deferred expressions in `self.defers[from..]` into the
-    /// current block in reverse (LIFO) declaration order, lowered for
-    /// their side effects only. Does nothing when the current block has
-    /// already been closed (for example after a `return`), since a dead
-    /// block must stay empty. The defers are cloned, not consumed, so a
-    /// `return` that escapes several blocks can re-emit the same defers.
-    pub fn emit_defers_from(&mut self, from: usize) {
-        if from >= self.defers.len() {
-            return;
-        }
-        if self.builder.is_closed(self.current) {
-            return;
-        }
-        // Clone the slice first: lowering each expression borrows `self`
-        // mutably, so the pending list cannot be borrowed across the loop.
-        let pending: Vec<crate::hir::expr::HirExpr> = self.defers[from..].to_vec();
-        for e in pending.iter().rev() {
-            let _ = expr::lower_expr(self, e);
-        }
-    }
-
-    /// Emit every pending deferred expression in reverse order. Used at a
-    /// `return`, which escapes all enclosing blocks at once.
-    pub fn emit_all_defers(&mut self) {
-        self.emit_defers_from(0);
     }
 }
 
@@ -337,7 +299,6 @@ pub fn lower_function(
         pending_calls: Vec::new(),
         decls,
         diverged: false,
-        defers: Vec::new(),
         lifted: Vec::new(),
         lambda_seq: 0,
         enclosing: mangled,

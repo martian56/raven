@@ -164,16 +164,18 @@ statements at the start of the arm block that pull payload fields out
 of the discriminant via `EnumCreate` projections (or struct field
 projections), one per pattern binding name.
 
-`defer e` does not emit at its own site. The lowering records `e` on a
-per-function pending stack and re-emits the pending set, in reverse
-(LIFO) order, at each block's normal exit and before every `return`. A
-`return` escapes all enclosing blocks and flushes the whole stack; a
-block's normal exit flushes only the defers registered inside it. See
-`docs/v2/specs/defer.md` for the full algorithm and worked examples.
+`defer e` is function-scoped. The lowering lifts `e` into a zero-argument
+thunk closure (`fun() -> Unit { e }`, reusing the closure machinery) and
+emits a `Call { callee: __defer_push, args: [thunk] }` at the point the
+`defer` statement is reached, flagging the function `has_defer`. Nothing
+fires at a block exit. Codegen opens a runtime defer frame on entry and
+runs the parked thunks in LIFO order at every return. See
+`docs/v2/specs/defer.md` for the full design.
 
 `?` propagation is already desugared to a match in HIR, so MIR has no
 special rule for it. Because the desugaring produces an ordinary
-`return`, defers flush on the `?` early-return path with no extra work.
+`return`, the reached defers run on the `?` early-return path with no
+extra work.
 
 ## Monomorphization
 

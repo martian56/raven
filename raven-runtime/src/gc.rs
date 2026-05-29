@@ -65,6 +65,121 @@ thread_local! {
     /// struct type once at program startup, before any struct is built.
     static STRUCT_DESCRIPTORS: RefCell<HashMap<u32, u64>> =
         RefCell::new(HashMap::new());
+
+    /// Per-call-frame stacks of deferred closures, one inner vector per
+    /// open call frame. A `defer expr` pushes its thunk closure onto the
+    /// top frame; the function epilogue runs and pops the top frame at
+    /// every return. Parked closures stay GC-reachable through `mark`,
+    /// which visits every pointer in every open defer frame.
+    static DEFER_FRAMES: RefCell<Vec<Vec<*mut crate::object::Closure>>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+/// ABI of a deferred thunk: the runtime calls the closure's lifted body
+/// through this pointer, passing the closure's capture environment. The
+/// thunk evaluates the deferred expression for its side effects and
+/// returns nothing.
+type DeferThunk = extern "C" fn(env: *mut u8);
+
+/// Open a fresh defer frame for the current call. The function epilogue
+/// must pair it with one `raven_defer_run_frame`.
+#[no_mangle]
+pub extern "C" fn raven_defer_enter_frame() {
+    DEFER_FRAMES.with(|f| f.borrow_mut().push(Vec::new()));
+}
+
+/// Register a deferred thunk on the current defer frame.
+///
+/// `closure` is a `Closure` whose lifted body takes only the capture
+/// environment and returns unit. It is parked until the frame runs, and
+/// stays GC-reachable in the meantime because `mark` visits it.
+///
+/// A push with no open frame is a no-op, which keeps a stray `defer`
+/// outside any frame from corrupting the stack.
+///
+/// # Safety
+///
+/// `closure` must be a live `Closure` produced by `raven_closure_new`.
+#[no_mangle]
+pub extern "C" fn raven_defer_push(closure: *mut crate::object::Closure) {
+    if closure.is_null() {
+        return;
+    }
+    DEFER_FRAMES.with(|f| {
+        if let Some(top) = f.borrow_mut().last_mut() {
+            top.push(closure);
+        }
+    });
+}
+
+/// Run and pop the current defer frame.
+///
+/// Invokes the frame's parked thunks in last-in-first-out order, then
+/// discards the frame. A thunk that registers another defer appends to
+/// the same frame, so it also runs before the frame is dropped, matching
+/// Go's behaviour for defers scheduled during a deferred call. A call
+/// with no open frame is a no-op.
+#[no_mangle]
+pub extern "C" fn raven_defer_run_frame() {
+    // Take ownership of the top frame so a thunk that pushes a new defer
+    // grows the still-open frame; we keep draining until it is empty.
+    let mut frame = match DEFER_FRAMES.with(|f| f.borrow_mut().pop()) {
+        Some(frame) => frame,
+        None => return,
+    };
+    // Re-open the frame while draining so any defer scheduled by a thunk
+    // lands here and runs too. Pop the placeholder afterwards.
+    DEFER_FRAMES.with(|f| f.borrow_mut().push(Vec::new()));
+    loop {
+        let closure = match frame.pop() {
+            Some(c) => c,
+            None => {
+                // Pull in any defers a thunk scheduled while draining.
+                let scheduled = DEFER_FRAMES.with(|f| {
+                    f.borrow_mut()
+                        .last_mut()
+                        .map(std::mem::take)
+                        .unwrap_or_default()
+                });
+                if scheduled.is_empty() {
+                    break;
+                }
+                frame = scheduled;
+                continue;
+            }
+        };
+        if closure.is_null() {
+            continue;
+        }
+        // SAFETY: a parked closure is a live Closure; its lifted body is a
+        // `fn(env)` and its capture buffer is the env argument.
+        unsafe {
+            let fn_ptr = (*closure).fn_ptr;
+            let env = (*closure).captures;
+            if !fn_ptr.is_null() {
+                let thunk: DeferThunk = std::mem::transmute(fn_ptr);
+                thunk(env);
+            }
+        }
+    }
+    DEFER_FRAMES.with(|f| {
+        f.borrow_mut().pop();
+    });
+}
+
+/// Visit every parked deferred closure across all open defer frames,
+/// marking each so the collector keeps it (and the values it captures)
+/// alive while it waits to run.
+fn for_each_defer_root(work: &mut Vec<*mut ObjectHeader>) {
+    DEFER_FRAMES.with(|f| {
+        for frame in f.borrow().iter() {
+            for &closure in frame.iter() {
+                if mark_object(closure as *mut ObjectHeader) {
+                    work.push(closure as *mut ObjectHeader);
+                }
+            }
+        }
+    });
 }
 
 /// Initial and floor collection threshold in bytes (1 MiB).
@@ -271,6 +386,9 @@ fn mark() {
             work.push(object);
         }
     });
+    // Closures parked in open defer frames are roots too: they must
+    // survive until the function epilogue runs them.
+    for_each_defer_root(&mut work);
     while let Some(object) = work.pop() {
         // SAFETY: `object` was reached from a root or another live
         // object, so it is a live registered header.
@@ -901,6 +1019,60 @@ mod collector_tests {
             raven_gc_leave_frame();
             raven_gc_collect();
             assert_eq!(raven_gc_live_objects(), 0);
+        });
+    }
+
+    #[test]
+    fn parked_defer_closure_survives_collection() {
+        isolated(|| {
+            // A closure parked in an open defer frame must survive a
+            // collection even with no shadow-stack root, and the GC
+            // pointer it captures must survive transitively.
+            let captured = raven_string_new(2);
+            let closure = raven_closure_new(dummy_body as *const u8, 8, 8, 1, 1);
+            // SAFETY: one pointer-sized GC capture slot.
+            unsafe {
+                let caps = raven_closure_captures(closure) as *mut *mut u8;
+                caps.write(captured as *mut u8);
+            }
+            raven_defer_enter_frame();
+            raven_defer_push(closure);
+            assert_eq!(raven_gc_live_objects(), 2);
+            raven_gc_collect();
+            assert_eq!(raven_gc_live_objects(), 2);
+            // Running the frame drops the only reference; the closure and
+            // its capture are then collectable.
+            raven_defer_run_frame();
+            raven_gc_collect();
+            assert_eq!(raven_gc_live_objects(), 0);
+        });
+    }
+
+    #[test]
+    fn defer_frame_runs_thunks_in_lifo_order() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        // A thunk records its tag; running a frame of two must observe
+        // them in reverse registration order.
+        static LOG: [AtomicUsize; 2] = [AtomicUsize::new(0), AtomicUsize::new(0)];
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        extern "C" fn record_a(_env: *mut u8) {
+            let i = NEXT.fetch_add(1, Ordering::SeqCst);
+            LOG[i].store(1, Ordering::SeqCst);
+        }
+        extern "C" fn record_b(_env: *mut u8) {
+            let i = NEXT.fetch_add(1, Ordering::SeqCst);
+            LOG[i].store(2, Ordering::SeqCst);
+        }
+        isolated(|| {
+            let a = raven_closure_new(record_a as *const u8, 0, 0, 0, 0);
+            let b = raven_closure_new(record_b as *const u8, 0, 0, 0, 0);
+            raven_defer_enter_frame();
+            raven_defer_push(a);
+            raven_defer_push(b);
+            raven_defer_run_frame();
+            // b was pushed last, so it runs first.
+            assert_eq!(LOG[0].load(Ordering::SeqCst), 2);
+            assert_eq!(LOG[1].load(Ordering::SeqCst), 1);
         });
     }
 

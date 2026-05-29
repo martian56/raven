@@ -101,6 +101,19 @@ recording the frame boundary; `raven_gc_leave_frame` pops back to the
 previous boundary. The two APIs share one underlying slot stack and may
 be mixed, though codegen uses only the frame API.
 
+### Deferred-thunk roots
+
+A `defer expr` parks a thunk closure on a per-call defer frame and runs
+it at the function's return (see `docs/v2/specs/defer.md`). A parked
+thunk is a heap closure object, and a collection can fire between the
+`raven_defer_push` that registers it and the `raven_defer_run_frame` that
+runs it. The collector therefore treats every closure pointer in every
+open defer frame as a root: the mark phase visits the shadow stack and
+then walks the defer frames, marking each parked thunk so it and the
+values it captures survive until it runs. The defer frame's lifetime is
+tied to the call frame, so these roots are released as soon as the frame
+runs.
+
 ### Calling convention codegen must follow
 
 1. For each GC-managed local in the frame (any local whose static type

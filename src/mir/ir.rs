@@ -305,6 +305,10 @@ pub struct MirFunction {
     pub blocks: Vec<MirBlock>,
     pub entry: MirBlockId,
     pub span: Span,
+    /// True when the function body registers at least one `defer`. Codegen
+    /// opens a runtime defer frame on entry and runs it at every return
+    /// path only for such functions. See `docs/v2/specs/defer.md`.
+    pub has_defer: bool,
 }
 
 impl MirFunction {
