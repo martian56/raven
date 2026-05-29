@@ -241,6 +241,18 @@ fn ffi_abs_program_compiles_and_runs() {
 }
 
 #[test]
+fn use_ffi_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // std/ffi converts a runtime Raven String to a C string. strlen on
+    // "hello" is 5, strcmp on equal strings is 0 and on "abc"/"abd" is a
+    // negative value (-1 on the supported libc), and from_cstr round-trips
+    // a CStr back to the String "roundtrip".
+    compile_link_run_and_check("use_ffi.rv", "5\n0\n-1\nroundtrip\n", &runtime);
+}
+
+#[test]
 fn std_io_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

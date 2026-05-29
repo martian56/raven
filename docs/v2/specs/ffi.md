@@ -67,11 +67,15 @@ not silently passed where the C ABI expects a foreign one.
 | `CLong`    | `long`           | `i64`                  |
 | `CSize`    | `size_t`         | pointer width (`i64`)  |
 | `CStr`     | `const char *`   | pointer width (`i64`)  |
+| `CDouble`  | `double`         | `f64`                  |
 | `CPtr<T>`  | `T *` (opaque)   | pointer width (`i64`)  |
 
 `CInt` is fixed at 32-bit, which matches the C `int` on every ABI Raven
 targets. `CLong` and `CSize` are 64-bit on the 64-bit targets Raven
-supports. `CStr`, `CSize`, and `CPtr<T>` are all pointer width.
+supports. `CStr`, `CSize`, and `CPtr<T>` are all pointer width. `CDouble`
+is C `double`, the same `f64` representation a Raven `Float` already uses,
+so a `Float` argument is accepted where a `CDouble` is expected. C `float`
+(`CFloat`) is not yet provided; see `docs/v2/specs/std-ffi.md`.
 
 `CPtr<T>` is a typed but opaque pointer in v2.0: the pointee type is kept
 for documentation and future conversions, but the back end treats the
@@ -81,8 +85,8 @@ for it yet.
 `CString` is accepted as an alias for `CStr` so that older `extern`
 signatures keep checking.
 
-The full `std/ffi` module with conversion helpers is issue #80; this
-spec provides only what is needed to call C.
+The `std/ffi` module adds runtime `String` to `CStr` conversion helpers
+on top of these primitives. See `docs/v2/specs/std-ffi.md`.
 
 ## C string literals and `CStr`
 
@@ -96,9 +100,10 @@ Passing a native Raven `String` where a `CStr` is expected is rejected.
 A heap `String` (see `docs/v2/specs/object-layout.md` and
 `raven-runtime/src/object/string.rs`) is length-prefixed and not
 guaranteed to be null-terminated, so it is not a valid `const char *`.
-String-to-CStr conversion (a null-terminated copy through a helper such
-as `raven_string_as_cstr`) is deferred to issue #80. In this release,
-only `c"..."` literals produce a `CStr`.
+To pass a runtime `String`, convert it through `std/ffi`'s `to_cstr`,
+which copies the bytes into a null-terminated buffer (see
+`docs/v2/specs/std-ffi.md`). A `c"..."` literal still produces a `CStr`
+directly with no allocation.
 
 An integer C parameter (`CInt`, `CLong`, `CSize`) accepts a native `Int`
 argument, so a literal such as `abs(-7)` checks. The back end converts
@@ -152,6 +157,5 @@ non-CRT symbol surfaces as an unresolved-symbol error at link time.
 * Variadic C functions (for example `printf` with format arguments).
 * Callbacks from C back into Raven (passing a Raven function as a C
   function pointer).
-* String-to-CStr conversion of a heap `String` (issue #80).
 * Non-CRT libraries and their link flags (issue #81).
 * Dereferencing or arithmetic on `CPtr<T>`.

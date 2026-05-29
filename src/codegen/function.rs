@@ -55,6 +55,7 @@ pub fn cranelift_ty(ty: &MirType, ptr: CType) -> Option<CType> {
         MirType::Ffi(ffi) => Some(match ffi {
             MirFfiTy::CInt => types::I32,
             MirFfiTy::CLong => types::I64,
+            MirFfiTy::CDouble => types::F64,
             MirFfiTy::CSize | MirFfiTy::CStr | MirFfiTy::CPtr(_) => ptr,
         }),
     }

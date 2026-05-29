@@ -1138,6 +1138,14 @@ impl<'a, 'b> Checker<'a, 'b> {
             {
                 continue;
             }
+            // A `CDouble` parameter is C `double` (f64), the same
+            // representation a Raven `Float` uses, so a `Float` argument
+            // passes directly with no conversion at the call.
+            if matches!(resolved_param.strip_self(), Ty::Ffi(FfiTy::CDouble))
+                && matches!(resolved_arg.strip_self(), Ty::Float)
+            {
+                continue;
+            }
             self.unify(param_ty, &a, &arg.span)?;
         }
         Ok(ret)
