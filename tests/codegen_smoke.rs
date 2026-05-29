@@ -786,6 +786,96 @@ fn net_program_compiles_and_runs() {
 }
 
 #[test]
+fn http_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // std/http client end to end against a loopback mock server. CI has no
+    // external network and Raven v2 has no threads, so the test runs a tiny
+    // HTTP/1.1 server on a std::thread that accepts one connection, reads the
+    // request headers, and writes a fixed 200 response. The compiled Raven
+    // program GETs that URL (passed through RAVEN_HTTP_URL) and prints the
+    // status code then the body. Read timeouts on both ends keep a failure
+    // from hanging CI.
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback listener");
+    let addr = listener
+        .local_addr()
+        .expect("listener local addr")
+        .to_string();
+    let url = format!("http://{addr}/");
+
+    let server = std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+            // Read until the end of the request headers; the GET has no body.
+            let mut buf = Vec::new();
+            let mut chunk = [0u8; 256];
+            loop {
+                match stream.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        buf.extend_from_slice(&chunk[..n]);
+                        if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            let resp = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello";
+            let _ = stream.write_all(resp.as_bytes());
+            let _ = stream.flush();
+        }
+    });
+
+    let name = "use_http.rv";
+    let source_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join("v2")
+        .join(name);
+    let source =
+        std::fs::read_to_string(&source_path).unwrap_or_else(|e| panic!("read {}: {}", name, e));
+    let object_bytes = match build_object(&source, &source_path) {
+        Ok(b) => b,
+        Err(e) => panic!("frontend or codegen failed for {}: {}", name, e),
+    };
+    let tmp = workdir();
+    let object_path = tmp.join("use_http.o");
+    std::fs::write(&object_path, &object_bytes).expect("write object");
+    let binary = tmp.join(if cfg!(windows) {
+        "use_http.exe"
+    } else {
+        "use_http"
+    });
+    if let Err(e) = linker::link(&object_path, &runtime, &binary) {
+        cleanup(&tmp);
+        panic!("linker failed to produce an executable for {}: {}", name, e);
+    }
+    let output = Command::new(&binary)
+        .env("RAVEN_HTTP_URL", &url)
+        .output()
+        .unwrap_or_else(|e| panic!("run {} binary: {}", name, e));
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let _ = server.join();
+    cleanup(&tmp);
+    assert!(
+        output.status.success(),
+        "use_http binary exited non zero: status={:?} stderr={}",
+        output.status,
+        stderr
+    );
+    assert_eq!(
+        stdout, "200\nhello\n",
+        "unexpected stdout for use_http: {:?}",
+        stdout
+    );
+}
+
+#[test]
 fn time_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
