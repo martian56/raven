@@ -1,0 +1,12 @@
+// While and for loops printing the same sequence twice.
+fun main() {
+    let i = 0
+    while i < 5 {
+        print_int(i)
+        i = i + 1
+    }
+
+    for j in 0..5 {
+        print_int(j)
+    }
+}

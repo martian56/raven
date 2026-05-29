@@ -1,0 +1,44 @@
+// A tour of core language features: variables, conditionals, loops,
+// functions, structs, and arithmetic, all with deterministic output.
+struct Rect { w: Int, h: Int }
+
+fun area(r: Rect) -> Int = r.w * r.h
+
+fun multiply(a: Int, b: Int) -> Int = a * b
+
+fun main() {
+    let name = "Raven"
+    print(name)
+
+    let x = 10
+    let y = 20
+    if x < y {
+        print("x is less than y")
+    }
+
+    let i = 0
+    while i < 3 {
+        print_int(i)
+        i = i + 1
+    }
+
+    for j in 0..3 {
+        print_int(j * 2)
+    }
+
+    print_int(multiply(6, 7))
+
+    let active = true
+    let access = true
+    if active && access {
+        print("Access granted")
+    }
+
+    print_int(5 + 10)
+    print_int(20 - 8)
+    print_int(6 * 7)
+    print_int(100 / 4)
+
+    let r = Rect { w: 4, h: 5 }
+    print_int(area(r))
+}

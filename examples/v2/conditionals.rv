@@ -1,0 +1,27 @@
+// Branching with else if chains.
+fun classify(age: Int) -> String {
+    if age < 18 {
+        "Too young"
+    } else if age < 30 {
+        "Young adult"
+    } else {
+        "Mature"
+    }
+}
+
+fun grade(score: Int) -> String {
+    if score >= 90 {
+        "Grade: A"
+    } else if score >= 80 {
+        "Grade: B"
+    } else if score >= 70 {
+        "Grade: C"
+    } else {
+        "Grade: F"
+    }
+}
+
+fun main() {
+    print(classify(25))
+    print(grade(85))
+}
