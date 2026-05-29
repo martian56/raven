@@ -20,8 +20,39 @@ homepage = "https://raven.ufazien.com"
 keywords = ["programming", "language", "compiler"]
 categories = ["development-tools", "command-line-utilities"]
 
-# Packaging metadata (deb / rpm / wix) intentionally omitted while v2 is under construction.
-# It will be repopulated alongside the v2 tooling work once the stdlib and rvpm shape settle.
+# Packaging metadata for the tagged-release workflow (.github/workflows/release.yml).
+# The v2 stdlib is embedded in the binaries via include_str!, so no .rv files ship
+# as installed assets. The raven_runtime static library is placed next to the raven
+# binary so the compiler locates it without configuration when linking user programs.
+[package.metadata.deb]
+maintainer = "martian56"
+copyright = "2026 martian56"
+license-file = ["LICENSE"]
+depends = "gcc"
+section = "devel"
+priority = "optional"
+extended-description = """\
+Raven is a statically typed compiled programming language.
+Ships the raven compiler and the rvpm package manager. The compiler links
+programs at build time, so a C toolchain (gcc) is required at runtime.
+"""
+assets = [
+    ["target/release/raven", "usr/bin/", "755"],
+    ["target/release/rvpm", "usr/bin/", "755"],
+    ["target/release/libraven_runtime.a", "usr/bin/", "644"],
+    ["README.md", "usr/share/doc/raven/", "644"],
+]
+
+[package.metadata.generate-rpm]
+license = "MIT"
+summary = "Statically typed compiled programming language"
+requires = { gcc = "*" }
+assets = [
+    { source = "target/release/raven", dest = "/usr/bin/raven", mode = "755" },
+    { source = "target/release/rvpm", dest = "/usr/bin/rvpm", mode = "755" },
+    { source = "target/release/libraven_runtime.a", dest = "/usr/bin/libraven_runtime.a", mode = "644" },
+    { source = "README.md", dest = "/usr/share/doc/raven/README.md", mode = "644", doc = true },
+]
 
 [[bin]]
 name = "raven"
