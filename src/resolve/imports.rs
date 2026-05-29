@@ -77,6 +77,7 @@ pub const STDLIB_MODULES: &[&str] = &[
     "collections",
     "cmp",
     "hash",
+    "encoding",
     "string",
     "math",
     "path",
