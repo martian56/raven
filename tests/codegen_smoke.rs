@@ -705,6 +705,59 @@ fn fs_program_compiles_and_runs() {
     );
 }
 
+#[test]
+fn time_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // std/time date and time end to end, driven by fixed UTC timestamps so
+    // every printed line is identical on every host: the epoch formats to
+    // 1970-01-01 00:00:00, 86400 seconds decomposes to 1970-1-2, 1700000000
+    // formats to 2023-11-14, parsing "2000-01-01 00:00:00" yields the Unix
+    // timestamp 946684800, an unparseable string takes the Err path printing
+    // "parse failed", and now() is past Nov 2023 so the final line is true.
+    let name = "use_time.rv";
+    let source_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join("v2")
+        .join(name);
+    let source =
+        std::fs::read_to_string(&source_path).unwrap_or_else(|e| panic!("read {}: {}", name, e));
+    let object_bytes = match build_object(&source, &source_path) {
+        Ok(b) => b,
+        Err(e) => panic!("frontend or codegen failed for {}: {}", name, e),
+    };
+    let tmp = workdir();
+    let object_path = tmp.join("use_time.o");
+    std::fs::write(&object_path, &object_bytes).expect("write object");
+    let binary = tmp.join(if cfg!(windows) {
+        "use_time.exe"
+    } else {
+        "use_time"
+    });
+    if let Err(e) = linker::link(&object_path, &runtime, &binary) {
+        cleanup(&tmp);
+        panic!("linker failed to produce an executable for {}: {}", name, e);
+    }
+    let output = Command::new(&binary)
+        .output()
+        .unwrap_or_else(|e| panic!("run {} binary: {}", name, e));
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    cleanup(&tmp);
+    assert!(
+        output.status.success(),
+        "use_time binary exited non zero: status={:?} stderr={}",
+        output.status,
+        stderr
+    );
+    assert_eq!(
+        stdout, "1970-01-01 00:00:00\n1970-1-2\n2023-11-14\n946684800\nparse failed\ntrue\n",
+        "unexpected stdout for use_time: {:?}",
+        stdout
+    );
+}
+
 /// Return the runtime staticlib when a linker and the staticlib are both
 /// present, or skip with a diagnostic. Shared by every smoke case so the
 /// skip behavior stays identical.
