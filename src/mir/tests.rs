@@ -278,39 +278,50 @@ fn mir_type_mangling_is_stable() {
 }
 
 // ----- Defer lowering -----
+//
+// A `defer expr` lowers to a thunk closure (a `ClosureCreate`) followed
+// by a `__defer_push` call at the point the `defer` statement is reached,
+// not at any block exit. The runtime per-frame defer list runs the parked
+// thunks in LIFO order at every function return. So lowering is asserted
+// structurally here (a push per reached defer, registered in the block
+// that reaches it); the LIFO and reached-only run-time behaviour is
+// verified end to end by the golden examples and the runtime tests.
 
-/// Collect the integer constant rendered by each `print(N)` call in the
-/// block, in statement order. A `print(N)` lowers to an int-to-string
-/// conversion (the constant `N` is its argument) followed by the `print`
-/// call, so matching the conversion recovers the printed value. Used to
-/// assert deferred call ordering.
-fn printed_int_args_in_block(block: &MirBlock) -> Vec<i64> {
-    let mut out = Vec::new();
-    for s in &block.statements {
-        if let MirStatement::Assign {
-            rvalue: MirRvalue::Call { callee, args },
-            ..
-        } = s
-        {
-            // `print(n)` lowers to `Int$to_string(n)` then a string print,
-            // so the deferred int is the constant argument to that
-            // to_string call. Reading them in block order recovers the
-            // order the deferred prints run.
-            if callee.mangled == "Int$to_string" {
-                if let Some(MirOperand::Const(MirConstant::Int(n))) = args.first() {
-                    out.push(*n);
-                }
-            }
-        }
-    }
-    out
+/// Count `__defer_push` calls across all of a function's blocks.
+fn defer_push_count(f: &MirFunction) -> usize {
+    f.blocks
+        .iter()
+        .flat_map(|b| b.statements.iter())
+        .filter(|s| {
+            matches!(
+                s,
+                MirStatement::Assign {
+                    rvalue: MirRvalue::Call { callee, .. },
+                    ..
+                } if callee.mangled == crate::codegen::intrinsics::DEFER_PUSH_FN
+            )
+        })
+        .count()
+}
+
+/// True when `block` registers a deferred thunk (`ClosureCreate` then
+/// `__defer_push`).
+fn block_pushes_defer(block: &MirBlock) -> bool {
+    block.statements.iter().any(|s| {
+        matches!(
+            s,
+            MirStatement::Assign {
+                rvalue: MirRvalue::Call { callee, .. },
+                ..
+            } if callee.mangled == crate::codegen::intrinsics::DEFER_PUSH_FN
+        )
+    })
 }
 
 #[test]
-fn defer_runs_in_reverse_order_before_return() {
-    // Two defers at the function body level: print(1) then
-    // print(2). The block that ends in `return` must call them in
-    // reverse (LIFO) order: 2 then 1.
+fn defer_lowers_to_a_push_per_statement() {
+    // Two body-level defers lower to two thunk pushes and mark the
+    // function so codegen wires the runtime defer frame.
     let prog = compile_with_prelude(
         r#"
         fun demo() -> Int {
@@ -321,55 +332,91 @@ fn defer_runs_in_reverse_order_before_return() {
     "#,
     );
     let demo = find_fn(&prog, "demo");
-    let ret_block = demo
-        .blocks
-        .iter()
-        .find(|b| matches!(b.terminator, MirTerminator::Return(_)))
-        .expect("demo has a return block");
+    assert!(demo.has_defer, "a function with a defer is marked");
     assert_eq!(
-        printed_int_args_in_block(ret_block),
-        vec![2, 1],
-        "deferred calls must run LIFO before the return"
+        defer_push_count(demo),
+        2,
+        "each reached defer pushes one thunk"
     );
 }
 
 #[test]
-fn only_reached_defers_run_on_each_return_path() {
-    // The first defer precedes the early return, so it is scheduled on
-    // both paths. The second defer follows the early return, so the early
-    // path never schedules it. The early-path return block runs only [9];
-    // the fall-through return block runs [8, 9] (LIFO).
+fn nested_block_defer_pushes_inside_the_inner_block() {
+    // The defer sits in the `if`'s then-block, so its push lands in a
+    // non-entry block (the conditional body), proving reached-only is
+    // dynamic: the push only runs when control enters that block, and the
+    // thunk runs at the function return rather than the inner block exit.
     let prog = compile_with_prelude(
         r#"
-        fun f(early: Bool) -> Int {
-            defer print(9)
-            if early {
-                return 1
+        fun f() -> Int {
+            print(1)
+            if true {
+                defer print(2)
+                print(3)
             }
-            defer print(8)
-            return 2
+            print(4)
+            return 0
         }
     "#,
     );
     let f = find_fn(&prog, "f");
+    assert!(f.has_defer);
+    assert_eq!(defer_push_count(f), 1);
 
-    let return_blocks: Vec<Vec<i64>> = f
-        .blocks
-        .iter()
-        .filter(|b| matches!(b.terminator, MirTerminator::Return(_)))
-        .map(printed_int_args_in_block)
-        .collect();
-
+    let entry = &f.blocks[f.entry.0 as usize];
     assert!(
-        return_blocks.contains(&vec![9]),
-        "the early-return path runs only the first defer, got {:?}",
-        return_blocks
+        !block_pushes_defer(entry),
+        "the nested defer must not register in the entry block"
     );
     assert!(
-        return_blocks.contains(&vec![8, 9]),
-        "the fall-through path runs both defers LIFO, got {:?}",
-        return_blocks
+        f.blocks
+            .iter()
+            .filter(|b| b.id != f.entry)
+            .any(block_pushes_defer),
+        "the nested defer registers in the inner conditional block"
     );
+}
+
+#[test]
+fn reached_only_defers_register_on_their_branch() {
+    // Each branch of the `if` registers its own defer; neither push is in
+    // the entry block, so a branch not taken never schedules its thunk.
+    let prog = compile_with_prelude(
+        r#"
+        fun f(taken: Bool) -> Int {
+            if taken {
+                defer print(100)
+            } else {
+                defer print(200)
+            }
+            return 0
+        }
+    "#,
+    );
+    let f = find_fn(&prog, "f");
+    assert!(f.has_defer);
+    assert_eq!(
+        defer_push_count(f),
+        2,
+        "both branches register their own defer"
+    );
+    let entry = &f.blocks[f.entry.0 as usize];
+    assert!(
+        !block_pushes_defer(entry),
+        "a conditional defer never registers unconditionally in entry"
+    );
+}
+
+#[test]
+fn function_without_defer_is_not_marked() {
+    let prog = compile_with_prelude(
+        r#"
+        fun plain() -> Int {
+            return 0
+        }
+    "#,
+    );
+    assert!(!find_fn(&prog, "plain").has_defer);
 }
 
 // ----- closure capture and invocation -----

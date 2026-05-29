@@ -181,7 +181,6 @@ fn lift_body(
         pending_calls: Vec::new(),
         decls: cx.decls,
         diverged: false,
-        defers: Vec::new(),
         lifted: Vec::new(),
         lambda_seq: 0,
         enclosing: name.to_string(),

@@ -307,6 +307,18 @@ impl ModuleCx {
         sig = self.make_sig(&[], &[]);
         self.declare_runtime(intrinsics::RUNTIME_GC_LEAVE_FRAME, &sig)?;
 
+        // raven_defer_enter_frame()
+        sig = self.make_sig(&[], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_DEFER_ENTER_FRAME, &sig)?;
+
+        // raven_defer_run_frame()
+        sig = self.make_sig(&[], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_DEFER_RUN_FRAME, &sig)?;
+
+        // raven_defer_push(closure ptr)
+        sig = self.make_sig(&[ptr], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_DEFER_PUSH, &sig)?;
+
         // raven_list_new(element_size: u32, element_align: u32, cap: u32,
         //                elements_are_gc_ptrs: u32) -> List ptr
         sig = self.make_sig(&[i32t, i32t, i32t, i32t], &[ptr]);

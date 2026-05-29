@@ -165,6 +165,12 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
                     root_frame,
                     ptr,
                 );
+                // Open the per-call defer frame after the GC frame so the
+                // epilogue runs defers (which may touch GC locals) before
+                // leaving the GC frame.
+                if self.func.has_defer {
+                    enter_defer_frame(self.cx, &mut builder);
+                }
             }
             lower_block(
                 self.cx,
@@ -173,6 +179,7 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
                 &slots,
                 &blocks,
                 root_frame,
+                self.func.has_defer,
             )?;
         }
 
@@ -253,6 +260,7 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lower_block(
     cx: &mut ModuleCx,
     builder: &mut FunctionBuilder<'_>,
@@ -260,6 +268,7 @@ fn lower_block(
     slots: &[LocalSlot],
     blocks: &[cranelift_codegen::ir::Block],
     root_frame: Option<RootFrame>,
+    has_defer: bool,
 ) -> Result<(), CodegenError> {
     for stmt in &mir_block.statements {
         lower_stmt(cx, builder, stmt, slots)?;
@@ -271,6 +280,7 @@ fn lower_block(
         slots,
         blocks,
         root_frame,
+        has_defer,
     )?;
     Ok(())
 }
@@ -1732,6 +1742,25 @@ fn lower_intrinsic(
             let inst = builder.ins().call(local_ref, &[a, b]);
             Ok(builder.inst_results(inst).first().copied())
         }
+        intrinsics::DEFER_PUSH_FN => {
+            // Park a deferred thunk closure on the current defer frame.
+            if args.len() != 1 {
+                return Err(CodegenError::Unsupported(format!(
+                    "__defer_push intrinsic expects 1 arg, got {}",
+                    args.len()
+                )));
+            }
+            let closure = require_value(
+                lower_operand(cx, builder, &args[0], slots)?,
+                "__defer_push closure",
+            )?;
+            let func_id = cx
+                .runtime_id(intrinsics::RUNTIME_DEFER_PUSH)
+                .expect("defer push declared at module init");
+            let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
+            builder.ins().call(local_ref, &[closure]);
+            Ok(None)
+        }
         _ => Err(CodegenError::Unsupported(format!(
             "unknown intrinsic: {}",
             mangled
@@ -1807,6 +1836,7 @@ fn lower_string_arg(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lower_terminator(
     cx: &mut ModuleCx,
     builder: &mut FunctionBuilder<'_>,
@@ -1814,6 +1844,7 @@ fn lower_terminator(
     slots: &[LocalSlot],
     blocks: &[cranelift_codegen::ir::Block],
     root_frame: Option<RootFrame>,
+    has_defer: bool,
 ) -> Result<(), CodegenError> {
     match term {
         MirTerminator::Goto(target) => {
@@ -1848,9 +1879,16 @@ fn lower_terminator(
             blocks,
         ),
         MirTerminator::Return(op) => {
-            // Evaluate the return value before leaving the root frame so
-            // a collection during evaluation still sees the locals rooted.
+            // Evaluate the return value before running defers or leaving
+            // the root frame so a collection during evaluation still sees
+            // the locals rooted, and the deferred thunks observe the
+            // already-computed result (they are Unit-typed and cannot
+            // change it). Defers run before leaving the GC frame, so they
+            // may still touch rooted GC locals.
             let v = lower_operand(cx, builder, op, slots)?;
+            if has_defer {
+                run_defer_frame(cx, builder);
+            }
             leave_root_frame(cx, builder, root_frame);
             match v {
                 Some(value) => {
@@ -1886,6 +1924,25 @@ fn leave_root_frame(
         .expect("gc leave frame declared at module init");
     let leave_ref = cx.module().declare_func_in_func(leave, builder.func);
     builder.ins().call(leave_ref, &[]);
+}
+
+/// Open the per-call defer frame at function entry.
+fn enter_defer_frame(cx: &mut ModuleCx, builder: &mut FunctionBuilder<'_>) {
+    let enter = cx
+        .runtime_id(intrinsics::RUNTIME_DEFER_ENTER_FRAME)
+        .expect("defer enter frame declared at module init");
+    let enter_ref = cx.module().declare_func_in_func(enter, builder.func);
+    builder.ins().call(enter_ref, &[]);
+}
+
+/// Run and pop the per-call defer frame at a return path, invoking the
+/// parked thunks in LIFO order.
+fn run_defer_frame(cx: &mut ModuleCx, builder: &mut FunctionBuilder<'_>) {
+    let run = cx
+        .runtime_id(intrinsics::RUNTIME_DEFER_RUN_FRAME)
+        .expect("defer run frame declared at module init");
+    let run_ref = cx.module().declare_func_in_func(run, builder.func);
+    builder.ins().call(run_ref, &[]);
 }
 
 /// Lower an enum dispatch: load the value's discriminant slot and branch

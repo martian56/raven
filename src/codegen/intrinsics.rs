@@ -47,6 +47,13 @@ pub const STR_FROM_BYTE: &str = "__str_from_byte";
 /// strings into a fresh `String`.
 pub const STR_CONCAT_FN: &str = "__str_concat";
 
+/// Internal defer intrinsic. MIR lowering of a `defer expr` builds a
+/// thunk closure capturing what `expr` needs, then emits
+/// `__defer_push(thunk)`, which lowers to the runtime's
+/// `raven_defer_push`. The function epilogue runs the parked thunks at
+/// each return. See `docs/v2/specs/defer.md`.
+pub const DEFER_PUSH_FN: &str = "__defer_push";
+
 /// Runtime C symbol the `print` intrinsic dispatches to.
 pub const RUNTIME_PRINTLN_STR: &str = "raven_println_str";
 
@@ -122,6 +129,17 @@ pub const RUNTIME_GC_ENTER_FRAME: &str = "raven_gc_enter_frame";
 /// Runtime C symbol leaving the most recent GC root frame.
 pub const RUNTIME_GC_LEAVE_FRAME: &str = "raven_gc_leave_frame";
 
+/// Runtime C symbol opening a per-call defer frame.
+pub const RUNTIME_DEFER_ENTER_FRAME: &str = "raven_defer_enter_frame";
+
+/// Runtime C symbol running and popping the current defer frame, called
+/// at every function return path.
+pub const RUNTIME_DEFER_RUN_FRAME: &str = "raven_defer_run_frame";
+
+/// Runtime C symbol parking a deferred thunk closure on the current
+/// defer frame.
+pub const RUNTIME_DEFER_PUSH: &str = "raven_defer_push";
+
 /// Runtime C symbols backing `List<T>` literals, indexing, and methods.
 ///
 /// A list value is a single GC pointer to a heap `List` object. Codegen
@@ -174,5 +192,6 @@ pub fn is_intrinsic(mangled: &str) -> bool {
             | STR_SUBSTRING
             | STR_FROM_BYTE
             | STR_CONCAT_FN
+            | DEFER_PUSH_FN
     )
 }

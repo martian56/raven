@@ -4,10 +4,11 @@
 
 Specify the `defer` statement: `defer expr` schedules `expr` to run when
 the enclosing function returns. Deferred work runs in reverse declaration
-order (LIFO), runs on every normal return path the deferred statement was
-reached through, and runs before the function hands control back to its
-caller. This is the v2.0 counterpart to Go's `defer`, scoped to fit a
-control-flow-graph back end that does not unwind.
+order (LIFO), runs only when its `defer` statement was actually reached at
+run time, and runs before the function hands control back to its caller.
+This is the v2.0 counterpart to Go's `defer`: function-scoped, not
+block-scoped. A `defer` written inside a nested block runs at the
+enclosing function's return, not at the inner block's exit.
 
 ## Pipeline position
 
@@ -15,150 +16,133 @@ control-flow-graph back end that does not unwind.
 Source -> Lexer -> Parser -> Resolver -> Tycheck -> HIR -> MIR -> Codegen
 ```
 
-* The parser already accepts `defer expr` as `StmtKind::Defer(Expr)`.
+* The parser accepts `defer expr` as `StmtKind::Defer(Expr)`.
 * The type checker checks the deferred expression like any expression and
   discards its type (the result is evaluated for side effects only).
 * HIR keeps the statement as `HirStmtKind::Defer(HirExpr)`.
-* MIR lowering performs the expansion: it records each deferred expression
-  and re-emits the pending set, in reverse order, at every block exit and
-  at every `return`.
-* Codegen needs no defer-specific logic. The deferred calls are ordinary
-  MIR statements that land in the block before its `Return` terminator,
-  so they are emitted before the GC leave-frame epilogue automatically.
+* MIR lowering turns each `defer expr` into a runtime registration: it
+  lifts `expr` into a zero-argument thunk closure and emits a
+  `__defer_push(thunk)` call at the point the `defer` statement executes.
+  The enclosing `MirFunction` is flagged `has_defer`.
+* Codegen opens a per-call defer frame on entry (for a `has_defer`
+  function), lowers `__defer_push` to `raven_defer_push`, and runs the
+  frame's parked thunks at every return path before leaving the GC frame.
 
 ## Semantics
 
-* **LIFO.** Within a return path, deferred expressions run in the reverse
-  of the order they were declared. `defer A; defer B; return` runs `B`
-  then `A`.
+* **Function-scoped.** A deferred expression runs when the enclosing
+  function returns, regardless of how deeply the `defer` is nested in
+  blocks, conditionals, or loops. There is no block-exit firing.
+* **LIFO.** Across all reached defers in the function, deferred
+  expressions run in the reverse of the order their `defer` statements
+  executed. `defer A; defer B; return` runs `B` then `A`, and a defer in
+  a nested block that ran after an earlier body-level defer still runs
+  before it.
 * **Reached-only.** A `defer` schedules its expression only if control
-  actually reached the `defer` statement at run time. A `defer` placed
-  after an early `return` that was taken never runs, because that line was
-  never executed.
+  actually reached the `defer` statement at run time. A `defer` in an
+  `if` branch that was not taken never runs; one after an early `return`
+  that was taken never runs, because that line was never executed. This
+  is dynamic: the thunk is pushed when the statement runs, not when the
+  block is compiled.
 * **Return value first.** On `return e`, the return value `e` is evaluated
-  first, then the deferred expressions run, then the function returns.
-  This matches Go: defers observe the already-computed result, not a
-  partially evaluated one.
-* **Block-scoped, function-scoped in practice.** A defer runs when the
-  block that registered it exits, by normal fall-through or by a `return`
-  escaping through it. A defer written at the function-body level (the
-  common case, and where Go programs put defers) therefore runs at every
-  function return, indistinguishable from Go's function scope. A defer
-  nested inside an inner block runs at that inner block's exit. See
-  Scope below for the precise rule and the rationale.
-* **No run on panic.** Raven `panic` aborts the process in v2.0; there is
-  no stack unwinding. Deferred expressions do not run on a panic, exactly
-  as a process that calls `abort()` runs no cleanup. This is intentional
-  and documented, not a gap to be patched with unwinding.
-* **Loops.** A `defer` inside a loop body runs when the body block exits
-  (each iteration), not at loop teardown, because the body is its
-  enclosing block. A `break` or `continue` is a control-flow edge out of
-  the body block and triggers the body's pending defers the same way a
-  fall-through does. Defers do not accumulate across iterations.
+  first, then the deferred thunks run, then the function returns. This
+  matches Go: defers observe the already-computed result.
+* **Cannot alter the return value.** Deferred expressions are Unit-typed
+  and run for their side effects only. v2.0 has no named-return mutation,
+  so a defer cannot change what the function returns.
+* **Loops.** A `defer` inside a loop body that runs on several iterations
+  schedules one thunk per iteration it was reached on; all of them run at
+  the function's return, in LIFO order. They do not fire at the end of
+  each iteration.
 
 ## Lowering strategy
 
-The chosen strategy is **compile-time expansion at MIR lowering** with a
-per-function pending-defer stack. No runtime defer stack, no heap thunks,
-no closures-as-defer-bodies. The alternative, a runtime per-frame stack of
-`(fn_ptr, env)` thunks, was rejected for v2.0: it needs runtime support
-and closure capture (issue #62), and the compile-time expansion already
-covers every required control-flow case correctly.
+The chosen strategy is a **per-frame runtime defer list**. Compile-time
+block expansion cannot express "only the dynamically reached defers, run
+at function return" for arbitrary control flow, because a static pass
+cannot know at a merge point whether a conditional branch executed. The
+runtime list makes both reached-only and ordering exact and dynamic.
 
-### The pending stack
+### The thunk closure
 
-`mir::lower::LowerCx` carries `defers: Vec<HirExpr>`, the deferred
-expressions registered so far in declaration order.
+Lowering `defer expr` wraps `expr` as the single statement of a
+zero-parameter lambda `fun() -> Unit { expr }`. The existing closure
+machinery (capture analysis and body lifting, issue #62) lifts the body
+into a standalone function and emits a `ClosureCreate` that captures the
+free variables `expr` reads. The deferred expression therefore observes
+the values its captures held when the `defer` statement ran, copied into
+the closure environment exactly like any other closure capture.
 
-* Lowering `HirStmtKind::Defer(e)` pushes a clone of `e` onto `defers`.
-  Nothing is emitted at the `defer` site.
-* Lowering a block records `mark = defers.len()` on entry. On the block's
-  normal exit (after its tail expression, when control has not diverged)
-  it emits `defers[mark..]` in reverse order as ordinary side-effecting
-  expressions, then truncates `defers` back to `mark` so an enclosing
-  block does not re-run them.
-* Lowering `HirExprKind::Return(value)` lowers `value` first, then emits
-  the entire pending `defers` stack in reverse order (a `return` escapes
-  all enclosing blocks at once), then closes the block with the `Return`
-  terminator. The stack is cloned, not consumed, so a return that escapes
-  several blocks emits each pending defer exactly once on its own path.
-* When a block has already diverged (a `return`, `break`, or `continue`
-  closed it and rolled a fresh dead block), the normal-exit flush is
-  skipped: the escaping statement already emitted what it needed, and the
-  dead block must stay empty.
+### Registration and the runtime list
 
-### Worked example
+The runtime maintains a thread-local stack of defer frames, one inner
+vector per open call frame:
 
-```
-fun f(early: Bool) -> Int {
-    defer print(9)      // push 9         -> defers = [9]
-    if early {
-        return 1            // emit [9] reversed -> print 9; return 1
-    }
-    defer print(8)      // push 8         -> defers = [9, 8]
-    return 2                // emit [9, 8] reversed -> print 8, print 9; return 2
-}
-```
+* `raven_defer_enter_frame()` pushes a fresh, empty frame. Codegen emits
+  it at the entry of every `has_defer` function, right after the GC root
+  frame is set up.
+* `raven_defer_push(closure)` appends a thunk closure to the current
+  frame. Codegen lowers each `__defer_push` MIR call to it. Pushing at
+  the point the `defer` statement executes is what makes the scheme
+  reached-only and the order dynamic.
+* `raven_defer_run_frame()` pops the current frame and invokes its parked
+  thunks in LIFO order, then discards it. Codegen emits it at every
+  return path before leaving the GC frame. A thunk that itself registers
+  a `defer` appends to the same frame and runs before the frame is
+  dropped, matching Go's behaviour for defers scheduled during a deferred
+  call.
 
-The MIR has two return-bearing blocks. The early-return block contains
-`print(9); return 1`. The fall-through block contains
-`print(8); print(9); return 2`. So `f(true)` prints `9` and
-`f(false)` prints `8` then `9`. The corresponding executable confirms
-this on a real run.
+The runtime calls each thunk through a fixed ABI, `extern "C"
+fn(env: *mut u8)`: it reads the closure's lifted-body function pointer and
+its capture buffer and calls the body with the buffer as the environment
+argument. The lifted thunk body has signature `(env) -> ()`, so this is
+the closure ABI codegen already uses for an indirect closure call with no
+user arguments.
 
-For the classic ordering case:
+### Which return paths run the defers
 
-```
-fun demo() -> Int {
-    defer print(1)      // defers = [1]
-    defer print(2)      // defers = [1, 2]
-    return 0                // emit reversed: print 2, print 1; return 0
-}
-```
+Codegen runs the frame at every `MirTerminator::Return`. Because the
+front end lowers all exits to a `Return` terminator, this covers:
 
-The single return block is `print(2); print(1); return 0`, so the
-program prints `2` then `1`.
+* a written `return e`,
+* the implicit fall-through return at the end of the body,
+* the `?` operator's error arm, which HIR desugars to `return Err(__e)`
+  (or `return None`), an ordinary `Return`. A defer declared before a `?`
+  runs when the `?` takes its early-return arm; a defer after it does not,
+  because the `?` return was reached first.
 
-## Interaction with `?`
+Each call enters exactly one defer frame and, at run time, takes exactly
+one return path, so the single `raven_defer_run_frame` on that path
+balances the single `raven_defer_enter_frame` at entry.
 
-The `?` operator is already desugared in HIR to a `match` whose error arm
-is `return Err(__e)` (or `return None` for `Option`). That synthesized
-`return` is an ordinary `HirExprKind::Return`, so it flushes the pending
-defers exactly like a written `return`. A defer declared before a `?` runs
-when the `?` takes its early-return arm; a defer declared after it does
-not, because the `?` return was reached first. No `?`-specific code is
-needed.
+## Interaction with the GC
 
-## Interaction with the GC leave-frame
+Parked thunks are heap closure objects, and a collection can occur between
+registration and execution. The collector roots them: `mark` visits every
+closure pointer in every open defer frame, so a parked thunk (and every
+value it captures) stays alive until it runs. The defer frame's lifetime
+is tied to the call frame, so the roots are released as soon as the frame
+runs.
 
-Codegen maintains a GC root frame for any function with GC pointer locals
-and emits `raven_gc_leave_frame` inside the `Return` terminator, after
-evaluating the return operand. Deferred expressions are lowered as MIR
-statements that precede the `Return` terminator, so codegen emits them
-before `raven_gc_leave_frame`. Deferred code may therefore read and write
-GC-managed locals safely: the locals are still rooted when the deferred
-calls run. This ordering is verified by an example whose deferred call
-reads a heap-allocated struct local and prints its field.
+Defers run before `raven_gc_leave_frame`, after the return operand is
+evaluated. The return value is computed while the locals are still rooted,
+and the deferred thunks may still read and write GC-managed locals because
+the GC root frame is not torn down until they finish.
 
-## Scope rationale
+## Panic
 
-True Go function-scope with reached-only semantics for defers nested in
-conditional sub-blocks needs runtime state, because a compile-time pass
-cannot know at the merge point whether a conditional branch executed. The
-block-scoped rule sidesteps this: every defer has a statically known exit
-point (the end of its block, plus any `return` escaping it), so reached-
-only is exact without runtime bookkeeping. For function-body-level defers,
-the enclosing block is the function body, so the rule coincides with Go's
-function scope. This keeps the required cases correct and the
-implementation runtime-free.
+Raven `panic` aborts the process in v2.0; there is no stack unwinding.
+Deferred expressions do not run on a panic, exactly as a process that
+calls `abort()` runs no cleanup. This is intentional and documented, not a
+gap to be patched with unwinding. Defers run on every normal return path,
+including the `?` operator's error return, which is an ordinary return and
+not a panic.
 
 ## Out of scope
 
 * Running defers on panic or any form of unwinding. v2.0 panic aborts.
-* A runtime defer stack and deferred closures with captured environments.
-* Deferring a `return` value rewrite (Go's named-return mutation from a
-  defer). Deferred expressions are evaluated for side effects only.
+* Named-return mutation from a defer (Go's ability to rewrite the return
+  value). Deferred expressions are Unit-typed and run for side effects.
 * Defer inside generic functions interacts with monomorphization only
-  through ordinary expression lowering; no defer-specific specialization
-  is needed.
-```
+  through ordinary closure and expression lowering; no defer-specific
+  specialization is needed.

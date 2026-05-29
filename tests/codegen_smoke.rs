@@ -107,6 +107,17 @@ fn closure_capture_program_compiles_and_runs() {
 }
 
 #[test]
+fn nested_defer_runs_at_function_return() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A defer inside a nested `if` block runs at the function's return,
+    // not at the inner block exit (function-scoped, Go-style). The program
+    // prints 1 3 4 first, then the deferred 2 fires at f's return.
+    compile_link_run_and_check("defer_nested.rv", "1\n3\n4\n2\n", &runtime);
+}
+
+#[test]
 fn deeply_nested_expression_does_not_overflow() {
     // Regression for issue #172: lowering recurses with expression
     // nesting, so a deeply nested expression overflowed the default

@@ -650,7 +650,10 @@ that only consult MIR lowering do not depend on a linker.
   body into a standalone function, captures free variables by value, and
   invokes closure values through an indirect call. See the Closures
   section above.
-* `defer` ordering and runtime hooks (issue #68).
+* ~~`defer` ordering and runtime hooks.~~ Implemented: function-scoped
+  defers register a thunk closure on a per-call runtime defer frame and
+  run in LIFO order at every return path before leaving the GC frame. See
+  `docs/v2/specs/defer.md`.
 * String interpolation (issue #69) and C FFI (issue #70).
 * ~~`List<T>` literals, indexing, and the built-in methods (`len`,
   `is_empty`, `push`, `pop`, `get`).~~ Implemented: see the Lists section

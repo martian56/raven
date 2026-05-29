@@ -31,6 +31,9 @@ pub struct FunctionBuilder {
     params: Vec<MirLocal>,
     /// Whether each block has had its real terminator set yet.
     block_set: Vec<bool>,
+    /// Set once the body registers a `defer`, so codegen wires the
+    /// runtime defer frame for this function.
+    has_defer: bool,
 }
 
 impl FunctionBuilder {
@@ -44,7 +47,13 @@ impl FunctionBuilder {
             blocks: Vec::new(),
             params: Vec::new(),
             block_set: Vec::new(),
+            has_defer: false,
         }
+    }
+
+    /// Record that the body registered a `defer`.
+    pub fn mark_has_defer(&mut self) {
+        self.has_defer = true;
     }
 
     /// Declare a parameter local. Must be called before any non-param
@@ -163,6 +172,7 @@ impl FunctionBuilder {
             blocks: self.blocks,
             entry,
             span: self.span,
+            has_defer: self.has_defer,
         }
     }
 }
