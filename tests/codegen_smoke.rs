@@ -562,6 +562,37 @@ fn random_program_compiles_and_runs() {
     );
 }
 
+#[test]
+fn fmt_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // std/fmt string and integer formatting plus the Debug trait. repeat,
+    // pad_left, pad_right, and center build fixed-width fields (widths count
+    // bytes); to_binary/to_octal/to_hex/to_radix render integers in a base,
+    // with to_radix(-42, 16) showing the leading '-'; pad_int zero-pads with
+    // the sign kept leftmost; join inserts the separator between elements;
+    // and .debug() delegates to ToString for Int/Bool and wraps Char and
+    // String in quotes. Prints ababab, 007, 7--, **hi**, 1010, 100, ff, -2a,
+    // 00042, -007, "a, b, c", 42, true, 'x', and "hi".
+    let expected = "ababab\n\
+                    007\n\
+                    7--\n\
+                    **hi**\n\
+                    1010\n\
+                    100\n\
+                    ff\n\
+                    -2a\n\
+                    00042\n\
+                    -007\n\
+                    a, b, c\n\
+                    42\n\
+                    true\n\
+                    'x'\n\
+                    \"hi\"\n";
+    compile_link_run_and_check("use_fmt.rv", expected, &runtime);
+}
+
 /// Return the runtime staticlib when a linker and the staticlib are both
 /// present, or skip with a diagnostic. Shared by every smoke case so the
 /// skip behavior stays identical.

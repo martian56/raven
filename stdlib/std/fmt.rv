@@ -1,0 +1,158 @@
+// std/fmt: string formatting helpers and a Debug trait. Padding widths
+// count UTF-8 bytes, matching the byte-oriented String model. There is no
+// printf-style format function: string interpolation "${expr}" is the
+// placeholder mechanism, and these are the building blocks. See
+// docs/v2/specs/std-fmt.md.
+
+import std/string
+
+// `s` repeated `n` times. A non-positive `n` yields the empty string.
+fun repeat(s: String, n: Int) -> String {
+    let out = ""
+    let i = 0
+    while i < n {
+        out = __str_concat(out, s)
+        i = i + 1
+    }
+    return out
+}
+
+// Left-pad `s` with `fill` until its byte length is at least `width`.
+// `fill` is assumed to be a single-byte string; a multi-byte `fill` may
+// overshoot the target width by up to its length minus one.
+fun pad_left(s: String, width: Int, fill: String) -> String {
+    let pad = width - __str_len(s)
+    if pad <= 0 {
+        return s
+    }
+    return __str_concat(repeat(fill, pad), s)
+}
+
+// Right-pad `s` with `fill` until its byte length is at least `width`.
+fun pad_right(s: String, width: Int, fill: String) -> String {
+    let pad = width - __str_len(s)
+    if pad <= 0 {
+        return s
+    }
+    return __str_concat(s, repeat(fill, pad))
+}
+
+// Center `s` in a field of byte width `width`, padding with `fill`. An
+// odd amount of padding puts the extra byte on the right.
+fun center(s: String, width: Int, fill: String) -> String {
+    let pad = width - __str_len(s)
+    if pad <= 0 {
+        return s
+    }
+    let left = pad / 2
+    let right = pad - left
+    return __str_concat(__str_concat(repeat(fill, left), s), repeat(fill, right))
+}
+
+// Join `parts` with `sep` between adjacent elements.
+fun join(parts: List<String>, sep: String) -> String {
+    let n = parts.len()
+    let out = ""
+    let i = 0
+    while i < n {
+        if i > 0 {
+            out = __str_concat(out, sep)
+        }
+        out = __str_concat(out, parts[i])
+        i = i + 1
+    }
+    return out
+}
+
+// Map a 0..15 digit value to its lowercase digit byte (0-9, a-f).
+fun radix_digit(v: Int) -> Int {
+    if v < 10 {
+        return 48 + v
+    }
+    return 87 + v
+}
+
+// `n` written in `base`, with a leading '-' for negatives. `base` must be
+// in 2..=16; out of range returns the empty string. Zero is "0". The most
+// negative i64 is handled by accumulating the negative magnitude so no
+// overflow occurs on negation.
+fun to_radix(n: Int, base: Int) -> String {
+    if base < 2 {
+        return ""
+    }
+    if base > 16 {
+        return ""
+    }
+    if n == 0 {
+        return "0"
+    }
+    let neg = n < 0
+    // Work in the negative domain so INT_MIN has no overflowing negation.
+    let m = n
+    if m > 0 {
+        m = 0 - m
+    }
+    let out = ""
+    while m < 0 {
+        let d = 0 - (m % base)
+        out = __str_concat(__str_from_byte(radix_digit(d)), out)
+        m = m / base
+    }
+    if neg {
+        out = __str_concat("-", out)
+    }
+    return out
+}
+
+fun to_binary(n: Int) -> String {
+    return to_radix(n, 2)
+}
+
+fun to_octal(n: Int) -> String {
+    return to_radix(n, 8)
+}
+
+fun to_hex(n: Int) -> String {
+    return to_radix(n, 16)
+}
+
+// Decimal `n` zero-padded to byte width `width`. For a negative `n` the
+// '-' stays leftmost and the zero fill goes between the sign and the
+// digits, so pad_int(-7, 4) is "-007".
+fun pad_int(n: Int, width: Int) -> String {
+    if n < 0 {
+        let digits = (0 - n).to_string()
+        return __str_concat("-", pad_left(digits, width - 1, "0"))
+    }
+    return pad_left(n.to_string(), width, "0")
+}
+
+trait Debug {
+    fun debug(self) -> String
+}
+
+impl Debug for Int {
+    fun debug(self) -> String = self.to_string()
+}
+
+impl Debug for Float {
+    fun debug(self) -> String = self.to_string()
+}
+
+impl Debug for Bool {
+    fun debug(self) -> String = self.to_string()
+}
+
+// Quoted with single quotes. Inner quotes are not escaped.
+impl Debug for Char {
+    fun debug(self) -> String {
+        return __str_concat(__str_concat("'", self.to_string()), "'")
+    }
+}
+
+// Quoted with double quotes. Inner quotes are not escaped.
+impl Debug for String {
+    fun debug(self) -> String {
+        return __str_concat(__str_concat("\"", self), "\"")
+    }
+}

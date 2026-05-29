@@ -45,6 +45,7 @@ pub const BUNDLED_MODULES: &[(&str, &str)] = &[
     ("hash", include_str!("../../stdlib/std/hash.rv")),
     ("encoding", include_str!("../../stdlib/std/encoding.rv")),
     ("random", include_str!("../../stdlib/std/random.rv")),
+    ("fmt", include_str!("../../stdlib/std/fmt.rv")),
     ("math", include_str!("../../stdlib/std/math.rv")),
     ("path", include_str!("../../stdlib/std/path.rv")),
     ("error", include_str!("../../stdlib/std/error.rv")),
@@ -440,6 +441,11 @@ mod tests {
     #[test]
     fn random_module_is_bundled() {
         assert!(bundled_source("random").is_some());
+    }
+
+    #[test]
+    fn fmt_module_is_bundled() {
+        assert!(bundled_source("fmt").is_some());
     }
 
     #[test]
