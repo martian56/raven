@@ -36,6 +36,7 @@ use super::CodegenError;
 /// if the runtime crate gains native dependencies. The trailing
 /// `/defaultlib:msvcrt` selects the C runtime and is passed verbatim.
 const MSVC_NATIVE_STATIC_LIBS: &[&str] = &[
+    "bcrypt.lib",
     "kernel32.lib",
     "advapi32.lib",
     "ntdll.lib",

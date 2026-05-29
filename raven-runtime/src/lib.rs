@@ -106,6 +106,48 @@ fn net_clear_error() {
     NET_LAST_ERROR.with(|e| e.borrow_mut().clear());
 }
 
+thread_local! {
+    // Message of the most recent fallible http op: empty on success, the
+    // transport error text on failure. The std/http wrapper reads it
+    // through `raven_http_last_error` to decide Ok vs Err. A non-2xx HTTP
+    // status is NOT a failure here; only transport, DNS, connect, or
+    // timeout errors set this slot.
+    static HTTP_LAST_ERROR: RefCell<std::string::String> = const { RefCell::new(std::string::String::new()) };
+}
+
+fn http_set_error(msg: std::string::String) {
+    HTTP_LAST_ERROR.with(|e| *e.borrow_mut() = msg);
+}
+
+fn http_clear_error() {
+    HTTP_LAST_ERROR.with(|e| e.borrow_mut().clear());
+}
+
+/// A response captured eagerly into owned data. ureq consumes the
+/// response when its body is read, so the whole request runs in one call
+/// and the status, headers, and body are stored here keyed by an id.
+struct HttpResp {
+    status: i64,
+    status_text: std::string::String,
+    // Response headers as `Key: Value` lines joined by `\n`.
+    headers: std::string::String,
+    body: std::string::String,
+}
+
+/// The process-wide HTTP response registry keyed by an incrementing id.
+/// Ids start at 1; 0 is the failure sentinel that pairs with a set
+/// last-error.
+fn http_registry() -> &'static Mutex<HashMap<i64, HttpResp>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<i64, HttpResp>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Issue the next HTTP response id.
+fn http_next_id() -> i64 {
+    static NEXT_ID: AtomicI64 = AtomicI64::new(1);
+    NEXT_ID.fetch_add(1, Ordering::Relaxed)
+}
+
 /// An entry in the socket registry. A listener or a stream is kept
 /// runtime-side so only an opaque integer id crosses the FFI.
 enum Socket {
@@ -962,6 +1004,227 @@ pub extern "C" fn raven_net_reachable(addr: *const object::String) -> bool {
         return false;
     };
     targets.any(|sa| TcpStream::connect_timeout(&sa, Duration::from_millis(500)).is_ok())
+}
+
+/// The message of the most recent fallible http op, empty when it
+/// succeeded. The std/http wrapper reads this to build an `Err` only when
+/// it is non-empty. A non-2xx HTTP status never sets it.
+#[no_mangle]
+pub extern "C" fn raven_http_last_error() -> *mut object::String {
+    HTTP_LAST_ERROR.with(|e| {
+        let msg = e.borrow();
+        object::raven_string_from_bytes(msg.as_ptr(), msg.len())
+    })
+}
+
+/// The standard reason phrase for an HTTP status code, for callers when
+/// the server omits one.
+fn http_reason(code: u16) -> &'static str {
+    match code {
+        200 => "OK",
+        201 => "Created",
+        202 => "Accepted",
+        204 => "No Content",
+        301 => "Moved Permanently",
+        302 => "Found",
+        304 => "Not Modified",
+        307 => "Temporary Redirect",
+        308 => "Permanent Redirect",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
+        404 => "Not Found",
+        405 => "Method Not Allowed",
+        408 => "Request Timeout",
+        409 => "Conflict",
+        410 => "Gone",
+        422 => "Unprocessable Entity",
+        429 => "Too Many Requests",
+        500 => "Internal Server Error",
+        501 => "Not Implemented",
+        502 => "Bad Gateway",
+        503 => "Service Unavailable",
+        504 => "Gateway Timeout",
+        _ => "",
+    }
+}
+
+/// Capture a ureq response into an owned `HttpResp`, reading the status,
+/// reason, headers, and body eagerly (reading the body consumes the
+/// response).
+fn http_capture(resp: ureq::Response) -> HttpResp {
+    let status = resp.status();
+    let reason = resp.status_text();
+    let status_text = if reason.is_empty() {
+        http_reason(status).to_string()
+    } else {
+        reason.to_string()
+    };
+    let mut header_lines: Vec<std::string::String> = Vec::new();
+    for name in resp.headers_names() {
+        if let Some(value) = resp.header(&name) {
+            header_lines.push(format!("{name}: {value}"));
+        }
+    }
+    let headers = header_lines.join("\n");
+    let body = resp.into_string().unwrap_or_default();
+    HttpResp {
+        status: status as i64,
+        status_text,
+        headers,
+        body,
+    }
+}
+
+/// Store a captured response and return its id, clearing the last error.
+fn http_store(resp: HttpResp) -> i64 {
+    let id = http_next_id();
+    http_registry().lock().unwrap().insert(id, resp);
+    http_clear_error();
+    id
+}
+
+/// Perform an HTTP/1.1 request and store the response.
+///
+/// `method` is "GET"/"POST"/"PUT"/"DELETE", `url` the target, `body` the
+/// request body (empty for GET/DELETE), and `headers` a String of
+/// `Key: Value` lines separated by `\n` (empty for none). Returns a
+/// response id, or 0 on a transport failure (DNS, connect, timeout) with
+/// the last-error slot set.
+///
+/// A non-2xx HTTP status (for example 404 or 500) is a SUCCESSFUL request
+/// that yielded a response: ureq surfaces it as `Error::Status`, and this
+/// stores a normal response entry from it. Only `Error::Transport`
+/// becomes id 0 plus a last-error.
+///
+/// # Safety
+///
+/// `method`, `url`, `body`, and `headers` must be valid
+/// `raven_string_from_bytes`-built `String`s.
+#[no_mangle]
+pub extern "C" fn raven_http_request(
+    method: *const object::String,
+    url: *const object::String,
+    body: *const object::String,
+    headers: *const object::String,
+) -> i64 {
+    let (Some(method), Some(url), Some(body), Some(headers)) = (
+        env_name(method),
+        env_name(url),
+        env_name(body),
+        env_name(headers),
+    ) else {
+        http_set_error("method, url, body, or headers is not valid UTF-8".to_string());
+        return 0;
+    };
+
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(5))
+        .timeout_read(Duration::from_secs(10))
+        .timeout_write(Duration::from_secs(10))
+        .build();
+
+    let mut req = agent.request(method, url);
+    for line in headers.split('\n') {
+        if line.is_empty() {
+            continue;
+        }
+        if let Some((name, value)) = line.split_once(':') {
+            req = req.set(name.trim(), value.trim());
+        }
+    }
+
+    // GET and DELETE send no body; POST and PUT send `body`.
+    let result = if body.is_empty() {
+        req.call()
+    } else {
+        req.send_string(body)
+    };
+
+    match result {
+        Ok(resp) => http_store(http_capture(resp)),
+        // A non-2xx status is a response, not a transport failure.
+        Err(ureq::Error::Status(_, resp)) => http_store(http_capture(resp)),
+        Err(ureq::Error::Transport(t)) => {
+            http_set_error(t.to_string());
+            0
+        }
+    }
+}
+
+/// Status code of the stored response `id`, for example 200 or 404. An
+/// unknown id yields 0.
+#[no_mangle]
+pub extern "C" fn raven_http_status(id: i64) -> i64 {
+    http_registry()
+        .lock()
+        .unwrap()
+        .get(&id)
+        .map(|r| r.status)
+        .unwrap_or(0)
+}
+
+/// Reason phrase of the stored response `id`, for example "OK". An
+/// unknown id yields an empty `String`.
+#[no_mangle]
+pub extern "C" fn raven_http_status_text(id: i64) -> *mut object::String {
+    let registry = http_registry().lock().unwrap();
+    let text = registry
+        .get(&id)
+        .map(|r| r.status_text.as_str())
+        .unwrap_or("");
+    object::raven_string_from_bytes(text.as_ptr(), text.len())
+}
+
+/// Body of the stored response `id`. An unknown id yields an empty
+/// `String`.
+#[no_mangle]
+pub extern "C" fn raven_http_body(id: i64) -> *mut object::String {
+    let registry = http_registry().lock().unwrap();
+    let body = registry.get(&id).map(|r| r.body.as_str()).unwrap_or("");
+    object::raven_string_from_bytes(body.as_ptr(), body.len())
+}
+
+/// A single response header value of `id` by `name` (case-insensitive),
+/// or an empty `String` when absent or the id is unknown.
+///
+/// # Safety
+///
+/// `name` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_http_header(id: i64, name: *const object::String) -> *mut object::String {
+    let wanted = env_name(name).unwrap_or("");
+    let registry = http_registry().lock().unwrap();
+    let value = registry
+        .get(&id)
+        .and_then(|r| {
+            r.headers.lines().find_map(|line| {
+                let (k, v) = line.split_once(':')?;
+                if k.trim().eq_ignore_ascii_case(wanted) {
+                    Some(v.trim().to_string())
+                } else {
+                    None
+                }
+            })
+        })
+        .unwrap_or_default();
+    object::raven_string_from_bytes(value.as_ptr(), value.len())
+}
+
+/// All response headers of `id` as `Key: Value` lines joined by `\n`. An
+/// unknown id yields an empty `String`.
+#[no_mangle]
+pub extern "C" fn raven_http_headers(id: i64) -> *mut object::String {
+    let registry = http_registry().lock().unwrap();
+    let headers = registry.get(&id).map(|r| r.headers.as_str()).unwrap_or("");
+    object::raven_string_from_bytes(headers.as_ptr(), headers.len())
+}
+
+/// Drop the stored response `id`, releasing its captured data. An unknown
+/// id is a no-op.
+#[no_mangle]
+pub extern "C" fn raven_http_free(id: i64) {
+    http_registry().lock().unwrap().remove(&id);
 }
 
 /// A stack buffer large enough for any base-ten `i64` plus a sign.
