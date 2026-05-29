@@ -61,6 +61,18 @@ fn enum_construction_compiles_and_runs() {
 }
 
 #[test]
+fn enum_self_method_match_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Regression for issue #186: matching on the `self` receiver of an
+    // enum method must read the payload through the underlying enum, not
+    // the `SelfTy` wrapper. Scalar prints 42, String prints hello, List
+    // payload `.len()` prints 3.
+    compile_link_run_and_check("enum_self_method.rv", "42\nhello\n3\n", &runtime);
+}
+
+#[test]
 fn closure_value_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
