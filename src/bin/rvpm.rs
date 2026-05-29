@@ -7,7 +7,9 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use raven::lock::{self, LockFile, LOCK_FILE_NAME};
 use raven::manifest::init::{init_project, name_from_dir, InitError};
+use raven::manifest::Manifest;
 use raven::pkg;
 use raven::resolve::GithubPath;
 
@@ -26,6 +28,13 @@ fn main() -> ExitCode {
             }
         },
         Some("fetch") => match cmd_fetch(&args[1..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("rvpm: {}", e);
+                ExitCode::from(1)
+            }
+        },
+        Some("lock") => match cmd_lock() {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("rvpm: {}", e);
@@ -68,6 +77,34 @@ fn cmd_fetch(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Generate or validate `rv.lock` for the package in the current
+/// directory. Generates when the lock is absent or does not cover every
+/// dependency in `rv.toml`; otherwise validates the existing lock against
+/// the cache. The full install/build UX lands in later releases; this is a
+/// way to exercise resolution and validation directly.
+fn cmd_lock() -> Result<(), String> {
+    let manifest = Manifest::load("rv.toml").map_err(|e| e.to_string())?;
+    let lock_path = std::path::Path::new(LOCK_FILE_NAME);
+
+    if lock_path.exists() {
+        let existing = LockFile::load(lock_path).map_err(|e| e.to_string())?;
+        if existing.covers(&manifest) {
+            lock::validate_lock(&existing).map_err(|e| e.to_string())?;
+            println!("rv.lock is up to date and verified");
+            return Ok(());
+        }
+    }
+
+    let lock = lock::resolve_and_lock(&manifest).map_err(|e| e.to_string())?;
+    lock.write(lock_path).map_err(|e| e.to_string())?;
+    println!(
+        "Wrote {} with {} package(s)",
+        LOCK_FILE_NAME,
+        lock.packages.len()
+    );
+    Ok(())
+}
+
 fn print_usage() {
     println!("rvpm: the Raven package manager");
     println!();
@@ -77,7 +114,8 @@ fn print_usage() {
     println!("Commands:");
     println!("  init [name]   Scaffold a new package in the current directory");
     println!("  fetch <pkg>   Fetch 'github.com/<user>/<repo>@<version>' into the shared cache");
+    println!("  lock          Generate or validate rv.lock for the current package");
     println!("  help          Print this message");
     println!();
-    println!("Dependency resolution, add/install/update, and build/run land in later releases.");
+    println!("add/install/update and build/run land in later releases.");
 }

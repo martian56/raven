@@ -11,6 +11,7 @@
 //! - `mir`: mid-level intermediate representation (basic blocks)
 //! - `codegen`: Cranelift IR generation and linking
 //! - `pkg`: rvpm package fetching and the shared content cache
+//! - `lock`: rvpm lock file generation and validation (rv.lock)
 //! - `driver`: pipeline orchestrator
 //!
 //! Lexer, span, and error infrastructure ship today; the rest land in
@@ -21,6 +22,7 @@ pub mod codegen;
 pub mod error;
 pub mod hir;
 pub mod lexer;
+pub mod lock;
 pub mod manifest;
 pub mod mir;
 pub mod parser;
