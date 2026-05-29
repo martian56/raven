@@ -71,6 +71,21 @@ fn fs_record<T>(r: io::Result<T>) -> Option<T> {
     }
 }
 
+thread_local! {
+    // Message of the most recent fallible time op (parsing): empty on
+    // success, the parse error text on failure. The std/time wrapper reads
+    // it through `raven_time_last_error` to decide Ok vs Err.
+    static TIME_LAST_ERROR: RefCell<std::string::String> = const { RefCell::new(std::string::String::new()) };
+}
+
+fn time_set_error(msg: std::string::String) {
+    TIME_LAST_ERROR.with(|e| *e.borrow_mut() = msg);
+}
+
+fn time_clear_error() {
+    TIME_LAST_ERROR.with(|e| e.borrow_mut().clear());
+}
+
 /// Allocate `size` bytes aligned to `align`.
 ///
 /// Returns null on allocation failure or invalid layout. The current
@@ -537,6 +552,144 @@ pub extern "C" fn raven_fs_is_file(path: *const object::String) -> bool {
 #[no_mangle]
 pub extern "C" fn raven_fs_is_dir(path: *const object::String) -> bool {
     env_name(path).is_some_and(|p| std::path::Path::new(p).is_dir())
+}
+
+/// The message of the most recent fallible time op (parsing), empty when
+/// it succeeded. The std/time wrapper reads this to build an `Err` only
+/// when it is non-empty.
+#[no_mangle]
+pub extern "C" fn raven_time_last_error() -> *mut object::String {
+    TIME_LAST_ERROR.with(|e| {
+        let msg = e.borrow();
+        object::raven_string_from_bytes(msg.as_ptr(), msg.len())
+    })
+}
+
+/// Current Unix timestamp in whole seconds (UTC).
+#[no_mangle]
+pub extern "C" fn raven_time_now() -> i64 {
+    chrono::Utc::now().timestamp()
+}
+
+/// Current Unix time in milliseconds (UTC).
+#[no_mangle]
+pub extern "C" fn raven_time_now_millis() -> i64 {
+    chrono::Utc::now().timestamp_millis()
+}
+
+/// The UTC datetime for a Unix timestamp in seconds, or the epoch when the
+/// timestamp is out of chrono's representable range.
+fn time_from_ts(ts: i64) -> chrono::DateTime<chrono::Utc> {
+    use chrono::TimeZone;
+    match chrono::Utc.timestamp_opt(ts, 0) {
+        chrono::LocalResult::Single(dt) => dt,
+        _ => chrono::DateTime::<chrono::Utc>::from_timestamp(0, 0).unwrap(),
+    }
+}
+
+/// Calendar year of `ts` (UTC).
+#[no_mangle]
+pub extern "C" fn raven_time_year(ts: i64) -> i64 {
+    use chrono::Datelike;
+    time_from_ts(ts).year() as i64
+}
+
+/// Month of `ts` (UTC), 1 through 12.
+#[no_mangle]
+pub extern "C" fn raven_time_month(ts: i64) -> i64 {
+    use chrono::Datelike;
+    time_from_ts(ts).month() as i64
+}
+
+/// Day of month of `ts` (UTC), 1 through 31.
+#[no_mangle]
+pub extern "C" fn raven_time_day(ts: i64) -> i64 {
+    use chrono::Datelike;
+    time_from_ts(ts).day() as i64
+}
+
+/// Hour of `ts` (UTC), 0 through 23.
+#[no_mangle]
+pub extern "C" fn raven_time_hour(ts: i64) -> i64 {
+    use chrono::Timelike;
+    time_from_ts(ts).hour() as i64
+}
+
+/// Minute of `ts` (UTC), 0 through 59.
+#[no_mangle]
+pub extern "C" fn raven_time_minute(ts: i64) -> i64 {
+    use chrono::Timelike;
+    time_from_ts(ts).minute() as i64
+}
+
+/// Second of `ts` (UTC), 0 through 59 (60 on a leap second).
+#[no_mangle]
+pub extern "C" fn raven_time_second(ts: i64) -> i64 {
+    use chrono::Timelike;
+    time_from_ts(ts).second() as i64
+}
+
+/// Weekday of `ts` (UTC) as 0 for Sunday through 6 for Saturday.
+#[no_mangle]
+pub extern "C" fn raven_time_weekday(ts: i64) -> i64 {
+    use chrono::Datelike;
+    time_from_ts(ts).weekday().num_days_from_sunday() as i64
+}
+
+/// Format the UTC datetime of `ts` with a chrono strftime `pattern`.
+///
+/// # Safety
+///
+/// `pattern` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_time_format(
+    ts: i64,
+    pattern: *const object::String,
+) -> *mut object::String {
+    let dt = time_from_ts(ts);
+    let value = match env_name(pattern) {
+        Some(p) => dt.format(p).to_string(),
+        None => std::string::String::new(),
+    };
+    object::raven_string_from_bytes(value.as_ptr(), value.len())
+}
+
+/// Parse `text` as a UTC datetime by the chrono strftime `pattern`,
+/// returning the Unix timestamp in seconds. On failure stores the parse
+/// error in the last-error slot and returns 0.
+///
+/// # Safety
+///
+/// Both arguments must be valid `raven_string_from_bytes`-built `String`s.
+#[no_mangle]
+pub extern "C" fn raven_time_parse(
+    text: *const object::String,
+    pattern: *const object::String,
+) -> i64 {
+    let parsed = match (env_name(text), env_name(pattern)) {
+        (Some(t), Some(p)) => chrono::NaiveDateTime::parse_from_str(t, p)
+            .map_err(|e| e.to_string())
+            .map(|dt| dt.and_utc().timestamp()),
+        _ => Err("text or pattern is not valid UTF-8".to_string()),
+    };
+    match parsed {
+        Ok(ts) => {
+            time_clear_error();
+            ts
+        }
+        Err(msg) => {
+            time_set_error(msg);
+            0
+        }
+    }
+}
+
+/// Sleep the current thread for `ms` milliseconds. A negative value is
+/// treated as zero.
+#[no_mangle]
+pub extern "C" fn raven_time_sleep_millis(ms: i64) {
+    let ms = ms.max(0) as u64;
+    std::thread::sleep(std::time::Duration::from_millis(ms));
 }
 
 /// A stack buffer large enough for any base-ten `i64` plus a sign.

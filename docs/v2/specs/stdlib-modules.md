@@ -50,7 +50,7 @@ Every module implicitly imports the prelude.
 
 | Module | Contents | Primary inspiration |
 |---|---|---|
-| `std/time` | `Instant`, `Duration`, `DateTime`, formatting, sleep | Java java.time, Go time |
+| `std/time` | UTC timestamps, `Date`, `Time`, `DateTime`, strftime format and parse, sleep | Java java.time, Go time |
 | `std/fs` | files, directories, metadata, read and write, all `Result` | Go os, Rust fs |
 | `std/path` | join, split, normalize, extension | Go path/filepath, Python pathlib |
 | `std/env` | args, environment variables, exit, platform info | Go os, Rust env |

@@ -1,0 +1,136 @@
+// std/time: date and time over the raven-runtime C ABI, backed by chrono
+// in UTC. All timestamps are Unix seconds (or milliseconds) in UTC; there
+// is no local-timezone handling. The primitives bind `raven_time_*`
+// symbols through `extern "C"`; the structs are assembled in pure Raven
+// from scalar component extractors because a struct cannot cross the FFI
+// boundary. Parsing is fallible and returns Result<Int, Error> through the
+// runtime's thread-local last-error slot. See docs/v2/specs/std-time.md.
+
+import std/error
+
+struct Date {
+    year: Int,
+    month: Int,
+    day: Int,
+}
+
+struct Time {
+    hour: Int,
+    minute: Int,
+    second: Int,
+}
+
+struct DateTime {
+    date: Date,
+    time: Time,
+}
+
+extern "C" {
+    fun raven_time_last_error() -> String
+    fun raven_time_now() -> Int
+    fun raven_time_now_millis() -> Int
+    fun raven_time_year(ts: Int) -> Int
+    fun raven_time_month(ts: Int) -> Int
+    fun raven_time_day(ts: Int) -> Int
+    fun raven_time_hour(ts: Int) -> Int
+    fun raven_time_minute(ts: Int) -> Int
+    fun raven_time_second(ts: Int) -> Int
+    fun raven_time_weekday(ts: Int) -> Int
+    fun raven_time_format(ts: Int, pattern: String) -> String
+    fun raven_time_parse(text: String, pattern: String) -> Int
+    fun raven_time_sleep_millis(ms: Int)
+}
+
+// Current Unix timestamp in whole seconds (UTC).
+fun now() -> Int {
+    return raven_time_now()
+}
+
+// Current Unix time in milliseconds (UTC).
+fun now_millis() -> Int {
+    return raven_time_now_millis()
+}
+
+// Decompose a Unix timestamp (seconds, UTC) into a DateTime, assembled in
+// Raven from the per-component runtime extractors.
+fun from_timestamp(ts: Int) -> DateTime {
+    let d = Date {
+        year: raven_time_year(ts),
+        month: raven_time_month(ts),
+        day: raven_time_day(ts),
+    }
+    let t = Time {
+        hour: raven_time_hour(ts),
+        minute: raven_time_minute(ts),
+        second: raven_time_second(ts),
+    }
+    return DateTime { date: d, time: t }
+}
+
+// Weekday of `ts` (UTC) as 0 for Sunday through 6 for Saturday.
+fun weekday(ts: Int) -> Int {
+    return raven_time_weekday(ts)
+}
+
+// Format the UTC datetime of `ts` with a chrono strftime `pattern`, for
+// example "%Y-%m-%d %H:%M:%S".
+fun format_timestamp(ts: Int, pattern: String) -> String {
+    return raven_time_format(ts, pattern)
+}
+
+// Parse a UTC datetime `text` by a chrono strftime `pattern`, returning
+// the Unix timestamp in seconds. On a parse failure returns an Error
+// tagged with kind "time".
+fun parse_timestamp(text: String, pattern: String) -> Result<Int, Error> {
+    let ts = raven_time_parse(text, pattern)
+    if raven_time_last_error().length() > 0 {
+        return Err(Error { kind: "time", message: "parse: ".concat(raven_time_last_error()) })
+    }
+    return Ok(ts)
+}
+
+// Sleep the current thread for `ms` milliseconds.
+fun sleep_millis(ms: Int) {
+    raven_time_sleep_millis(ms)
+}
+
+// Left-pad the base-ten text of `n` with zeros to at least `width` digits.
+// Negative values are not expected for the calendar fields used here, so
+// the sign is not handled specially.
+fun pad2(n: Int) -> String {
+    if n < 10 {
+        return "0".concat("${n}")
+    }
+    return "${n}"
+}
+
+fun pad4(n: Int) -> String {
+    if n < 10 {
+        return "000".concat("${n}")
+    }
+    if n < 100 {
+        return "00".concat("${n}")
+    }
+    if n < 1000 {
+        return "0".concat("${n}")
+    }
+    return "${n}"
+}
+
+impl ToString for Date {
+    fun to_string(self) -> String {
+        return pad4(self.year).concat("-").concat(pad2(self.month)).concat("-").concat(pad2(self.day))
+    }
+}
+
+impl ToString for Time {
+    fun to_string(self) -> String {
+        return pad2(self.hour).concat(":").concat(pad2(self.minute)).concat(":").concat(pad2(self.second))
+    }
+}
+
+impl ToString for DateTime {
+    fun to_string(self) -> String {
+        return self.date.to_string().concat(" ").concat(self.time.to_string())
+    }
+}
