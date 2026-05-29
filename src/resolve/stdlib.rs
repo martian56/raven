@@ -54,6 +54,7 @@ pub const BUNDLED_MODULES: &[(&str, &str)] = &[
     ("time", include_str!("../../stdlib/std/time.rv")),
     ("net", include_str!("../../stdlib/std/net.rv")),
     ("http", include_str!("../../stdlib/std/http.rv")),
+    ("json", include_str!("../../stdlib/std/json.rv")),
     ("test", include_str!("../../stdlib/std/test.rv")),
 ];
 
@@ -476,6 +477,11 @@ mod tests {
     #[test]
     fn http_module_is_bundled() {
         assert!(bundled_source("http").is_some());
+    }
+
+    #[test]
+    fn json_module_is_bundled() {
+        assert!(bundled_source("json").is_some());
     }
 
     #[test]

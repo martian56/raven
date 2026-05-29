@@ -939,6 +939,24 @@ fn time_program_compiles_and_runs() {
     );
 }
 
+#[test]
+fn json_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // std/json parse and stringify end to end. A nested object with an
+    // array value round trips through parse then compact stringify,
+    // preserving insertion key order and rendering the whole-number Float 1
+    // as `1`. A string with a `\n` escape and a `A` unicode escape
+    // decodes (the escape becomes the literal A) and re-serializes with the
+    // newline re-escaped. A malformed object takes the Err path. Prints the
+    // compact object, the re-escaped string, then `parse failed`.
+    let expected = "{\"a\":1,\"b\":[true,null,\"hi\"]}\n\
+                    \"x\\ny A\"\n\
+                    parse failed\n";
+    compile_link_run_and_check("use_json.rv", expected, &runtime);
+}
+
 /// Return the runtime staticlib when a linker and the staticlib are both
 /// present, or skip with a diagnostic. Shared by every smoke case so the
 /// skip behavior stays identical.
