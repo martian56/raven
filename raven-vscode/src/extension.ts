@@ -26,8 +26,7 @@ export function activate(context: vscode.ExtensionContext) {
             const word = document.getText(range);
             
             const builtinFunctions: { [key: string]: string } = {
-                'print': 'Prints a String followed by a newline. Usage: `print(message)`',
-                'print_int': 'Prints an Int followed by a newline. Usage: `print_int(n)`',
+                'print': 'Prints any `ToString` value followed by a newline. Usage: `print(value)`',
                 'println': 'Prints a String with a trailing newline (from `std/io`). Usage: `import std/io { println }`',
                 'panic': 'Aborts the program with a message (from `std/test`).'
             };
@@ -46,7 +45,7 @@ export function activate(context: vscode.ExtensionContext) {
     let completionProvider = vscode.languages.registerCompletionItemProvider('raven', {
         provideCompletionItems(document, position, token, context) {
             const builtinFunctions = [
-                'print', 'print_int', 'println', 'panic'
+                'print', 'println', 'panic'
             ];
 
             const keywords = [

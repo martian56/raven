@@ -3,8 +3,8 @@
 // the deferred calls fire, so this program prints 2 then 1 before main
 // observes the result.
 fun demo() -> Int {
-    defer print_int(1)
-    defer print_int(2)
+    defer print(1)
+    defer print(2)
     return 0
 }
 

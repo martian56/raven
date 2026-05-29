@@ -21,6 +21,6 @@ fun describe(s: dyn Speak) -> Int = s.sound()
 fun main() {
     let d = Dog {}
     let c = Cat {}
-    print_int(describe(d))
-    print_int(describe(c))
+    print(describe(d))
+    print(describe(c))
 }

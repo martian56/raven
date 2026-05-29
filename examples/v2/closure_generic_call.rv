@@ -12,5 +12,5 @@ fun apply(f: fun(Int) -> Int, x: Int) -> Int {
 
 fun main() {
     let f = fun(x: Int) -> Int = identity(x) + 1
-    print_int(apply(f, 41))
+    print(apply(f, 41))
 }

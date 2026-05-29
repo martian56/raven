@@ -7,6 +7,6 @@ fun make_adder(n: Int) -> fun(Int) -> Int {
 
 fun main() {
     let add10 = make_adder(10)
-    print_int(add10(5))
-    print_int(add10(32))
+    print(add10(5))
+    print(add10(32))
 }

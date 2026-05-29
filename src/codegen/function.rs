@@ -1609,38 +1609,6 @@ fn lower_intrinsic(
             let inst = builder.ins().call(local_ref, &[]);
             Ok(builder.inst_results(inst).first().copied())
         }
-        intrinsics::PRINT_INT => {
-            if args.len() != 1 {
-                return Err(CodegenError::Unsupported(format!(
-                    "print_int intrinsic expects 1 arg, got {}",
-                    args.len()
-                )));
-            }
-            let v = require_value(
-                lower_operand(cx, builder, &args[0], slots)?,
-                "print_int argument",
-            )?;
-            // `raven_println_int` takes an i64. A native `Int` is already
-            // i64; a C FFI integer may be narrower (`CInt` is i32) or the
-            // same width (`CLong`/`CSize`). Sign-extend a narrower value
-            // so a negative C `int` prints correctly.
-            let v = {
-                let got = builder.func.dfg.value_type(v);
-                if got == types::I64 {
-                    v
-                } else if got.is_int() && got.bytes() < types::I64.bytes() {
-                    builder.ins().sextend(types::I64, v)
-                } else {
-                    v
-                }
-            };
-            let func_id = cx
-                .runtime_id(intrinsics::RUNTIME_PRINTLN_INT)
-                .expect("runtime imports declared at module init");
-            let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
-            builder.ins().call(local_ref, &[v]);
-            Ok(None)
-        }
         intrinsics::STR_LEN => {
             // `raven_string_len` returns a u32; the bundled source treats
             // the result as a native `Int` (i64), so zero-extend it.

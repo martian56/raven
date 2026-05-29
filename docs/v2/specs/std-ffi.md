@@ -103,11 +103,11 @@ extern "C" {
 fun main() {
     let s = "hello"
     let n = strlen(to_cstr(s))
-    print_int(n)
+    print(n)
     let eq = strcmp(to_cstr("abc"), to_cstr("abc"))
-    print_int(eq)
+    print(eq)
     let lt = strcmp(to_cstr("abc"), to_cstr("abd"))
-    print_int(lt)
+    print(lt)
     println(from_cstr(to_cstr("roundtrip")))
 }
 ```
@@ -126,11 +126,12 @@ for equal strings and a negative value when the first differing byte is
 smaller (`-1` here for `'c'` against `'d'`). `from_cstr(to_cstr("roundtrip"))`
 recovers the original text.
 
-The C integer results print through `print_int`, which accepts the integer
-FFI types (`CInt`, `CLong`, `CSize`) and widens a narrower one to i64. The
-surface has no `ToString` impl for the FFI integer types, so a `CSize` or
-`CInt` cannot be interpolated into a `"${...}"` string or compared to a
-native `Int` directly; route them through `print_int` to observe a value.
+The C integer results print through `print`. The integer FFI types
+(`CInt`, `CLong`, `CSize`) satisfy `ToString` by widening to `Int` (a
+narrower one is sign-extended) and rendering through the `Int` to-string
+path, so a `CSize` or `CInt` can be printed or interpolated into a
+`"${...}"` string directly. `CSize` is treated as a signed `Int`, correct
+for realistic sizes (below 2^63).
 
 ## Out of scope
 

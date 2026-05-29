@@ -8,7 +8,7 @@ fun square(n: Int) -> Int = n * n
 fun greet(name: String) -> String = "Hello, ${name}!"
 
 fun main() {
-    print_int(add(7, 8))
-    print_int(square(6))
+    print(add(7, 8))
+    print(square(6))
     print(greet("Raven"))
 }

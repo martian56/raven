@@ -39,18 +39,18 @@ fun main() {
     for n in nums {
         total += n
     }
-    print_int(total)
+    print(total)
 
     for i in 0..3 {
         if i == 1 {
             continue
         }
-        print_int(i)
+        print(i)
     }
 
     let s = Shape.Circle(2.0)
     print(describe(s.area()))
 
     let n = strlen(c"hello")
-    print_int(n)
+    print(n)
 }

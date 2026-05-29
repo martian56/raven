@@ -45,6 +45,22 @@ fn compile(src: &str) -> MirProgram {
     lower_program(&hir).expect("mir")
 }
 
+/// Like `compile`, but merges the bundled prelude first so `print` of a
+/// scalar resolves through its `ToString` impl. Tests that print need
+/// this, since `print` requires the prelude's `impl ToString for Int`.
+fn compile_with_prelude(src: &str) -> MirProgram {
+    let tokens = Lexer::new(src.to_string(), PathBuf::from("t.rv"))
+        .tokenize()
+        .expect("lex");
+    let file = parse(&tokens).expect("parse");
+    let file = crate::resolve::expand_with_stdlib(&file).expect("stdlib expand");
+    let mut loader = NoLoader;
+    let resolved = resolve_file(&file, &mut loader).expect("resolve");
+    let typed = check_file(&resolved).expect("tycheck");
+    let hir = lower_file(&typed).expect("hir");
+    lower_program(&hir).expect("mir")
+}
+
 fn find_fn<'a>(p: &'a MirProgram, name: &str) -> &'a MirFunction {
     p.functions
         .iter()
@@ -263,9 +279,12 @@ fn mir_type_mangling_is_stable() {
 
 // ----- Defer lowering -----
 
-/// Collect the integer constant argument of each `print_int` call in the
-/// block, in statement order. Used to assert deferred call ordering.
-fn print_int_args_in_block(block: &MirBlock) -> Vec<i64> {
+/// Collect the integer constant rendered by each `print(N)` call in the
+/// block, in statement order. A `print(N)` lowers to an int-to-string
+/// conversion (the constant `N` is its argument) followed by the `print`
+/// call, so matching the conversion recovers the printed value. Used to
+/// assert deferred call ordering.
+fn printed_int_args_in_block(block: &MirBlock) -> Vec<i64> {
     let mut out = Vec::new();
     for s in &block.statements {
         if let MirStatement::Assign {
@@ -273,7 +292,11 @@ fn print_int_args_in_block(block: &MirBlock) -> Vec<i64> {
             ..
         } = s
         {
-            if callee.mangled == "print_int" {
+            // `print(n)` lowers to `Int$to_string(n)` then a string print,
+            // so the deferred int is the constant argument to that
+            // to_string call. Reading them in block order recovers the
+            // order the deferred prints run.
+            if callee.mangled == "Int$to_string" {
                 if let Some(MirOperand::Const(MirConstant::Int(n))) = args.first() {
                     out.push(*n);
                 }
@@ -285,14 +308,14 @@ fn print_int_args_in_block(block: &MirBlock) -> Vec<i64> {
 
 #[test]
 fn defer_runs_in_reverse_order_before_return() {
-    // Two defers at the function body level: print_int(1) then
-    // print_int(2). The block that ends in `return` must call them in
+    // Two defers at the function body level: print(1) then
+    // print(2). The block that ends in `return` must call them in
     // reverse (LIFO) order: 2 then 1.
-    let prog = compile(
+    let prog = compile_with_prelude(
         r#"
         fun demo() -> Int {
-            defer print_int(1)
-            defer print_int(2)
+            defer print(1)
+            defer print(2)
             return 0
         }
     "#,
@@ -304,7 +327,7 @@ fn defer_runs_in_reverse_order_before_return() {
         .find(|b| matches!(b.terminator, MirTerminator::Return(_)))
         .expect("demo has a return block");
     assert_eq!(
-        print_int_args_in_block(ret_block),
+        printed_int_args_in_block(ret_block),
         vec![2, 1],
         "deferred calls must run LIFO before the return"
     );
@@ -316,14 +339,14 @@ fn only_reached_defers_run_on_each_return_path() {
     // both paths. The second defer follows the early return, so the early
     // path never schedules it. The early-path return block runs only [9];
     // the fall-through return block runs [8, 9] (LIFO).
-    let prog = compile(
+    let prog = compile_with_prelude(
         r#"
         fun f(early: Bool) -> Int {
-            defer print_int(9)
+            defer print(9)
             if early {
                 return 1
             }
-            defer print_int(8)
+            defer print(8)
             return 2
         }
     "#,
@@ -334,7 +357,7 @@ fn only_reached_defers_run_on_each_return_path() {
         .blocks
         .iter()
         .filter(|b| matches!(b.terminator, MirTerminator::Return(_)))
-        .map(print_int_args_in_block)
+        .map(printed_int_args_in_block)
         .collect();
 
     assert!(
@@ -483,7 +506,7 @@ fn generic_call_inside_closure_body_is_monomorphized() {
     // queued only if the lifted body's pending generic call sites reach
     // the monomorphization worklist. Before the fix those calls were
     // dropped and no instance was emitted, leaving an unresolved callee.
-    let prog = compile(
+    let prog = compile_with_prelude(
         r#"
         fun identity<T>(x: T) -> T = x
 
@@ -493,7 +516,7 @@ fn generic_call_inside_closure_body_is_monomorphized() {
 
         fun main() {
             let f = fun(x: Int) -> Int = identity(x) + 1
-            print_int(apply(f, 41))
+            print(apply(f, 41))
         }
     "#,
     );

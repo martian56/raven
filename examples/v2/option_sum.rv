@@ -11,5 +11,5 @@ fun unwrap_or(x: Option<Int>, fallback: Int) -> Int {
 fun main() {
     let present = unwrap_or(Some(5), 0)
     let missing = unwrap_or(None, 99)
-    print_int(present + missing)
+    print(present + missing)
 }

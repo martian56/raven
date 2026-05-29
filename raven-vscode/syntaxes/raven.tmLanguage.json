@@ -332,7 +332,7 @@
       "patterns": [
         {
           "name": "support.function.builtin.raven",
-          "match": "\\b(print|print_int)\\s*(?=\\()"
+          "match": "\\b(print)\\s*(?=\\()"
         },
         {
           "name": "entity.name.function.call.raven",

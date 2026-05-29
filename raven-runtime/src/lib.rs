@@ -384,23 +384,6 @@ pub extern "C" fn raven_read_line() -> *mut object::String {
     object::raven_string_from_bytes(line.as_ptr(), line.len())
 }
 
-/// Write a signed 64-bit integer to standard output in base ten,
-/// followed by a single `\n`.
-///
-/// This is the integer companion of `raven_println_str`. The back-end
-/// wires the built-in `print_int(Int)` free function to this symbol so a
-/// program can observe a computed integer without a string conversion.
-#[no_mangle]
-pub extern "C" fn raven_println_int(value: i64) {
-    let stdout = io::stdout();
-    let mut handle = stdout.lock();
-    // Format into a small stack buffer to avoid a heap allocation.
-    let mut buf = itoa_buf();
-    let s = format_i64(value, &mut buf);
-    let _ = handle.write_all(s.as_bytes());
-    let _ = handle.write_all(b"\n");
-}
-
 /// Look up an environment variable and return its value as a heap
 /// `String`. Returns an empty `String` when the variable is unset or its
 /// value is not valid UTF-8, so the caller always gets a usable pointer.
@@ -1678,52 +1661,10 @@ pub extern "C" fn raven_process_free(id: i64) {
     process_registry().lock().unwrap().remove(&id);
 }
 
-/// A stack buffer large enough for any base-ten `i64` plus a sign.
-fn itoa_buf() -> [u8; 20] {
-    [0u8; 20]
-}
-
-/// Format `value` into `buf` and return the written slice as a string.
-/// Twenty bytes hold the widest `i64` (`-9223372036854775808`).
-fn format_i64(value: i64, buf: &mut [u8; 20]) -> &str {
-    // Work with the unsigned magnitude to handle i64::MIN safely.
-    let negative = value < 0;
-    let mut magnitude = value.unsigned_abs();
-    let mut pos = buf.len();
-    loop {
-        pos -= 1;
-        buf[pos] = b'0' + (magnitude % 10) as u8;
-        magnitude /= 10;
-        if magnitude == 0 {
-            break;
-        }
-    }
-    if negative {
-        pos -= 1;
-        buf[pos] = b'-';
-    }
-    // SAFETY: the bytes written are ASCII digits and an optional '-'.
-    unsafe { std::str::from_utf8_unchecked(&buf[pos..]) }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::mem::{align_of, size_of};
-
-    #[test]
-    fn format_i64_handles_edges() {
-        let mut buf = itoa_buf();
-        assert_eq!(format_i64(0, &mut buf), "0");
-        let mut buf = itoa_buf();
-        assert_eq!(format_i64(7, &mut buf), "7");
-        let mut buf = itoa_buf();
-        assert_eq!(format_i64(-7, &mut buf), "-7");
-        let mut buf = itoa_buf();
-        assert_eq!(format_i64(i64::MAX, &mut buf), "9223372036854775807");
-        let mut buf = itoa_buf();
-        assert_eq!(format_i64(i64::MIN, &mut buf), "-9223372036854775808");
-    }
 
     #[test]
     fn object_header_is_sixteen_bytes() {

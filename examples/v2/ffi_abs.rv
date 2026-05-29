@@ -7,5 +7,5 @@ extern "C" {
 
 fun main() {
     let n = abs(-7)
-    print_int(n)
+    print(n)
 }

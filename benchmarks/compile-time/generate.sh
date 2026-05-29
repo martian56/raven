@@ -199,7 +199,7 @@ ENTRY="$CORPUS_DIR/main.rv"
     for ((i = 0; i < COUNT; i++)); do
         echo "    total = total + compute_${i}(${i} + 1)"
     done
-    echo "    print_int(total)"
+    echo "    print(total)"
     echo "}"
 } > "$ENTRY"
 

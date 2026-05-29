@@ -19,11 +19,11 @@ impl<T> Box<T> {
 
 fun main() {
     let b = Box { value: 42 }
-    print_int(b.get())          // 42 (concrete impl Box<Int>)
-    print_int(b.unwrap())       // 42 (generic impl<T> Box<T> at T = Int)
+    print(b.get())          // 42 (concrete impl Box<Int>)
+    print(b.unwrap())       // 42 (generic impl<T> Box<T> at T = Int)
 
     let n = Box { value: 7 }
-    print_int(n.value)          // 7 (direct field access)
+    print(n.value)          // 7 (direct field access)
 
     let s = Box { value: "raven" }
     print(s.unwrap())           // raven (generic impl<T> Box<T> at T = String)

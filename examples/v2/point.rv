@@ -6,5 +6,5 @@ fun add_coords(p: Point) -> Int = p.x + p.y
 
 fun main() {
     let p = Point { x: 3, y: 4 }
-    print_int(add_coords(p))
+    print(add_coords(p))
 }

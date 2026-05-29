@@ -1,12 +1,12 @@
 // C FFI: declare libc `strlen` and call it on a C string literal.
 // `c"hello"` lowers to a pointer to a static null-terminated buffer, so
 // strlen counts 5 bytes. CSize is size_t, which is pointer width (i64 on
-// x86_64), and print_int observes it directly. Prints 5.
+// x86_64); `print` widens it to Int and renders the digits. Prints 5.
 extern "C" {
     fun strlen(s: CStr) -> CSize
 }
 
 fun main() {
     let n = strlen(c"hello")
-    print_int(n)
+    print(n)
 }

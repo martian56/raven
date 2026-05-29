@@ -125,5 +125,5 @@ fun main() {
     total = total + compute_59(59 + 1)
     total = total + compute_60(60 + 1)
     total = total + compute_61(61 + 1)
-    print_int(total)
+    print(total)
 }

@@ -325,7 +325,7 @@ fn walk_expr(
                 }
             } else if is_builtin_ctor_name(name) {
                 // Built in constructor identifiers (`None`, `Some`, `Ok`,
-                // `Err`), the `print`/`print_int` free functions, and the
+                // `Err`), the `print` free function, and the
                 // internal `__io_*` intrinsics bypass scope lookup. The
                 // type checker recognizes them and assigns the correct
                 // type at the call site.
@@ -638,9 +638,9 @@ fn is_builtin_type_name(name: &str) -> bool {
 /// Builtin constructor identifiers. These appear in expressions
 /// (`None`, `Some(x)`, `Ok(v)`, `Err(e)`) and are recognized by the
 /// type checker. The resolver bypasses scope lookup for them so they
-/// can be used without an explicit import. `print` and `print_int` are
-/// treated the same way: they are built in free function intrinsics
-/// whose call sites are wired to the runtime by the codegen back end.
+/// can be used without an explicit import. `print` is treated the same
+/// way: it is a built in free function intrinsic whose call sites are
+/// wired to the runtime by the codegen back end.
 ///
 /// The `__io_*` and `__str_*` names are internal stdlib intrinsics: the
 /// bundled `std/io` and `std/string` sources call them to reach the
@@ -656,7 +656,6 @@ fn is_builtin_ctor_name(name: &str) -> bool {
             | "Ok"
             | "Err"
             | "print"
-            | "print_int"
             | "__io_print_str"
             | "__io_println_str"
             | "__io_read_line"

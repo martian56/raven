@@ -587,7 +587,7 @@ import std/iter { collect, fold, count }
 fun main() {
     let xs = [1, 2, 3, 4, 5, 6]
     let kept = collect(xs.iter().map(fun(x: Int) -> Int = x * 10).filter(fun(y: Int) -> Bool = y > 20))
-    print_int(kept.len())
+    print(kept.len())
 }
 ```
 
@@ -702,12 +702,12 @@ v2 (`examples/v2/loops.rv`):
 fun main() {
     let i = 0
     while i < 5 {
-        print_int(i)
+        print(i)
         i = i + 1
     }
 
     for j in 0..5 {
-        print_int(j)
+        print(j)
     }
 }
 ```
@@ -845,9 +845,9 @@ import std/math { abs_int, min_int, max_int, pow_int }
 import std/string
 
 fun main() {
-    print_int(abs_int(-10))
-    print_int(min_int(-10, 15))
-    print_int(max_int(-10, 15))
+    print(abs_int(-10))
+    print(min_int(-10, 15))
+    print(max_int(-10, 15))
     print("  hello world  ".trim())
     print("raven".to_upper())
 }
