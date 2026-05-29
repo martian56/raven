@@ -6,7 +6,7 @@
 // server, not both at once, because Raven v2 has no threads. See
 // docs/v2/specs/std-net.md.
 
-import std/error
+import std/error { error_kind }
 import std/string
 
 struct TcpStream {
@@ -33,7 +33,7 @@ extern "C" {
 // An Error tagged with kind "net", its message a context prefix joined to
 // the runtime's last-error text.
 fun net_error(ctx: String) -> Error {
-    return Error { kind: "net", message: ctx.concat(": ").concat(raven_net_last_error()) }
+    return error_kind("net", ctx.concat(": ").concat(raven_net_last_error()))
 }
 
 // Connect a TCP stream to `addr` ("host:port").

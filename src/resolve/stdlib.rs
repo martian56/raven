@@ -1128,6 +1128,35 @@ mod tests {
     }
 
     #[test]
+    fn bundled_module_sibling_fn_selector_is_namespaced() {
+        // std/fs does `import std/error { error_kind }` and calls
+        // `error_kind(...)` inside `io_error`. After expansion that call
+        // site must reference the dependency's namespaced symbol
+        // (`std.error.error_kind`), not the bare name (issue #178).
+        let user = parse_src("import std/fs { read }\nfun main() {}\n");
+        let combined = expand_with_stdlib(&user).expect("expand");
+        let io_error = combined
+            .items
+            .iter()
+            .filter_map(|d| match &d.kind {
+                DeclKind::Function(f) if f.name == mangle_stdlib_fn("fs", "io_error") => Some(f),
+                _ => None,
+            })
+            .next()
+            .expect("io_error present");
+        let mut idents = Vec::new();
+        collect_fn_body_idents(&io_error.body, &mut idents);
+        assert!(
+            idents.iter().any(|n| n == "std.error.error_kind"),
+            "io_error should call the namespaced sibling, got: {idents:?}"
+        );
+        assert!(
+            !idents.iter().any(|n| n == "error_kind"),
+            "no bare sibling-module call should remain, got: {idents:?}"
+        );
+    }
+
+    #[test]
     fn transitive_std_import_merges_dependency_once() {
         // `std/path` imports `std/string`. A user importing only `std/path`
         // must still get `std/string`'s items merged (so path's `String`

@@ -211,6 +211,14 @@ ships.
   by rewriting intra-module sibling calls to their namespaced names; see
   that spec for the detail.
 
+A bundled module may also selectively import a free function from another
+bundled module (`import std/error { error_kind }`) and call it by its bare
+name: the expander rewrites that call site to the dependency's namespaced
+symbol (`std.error.error_kind`), the same rewrite it applies to intra-module
+sibling calls. `std/fs`, `std/net`, `std/http`, and `std/time` use this to
+build their tagged errors through `error_kind` rather than assembling the
+`Error` struct literal by hand.
+
 ## Out of scope
 
 * The aliased import form `import std/io as io` with `io.member(...)`

@@ -1,14 +1,14 @@
 // std/fs: filesystem operations over the raven-runtime C ABI. Fallible
 // ops return Result<T, Error> where the error is an std/error `Error`
 // tagged with kind "io" (Raven has no type alias, so IoError is realized
-// as that, built directly as an `Error` struct literal with kind "io").
+// as that, built through std/error's `error_kind("io", ...)`).
 // The runtime keeps a thread-local last-error string; each
 // wrapper runs the op and turns a non-empty last error into an Err. The
 // non-fallible queries (exists, is_file, is_dir) treat a missing path as a
 // normal false. Path manipulation is pure Raven string work on `/`. See
 // docs/v2/specs/std-fs.md.
 
-import std/error
+import std/error { error_kind }
 import std/string
 
 extern "C" {
@@ -29,7 +29,7 @@ extern "C" {
 // An Error tagged with kind "io" (the IoError realization), its message a
 // context prefix joined to the runtime's last-error text.
 fun io_error(ctx: String) -> Error {
-    return Error { kind: "io", message: ctx.concat(": ").concat(raven_fs_last_error()) }
+    return error_kind("io", ctx.concat(": ").concat(raven_fs_last_error()))
 }
 
 // Whole file at `path` as a String.
