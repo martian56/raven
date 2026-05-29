@@ -9,6 +9,7 @@ on:
       - "examples/**"
       - "tests/**"
       - "raven-runtime/**"
+      - "benchmarks/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/ci.yml"
@@ -20,6 +21,7 @@ on:
       - "examples/**"
       - "tests/**"
       - "raven-runtime/**"
+      - "benchmarks/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/ci.yml"
@@ -60,3 +62,20 @@ jobs:
       run: cargo build --workspace --verbose
     - name: Run tests
       run: cargo test --workspace --verbose
+
+  benchmark:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build release raven and runtime
+      run: |
+        cargo build --release --bin raven
+        cargo build --release -p raven-runtime
+    - name: Compile-time benchmark
+      env:
+        RAVEN_BENCH_SKIP_BUILD: "1"
+        RAVEN_BENCH_THRESHOLD_PCT: "60"
+      run: bash benchmarks/compile-time/run.sh

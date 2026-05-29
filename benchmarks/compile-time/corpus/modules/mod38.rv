@@ -1,0 +1,159 @@
+import std/string
+
+struct Vec2_38 { x: Int, y: Int }
+
+impl Vec2_38 {
+    fun add(self, o: Vec2_38) -> Vec2_38 {
+        return Vec2_38 { x: self.x + o.x, y: self.y + o.y }
+    }
+    fun scale(self, k: Int) -> Vec2_38 {
+        return Vec2_38 { x: self.x * k, y: self.y * k }
+    }
+    fun magnitude_sq(self) -> Int {
+        return self.x * self.x + self.y * self.y
+    }
+}
+
+struct Node_38 { id: Int, weight: Int, label: String }
+
+impl Node_38 {
+    fun heavier(self, other: Node_38) -> Bool {
+        return self.weight > other.weight
+    }
+    fun retag(self, n: String) -> Node_38 {
+        return Node_38 { id: self.id, weight: self.weight, label: n }
+    }
+}
+
+enum Shape_38 {
+    Circle,
+    Square,
+    Triangle,
+    Hexagon,
+}
+
+fun classify_38(s: Shape_38) -> Int {
+    return match s {
+        Circle -> 14,
+        Square -> 14 * 2,
+        Triangle -> 14 * 3,
+        Hexagon -> 14 * 6,
+    }
+}
+
+enum Outcome_38 {
+    Pass,
+    Fail,
+    Skip,
+}
+
+fun grade_38(score: Int) -> Outcome_38 {
+    if score >= 60 {
+        return Outcome_38.Pass
+    }
+    if score >= 30 {
+        return Outcome_38.Skip
+    }
+    return Outcome_38.Fail
+}
+
+fun grade_points_38(o: Outcome_38) -> Int {
+    return match o {
+        Pass -> 100,
+        Fail -> 0,
+        Skip -> 50,
+    }
+}
+
+struct Pair_38<T> { first: T, second: T }
+
+impl<T> Pair_38<T> {
+    fun left(self) -> T = self.first
+    fun right(self) -> T = self.second
+}
+
+struct Wrap_38<T> { inner: T }
+
+impl<T> Wrap_38<T> {
+    fun get(self) -> T = self.inner
+    fun mapped<U>(self, f: fun(T) -> U) -> U = f(self.inner)
+}
+
+trait Score_38 {
+    fun score(self) -> Int
+}
+
+impl Score_38 for Node_38 {
+    fun score(self) -> Int = self.id * 10 + self.weight
+}
+
+impl Score_38 for Vec2_38 {
+    fun score(self) -> Int = self.magnitude_sq()
+}
+
+fun ranked_38<T: Score_38>(x: T) -> Int = x.score()
+
+fun identity_38<T>(x: T) -> T = x
+
+fun maybe_38(n: Int) -> Option<Int> {
+    if n > 14 {
+        return Some(n * 2)
+    }
+    return None
+}
+
+fun unwrap_or_38(x: Option<Int>, fallback: Int) -> Int {
+    return match x {
+        None -> fallback,
+        Some(v) -> v,
+    }
+}
+
+fun accumulate_38(limit: Int) -> Int {
+    let total = 0
+    let i = 0
+    while i < limit {
+        if i % 2 == 0 {
+            total = total + i
+        } else {
+            total = total - 1
+        }
+        i = i + 1
+    }
+    return total
+}
+
+fun sweep_38(limit: Int) -> Int {
+    let total = 0
+    for k in 0..limit {
+        total = total + classify_38(Shape_38.Triangle) + k
+    }
+    return total
+}
+
+fun fib_38(n: Int) -> Int {
+    if n < 2 {
+        return n
+    }
+    return fib_38(n - 1) + fib_38(n - 2)
+}
+
+fun compute_38(seed: Int) -> Int {
+    let v = Vec2_38 { x: seed, y: seed + 14 }
+    let w = v.add(Vec2_38 { x: 2, y: 3 }).scale(2)
+    let node = Node_38 { id: seed, weight: 14, label: "n" }
+    let tagged = node.retag("tagged")
+    let p = Pair_38 { first: w.x, second: w.y }
+    let q = Pair_38 { first: tagged.label, second: "z" }
+    let boxed = Wrap_38 { inner: seed }
+    let doubled = boxed.mapped(fun(x: Int) -> Int = x * 2)
+    let big = boxed.mapped(fun(x: Int) -> Bool = x > 14)
+    let m = unwrap_or_38(maybe_38(seed), 0)
+    let g = grade_points_38(grade_38(seed))
+    let r = ranked_38(tagged) + ranked_38(v)
+    let extra = if big { 1 } else { 0 }
+    return p.left() + p.right() + w.magnitude_sq() + identity_38(doubled)
+        + m + g + r + accumulate_38(14) + sweep_38(14)
+        + fib_38(8) + classify_38(Shape_38.Hexagon) + extra
+        + q.left().length()
+}
