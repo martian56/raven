@@ -77,4 +77,5 @@ jobs:
     - name: Compile-time benchmark
       env:
         RAVEN_BENCH_SKIP_BUILD: "1"
+        RAVEN_BENCH_THRESHOLD_PCT: "60"
       run: bash benchmarks/compile-time/run.sh

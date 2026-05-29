@@ -73,6 +73,13 @@ compile time, by reading the time the CI job prints and writing it here.
 When `baseline.txt` is absent or empty, the regression check is skipped
 and only the ceiling and the printed time apply.
 
+The GitHub-hosted runner is shared, so back to back runs of the same
+corpus have varied between roughly 3.3s and 5.8s in practice. The baseline
+is set to the slower end of that range, and the CI job widens the
+threshold to 60 percent (through `RAVEN_BENCH_THRESHOLD_PCT`) so normal
+runner variance does not flake the job while a genuine regression past
+roughly 9s still fails. The absolute ceiling backstops both.
+
 ### Environment variables
 
 | Variable | Default | Meaning |
