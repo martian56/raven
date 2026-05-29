@@ -485,6 +485,22 @@ fn mutation_program_compiles_and_runs() {
     compile_link_run_and_check("mutation.rv", "7\n99\n", &runtime);
 }
 
+#[test]
+fn encoding_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // std/encoding hex and base64 over String bytes. The known vectors:
+    // hex("abc")=616263, base64 of "abc"/"Man"/"Ma"/"M" =
+    // YWJj/TWFu/TWE=/TQ== (the last two show one and two `=` padding).
+    // Then three round-trip equalities print true.
+    compile_link_run_and_check(
+        "use_encoding.rv",
+        "616263\nYWJj\nTWFu\nTWE=\nTQ==\ntrue\ntrue\ntrue\n",
+        &runtime,
+    );
+}
+
 /// Return the runtime staticlib when a linker and the staticlib are both
 /// present, or skip with a diagnostic. Shared by every smoke case so the
 /// skip behavior stays identical.
