@@ -647,6 +647,64 @@ fn env_program_compiles_and_runs() {
     );
 }
 
+#[test]
+fn fs_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // std/fs filesystem ops end to end. The program writes a uniquely
+    // named file in its working directory, queries it, appends, sizes it,
+    // removes it, and finally reads a missing file to exercise the Err
+    // path. Every printed line is deterministic: wrote, then exists/is_file
+    // true and is_dir false, the contents "hello", appended, the appended
+    // contents "hello world", the size 11, removed, exists false, and the
+    // missing-file read reporting "read failed". The binary runs from a
+    // fresh temp dir so its own temp file (which it removes) leaves no
+    // residue.
+    let name = "use_fs.rv";
+    let source_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join("v2")
+        .join(name);
+    let source =
+        std::fs::read_to_string(&source_path).unwrap_or_else(|e| panic!("read {}: {}", name, e));
+    let object_bytes = match build_object(&source, &source_path) {
+        Ok(b) => b,
+        Err(e) => panic!("frontend or codegen failed for {}: {}", name, e),
+    };
+    let tmp = workdir();
+    let object_path = tmp.join("use_fs.o");
+    std::fs::write(&object_path, &object_bytes).expect("write object");
+    let binary = tmp.join(if cfg!(windows) {
+        "use_fs.exe"
+    } else {
+        "use_fs"
+    });
+    if let Err(e) = linker::link(&object_path, &runtime, &binary) {
+        cleanup(&tmp);
+        panic!("linker failed to produce an executable for {}: {}", name, e);
+    }
+    let output = Command::new(&binary)
+        .current_dir(&tmp)
+        .output()
+        .unwrap_or_else(|e| panic!("run {} binary: {}", name, e));
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    cleanup(&tmp);
+    assert!(
+        output.status.success(),
+        "use_fs binary exited non zero: status={:?} stderr={}",
+        output.status,
+        stderr
+    );
+    assert_eq!(
+        stdout,
+        "wrote\ntrue\ntrue\nfalse\nhello\nappended\nhello world\n11\nremoved\nfalse\nread failed\n",
+        "unexpected stdout for use_fs: {:?}",
+        stdout
+    );
+}
+
 /// Return the runtime staticlib when a linker and the staticlib are both
 /// present, or skip with a diagnostic. Shared by every smoke case so the
 /// skip behavior stays identical.
