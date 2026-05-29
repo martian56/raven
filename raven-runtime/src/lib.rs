@@ -123,6 +123,35 @@ fn http_clear_error() {
     HTTP_LAST_ERROR.with(|e| e.borrow_mut().clear());
 }
 
+thread_local! {
+    // Message of the most recent failed regex compile: empty on success,
+    // the syntax error text on failure. The std/regex wrapper reads it
+    // through `raven_regex_last_error` to decide Ok vs Err.
+    static REGEX_LAST_ERROR: RefCell<std::string::String> = const { RefCell::new(std::string::String::new()) };
+}
+
+fn regex_set_error(msg: std::string::String) {
+    REGEX_LAST_ERROR.with(|e| *e.borrow_mut() = msg);
+}
+
+fn regex_clear_error() {
+    REGEX_LAST_ERROR.with(|e| e.borrow_mut().clear());
+}
+
+/// The process-wide compiled-regex registry keyed by an incrementing id.
+/// Ids start at 1; 0 is the failure sentinel that pairs with a set
+/// last-error.
+fn regex_registry() -> &'static Mutex<HashMap<i64, regex::Regex>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<i64, regex::Regex>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Issue the next compiled-regex id.
+fn regex_next_id() -> i64 {
+    static NEXT_ID: AtomicI64 = AtomicI64::new(1);
+    NEXT_ID.fetch_add(1, Ordering::Relaxed)
+}
+
 /// A response captured eagerly into owned data. ureq consumes the
 /// response when its body is read, so the whole request runs in one call
 /// and the status, headers, and body are stored here keyed by an id.
@@ -1225,6 +1254,203 @@ pub extern "C" fn raven_http_headers(id: i64) -> *mut object::String {
 #[no_mangle]
 pub extern "C" fn raven_http_free(id: i64) {
     http_registry().lock().unwrap().remove(&id);
+}
+
+/// The message of the most recent failed regex compile, empty when it
+/// succeeded. The std/regex wrapper reads this to build an `Err` only
+/// when the compile id is 0.
+#[no_mangle]
+pub extern "C" fn raven_regex_last_error() -> *mut object::String {
+    REGEX_LAST_ERROR.with(|e| {
+        let msg = e.borrow();
+        object::raven_string_from_bytes(msg.as_ptr(), msg.len())
+    })
+}
+
+/// Compile `pattern` (Rust regex, RE2-style: no backreferences or
+/// lookaround) and register it. Returns the pattern id, or 0 on a syntax
+/// error with the last-error slot set.
+///
+/// # Safety
+///
+/// `pattern` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_regex_compile(pattern: *const object::String) -> i64 {
+    let Some(pattern) = env_name(pattern) else {
+        regex_set_error("pattern is not valid UTF-8".to_string());
+        return 0;
+    };
+    match regex::Regex::new(pattern) {
+        Ok(re) => {
+            let id = regex_next_id();
+            regex_registry().lock().unwrap().insert(id, re);
+            regex_clear_error();
+            id
+        }
+        Err(e) => {
+            regex_set_error(e.to_string());
+            0
+        }
+    }
+}
+
+/// Whether the compiled pattern `id` matches anywhere in `text`. An
+/// unknown id yields false.
+///
+/// # Safety
+///
+/// `text` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_regex_is_match(id: i64, text: *const object::String) -> bool {
+    let Some(text) = env_name(text) else {
+        return false;
+    };
+    let registry = regex_registry().lock().unwrap();
+    registry.get(&id).is_some_and(|re| re.is_match(text))
+}
+
+/// Whether the compiled pattern `id` has a match in `text`. Lets the
+/// wrapper tell "no match" apart from "matched the empty string", which
+/// `raven_regex_find` cannot signal by its return value alone.
+///
+/// # Safety
+///
+/// `text` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_regex_has_match(id: i64, text: *const object::String) -> bool {
+    raven_regex_is_match(id, text)
+}
+
+/// The first match of the compiled pattern `id` in `text`, or an empty
+/// `String` when there is no match (pair with `raven_regex_has_match` to
+/// tell a matched empty string apart from no match).
+///
+/// # Safety
+///
+/// `text` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_regex_find(id: i64, text: *const object::String) -> *mut object::String {
+    let value = env_name(text)
+        .and_then(|text| {
+            let registry = regex_registry().lock().unwrap();
+            registry
+                .get(&id)
+                .and_then(|re| re.find(text).map(|m| m.as_str().to_string()))
+        })
+        .unwrap_or_default();
+    object::raven_string_from_bytes(value.as_ptr(), value.len())
+}
+
+/// All non-overlapping matches of the compiled pattern `id` in `text`,
+/// joined by `\n`. An empty result means no matches. A match that itself
+/// contains a literal newline is ambiguous under this scheme.
+///
+/// # Safety
+///
+/// `text` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_regex_find_all(
+    id: i64,
+    text: *const object::String,
+) -> *mut object::String {
+    let value = env_name(text)
+        .map(|text| {
+            let registry = regex_registry().lock().unwrap();
+            match registry.get(&id) {
+                Some(re) => re
+                    .find_iter(text)
+                    .map(|m| m.as_str())
+                    .collect::<Vec<&str>>()
+                    .join("\n"),
+                None => std::string::String::new(),
+            }
+        })
+        .unwrap_or_default();
+    object::raven_string_from_bytes(value.as_ptr(), value.len())
+}
+
+/// The capture groups of the first match of the compiled pattern `id` in
+/// `text`, joined by `\n`: group 0 (the whole match) first, then groups
+/// 1, 2, and so on. An unmatched optional group becomes an empty line. An
+/// empty result means no match (pair with `raven_regex_has_match`).
+///
+/// # Safety
+///
+/// `text` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_regex_captures(
+    id: i64,
+    text: *const object::String,
+) -> *mut object::String {
+    let value = env_name(text)
+        .and_then(|text| {
+            let registry = regex_registry().lock().unwrap();
+            registry.get(&id).and_then(|re| {
+                re.captures(text).map(|caps| {
+                    caps.iter()
+                        .map(|g| g.map(|m| m.as_str()).unwrap_or(""))
+                        .collect::<Vec<&str>>()
+                        .join("\n")
+                })
+            })
+        })
+        .unwrap_or_default();
+    object::raven_string_from_bytes(value.as_ptr(), value.len())
+}
+
+/// Replace every match of the compiled pattern `id` in `text` with
+/// `repl`. The regex crate honors `$name`, `$1`, and `${1}` group
+/// references in `repl`. An unknown id returns `text` unchanged.
+///
+/// # Safety
+///
+/// `text` and `repl` must be valid `raven_string_from_bytes`-built
+/// `String`s.
+#[no_mangle]
+pub extern "C" fn raven_regex_replace_all(
+    id: i64,
+    text: *const object::String,
+    repl: *const object::String,
+) -> *mut object::String {
+    let value = match (env_name(text), env_name(repl)) {
+        (Some(text), Some(repl)) => {
+            let registry = regex_registry().lock().unwrap();
+            match registry.get(&id) {
+                Some(re) => re.replace_all(text, repl).into_owned(),
+                None => text.to_string(),
+            }
+        }
+        (Some(text), None) => text.to_string(),
+        _ => std::string::String::new(),
+    };
+    object::raven_string_from_bytes(value.as_ptr(), value.len())
+}
+
+/// Split `text` on the compiled pattern `id`, joining the pieces by `\n`.
+/// An unknown id returns `text` unchanged.
+///
+/// # Safety
+///
+/// `text` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_regex_split(id: i64, text: *const object::String) -> *mut object::String {
+    let value = env_name(text)
+        .map(|text| {
+            let registry = regex_registry().lock().unwrap();
+            match registry.get(&id) {
+                Some(re) => re.split(text).collect::<Vec<&str>>().join("\n"),
+                None => text.to_string(),
+            }
+        })
+        .unwrap_or_default();
+    object::raven_string_from_bytes(value.as_ptr(), value.len())
+}
+
+/// Drop the compiled pattern `id` from the registry. An unknown id is a
+/// no-op.
+#[no_mangle]
+pub extern "C" fn raven_regex_free(id: i64) {
+    regex_registry().lock().unwrap().remove(&id);
 }
 
 /// A stack buffer large enough for any base-ten `i64` plus a sign.

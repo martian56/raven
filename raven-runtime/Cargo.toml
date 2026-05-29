@@ -13,4 +13,5 @@ name = "raven_runtime"
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+regex = "1"
 ureq = "2.12"
