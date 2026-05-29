@@ -1001,6 +1001,86 @@ fn regex_program_compiles_and_runs() {
     compile_link_run_and_check("use_regex.rv", expected, &runtime);
 }
 
+#[test]
+fn process_module_is_bundled() {
+    // The std/process module source is embedded in the compiler and visible
+    // to the resolver under its `std/` path.
+    assert!(raven::resolve::stdlib::bundled_source("process").is_some());
+}
+
+#[test]
+fn process_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // std/process subprocesses end to end. A portable subprocess test
+    // cannot rely on host commands (echo/cmd differ across platforms), so
+    // the child is a SECOND compiled Raven program with identical output
+    // everywhere: proc_child.rv prints `7\n`. The parent (use_process.rv)
+    // reads the child's path from RAVEN_PROC_CHILD, runs it with no args,
+    // and prints the exit code (0) then the captured stdout (`7\n`), then
+    // takes the spawn-failure Err path on a nonexistent program, printing
+    // `run failed`. Total stdout is `0\n7\nrun failed\n`.
+    let child = build_example_binary("proc_child.rv", &runtime);
+    let parent = build_example_binary("use_process.rv", &runtime);
+
+    let output = Command::new(&parent.binary)
+        .env("RAVEN_PROC_CHILD", &child.binary)
+        .output()
+        .expect("run use_process binary");
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    cleanup(&child.tmp);
+    cleanup(&parent.tmp);
+    assert!(
+        output.status.success(),
+        "use_process binary exited non zero: status={:?} stderr={}",
+        output.status,
+        stderr
+    );
+    assert_eq!(
+        stdout, "0\n7\nrun failed\n",
+        "unexpected stdout for use_process: {:?}",
+        stdout
+    );
+}
+
+/// A compiled example binary plus the temp dir holding it, so the caller
+/// can run the binary and then clean up.
+struct ExampleBinary {
+    binary: PathBuf,
+    tmp: PathBuf,
+}
+
+/// Compile `examples/v2/<name>` to a fresh temp executable and return its
+/// path. Panics on any failure on a supported host.
+fn build_example_binary(name: &str, runtime: &RuntimeStaticLib) -> ExampleBinary {
+    let source_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join("v2")
+        .join(name);
+    let source =
+        std::fs::read_to_string(&source_path).unwrap_or_else(|e| panic!("read {}: {}", name, e));
+    let object_bytes = match build_object(&source, &source_path) {
+        Ok(b) => b,
+        Err(e) => panic!("frontend or codegen failed for {}: {}", name, e),
+    };
+    let tmp = workdir();
+    let stem = Path::new(name).file_stem().unwrap().to_string_lossy();
+    let object_path = tmp.join(format!("{}.o", stem));
+    std::fs::write(&object_path, &object_bytes).expect("write object");
+    let binary = tmp.join(if cfg!(windows) {
+        format!("{}.exe", stem)
+    } else {
+        stem.to_string()
+    });
+    if let Err(e) = linker::link(&object_path, runtime, &binary) {
+        cleanup(&tmp);
+        panic!("linker failed to produce an executable for {}: {}", name, e);
+    }
+    ExampleBinary { binary, tmp }
+}
+
 /// Return the runtime staticlib when a linker and the staticlib are both
 /// present, or skip with a diagnostic. Shared by every smoke case so the
 /// skip behavior stays identical.

@@ -138,6 +138,45 @@ fn regex_clear_error() {
     REGEX_LAST_ERROR.with(|e| e.borrow_mut().clear());
 }
 
+thread_local! {
+    // Message of the most recent failed subprocess spawn: empty on success,
+    // the OS error text on failure. The std/process wrapper reads it through
+    // `raven_process_last_error` to decide Ok vs Err. A child that runs but
+    // exits non-zero is NOT a failure here; only a spawn error sets this.
+    static PROCESS_LAST_ERROR: RefCell<std::string::String> = const { RefCell::new(std::string::String::new()) };
+}
+
+fn process_set_error(msg: std::string::String) {
+    PROCESS_LAST_ERROR.with(|e| *e.borrow_mut() = msg);
+}
+
+fn process_clear_error() {
+    PROCESS_LAST_ERROR.with(|e| e.borrow_mut().clear());
+}
+
+/// A finished child's captured output. The child runs to completion in one
+/// call and its exit code, stdout, and stderr are stored here keyed by an
+/// id so only an opaque integer crosses the FFI.
+struct ProcResult {
+    code: i64,
+    stdout: std::string::String,
+    stderr: std::string::String,
+}
+
+/// The process-wide child-result registry keyed by an incrementing id. Ids
+/// start at 1; 0 is the spawn-failure sentinel that pairs with a set
+/// last-error.
+fn process_registry() -> &'static Mutex<HashMap<i64, ProcResult>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<i64, ProcResult>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Issue the next child-result id.
+fn process_next_id() -> i64 {
+    static NEXT_ID: AtomicI64 = AtomicI64::new(1);
+    NEXT_ID.fetch_add(1, Ordering::Relaxed)
+}
+
 /// The process-wide compiled-regex registry keyed by an incrementing id.
 /// Ids start at 1; 0 is the failure sentinel that pairs with a set
 /// last-error.
@@ -1451,6 +1490,132 @@ pub extern "C" fn raven_regex_split(id: i64, text: *const object::String) -> *mu
 #[no_mangle]
 pub extern "C" fn raven_regex_free(id: i64) {
     regex_registry().lock().unwrap().remove(&id);
+}
+
+/// The message of the most recent failed subprocess spawn, empty when the
+/// spawn succeeded. The std/process wrapper reads this to build an `Err`
+/// only when the run id is 0. A non-zero child exit never sets it.
+#[no_mangle]
+pub extern "C" fn raven_process_last_error() -> *mut object::String {
+    PROCESS_LAST_ERROR.with(|e| {
+        let msg = e.borrow();
+        object::raven_string_from_bytes(msg.as_ptr(), msg.len())
+    })
+}
+
+/// Spawn `program` with `args_nul_joined` (the child's args, each joined by
+/// a single NUL byte; an empty String means no args), feed `stdin_data` to
+/// the child's stdin (an empty String writes nothing), wait for it, and
+/// capture stdout, stderr (lossy UTF-8), and the exit code into a registry
+/// entry. Returns the entry id, or 0 on a spawn failure (for example the
+/// program is not found) with the last-error slot set. A child that runs
+/// but exits non-zero is NOT a spawn failure: its code and output are
+/// captured and a normal id is returned.
+///
+/// # Safety
+///
+/// `program`, `args_nul_joined`, and `stdin_data` must be valid
+/// `raven_string_from_bytes`-built `String`s.
+#[no_mangle]
+pub extern "C" fn raven_process_run(
+    program: *const object::String,
+    args_nul_joined: *const object::String,
+    stdin_data: *const object::String,
+) -> i64 {
+    let (Some(program), Some(args_joined), Some(stdin_data)) = (
+        env_name(program),
+        env_name(args_nul_joined),
+        env_name(stdin_data),
+    ) else {
+        process_set_error("program, args, or stdin is not valid UTF-8".to_string());
+        return 0;
+    };
+
+    // The args are joined by NUL. An empty String is zero args; otherwise
+    // each NUL-separated field is one arg. Program args effectively never
+    // contain NUL, so this round-trips unambiguously.
+    let args: Vec<&str> = if args_joined.is_empty() {
+        Vec::new()
+    } else {
+        args_joined.split('\0').collect()
+    };
+
+    let mut command = process::Command::new(program);
+    command.args(&args);
+    command.stdin(process::Stdio::piped());
+    command.stdout(process::Stdio::piped());
+    command.stderr(process::Stdio::piped());
+
+    let mut child = match command.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            process_set_error(e.to_string());
+            return 0;
+        }
+    };
+
+    if let Some(mut stdin) = child.stdin.take() {
+        // Ignore a broken pipe: a child that exits without reading still
+        // produced a valid result. Dropping stdin closes it.
+        let _ = stdin.write_all(stdin_data.as_bytes());
+    }
+
+    let output = match child.wait_with_output() {
+        Ok(o) => o,
+        Err(e) => {
+            process_set_error(e.to_string());
+            return 0;
+        }
+    };
+
+    // A child terminated by a signal with no exit code maps to -1.
+    let code = output.status.code().map(|c| c as i64).unwrap_or(-1);
+    let result = ProcResult {
+        code,
+        stdout: std::string::String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: std::string::String::from_utf8_lossy(&output.stderr).into_owned(),
+    };
+    let id = process_next_id();
+    process_registry().lock().unwrap().insert(id, result);
+    process_clear_error();
+    id
+}
+
+/// Exit code of the finished child `id`. A child terminated by a signal
+/// with no code yields -1. An unknown id yields -1.
+#[no_mangle]
+pub extern "C" fn raven_process_exit_code(id: i64) -> i64 {
+    process_registry()
+        .lock()
+        .unwrap()
+        .get(&id)
+        .map(|r| r.code)
+        .unwrap_or(-1)
+}
+
+/// Captured stdout of the finished child `id`. An unknown id yields an
+/// empty `String`.
+#[no_mangle]
+pub extern "C" fn raven_process_stdout(id: i64) -> *mut object::String {
+    let registry = process_registry().lock().unwrap();
+    let out = registry.get(&id).map(|r| r.stdout.as_str()).unwrap_or("");
+    object::raven_string_from_bytes(out.as_ptr(), out.len())
+}
+
+/// Captured stderr of the finished child `id`. An unknown id yields an
+/// empty `String`.
+#[no_mangle]
+pub extern "C" fn raven_process_stderr(id: i64) -> *mut object::String {
+    let registry = process_registry().lock().unwrap();
+    let err = registry.get(&id).map(|r| r.stderr.as_str()).unwrap_or("");
+    object::raven_string_from_bytes(err.as_ptr(), err.len())
+}
+
+/// Drop the finished child `id`, releasing its captured output. An unknown
+/// id is a no-op.
+#[no_mangle]
+pub extern "C" fn raven_process_free(id: i64) {
+    process_registry().lock().unwrap().remove(&id);
 }
 
 /// A stack buffer large enough for any base-ten `i64` plus a sign.
