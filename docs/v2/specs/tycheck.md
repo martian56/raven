@@ -188,6 +188,7 @@ Three generic shapes are hard coded:
 * `Option<T>`. Variants: `None`, `Some(T)`. Constructed by writing `None` or `Some(value)` at a use site whose context type fixes `T`. The resolver already accepts `Option` and `Result` as built in type names; the type checker recognizes the variant identifiers when the contextual type is known.
 * `Result<T, E>`. Variants: `Ok(T)`, `Err(E)`.
 * `List<T>`. The array literal `[a, b, c]` infers `T` as the unified element type. Empty list literals require a context type and are otherwise rejected with `TypeMismatch`.
+* `Set<T>` and `Map<K, V>` (bundled `std/collections` types). The set literal `{a, b}` types as `Set<T>` with `T` unified across the elements; the map literal `["k": v]` (and the empty `[:]`) types as `Map<K, V>` with `K` and `V` unified across the keys and values. The literal binds to the imported `Set`/`Map` declaration, so it requires `import std/collections` in scope and otherwise reports a `TypeError`. `T` and `K` carry the declarations' `Eq` bound. HIR lowers the literals to the `Set.new()`/`Map.new()` constructors plus an `add`/`set` per element or pair.
 
 Member access against these types goes through a small inherent method table. None of these types participate in the general generic mechanism: their `T` and `E` are pattern matched directly by the type checker. When the full generic mechanism lands (issue #59), these special cases collapse into the unified path.
 

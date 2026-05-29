@@ -376,9 +376,15 @@ fn walk_expr(
                 }
             }
         }
-        ExprKind::Array(items) | ExprKind::Tuple(items) => {
+        ExprKind::Array(items) | ExprKind::Tuple(items) | ExprKind::SetLit(items) => {
             for e in items {
                 walk_expr(e, scope, map)?;
+            }
+        }
+        ExprKind::MapLit(pairs) => {
+            for (k, v) in pairs {
+                walk_expr(k, scope, map)?;
+                walk_expr(v, scope, map)?;
             }
         }
         ExprKind::Paren(e) => walk_expr(e, scope, map)?,

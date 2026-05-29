@@ -497,20 +497,53 @@ impl Parser {
         Err(RavenError::parse(ParseError::UnsupportedTuple, span))
     }
 
+    /// Parse a `[...]` bracket primary: a list literal `[a, b]`, an empty
+    /// list `[]`, an empty map `[:]`, or a map literal `[k: v, ...]`. A
+    /// map is distinguished from a list by a `:` at the top level of the
+    /// first element; the empty map uses the explicit `[:]` form so the
+    /// bare `[]` stays an empty list.
     fn parse_array_lit(&mut self) -> ParseResult<Expr> {
         let lb = self.advance();
-        let mut items = Vec::new();
         self.skip_newlines();
-        if !matches!(self.peek_kind(), TokenKind::RBracket) {
+        // Empty map: `[:]`.
+        if matches!(self.peek_kind(), TokenKind::Colon)
+            && matches!(self.peek_kind_at(1), TokenKind::RBracket)
+        {
+            self.advance(); // :
+            let rb = self.advance(); // ]
+            let span = merge_spans(&lb.span, &rb.span);
+            return Ok(Expr {
+                kind: ExprKind::MapLit(Vec::new()),
+                span,
+            });
+        }
+        // Empty list: `[]`.
+        if matches!(self.peek_kind(), TokenKind::RBracket) {
+            let rb = self.advance();
+            let span = merge_spans(&lb.span, &rb.span);
+            return Ok(Expr {
+                kind: ExprKind::Array(Vec::new()),
+                span,
+            });
+        }
+        // Parse the first element expression, then decide list vs map by
+        // whether a `:` follows it at the top level.
+        let first = self.parse_expr()?;
+        self.skip_newlines();
+        if matches!(self.peek_kind(), TokenKind::Colon) {
+            return self.parse_map_lit(lb.span, first);
+        }
+        let mut items = vec![first];
+        self.skip_newlines();
+        if self.eat(&TokenKind::Comma) {
             loop {
                 self.skip_newlines();
+                if matches!(self.peek_kind(), TokenKind::RBracket) {
+                    break;
+                }
                 items.push(self.parse_expr()?);
                 self.skip_newlines();
                 if !self.eat(&TokenKind::Comma) {
-                    break;
-                }
-                self.skip_newlines();
-                if matches!(self.peek_kind(), TokenKind::RBracket) {
                     break;
                 }
             }
@@ -523,6 +556,38 @@ impl Parser {
         })
     }
 
+    /// Parse the remainder of a map literal after the first key has been
+    /// read and the following `:` is the next token. `first_key` is that
+    /// key. Produces an `ExprKind::MapLit` of `(key, value)` pairs; the
+    /// HIR lowers it to `Map.new()` plus one `set(k, v)` per pair.
+    fn parse_map_lit(&mut self, lbracket: Span, first_key: Expr) -> ParseResult<Expr> {
+        let mut pairs: Vec<(Expr, Expr)> = Vec::new();
+        self.expect(&TokenKind::Colon, "`:`")?;
+        self.skip_newlines();
+        let first_val = self.parse_expr()?;
+        pairs.push((first_key, first_val));
+        self.skip_newlines();
+        while self.eat(&TokenKind::Comma) {
+            self.skip_newlines();
+            if matches!(self.peek_kind(), TokenKind::RBracket) {
+                break;
+            }
+            let key = self.parse_expr()?;
+            self.skip_newlines();
+            self.expect(&TokenKind::Colon, "`:`")?;
+            self.skip_newlines();
+            let val = self.parse_expr()?;
+            pairs.push((key, val));
+            self.skip_newlines();
+        }
+        let rb = self.expect(&TokenKind::RBracket, "`]`")?;
+        let span = merge_spans(&lbracket, &rb.span);
+        Ok(Expr {
+            kind: ExprKind::MapLit(pairs),
+            span,
+        })
+    }
+
     /// Parse a `{...}` primary: either a shorthand lambda or a block
     /// expression. The distinguisher is an `Arrow` token at depth 0
     /// before any statement separator outside parens or brackets.
@@ -530,10 +595,92 @@ impl Parser {
         if self.is_shorthand_lambda() {
             return self.parse_lambda_shorthand();
         }
+        if self.is_set_literal() {
+            return self.parse_set_lit();
+        }
         let block = self.parse_block()?;
         let span = block.span.clone();
         Ok(Expr {
             kind: ExprKind::Block(block),
+            span,
+        })
+    }
+
+    /// Heuristic for a set literal `{ e1, e2, ... }`. The cursor is at the
+    /// opening `{`. A set is a brace whose first element is an expression
+    /// followed, at brace depth 1, by a `,` before any statement separator
+    /// (`;` or newline) or the closing `}`. A single-element `{ x }` is a
+    /// block (it preserves the existing one-tail-expression behavior), so a
+    /// set always carries at least one comma. An empty `{}` is a block, and
+    /// an empty set is written `Set.new()`.
+    fn is_set_literal(&self) -> bool {
+        let mut depth_paren = 0i32;
+        let mut depth_bracket = 0i32;
+        let mut depth_brace = 0i32;
+        let mut i = self.pos;
+        let mut seen_token = false;
+        while i < self.tokens.len() {
+            let k = &self.tokens[i].kind;
+            match k {
+                TokenKind::LBrace => depth_brace += 1,
+                TokenKind::RBrace => {
+                    depth_brace -= 1;
+                    if depth_brace == 0 {
+                        return false;
+                    }
+                }
+                TokenKind::LParen => depth_paren += 1,
+                TokenKind::RParen => depth_paren -= 1,
+                TokenKind::LBracket => depth_bracket += 1,
+                TokenKind::RBracket => depth_bracket -= 1,
+                TokenKind::Comma if depth_brace == 1 && depth_paren == 0 && depth_bracket == 0 => {
+                    return seen_token;
+                }
+                // A statement keyword right after `{` is always a block.
+                TokenKind::Let | TokenKind::Return | TokenKind::Break | TokenKind::Continue
+                    if depth_brace == 1 && !seen_token =>
+                {
+                    return false;
+                }
+                TokenKind::Semi | TokenKind::Newline
+                    if depth_brace == 1 && depth_paren == 0 && depth_bracket == 0 =>
+                {
+                    return false;
+                }
+                TokenKind::Eof => return false,
+                _ => {
+                    if depth_brace == 1 {
+                        seen_token = true;
+                    }
+                }
+            }
+            i += 1;
+        }
+        false
+    }
+
+    /// Parse a set literal `{ e1, e2, ... }`. Produces an
+    /// `ExprKind::SetLit`; the HIR lowers it to `Set.new()` plus one
+    /// `add(e)` per element. The cursor is at the opening `{`.
+    fn parse_set_lit(&mut self) -> ParseResult<Expr> {
+        let lb = self.advance(); // {
+        let mut items = Vec::new();
+        self.skip_newlines();
+        loop {
+            self.skip_newlines();
+            if matches!(self.peek_kind(), TokenKind::RBrace) {
+                break;
+            }
+            items.push(self.parse_expr()?);
+            self.skip_newlines();
+            if !self.eat(&TokenKind::Comma) {
+                break;
+            }
+        }
+        let rb = self.expect(&TokenKind::RBrace, "`}`")?;
+        let span = merge_spans(&lb.span, &rb.span);
+        Ok(Expr {
+            kind: ExprKind::SetLit(items),
             span,
         })
     }

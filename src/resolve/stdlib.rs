@@ -770,9 +770,15 @@ fn rewrite_expr(expr: &mut Expr, rename: &HashMap<String, String>) {
                 }
             }
         }
-        ExprKind::Array(items) | ExprKind::Tuple(items) => {
+        ExprKind::Array(items) | ExprKind::Tuple(items) | ExprKind::SetLit(items) => {
             for e in items {
                 rewrite_expr(e, rename);
+            }
+        }
+        ExprKind::MapLit(pairs) => {
+            for (k, v) in pairs {
+                rewrite_expr(k, rename);
+                rewrite_expr(v, rename);
             }
         }
         ExprKind::StructLit { fields, .. } => {

@@ -397,6 +397,27 @@ fn pretty_expr(buf: &mut String, expr: &Expr, depth: usize) {
             indent(buf, depth);
             buf.push_str(")\n");
         }
+        ExprKind::SetLit(items) => {
+            buf.push_str("(set\n");
+            for it in items {
+                pretty_expr(buf, it, depth + 1);
+            }
+            indent(buf, depth);
+            buf.push_str(")\n");
+        }
+        ExprKind::MapLit(pairs) => {
+            buf.push_str("(map\n");
+            for (k, v) in pairs {
+                indent(buf, depth + 1);
+                buf.push_str("(pair\n");
+                pretty_expr(buf, k, depth + 2);
+                pretty_expr(buf, v, depth + 2);
+                indent(buf, depth + 1);
+                buf.push_str(")\n");
+            }
+            indent(buf, depth);
+            buf.push_str(")\n");
+        }
         ExprKind::Paren(inner) => {
             buf.push_str("(paren\n");
             pretty_expr(buf, inner, depth + 1);

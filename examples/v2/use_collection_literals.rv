@@ -1,0 +1,39 @@
+// golden:skip
+import std/collections
+import std/io { println }
+
+fun main() {
+    // Set literal: duplicates collapse, membership and length work.
+    let s: Set<Int> = {1, 2, 2, 3}
+    print(s.len())
+    print(s.contains(2))
+    print(s.contains(9))
+
+    // Set inference without an annotation.
+    let inferred = {10, 20, 30}
+    print(inferred.len())
+
+    // Map literal: keys map to values, get returns Option, length counts pairs.
+    let m = ["a": 1, "b": 2]
+    print(m.len())
+    match m.get("a") {
+        Some(v) -> print(v)
+        None -> print(0)
+    }
+    match m.get("z") {
+        Some(v) -> print(v)
+        None -> print(-1)
+    }
+
+    // Map value inference: String keys to Bool values.
+    let flags = ["x": true, "y": false]
+    print(flags.len())
+    match flags.get("x") {
+        Some(b) -> print(b)
+        None -> print(false)
+    }
+
+    // Empty map form `[:]` builds an empty Map.
+    let empty: Map<String, Int> = [:]
+    print(empty.len())
+}

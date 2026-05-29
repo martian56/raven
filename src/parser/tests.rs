@@ -169,6 +169,101 @@ fn parses_array_literal() {
     assert_eq!(items.len(), 3);
 }
 
+// ----- set and map literals -----
+
+/// Extract the initializer expression of the first top-level `let`.
+fn let_init(f: &crate::ast::File) -> &ExprKind {
+    let DeclKind::Let(d) = &f.items[0].kind else {
+        panic!("expected a let decl");
+    };
+    &d.init.as_ref().expect("let initializer").kind
+}
+
+#[test]
+fn parses_set_literal() {
+    let f = parse_ok("let s = {1, 2, 2}\n");
+    let ExprKind::SetLit(items) = let_init(&f) else {
+        panic!("expected a set literal, got {:?}", let_init(&f));
+    };
+    assert_eq!(items.len(), 3);
+}
+
+#[test]
+fn parses_single_element_set_with_trailing_comma() {
+    let f = parse_ok("let s = {1,}\n");
+    let ExprKind::SetLit(items) = let_init(&f) else {
+        panic!("expected a set literal");
+    };
+    assert_eq!(items.len(), 1);
+}
+
+#[test]
+fn single_element_brace_is_a_block_not_a_set() {
+    // `{ x }` stays a block whose tail expression is `x`, preserving the
+    // existing block behavior. A set needs the comma form.
+    let f = parse_ok("let a = { 5 }\n");
+    let ExprKind::Block(b) = let_init(&f) else {
+        panic!("expected a block, not a set");
+    };
+    assert!(b.stmts.is_empty());
+    assert!(matches!(
+        b.trailing.as_ref().unwrap().kind,
+        ExprKind::Int(5)
+    ));
+}
+
+#[test]
+fn brace_with_statement_is_a_block() {
+    let f = parse_ok("let b = { let x = 3; x + 1 }\n");
+    assert!(matches!(let_init(&f), ExprKind::Block(_)));
+}
+
+#[test]
+fn empty_brace_is_a_block() {
+    let f = parse_ok("let u = {}\n");
+    let ExprKind::Block(b) = let_init(&f) else {
+        panic!("expected a block");
+    };
+    assert!(b.stmts.is_empty());
+    assert!(b.trailing.is_none());
+}
+
+#[test]
+fn parses_map_literal() {
+    let f = parse_ok("let m = [\"a\": 1, \"b\": 2]\n");
+    let ExprKind::MapLit(pairs) = let_init(&f) else {
+        panic!("expected a map literal, got {:?}", let_init(&f));
+    };
+    assert_eq!(pairs.len(), 2);
+}
+
+#[test]
+fn empty_map_literal_is_a_map_lit_with_no_pairs() {
+    let f = parse_ok("let m = [:]\n");
+    let ExprKind::MapLit(pairs) = let_init(&f) else {
+        panic!("expected an empty map literal");
+    };
+    assert!(pairs.is_empty());
+}
+
+#[test]
+fn empty_bracket_is_an_empty_list() {
+    let f = parse_ok("let e = []\n");
+    let ExprKind::Array(items) = let_init(&f) else {
+        panic!("expected an empty array");
+    };
+    assert!(items.is_empty());
+}
+
+#[test]
+fn bracket_without_colon_is_a_list() {
+    let f = parse_ok("let l = [1, 2, 3]\n");
+    let ExprKind::Array(items) = let_init(&f) else {
+        panic!("expected an array");
+    };
+    assert_eq!(items.len(), 3);
+}
+
 #[test]
 fn parses_paren_expr() {
     let f = parse_ok("let a = (1 + 2)\n");
