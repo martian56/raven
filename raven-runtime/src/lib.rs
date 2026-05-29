@@ -36,9 +36,40 @@ pub use object::{
 };
 
 use std::alloc::{self, Layout};
+use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
 use std::process;
 use std::slice;
+
+thread_local! {
+    // Message of the most recent fallible fs op: empty on success, the OS
+    // error text on failure. The Raven wrapper reads it through
+    // `raven_fs_last_error` after each call to decide Ok vs Err.
+    static FS_LAST_ERROR: RefCell<std::string::String> = const { RefCell::new(std::string::String::new()) };
+}
+
+fn fs_set_error(msg: std::string::String) {
+    FS_LAST_ERROR.with(|e| *e.borrow_mut() = msg);
+}
+
+fn fs_clear_error() {
+    FS_LAST_ERROR.with(|e| e.borrow_mut().clear());
+}
+
+/// Record the result of a fallible fs op: clear the last error on success,
+/// store the OS message on failure.
+fn fs_record<T>(r: io::Result<T>) -> Option<T> {
+    match r {
+        Ok(v) => {
+            fs_clear_error();
+            Some(v)
+        }
+        Err(e) => {
+            fs_set_error(e.to_string());
+            None
+        }
+    }
+}
 
 /// Allocate `size` bytes aligned to `align`.
 ///
@@ -328,6 +359,184 @@ pub extern "C" fn raven_random_entropy() -> i64 {
     z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
     z = z ^ (z >> 31);
     z as i64
+}
+
+/// The message of the most recent fallible fs op, empty when it
+/// succeeded. The Raven wrapper reads this to build an `Err` only when it
+/// is non-empty.
+#[no_mangle]
+pub extern "C" fn raven_fs_last_error() -> *mut object::String {
+    FS_LAST_ERROR.with(|e| {
+        let msg = e.borrow();
+        object::raven_string_from_bytes(msg.as_ptr(), msg.len())
+    })
+}
+
+/// Read the whole file at `path` as a `String`. On failure stores the OS
+/// message in the last-error slot and returns an empty `String`.
+///
+/// # Safety
+///
+/// `path` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_fs_read(path: *const object::String) -> *mut object::String {
+    let contents = env_name(path)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
+        .and_then(std::fs::read_to_string);
+    let value = fs_record(contents).unwrap_or_default();
+    object::raven_string_from_bytes(value.as_ptr(), value.len())
+}
+
+/// Create or truncate `path` and write `contents` to it.
+///
+/// # Safety
+///
+/// Both arguments must be valid `raven_string_from_bytes`-built `String`s.
+#[no_mangle]
+pub extern "C" fn raven_fs_write(
+    path: *const object::String,
+    contents: *const object::String,
+) -> bool {
+    let result = match (env_name(path), env_name(contents)) {
+        (Some(p), Some(c)) => std::fs::write(p, c),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "path or contents is not valid UTF-8",
+        )),
+    };
+    fs_record(result).is_some()
+}
+
+/// Append `contents` to `path`, creating it when absent.
+///
+/// # Safety
+///
+/// Both arguments must be valid `raven_string_from_bytes`-built `String`s.
+#[no_mangle]
+pub extern "C" fn raven_fs_append(
+    path: *const object::String,
+    contents: *const object::String,
+) -> bool {
+    let result = match (env_name(path), env_name(contents)) {
+        (Some(p), Some(c)) => std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(p)
+            .and_then(|mut f| f.write_all(c.as_bytes())),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "path or contents is not valid UTF-8",
+        )),
+    };
+    fs_record(result).is_some()
+}
+
+/// Remove the file at `path`.
+///
+/// # Safety
+///
+/// `path` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_fs_remove_file(path: *const object::String) -> bool {
+    let result = env_name(path)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
+        .and_then(std::fs::remove_file);
+    fs_record(result).is_some()
+}
+
+/// Create the directory at `path`, including any missing parents.
+///
+/// # Safety
+///
+/// `path` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_fs_create_dir(path: *const object::String) -> bool {
+    let result = env_name(path)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
+        .and_then(std::fs::create_dir_all);
+    fs_record(result).is_some()
+}
+
+/// Remove the directory at `path` and all of its contents.
+///
+/// # Safety
+///
+/// `path` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_fs_remove_dir(path: *const object::String) -> bool {
+    let result = env_name(path)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
+        .and_then(std::fs::remove_dir_all);
+    fs_record(result).is_some()
+}
+
+/// List the entry names of the directory at `path`, joined by `\n`. An
+/// empty directory yields an empty `String`. On failure stores the OS
+/// message and returns an empty `String`.
+///
+/// # Safety
+///
+/// `path` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_fs_list(path: *const object::String) -> *mut object::String {
+    let result = env_name(path)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
+        .and_then(|p| {
+            let mut names: Vec<std::string::String> = Vec::new();
+            for entry in std::fs::read_dir(p)? {
+                let entry = entry?;
+                names.push(entry.file_name().to_string_lossy().into_owned());
+            }
+            Ok(names.join("\n"))
+        });
+    let value = fs_record(result).unwrap_or_default();
+    object::raven_string_from_bytes(value.as_ptr(), value.len())
+}
+
+/// File size at `path` in bytes. On failure stores the OS message and
+/// returns 0.
+///
+/// # Safety
+///
+/// `path` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_fs_size(path: *const object::String) -> i64 {
+    let result = env_name(path)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
+        .and_then(std::fs::metadata)
+        .map(|m| m.len() as i64);
+    fs_record(result).unwrap_or(0)
+}
+
+/// Whether anything exists at `path`. Not fallible: a missing path is a
+/// normal `false`.
+///
+/// # Safety
+///
+/// `path` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_fs_exists(path: *const object::String) -> bool {
+    env_name(path).is_some_and(|p| std::path::Path::new(p).exists())
+}
+
+/// Whether `path` is a regular file. A missing path is `false`.
+///
+/// # Safety
+///
+/// `path` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_fs_is_file(path: *const object::String) -> bool {
+    env_name(path).is_some_and(|p| std::path::Path::new(p).is_file())
+}
+
+/// Whether `path` is a directory. A missing path is `false`.
+///
+/// # Safety
+///
+/// `path` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_fs_is_dir(path: *const object::String) -> bool {
+    env_name(path).is_some_and(|p| std::path::Path::new(p).is_dir())
 }
 
 /// A stack buffer large enough for any base-ten `i64` plus a sign.

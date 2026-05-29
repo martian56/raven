@@ -1,0 +1,226 @@
+// std/fs: filesystem operations over the raven-runtime C ABI. Fallible
+// ops return Result<T, Error> where the error is an std/error `Error`
+// tagged with kind "io" (Raven has no type alias, so IoError is realized
+// as that, built directly as an `Error` struct literal with kind "io").
+// The runtime keeps a thread-local last-error string; each
+// wrapper runs the op and turns a non-empty last error into an Err. The
+// non-fallible queries (exists, is_file, is_dir) treat a missing path as a
+// normal false. Path manipulation is pure Raven string work on `/`. See
+// docs/v2/specs/std-fs.md.
+
+import std/error
+import std/string
+
+extern "C" {
+    fun raven_fs_last_error() -> String
+    fun raven_fs_read(path: String) -> String
+    fun raven_fs_write(path: String, contents: String) -> Bool
+    fun raven_fs_append(path: String, contents: String) -> Bool
+    fun raven_fs_remove_file(path: String) -> Bool
+    fun raven_fs_create_dir(path: String) -> Bool
+    fun raven_fs_remove_dir(path: String) -> Bool
+    fun raven_fs_list(path: String) -> String
+    fun raven_fs_size(path: String) -> Int
+    fun raven_fs_exists(path: String) -> Bool
+    fun raven_fs_is_file(path: String) -> Bool
+    fun raven_fs_is_dir(path: String) -> Bool
+}
+
+// An Error tagged with kind "io" (the IoError realization), its message a
+// context prefix joined to the runtime's last-error text.
+fun io_error(ctx: String) -> Error {
+    return Error { kind: "io", message: ctx.concat(": ").concat(raven_fs_last_error()) }
+}
+
+// Whole file at `path` as a String.
+fun read(path: String) -> Result<String, Error> {
+    let out = raven_fs_read(path)
+    if raven_fs_last_error().length() > 0 {
+        return Err(io_error("read"))
+    }
+    return Ok(out)
+}
+
+// Create or truncate `path` and write `contents`. Returns Ok(true) on
+// success; the Bool payload is always true and exists only because the
+// surface uses Result<Bool, Error> rather than a Unit payload.
+fun write(path: String, contents: String) -> Result<Bool, Error> {
+    raven_fs_write(path, contents)
+    if raven_fs_last_error().length() > 0 {
+        return Err(io_error("write"))
+    }
+    return Ok(true)
+}
+
+// Append `contents` to `path`, creating it when absent. Ok(true) on success.
+fun append(path: String, contents: String) -> Result<Bool, Error> {
+    raven_fs_append(path, contents)
+    if raven_fs_last_error().length() > 0 {
+        return Err(io_error("append"))
+    }
+    return Ok(true)
+}
+
+// Remove the file at `path`. Ok(true) on success.
+fun remove_file(path: String) -> Result<Bool, Error> {
+    raven_fs_remove_file(path)
+    if raven_fs_last_error().length() > 0 {
+        return Err(io_error("remove_file"))
+    }
+    return Ok(true)
+}
+
+// Create the directory at `path`, including any missing parents. Ok(true)
+// on success.
+fun create_dir(path: String) -> Result<Bool, Error> {
+    raven_fs_create_dir(path)
+    if raven_fs_last_error().length() > 0 {
+        return Err(io_error("create_dir"))
+    }
+    return Ok(true)
+}
+
+// Remove the directory at `path` and all of its contents. Ok(true) on
+// success.
+fun remove_dir(path: String) -> Result<Bool, Error> {
+    raven_fs_remove_dir(path)
+    if raven_fs_last_error().length() > 0 {
+        return Err(io_error("remove_dir"))
+    }
+    return Ok(true)
+}
+
+// Entry names (not full paths) of the directory at `path`. An empty
+// directory yields an empty list.
+fun list_dir(path: String) -> Result<List<String>, Error> {
+    let joined = raven_fs_list(path)
+    if raven_fs_last_error().length() > 0 {
+        return Err(io_error("list_dir"))
+    }
+    return Ok(split_lines(joined))
+}
+
+// File size at `path` in bytes.
+fun size(path: String) -> Result<Int, Error> {
+    let n = raven_fs_size(path)
+    if raven_fs_last_error().length() > 0 {
+        return Err(io_error("size"))
+    }
+    return Ok(n)
+}
+
+// Whether anything exists at `path`. A missing path is a normal false.
+fun exists(path: String) -> Bool {
+    return raven_fs_exists(path)
+}
+
+// Whether `path` is a regular file. A missing path is false.
+fun is_file(path: String) -> Bool {
+    return raven_fs_is_file(path)
+}
+
+// Whether `path` is a directory. A missing path is false.
+fun is_dir(path: String) -> Bool {
+    return raven_fs_is_dir(path)
+}
+
+// Split `s` on `\n` into a list of lines. An empty string yields an empty
+// list (not a one-element list of ""), so an empty directory listing maps
+// to an empty list.
+fun split_lines(s: String) -> List<String> {
+    let out: List<String> = []
+    if s.length() == 0 {
+        return out
+    }
+    let n = s.length()
+    let start = 0
+    let i = 0
+    while i < n {
+        if s.char_at(i).starts_with("\n") {
+            out.push(s.substring(start, i))
+            start = i + 1
+        }
+        i = i + 1
+    }
+    out.push(s.substring(start, n))
+    return out
+}
+
+// Path manipulation on `/` separators. Forward slash works on Windows for
+// these std ops; the OS separator is not detected. These overlap with
+// std/path; they are duplicated here so std/fs is usable without a second
+// import.
+
+// Byte index of the last `/`, or -1 when none.
+fun last_slash(p: String) -> Int {
+    let i = p.length() - 1
+    while i >= 0 {
+        if p.char_at(i).starts_with("/") {
+            return i
+        }
+        i = i - 1
+    }
+    return -1
+}
+
+fun join(a: String, b: String) -> String {
+    if a.length() == 0 {
+        return b
+    }
+    if b.length() == 0 {
+        return a
+    }
+    let a_slash = a.ends_with("/")
+    let b_slash = b.starts_with("/")
+    if a_slash {
+        if b_slash {
+            return a.concat(b.substring(1, b.length()))
+        }
+        return a.concat(b)
+    }
+    if b_slash {
+        return a.concat(b)
+    }
+    return a.concat("/").concat(b)
+}
+
+fun basename(p: String) -> String {
+    let i = last_slash(p)
+    if i < 0 {
+        return p
+    }
+    return p.substring(i + 1, p.length())
+}
+
+fun dirname(p: String) -> String {
+    let i = last_slash(p)
+    if i < 0 {
+        return "."
+    }
+    if i == 0 {
+        return "/"
+    }
+    return p.substring(0, i)
+}
+
+// Split `p` on `/` into its components, dropping empty pieces produced by
+// leading, trailing, or repeated separators.
+fun split(p: String) -> List<String> {
+    let out: List<String> = []
+    let n = p.length()
+    let start = 0
+    let i = 0
+    while i < n {
+        if p.char_at(i).starts_with("/") {
+            if i > start {
+                out.push(p.substring(start, i))
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    if n > start {
+        out.push(p.substring(start, n))
+    }
+    return out
+}
