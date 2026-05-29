@@ -1,0 +1,21 @@
+// golden:skip
+import std/fmt { repeat, pad_left, pad_right, center, join, to_radix, to_binary, to_octal, to_hex, pad_int }
+import std/io { println }
+
+fun main() {
+    println(repeat("ab", 3))
+    println(pad_left("7", 3, "0"))
+    println(pad_right("7", 3, "-"))
+    println(center("hi", 6, "*"))
+    println(to_binary(10))
+    println(to_octal(64))
+    println(to_hex(255))
+    println(to_radix(-42, 16))
+    println(pad_int(42, 5))
+    println(pad_int(-7, 4))
+    println(join(["a", "b", "c"], ", "))
+    println((42).debug())
+    println(true.debug())
+    println('x'.debug())
+    println("hi".debug())
+}
