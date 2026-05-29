@@ -93,6 +93,10 @@ pub enum FfiTy {
     /// `*const c_char`: a pointer to a null-terminated byte buffer.
     /// Maps to a pointer-width int.
     CStr,
+    /// C `double`, 64-bit IEEE float. Maps to `f64`, the same
+    /// representation a Raven `Float` already uses, so a `Float`
+    /// argument is accepted where a `CDouble` is expected.
+    CDouble,
     /// An opaque typed pointer `CPtr<T>`. Maps to a pointer-width int.
     /// The pointee type is carried for documentation and future
     /// conversions; the v2.0 back end treats it as an opaque pointer.
@@ -106,6 +110,7 @@ impl fmt::Display for FfiTy {
             FfiTy::CLong => f.write_str("CLong"),
             FfiTy::CSize => f.write_str("CSize"),
             FfiTy::CStr => f.write_str("CStr"),
+            FfiTy::CDouble => f.write_str("CDouble"),
             FfiTy::CPtr(inner) => write!(f, "CPtr<{}>", inner),
         }
     }

@@ -22,6 +22,8 @@ pub enum MirFfiTy {
     CSize,
     /// `*const c_char`. Codegen maps it to a pointer-width int.
     CStr,
+    /// C `double`. Codegen maps it to `f64`.
+    CDouble,
     /// `CPtr<T>`, an opaque pointer. Codegen maps it to a pointer-width
     /// int. The pointee mangle is kept for symbol uniqueness only.
     CPtr(Box<MirType>),
@@ -209,6 +211,7 @@ impl MirFfiTy {
             FfiTy::CLong => MirFfiTy::CLong,
             FfiTy::CSize => MirFfiTy::CSize,
             FfiTy::CStr => MirFfiTy::CStr,
+            FfiTy::CDouble => MirFfiTy::CDouble,
             FfiTy::CPtr(inner) => MirFfiTy::CPtr(Box::new(MirType::from_ty(inner))),
         }
     }
@@ -220,6 +223,7 @@ impl MirFfiTy {
             MirFfiTy::CLong => "CLong".into(),
             MirFfiTy::CSize => "CSize".into(),
             MirFfiTy::CStr => "CStr".into(),
+            MirFfiTy::CDouble => "CDouble".into(),
             MirFfiTy::CPtr(inner) => format!("CPtr_{}", inner.mangle()),
         }
     }
@@ -232,6 +236,7 @@ impl fmt::Display for MirFfiTy {
             MirFfiTy::CLong => f.write_str("CLong"),
             MirFfiTy::CSize => f.write_str("CSize"),
             MirFfiTy::CStr => f.write_str("CStr"),
+            MirFfiTy::CDouble => f.write_str("CDouble"),
             MirFfiTy::CPtr(inner) => write!(f, "CPtr<{}>", inner),
         }
     }

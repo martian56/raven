@@ -1,0 +1,25 @@
+// std/ffi: helpers for the C foreign-function interface. The C type set
+// (CInt, CLong, CSize, CStr, CPtr<T>, CDouble) is built into the type
+// checker; this module adds runtime conversions between a Raven `String`
+// and a C `CStr`. The primitives bind the raven-runtime C ABI through
+// `extern "C"`; the wrappers are pure Raven. See docs/v2/specs/std-ffi.md.
+
+extern "C" {
+    fun raven_string_to_cstr(s: String) -> CStr
+    fun raven_cstr_to_string(p: CStr) -> String
+}
+
+// Copy `s` into a fresh, null-terminated C string and return a `CStr`
+// pointing at it. The buffer is a standalone copy valid for the rest of
+// the program run, so it is safe to pass to a C function that reads (or
+// retains) the pointer. Embedded NUL bytes are kept up to the first one
+// a C reader stops at.
+fun to_cstr(s: String) -> CStr {
+    return raven_string_to_cstr(s)
+}
+
+// Read the null-terminated bytes at `p` and build a Raven `String`. The
+// length is taken up to the first NUL; the terminator is dropped.
+fun from_cstr(p: CStr) -> String {
+    return raven_cstr_to_string(p)
+}

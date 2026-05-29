@@ -57,6 +57,7 @@ pub const BUNDLED_MODULES: &[(&str, &str)] = &[
     ("json", include_str!("../../stdlib/std/json.rv")),
     ("regex", include_str!("../../stdlib/std/regex.rv")),
     ("process", include_str!("../../stdlib/std/process.rv")),
+    ("ffi", include_str!("../../stdlib/std/ffi.rv")),
     ("test", include_str!("../../stdlib/std/test.rv")),
 ];
 
@@ -494,6 +495,11 @@ mod tests {
     #[test]
     fn process_module_is_bundled() {
         assert!(bundled_source("process").is_some());
+    }
+
+    #[test]
+    fn ffi_module_is_bundled() {
+        assert!(bundled_source("ffi").is_some());
     }
 
     #[test]

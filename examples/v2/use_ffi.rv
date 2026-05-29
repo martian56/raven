@@ -1,0 +1,23 @@
+// std/ffi: convert a runtime Raven String to a C string and call libc.
+// strlen counts the bytes of "hello" (5). strcmp returns 0 for equal
+// strings and a nonzero value otherwise. from_cstr round-trips a CStr
+// back to a Raven String. The C integer results print through print_int,
+// which accepts the FFI integer types and widens them to i64.
+import std/ffi { to_cstr, from_cstr }
+import std/io { println }
+
+extern "C" {
+    fun strlen(s: CStr) -> CSize
+    fun strcmp(a: CStr, b: CStr) -> CInt
+}
+
+fun main() {
+    let s = "hello"
+    let n = strlen(to_cstr(s))
+    print_int(n)
+    let eq = strcmp(to_cstr("abc"), to_cstr("abc"))
+    print_int(eq)
+    let lt = strcmp(to_cstr("abc"), to_cstr("abd"))
+    print_int(lt)
+    println(from_cstr(to_cstr("roundtrip")))
+}

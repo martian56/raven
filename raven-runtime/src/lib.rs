@@ -516,6 +516,66 @@ pub extern "C" fn raven_int_to_float(value: i64) -> f64 {
     value as f64
 }
 
+/// Copy a Raven `String` into a freshly allocated, null-terminated byte
+/// buffer and return a `*const c_char` (`CStr`) to its first byte.
+///
+/// The returned buffer is a standalone copy, not the String's own bytes,
+/// so embedded NUL bytes in the String are preserved up to the first one
+/// a C reader will stop at. The buffer is allocated outside the GC heap
+/// and is intentionally not reclaimed: it is valid for the rest of the
+/// program run. Use this for short-lived calls into C (for example
+/// `strlen`). Backs `std/ffi`'s `to_cstr`.
+///
+/// # Safety
+///
+/// `s` must be a valid `raven_string_from_bytes`-built `String` or null.
+#[no_mangle]
+pub extern "C" fn raven_string_to_cstr(s: *const object::String) -> *const u8 {
+    let len = object::raven_string_len(s) as usize;
+    // One extra byte for the terminating NUL. `raven_alloc` returns a
+    // non-null dangling pointer at size zero, which is fine for the empty
+    // string: byte index 0 is the NUL we write below.
+    let buf = raven_alloc(len + 1, 1);
+    if buf.is_null() {
+        return std::ptr::null();
+    }
+    let src = object::raven_string_bytes(s);
+    // SAFETY: `buf` has `len + 1` writable bytes; `src` holds `len`
+    // initialized bytes (or is null when `len` is zero, guarded here).
+    unsafe {
+        if len > 0 && !src.is_null() {
+            std::ptr::copy_nonoverlapping(src, buf, len);
+        }
+        *buf.add(len) = 0;
+    }
+    buf as *const u8
+}
+
+/// Read the null-terminated bytes at `p` and build a Raven `String`.
+///
+/// The length is computed up to the first NUL byte; the terminator is
+/// not included in the result. A null `p` yields an empty `String`.
+/// Backs `std/ffi`'s `from_cstr`.
+///
+/// # Safety
+///
+/// `p` must point to a null-terminated byte sequence or be null.
+#[no_mangle]
+pub extern "C" fn raven_cstr_to_string(p: *const u8) -> *mut object::String {
+    if p.is_null() {
+        return object::raven_string_from_bytes(std::ptr::null(), 0);
+    }
+    let mut len = 0usize;
+    // SAFETY: the caller guarantees a NUL terminator, so the scan stops
+    // inside the buffer.
+    unsafe {
+        while *p.add(len) != 0 {
+            len += 1;
+        }
+    }
+    object::raven_string_from_bytes(p, len)
+}
+
 /// Return a non-deterministic 64-bit seed for entropy seeding.
 ///
 /// Mixes a high-resolution timestamp with the process id through a
