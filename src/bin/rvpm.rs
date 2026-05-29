@@ -2,7 +2,8 @@
 //!
 //! rvpm manages Raven packages described by an `rv.toml` manifest. This
 //! binary is intentionally thin: it parses arguments and dispatches to
-//! library code in `raven::manifest`. Today only `init` is implemented.
+//! library code in `raven::manifest`, `raven::pkg`, `raven::lock`, and
+//! `raven::ops`.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -10,6 +11,7 @@ use std::process::ExitCode;
 use raven::lock::{self, LockFile, LOCK_FILE_NAME};
 use raven::manifest::init::{init_project, name_from_dir, InitError};
 use raven::manifest::Manifest;
+use raven::ops;
 use raven::pkg;
 use raven::resolve::GithubPath;
 
@@ -41,6 +43,9 @@ fn main() -> ExitCode {
                 ExitCode::from(1)
             }
         },
+        Some("add") => run(cmd_add(&args[1..])),
+        Some("install") => run(cmd_install(&args[1..])),
+        Some("update") => run(cmd_update(&args[1..])),
         Some(other) => {
             eprintln!("rvpm: unknown subcommand '{}'", other);
             eprintln!("Run 'rvpm help' for usage.");
@@ -105,6 +110,75 @@ fn cmd_lock() -> Result<(), String> {
     Ok(())
 }
 
+/// Print a command's outcome lines, mapping its error to a non-zero exit.
+fn run(result: Result<Vec<String>, String>) -> ExitCode {
+    match result {
+        Ok(lines) => {
+            for line in lines {
+                println!("{}", line);
+            }
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("rvpm: {}", e);
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// Append (or update) a dependency in rv.toml, then resolve and write
+/// rv.lock. Accepts `github.com/<user>/<repo>` with an optional
+/// `@<version>`; without a version a placeholder constraint is recorded.
+fn cmd_add(args: &[String]) -> Result<Vec<String>, String> {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        return Ok(vec![add_usage()]);
+    }
+    let spec = args
+        .first()
+        .ok_or_else(|| format!("add needs a package argument\n{}", add_usage()))?;
+    let (path, version) = match spec.rsplit_once('@') {
+        Some((p, v)) => (p, Some(v)),
+        None => (spec.as_str(), None),
+    };
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let report = ops::add(&cwd, path, version).map_err(|e| e.to_string())?;
+    Ok(report.outcome_lines)
+}
+
+/// Re-resolve rv.toml against rv.lock and fill the cache, validating an
+/// existing lock or writing a fresh one.
+fn cmd_install(args: &[String]) -> Result<Vec<String>, String> {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        return Ok(vec![install_usage()]);
+    }
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let (_outcome, report) = ops::install(&cwd).map_err(|e| e.to_string())?;
+    Ok(report.outcome_lines)
+}
+
+/// Re-resolve rv.toml and rewrite rv.lock, for one named package or all.
+fn cmd_update(args: &[String]) -> Result<Vec<String>, String> {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        return Ok(vec![update_usage()]);
+    }
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let package = args.first().map(String::as_str);
+    let report = ops::update(&cwd, package).map_err(|e| e.to_string())?;
+    Ok(report.outcome_lines)
+}
+
+fn add_usage() -> String {
+    "Usage: rvpm add github.com/<user>/<repo>[@<version>]".to_string()
+}
+
+fn install_usage() -> String {
+    "Usage: rvpm install".to_string()
+}
+
+fn update_usage() -> String {
+    "Usage: rvpm update [github.com/<user>/<repo>]".to_string()
+}
+
 fn print_usage() {
     println!("rvpm: the Raven package manager");
     println!();
@@ -112,10 +186,15 @@ fn print_usage() {
     println!("  rvpm <command> [arguments]");
     println!();
     println!("Commands:");
-    println!("  init [name]   Scaffold a new package in the current directory");
-    println!("  fetch <pkg>   Fetch 'github.com/<user>/<repo>@<version>' into the shared cache");
-    println!("  lock          Generate or validate rv.lock for the current package");
-    println!("  help          Print this message");
+    println!("  init [name]    Scaffold a new package in the current directory");
+    println!("  add <pkg>      Add a dependency to rv.toml, then resolve and write rv.lock");
+    println!("  install        Resolve rv.toml against rv.lock and fill the cache");
+    println!("  update [pkg]   Re-resolve rv.toml and rewrite rv.lock for one package or all");
+    println!("  fetch <pkg>    Fetch 'github.com/<user>/<repo>@<version>' into the shared cache");
+    println!("  lock           Generate or validate rv.lock for the current package");
+    println!("  help           Print this message");
     println!();
-    println!("add/install/update and build/run land in later releases.");
+    println!("Package arguments use the 'github.com/<user>/<repo>' form.");
+    println!("For 'add', append '@<version>' to pin a git tag or branch; without it");
+    println!("a placeholder constraint is recorded. build and run land in a later release.");
 }

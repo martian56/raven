@@ -46,6 +46,8 @@ target-lexicon = "0.12"
 # rv.toml manifest parsing for the rvpm package manager.
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+# Format-preserving rv.toml edits for `rvpm add`.
+toml_edit = "0.22"
 # Content (tree) hashing for the rvpm lock file (rv.lock).
 sha2 = "0.10"
 
