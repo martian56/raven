@@ -1,6 +1,6 @@
 # Raven Language
 
-[Raven](https://github.com/martian56/raven) is a statically typed language with a small runtime. This extension adds VS Code support for `.rv` files: highlighting, snippets, and a few editor conveniences.
+[Raven](https://github.com/martian56/raven) is a statically typed systems language with a small runtime. This extension adds VS Code support for `.rv` files (Raven v2 syntax): highlighting, snippets, and a few editor conveniences.
 
 **Docs:** [raven documentation](https://martian56.github.io/raven/) · **Language & compiler:** [GitHub](https://github.com/martian56/raven)
 
@@ -8,8 +8,8 @@
 
 ## Features
 
-- **Syntax highlighting** for Raven source
-- **Snippets** for common patterns (variables, functions, control flow, structs, enums, `main`, printing)
+- **Syntax highlighting** for Raven v2 source, including PascalCase types, traits, generics, `match` arms, `${...}` string interpolation, `c"..."` and `"""..."""` strings, ranges, and `extern` blocks
+- **Snippets** for common patterns (bindings, functions, control flow, structs, enums, traits, impls, `match`, closures, `defer`, imports, `main`, printing)
 - **Comments & brackets** — line comments (`//`), block comments, sensible bracket/indent behavior for `.rv` files
 - **Run Raven File** — opens a terminal and runs the current file with the `raven` CLI (see below)
 - **Hovers & completions** for built-in functions and common keywords
@@ -45,11 +45,12 @@ Type the prefix, then **Tab** to expand:
 
 | Prefix | Use for |
 |--------|---------|
-| `let`, `fun` | Variables and functions |
-| `if`, `ifelse`, `elseif`, `ifelseif` | Branches (Raven uses **`elseif`**, not `else if`) |
-| `while`, `for` | Loops |
-| `struct`, `impl`, `enum` | Types and methods |
-| `print`, `printf`, `main` | Output and program entry |
+| `let`, `leti`, `const`, `fun`, `fune`, `fung` | Bindings and functions |
+| `if`, `ifelse`, `elseif`, `match` | Branches and pattern matching |
+| `while`, `loop`, `for`, `foreach` | Loops |
+| `struct`, `structg`, `enum`, `trait`, `impl`, `implfor` | Types, traits, and methods |
+| `import`, `imports`, `extern`, `defer`, `closure` | Modules, FFI, deferral, closures |
+| `print`, `printi`, `main` | Output and program entry |
 
 ---
 

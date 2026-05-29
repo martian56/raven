@@ -26,16 +26,10 @@ export function activate(context: vscode.ExtensionContext) {
             const word = document.getText(range);
             
             const builtinFunctions: { [key: string]: string } = {
-                'print': 'Prints output to console. Usage: `print(message)`',
-                'input': 'Gets user input. Usage: `let name: string = input("Enter name: ")`',
-                'format': 'Formats string with placeholders. Usage: `format("Hello {}", name)`',
-                'len': 'Gets length of string or array. Usage: `len(text)` or `len(array)`',
-                'type': 'Gets type information. Usage: `type(variable)`',
-                'read_file': 'Reads file contents. Usage: `let content: string = read_file("file.txt")`',
-                'write_file': 'Writes to file. Usage: `write_file("file.txt", content)`',
-                'append_file': 'Appends to file. Usage: `append_file("file.txt", content)`',
-                'file_exists': 'Checks if file exists. Usage: `file_exists("file.txt")`',
-                'enum_from_string': 'Converts string to enum. Usage: `enum_from_string("EnumName", "VariantName")`'
+                'print': 'Prints a String followed by a newline. Usage: `print(message)`',
+                'print_int': 'Prints an Int followed by a newline. Usage: `print_int(n)`',
+                'println': 'Prints a String with a trailing newline (from `std/io`). Usage: `import std/io { println }`',
+                'panic': 'Aborts the program with a message (from `std/test`).'
             };
 
             if (builtinFunctions[word]) {
@@ -52,18 +46,20 @@ export function activate(context: vscode.ExtensionContext) {
     let completionProvider = vscode.languages.registerCompletionItemProvider('raven', {
         provideCompletionItems(document, position, token, context) {
             const builtinFunctions = [
-                'print', 'input', 'format', 'len', 'type',
-                'read_file', 'write_file', 'append_file', 'file_exists', 'enum_from_string'
+                'print', 'print_int', 'println', 'panic'
             ];
 
             const keywords = [
-                'let', 'fun', 'if', 'elseif', 'else', 'while', 'for', 'return',
-                'import', 'export', 'from', 'struct', 'impl', 'enum', 'print',
-                'true', 'false', 'void', 'const', 'and', 'or', 'not'
+                'let', 'const', 'fun', 'return', 'if', 'else', 'while', 'for',
+                'loop', 'in', 'break', 'continue', 'match', 'struct', 'enum',
+                'trait', 'impl', 'import', 'as', 'extern', 'defer', 'dyn',
+                'true', 'false', 'self', 'Self'
             ];
 
             const types = [
-                'int', 'float', 'bool', 'string', 'int[]', 'float[]', 'bool[]', 'string[]'
+                'Int', 'Float', 'Bool', 'String', 'Char', 'Unit',
+                'Option', 'Result', 'List', 'Map', 'Set',
+                'CInt', 'CLong', 'CSize', 'CStr', 'CPtr', 'CDouble'
             ];
 
             const completions: vscode.CompletionItem[] = [];

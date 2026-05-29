@@ -1,8 +1,8 @@
 {
   "name": "raven-language",
   "displayName": "Raven Language",
-  "description": "Syntax highlighting and language support for Raven programming language",
-  "version": "1.2.2",
+  "description": "Syntax highlighting and language support for the Raven v2 programming language",
+  "version": "2.0.0",
   "publisher": "martian56",
   "icon": "icons/raven-fullsize.png",
   "engines": {
@@ -17,7 +17,10 @@
     "programming",
     "language",
     "syntax",
-    "highlighting"
+    "highlighting",
+    "systems",
+    "traits",
+    "generics"
   ],
   "contributes": {
     "languages": [
