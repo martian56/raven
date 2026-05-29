@@ -10,8 +10,8 @@
 
 - **Syntax highlighting** for Raven v2 source, including PascalCase types, traits, generics, `match` arms, `${...}` string interpolation, `c"..."` and `"""..."""` strings, ranges, and `extern` blocks
 - **Snippets** for common patterns (bindings, functions, control flow, structs, enums, traits, impls, `match`, closures, `defer`, imports, `main`, printing)
-- **Comments & brackets** — line comments (`//`), block comments, sensible bracket/indent behavior for `.rv` files
-- **Run Raven File** — opens a terminal and runs the current file with the `raven` CLI (see below)
+- **Comments & brackets**: line comments (`//`), block comments, sensible bracket/indent behavior for `.rv` files
+- **Run Raven File**: opens a terminal and runs the current file with the `raven` CLI (see below)
 - **Hovers & completions** for built-in functions and common keywords
 
 This extension does not embed the compiler. For full type-checking and navigation, use the `raven` CLI or your usual workflow outside the editor.
