@@ -52,6 +52,7 @@ pub const BUNDLED_MODULES: &[(&str, &str)] = &[
     ("env", include_str!("../../stdlib/std/env.rv")),
     ("fs", include_str!("../../stdlib/std/fs.rv")),
     ("time", include_str!("../../stdlib/std/time.rv")),
+    ("net", include_str!("../../stdlib/std/net.rv")),
     ("test", include_str!("../../stdlib/std/test.rv")),
 ];
 
@@ -464,6 +465,11 @@ mod tests {
     #[test]
     fn time_module_is_bundled() {
         assert!(bundled_source("time").is_some());
+    }
+
+    #[test]
+    fn net_module_is_bundled() {
+        assert!(bundled_source("net").is_some());
     }
 
     #[test]

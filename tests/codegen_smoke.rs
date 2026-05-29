@@ -706,6 +706,86 @@ fn fs_program_compiles_and_runs() {
 }
 
 #[test]
+fn net_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // std/net TCP client end to end against a loopback echo server. Raven
+    // v2 has no threads, so a single program cannot be both server and
+    // client: the test side runs the server on a std::thread and the
+    // compiled Raven program is the client. The server binds an ephemeral
+    // loopback port, the test passes its address to the client through
+    // RAVEN_NET_ADDR, the client connects, writes "ping", reads the echo,
+    // and prints it. A read timeout on both ends keeps a failure from
+    // hanging CI.
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback listener");
+    let addr = listener
+        .local_addr()
+        .expect("listener local addr")
+        .to_string();
+
+    let server = std::thread::spawn(move || {
+        // Accept one connection, echo back exactly what is read once, then
+        // drop. A read timeout means a misbehaving client cannot wedge the
+        // thread.
+        if let Ok((mut stream, _)) = listener.accept() {
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+            let mut buf = [0u8; 256];
+            if let Ok(n) = stream.read(&mut buf) {
+                let _ = stream.write_all(&buf[..n]);
+                let _ = stream.flush();
+            }
+        }
+    });
+
+    let name = "use_net.rv";
+    let source_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join("v2")
+        .join(name);
+    let source =
+        std::fs::read_to_string(&source_path).unwrap_or_else(|e| panic!("read {}: {}", name, e));
+    let object_bytes = match build_object(&source, &source_path) {
+        Ok(b) => b,
+        Err(e) => panic!("frontend or codegen failed for {}: {}", name, e),
+    };
+    let tmp = workdir();
+    let object_path = tmp.join("use_net.o");
+    std::fs::write(&object_path, &object_bytes).expect("write object");
+    let binary = tmp.join(if cfg!(windows) {
+        "use_net.exe"
+    } else {
+        "use_net"
+    });
+    if let Err(e) = linker::link(&object_path, &runtime, &binary) {
+        cleanup(&tmp);
+        panic!("linker failed to produce an executable for {}: {}", name, e);
+    }
+    let output = Command::new(&binary)
+        .env("RAVEN_NET_ADDR", &addr)
+        .output()
+        .unwrap_or_else(|e| panic!("run {} binary: {}", name, e));
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let _ = server.join();
+    cleanup(&tmp);
+    assert!(
+        output.status.success(),
+        "use_net binary exited non zero: status={:?} stderr={}",
+        output.status,
+        stderr
+    );
+    assert_eq!(
+        stdout, "ping\n",
+        "unexpected stdout for use_net: {:?}",
+        stdout
+    );
+}
+
+#[test]
 fn time_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

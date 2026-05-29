@@ -37,9 +37,14 @@ pub use object::{
 
 use std::alloc::{self, Layout};
 use std::cell::RefCell;
-use std::io::{self, BufRead, Write};
+use std::collections::HashMap;
+use std::io::{self, BufRead, Read, Write};
+use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::process;
 use std::slice;
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 
 thread_local! {
     // Message of the most recent fallible fs op: empty on success, the OS
@@ -84,6 +89,50 @@ fn time_set_error(msg: std::string::String) {
 
 fn time_clear_error() {
     TIME_LAST_ERROR.with(|e| e.borrow_mut().clear());
+}
+
+thread_local! {
+    // Message of the most recent fallible net op: empty on success, the OS
+    // error text on failure. The std/net wrapper reads it through
+    // `raven_net_last_error` to decide Ok vs Err.
+    static NET_LAST_ERROR: RefCell<std::string::String> = const { RefCell::new(std::string::String::new()) };
+}
+
+fn net_set_error(msg: std::string::String) {
+    NET_LAST_ERROR.with(|e| *e.borrow_mut() = msg);
+}
+
+fn net_clear_error() {
+    NET_LAST_ERROR.with(|e| e.borrow_mut().clear());
+}
+
+/// An entry in the socket registry. A listener or a stream is kept
+/// runtime-side so only an opaque integer id crosses the FFI.
+enum Socket {
+    Listener(TcpListener),
+    Stream(TcpStream),
+}
+
+/// The process-wide socket registry keyed by an incrementing id. Ids start
+/// at 1; 0 (or any non-positive value) is the failure sentinel that pairs
+/// with a set last-error.
+fn net_registry() -> &'static Mutex<HashMap<i64, Socket>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<i64, Socket>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Issue the next socket id.
+fn net_next_id() -> i64 {
+    static NEXT_ID: AtomicI64 = AtomicI64::new(1);
+    NEXT_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+/// Insert a socket and return its id, clearing the last error.
+fn net_insert(sock: Socket) -> i64 {
+    let id = net_next_id();
+    net_registry().lock().unwrap().insert(id, sock);
+    net_clear_error();
+    id
 }
 
 /// Allocate `size` bytes aligned to `align`.
@@ -690,6 +739,229 @@ pub extern "C" fn raven_time_parse(
 pub extern "C" fn raven_time_sleep_millis(ms: i64) {
     let ms = ms.max(0) as u64;
     std::thread::sleep(std::time::Duration::from_millis(ms));
+}
+
+/// The message of the most recent fallible net op, empty when it
+/// succeeded. The std/net wrapper reads this to build an `Err` only when it
+/// is non-empty.
+#[no_mangle]
+pub extern "C" fn raven_net_last_error() -> *mut object::String {
+    NET_LAST_ERROR.with(|e| {
+        let msg = e.borrow();
+        object::raven_string_from_bytes(msg.as_ptr(), msg.len())
+    })
+}
+
+/// Connect a TCP stream to `addr` ("host:port") and register it. Returns
+/// the stream id, or 0 on failure with the last-error slot set.
+///
+/// # Safety
+///
+/// `addr` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_net_connect(addr: *const object::String) -> i64 {
+    let result = env_name(addr)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "addr is not valid UTF-8"))
+        .and_then(TcpStream::connect);
+    match result {
+        Ok(stream) => net_insert(Socket::Stream(stream)),
+        Err(e) => {
+            net_set_error(e.to_string());
+            0
+        }
+    }
+}
+
+/// Bind a TCP listener to `addr` ("host:port") and register it. Returns the
+/// listener id, or 0 on failure with the last-error slot set.
+///
+/// # Safety
+///
+/// `addr` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_net_listen(addr: *const object::String) -> i64 {
+    let result = env_name(addr)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "addr is not valid UTF-8"))
+        .and_then(TcpListener::bind);
+    match result {
+        Ok(listener) => net_insert(Socket::Listener(listener)),
+        Err(e) => {
+            net_set_error(e.to_string());
+            0
+        }
+    }
+}
+
+/// Block until a connection arrives on the listener `listener_id`, register
+/// the accepted stream, and return its id. Returns 0 on failure (unknown
+/// id, the id is not a listener, or an accept error) with the last-error
+/// slot set.
+#[no_mangle]
+pub extern "C" fn raven_net_accept(listener_id: i64) -> i64 {
+    let accepted = {
+        let registry = net_registry().lock().unwrap();
+        match registry.get(&listener_id) {
+            Some(Socket::Listener(l)) => l.accept().map(|(stream, _)| stream),
+            Some(Socket::Stream(_)) => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "id is not a listener",
+            )),
+            None => Err(io::Error::new(io::ErrorKind::NotFound, "unknown socket id")),
+        }
+    };
+    match accepted {
+        Ok(stream) => net_insert(Socket::Stream(stream)),
+        Err(e) => {
+            net_set_error(e.to_string());
+            0
+        }
+    }
+}
+
+/// Read up to `max` bytes from the stream `stream_id` and return them as a
+/// `String` (treated as a byte buffer). A clean EOF returns an empty
+/// `String` with the last error cleared, so the wrapper can return Ok("").
+/// On error sets the last error and returns an empty `String`.
+#[no_mangle]
+pub extern "C" fn raven_net_read(stream_id: i64, max: i64) -> *mut object::String {
+    let cap = max.max(0) as usize;
+    let result = {
+        let mut registry = net_registry().lock().unwrap();
+        match registry.get_mut(&stream_id) {
+            Some(Socket::Stream(s)) => {
+                let mut buf = vec![0u8; cap];
+                s.read(&mut buf).map(|n| {
+                    buf.truncate(n);
+                    buf
+                })
+            }
+            Some(Socket::Listener(_)) => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "id is not a stream",
+            )),
+            None => Err(io::Error::new(io::ErrorKind::NotFound, "unknown socket id")),
+        }
+    };
+    match result {
+        Ok(bytes) => {
+            net_clear_error();
+            object::raven_string_from_bytes(bytes.as_ptr(), bytes.len())
+        }
+        Err(e) => {
+            net_set_error(e.to_string());
+            object::raven_string_from_bytes(std::ptr::null(), 0)
+        }
+    }
+}
+
+/// Write all bytes of `data` to the stream `stream_id`. Returns the number
+/// of bytes written, or -1 on failure with the last error set.
+///
+/// # Safety
+///
+/// `data` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_net_write(stream_id: i64, data: *const object::String) -> i64 {
+    let ptr = object::raven_string_bytes(data);
+    let len = object::raven_string_len(data) as usize;
+    let bytes: &[u8] = if ptr.is_null() || len == 0 {
+        &[]
+    } else {
+        // SAFETY: a Raven String holds `len` initialized bytes.
+        unsafe { slice::from_raw_parts(ptr, len) }
+    };
+    let result = {
+        let mut registry = net_registry().lock().unwrap();
+        match registry.get_mut(&stream_id) {
+            Some(Socket::Stream(s)) => s.write_all(bytes).map(|()| bytes.len() as i64),
+            Some(Socket::Listener(_)) => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "id is not a stream",
+            )),
+            None => Err(io::Error::new(io::ErrorKind::NotFound, "unknown socket id")),
+        }
+    };
+    match result {
+        Ok(n) => {
+            net_clear_error();
+            n
+        }
+        Err(e) => {
+            net_set_error(e.to_string());
+            -1
+        }
+    }
+}
+
+/// Remove `stream_id` from the registry; dropping the socket closes it. An
+/// unknown id is a no-op.
+#[no_mangle]
+pub extern "C" fn raven_net_close(stream_id: i64) {
+    net_registry().lock().unwrap().remove(&stream_id);
+}
+
+/// Set the read timeout of the stream `stream_id` to `ms` milliseconds. A
+/// value of 0 clears the timeout (blocking reads). Errors are stored in the
+/// last-error slot.
+#[no_mangle]
+pub extern "C" fn raven_net_set_read_timeout_ms(stream_id: i64, ms: i64) {
+    let timeout = if ms <= 0 {
+        None
+    } else {
+        Some(Duration::from_millis(ms as u64))
+    };
+    let registry = net_registry().lock().unwrap();
+    match registry.get(&stream_id) {
+        Some(Socket::Stream(s)) => match s.set_read_timeout(timeout) {
+            Ok(()) => net_clear_error(),
+            Err(e) => net_set_error(e.to_string()),
+        },
+        _ => net_set_error("unknown socket id".to_string()),
+    }
+}
+
+/// Resolve `host` to its IP addresses, newline-joined. On failure stores
+/// the error and returns an empty `String`.
+///
+/// # Safety
+///
+/// `host` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_dns_lookup(host: *const object::String) -> *mut object::String {
+    let result = env_name(host)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "host is not valid UTF-8"))
+        .and_then(|h| {
+            let addrs = (h, 0u16).to_socket_addrs()?;
+            let ips: Vec<std::string::String> = addrs.map(|sa| sa.ip().to_string()).collect();
+            Ok(ips.join("\n"))
+        });
+    match result {
+        Ok(joined) => {
+            net_clear_error();
+            object::raven_string_from_bytes(joined.as_ptr(), joined.len())
+        }
+        Err(e) => {
+            net_set_error(e.to_string());
+            object::raven_string_from_bytes(std::ptr::null(), 0)
+        }
+    }
+}
+
+/// Probe whether `addr` ("host:port") accepts a TCP connection within a
+/// short timeout. A pure boolean probe: never sets the last error.
+///
+/// # Safety
+///
+/// `addr` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_net_reachable(addr: *const object::String) -> bool {
+    let Some(text) = env_name(addr) else {
+        return false;
+    };
+    let Ok(mut targets) = text.to_socket_addrs() else {
+        return false;
+    };
+    targets.any(|sa| TcpStream::connect_timeout(&sa, Duration::from_millis(500)).is_ok())
 }
 
 /// A stack buffer large enough for any base-ten `i64` plus a sign.
