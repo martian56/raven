@@ -240,6 +240,14 @@ pub fn expand_with_stdlib_ctx(
     wanted.insert(PRELUDE_MODULE.to_string());
     collect_std_module_imports(user, &mut wanted);
 
+    // `@derive(Debug)` synthesizes an `impl Debug`, whose trait lives in
+    // `std/fmt`. Force-merge that module so the generated impl resolves even
+    // when the user wrote no `import std/fmt` line, mirroring how the prelude
+    // is always present.
+    if super::derive::needs_fmt_module(user) {
+        wanted.insert("fmt".to_string());
+    }
+
     // Load every local `./`/`../` module reachable from the user file,
     // transitively, before computing the bundled set: a local module may
     // itself `import std/...`, and those bundled modules must merge too so
@@ -327,6 +335,15 @@ pub fn expand_with_stdlib_ctx(
     // combined file's span borrows the user's file path for diagnostics
     // that key off the top level file.
     combined_items.extend(user.items.iter().cloned());
+
+    // Synthesize trait impls for every `@derive(...)` attribute. The user's
+    // own types carry the attributes, so this runs over the full combined
+    // item list (a stdlib type never carries a derive, so scanning all of it
+    // is harmless). The generated impls append after the user items and flow
+    // through resolve, type checking, and codegen like hand written ones.
+    let mut derived_impls = Vec::new();
+    super::derive::expand_derives(&combined_items, &mut derived_impls)?;
+    combined_items.append(&mut derived_impls);
 
     Ok(File {
         items: combined_items,

@@ -110,6 +110,9 @@ pub enum ResolveError {
         candidates: Vec<Span>,
     },
     SelfOutsideImpl,
+    /// A resolve-stage diagnostic that does not fit the structured variants,
+    /// carrying its own message (for example a `@derive(...)` rejection).
+    Other(String),
 }
 
 impl fmt::Display for ResolveError {
@@ -133,6 +136,7 @@ impl fmt::Display for ResolveError {
             ResolveError::SelfOutsideImpl => {
                 write!(f, "`self` or `Self` used outside an `impl` block")
             }
+            ResolveError::Other(msg) => write!(f, "{}", msg),
         }
     }
 }

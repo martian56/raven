@@ -1,0 +1,50 @@
+// Compile-time `@derive(...)` for the core traits. The attribute
+// synthesizes the trait impls so the type works with hash-backed
+// collections and prints without a hand written `equals`/`hash`/
+// `to_string`/`debug`. Covers a non-generic struct used as a Map key and a
+// Set element, an enum with payload variants, and a bounded generic struct.
+
+import std/collections { Map, Set }
+
+@derive(Eq, Hash, ToString, Debug)
+struct Point { x: Int, y: Int }
+
+@derive(Eq, ToString)
+enum Shape {
+    Dot,
+    Circle(Int),
+    Rect(Int, Int),
+}
+
+@derive(Eq, ToString)
+struct Pair<A, B> { first: A, second: B }
+
+fun main() {
+    let p = Point { x: 1, y: 2 }
+    let q = Point { x: 1, y: 2 }
+    let r = Point { x: 3, y: 4 }
+    print(p.equals(q))      // true
+    print(p.equals(r))      // false
+    print(p.to_string())    // Point { x: 1, y: 2 }
+    print(p.debug())        // Point { x: 1, y: 2 }
+
+    // Derived Eq + Hash let the struct key a Map and join a Set.
+    let m: Map<Point, Int> = Map.new()
+    m.set(p, 100)
+    print(m.has(q))         // true
+    let s: Set<Point> = Set.new()
+    s.add(p)
+    print(s.contains(q))    // true
+    print(s.contains(r))    // false
+
+    let c = Shape.Circle(3)
+    print(c.equals(Shape.Circle(3)))    // true
+    print(c.equals(Shape.Rect(2, 4)))   // false
+    print(c.to_string())                // Circle(3)
+    print(Shape.Dot.to_string())        // Dot
+
+    let pr = Pair { first: 1, second: "hi" }
+    print(pr.equals(Pair { first: 1, second: "hi" }))   // true
+    print(pr.equals(Pair { first: 2, second: "no" }))   // false
+    print(pr.to_string())                               // Pair { first: 1, second: hi }
+}

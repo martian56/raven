@@ -33,5 +33,5 @@ A function bounded by a prelude trait, for example `fun describe<T: ToString>(x:
 
 - `Hash for Char` and `Hash for Float`: need a `Char`-to-`Int` primitive and a defined float-bit hash; deferred until those land.
 - Associated types on `Iterator` (the element type is a trait type parameter for now).
-- Derivation (`derive(Eq, Hash)`): user types implement the traits explicitly for now.
+- `Ord` derivation: not derivable yet. `Eq`, `Hash`, `ToString`, and `Debug` are derivable through `@derive(...)`; see `derive.md`.
 - The lazy iterator adapter pipeline: specified in `std/iter`.

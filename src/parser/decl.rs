@@ -13,18 +13,58 @@ use super::{merge_spans, ParseResult, Parser};
 impl Parser {
     /// Parse one top level declaration.
     pub(crate) fn parse_decl(&mut self) -> ParseResult<Decl> {
+        // A leading `@derive(...)` attribute attaches a derived trait list
+        // to the struct or enum that immediately follows.
+        let derives = if matches!(self.peek_kind(), TokenKind::At) {
+            let d = self.parse_derive_attr()?;
+            self.skip_separators();
+            d
+        } else {
+            Vec::new()
+        };
         match self.peek_kind() {
+            TokenKind::Struct => self.parse_struct_decl(derives),
+            TokenKind::Enum => self.parse_enum_decl(derives),
+            _ if !derives.is_empty() => {
+                Err(self.unexpected("`struct` or `enum` after `@derive(...)`"))
+            }
             TokenKind::Fun => self.parse_function_decl(),
-            TokenKind::Struct => self.parse_struct_decl(),
             TokenKind::Trait => self.parse_trait_decl(),
             TokenKind::Impl => self.parse_impl_decl(),
-            TokenKind::Enum => self.parse_enum_decl(),
             TokenKind::Extern => self.parse_extern_decl(),
             TokenKind::Import => self.parse_import_decl(),
             TokenKind::Const => self.parse_const_decl(),
             TokenKind::Let => self.parse_let_decl(),
             _ => Err(self.unexpected("top level item")),
         }
+    }
+
+    /// Parse `@derive(Name, Name, ...)`, returning the trait names. The `@`
+    /// is at the cursor on entry. Only the `derive` attribute is recognized;
+    /// any other attribute name is a parse error.
+    fn parse_derive_attr(&mut self) -> ParseResult<Vec<String>> {
+        self.expect(&TokenKind::At, "`@`")?;
+        let (name, name_span) = self.expect_ident("attribute name")?;
+        if name != "derive" {
+            return Err(RavenError::parse(
+                ParseError::Custom(format!("unknown attribute `@{name}`, expected `@derive`")),
+                name_span,
+            ));
+        }
+        self.expect(&TokenKind::LParen, "`(`")?;
+        self.skip_newlines();
+        let mut traits = Vec::new();
+        while !matches!(self.peek_kind(), TokenKind::RParen) {
+            let (t, _) = self.expect_ident("trait name")?;
+            traits.push(t);
+            self.skip_newlines();
+            if !self.eat(&TokenKind::Comma) {
+                break;
+            }
+            self.skip_newlines();
+        }
+        self.expect(&TokenKind::RParen, "`)`")?;
+        Ok(traits)
     }
 
     fn parse_function_decl(&mut self) -> ParseResult<Decl> {
@@ -197,7 +237,7 @@ impl Parser {
         Ok(params)
     }
 
-    fn parse_struct_decl(&mut self) -> ParseResult<Decl> {
+    fn parse_struct_decl(&mut self, derives: Vec<String>) -> ParseResult<Decl> {
         let start = self.advance().span; // struct
         let (name, _) = self.expect_ident("struct name")?;
         let generics = self.parse_generic_params_opt()?;
@@ -230,6 +270,7 @@ impl Parser {
                 name,
                 generics,
                 fields,
+                derives,
                 span: span.clone(),
             }),
             span,
@@ -299,7 +340,7 @@ impl Parser {
         })
     }
 
-    fn parse_enum_decl(&mut self) -> ParseResult<Decl> {
+    fn parse_enum_decl(&mut self, derives: Vec<String>) -> ParseResult<Decl> {
         let start = self.advance().span; // enum
         let (name, _) = self.expect_ident("enum name")?;
         let generics = self.parse_generic_params_opt()?;
@@ -386,6 +427,7 @@ impl Parser {
                 name,
                 generics,
                 variants,
+                derives,
                 span: span.clone(),
             }),
             span,
