@@ -277,7 +277,7 @@ fn collect_free_stmt(
             }
             collect_free_expr(value, bound, seen, out);
         }
-        HirStmtKind::Defer(e) => collect_free_expr(e, bound, seen, out),
+        HirStmtKind::Defer(e) | HirStmtKind::Spawn(e) => collect_free_expr(e, bound, seen, out),
     }
 }
 

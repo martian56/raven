@@ -54,6 +54,12 @@ pub const STR_CONCAT_FN: &str = "__str_concat";
 /// each return. See `docs/v2/specs/defer.md`.
 pub const DEFER_PUSH_FN: &str = "__defer_push";
 
+/// Internal spawn intrinsic. MIR lowering of a `spawn expr` evaluates
+/// `expr` to a `fun() -> Unit` closure and emits `__go_spawn(closure)`,
+/// which lowers to the runtime's `raven_go_spawn`. The runtime starts a
+/// goroutine running the closure. See `docs/v2/specs/concurrency.md`.
+pub const GO_SPAWN_FN: &str = "__go_spawn";
+
 /// Runtime C symbol the `print` intrinsic dispatches to.
 pub const RUNTIME_PRINTLN_STR: &str = "raven_println_str";
 
@@ -140,6 +146,9 @@ pub const RUNTIME_DEFER_RUN_FRAME: &str = "raven_defer_run_frame";
 /// defer frame.
 pub const RUNTIME_DEFER_PUSH: &str = "raven_defer_push";
 
+/// Runtime C symbol spawning a goroutine from a `fun() -> Unit` closure.
+pub const RUNTIME_GO_SPAWN: &str = "raven_go_spawn";
+
 /// Runtime C symbols backing `List<T>` literals, indexing, and methods.
 ///
 /// A list value is a single GC pointer to a heap `List` object. Codegen
@@ -199,5 +208,6 @@ pub fn is_intrinsic(mangled: &str) -> bool {
             | STR_FROM_BYTE
             | STR_CONCAT_FN
             | DEFER_PUSH_FN
+            | GO_SPAWN_FN
     )
 }

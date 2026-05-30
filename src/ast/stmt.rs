@@ -37,6 +37,9 @@ pub enum StmtKind {
     Continue,
     /// `defer expr`: schedules `expr` to run at scope exit.
     Defer(Expr),
+    /// `spawn expr`: starts a goroutine running the `fun() -> Unit`
+    /// closure `expr` produces.
+    Spawn(Expr),
     /// `lvalue op= rhs`. The `target` expression is constrained at parse
     /// time to be a valid LValue (identifier with `.` and `[]` chains).
     Assign {

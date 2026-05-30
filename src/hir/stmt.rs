@@ -40,6 +40,10 @@ pub enum HirStmtKind {
     /// `defer expr`. Schedules `expr` to run at scope exit; lowered
     /// further by a later pass (issue #68).
     Defer(HirExpr),
+    /// `spawn expr`. Starts a goroutine running the `fun() -> Unit`
+    /// closure `expr` produces; MIR lowering emits a `raven_go_spawn`
+    /// call. See `docs/v2/specs/concurrency.md`.
+    Spawn(HirExpr),
 }
 
 /// Where an assignment is writing. Compound-assignment lowering can

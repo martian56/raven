@@ -168,6 +168,17 @@ fn closure_capture_program_compiles_and_runs() {
 }
 
 #[test]
+fn concurrency_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // `spawn` starts goroutines that communicate over channels on the
+    // cooperative scheduler. Producer/consumer, fan-in, and a cooperative
+    // interleave each sum to 15, deterministically.
+    compile_link_run_and_check("use_concurrency.rv", "15\n15\n15\n", &runtime);
+}
+
+#[test]
 fn nested_defer_runs_at_function_return() {
     let Some(runtime) = supported_runtime() else {
         return;

@@ -80,6 +80,18 @@ pub(crate) fn lower_stmt(stmt: &Stmt, cx: &LowerCtx<'_>) -> Result<Vec<HirStmt>,
                 span: stmt.span.clone(),
             }])
         }
+        StmtKind::Spawn(e) => {
+            // The operand is a goroutine body: a `fun() -> Unit` closure.
+            let expected = Ty::Function {
+                params: Vec::new(),
+                ret: Box::new(Ty::Unit),
+            };
+            let lowered = lower_expr(e, &expected, cx)?;
+            Ok(vec![HirStmt {
+                kind: HirStmtKind::Spawn(lowered),
+                span: stmt.span.clone(),
+            }])
+        }
         StmtKind::Assign { target, op, value } => match op {
             AssignOp::Assign => {
                 let tgt = lower_assign_target(target, cx)?;

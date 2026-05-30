@@ -1,0 +1,46 @@
+// std/sync: goroutine-style concurrency over the raven-runtime cooperative
+// scheduler. A Channel wraps an opaque runtime id, the same registry
+// pattern std/net uses for sockets. send and recv block by yielding to the
+// scheduler when the channel is full or empty. This slice carries Int
+// values; a goroutine body is started with the `spawn` keyword. See
+// docs/v2/specs/concurrency.md.
+
+extern "C" {
+    fun raven_channel_new() -> Int
+    fun raven_channel_new_buffered(cap: Int) -> Int
+    fun raven_channel_send(id: Int, value: Int)
+    fun raven_channel_recv(id: Int) -> Int
+    fun raven_go_yield()
+}
+
+// A channel of Int values. The id keys the runtime's channel registry.
+struct Channel {
+    id: Int,
+}
+
+// Create an unbuffered (rendezvous) channel.
+fun channel() -> Channel {
+    return Channel { id: raven_channel_new() }
+}
+
+// Create a buffered channel of capacity `cap`.
+fun channel_buffered(cap: Int) -> Channel {
+    return Channel { id: raven_channel_new_buffered(cap) }
+}
+
+impl Channel {
+    // Send `value`, blocking until the channel can accept it.
+    fun send(self, value: Int) {
+        raven_channel_send(self.id, value)
+    }
+
+    // Receive a value, blocking until one is available.
+    fun recv(self) -> Int {
+        return raven_channel_recv(self.id)
+    }
+}
+
+// Yield control to the scheduler so other ready goroutines can run.
+fun yield_now() {
+    raven_go_yield()
+}

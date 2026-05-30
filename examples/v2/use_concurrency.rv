@@ -1,0 +1,71 @@
+// Cooperative green threads and channels. A spawned goroutine runs a
+// fun() -> Unit closure; channels carry values between goroutines and
+// block (yielding to the scheduler) when full or empty. Output is
+// deterministic because every result is a sum or count, not an order.
+// See docs/v2/specs/concurrency.md.
+
+import std/sync { Channel, channel, channel_buffered, yield_now }
+
+fun main() {
+    // Producer/consumer: a goroutine sends 1..5 on an unbuffered channel;
+    // main receives 5 values and prints their sum (15).
+    let ch = channel()
+    spawn(fun() -> Unit {
+        let i = 1
+        while i <= 5 {
+            ch.send(i)
+            i = i + 1
+        }
+    })
+    let sum = 0
+    let n = 0
+    while n < 5 {
+        sum = sum + ch.recv()
+        n = n + 1
+    }
+    print(sum)
+
+    // Fan-in: three goroutines each send one value; main receives three
+    // and prints their sum (3 + 5 + 7 = 15). Ordering is irrelevant.
+    let fan = channel()
+    spawn(fun() -> Unit {
+        fan.send(3)
+    })
+    spawn(fun() -> Unit {
+        fan.send(5)
+    })
+    spawn(fun() -> Unit {
+        fan.send(7)
+    })
+    let total = 0
+    let k = 0
+    while k < 3 {
+        total = total + fan.recv()
+        k = k + 1
+    }
+    print(total)
+
+    // Cooperative interleave over a buffered channel: a goroutine appends
+    // even numbers, main appends odd numbers, both yielding between sends.
+    // The final sum of all six values is deterministic (0+1+2+3+4+5 = 15).
+    let inter = channel_buffered(8)
+    spawn(fun() -> Unit {
+        inter.send(0)
+        yield_now()
+        inter.send(2)
+        yield_now()
+        inter.send(4)
+    })
+    inter.send(1)
+    yield_now()
+    inter.send(3)
+    yield_now()
+    inter.send(5)
+    let acc = 0
+    let m = 0
+    while m < 6 {
+        acc = acc + inter.recv()
+        m = m + 1
+    }
+    print(acc)
+}

@@ -169,7 +169,7 @@ fn hir_uses_iterator_intrinsics(p: &HirProgram) -> bool {
             HirStmtKind::Let { init, .. } => expr_uses(&init.kind),
             HirStmtKind::Expr(e) => expr_uses(&e.kind),
             HirStmtKind::Assign { value, .. } => expr_uses(&value.kind),
-            HirStmtKind::Defer(e) => expr_uses(&e.kind),
+            HirStmtKind::Defer(e) | HirStmtKind::Spawn(e) => expr_uses(&e.kind),
         }
     }
     fn expr_uses(k: &HirExprKind) -> bool {

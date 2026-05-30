@@ -59,6 +59,7 @@ pub enum TokenKind {
     As,
     Extern,
     Defer,
+    Spawn,
     True,
     False,
     /// lowercase `self`
@@ -383,6 +384,7 @@ impl Lexer {
             "as" => TokenKind::As,
             "extern" => TokenKind::Extern,
             "defer" => TokenKind::Defer,
+            "spawn" => TokenKind::Spawn,
             "true" => TokenKind::True,
             "false" => TokenKind::False,
             "self" => TokenKind::SelfLower,

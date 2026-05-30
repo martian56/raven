@@ -631,6 +631,10 @@ impl Printer<'_> {
                 let text = format!("defer {}", self.render_expr(e));
                 self.emit_multiline(&text);
             }
+            StmtKind::Spawn(e) => {
+                let text = format!("spawn {}", self.render_expr(e));
+                self.emit_multiline(&text);
+            }
             StmtKind::Assign { target, op, value } => {
                 let text = format!(
                     "{} {} {}",

@@ -63,6 +63,7 @@ pub const BUNDLED_MODULES: &[(&str, &str)] = &[
     ("process", include_str!("../../stdlib/std/process.rv")),
     ("ffi", include_str!("../../stdlib/std/ffi.rv")),
     ("test", include_str!("../../stdlib/std/test.rv")),
+    ("sync", include_str!("../../stdlib/std/sync.rv")),
 ];
 
 /// The prelude module that is implicitly imported into every program.
@@ -773,7 +774,7 @@ fn rewrite_stmt(stmt: &mut Stmt, rename: &HashMap<String, String>) {
                 rewrite_expr(e, rename);
             }
         }
-        StmtKind::Defer(e) | StmtKind::Expr(e) => rewrite_expr(e, rename),
+        StmtKind::Defer(e) | StmtKind::Spawn(e) | StmtKind::Expr(e) => rewrite_expr(e, rename),
         StmtKind::Assign { target, value, .. } => {
             rewrite_expr(target, rename);
             rewrite_expr(value, rename);

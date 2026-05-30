@@ -221,6 +221,12 @@ fn pretty_stmt(buf: &mut String, stmt: &HirStmt, depth: usize) {
             indent(buf, depth);
             buf.push_str(")\n");
         }
+        HirStmtKind::Spawn(e) => {
+            buf.push_str("(spawn\n");
+            pretty_expr(buf, e, depth + 1);
+            indent(buf, depth);
+            buf.push_str(")\n");
+        }
     }
 }
 

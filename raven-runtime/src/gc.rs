@@ -30,7 +30,55 @@ use std::collections::HashMap;
 /// pointer (or null). The collector reads the slot's current value at
 /// collection time, so a slot reassigned during the function body is
 /// always observed at its live value.
-type RootSlot = *mut *mut u8;
+pub(crate) type RootSlot = *mut *mut u8;
+
+/// A saved root chain: the `ROOTS` and `FRAMES` vectors of a goroutine
+/// that is not currently running. The scheduler swaps these in and out of
+/// the thread-local cells on a context switch.
+pub(crate) type SavedRoots = (Vec<RootSlot>, Vec<usize>);
+
+/// Hook the scheduler installs so the mark phase can reach the roots of
+/// every parked goroutine and every buffered channel value. It is called
+/// once per collection with a visitor that must be applied to each extra
+/// root slot. When no scheduler has started this stays `None`, so a
+/// program with no goroutines marks exactly the thread-local chain.
+type ExtraRootsHook = fn(&mut dyn FnMut(RootSlot));
+
+thread_local! {
+    static EXTRA_ROOTS_HOOK: Cell<Option<ExtraRootsHook>> = const { Cell::new(None) };
+}
+
+/// Install the scheduler's extra-roots hook. Idempotent; the scheduler
+/// installs it the first time a goroutine is spawned.
+pub(crate) fn set_extra_roots_hook(hook: ExtraRootsHook) {
+    EXTRA_ROOTS_HOOK.with(|h| h.set(Some(hook)));
+}
+
+/// Move the live thread-local root chain out, leaving it empty, and
+/// return it. The scheduler calls this on a context switch to stash the
+/// suspending goroutine's roots on its goroutine struct.
+pub(crate) fn take_root_chain() -> SavedRoots {
+    let roots = ROOTS.with(|r| std::mem::take(&mut *r.borrow_mut()));
+    let frames = FRAMES.with(|f| std::mem::take(&mut *f.borrow_mut()));
+    (roots, frames)
+}
+
+/// Install `saved` as the live thread-local root chain, replacing whatever
+/// was there. The scheduler calls this on a context switch to make the
+/// resuming goroutine's roots the live chain.
+pub(crate) fn install_root_chain(saved: SavedRoots) {
+    ROOTS.with(|r| *r.borrow_mut() = saved.0);
+    FRAMES.with(|f| *f.borrow_mut() = saved.1);
+}
+
+/// Visit every slot in a saved root chain, applying `visit` to each.
+/// Used by the scheduler's extra-roots hook to surface a parked
+/// goroutine's roots to the collector.
+pub(crate) fn for_each_slot_in(saved: &SavedRoots, visit: &mut dyn FnMut(RootSlot)) {
+    for &slot in &saved.0 {
+        visit(slot);
+    }
+}
 
 thread_local! {
     /// The shadow stack of root slot addresses, shared by the frame API
@@ -389,6 +437,23 @@ fn mark() {
     // Closures parked in open defer frames are roots too: they must
     // survive until the function epilogue runs them.
     for_each_defer_root(&mut work);
+    // Roots of every parked goroutine and every buffered channel value.
+    // The hook is set only after a scheduler starts, so a program with no
+    // goroutines visits nothing extra here.
+    if let Some(hook) = EXTRA_ROOTS_HOOK.with(|h| h.get()) {
+        let mut visit = |slot: RootSlot| {
+            if slot.is_null() {
+                return;
+            }
+            // SAFETY: the scheduler only hands the collector live slot
+            // addresses from parked chains and channel buffers.
+            let object = unsafe { *slot } as *mut ObjectHeader;
+            if mark_object(object) {
+                work.push(object);
+            }
+        };
+        hook(&mut visit);
+    }
     while let Some(object) = work.pop() {
         // SAFETY: `object` was reached from a root or another live
         // object, so it is a live registered header.
