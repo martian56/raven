@@ -43,6 +43,25 @@ pub enum HirUnaryOp {
     Ref,
 }
 
+/// The raw-pointer FFI operations carried by [`HirExprKind::PtrBuiltin`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PtrBuiltinOp {
+    /// `__ptr_alloc<T>(count)`: malloc `count * sizeof(T)` bytes.
+    Alloc,
+    /// `__ptr_free<T>(p)`: free a buffer from `Alloc`.
+    Free,
+    /// `__ptr_load<T>(p)`: read the pointee at `p`.
+    Load,
+    /// `__ptr_store<T>(p, value)`: write `value` at `p`.
+    Store,
+    /// `__ptr_offset<T>(p, count)`: advance by `count` elements.
+    Offset,
+    /// `__ptr_is_null<T>(p)`: true when `p` is the null pointer.
+    IsNull,
+    /// `__ptr_null<T>()`: the null `CPtr<T>`.
+    Null,
+}
+
 /// Binary infix operators. Compound assignment is gone (it is desugared
 /// in the lowering pass), so this matches the AST one for one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -233,6 +252,18 @@ pub enum HirExprKind {
     /// resolved struct type argument, grounded per monomorphization in MIR
     /// and lowered to a `List<String>` of the struct's field names.
     FieldNames(HirTy),
+
+    /// A raw-pointer FFI builtin (`__ptr_load`, `__ptr_store`,
+    /// `__ptr_offset`, `__ptr_is_null`, `__ptr_null`, `__ptr_alloc`,
+    /// `__ptr_free`). `pointee` is the resolved type argument `T`, grounded
+    /// per monomorphization in MIR to pick the load/store width and element
+    /// size. `args` are the lowered value operands. See
+    /// `docs/v2/specs/std-ffi.md`.
+    PtrBuiltin {
+        op: PtrBuiltinOp,
+        pointee: HirTy,
+        args: Vec<HirExpr>,
+    },
 
     // ----- lambda -----
     Lambda {

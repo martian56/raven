@@ -11,6 +11,7 @@ needs a conversion, which is what `to_cstr` and `from_cstr` provide.
 
 ```raven
 import std/ffi { to_cstr, from_cstr }
+import std/ffi { alloc, free, load, store, offset, is_null, null_ptr }
 ```
 
 ## Surface
@@ -29,6 +30,72 @@ terminator is not included).
 
 Both wrappers are pure Raven over two raven-runtime symbols bound through
 `extern "C"`: `raven_string_to_cstr` and `raven_cstr_to_string`.
+
+## Raw pointer and buffer access
+
+`CPtr<T>` is a usable raw pointer. The following generic functions read and
+write C memory through it and obtain or release a buffer:
+
+```raven
+fun alloc<T>(count: Int) -> CPtr<T>
+fun free<T>(p: CPtr<T>)
+fun load<T>(p: CPtr<T>) -> T
+fun store<T>(p: CPtr<T>, value: T)
+fun offset<T>(p: CPtr<T>, count: Int) -> CPtr<T>
+fun is_null<T>(p: CPtr<T>) -> Bool
+fun null_ptr<T>() -> CPtr<T>
+```
+
+* `alloc<T>(count)` reserves room for `count` elements of `T` and returns a
+  `CPtr<T>` to the (uninitialized) buffer, or the null pointer on a zero
+  count or allocation failure.
+* `free<T>(p)` releases a buffer from `alloc`; a null pointer is a no-op.
+* `load<T>(p)` reads the element of type `T` at `p`; `store<T>(p, value)`
+  writes it. The pointee width sets the size of the single machine
+  load/store the back end emits.
+* `offset<T>(p, count)` advances `p` by `count` elements, scaling by the
+  size of `T` (`p + count * sizeof(T)`). There is no `at`/indexed-load in
+  this release; compose `load(offset(p, i))`.
+* `is_null<T>(p)` is true exactly when `p` is the null pointer; `null_ptr<T>()`
+  is that null `CPtr<T>`. Many C APIs return null on failure, so check before
+  dereferencing.
+
+### Supported pointee types
+
+`T` must be a C scalar (`CInt`, `CLong`, `CSize`, `CFloat`, `CDouble`,
+`CStr`) or a native `Int`/`Float`. The pointer load/store width is the
+Cranelift machine type of `T`: `CInt` is a 4-byte i32, `CLong`/`CSize`/`CStr`
+and `Int` are 8-byte i64, `CFloat` is a 4-byte f32, `CDouble`/`Float` an
+8-byte f64. A native `Int` stored to a `CInt` pointee is narrowed to i32 at
+the store, and a `Float` stored to a `CFloat` pointee is narrowed to f32,
+the same boundary conversions an `extern` call applies. The pointee may also
+be a generic parameter inside a generic function, which is how these
+wrappers forward `T`; it is grounded to a concrete type per monomorphization
+to pick the width.
+
+### Lowering
+
+The wrappers forward to compiler builtins (`__ptr_load`, `__ptr_store`,
+`__ptr_offset`, `__ptr_is_null`, `__ptr_null`, `__ptr_alloc`, `__ptr_free`),
+each parameterized by the pointee type `T` the same way the reflection
+builtins carry their type argument. The type checker records `T`, HIR
+carries it, and MIR grounds it under the monomorphization substitution so
+codegen emits a Cranelift `load`/`store` of the right width and scales
+`offset`/`alloc` by `sizeof(T)`. `alloc` and `free` call the raven-runtime
+symbols `raven_ffi_alloc(bytes) -> ptr` and `raven_ffi_free(ptr)`, thin
+`malloc`/`free` wrappers.
+
+### Lifetime and safety
+
+Memory from `alloc` lives **outside the garbage collector**. It is never
+traced and never reclaimed automatically: the caller owns it and **must**
+`free` it (a manual lifetime), consistent with the copy-and-leak note for
+`to_cstr` above. This is unchecked raw memory access. There are no bounds
+checks, no null checks, and no use-after-free or double-free protection: an
+out-of-range `offset`, a `load`/`store` through a null or freed pointer, or
+a width that does not match how C allocated the region is undefined
+behavior, exactly as in C. Use `is_null` to guard pointers a C API may
+return null, and keep the element type `T` consistent with the C side.
 
 ## Lifetime and ownership
 
@@ -136,10 +203,33 @@ for realistic sizes (below 2^63). The float FFI types (`CFloat`,
 `CDouble`) satisfy `ToString` the same way through the `Float` to-string
 path; a `CFloat` widens its f32 to f64 first.
 
+## Raw pointer verification
+
+`examples/v2/ffi_pointers.rv` allocates a buffer of `CInt`s, round-trips
+values through raw `store`/`load` at successive offsets, checks `is_null` on
+a null and a live pointer, and calls a C function
+(`raven_ffi_fill_i32(p, n, val)`) that writes through the pointer Raven
+passed, proving Raven and C share the same memory. It then frees the buffer:
+
+```
+10
+20
+30
+40
+true
+false
+7
+7
+```
+
+The first four lines are the values stored and loaded back. `true`/`false`
+are `is_null` on the null pointer and on the live buffer. The trailing `7`s
+are read back after the C `raven_ffi_fill_i32` filled the buffer with `7`.
+
 ## Out of scope
 
 * A `free`/`drop` for buffers from `to_cstr` (copy-and-leak semantics).
+  Buffers from `alloc` do have `free`.
 * Everything listed out of scope in `docs/v2/specs/ffi.md` (struct by
-  value, variadics, callbacks into Raven, `CPtr<T>` dereference, non-CRT
-  libraries).
+  value, variadics, callbacks into Raven, non-CRT libraries).
 ```

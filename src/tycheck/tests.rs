@@ -640,3 +640,50 @@ fn field_names_on_scalar_is_rejected() {
         other => panic!("expected a type error, got {:?}", other),
     }
 }
+
+#[test]
+fn ptr_builtins_typecheck_for_c_scalars() {
+    // load returns the pointee, store/free/offset/is_null/null/alloc all
+    // accept and yield the documented types for a C scalar pointee.
+    check(
+        r#"
+        fun roundtrip() -> CInt {
+            let p = __ptr_alloc<CInt>(4)
+            __ptr_store<CInt>(p, 10)
+            let q = __ptr_offset<CInt>(p, 1)
+            let v = __ptr_load<CInt>(q)
+            __ptr_free<CInt>(p)
+            return v
+        }
+        fun nulls() -> Bool {
+            let n = __ptr_null<CInt>()
+            return __ptr_is_null<CInt>(n)
+        }
+    "#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn ptr_load_yields_the_pointee_type() {
+    // __ptr_load<CLong> returns a CLong, which unifies with the CLong
+    // return; a mismatched return type would be a tycheck error.
+    check("fun f(p: CPtr<CLong>) -> CLong { return __ptr_load<CLong>(p) }\n").unwrap();
+}
+
+#[test]
+fn ptr_builtins_resolve_a_generic_parameter() {
+    // The pointee may be a generic parameter, so the std/ffi wrappers can
+    // forward it; grounded per monomorphization in MIR.
+    check("fun deref<T>(p: CPtr<T>) -> T { return __ptr_load<T>(p) }\n").unwrap();
+}
+
+#[test]
+fn ptr_builtin_rejects_a_non_pointer_pointee() {
+    let err = check("fun f() -> Bool { return __ptr_is_null<String>(__ptr_null<String>()) }\n")
+        .unwrap_err();
+    match err {
+        RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::Custom(_))),
+        other => panic!("expected a type error, got {:?}", other),
+    }
+}

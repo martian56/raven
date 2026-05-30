@@ -250,6 +250,9 @@ pub fn substitute(ty: &Ty, subst: &SubstMap) -> Ty {
             params: params.iter().map(|a| substitute(a, subst)).collect(),
             ret: Box::new(substitute(ret, subst)),
         },
+        Ty::Ffi(crate::tycheck::FfiTy::CPtr(inner)) => Ty::Ffi(crate::tycheck::FfiTy::CPtr(
+            Box::new(substitute(inner, subst)),
+        )),
         other => other.clone(),
     }
 }

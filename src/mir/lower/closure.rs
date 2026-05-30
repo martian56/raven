@@ -348,6 +348,11 @@ fn collect_free_expr(
                 collect_free_expr(a, bound, seen, out);
             }
         }
+        HirExprKind::PtrBuiltin { args, .. } => {
+            for a in args {
+                collect_free_expr(a, bound, seen, out);
+            }
+        }
         HirExprKind::MethodCall { receiver, args, .. } => {
             collect_free_expr(receiver, bound, seen, out);
             for a in args {

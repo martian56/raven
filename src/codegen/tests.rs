@@ -201,6 +201,123 @@ fn compiles_extern_c_call_with_cfloat() {
 }
 
 #[test]
+fn compiles_ptr_alloc_store_load_free() {
+    // Raw pointer round-trip: allocate, store through the pointer, load it
+    // back, and free, all via the `__ptr_*` builtins. Exercises the MIR
+    // PtrAlloc/PtrStore/PtrLoad/PtrFree lowering and its Cranelift
+    // load/store emission.
+    let src = r#"
+        fun main() {
+            let p = __ptr_alloc<CInt>(2)
+            __ptr_store<CInt>(p, 42)
+            let v = __ptr_load<CInt>(p)
+            print(v)
+            __ptr_free<CInt>(p)
+        }
+    "#;
+    let prog = compile(src);
+    let main = prog
+        .functions
+        .iter()
+        .find(|f| f.origin == "main")
+        .expect("main function");
+    let has_alloc = main
+        .blocks
+        .iter()
+        .flat_map(|b| b.statements.iter())
+        .any(|s| {
+            matches!(
+                s,
+                MirStatement::Assign {
+                    rvalue: MirRvalue::PtrAlloc { .. },
+                    ..
+                }
+            )
+        });
+    let has_store = main
+        .blocks
+        .iter()
+        .flat_map(|b| b.statements.iter())
+        .any(|s| matches!(s, MirStatement::PtrStore { .. }));
+    let has_load = main
+        .blocks
+        .iter()
+        .flat_map(|b| b.statements.iter())
+        .any(|s| {
+            matches!(
+                s,
+                MirStatement::Assign {
+                    rvalue: MirRvalue::PtrLoad { .. },
+                    ..
+                }
+            )
+        });
+    let has_free = main
+        .blocks
+        .iter()
+        .flat_map(|b| b.statements.iter())
+        .any(|s| matches!(s, MirStatement::PtrFree { .. }));
+    assert!(has_alloc, "MIR should contain a PtrAlloc");
+    assert!(has_store, "MIR should contain a PtrStore");
+    assert!(has_load, "MIR should contain a PtrLoad");
+    assert!(has_free, "MIR should contain a PtrFree");
+    let object = compile_program(&prog).expect("codegen ptr round-trip");
+    assert!(object.len() > 64);
+}
+
+#[test]
+fn compiles_ptr_offset_and_null_check() {
+    // Pointer offset and null check through the builtins. The Bool results
+    // flow out as a return rather than `print`, which would require the
+    // prelude's `ToString` impl (unavailable under the test's NoLoader).
+    let src = r#"
+        fun probe() -> Bool {
+            let p = __ptr_null<CLong>()
+            let b = __ptr_is_null<CLong>(p)
+            let q = __ptr_offset<CLong>(p, 3)
+            let b2 = __ptr_is_null<CLong>(q)
+            return b && b2
+        }
+    "#;
+    let prog = compile(src);
+    let main = prog
+        .functions
+        .iter()
+        .find(|f| f.origin == "probe")
+        .expect("probe function");
+    let has_offset = main
+        .blocks
+        .iter()
+        .flat_map(|b| b.statements.iter())
+        .any(|s| {
+            matches!(
+                s,
+                MirStatement::Assign {
+                    rvalue: MirRvalue::PtrOffset { .. },
+                    ..
+                }
+            )
+        });
+    let has_is_null = main
+        .blocks
+        .iter()
+        .flat_map(|b| b.statements.iter())
+        .any(|s| {
+            matches!(
+                s,
+                MirStatement::Assign {
+                    rvalue: MirRvalue::PtrIsNull { .. },
+                    ..
+                }
+            )
+        });
+    assert!(has_offset, "MIR should contain a PtrOffset");
+    assert!(has_is_null, "MIR should contain a PtrIsNull");
+    let object = compile_program(&prog).expect("codegen ptr offset/null");
+    assert!(object.len() > 64);
+}
+
+#[test]
 fn compiles_float_arithmetic() {
     let prog = compile("fun mix(x: Float, y: Float) -> Float { return x * y + 1.0 }");
     let object = compile_program(&prog).expect("codegen float");

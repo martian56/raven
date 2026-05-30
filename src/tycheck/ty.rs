@@ -102,9 +102,10 @@ pub enum FfiTy {
     /// representation a Raven `Float` already uses, so a `Float`
     /// argument is accepted where a `CDouble` is expected.
     CDouble,
-    /// An opaque typed pointer `CPtr<T>`. Maps to a pointer-width int.
-    /// The pointee type is carried for documentation and future
-    /// conversions; the v2.0 back end treats it as an opaque pointer.
+    /// A typed raw pointer `CPtr<T>`. Maps to a pointer-width int. The
+    /// pointee type drives the raw load/store width and the offset/alloc
+    /// element stride of the `std/ffi` pointer surface. See
+    /// `docs/v2/specs/std-ffi.md`.
     CPtr(Box<Ty>),
 }
 

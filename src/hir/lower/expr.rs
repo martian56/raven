@@ -6,7 +6,7 @@ use crate::span::Span;
 use crate::tycheck::Ty;
 
 use crate::hir::expr::{
-    HirArm, HirBinaryOp, HirBlock, HirExpr, HirExprKind, HirUnaryOp, InterpolPart,
+    HirArm, HirBinaryOp, HirBlock, HirExpr, HirExprKind, HirUnaryOp, InterpolPart, PtrBuiltinOp,
 };
 use crate::hir::pattern::{HirPattern, HirPatternKind};
 use crate::hir::stmt::{HirAssignTarget, HirStmt, HirStmtKind};
@@ -191,6 +191,22 @@ pub(crate) fn lower_expr(
                     if name == "field_names" {
                         let arg_ty = cx.ty_at(&callee.span);
                         return Ok(make_expr(HirExprKind::FieldNames(arg_ty), ty, span));
+                    }
+                    if let Some(op) = ptr_builtin_op(name) {
+                        let pointee = cx.ty_at(&callee.span);
+                        let mut lowered = Vec::with_capacity(args.len());
+                        for a in args {
+                            lowered.push(lower_expr(a, &Ty::Error, cx)?);
+                        }
+                        return Ok(make_expr(
+                            HirExprKind::PtrBuiltin {
+                                op,
+                                pointee,
+                                args: lowered,
+                            },
+                            ty,
+                            span,
+                        ));
                     }
                 }
             }
@@ -590,6 +606,21 @@ fn lower_map_lit(
         map_ty.clone(),
         span.clone(),
     ))
+}
+
+/// Map a raw-pointer FFI builtin name to its op, or `None` for any other
+/// identifier.
+fn ptr_builtin_op(name: &str) -> Option<PtrBuiltinOp> {
+    Some(match name {
+        "__ptr_alloc" => PtrBuiltinOp::Alloc,
+        "__ptr_free" => PtrBuiltinOp::Free,
+        "__ptr_load" => PtrBuiltinOp::Load,
+        "__ptr_store" => PtrBuiltinOp::Store,
+        "__ptr_offset" => PtrBuiltinOp::Offset,
+        "__ptr_is_null" => PtrBuiltinOp::IsNull,
+        "__ptr_null" => PtrBuiltinOp::Null,
+        _ => return None,
+    })
 }
 
 fn lower_unop(op: UnaryOp) -> HirUnaryOp {

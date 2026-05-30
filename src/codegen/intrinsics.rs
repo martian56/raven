@@ -178,6 +178,12 @@ pub const RUNTIME_CLOSURE_FN_PTR: &str = "raven_closure_fn_ptr";
 /// Runtime C symbol returning a closure's capture buffer.
 pub const RUNTIME_CLOSURE_CAPTURES: &str = "raven_closure_captures";
 
+/// Runtime symbol: `raven_ffi_alloc(bytes: usize) -> ptr`. Backs the raw
+/// FFI `__ptr_alloc` builtin.
+pub const RUNTIME_FFI_ALLOC: &str = "raven_ffi_alloc";
+/// Runtime symbol: `raven_ffi_free(p: ptr)`. Backs the `__ptr_free` builtin.
+pub const RUNTIME_FFI_FREE: &str = "raven_ffi_free";
+
 /// True when `mangled` is one of the recognized intrinsics.
 pub fn is_intrinsic(mangled: &str) -> bool {
     matches!(

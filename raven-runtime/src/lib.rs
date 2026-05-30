@@ -571,6 +571,68 @@ pub extern "C" fn raven_cstr_to_string(p: *const u8) -> *mut object::String {
     object::raven_string_from_bytes(p, len)
 }
 
+extern "C" {
+    fn malloc(size: usize) -> *mut std::ffi::c_void;
+    fn free(ptr: *mut std::ffi::c_void);
+}
+
+/// Allocate `bytes` of uninitialized, writable memory outside the GC heap
+/// and return its address as a pointer-width integer.
+///
+/// This is a thin `malloc` wrapper backing `std/ffi`'s `alloc`. The memory
+/// is not tracked by the collector and is never reclaimed automatically:
+/// the caller must hand the returned pointer to `raven_ffi_free` when done.
+/// A request of zero bytes, or an allocation failure, returns 0 (a null
+/// pointer).
+#[no_mangle]
+pub extern "C" fn raven_ffi_alloc(bytes: usize) -> usize {
+    if bytes == 0 {
+        return 0;
+    }
+    // SAFETY: `malloc` is the C allocator; a null return is reported as 0.
+    let p = unsafe { malloc(bytes) };
+    p as usize
+}
+
+/// Free a buffer previously returned by `raven_ffi_alloc`.
+///
+/// A null pointer (0) is a no-op, matching C `free`.
+///
+/// # Safety
+///
+/// `p` must be a live pointer returned by `raven_ffi_alloc` and not already
+/// freed.
+#[no_mangle]
+pub extern "C" fn raven_ffi_free(p: usize) {
+    if p == 0 {
+        return;
+    }
+    // SAFETY: the caller guarantees `p` came from `raven_ffi_alloc` and is
+    // not freed twice.
+    unsafe { free(p as *mut std::ffi::c_void) }
+}
+
+/// Test helper: write `val` into the first `n` 32-bit slots at `p`.
+///
+/// Proves a pointer Raven hands to a C function refers to the same memory
+/// the C side writes through. Used by `examples/v2/ffi_pointers.rv`.
+///
+/// # Safety
+///
+/// `p` must point to at least `n` writable `i32` slots.
+#[no_mangle]
+pub extern "C" fn raven_ffi_fill_i32(p: *mut i32, n: i32, val: i32) {
+    if p.is_null() || n <= 0 {
+        return;
+    }
+    // SAFETY: the caller guarantees `n` writable i32 slots at `p`.
+    unsafe {
+        for i in 0..n as isize {
+            *p.offset(i) = val;
+        }
+    }
+}
+
 /// Return a non-deterministic 64-bit seed for entropy seeding.
 ///
 /// Mixes a high-resolution timestamp with the process id through a

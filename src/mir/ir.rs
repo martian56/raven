@@ -205,6 +205,34 @@ pub enum MirRvalue {
         /// The trait's method names in declaration order (vtable slots).
         methods: Vec<String>,
     },
+    /// Raw FFI pointer load: read the pointee of type `pointee` from the
+    /// address `addr` (a pointer-width value). The back end emits a single
+    /// Cranelift `load` of the pointee's machine type. See
+    /// `docs/v2/specs/std-ffi.md`.
+    PtrLoad {
+        addr: MirOperand,
+        pointee: MirType,
+    },
+    /// Raw FFI pointer offset: `addr + count * sizeof(pointee)`, yielding a
+    /// new pointer-width value. `count` is a native `Int`.
+    PtrOffset {
+        addr: MirOperand,
+        count: MirOperand,
+        pointee: MirType,
+    },
+    /// Raw FFI null check: true when `addr` is the null pointer (0).
+    PtrIsNull {
+        addr: MirOperand,
+    },
+    /// The null `CPtr<T>` constant (pointer-width 0).
+    PtrNull,
+    /// Raw FFI allocation: malloc `count * sizeof(pointee)` bytes through
+    /// the runtime `raven_ffi_alloc`, returning a pointer-width value. The
+    /// memory is outside the GC heap; the caller must `PtrFree` it.
+    PtrAlloc {
+        count: MirOperand,
+        pointee: MirType,
+    },
     /// Dynamic dispatch through a `dyn Trait` value. The back end loads
     /// the data and vtable words from the receiver's fat pointer box,
     /// loads the method pointer at `slot` from the vtable, and indirect
@@ -250,6 +278,18 @@ pub enum MirStatement {
         base: MirOperand,
         index: MirOperand,
         value: MirOperand,
+    },
+    /// Raw FFI pointer store: write `value` (of type `pointee`) to the
+    /// address `addr`. The back end emits a single Cranelift `store` of the
+    /// pointee's machine type. See `docs/v2/specs/std-ffi.md`.
+    PtrStore {
+        addr: MirOperand,
+        value: MirOperand,
+        pointee: MirType,
+    },
+    /// Raw FFI free: hand `addr` to the runtime `raven_ffi_free`.
+    PtrFree {
+        addr: MirOperand,
     },
     StorageLive(MirLocal),
     StorageDead(MirLocal),
