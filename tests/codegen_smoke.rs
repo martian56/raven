@@ -102,6 +102,24 @@ fn derive_program_compiles_and_runs() {
 }
 
 #[test]
+fn derive_json_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // `@derive(ToJson, FromJson)` synthesizes JSON serialization for a
+    // struct, a nested struct, a generic `Pair`, and an enum (tuple and unit
+    // variants). Each value round-trips `to_json` -> `stringify` -> `parse`
+    // -> `from_json` back to an equal value (the `true` lines), and a
+    // from_json on an object missing a required field returns the
+    // missing-field error.
+    compile_link_run_and_check(
+        "use_derive_json.rv",
+        "{\"x\":1,\"y\":2}\ntrue\n{\"start\":{\"x\":0,\"y\":0},\"end\":{\"x\":3,\"y\":4}}\ntrue\n{\"first\":7,\"second\":true}\ntrue\n{\"tag\":\"Rect\",\"values\":[2,5]}\ntrue\n{\"tag\":\"Dot\",\"values\":[]}\ntrue\nmissing field y\n",
+        &runtime,
+    );
+}
+
+#[test]
 fn closure_value_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

@@ -499,6 +499,18 @@ pub extern "C" fn raven_int_to_float(value: i64) -> f64 {
     value as f64
 }
 
+/// Truncate an `f64` toward zero to a signed 64-bit integer.
+///
+/// The v2 surface language has no Float-to-Int cast, so `std/json` binds
+/// this symbol through `extern "C"` to recover an `Int` field from a JSON
+/// number (which always parses to `Float`). A value outside the `i64`
+/// range saturates to `i64::MIN`/`i64::MAX`, and `NaN` maps to `0`, the
+/// usual `as` cast behavior.
+#[no_mangle]
+pub extern "C" fn raven_float_to_int(value: f64) -> i64 {
+    value as i64
+}
+
 /// Copy a Raven `String` into a freshly allocated, null-terminated byte
 /// buffer and return a `*const c_char` (`CStr`) to its first byte.
 ///

@@ -248,6 +248,15 @@ pub fn expand_with_stdlib_ctx(
         wanted.insert("fmt".to_string());
     }
 
+    // `@derive(ToJson)`/`@derive(FromJson)` synthesize impls that reference
+    // the `JsonValue` tree and the JSON traits in `std/json`. Force-merge
+    // that module (it transitively pulls in `std/error` and
+    // `std/collections`) so the generated impls resolve even when the user
+    // wrote no `import std/json` line.
+    if super::derive::needs_json_module(user) {
+        wanted.insert("json".to_string());
+    }
+
     // Load every local `./`/`../` module reachable from the user file,
     // transitively, before computing the bundled set: a local module may
     // itself `import std/...`, and those bundled modules must merge too so

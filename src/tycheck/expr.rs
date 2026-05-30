@@ -2060,10 +2060,11 @@ impl<'a, 'b> Checker<'a, 'b> {
             .cloned()
             .ok_or_else(|| ty_custom("enum signature missing", span))?;
         let Some((_, variant)) = sig.variant(name) else {
-            return Err(RavenError::ty(
-                TypeError::Custom(format!("enum `{}` has no variant `{}`", sig.name, name)),
-                span.clone(),
-            ));
+            // Not a variant: this may be an associated function call on the
+            // enum (for example a derived `Shape.from_json(j)`). Fall through
+            // so associated-function resolution can try; it reports its own
+            // error if no such function exists.
+            return Ok(None);
         };
         // Fresh inference variables for the enum's generic parameters.
         let args = self.instantiate_type_args(&sig.generics, &[], span, &sig.name)?;

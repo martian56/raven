@@ -1,0 +1,109 @@
+// Compile-time `@derive(ToJson, FromJson)` for JSON serialization. Each
+// type round-trips through `to_json` -> `stringify` -> `parse` -> `from_json`
+// back to a value equal to the original. The struct encoding is a JSON
+// object keyed by field name; the enum encoding is a tagged object
+// `{"tag": "Variant", "values": [...]}`. Object key order follows the Map
+// hash-bucket layout (see std/json), so the printed bytes are the
+// serializer's order, not source order.
+
+import std/json { JsonValue, stringify, parse }
+
+@derive(ToJson, FromJson, Eq, ToString)
+struct Point { x: Int, y: Int }
+
+@derive(ToJson, FromJson, Eq, ToString)
+struct Segment { start: Point, end: Point }
+
+@derive(ToJson, FromJson, Eq, ToString)
+struct Pair<A, B> { first: A, second: B }
+
+@derive(ToJson, FromJson, Eq, ToString)
+enum Shape {
+    Dot,
+    Circle(Int),
+    Rect(Int, Int),
+}
+
+// Round-trip a struct: serialize, print the bytes, parse back, decode, and
+// report whether the decoded value equals the original.
+fun roundtrip_point(p: Point) {
+    let s = stringify(p.to_json())
+    print(s)
+    match parse(s) {
+        Ok(v) -> {
+            match Point.from_json(v) {
+                Ok(p2) -> print(p.equals(p2)),
+                Err(e) -> print("decode error"),
+            }
+        },
+        Err(e) -> print("parse error"),
+    }
+}
+
+fun main() {
+    let p = Point { x: 1, y: 2 }
+    roundtrip_point(p)
+
+    let seg = Segment { start: Point { x: 0, y: 0 }, end: Point { x: 3, y: 4 } }
+    let ss = stringify(seg.to_json())
+    print(ss)
+    match parse(ss) {
+        Ok(v) -> {
+            match Segment.from_json(v) {
+                Ok(s2) -> print(seg.equals(s2)),
+                Err(e) -> print("decode error"),
+            }
+        },
+        Err(e) -> print("parse error"),
+    }
+
+    let pr = Pair { first: 7, second: true }
+    let ps = stringify(pr.to_json())
+    print(ps)
+    match parse(ps) {
+        Ok(v) -> {
+            match Pair.from_json(v) {
+                Ok(pr2) -> print(pr.equals(pr2)),
+                Err(e) -> print("decode error"),
+            }
+        },
+        Err(e) -> print("parse error"),
+    }
+
+    let c = Shape.Rect(2, 5)
+    let cs = stringify(c.to_json())
+    print(cs)
+    match parse(cs) {
+        Ok(v) -> {
+            match Shape.from_json(v) {
+                Ok(c2) -> print(c.equals(c2)),
+                Err(e) -> print("decode error"),
+            }
+        },
+        Err(e) -> print("parse error"),
+    }
+
+    let d = Shape.Dot
+    let ds = stringify(d.to_json())
+    print(ds)
+    match parse(ds) {
+        Ok(v) -> {
+            match Shape.from_json(v) {
+                Ok(d2) -> print(d.equals(d2)),
+                Err(e) -> print("decode error"),
+            }
+        },
+        Err(e) -> print("parse error"),
+    }
+
+    // A from_json failure: the object is missing the required `y` field.
+    match parse("{\"x\": 9}") {
+        Ok(v) -> {
+            match Point.from_json(v) {
+                Ok(bad) -> print("unexpected ok"),
+                Err(e) -> print(e.message),
+            }
+        },
+        Err(e) -> print("parse error"),
+    }
+}
