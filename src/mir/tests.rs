@@ -760,3 +760,51 @@ fn top_level_fn_as_cfnptr_lowers_to_fn_addr() {
         "main should take the address of `compare` as a CFnPtr"
     );
 }
+
+#[test]
+fn repr_c_struct_layout_is_recorded() {
+    // A `@repr(C)` struct of two CInt fields lays out as 8 bytes with the
+    // second field at offset 4. The layout is keyed by the struct name and
+    // populated only because the struct is repr(C).
+    let prog = compile(
+        r#"
+        @repr(C)
+        struct Point {
+            x: CInt
+            y: CInt
+        }
+        extern "C" {
+            fun f(p: Point) -> Point
+        }
+        fun main() {
+            let q = f(Point { x: 1, y: 2 })
+        }
+        "#,
+    );
+    let layout = prog
+        .repr_c_structs
+        .get("Point")
+        .expect("Point layout recorded");
+    assert_eq!(layout.size, 8);
+    assert_eq!(layout.fields.len(), 2);
+    assert_eq!(layout.fields[0].offset, 0);
+    assert_eq!(layout.fields[1].offset, 4);
+}
+
+#[test]
+fn plain_struct_has_no_repr_c_layout() {
+    // A struct without `@repr(C)` is a heap object and gets no by-value
+    // FFI layout.
+    let prog = compile(
+        r#"
+        struct Point {
+            x: Int
+            y: Int
+        }
+        fun main() {
+            let p = Point { x: 1, y: 2 }
+        }
+        "#,
+    );
+    assert!(prog.repr_c_structs.is_empty());
+}

@@ -160,7 +160,9 @@ non-CRT symbol surfaces as an unresolved-symbol error at link time.
 
 ## Out of scope
 
-* Passing or returning structs by value across the C ABI.
+* Passing or returning structs by value larger than 8 bytes, or with
+  floating-point or nested fields. Small integer-class `@repr(C)` structs
+  up to one register do cross by value; see `docs/v2/specs/std-ffi.md`.
 * Variadic C functions (for example `printf` with format arguments).
 * Callbacks from C back into Raven (passing a Raven function as a C
   function pointer).

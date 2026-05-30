@@ -36,6 +36,8 @@ pub struct StructSig {
     pub name: String,
     pub generics: Vec<GenericParamSig>,
     pub fields: Vec<FieldSig>,
+    /// `@repr(C)`: C memory layout, eligible to cross the FFI by value.
+    pub repr_c: bool,
     pub span: Span,
 }
 
@@ -226,6 +228,7 @@ mod tests {
                     span: span(),
                 },
             ],
+            repr_c: false,
             span: span(),
         };
         let (idx, ty) = sig.field("y").expect("y is present");

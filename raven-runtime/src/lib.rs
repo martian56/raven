@@ -673,6 +673,35 @@ pub extern "C" fn raven_ffi_qsort_i32(
     }
 }
 
+/// A C-layout point passed and returned by value across the FFI.
+///
+/// Two `int` fields, eight bytes, the by-value struct shape Raven's
+/// `@repr(C)` slice supports. `repr(C)` here matches the C ABI both sides
+/// agree on. Used by `examples/v2/ffi_struct.rv`.
+#[repr(C)]
+pub struct RavenFfiPoint {
+    pub x: i32,
+    pub y: i32,
+}
+
+/// Test helper: translate a point by `(dx, dy)`, taking and returning the
+/// point by value. Proves a small C struct crosses the FFI in both
+/// directions with its fields intact.
+#[no_mangle]
+pub extern "C" fn raven_ffi_translate(p: RavenFfiPoint, dx: i32, dy: i32) -> RavenFfiPoint {
+    RavenFfiPoint {
+        x: p.x + dx,
+        y: p.y + dy,
+    }
+}
+
+/// Test helper: sum a point's fields, taking the point by value. Proves a
+/// by-value struct argument reaches C with its fields in the right slots.
+#[no_mangle]
+pub extern "C" fn raven_ffi_point_sum(p: RavenFfiPoint) -> i32 {
+    p.x + p.y
+}
+
 /// Return a non-deterministic 64-bit seed for entropy seeding.
 ///
 /// Mixes a high-resolution timestamp with the process id through a

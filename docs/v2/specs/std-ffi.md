@@ -284,12 +284,88 @@ The first four lines are the values stored and loaded back. `true`/`false`
 are `is_null` on the null pointer and on the live buffer. The trailing `7`s
 are read back after the C `raven_ffi_fill_i32` filled the buffer with `7`.
 
+## Small C structs by value
+
+A small C struct can cross the FFI by value, both as an argument and as a
+return. The Raven side declares a struct with C memory layout by marking it
+`@repr(C)`:
+
+```raven
+@repr(C)
+struct Point {
+    x: CInt
+    y: CInt
+}
+
+extern "C" {
+    fun raven_ffi_point_sum(p: Point) -> CInt
+    fun raven_ffi_translate(p: Point, dx: CInt, dy: CInt) -> Point
+}
+
+fun main() {
+    let p = Point { x: 3, y: 4 }
+    print(raven_ffi_point_sum(p))       // 7
+    let q = raven_ffi_translate(p, 1, 2) // {4, 6}
+    print(q.x)
+    print(q.y)
+}
+```
+
+### Layout rule
+
+A `@repr(C)` struct has C layout: fields in declaration order, each at its
+naturally aligned offset, and the total size rounded up to the struct's
+alignment. `CInt` is 4-byte aligned and 4 bytes; `CLong`, `CSize`, `CStr`,
+`CPtr<T>`, and `CFnPtr` are 8-byte aligned and 8 bytes. So `Point` above is
+`{ x at 0, y at 4 }`, total 8 bytes. The fields are still readable on the
+Raven side (`q.x`), since the value remains an ordinary heap struct; only
+the call boundary marshals it by value.
+
+### Supported shape (this release)
+
+* Every field must be an **integer-class C scalar**: `CInt`, `CLong`,
+  `CSize`, `CStr`, `CPtr<T>`, or `CFnPtr`. A float field (`CFloat`,
+  `CDouble`) is rejected, because System V AMD64 classifies a floating
+  field as SSE and would pass it in a different register class.
+* The total C size must be **at most 8 bytes** (one machine register). A
+  larger struct is rejected with a clear error; pass a `CPtr<...>` to the
+  struct instead.
+* A native `Int` literal initializes a `CInt`/`CLong`/`CSize` field
+  (`Point { x: 3, y: 4 }`), the same coercion a C call applies.
+* Only a `@repr(C)` struct may be handed to a C function by value; a plain
+  heap struct (a GC pointer) is rejected at the call.
+
+### ABI and marshaling
+
+Both System V AMD64 (Linux, macOS) and Windows x64 pass an aggregate of at
+most eight bytes whose members are all integer-class in a **single integer
+register**, and return it in `RAX`. The two ABIs agree on this case, so a
+struct of this shape marshals identically: the back end packs the fields
+into one i64 (each field reduced to its C width and placed at its C byte
+offset) and passes that i64 where the extern signature has the struct
+parameter; a returned struct arrives as one i64 and is unpacked into a
+fresh heap struct. The i64's byte image equals the struct's C memory image
+on little-endian x86-64.
+
+Cranelift's `StructArgument` purpose was not used: in this version it
+passes the whole aggregate on the stack rather than applying the ABI
+register classification, which is wrong for the common small-struct case on
+both ABIs. The manual single-register packing above is correct for the
+supported shape on both.
+
+### Out of scope (struct by value)
+
+* Structs larger than 8 bytes (the System V two-register path and the
+  Windows x64 hidden-pointer path for 3, 5, 6, 7, or >8 byte structs).
+* Floating-point fields (the System V SSE classification).
+* Nested struct fields and struct fields of struct type.
+
 ## Out of scope
 
 * A `free`/`drop` for buffers from `to_cstr` (copy-and-leak semantics).
   Buffers from `alloc` do have `free`.
 * Capturing closures as callbacks (a userdata/trampoline mechanism beyond
   the non-capturing top-level functions supported here).
-* The rest of what `docs/v2/specs/ffi.md` lists out of scope (struct by
-  value, variadics, non-CRT libraries).
+* The rest of what `docs/v2/specs/ffi.md` lists out of scope (variadics,
+  non-CRT libraries).
 ```

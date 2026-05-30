@@ -508,6 +508,46 @@ fn extern_int_param_accepts_int_literal() {
 }
 
 #[test]
+fn repr_c_struct_crosses_ffi_by_value() {
+    // A `@repr(C)` struct of two `CInt` fields (8 bytes) is accepted as a
+    // by-value argument and return of an extern C function, and an `Int`
+    // literal initializes its `CInt` fields.
+    check(
+        "@repr(C)\nstruct Point {\n    x: CInt\n    y: CInt\n}\nextern \"C\" {\n    fun f(p: Point) -> Point\n}\nfun main() {\n    let q = f(Point { x: 1, y: 2 })\n    print(q.x)\n}\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn repr_c_struct_rejects_non_scalar_field() {
+    // A repr(C) struct field must be a C scalar; a `String` field is
+    // rejected at the declaration.
+    let err = check("@repr(C)\nstruct Bad {\n    s: String\n}\nfun main() {}\n").unwrap_err();
+    assert!(matches!(err, RavenError::Type(_, _, _)));
+}
+
+#[test]
+fn repr_c_struct_rejects_oversize() {
+    // A repr(C) struct larger than one register (here three CInts, 12
+    // bytes) cannot cross the FFI by value in this slice.
+    let err =
+        check("@repr(C)\nstruct Big {\n    a: CInt\n    b: CInt\n    c: CInt\n}\nfun main() {}\n")
+            .unwrap_err();
+    assert!(matches!(err, RavenError::Type(_, _, _)));
+}
+
+#[test]
+fn non_repr_c_struct_rejected_at_c_call() {
+    // A plain heap struct (no `@repr(C)`) is a GC pointer and must not be
+    // handed to a C function as if it had C layout.
+    let err = check(
+        "struct P {\n    x: CInt\n}\nextern \"C\" {\n    fun g(p: P)\n}\nfun main() {\n    g(P { x: 1 })\n}\n",
+    )
+    .unwrap_err();
+    assert!(matches!(err, RavenError::Type(_, _, _)));
+}
+
+#[test]
 fn extern_cfloat_param_accepts_float_and_return_prints() {
     // A native `Float` is accepted where a `CFloat` parameter is expected
     // (it narrows to f32 at the call), and the `CFloat` return renders

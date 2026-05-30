@@ -154,6 +154,7 @@ fn lower_decl(decl: &Decl, cx: &LowerCtx<'_>) -> Result<Option<HirItem>, RavenEr
                 kind: HirItemKind::Struct(HirStruct {
                     name: s.name.clone(),
                     fields,
+                    repr_c: s.repr_c,
                     span: s.span.clone(),
                 }),
             }))

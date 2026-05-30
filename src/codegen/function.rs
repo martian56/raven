@@ -1665,16 +1665,23 @@ fn lower_call(
     // its declared C ABI machine width. A native `Int` passed to a `CInt`
     // parameter is an i64 value that must be reduced to i32 to match the
     // imported signature; an `Int` to a `CLong`/`CSize` is already i64.
+    // A `@repr(C)` struct argument is a heap pointer that must instead be
+    // packed into the single register the platform ABI passes it in.
+    let is_extern = cx.extern_params(&callee.mangled).is_some();
     let extern_param_tys: Option<Vec<MirType>> = cx
         .extern_params(&callee.mangled)
         .or_else(|| cx.fn_params(&callee.mangled))
         .map(|s| s.to_vec());
+    let extern_ret: Option<MirType> = cx.extern_ret(&callee.mangled).cloned();
     let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
     let mut arg_vals = Vec::with_capacity(args.len());
     for (i, a) in args.iter().enumerate() {
         if let Some(v) = lower_operand(cx, builder, a, slots)? {
             let v = match &extern_param_tys {
                 Some(tys) => match tys.get(i) {
+                    Some(pt) if is_extern && is_repr_c_struct(cx, pt) => {
+                        marshal_struct_to_reg(cx, builder, v, pt)
+                    }
                     Some(pt) => coerce_to_param(builder, v, pt, cx.pointer_type()),
                     None => v,
                 },
@@ -1684,8 +1691,111 @@ fn lower_call(
         }
     }
     let inst = builder.ins().call(local_ref, &arg_vals);
-    let results = builder.inst_results(inst);
-    Ok(results.first().copied())
+    let result = builder.inst_results(inst).first().copied();
+    // A by-value struct return arrives as the single register the ABI
+    // returns it in; rebuild a Raven heap struct from its packed bytes.
+    if let (Some(reg), Some(ret_ty)) = (result, &extern_ret) {
+        if is_extern && is_repr_c_struct(cx, ret_ty) {
+            return Ok(Some(marshal_reg_to_struct(cx, builder, reg, ret_ty)));
+        }
+    }
+    Ok(result)
+}
+
+/// True when `ty` is a `@repr(C)` struct with a recorded C layout, the
+/// shape that crosses the FFI by value in a single register.
+fn is_repr_c_struct(cx: &ModuleCx, ty: &MirType) -> bool {
+    matches!(ty, MirType::Struct { .. }) && cx.repr_c_layout(&ty.mangle()).is_some()
+}
+
+/// Pack a `@repr(C)` struct's heap fields into the single integer register
+/// the platform C ABI passes the struct in. Each field is read from its
+/// pointer-width heap slot, reduced to its C width, and OR-ed into the
+/// accumulator at its C bit offset. Both System V AMD64 and Windows x64
+/// pass an aggregate of at most eight bytes this way, so the resulting
+/// i64's byte order matches the struct's C memory image.
+fn marshal_struct_to_reg(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    obj: Value,
+    ty: &MirType,
+) -> Value {
+    let ptr = cx.pointer_type();
+    let layout = cx
+        .repr_c_layout(&ty.mangle())
+        .cloned()
+        .expect("is_repr_c_struct checked the layout is present");
+    let fields = call_struct_fields(cx, builder, obj, ptr);
+    let mut acc = builder.ins().iconst(types::I64, 0);
+    for (i, f) in layout.fields.iter().enumerate() {
+        let raw = builder
+            .ins()
+            .load(types::I64, MemFlags::new(), fields, layout::slot_offset(i));
+        let (fsize, _) = f
+            .ffi
+            .c_scalar_layout()
+            .expect("repr(C) field is an integer-class scalar");
+        let masked = mask_low_bytes(builder, raw, fsize);
+        let placed = if f.offset == 0 {
+            masked
+        } else {
+            builder.ins().ishl_imm(masked, (f.offset * 8) as i64)
+        };
+        acc = builder.ins().bor(acc, placed);
+    }
+    acc
+}
+
+/// Rebuild a Raven heap struct from the single register a by-value
+/// `@repr(C)` struct return arrives in. Each field is extracted from its C
+/// bit offset, widened to a pointer-width heap slot, and stored into a
+/// fresh struct object whose descriptor matches the type.
+fn marshal_reg_to_struct(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    reg: Value,
+    ty: &MirType,
+) -> Value {
+    let ptr = cx.pointer_type();
+    let layout = cx
+        .repr_c_layout(&ty.mangle())
+        .cloned()
+        .expect("is_repr_c_struct checked the layout is present");
+    // The struct descriptor marks every field non-pointer: a repr(C)
+    // struct holds only C scalars, so the collector treats its body as
+    // opaque words and never follows a field as a GC pointer.
+    let type_id = cx.intern_descriptor(&ty.mangle(), 0);
+    let field_count = layout.fields.len() as i64;
+    let obj = call_struct_new(cx, builder, field_count, type_id, ptr);
+    let base = call_struct_fields(cx, builder, obj, ptr);
+    let reg64 = to_int64(builder, reg);
+    for (i, f) in layout.fields.iter().enumerate() {
+        let shifted = if f.offset == 0 {
+            reg64
+        } else {
+            builder.ins().ushr_imm(reg64, (f.offset * 8) as i64)
+        };
+        let (fsize, _) = f
+            .ffi
+            .c_scalar_layout()
+            .expect("repr(C) field is an integer-class scalar");
+        let field_val = mask_low_bytes(builder, shifted, fsize);
+        builder
+            .ins()
+            .store(MemFlags::new(), field_val, base, layout::slot_offset(i));
+    }
+    obj
+}
+
+/// Zero every bit of `v` above the low `size` bytes, keeping it i64. A
+/// full eight-byte field passes through. Used to isolate one packed C
+/// field from a register that holds several.
+fn mask_low_bytes(builder: &mut FunctionBuilder<'_>, v: Value, size: u32) -> Value {
+    if size >= 8 {
+        return v;
+    }
+    let mask = (1i64 << (size * 8)) - 1;
+    builder.ins().band_imm(v, mask)
 }
 
 /// Reconcile an argument value's machine type with the type the callee's

@@ -115,6 +115,23 @@ pub enum FfiTy {
     CFnPtr,
 }
 
+impl FfiTy {
+    /// C `(size, alignment)` in bytes for a scalar FFI field of a
+    /// `@repr(C)` struct, on the 64-bit ABIs Raven targets. `None` for a
+    /// type that is not a plain integer-class C scalar (floats and the
+    /// nested cases are excluded from the by-value struct slice). Used to
+    /// validate and lay out a repr(C) struct that crosses the FFI by value.
+    pub fn c_scalar_layout(&self) -> Option<(u32, u32)> {
+        match self {
+            FfiTy::CInt => Some((4, 4)),
+            FfiTy::CLong | FfiTy::CSize | FfiTy::CStr | FfiTy::CPtr(_) | FfiTy::CFnPtr => {
+                Some((8, 8))
+            }
+            FfiTy::CFloat | FfiTy::CDouble => None,
+        }
+    }
+}
+
 impl fmt::Display for FfiTy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

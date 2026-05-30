@@ -1212,6 +1212,12 @@ impl<'a, 'b> Checker<'a, 'b> {
                 span.clone(),
             ));
         }
+        // Whether this call targets a foreign C function; only then is a
+        // struct argument marshaled by value and required to be `@repr(C)`.
+        let callee_is_extern = matches!(
+            self.resolved.map.lookup(&callee.span),
+            Some(Binding::Extern { .. })
+        );
         for (param_ty, arg) in params.iter().zip(args.iter()) {
             let a = self.check_expr(arg)?;
             // An integer C FFI parameter (`CInt`, `CLong`, `CSize`)
@@ -1249,6 +1255,21 @@ impl<'a, 'b> Checker<'a, 'b> {
             if matches!(resolved_param.strip_self(), Ty::Ffi(FfiTy::CFnPtr)) {
                 self.check_callback_arg(arg, resolved_arg.strip_self())?;
                 continue;
+            }
+            // A struct argument may cross a C call only when it is a
+            // `@repr(C)` struct: the back end marshals its fields by value
+            // per the platform ABI. A plain heap struct (a GC pointer) is
+            // rejected so it is never handed to C as if it had C layout.
+            if let Ty::Struct { id, name, .. } = resolved_param.strip_self() {
+                let is_repr_c = self.env.structs.get(id).is_some_and(|s| s.repr_c);
+                if callee_is_extern && !is_repr_c {
+                    return Err(ty_custom(
+                        &format!(
+                            "struct `{name}` is passed to a C function but is not `@repr(C)`; mark it `@repr(C)` to cross the FFI by value"
+                        ),
+                        &arg.span,
+                    ));
+                }
             }
             self.unify(param_ty, &a, &arg.span)?;
         }
@@ -2556,6 +2577,19 @@ impl<'a, 'b> Checker<'a, 'b> {
             })?;
             let field_ty_inst = substitute(field_ty, &subst);
             let value_ty = self.check_expr(&fi.value)?;
+            // An integer-class C FFI field (`CInt`, `CLong`, `CSize`)
+            // accepts a native `Int` literal, the same coercion a C call
+            // applies, so a `@repr(C)` struct can be built with plain
+            // integer literals (`Point { x: 3, y: 4 }`). The back end
+            // reduces the i64 to the field's C width at the boundary.
+            let resolved_field = self.infer.resolve(&field_ty_inst);
+            let resolved_value = self.infer.resolve(&value_ty);
+            if is_int_ffi(resolved_field.strip_self())
+                && matches!(resolved_value.strip_self(), Ty::Int)
+            {
+                seen.insert(fi.name.clone());
+                continue;
+            }
             self.unify(&field_ty_inst, &value_ty, &fi.value.span)?;
             seen.insert(fi.name.clone());
         }

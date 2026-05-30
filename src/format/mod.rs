@@ -289,6 +289,9 @@ impl Printer<'_> {
     }
 
     fn struct_decl(&mut self, s: &Struct) -> Option<String> {
+        if s.repr_c {
+            self.line("@repr(C)");
+        }
         if !s.derives.is_empty() {
             self.line(&format!("@derive({})", s.derives.join(", ")));
         }

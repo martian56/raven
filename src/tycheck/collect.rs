@@ -80,6 +80,7 @@ pub fn collect_declarations(
                         name: s.name.clone(),
                         generics,
                         fields: Vec::new(),
+                        repr_c: s.repr_c,
                         span: s.span.clone(),
                     },
                 );
@@ -294,9 +295,82 @@ fn fill_struct(
             span: f.span.clone(),
         });
     }
+    if s.repr_c {
+        validate_repr_c(s, &fields)?;
+    }
     let entry = env.structs.get_mut(&id).expect("struct sig pre populated");
     entry.fields = fields;
     Ok(())
+}
+
+/// The largest total byte size a `@repr(C)` struct may have to cross the
+/// FFI by value in this slice. Both System V AMD64 and Windows x64 pass an
+/// aggregate of this size in a single integer register, so the value
+/// marshals as one i64. Larger structs need the two-register or
+/// hidden-pointer paths, which are out of scope here.
+pub const REPR_C_MAX_BYTES: u32 = 8;
+
+/// Validate a `@repr(C)` struct used for by-value FFI: it must have at
+/// least one field, every field must be a plain integer-class C scalar
+/// (`CInt`, `CLong`, `CSize`, `CStr`, `CPtr<T>`, `CFnPtr`), and the total
+/// C size (fields in order, naturally aligned) must be at most
+/// [`REPR_C_MAX_BYTES`]. Float fields and larger structs are rejected with
+/// a clear message; they are deferred (see `docs/v2/specs/std-ffi.md`).
+fn validate_repr_c(s: &Struct, fields: &[FieldSig]) -> Result<(), RavenError> {
+    if fields.is_empty() {
+        return Err(RavenError::ty(
+            TypeError::Custom(format!(
+                "`@repr(C)` struct `{}` must have at least one field",
+                s.name
+            )),
+            s.span.clone(),
+        ));
+    }
+    let mut size: u32 = 0;
+    let mut max_align: u32 = 1;
+    for f in fields {
+        let (fsize, falign) = match &f.ty {
+            Ty::Ffi(ffi) => match ffi.c_scalar_layout() {
+                Some(layout) => layout,
+                None => {
+                    return Err(RavenError::ty(
+                        TypeError::Custom(format!(
+                            "field `{}` of `@repr(C)` struct `{}` has type `{}`, which cannot cross the FFI by value; use an integer-class C scalar (CInt, CLong, CSize, CStr, CPtr<T>)",
+                            f.name, s.name, f.ty
+                        )),
+                        f.span.clone(),
+                    ));
+                }
+            },
+            other => {
+                return Err(RavenError::ty(
+                    TypeError::Custom(format!(
+                        "field `{}` of `@repr(C)` struct `{}` has type `{}`; a repr(C) struct field must be a C scalar",
+                        f.name, s.name, other
+                    )),
+                    f.span.clone(),
+                ));
+            }
+        };
+        size = align_up(size, falign) + fsize;
+        max_align = max_align.max(falign);
+    }
+    let total = align_up(size, max_align);
+    if total > REPR_C_MAX_BYTES {
+        return Err(RavenError::ty(
+            TypeError::Custom(format!(
+                "`@repr(C)` struct `{}` is {total} bytes; passing structs larger than {REPR_C_MAX_BYTES} bytes by value is not supported yet (pass a CPtr<...> instead)",
+                s.name
+            )),
+            s.span.clone(),
+        ));
+    }
+    Ok(())
+}
+
+/// Round `offset` up to the next multiple of `align` (a power of two).
+fn align_up(offset: u32, align: u32) -> u32 {
+    (offset + align - 1) & !(align - 1)
 }
 
 fn fill_enum(
