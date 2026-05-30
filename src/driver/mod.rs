@@ -90,6 +90,8 @@ pub fn compile_to_object(
     let tokens = Lexer::new(source.to_string(), input.to_path_buf())
         .tokenize()
         .map_err(|e| DriverError::Frontend(format!("lex: {}", e)))?;
+    let tokens = crate::macros::expand_tokens(&tokens)
+        .map_err(|e| DriverError::Frontend(format!("macro: {}", e)))?;
     let file = parse(&tokens).map_err(|e| DriverError::Frontend(format!("parse: {}", e)))?;
     let file = expand_with_stdlib_ctx(&file, ctx)
         .map_err(|e| DriverError::Frontend(format!("stdlib: {}", e)))?;

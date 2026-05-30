@@ -213,6 +213,7 @@ fn build_object(source: &str, path: &Path) -> Result<Vec<u8>, String> {
     let tokens = Lexer::new(source.to_string(), path.to_path_buf())
         .tokenize()
         .map_err(|e| format!("lex: {}", e))?;
+    let tokens = raven::macros::expand_tokens(&tokens).map_err(|e| format!("macro: {}", e))?;
     let file = parse(&tokens).map_err(|e| format!("parse: {}", e))?;
     let file = expand_with_stdlib(&file).map_err(|e| format!("stdlib: {}", e))?;
     let mut loader = FsLoader;

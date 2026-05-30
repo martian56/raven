@@ -1,0 +1,21 @@
+// Declarative macros: expression-position invocations with metavariable
+// substitution. Captures are wrapped in parens in the templates so operator
+// precedence is preserved when the captured expression is spliced.
+
+macro twice { ($x:expr) => { ($x) + ($x) } }
+
+macro max2 { ($a:expr, $b:expr) => { if ($a) > ($b) { ($a) } else { ($b) } } }
+
+fun main() {
+    let n = 3
+
+    // twice!(n + 1) expands to ((n + 1)) + ((n + 1)) = 4 + 4 = 8.
+    print(twice!(n + 1))
+
+    // Two metavariables, comma delimited.
+    print(max2!(10, 7))
+    print(max2!(2 * 2, 9))
+
+    // Composition: a macro call inside another expression, and nested calls.
+    print(twice!(twice!(n)) + 1)
+}

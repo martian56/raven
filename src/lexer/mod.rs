@@ -125,6 +125,9 @@ pub enum TokenKind {
     Semi,
     Colon,
     At,
+    /// Metavariable sigil in declarative macros (`$name`). Outside a macro
+    /// definition or invocation it has no meaning and the parser rejects it.
+    Dollar,
 
     // Whitespace significant.
     Newline,
@@ -1000,6 +1003,10 @@ impl Lexer {
             '@' => {
                 self.bump();
                 make(self, TokenKind::At)
+            }
+            '$' => {
+                self.bump();
+                make(self, TokenKind::Dollar)
             }
             other => {
                 self.bump();
