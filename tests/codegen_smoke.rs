@@ -35,11 +35,16 @@ fn declarative_macros_compile_and_run() {
     let Some(runtime) = supported_runtime() else {
         return;
     };
-    // `twice!` and `max2!` expand at the token level before parse. The
-    // captured expressions are spliced into the templates and evaluated:
-    // twice!(n + 1) == 8, max2!(10, 7) == 10, max2!(2 * 2, 9) == 9, and the
-    // nested twice!(twice!(n)) + 1 == 13.
-    compile_link_run_and_check("use_macros.rv", "8\n10\n9\n13\n", &runtime);
+    // `twice!`, `max2!`, repetition macros, and a hygienic macro expand at the
+    // token level before parse. twice!(n + 1) == 8, max2!(10, 7) == 10,
+    // max2!(2 * 2, 9) == 9, twice!(twice!(n)) + 1 == 13, sum_all!(1, 2, 3) == 6,
+    // sum_all!() == 0, sum_all!(10) == 10, sum_some!(4, 5, 6) == 15, and the
+    // hygienic doubled!(tmp) == 200 with the caller's tmp left at 100.
+    compile_link_run_and_check(
+        "use_macros.rv",
+        "8\n10\n9\n13\n6\n0\n10\n15\n200\n100\n",
+        &runtime,
+    );
 }
 
 #[test]
