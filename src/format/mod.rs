@@ -289,6 +289,9 @@ impl Printer<'_> {
     }
 
     fn struct_decl(&mut self, s: &Struct) -> Option<String> {
+        if !s.derives.is_empty() {
+            self.line(&format!("@derive({})", s.derives.join(", ")));
+        }
         let mut head = String::from("struct ");
         head.push_str(&s.name);
         head.push_str(&render_generics(&s.generics));
@@ -376,6 +379,9 @@ impl Printer<'_> {
     }
 
     fn enum_decl(&mut self, e: &Enum) -> Option<String> {
+        if !e.derives.is_empty() {
+            self.line(&format!("@derive({})", e.derives.join(", ")));
+        }
         let mut head = String::from("enum ");
         head.push_str(&e.name);
         head.push_str(&render_generics(&e.generics));

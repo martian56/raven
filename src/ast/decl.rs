@@ -81,6 +81,10 @@ pub struct Struct {
     pub name: String,
     pub generics: Vec<GenericParam>,
     pub fields: Vec<StructField>,
+    /// Trait names requested by a preceding `@derive(...)` attribute. The
+    /// derive pass synthesizes one impl per name before resolution; empty
+    /// when no attribute is present.
+    pub derives: Vec<String>,
     pub span: Span,
 }
 
@@ -123,6 +127,9 @@ pub struct Enum {
     pub name: String,
     pub generics: Vec<GenericParam>,
     pub variants: Vec<EnumVariant>,
+    /// Trait names requested by a preceding `@derive(...)` attribute. See
+    /// [`Struct::derives`].
+    pub derives: Vec<String>,
     pub span: Span,
 }
 

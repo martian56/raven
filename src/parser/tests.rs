@@ -666,6 +666,49 @@ fn parses_enum_with_struct_payload() {
     assert_eq!(fields[0].name, "radius");
 }
 
+#[test]
+fn derive_attribute_attaches_to_struct() {
+    let src = "@derive(Eq, Hash, ToString, Debug)\nstruct Point { x: Int, y: Int }\n";
+    let f = parse_ok(src);
+    let DeclKind::Struct(s) = &f.items[0].kind else {
+        panic!("expected struct decl")
+    };
+    assert_eq!(s.derives, vec!["Eq", "Hash", "ToString", "Debug"]);
+    assert_eq!(s.fields.len(), 2);
+}
+
+#[test]
+fn derive_attribute_attaches_to_enum() {
+    let src = "@derive(Eq, ToString)\nenum Shape { Dot, Circle(Int) }\n";
+    let f = parse_ok(src);
+    let DeclKind::Enum(e) = &f.items[0].kind else {
+        panic!("expected enum decl")
+    };
+    assert_eq!(e.derives, vec!["Eq", "ToString"]);
+    assert_eq!(e.variants.len(), 2);
+}
+
+#[test]
+fn struct_without_derive_has_empty_list() {
+    let f = parse_ok("struct Point { x: Int }\n");
+    let DeclKind::Struct(s) = &f.items[0].kind else {
+        panic!()
+    };
+    assert!(s.derives.is_empty());
+}
+
+#[test]
+fn unknown_attribute_is_a_parse_error() {
+    let err = parse_err("@inline\nfun f() {}\n");
+    assert!(matches!(err, RavenError::Parse(_, _, _)), "got: {}", err);
+}
+
+#[test]
+fn derive_before_non_type_is_a_parse_error() {
+    let err = parse_err("@derive(Eq)\nfun f() {}\n");
+    assert!(matches!(err, RavenError::Parse(_, _, _)), "got: {}", err);
+}
+
 // ----- imports, externs, const -----
 
 #[test]

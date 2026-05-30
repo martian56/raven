@@ -86,6 +86,22 @@ fn enum_self_method_match_compiles_and_runs() {
 }
 
 #[test]
+fn derive_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // `@derive(Eq, Hash, ToString, Debug)` synthesizes the trait impls. The
+    // derived `Eq + Hash` let a struct key a Map and join a Set (lines 5 to
+    // 7), the enum derive compares and prints payload variants, and the
+    // generic `Pair` derive compares and prints at <Int, String>.
+    compile_link_run_and_check(
+        "use_derive.rv",
+        "true\nfalse\nPoint { x: 1, y: 2 }\nPoint { x: 1, y: 2 }\ntrue\ntrue\nfalse\ntrue\nfalse\nCircle(3)\nDot\ntrue\nfalse\nPair { first: 1, second: hi }\n",
+        &runtime,
+    );
+}
+
+#[test]
 fn closure_value_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
