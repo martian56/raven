@@ -550,6 +550,48 @@ fn ffi_type_mismatch_is_rejected() {
 }
 
 #[test]
+fn top_level_fn_passed_as_cfnptr_checks() {
+    // A non-capturing top-level function whose params and return are all
+    // C-FFI types is accepted where a `CFnPtr` is expected.
+    check(
+        "extern \"C\" {\n    fun takes_cb(cmp: CFnPtr)\n}\nfun compare(a: CPtr<CInt>, b: CPtr<CInt>) -> CInt {\n    return __ptr_load<CInt>(a) - __ptr_load<CInt>(b)\n}\nfun main() {\n    takes_cb(compare)\n}\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn cfnptr_arg_with_non_ffi_signature_is_rejected() {
+    // A function with a native `Int` parameter has no defined C ABI, so it
+    // cannot be passed as a `CFnPtr`.
+    let err = check(
+        "extern \"C\" {\n    fun takes_cb(cmp: CFnPtr)\n}\nfun bad(x: Int) -> CInt {\n    return 0\n}\nfun main() {\n    takes_cb(bad)\n}\n",
+    )
+    .unwrap_err();
+    assert!(matches!(err, RavenError::Type(_, _, _)));
+}
+
+#[test]
+fn cfnptr_arg_must_be_a_function_not_a_value() {
+    // A non-function value where a `CFnPtr` is expected is rejected.
+    let err = check(
+        "extern \"C\" {\n    fun takes_cb(cmp: CFnPtr)\n}\nfun main() {\n    takes_cb(7)\n}\n",
+    )
+    .unwrap_err();
+    assert!(matches!(err, RavenError::Type(_, _, _)));
+}
+
+#[test]
+fn cfnptr_arg_rejects_closure_value() {
+    // A local of function type is a closure value carrying a capture
+    // environment C cannot supply, so it is not a valid `CFnPtr`.
+    let err = check(
+        "extern \"C\" {\n    fun takes_cb(cmp: CFnPtr)\n}\nfun main() {\n    let f = fun(a: CPtr<CInt>, b: CPtr<CInt>) -> CInt { return 0 }\n    takes_cb(f)\n}\n",
+    )
+    .unwrap_err();
+    assert!(matches!(err, RavenError::Type(_, _, _)));
+}
+
+#[test]
 fn set_literal_type_checks() {
     check_with_prelude(
         "import std/collections\nfun main() {\n    let s: Set<Int> = {1, 2, 2}\n    let _ = s.len()\n}\n",

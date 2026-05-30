@@ -639,6 +639,7 @@ fn is_builtin_type_name(name: &str) -> bool {
             | "CFloat"
             | "CDouble"
             | "CPtr"
+            | "CFnPtr"
             | "Any"
     )
 }

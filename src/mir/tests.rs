@@ -724,3 +724,39 @@ fn type_name_on_generic_param_resolves_per_monomorphization() {
         names
     );
 }
+
+#[test]
+fn top_level_fn_as_cfnptr_lowers_to_fn_addr() {
+    // A non-capturing top-level function passed where a `CFnPtr` is
+    // expected lowers to a `FnAddr` rvalue naming that function, not the
+    // synthetic Unit a plain free name would produce.
+    let prog = compile(
+        r#"
+        extern "C" {
+            fun takes_cb(cmp: CFnPtr)
+        }
+        fun compare(a: CPtr<CInt>, b: CPtr<CInt>) -> CInt {
+            return __ptr_load<CInt>(a) - __ptr_load<CInt>(b)
+        }
+        fun main() {
+            takes_cb(compare)
+        }
+    "#,
+    );
+    let main = find_fn(&prog, "main");
+    let has_fn_addr = main.blocks.iter().any(|b| {
+        b.statements.iter().any(|s| {
+            matches!(
+                s,
+                MirStatement::Assign {
+                    rvalue: MirRvalue::FnAddr { mangled },
+                    ..
+                } if mangled == "compare"
+            )
+        })
+    });
+    assert!(
+        has_fn_addr,
+        "main should take the address of `compare` as a CFnPtr"
+    );
+}

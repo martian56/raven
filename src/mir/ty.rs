@@ -29,6 +29,9 @@ pub enum MirFfiTy {
     /// `CPtr<T>`, an opaque pointer. Codegen maps it to a pointer-width
     /// int. The pointee mangle is kept for symbol uniqueness only.
     CPtr(Box<MirType>),
+    /// An untyped C function pointer. Codegen maps it to a pointer-width
+    /// int.
+    CFnPtr,
 }
 
 /// Ground type used inside MIR.
@@ -216,6 +219,7 @@ impl MirFfiTy {
             FfiTy::CFloat => MirFfiTy::CFloat,
             FfiTy::CDouble => MirFfiTy::CDouble,
             FfiTy::CPtr(inner) => MirFfiTy::CPtr(Box::new(MirType::from_ty(inner))),
+            FfiTy::CFnPtr => MirFfiTy::CFnPtr,
         }
     }
 
@@ -229,6 +233,7 @@ impl MirFfiTy {
             MirFfiTy::CFloat => "CFloat".into(),
             MirFfiTy::CDouble => "CDouble".into(),
             MirFfiTy::CPtr(inner) => format!("CPtr_{}", inner.mangle()),
+            MirFfiTy::CFnPtr => "CFnPtr".into(),
         }
     }
 }
@@ -243,6 +248,7 @@ impl fmt::Display for MirFfiTy {
             MirFfiTy::CFloat => f.write_str("CFloat"),
             MirFfiTy::CDouble => f.write_str("CDouble"),
             MirFfiTy::CPtr(inner) => write!(f, "CPtr<{}>", inner),
+            MirFfiTy::CFnPtr => f.write_str("CFnPtr"),
         }
     }
 }

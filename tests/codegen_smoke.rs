@@ -338,6 +338,19 @@ fn ffi_cfloat_program_compiles_and_runs() {
 }
 
 #[test]
+fn ffi_callback_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A non-capturing top-level function passed as a `CFnPtr`: the C
+    // library `qsort` (through the runtime helper) calls back into the
+    // Raven `compare` for each pair, sorting the buffer 30,10,50,20,40
+    // into ascending order. Proves the Raven function compiled under the
+    // platform C ABI is invocable directly by C.
+    compile_link_run_and_check("ffi_callback.rv", "10\n20\n30\n40\n50\n", &runtime);
+}
+
+#[test]
 fn use_ffi_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

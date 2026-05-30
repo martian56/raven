@@ -1240,9 +1240,78 @@ impl<'a, 'b> Checker<'a, 'b> {
             {
                 continue;
             }
+            // A `CFnPtr` parameter accepts a non-capturing top-level Raven
+            // function whose parameters and return are all C-FFI types. The
+            // function is passed as its C-ABI address; the signature match
+            // is the programmer's responsibility, like C. A captured local
+            // (a closure value) or a function with a non-FFI signature is
+            // rejected. See `docs/v2/specs/std-ffi.md`.
+            if matches!(resolved_param.strip_self(), Ty::Ffi(FfiTy::CFnPtr)) {
+                self.check_callback_arg(arg, resolved_arg.strip_self())?;
+                continue;
+            }
             self.unify(param_ty, &a, &arg.span)?;
         }
         Ok(ret)
+    }
+
+    /// Validate an argument passed where a `CFnPtr` is expected. The
+    /// argument must be a bare name of a non-capturing top-level function
+    /// (a resolver `Function` binding) whose parameters and return are all
+    /// C-FFI scalar or pointer types, so the C ABI of the resulting
+    /// function pointer is well defined. A closure value (a captured local
+    /// of function type) or a function with a non-FFI signature is
+    /// rejected. Capturing closures as callbacks are a follow-up.
+    fn check_callback_arg(&mut self, arg: &Expr, arg_ty: &Ty) -> Result<(), RavenError> {
+        let (params, ret) = match arg_ty {
+            Ty::Function { params, ret } => (params, ret.as_ref()),
+            other => {
+                return Err(ty_custom(
+                    &format!(
+                        "a `CFnPtr` argument must be a top-level function, got `{}`",
+                        other
+                    ),
+                    &arg.span,
+                ));
+            }
+        };
+        // Only a bare ident naming a top-level function is a callback. A
+        // local of function type is a closure value, which carries a
+        // capture environment C cannot supply; reject it here.
+        let is_top_level_fn = matches!(&arg.kind, ExprKind::Ident { .. })
+            && matches!(
+                self.resolved.map.lookup(&arg.span),
+                Some(Binding::Function(_))
+            );
+        if !is_top_level_fn {
+            return Err(ty_custom(
+                "a `CFnPtr` argument must be a non-capturing top-level function, not a closure value",
+                &arg.span,
+            ));
+        }
+        for p in params {
+            let rp = self.infer.resolve(p);
+            if !is_ffi_abi_ty(rp.strip_self()) {
+                return Err(ty_custom(
+                    &format!(
+                        "a `CFnPtr` callback parameter must be a C-FFI type (CInt, CLong, CSize, CFloat, CDouble, CStr, CPtr<T>), got `{}`",
+                        rp
+                    ),
+                    &arg.span,
+                ));
+            }
+        }
+        let rr = self.infer.resolve(ret);
+        if !matches!(rr.strip_self(), Ty::Unit) && !is_ffi_abi_ty(rr.strip_self()) {
+            return Err(ty_custom(
+                &format!(
+                    "a `CFnPtr` callback return must be a C-FFI type or Unit, got `{}`",
+                    rr
+                ),
+                &arg.span,
+            ));
+        }
+        Ok(())
     }
 
     fn check_builtin_constructor_call(
@@ -2646,6 +2715,11 @@ pub fn check_binary(l: &Ty, r: &Ty, op: BinaryOp, span: &Span) -> Result<Ty, Rav
         Add | Sub | Mul | Div | Mod => match (ls, rs) {
             (Ty::Int, Ty::Int) => Ok(Ty::Int),
             (Ty::Float, Ty::Float) => Ok(Ty::Float),
+            // Arithmetic on two equal integer C FFI types stays in that
+            // type (the back end emits the op at the type's machine
+            // width). This lets an FFI callback such as a `qsort`
+            // comparator compute `load<CInt>(a) - load<CInt>(b)` directly.
+            (a, b) if is_int_ffi(a) && a == b => Ok(a.clone()),
             _ => Err(RavenError::ty(
                 TypeError::TypeMismatch {
                     expected: format!("{} and {}", ls, ls),
@@ -2734,6 +2808,19 @@ fn is_int_ffi(ty: &Ty) -> bool {
 
 fn is_float_ffi(ty: &Ty) -> bool {
     matches!(ty, Ty::Ffi(FfiTy::CFloat) | Ty::Ffi(FfiTy::CDouble))
+}
+
+/// True for a C-FFI scalar or pointer type with a well-defined C ABI:
+/// `CInt`, `CLong`, `CSize`, `CFloat`, `CDouble`, `CStr`, `CPtr<T>`, or
+/// `CFnPtr`. Used to validate that a function passed as a `CFnPtr`
+/// callback has a signature C can call.
+fn is_ffi_abi_ty(ty: &Ty) -> bool {
+    is_int_ffi(ty)
+        || is_float_ffi(ty)
+        || matches!(
+            ty,
+            Ty::Ffi(FfiTy::CStr) | Ty::Ffi(FfiTy::CPtr(_)) | Ty::Ffi(FfiTy::CFnPtr)
+        )
 }
 
 /// True if `ty` is a valid pointee for the raw-pointer FFI builtins: a C

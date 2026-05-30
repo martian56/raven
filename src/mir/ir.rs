@@ -226,6 +226,15 @@ pub enum MirRvalue {
     },
     /// The null `CPtr<T>` constant (pointer-width 0).
     PtrNull,
+    /// The address of a top-level function as a C function pointer. The
+    /// back end emits `func_addr` for the named symbol. Used when a
+    /// non-capturing top-level function is passed where a `CFnPtr` is
+    /// expected. The function is compiled under the platform C ABI, so the
+    /// resulting pointer is callable directly by C. See
+    /// `docs/v2/specs/std-ffi.md`.
+    FnAddr {
+        mangled: String,
+    },
     /// Raw FFI allocation: malloc `count * sizeof(pointee)` bytes through
     /// the runtime `raven_ffi_alloc`, returning a pointer-width value. The
     /// memory is outside the GC heap; the caller must `PtrFree` it.

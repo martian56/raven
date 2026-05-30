@@ -315,6 +315,9 @@ fn pretty_rvalue(buf: &mut String, r: &MirRvalue) {
             buf.push(')');
         }
         MirRvalue::PtrNull => buf.push_str("(ptr-null)"),
+        MirRvalue::FnAddr { mangled } => {
+            write!(buf, "(fn-addr {})", mangled).unwrap();
+        }
         MirRvalue::PtrAlloc { count, pointee } => {
             write!(buf, "(ptr-alloc {} ", pointee).unwrap();
             pretty_operand(buf, count);

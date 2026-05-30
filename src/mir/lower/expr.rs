@@ -33,10 +33,35 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
         HirExprKind::Ident(name) => match cx.lookup(name) {
             Some(local) => MirOperand::Copy(local),
             None => {
-                // Free name (e.g. callable, constant, or undeclared
-                // global). The type checker has already validated the
-                // program; for callable references we emit a synthetic
-                // zero so codegen has something concrete.
+                // A free name of function type used as a value is a
+                // reference to a top-level function. When the surrounding
+                // context expects a C function pointer this becomes the
+                // function's address; the type checker has already
+                // verified the function is non-generic and C-FFI typed.
+                // Generic free functions cannot be used as a callback (no
+                // concrete C ABI), so only non-generic names take an
+                // address; any other free name keeps the synthetic zero.
+                if let MirType::Function { .. } = &ty {
+                    if cx
+                        .decls
+                        .functions
+                        .get(name)
+                        .map(|e| e.generic_params.is_empty())
+                        .unwrap_or(false)
+                    {
+                        let dst = cx
+                            .builder
+                            .fresh_temp("fnaddr", MirType::Ffi(MirFfiTy::CFnPtr));
+                        cx.builder.assign(
+                            cx.current,
+                            dst,
+                            MirRvalue::FnAddr {
+                                mangled: name.clone(),
+                            },
+                        );
+                        return MirOperand::Copy(dst);
+                    }
+                }
                 MirOperand::Const(MirConstant::Unit)
             }
         },
