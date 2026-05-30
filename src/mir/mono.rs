@@ -78,6 +78,7 @@ struct MethodSymbolEntry {
 pub fn monomorphize(hir: &HirProgram) -> Result<MirProgram, RavenError> {
     let mut program = MirProgram::new();
     program.externs = collect_externs(hir);
+    program.repr_c_structs = collect_repr_c_structs(hir);
     let (index, roots, symbols, generics, fn_index, method_index, method_symbols) =
         collect_roots(hir);
     let decls = collect_decls(hir, fn_index, method_index);
@@ -165,6 +166,48 @@ fn collect_externs(hir: &HirProgram) -> Vec<super::ir::MirExternFn> {
                 });
             }
         }
+    }
+    out
+}
+
+/// Build the C layout of every `@repr(C)` struct, keyed by the mangled
+/// struct name the back end uses for its descriptor. Each field's C offset
+/// is computed in declaration order with natural alignment, and the total
+/// size is rounded to the struct's alignment. The tycheck pass has already
+/// proved every field is an integer-class C scalar and the total is at
+/// most one register, so the conversions here cannot fail; a non-scalar
+/// field is skipped defensively rather than panicking.
+fn collect_repr_c_structs(hir: &HirProgram) -> HashMap<String, super::ir::ReprCLayout> {
+    use super::ir::{ReprCField, ReprCLayout};
+    use super::ty::MirFfiTy;
+
+    let mut out = HashMap::new();
+    for item in &hir.items {
+        let HirItemKind::Struct(s) = &item.kind else {
+            continue;
+        };
+        if !s.repr_c {
+            continue;
+        }
+        let mut offset: u32 = 0;
+        let mut max_align: u32 = 1;
+        let mut fields = Vec::with_capacity(s.fields.len());
+        for (_, ty, _) in &s.fields {
+            let Ty::Ffi(ffi) = ty else { continue };
+            let mir_ffi = MirFfiTy::from_ffi(ffi);
+            let Some((size, align)) = ffi.c_scalar_layout() else {
+                continue;
+            };
+            offset = (offset + align - 1) & !(align - 1);
+            fields.push(ReprCField {
+                offset,
+                ffi: mir_ffi,
+            });
+            offset += size;
+            max_align = max_align.max(align);
+        }
+        let size = (offset + max_align - 1) & !(max_align - 1);
+        out.insert(s.name.clone(), ReprCLayout { size, fields });
     }
     out
 }

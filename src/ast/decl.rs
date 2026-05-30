@@ -85,6 +85,10 @@ pub struct Struct {
     /// derive pass synthesizes one impl per name before resolution; empty
     /// when no attribute is present.
     pub derives: Vec<String>,
+    /// Set by a preceding `@repr(C)` attribute. A repr(C) struct has C
+    /// memory layout (fields in declaration order, naturally aligned) and
+    /// may cross the FFI boundary by value. See `docs/v2/specs/std-ffi.md`.
+    pub repr_c: bool,
     pub span: Span,
 }
 

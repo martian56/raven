@@ -223,6 +223,22 @@ impl MirFfiTy {
         }
     }
 
+    /// C `(size, alignment)` in bytes for an integer-class scalar field of
+    /// a `@repr(C)` struct, on the 64-bit ABIs Raven targets. `None` for a
+    /// float, which is excluded from the by-value struct slice. The tycheck
+    /// pass already rejected anything this returns `None` for.
+    pub fn c_scalar_layout(&self) -> Option<(u32, u32)> {
+        match self {
+            MirFfiTy::CInt => Some((4, 4)),
+            MirFfiTy::CLong
+            | MirFfiTy::CSize
+            | MirFfiTy::CStr
+            | MirFfiTy::CPtr(_)
+            | MirFfiTy::CFnPtr => Some((8, 8)),
+            MirFfiTy::CFloat | MirFfiTy::CDouble => None,
+        }
+    }
+
     /// Identifier-safe mangling for use inside symbol names.
     pub fn mangle(&self) -> String {
         match self {

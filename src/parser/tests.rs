@@ -698,6 +698,43 @@ fn struct_without_derive_has_empty_list() {
 }
 
 #[test]
+fn repr_c_attribute_marks_struct() {
+    let src = "@repr(C)\nstruct Point { x: CInt, y: CInt }\n";
+    let f = parse_ok(src);
+    let DeclKind::Struct(s) = &f.items[0].kind else {
+        panic!("expected struct decl")
+    };
+    assert!(s.repr_c);
+    assert!(s.derives.is_empty());
+}
+
+#[test]
+fn repr_c_and_derive_combine_on_struct() {
+    let src = "@repr(C)\n@derive(Eq)\nstruct Point { x: CInt }\n";
+    let f = parse_ok(src);
+    let DeclKind::Struct(s) = &f.items[0].kind else {
+        panic!("expected struct decl")
+    };
+    assert!(s.repr_c);
+    assert_eq!(s.derives, vec!["Eq"]);
+}
+
+#[test]
+fn struct_without_repr_is_not_repr_c() {
+    let f = parse_ok("struct Point { x: Int }\n");
+    let DeclKind::Struct(s) = &f.items[0].kind else {
+        panic!()
+    };
+    assert!(!s.repr_c);
+}
+
+#[test]
+fn unknown_repr_is_a_parse_error() {
+    let err = parse_err("@repr(Packed)\nstruct P { x: CInt }\n");
+    assert!(matches!(err, RavenError::Parse(_, _, _)), "got: {}", err);
+}
+
+#[test]
 fn unknown_attribute_is_a_parse_error() {
     let err = parse_err("@inline\nfun f() {}\n");
     assert!(matches!(err, RavenError::Parse(_, _, _)), "got: {}", err);

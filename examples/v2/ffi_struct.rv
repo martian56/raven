@@ -1,0 +1,29 @@
+// Pass and return a small C struct BY VALUE across the FFI. The C struct
+// `Point { int x; int y; }` is eight bytes, so both System V AMD64 and
+// Windows x64 carry it in a single integer register. The Raven side marks
+// the matching struct `@repr(C)` so its fields marshal by value at the
+// call boundary. See docs/v2/specs/std-ffi.md.
+
+@repr(C)
+struct Point {
+    x: CInt
+    y: CInt
+}
+
+extern "C" {
+    fun raven_ffi_point_sum(p: Point) -> CInt
+    fun raven_ffi_translate(p: Point, dx: CInt, dy: CInt) -> Point
+}
+
+fun main() {
+    let p = Point { x: 3, y: 4 }
+
+    // By-value struct argument returning a scalar: 3 + 4 = 7.
+    print(raven_ffi_point_sum(p))
+
+    // By-value struct argument and by-value struct return:
+    // translate({3, 4}, 1, 2) = {4, 6}.
+    let q = raven_ffi_translate(p, 1, 2)
+    print(q.x)
+    print(q.y)
+}

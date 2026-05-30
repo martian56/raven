@@ -351,6 +351,19 @@ fn ffi_callback_program_compiles_and_runs() {
 }
 
 #[test]
+fn ffi_struct_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A small C struct crosses the FFI by value. `Point { x: CInt, y: CInt }`
+    // is eight bytes, so both System V AMD64 and Windows x64 carry it in one
+    // integer register. `raven_ffi_point_sum({3, 4})` is 7 (by-value
+    // argument), and `raven_ffi_translate({3, 4}, 1, 2)` returns {4, 6}
+    // (by-value argument and by-value return). Prints 7, 4, 6.
+    compile_link_run_and_check("ffi_struct.rv", "7\n4\n6\n", &runtime);
+}
+
+#[test]
 fn use_ffi_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

@@ -13,18 +13,19 @@ use super::{merge_spans, ParseResult, Parser};
 impl Parser {
     /// Parse one top level declaration.
     pub(crate) fn parse_decl(&mut self) -> ParseResult<Decl> {
-        // A leading `@derive(...)` attribute attaches a derived trait list
-        // to the struct or enum that immediately follows.
-        let derives = if matches!(self.peek_kind(), TokenKind::At) {
-            let d = self.parse_derive_attr()?;
+        // Leading attributes: `@derive(...)` attaches a derived trait list,
+        // `@repr(C)` marks a struct for C memory layout. Both attach to the
+        // struct or enum that immediately follows.
+        let mut derives = Vec::new();
+        let mut repr_c = false;
+        while matches!(self.peek_kind(), TokenKind::At) {
+            self.parse_item_attr(&mut derives, &mut repr_c)?;
             self.skip_separators();
-            d
-        } else {
-            Vec::new()
-        };
+        }
         match self.peek_kind() {
-            TokenKind::Struct => self.parse_struct_decl(derives),
-            TokenKind::Enum => self.parse_enum_decl(derives),
+            TokenKind::Struct => self.parse_struct_decl(derives, repr_c),
+            TokenKind::Enum if !repr_c => self.parse_enum_decl(derives),
+            _ if repr_c => Err(self.unexpected("`struct` after `@repr(C)`")),
             _ if !derives.is_empty() => {
                 Err(self.unexpected("`struct` or `enum` after `@derive(...)`"))
             }
@@ -39,32 +40,50 @@ impl Parser {
         }
     }
 
-    /// Parse `@derive(Name, Name, ...)`, returning the trait names. The `@`
-    /// is at the cursor on entry. Only the `derive` attribute is recognized;
-    /// any other attribute name is a parse error.
-    fn parse_derive_attr(&mut self) -> ParseResult<Vec<String>> {
+    /// Parse one `@name(...)` item attribute. `@derive(Name, ...)` appends
+    /// trait names to `derives`; `@repr(C)` sets `repr_c`. The `@` is at the
+    /// cursor on entry. Any other attribute name is a parse error.
+    fn parse_item_attr(&mut self, derives: &mut Vec<String>, repr_c: &mut bool) -> ParseResult<()> {
         self.expect(&TokenKind::At, "`@`")?;
         let (name, name_span) = self.expect_ident("attribute name")?;
-        if name != "derive" {
-            return Err(RavenError::parse(
-                ParseError::Custom(format!("unknown attribute `@{name}`, expected `@derive`")),
-                name_span,
-            ));
-        }
-        self.expect(&TokenKind::LParen, "`(`")?;
-        self.skip_newlines();
-        let mut traits = Vec::new();
-        while !matches!(self.peek_kind(), TokenKind::RParen) {
-            let (t, _) = self.expect_ident("trait name")?;
-            traits.push(t);
-            self.skip_newlines();
-            if !self.eat(&TokenKind::Comma) {
-                break;
+        match name.as_str() {
+            "derive" => {
+                self.expect(&TokenKind::LParen, "`(`")?;
+                self.skip_newlines();
+                while !matches!(self.peek_kind(), TokenKind::RParen) {
+                    let (t, _) = self.expect_ident("trait name")?;
+                    derives.push(t);
+                    self.skip_newlines();
+                    if !self.eat(&TokenKind::Comma) {
+                        break;
+                    }
+                    self.skip_newlines();
+                }
+                self.expect(&TokenKind::RParen, "`)`")?;
+                Ok(())
             }
-            self.skip_newlines();
+            "repr" => {
+                self.expect(&TokenKind::LParen, "`(`")?;
+                let (layout, layout_span) = self.expect_ident("representation name")?;
+                if layout != "C" {
+                    return Err(RavenError::parse(
+                        ParseError::Custom(format!(
+                            "unknown representation `@repr({layout})`, expected `@repr(C)`"
+                        )),
+                        layout_span,
+                    ));
+                }
+                self.expect(&TokenKind::RParen, "`)`")?;
+                *repr_c = true;
+                Ok(())
+            }
+            other => Err(RavenError::parse(
+                ParseError::Custom(format!(
+                    "unknown attribute `@{other}`, expected `@derive` or `@repr`"
+                )),
+                name_span,
+            )),
         }
-        self.expect(&TokenKind::RParen, "`)`")?;
-        Ok(traits)
     }
 
     fn parse_function_decl(&mut self) -> ParseResult<Decl> {
@@ -237,7 +256,7 @@ impl Parser {
         Ok(params)
     }
 
-    fn parse_struct_decl(&mut self, derives: Vec<String>) -> ParseResult<Decl> {
+    fn parse_struct_decl(&mut self, derives: Vec<String>, repr_c: bool) -> ParseResult<Decl> {
         let start = self.advance().span; // struct
         let (name, _) = self.expect_ident("struct name")?;
         let generics = self.parse_generic_params_opt()?;
@@ -271,6 +290,7 @@ impl Parser {
                 generics,
                 fields,
                 derives,
+                repr_c,
                 span: span.clone(),
             }),
             span,

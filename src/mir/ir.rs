@@ -6,10 +6,12 @@
 //! in exactly one terminator. Local variables are dense indices into
 //! the function's locals table.
 
+use std::collections::HashMap;
+
 use crate::resolve::DeclId;
 use crate::span::Span;
 
-use super::ty::MirType;
+use super::ty::{MirFfiTy, MirType};
 
 /// Dense index into [`MirFunction::locals`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -385,6 +387,25 @@ pub struct MirExternFn {
     pub ret: MirType,
 }
 
+/// One C-layout field of a `@repr(C)` struct that crosses the FFI by
+/// value: its C byte offset within the struct and its scalar FFI type.
+#[derive(Debug, Clone)]
+pub struct ReprCField {
+    pub offset: u32,
+    pub ffi: MirFfiTy,
+}
+
+/// The C memory layout of a `@repr(C)` struct: its total byte size and
+/// each field's C offset and type, in declaration order. The back end
+/// uses this to pack the struct's heap fields into the register-sized
+/// value the platform C ABI passes by value, and to unpack a returned
+/// one. In this slice the total size is at most 8 bytes (one register).
+#[derive(Debug, Clone)]
+pub struct ReprCLayout {
+    pub size: u32,
+    pub fields: Vec<ReprCField>,
+}
+
 /// One full MIR program: a flat list of monomorphic functions plus the
 /// foreign functions declared in `extern` blocks.
 #[derive(Debug, Clone)]
@@ -393,6 +414,11 @@ pub struct MirProgram {
     /// Foreign functions declared in `extern "C"` blocks. Declared as
     /// imported symbols by the back end and resolved at link time.
     pub externs: Vec<MirExternFn>,
+    /// C layouts of `@repr(C)` structs, keyed by mangled struct name (the
+    /// key `MirType::mangle` produces). Populated only for structs that
+    /// can cross the FFI by value; the back end consults it at an extern
+    /// call boundary to marshal a struct argument or return.
+    pub repr_c_structs: HashMap<String, ReprCLayout>,
 }
 
 impl MirProgram {
@@ -400,6 +426,7 @@ impl MirProgram {
         Self {
             functions: Vec::new(),
             externs: Vec::new(),
+            repr_c_structs: HashMap::new(),
         }
     }
 }

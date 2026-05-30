@@ -88,6 +88,8 @@ pub struct HirFn {
 pub struct HirStruct {
     pub name: String,
     pub fields: Vec<(String, HirTy, Span)>,
+    /// `@repr(C)`: C memory layout, eligible to cross the FFI by value.
+    pub repr_c: bool,
     pub span: Span,
 }
 

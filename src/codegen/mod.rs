@@ -117,6 +117,7 @@ pub fn compile_to_object(
     let module = ObjectModule::new(builder);
 
     let mut cx = ModuleCx::new(module);
+    cx.set_repr_c_structs(program.repr_c_structs.clone());
     cx.declare_runtime_imports()?;
     cx.declare_externs(program)?;
     cx.declare_functions(program)?;

@@ -15,7 +15,7 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectModule, ObjectProduct};
 
-use crate::mir::{MirFunction, MirProgram, MirType};
+use crate::mir::{MirFunction, MirProgram, MirType, ReprCLayout};
 
 use super::function::FunctionLowering;
 use super::intrinsics;
@@ -44,6 +44,10 @@ pub struct ModuleCx {
     /// raw C symbol name. A call site uses these to coerce each argument
     /// to the C ABI machine width before the direct call.
     extern_params: HashMap<String, Vec<MirType>>,
+    /// Return type of each declared extern C function, keyed by its raw C
+    /// symbol name. A call site uses it to marshal a by-value struct
+    /// return back into a Raven heap struct.
+    extern_rets: HashMap<String, MirType>,
     /// Parameter types of each declared Raven function, keyed by its
     /// mangled name. A call site uses these to coerce each argument to the
     /// callee's parameter machine width (for example a native `Int` passed
@@ -73,6 +77,11 @@ pub struct ModuleCx {
     vtables: HashMap<String, DataId>,
     /// Counter handing out unique vtable data symbol names.
     vtable_counter: u32,
+    /// C layouts of `@repr(C)` structs, keyed by mangled struct name. A
+    /// call site marshals a struct argument or return against this layout
+    /// when crossing the C ABI by value. Empty when the program declares
+    /// no by-value FFI structs.
+    repr_c_structs: HashMap<String, ReprCLayout>,
 }
 
 /// The exported `main` shim plus the Raven `main` it dispatches to.
@@ -98,6 +107,7 @@ impl ModuleCx {
             functions: HashMap::new(),
             runtime: HashMap::new(),
             extern_params: HashMap::new(),
+            extern_rets: HashMap::new(),
             fn_params: HashMap::new(),
             strings: BTreeMap::new(),
             string_counter: 0,
@@ -106,7 +116,19 @@ impl ModuleCx {
             next_type_id: 0,
             vtables: HashMap::new(),
             vtable_counter: 0,
+            repr_c_structs: HashMap::new(),
         }
+    }
+
+    /// Record the program's `@repr(C)` struct layouts for the call sites
+    /// that marshal a by-value struct across the C ABI.
+    pub fn set_repr_c_structs(&mut self, layouts: HashMap<String, ReprCLayout>) {
+        self.repr_c_structs = layouts;
+    }
+
+    /// The C layout of the `@repr(C)` struct named by `mangle`, if any.
+    pub fn repr_c_layout(&self, mangle: &str) -> Option<&ReprCLayout> {
+        self.repr_c_structs.get(mangle)
     }
 
     /// Intern and emit the vtable for a `(concrete_type, trait)` pair.
@@ -495,6 +517,7 @@ impl ModuleCx {
             self.functions.insert(ext.name.clone(), id);
             self.extern_params
                 .insert(ext.name.clone(), ext.params.clone());
+            self.extern_rets.insert(ext.name.clone(), ext.ret.clone());
         }
         Ok(())
     }
@@ -503,6 +526,12 @@ impl ModuleCx {
     /// one. Used by a call site to coerce arguments to the C ABI width.
     pub fn extern_params(&self, name: &str) -> Option<&[MirType]> {
         self.extern_params.get(name).map(|v| v.as_slice())
+    }
+
+    /// Return type of a declared extern C function, if `name` names one.
+    /// Used by a call site to marshal a by-value struct return.
+    pub fn extern_ret(&self, name: &str) -> Option<&MirType> {
+        self.extern_rets.get(name)
     }
 
     /// Parameter types of a declared Raven function, if `name` names one.
