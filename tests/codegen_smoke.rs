@@ -31,6 +31,18 @@ fn hello_world_compiles_and_runs() {
 }
 
 #[test]
+fn declarative_macros_compile_and_run() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // `twice!` and `max2!` expand at the token level before parse. The
+    // captured expressions are spliced into the templates and evaluated:
+    // twice!(n + 1) == 8, max2!(10, 7) == 10, max2!(2 * 2, 9) == 9, and the
+    // nested twice!(twice!(n)) + 1 == 13.
+    compile_link_run_and_check("use_macros.rv", "8\n10\n9\n13\n", &runtime);
+}
+
+#[test]
 fn multifile_local_imports_compile_and_run() {
     let Some(runtime) = supported_runtime() else {
         return;
@@ -1279,6 +1291,7 @@ fn build_object(source: &str, path: &Path) -> Result<Vec<u8>, String> {
     let tokens = Lexer::new(source.to_string(), path.to_path_buf())
         .tokenize()
         .map_err(|e| format!("lex: {}", e))?;
+    let tokens = raven::macros::expand_tokens(&tokens).map_err(|e| format!("macro: {}", e))?;
     let file = parse(&tokens).map_err(|e| format!("parse: {}", e))?;
     // Mirror the driver: merge any imported bundled stdlib modules before
     // resolving. A program with no `std/` imports is unchanged.

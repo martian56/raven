@@ -303,6 +303,7 @@ pub(crate) fn describe_token(kind: &TokenKind) -> String {
         TokenKind::Semi => "`;`".to_string(),
         TokenKind::Colon => "`:`".to_string(),
         TokenKind::At => "`@`".to_string(),
+        TokenKind::Dollar => "`$`".to_string(),
         TokenKind::Newline => "newline".to_string(),
         TokenKind::Eof => "end of file".to_string(),
     }

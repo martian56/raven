@@ -480,3 +480,18 @@ let s = "hello, ${name}"
         .iter()
         .any(|t| matches!(&t.kind, TokenKind::StringLit(s) if s == "hello, ${name}")));
 }
+
+#[test]
+fn dollar_lexes_as_a_standalone_token() {
+    let toks = lex("$x:expr");
+    assert_eq!(
+        kinds(&toks),
+        vec![
+            TokenKind::Dollar,
+            TokenKind::Identifier("x".into()),
+            TokenKind::Colon,
+            TokenKind::Identifier("expr".into()),
+            TokenKind::Eof,
+        ]
+    );
+}

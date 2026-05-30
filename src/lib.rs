@@ -25,6 +25,7 @@ pub mod format;
 pub mod hir;
 pub mod lexer;
 pub mod lock;
+pub mod macros;
 pub mod manifest;
 pub mod mir;
 pub mod ops;
