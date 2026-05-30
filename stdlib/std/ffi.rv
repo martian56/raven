@@ -1,5 +1,5 @@
 // std/ffi: helpers for the C foreign-function interface. The C type set
-// (CInt, CLong, CSize, CStr, CPtr<T>, CDouble) is built into the type
+// (CInt, CLong, CSize, CStr, CPtr<T>, CFloat, CDouble) is built into the type
 // checker; this module adds runtime conversions between a Raven `String`
 // and a C `CStr`. The primitives bind the raven-runtime C ABI through
 // `extern "C"`; the wrappers are pure Raven. See docs/v2/specs/std-ffi.md.

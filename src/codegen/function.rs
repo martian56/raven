@@ -55,6 +55,7 @@ pub fn cranelift_ty(ty: &MirType, ptr: CType) -> Option<CType> {
         MirType::Ffi(ffi) => Some(match ffi {
             MirFfiTy::CInt => types::I32,
             MirFfiTy::CLong => types::I64,
+            MirFfiTy::CFloat => types::F32,
             MirFfiTy::CDouble => types::F64,
             MirFfiTy::CSize | MirFfiTy::CStr | MirFfiTy::CPtr(_) => ptr,
         }),
@@ -668,6 +669,10 @@ fn emit_cast(builder: &mut FunctionBuilder<'_>, v: Value, _ptr: CType, target: &
     }
     if src_ty == types::F64 && dst_ty.is_int() {
         return builder.ins().fcvt_to_sint_sat(dst_ty, v);
+    }
+    // A `CFloat` (f32) result widens to a Raven `Float` (f64).
+    if src_ty == types::F32 && dst_ty == types::F64 {
+        return builder.ins().fpromote(types::F64, v);
     }
     v
 }
@@ -1533,7 +1538,14 @@ fn coerce_to_param(
         return v;
     };
     let got = builder.func.dfg.value_type(v);
-    if got == want || !got.is_int() || !want.is_int() {
+    if got == want {
+        return v;
+    }
+    // A Raven `Float` (f64) passed to a `CFloat` parameter narrows to f32.
+    if got == types::F64 && want == types::F32 {
+        return builder.ins().fdemote(types::F32, v);
+    }
+    if !got.is_int() || !want.is_int() {
         return v;
     }
     if want.bytes() < got.bytes() {

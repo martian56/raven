@@ -508,6 +508,17 @@ fn extern_int_param_accepts_int_literal() {
 }
 
 #[test]
+fn extern_cfloat_param_accepts_float_and_return_prints() {
+    // A native `Float` is accepted where a `CFloat` parameter is expected
+    // (it narrows to f32 at the call), and the `CFloat` return renders
+    // through the `Float` to-string path, so it can be printed.
+    check(
+        "extern \"C\" {\n    fun sqrtf(x: CFloat) -> CFloat\n}\nfun main() {\n    let r = sqrtf(16.0)\n    print(r)\n}\n",
+    )
+    .unwrap();
+}
+
+#[test]
 fn cstring_alias_resolves_to_cstr() {
     // `CString` is accepted as an alias for `CStr` so older signatures
     // keep checking.

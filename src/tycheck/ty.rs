@@ -93,6 +93,11 @@ pub enum FfiTy {
     /// `*const c_char`: a pointer to a null-terminated byte buffer.
     /// Maps to a pointer-width int.
     CStr,
+    /// C `float`, 32-bit IEEE float. Maps to `f32`. A Raven `Float`
+    /// (f64) argument is accepted where a `CFloat` is expected; the
+    /// back end narrows it to f32 at the call boundary and widens a
+    /// `CFloat` return back to f64.
+    CFloat,
     /// C `double`, 64-bit IEEE float. Maps to `f64`, the same
     /// representation a Raven `Float` already uses, so a `Float`
     /// argument is accepted where a `CDouble` is expected.
@@ -110,6 +115,7 @@ impl fmt::Display for FfiTy {
             FfiTy::CLong => f.write_str("CLong"),
             FfiTy::CSize => f.write_str("CSize"),
             FfiTy::CStr => f.write_str("CStr"),
+            FfiTy::CFloat => f.write_str("CFloat"),
             FfiTy::CDouble => f.write_str("CDouble"),
             FfiTy::CPtr(inner) => write!(f, "CPtr<{}>", inner),
         }

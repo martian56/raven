@@ -1023,6 +1023,33 @@ fn lower_method_call(
             );
             return MirOperand::Copy(dst);
         }
+        // The float C FFI types render through the `Float` to-string path.
+        // A `CFloat` (f32) widens to f64 first; a `CDouble` is already f64.
+        if let MirType::Ffi(MirFfiTy::CFloat | MirFfiTy::CDouble) = &recv_ty {
+            let recv = lower_expr(cx, receiver);
+            let widened = cx.builder.fresh_temp("ffiwiden", MirType::Float);
+            cx.builder.assign(
+                cx.current,
+                widened,
+                MirRvalue::Cast {
+                    operand: recv,
+                    target: MirType::Float,
+                },
+            );
+            let dst = cx.builder.fresh_temp("tostr", MirType::Str);
+            cx.builder.assign(
+                cx.current,
+                dst,
+                MirRvalue::Call {
+                    callee: MirFnRef {
+                        mangled: super::super::intrinsics::FLOAT_TO_STRING.into(),
+                        origin: None,
+                    },
+                    args: vec![MirOperand::Copy(widened)],
+                },
+            );
+            return MirOperand::Copy(dst);
+        }
     }
 
     if let MirType::Dyn { methods, .. } = &recv_ty {

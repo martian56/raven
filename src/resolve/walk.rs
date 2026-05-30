@@ -636,6 +636,8 @@ fn is_builtin_type_name(name: &str) -> bool {
             | "CInt"
             | "CLong"
             | "CSize"
+            | "CFloat"
+            | "CDouble"
             | "CPtr"
             | "Any"
     )
