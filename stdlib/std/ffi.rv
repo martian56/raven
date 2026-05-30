@@ -23,3 +23,51 @@ fun to_cstr(s: String) -> CStr {
 fun from_cstr(p: CStr) -> String {
     return raven_cstr_to_string(p)
 }
+
+// Raw pointer and buffer access. These wrap the `__ptr_*` compiler builtins,
+// which take the pointee type `T` (a C scalar such as CInt/CLong/CSize/
+// CFloat/CDouble/CStr, or a native Int/Float). The pointee width drives the
+// load/store size and the element stride for `offset`.
+//
+// Memory from `alloc` lives OUTSIDE the garbage collector: it is never
+// reclaimed automatically, so the caller MUST `free` it. The access is
+// unchecked raw memory; an out-of-range offset or a load through a freed or
+// null pointer is undefined behavior, exactly as in C. See
+// docs/v2/specs/std-ffi.md.
+
+// Allocate room for `count` elements of type `T` and return a `CPtr<T>` to
+// the buffer (null on a zero count or allocation failure). The memory is
+// uninitialized. The caller must `free` it.
+fun alloc<T>(count: Int) -> CPtr<T> {
+    return __ptr_alloc<T>(count)
+}
+
+// Free a buffer obtained from `alloc`. A null pointer is a no-op.
+fun free<T>(p: CPtr<T>) {
+    __ptr_free<T>(p)
+}
+
+// Read the element of type `T` at `p`.
+fun load<T>(p: CPtr<T>) -> T {
+    return __ptr_load<T>(p)
+}
+
+// Write `value` to the element of type `T` at `p`.
+fun store<T>(p: CPtr<T>, value: T) {
+    __ptr_store<T>(p, value)
+}
+
+// Advance `p` by `count` elements (scaled by the size of `T`).
+fun offset<T>(p: CPtr<T>, count: Int) -> CPtr<T> {
+    return __ptr_offset<T>(p, count)
+}
+
+// True when `p` is the null pointer.
+fun is_null<T>(p: CPtr<T>) -> Bool {
+    return __ptr_is_null<T>(p)
+}
+
+// The null `CPtr<T>`.
+fun null_ptr<T>() -> CPtr<T> {
+    return __ptr_null<T>()
+}

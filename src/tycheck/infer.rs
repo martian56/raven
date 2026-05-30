@@ -183,6 +183,9 @@ impl InferCtx {
                 name: name.clone(),
                 args: args.iter().map(|t| self.resolve(t)).collect(),
             },
+            Ty::Ffi(super::ty::FfiTy::CPtr(inner)) => {
+                Ty::Ffi(super::ty::FfiTy::CPtr(Box::new(self.resolve(inner))))
+            }
             _ => ty.clone(),
         }
     }
@@ -416,6 +419,7 @@ fn first_unresolved_var(ty: &Ty) -> Option<(Span, InferVarId)> {
             .iter()
             .find_map(first_unresolved_var)
             .or_else(|| first_unresolved_var(ret)),
+        Ty::Ffi(super::ty::FfiTy::CPtr(inner)) => first_unresolved_var(inner),
         _ => None,
     }
 }
@@ -427,6 +431,7 @@ fn occurs(v: InferVarId, ty: &Ty) -> bool {
         Ty::Result(a, b) => occurs(v, a) || occurs(v, b),
         Ty::Struct { args, .. } | Ty::Enum { args, .. } => args.iter().any(|t| occurs(v, t)),
         Ty::Function { params, ret } => params.iter().any(|t| occurs(v, t)) || occurs(v, ret),
+        Ty::Ffi(super::ty::FfiTy::CPtr(inner)) => occurs(v, inner),
         _ => false,
     }
 }
@@ -506,6 +511,9 @@ pub fn substitute(ty: &Ty, subst: &HashMap<ParamId, Ty>) -> Ty {
             name: name.clone(),
             args: args.iter().map(|t| substitute(t, subst)).collect(),
         },
+        Ty::Ffi(super::ty::FfiTy::CPtr(inner)) => {
+            Ty::Ffi(super::ty::FfiTy::CPtr(Box::new(substitute(inner, subst))))
+        }
         _ => ty.clone(),
     }
 }

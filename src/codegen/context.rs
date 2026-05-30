@@ -44,6 +44,12 @@ pub struct ModuleCx {
     /// raw C symbol name. A call site uses these to coerce each argument
     /// to the C ABI machine width before the direct call.
     extern_params: HashMap<String, Vec<MirType>>,
+    /// Parameter types of each declared Raven function, keyed by its
+    /// mangled name. A call site uses these to coerce each argument to the
+    /// callee's parameter machine width (for example a native `Int` passed
+    /// to a `CInt` parameter narrows from i64 to i32), matching how extern
+    /// arguments are coerced.
+    fn_params: HashMap<String, Vec<MirType>>,
     /// Interned string literal data ids keyed by the literal's bytes.
     strings: BTreeMap<Vec<u8>, DataId>,
     /// Counter for unique data symbol names.
@@ -92,6 +98,7 @@ impl ModuleCx {
             functions: HashMap::new(),
             runtime: HashMap::new(),
             extern_params: HashMap::new(),
+            fn_params: HashMap::new(),
             strings: BTreeMap::new(),
             string_counter: 0,
             main_entry: None,
@@ -414,6 +421,14 @@ impl ModuleCx {
         sig = self.make_sig(&[i32t], &[ptr]);
         self.declare_runtime(intrinsics::RUNTIME_CHAR_TO_STRING, &sig)?;
 
+        // raven_ffi_alloc(bytes: usize) -> ptr
+        sig = self.make_sig(&[ptr], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_FFI_ALLOC, &sig)?;
+
+        // raven_ffi_free(p: ptr)
+        sig = self.make_sig(&[ptr], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_FFI_FREE, &sig)?;
+
         Ok(())
     }
 
@@ -490,6 +505,13 @@ impl ModuleCx {
         self.extern_params.get(name).map(|v| v.as_slice())
     }
 
+    /// Parameter types of a declared Raven function, if `name` names one.
+    /// Used by a call site to coerce arguments to the callee's parameter
+    /// machine width.
+    pub fn fn_params(&self, name: &str) -> Option<&[MirType]> {
+        self.fn_params.get(name).map(|v| v.as_slice())
+    }
+
     /// Declare every MIR function ahead of body emission so that calls
     /// between functions can be resolved without a fix up pass.
     ///
@@ -510,6 +532,12 @@ impl ModuleCx {
             };
             let id = self.module.declare_function(&name, linkage, &sig)?;
             self.functions.insert(func.name.clone(), id);
+            let param_tys: Vec<MirType> = func
+                .params
+                .iter()
+                .map(|p| func.local_decl(*p).ty.clone())
+                .collect();
+            self.fn_params.insert(func.name.clone(), param_tys);
             if is_main {
                 let shim = self.declare_main_shim()?;
                 self.main_entry = Some(MainEntry {

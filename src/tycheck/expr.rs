@@ -1256,6 +1256,10 @@ impl<'a, 'b> Checker<'a, 'b> {
         match name {
             "type_name" => self.check_reflection_builtin(name, generics, callee_span, args, span),
             "field_names" => self.check_reflection_builtin(name, generics, callee_span, args, span),
+            "__ptr_alloc" | "__ptr_free" | "__ptr_load" | "__ptr_store" | "__ptr_offset"
+            | "__ptr_is_null" | "__ptr_null" => {
+                self.check_ptr_builtin(name, generics, callee_span, args, span)
+            }
             "Some" => {
                 if args.len() != 1 {
                     return Err(RavenError::ty(
@@ -1467,6 +1471,107 @@ impl<'a, 'b> Checker<'a, 'b> {
             "field_names" => Ty::List(Box::new(Ty::Str)),
             _ => Ty::Str,
         })
+    }
+
+    /// Check a raw-pointer FFI builtin (`__ptr_load`, `__ptr_store`,
+    /// `__ptr_offset`, `__ptr_is_null`, `__ptr_null`, `__ptr_alloc`,
+    /// `__ptr_free`). Each takes one type argument `T`, the pointee type,
+    /// which must be a C scalar (`CInt`, `CLong`, `CSize`, `CFloat`,
+    /// `CDouble`, `CStr`) or a native `Int`/`Float`; a generic parameter is
+    /// allowed so `std/ffi` can wrap these in generic functions. The pointee
+    /// is recorded at the callee span so HIR carries it; MIR grounds it per
+    /// monomorphization to pick the load/store width.
+    fn check_ptr_builtin(
+        &mut self,
+        name: &str,
+        generics: &[crate::ast::Type],
+        callee_span: &Span,
+        args: &[Expr],
+        span: &Span,
+    ) -> Result<Ty, RavenError> {
+        if generics.len() != 1 {
+            return Err(RavenError::ty(
+                TypeError::GenericArityMismatch {
+                    decl: name.to_string(),
+                    expected: 1,
+                    actual: generics.len(),
+                },
+                span.clone(),
+            ));
+        }
+        let pointee = self.resolve_ast_ty(&generics[0])?;
+        if !is_ptr_pointee(pointee.strip_self()) {
+            return Err(ty_custom(
+                &format!(
+                    "`{}` pointee must be a C scalar (CInt, CLong, CSize, CFloat, CDouble, CStr) or Int/Float, got `{}`",
+                    name, pointee
+                ),
+                span,
+            ));
+        }
+        let cptr = Ty::Ffi(FfiTy::CPtr(Box::new(pointee.clone())));
+        let expected_args = match name {
+            "__ptr_null" => 0,
+            "__ptr_alloc" | "__ptr_free" | "__ptr_load" | "__ptr_is_null" => 1,
+            _ => 2, // __ptr_store, __ptr_offset
+        };
+        if args.len() != expected_args {
+            return Err(RavenError::ty(
+                TypeError::WrongArity {
+                    func: name.to_string(),
+                    expected: expected_args,
+                    actual: args.len(),
+                },
+                span.clone(),
+            ));
+        }
+        // Record the pointee at the callee span for HIR to carry.
+        self.record(callee_span, pointee.clone());
+        match name {
+            "__ptr_null" => Ok(cptr),
+            "__ptr_alloc" => {
+                let n = self.check_expr(&args[0])?;
+                self.unify(&Ty::Int, &n, &args[0].span)?;
+                Ok(cptr)
+            }
+            "__ptr_free" => {
+                let p = self.check_expr(&args[0])?;
+                self.unify(&cptr, &p, &args[0].span)?;
+                Ok(Ty::Unit)
+            }
+            "__ptr_is_null" => {
+                let p = self.check_expr(&args[0])?;
+                self.unify(&cptr, &p, &args[0].span)?;
+                Ok(Ty::Bool)
+            }
+            "__ptr_load" => {
+                let p = self.check_expr(&args[0])?;
+                self.unify(&cptr, &p, &args[0].span)?;
+                Ok(pointee)
+            }
+            "__ptr_offset" => {
+                let p = self.check_expr(&args[0])?;
+                self.unify(&cptr, &p, &args[0].span)?;
+                let n = self.check_expr(&args[1])?;
+                self.unify(&Ty::Int, &n, &args[1].span)?;
+                Ok(cptr)
+            }
+            // __ptr_store
+            _ => {
+                let p = self.check_expr(&args[0])?;
+                self.unify(&cptr, &p, &args[0].span)?;
+                let v = self.check_expr(&args[1])?;
+                let rv = self.infer.resolve(&v);
+                // A native Int/Float is accepted where the pointee is an
+                // integer/float C scalar, matching the call-site coercion.
+                let ok = (is_int_ffi(pointee.strip_self()) && matches!(rv.strip_self(), Ty::Int))
+                    || (is_float_ffi(pointee.strip_self()) && matches!(rv.strip_self(), Ty::Float));
+                if !ok {
+                    self.unify(&pointee, &v, &args[1].span)?;
+                }
+                Ok(Ty::Unit)
+            }
+        }
     }
 
     /// Reject a stdlib intrinsic call whose argument count differs from
@@ -2629,6 +2734,19 @@ fn is_int_ffi(ty: &Ty) -> bool {
 
 fn is_float_ffi(ty: &Ty) -> bool {
     matches!(ty, Ty::Ffi(FfiTy::CFloat) | Ty::Ffi(FfiTy::CDouble))
+}
+
+/// True if `ty` is a valid pointee for the raw-pointer FFI builtins: a C
+/// scalar, a native `Int`/`Float`, or a generic parameter (resolved per
+/// monomorphization). The pointer load/store width is the Cranelift type of
+/// this pointee.
+fn is_ptr_pointee(ty: &Ty) -> bool {
+    is_int_ffi(ty)
+        || is_float_ffi(ty)
+        || matches!(
+            ty,
+            Ty::Ffi(FfiTy::CStr) | Ty::Int | Ty::Float | Ty::Param(_)
+        )
 }
 
 fn ty_custom(msg: &str, span: &Span) -> RavenError {

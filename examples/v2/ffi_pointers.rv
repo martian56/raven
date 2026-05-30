@@ -1,0 +1,35 @@
+// Raw pointer and buffer access for the C FFI. Allocate a buffer of CInts
+// outside the GC, round-trip values through raw load/store, check null
+// pointers, and let a C function write through a Raven-allocated pointer.
+// See docs/v2/specs/std-ffi.md. The memory is freed manually at the end.
+import std/ffi { alloc, free, load, store, offset, is_null, null_ptr }
+
+extern "C" {
+    fun raven_ffi_fill_i32(p: CPtr<CInt>, n: CInt, val: CInt)
+}
+
+fun main() {
+    // Allocate four CInts and round-trip values through raw memory.
+    let buf = alloc<CInt>(4)
+    store<CInt>(buf, 10)
+    store<CInt>(offset<CInt>(buf, 1), 20)
+    store<CInt>(offset<CInt>(buf, 2), 30)
+    store<CInt>(offset<CInt>(buf, 3), 40)
+    print(load<CInt>(buf))
+    print(load<CInt>(offset<CInt>(buf, 1)))
+    print(load<CInt>(offset<CInt>(buf, 2)))
+    print(load<CInt>(offset<CInt>(buf, 3)))
+
+    // Null checks: a null pointer is null, the buffer is not.
+    let nothing = null_ptr<CInt>()
+    print(is_null<CInt>(nothing))
+    print(is_null<CInt>(buf))
+
+    // A C function fills the buffer through the pointer Raven passed; load
+    // the bytes it wrote back out to prove they share the same memory.
+    raven_ffi_fill_i32(buf, 4, 7)
+    print(load<CInt>(buf))
+    print(load<CInt>(offset<CInt>(buf, 3)))
+
+    free<CInt>(buf)
+}

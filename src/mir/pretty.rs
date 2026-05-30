@@ -128,6 +128,22 @@ fn pretty_stmt(buf: &mut String, s: &MirStatement, depth: usize) {
             pretty_operand(buf, value);
             buf.push_str(")\n");
         }
+        MirStatement::PtrStore {
+            addr,
+            value,
+            pointee,
+        } => {
+            write!(buf, "(ptr-store {} ", pointee).unwrap();
+            pretty_operand(buf, addr);
+            buf.push(' ');
+            pretty_operand(buf, value);
+            buf.push_str(")\n");
+        }
+        MirStatement::PtrFree { addr } => {
+            buf.push_str("(ptr-free ");
+            pretty_operand(buf, addr);
+            buf.push_str(")\n");
+        }
         MirStatement::StorageLive(l) => writeln!(buf, "(storage-live _{})", l.0).unwrap(),
         MirStatement::StorageDead(l) => writeln!(buf, "(storage-dead _{})", l.0).unwrap(),
         MirStatement::Nop => writeln!(buf, "(nop)").unwrap(),
@@ -275,6 +291,33 @@ fn pretty_rvalue(buf: &mut String, r: &MirRvalue) {
                 buf.push(' ');
                 pretty_operand(buf, a);
             }
+            buf.push(')');
+        }
+        MirRvalue::PtrLoad { addr, pointee } => {
+            write!(buf, "(ptr-load {} ", pointee).unwrap();
+            pretty_operand(buf, addr);
+            buf.push(')');
+        }
+        MirRvalue::PtrOffset {
+            addr,
+            count,
+            pointee,
+        } => {
+            write!(buf, "(ptr-offset {} ", pointee).unwrap();
+            pretty_operand(buf, addr);
+            buf.push(' ');
+            pretty_operand(buf, count);
+            buf.push(')');
+        }
+        MirRvalue::PtrIsNull { addr } => {
+            buf.push_str("(ptr-is-null ");
+            pretty_operand(buf, addr);
+            buf.push(')');
+        }
+        MirRvalue::PtrNull => buf.push_str("(ptr-null)"),
+        MirRvalue::PtrAlloc { count, pointee } => {
+            write!(buf, "(ptr-alloc {} ", pointee).unwrap();
+            pretty_operand(buf, count);
             buf.push(')');
         }
     }

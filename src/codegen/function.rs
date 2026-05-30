@@ -304,6 +304,12 @@ fn lower_stmt(
         MirStatement::StoreIndex { base, index, value } => {
             lower_store_index(cx, builder, base, index, value, slots)
         }
+        MirStatement::PtrStore {
+            addr,
+            value,
+            pointee,
+        } => lower_ptr_store(cx, builder, addr, value, pointee, slots),
+        MirStatement::PtrFree { addr } => lower_ptr_free(cx, builder, addr, slots),
         MirStatement::StorageLive(_) | MirStatement::StorageDead(_) | MirStatement::Nop => Ok(()),
     }
 }
@@ -334,6 +340,44 @@ fn lower_store_field(
     builder
         .ins()
         .store(MemFlags::new(), v, fields, layout::slot_offset(index));
+    Ok(())
+}
+
+/// Lower `__ptr_store<T>(p, value)`: coerce `value` to the pointee machine
+/// width (a native `Int` narrows to `CInt`/`CFloat`, a `Float` to `CFloat`)
+/// and store it at `p`.
+fn lower_ptr_store(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    addr: &MirOperand,
+    value: &MirOperand,
+    pointee: &MirType,
+    slots: &[LocalSlot],
+) -> Result<(), CodegenError> {
+    let ptr = cx.pointer_type();
+    let a = require_value(
+        lower_operand(cx, builder, addr, slots)?,
+        "ptr_store address",
+    )?;
+    let v = require_value(lower_operand(cx, builder, value, slots)?, "ptr_store value")?;
+    let v = coerce_to_param(builder, v, pointee, ptr);
+    builder.ins().store(MemFlags::new(), v, a, 0);
+    Ok(())
+}
+
+/// Lower `__ptr_free<T>(p)`: call `raven_ffi_free(p)`.
+fn lower_ptr_free(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    addr: &MirOperand,
+    slots: &[LocalSlot],
+) -> Result<(), CodegenError> {
+    let a = require_value(lower_operand(cx, builder, addr, slots)?, "ptr_free address")?;
+    let func_id = cx
+        .runtime_id(intrinsics::RUNTIME_FFI_FREE)
+        .expect("ffi free runtime symbol declared at module init");
+    let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
+    builder.ins().call(local_ref, &[a]);
     Ok(())
 }
 
@@ -452,7 +496,108 @@ fn lower_rvalue(
             arg,
             elem_ty,
         } => lower_list_method(cx, builder, *op, receiver, arg.as_ref(), elem_ty, slots),
+        MirRvalue::PtrLoad { addr, pointee } => lower_ptr_load(cx, builder, addr, pointee, slots),
+        MirRvalue::PtrOffset {
+            addr,
+            count,
+            pointee,
+        } => lower_ptr_offset(cx, builder, addr, count, pointee, slots),
+        MirRvalue::PtrIsNull { addr } => lower_ptr_is_null(cx, builder, addr, slots),
+        MirRvalue::PtrNull => Ok(Some(builder.ins().iconst(cx.pointer_type(), 0))),
+        MirRvalue::PtrAlloc { count, pointee } => {
+            lower_ptr_alloc(cx, builder, count, pointee, slots)
+        }
     }
+}
+
+/// Cranelift machine type for a raw-pointer pointee, and its byte size.
+/// `CStr`/`CSize` and any `CPtr` are pointer-width; the scalar widths come
+/// from [`cranelift_ty`]. Returns `(ty, size_in_bytes)`.
+fn pointee_machine_ty(pointee: &MirType, ptr: CType) -> (CType, i64) {
+    let t = cranelift_ty(pointee, ptr).unwrap_or(ptr);
+    (t, t.bytes() as i64)
+}
+
+/// Lower `__ptr_load<T>(p)`: a single load of the pointee machine type at
+/// address `p`. An integer pointee narrower than `Int` (i64) is sign or
+/// zero extended back to i64 so it flows as a native value; a `CInt`
+/// result stays i32 (its own ABI width), matching how extern `CInt`
+/// results are handled.
+fn lower_ptr_load(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    addr: &MirOperand,
+    pointee: &MirType,
+    slots: &[LocalSlot],
+) -> Result<RValue, CodegenError> {
+    let ptr = cx.pointer_type();
+    let a = require_value(lower_operand(cx, builder, addr, slots)?, "ptr_load address")?;
+    let (ty, _) = pointee_machine_ty(pointee, ptr);
+    let v = builder.ins().load(ty, MemFlags::new(), a, 0);
+    Ok(Some(v))
+}
+
+/// Lower `__ptr_offset<T>(p, n)`: `p + n * sizeof(T)`. `n` is a native
+/// `Int` taken to pointer width for the address arithmetic.
+fn lower_ptr_offset(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    addr: &MirOperand,
+    count: &MirOperand,
+    pointee: &MirType,
+    slots: &[LocalSlot],
+) -> Result<RValue, CodegenError> {
+    let ptr = cx.pointer_type();
+    let a = require_value(
+        lower_operand(cx, builder, addr, slots)?,
+        "ptr_offset address",
+    )?;
+    let n = require_value(
+        lower_operand(cx, builder, count, slots)?,
+        "ptr_offset count",
+    )?;
+    let n = to_pointer_width(builder, n, ptr);
+    let (_, size) = pointee_machine_ty(pointee, ptr);
+    let stride = builder.ins().iconst(ptr, size);
+    let bytes = builder.ins().imul(n, stride);
+    Ok(Some(builder.ins().iadd(a, bytes)))
+}
+
+/// Lower `__ptr_is_null<T>(p)`: `p == 0`, producing an i8 Bool.
+fn lower_ptr_is_null(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    addr: &MirOperand,
+    slots: &[LocalSlot],
+) -> Result<RValue, CodegenError> {
+    let a = require_value(
+        lower_operand(cx, builder, addr, slots)?,
+        "ptr_is_null address",
+    )?;
+    // `icmp` yields an i8, the representation Raven uses for `Bool`.
+    Ok(Some(builder.ins().icmp_imm(IntCC::Equal, a, 0)))
+}
+
+/// Lower `__ptr_alloc<T>(count)`: call `raven_ffi_alloc(count * sizeof(T))`.
+fn lower_ptr_alloc(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    count: &MirOperand,
+    pointee: &MirType,
+    slots: &[LocalSlot],
+) -> Result<RValue, CodegenError> {
+    let ptr = cx.pointer_type();
+    let n = require_value(lower_operand(cx, builder, count, slots)?, "ptr_alloc count")?;
+    let n = to_pointer_width(builder, n, ptr);
+    let (_, size) = pointee_machine_ty(pointee, ptr);
+    let stride = builder.ins().iconst(ptr, size);
+    let bytes = builder.ins().imul(n, stride);
+    let func_id = cx
+        .runtime_id(intrinsics::RUNTIME_FFI_ALLOC)
+        .expect("ffi alloc runtime symbol declared at module init");
+    let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
+    let inst = builder.ins().call(local_ref, &[bytes]);
+    Ok(builder.inst_results(inst).first().copied())
 }
 
 fn lower_operand(
@@ -1503,8 +1648,10 @@ fn lower_call(
     // its declared C ABI machine width. A native `Int` passed to a `CInt`
     // parameter is an i64 value that must be reduced to i32 to match the
     // imported signature; an `Int` to a `CLong`/`CSize` is already i64.
-    let extern_param_tys: Option<Vec<MirType>> =
-        cx.extern_params(&callee.mangled).map(|s| s.to_vec());
+    let extern_param_tys: Option<Vec<MirType>> = cx
+        .extern_params(&callee.mangled)
+        .or_else(|| cx.fn_params(&callee.mangled))
+        .map(|s| s.to_vec());
     let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
     let mut arg_vals = Vec::with_capacity(args.len());
     for (i, a) in args.iter().enumerate() {

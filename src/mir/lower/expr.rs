@@ -6,7 +6,9 @@
 //! may also rewrite `LowerCx::current` so the caller continues from
 //! the right continuation block.
 
-use crate::hir::expr::{HirBinaryOp, HirBlock, HirExpr, HirExprKind, HirUnaryOp, InterpolPart};
+use crate::hir::expr::{
+    HirBinaryOp, HirBlock, HirExpr, HirExprKind, HirUnaryOp, InterpolPart, PtrBuiltinOp,
+};
 
 use super::super::ir::{
     ListMethodOp, MirBinOp, MirBlockId, MirConstant, MirFnRef, MirLocal, MirOperand, MirRvalue,
@@ -315,6 +317,9 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
         }
         HirExprKind::TypeName(arg) => lower_type_name(cx, arg, ty),
         HirExprKind::FieldNames(arg) => lower_field_names(cx, arg, ty),
+        HirExprKind::PtrBuiltin { op, pointee, args } => {
+            lower_ptr_builtin(cx, *op, pointee, args, ty)
+        }
     }
 }
 
@@ -366,6 +371,81 @@ fn lower_field_names(cx: &mut LowerCx<'_>, arg: &crate::tycheck::Ty, ty: MirType
         },
     );
     MirOperand::Copy(dst)
+}
+
+/// Lower a raw-pointer FFI builtin. The pointee is grounded under the
+/// current substitution so its machine width is known; the resulting MIR
+/// rvalue or statement carries it to codegen. See `docs/v2/specs/std-ffi.md`.
+fn lower_ptr_builtin(
+    cx: &mut LowerCx<'_>,
+    op: PtrBuiltinOp,
+    pointee: &crate::tycheck::Ty,
+    args: &[HirExpr],
+    ty: MirType,
+) -> MirOperand {
+    let pointee = mir_ty(pointee, cx.subst);
+    let mut ops: Vec<MirOperand> = args.iter().map(|a| lower_expr(cx, a)).collect();
+    match op {
+        PtrBuiltinOp::Null => {
+            let dst = cx.builder.fresh_temp("ptr_null", ty);
+            cx.builder.assign(cx.current, dst, MirRvalue::PtrNull);
+            MirOperand::Copy(dst)
+        }
+        PtrBuiltinOp::Alloc => {
+            let count = ops.remove(0);
+            let dst = cx.builder.fresh_temp("ptr_alloc", ty);
+            cx.builder
+                .assign(cx.current, dst, MirRvalue::PtrAlloc { count, pointee });
+            MirOperand::Copy(dst)
+        }
+        PtrBuiltinOp::Load => {
+            let addr = ops.remove(0);
+            let dst = cx.builder.fresh_temp("ptr_load", ty);
+            cx.builder
+                .assign(cx.current, dst, MirRvalue::PtrLoad { addr, pointee });
+            MirOperand::Copy(dst)
+        }
+        PtrBuiltinOp::Offset => {
+            let addr = ops.remove(0);
+            let count = ops.remove(0);
+            let dst = cx.builder.fresh_temp("ptr_offset", ty);
+            cx.builder.assign(
+                cx.current,
+                dst,
+                MirRvalue::PtrOffset {
+                    addr,
+                    count,
+                    pointee,
+                },
+            );
+            MirOperand::Copy(dst)
+        }
+        PtrBuiltinOp::IsNull => {
+            let addr = ops.remove(0);
+            let dst = cx.builder.fresh_temp("ptr_is_null", ty);
+            cx.builder
+                .assign(cx.current, dst, MirRvalue::PtrIsNull { addr });
+            MirOperand::Copy(dst)
+        }
+        PtrBuiltinOp::Store => {
+            let addr = ops.remove(0);
+            let value = ops.remove(0);
+            cx.builder.emit(
+                cx.current,
+                MirStatement::PtrStore {
+                    addr,
+                    value,
+                    pointee,
+                },
+            );
+            MirOperand::Const(MirConstant::Unit)
+        }
+        PtrBuiltinOp::Free => {
+            let addr = ops.remove(0);
+            cx.builder.emit(cx.current, MirStatement::PtrFree { addr });
+            MirOperand::Const(MirConstant::Unit)
+        }
+    }
 }
 
 /// Lower a block to a single result operand. Statements are emitted as
