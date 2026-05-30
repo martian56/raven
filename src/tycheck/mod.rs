@@ -76,6 +76,13 @@ pub struct TypeMap {
     pub types: HashMap<UseKey, Ty>,
     /// `dyn Trait` coercions keyed by the coerced expression's span.
     pub coercions: HashMap<UseKey, DynCoercion>,
+    /// Resolved explicit type arguments of a generic call, keyed by the
+    /// callee's span. Recorded only when a call writes them (`f<Int>()`).
+    /// MIR uses them to bind a callee's generic parameters that the value
+    /// arguments and result type do not pin down (for example a
+    /// `type_name<T>()` inside a generic body, or any `f<T>()` with no
+    /// argument carrying `T`).
+    pub type_args: HashMap<UseKey, Vec<Ty>>,
 }
 
 impl TypeMap {
@@ -92,6 +99,17 @@ impl TypeMap {
     /// Look up the type recorded at `span`, if any.
     pub fn lookup(&self, span: &Span) -> Option<&Ty> {
         self.types.get(&UseKey::from_span(span))
+    }
+
+    /// Record the resolved explicit type arguments of a call at the
+    /// callee's `span`.
+    pub fn record_type_args(&mut self, span: &Span, args: Vec<Ty>) {
+        self.type_args.insert(UseKey::from_span(span), args);
+    }
+
+    /// Look up the explicit type arguments recorded at `span`, if any.
+    pub fn lookup_type_args(&self, span: &Span) -> Option<&Vec<Ty>> {
+        self.type_args.get(&UseKey::from_span(span))
     }
 
     /// Record a `dyn Trait` coercion at `span` (the coerced expression).

@@ -72,6 +72,12 @@ pub struct HirFn {
     pub name: String,
     pub params: Vec<(String, HirTy, Span)>,
     pub ret: HirTy,
+    /// The function's generic parameters in declaration order (impl/trait
+    /// owner parameters first, then the function's own). Monomorphization
+    /// uses this so a parameter that appears only in the body, for example
+    /// the `T` of `fun describe<T>() -> String { type_name<T>() }`, still
+    /// drives specialization even though no signature type mentions it.
+    pub generics: Vec<crate::tycheck::ty::ParamId>,
     /// `None` for trait members without a default body.
     pub body: Option<HirBlock>,
     pub span: Span,

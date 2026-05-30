@@ -344,13 +344,17 @@ fn collect_roots(
     )
 }
 
-/// Collect a function's generic parameters in declaration order. The
-/// HIR does not carry an explicit parameter list, so the parameters are
-/// recovered by scanning the parameter and return types for `Ty::Param`
-/// occurrences and ordering them by their declaration index. The index
-/// on a `ParamId` is its position in the original `<...>` list, which is
-/// the order both the call site and the mangled name rely on.
+/// Collect a function's generic parameters in declaration order. The HIR
+/// carries the declared parameter list (`HirFn::generics`); it is the
+/// authoritative source because a parameter may appear only in the body
+/// (for example the `T` of `type_name<T>()`) and so be invisible to a scan
+/// of the signature types. The list is already in declaration order, the
+/// order both the call site and the mangled name rely on. The signature
+/// scan is kept as a fallback for any HIR built without the field set.
 fn generic_params_of(f: &HirFn) -> Vec<ParamId> {
+    if !f.generics.is_empty() {
+        return f.generics.clone();
+    }
     let mut found: Vec<ParamId> = Vec::new();
     let mut collect = |t: &Ty| collect_params(t, &mut found);
     for (_, ty, _) in &f.params {

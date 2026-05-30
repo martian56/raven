@@ -76,14 +76,18 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             MirOperand::Copy(dst)
         }
         HirExprKind::StructLit { name, fields } => lower_struct_lit(cx, name, fields, &expr.ty, ty),
-        HirExprKind::Call { callee, args } => {
+        HirExprKind::Call {
+            callee,
+            args,
+            type_args,
+        } => {
             // A callee that is an in-scope local of function type is a
             // closure value: dispatch indirectly through its Closure
             // object. Any other callee is a direct call by symbol.
             if is_closure_value_callee(cx, callee) {
                 return lower_closure_call(cx, callee, args, ty);
             }
-            let callee_ref = call_ref_from_callee(cx, callee, args, &expr.ty);
+            let callee_ref = call_ref_from_callee(cx, callee, args, type_args, &expr.ty);
             let arg_ops: Vec<MirOperand> = args.iter().map(|a| lower_expr(cx, a)).collect();
             let dst = cx.builder.fresh_temp("call", ty);
             cx.builder.assign(
@@ -309,7 +313,59 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             cx.builder.assign(cx.current, dst, rvalue);
             MirOperand::Copy(dst)
         }
+        HirExprKind::TypeName(arg) => lower_type_name(cx, arg, ty),
+        HirExprKind::FieldNames(arg) => lower_field_names(cx, arg, ty),
     }
+}
+
+/// Lower `type_name<T>()`. The carried type argument is grounded under the
+/// current substitution (so a generic parameter becomes the concrete type
+/// for this monomorphization), then rendered to its source spelling as a
+/// `String` constant. See `docs/v2/specs/reflection.md`.
+fn lower_type_name(cx: &mut LowerCx<'_>, arg: &crate::tycheck::Ty, ty: MirType) -> MirOperand {
+    let concrete = super::substitute(arg, cx.subst);
+    let rendered = format!("{}", concrete.strip_self());
+    let dst = cx.builder.fresh_temp("typename", ty);
+    cx.builder.assign(
+        cx.current,
+        dst,
+        MirRvalue::Use(MirOperand::Const(MirConstant::Str(rendered))),
+    );
+    MirOperand::Copy(dst)
+}
+
+/// Lower `field_names<T>()`. The carried type argument is grounded under the
+/// current substitution; when it is a known struct, the field names in
+/// declaration order become a `List<String>` literal. A grounded non-struct
+/// type yields an empty list (a generic parameter bound to a non-struct at
+/// some instantiation cannot be rejected at the call site in this slice).
+fn lower_field_names(cx: &mut LowerCx<'_>, arg: &crate::tycheck::Ty, ty: MirType) -> MirOperand {
+    use crate::tycheck::Ty;
+    let concrete = super::substitute(arg, cx.subst);
+    let names: Vec<String> = match concrete.strip_self() {
+        Ty::Struct { name, .. } => cx
+            .decls
+            .structs
+            .get(name.as_str())
+            .map(|s| s.fields.iter().map(|(n, _, _)| n.clone()).collect())
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    let elements: Vec<MirOperand> = names
+        .into_iter()
+        .map(|n| MirOperand::Const(MirConstant::Str(n)))
+        .collect();
+    let list_ty = MirType::List(Box::new(MirType::Str));
+    let dst = cx.builder.fresh_temp("fieldnames", ty);
+    cx.builder.assign(
+        cx.current,
+        dst,
+        MirRvalue::ArrayLit {
+            ty: list_ty,
+            elements,
+        },
+    );
+    MirOperand::Copy(dst)
 }
 
 /// Lower a block to a single result operand. Statements are emitted as
@@ -713,6 +769,7 @@ fn call_ref_from_callee(
     cx: &mut LowerCx<'_>,
     callee: &HirExpr,
     args: &[HirExpr],
+    type_args: &[crate::tycheck::Ty],
     result_ty: &crate::tycheck::Ty,
 ) -> MirFnRef {
     let HirExprKind::Ident(name) = &callee.kind else {
@@ -743,6 +800,16 @@ fn call_ref_from_callee(
     // can bind them. The two parameter spaces never collide because a
     // `ParamId` carries its owner span.
     let mut subst: super::SubstMap = super::SubstMap::new();
+    // Explicit type arguments bind the callee's generic parameters in
+    // declaration order. Each is grounded under the enclosing function's
+    // substitution first, so a `T` argument inside a generic body resolves
+    // to the concrete type for this monomorphization. This is what lets a
+    // call carrying `T` only as a type argument (no value argument pins it)
+    // specialize correctly, for example `type_name<T>()` and `describe<T>()`.
+    for (param, arg) in entry.generic_params.iter().zip(type_args.iter()) {
+        let got = super::substitute(arg, cx.subst);
+        subst.entry(param.clone()).or_insert(got);
+    }
     for (decl_ty, arg) in entry.params.iter().zip(args.iter()) {
         let got = super::substitute(&arg.ty, cx.subst);
         match_param(decl_ty, &got, &mut subst);

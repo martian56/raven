@@ -178,6 +178,22 @@ pub(crate) fn lower_expr(
                     ));
                 }
             }
+            // Compile-time reflection builtins. The callee is an unbound
+            // identifier with a single type argument; the type checker
+            // recorded the resolved type argument at the callee span. Carry
+            // it into a dedicated node so MIR grounds it per monomorphization.
+            if let ExprKind::Ident { name, .. } = &callee.kind {
+                if cx.is_unbound_builtin(&callee.span) {
+                    if name == "type_name" {
+                        let arg_ty = cx.ty_at(&callee.span);
+                        return Ok(make_expr(HirExprKind::TypeName(arg_ty), ty, span));
+                    }
+                    if name == "field_names" {
+                        let arg_ty = cx.ty_at(&callee.span);
+                        return Ok(make_expr(HirExprKind::FieldNames(arg_ty), ty, span));
+                    }
+                }
+            }
             // Recognize the built in enum constructors `Some(x)`, `Ok(x)`,
             // and `Err(x)` so they lower to typed constructor nodes (and
             // then to `EnumCreate` in MIR) rather than ordinary calls.
@@ -238,6 +254,7 @@ pub(crate) fn lower_expr(
             HirExprKind::Call {
                 callee: Box::new(c),
                 args: lowered,
+                type_args: cx.type_args_at(&callee.span),
             }
         }
         ExprKind::MethodCall {

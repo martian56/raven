@@ -1,0 +1,51 @@
+// Compile-time type reflection: type_name<T>() and field_names<T>().
+//
+// Both resolve at compile time. type_name renders a type's name; a generic
+// describe<T> resolves per monomorphization, so describe<Int> and
+// describe<Point> print different names from one body. field_names yields a
+// struct's field names in declaration order. See docs/v2/specs/reflection.md.
+//
+// Compiling and running this prints:
+//   Int
+//   String
+//   Point
+//   2
+//   x
+//   y
+//   Int
+//   Point
+//   introspect Point
+//   field x
+//   field y
+struct Point {
+    x: Int,
+    y: Int
+}
+
+fun describe<T>() -> String {
+    return type_name<T>()
+}
+
+fun introspect<T>() {
+    print("introspect ${type_name<T>()}")
+    let fields = field_names<T>()
+    for f in fields {
+        print("field ${f}")
+    }
+}
+
+fun main() {
+    print(type_name<Int>())       // Int
+    print(type_name<String>())    // String
+    print(type_name<Point>())     // Point
+
+    let names = field_names<Point>()
+    print(names.len())            // 2
+    print(names[0])               // x
+    print(names[1])               // y
+
+    print(describe<Int>())        // Int
+    print(describe<Point>())      // Point
+
+    introspect<Point>()           // introspect Point, field x, field y
+}
