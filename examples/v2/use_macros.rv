@@ -1,10 +1,23 @@
 // Declarative macros: expression-position invocations with metavariable
-// substitution. Captures are wrapped in parens in the templates so operator
-// precedence is preserved when the captured expression is spliced.
+// substitution, repetition, and basic hygiene. Captures are wrapped in parens
+// in the templates so operator precedence is preserved when the captured
+// expression is spliced.
 
 macro twice { ($x:expr) => { ($x) + ($x) } }
 
 macro max2 { ($a:expr, $b:expr) => { if ($a) > ($b) { ($a) } else { ($b) } } }
+
+// Variadic repetition: `$(...)*` matches zero or more comma-separated exprs and
+// the template repeats `+ ($x)` once per capture. sum_all!() is 0.
+macro sum_all { ($($x:expr),*) => { (0 $(+ ($x))*) } }
+
+// One-or-more repetition: `$(...)+` requires at least one argument.
+macro sum_some { ($($x:expr),+) => { (0 $(+ ($x))+) } }
+
+// Hygiene: the template introduces `tmp` in a block expression. The rename
+// makes that `tmp` distinct from any caller `tmp`, so doubled!(tmp) reads the
+// caller's value and leaves the caller's `tmp` untouched.
+macro doubled { ($x:expr) => { { let tmp = ($x); tmp + tmp } } }
 
 fun main() {
     let n = 3
@@ -18,4 +31,17 @@ fun main() {
 
     // Composition: a macro call inside another expression, and nested calls.
     print(twice!(twice!(n)) + 1)
+
+    // Repetition: sum_all!(1, 2, 3) == 6, sum_all!() == 0, sum_all!(10) == 10.
+    print(sum_all!(1, 2, 3))
+    print(sum_all!())
+    print(sum_all!(10))
+
+    // One-or-more: sum_some!(4, 5, 6) == 15.
+    print(sum_some!(4, 5, 6))
+
+    // Hygiene: caller's tmp is 100, doubled!(tmp) is 200, and tmp stays 100.
+    let tmp = 100
+    print(doubled!(tmp))
+    print(tmp)
 }

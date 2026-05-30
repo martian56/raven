@@ -96,6 +96,51 @@ so that `twice!(n + 1)` expands to `((n + 1)) + ((n + 1))` rather than
 `(n + 1) + (n + 1)` with the wrong grouping intent. This is the caller's
 responsibility in this slice; there is no automatic parenthesization.
 
+### Repetition
+
+A repetition group matches and expands a sub-pattern a variable number of
+times. The forms are:
+
+```
+$( <sub> )<sep>*      zero or more
+$( <sub> )<sep>+      one or more
+```
+
+`<sep>` is an optional single separator token between repetitions, commonly
+`,`. It sits between the closing `)` and the `*` or `+` marker. Omitting it
+means the repetitions are adjacent with no separator.
+
+In a matcher, a repetition matches `<sub>` as many times as it can, requiring
+the separator between consecutive matches. Every metavariable declared inside
+the repetition then binds to a sequence, one captured run per match. With `*`
+zero matches are allowed; with `+` at least one match is required, and a call
+with too few arguments falls through to the next rule (or, if none matches, is
+the usual "no rule matches" error).
+
+In a template, a repetition expands `<sub>` once per captured repetition,
+splicing `<sep>` between consecutive expansions. A metavariable used inside a
+template repetition must have been captured under a matcher repetition; the
+expansion count is taken from that sequence's length.
+
+The binding rule: a metavariable captured under a matcher repetition is a
+sequence and may only be spliced inside a template repetition (where it is
+viewed one element at a time). A non-repeated metavariable is a single run and
+is spliced directly. Using a sequence metavariable outside a template
+repetition splices nothing.
+
+Example, a variadic sum that needs no stdlib:
+
+```
+macro sum_all { ($($x:expr),*) => { (0 $(+ ($x))*) } }
+```
+
+`sum_all!(1, 2, 3)` expands to `(0 + (1) + (2) + (3))` (6), `sum_all!(10)` to
+`(0 + (10))` (10), and `sum_all!()` to `(0)` (0). With `+` instead of `*` the
+zero-argument call is rejected.
+
+One level of repetition is supported. Nested repetition (a repetition inside a
+repetition) is a follow-up.
+
 ## Expansion model
 
 1. Scan the token stream for `macro <ident> { ... }` definitions. Record
@@ -145,31 +190,56 @@ expander reports:
 
 ## Hygiene
 
-This slice performs plain token substitution and is not hygienic. A name
-introduced by a template (for example a `let` binding) and a name in a
-captured argument live in the same flat namespace after expansion, so a
-template binding can accidentally capture or shadow a caller's name, and a
-caller's name can shadow a template's. Macros in this slice should avoid
-introducing bindings whose names could collide with caller code. Full
-hygiene (renaming template-introduced identifiers so they cannot capture)
-is a follow-up.
+Basic hygiene protects identifiers that a template introduces at a binding
+site. During each expansion, an identifier that immediately follows `let`,
+`const`, or `for` in the template (and is a verbatim template token, not a
+metavariable splice) is renamed to a fresh, unique name, and every verbatim
+use of the same spelling in that template is renamed to match. The fresh name
+contains a `$`, which the lexer can never produce in a source identifier, so a
+template temporary can never collide with or capture a caller name of the same
+spelling.
 
-## What this slice supports
+Example:
+
+```
+macro doubled { ($x:expr) => { { let tmp = ($x); tmp + tmp } } }
+```
+
+Calling `doubled!(tmp)` where the caller already has a `tmp` in scope is safe:
+the captured `$x` keeps the caller's spelling `tmp` (it refers to the caller's
+binding), while the template's own `let tmp` becomes a fresh name. The result
+reads the caller's `tmp` and the caller's `tmp` is left untouched.
+
+### Boundary
+
+The guarantee is limited to template-introduced binding sites at `let`,
+`const`, and `for`. Metavariable-captured tokens always keep their original
+identity, so they continue to refer to call-site bindings. This slice does not
+provide full referential hygiene: a free identifier the template names (for
+example a function it calls) is still resolved at the call site, not at the
+macro's definition site, so it can be shadowed by a caller binding of the same
+name. Definition-site resolution of free identifiers is a follow-up.
+
+## What is supported
 
 * `macro <name> { (<matcher>) => { <template> } ... }` with one or more
-  fixed-arity rules, first matching rule wins.
+  rules, first matching rule wins.
 * `name!(...)` invocation in expression position.
 * `$x:expr` (balanced capture up to the next matcher delimiter) and
   `$x:ident` (single identifier) metavariables.
+* Repetition `$( <sub> )<sep>*` and `$( <sub> )<sep>+` (one level) in both
+  matchers and templates, with an optional single separator.
+* Basic hygiene: template-introduced binding-site identifiers (`let`, `const`,
+  `for`) are renamed to fresh names so they cannot capture or be captured.
 * Nested and composed macro calls, expanded to a fixpoint under the limit.
 * Clear, spanned errors for the cases listed above.
 * A strict no-op for programs that define no macros.
 
 ## Deferred to follow-ups
 
-* Repetition in matchers and templates (`$(...)sep*`).
+* Nested repetition (a repetition group inside another).
 * Item-position and statement-position invocations.
-* Hygiene (avoiding accidental capture).
+* Full referential hygiene (definition-site resolution of free identifiers).
 * Additional fragment kinds (`ty`, `literal`, `pat`, `block`).
 * Procedural macros / compile-time functions (the broader procedural side).
 ```

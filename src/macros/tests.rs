@@ -37,6 +37,9 @@ fn piece(k: &TokenKind) -> String {
         TokenKind::Gt => ">".into(),
         TokenKind::LParen => "(".into(),
         TokenKind::RParen => ")".into(),
+        TokenKind::LBracket => "[".into(),
+        TokenKind::RBracket => "]".into(),
+        TokenKind::Colon => ":".into(),
         TokenKind::LBrace => "{".into(),
         TokenKind::RBrace => "}".into(),
         TokenKind::Comma => ",".into(),
@@ -129,4 +132,93 @@ fn duplicate_macro_is_an_error() {
     let src = "macro dup { ($x:expr) => { ($x) } }\nmacro dup { ($x:expr) => { ($x) } }\n";
     let e = expand_tokens(&lex(src)).expect_err("duplicate def");
     assert!(format!("{}", e).contains("already defined"));
+}
+
+#[test]
+fn star_repetition_binds_sequence_and_repeats_template() {
+    let src = "macro sum_all { ($($x:expr),*) => { (0 $(+ ($x))*) } }\n\
+               let s = sum_all!(1, 2, 3)\n";
+    assert_eq!(expand_render(src), "let s = ( 0 + ( 1 ) + ( 2 ) + ( 3 ) )");
+}
+
+#[test]
+fn star_repetition_accepts_zero_reps() {
+    let src = "macro sum_all { ($($x:expr),*) => { (0 $(+ ($x))*) } }\nlet s = sum_all!()\n";
+    assert_eq!(expand_render(src), "let s = ( 0 )");
+}
+
+#[test]
+fn star_repetition_accepts_one_rep() {
+    let src = "macro sum_all { ($($x:expr),*) => { (0 $(+ ($x))*) } }\nlet s = sum_all!(10)\n";
+    assert_eq!(expand_render(src), "let s = ( 0 + ( 10 ) )");
+}
+
+#[test]
+fn plus_repetition_requires_at_least_one() {
+    let src = "macro sum_some { ($($x:expr),+) => { (0 $(+ ($x))+) } }\nlet s = sum_some!()\n";
+    let e = expand_tokens(&lex(src)).expect_err("plus needs one");
+    assert!(
+        format!("{}", e).contains("no rule of macro `sum_some!`"),
+        "got: {}",
+        e
+    );
+}
+
+#[test]
+fn plus_repetition_matches_multiple() {
+    let src = "macro sum_some { ($($x:expr),+) => { (0 $(+ ($x))+) } }\nlet s = sum_some!(4, 5)\n";
+    assert_eq!(expand_render(src), "let s = ( 0 + ( 4 ) + ( 5 ) )");
+}
+
+#[test]
+fn repetition_with_multiple_metavariables_per_rep() {
+    let src = "macro pairs { ($($k:ident : $v:expr),*) => { [$(($k, $v)),*] } }\n\
+               let p = pairs!(a : 1, b : 2)\n";
+    assert_eq!(expand_render(src), "let p = [ ( a , 1 ) , ( b , 2 ) ]");
+}
+
+#[test]
+fn hygiene_renames_template_binding_not_captured_name() {
+    // The template introduces `tmp`. The captured `$x` is also `tmp`. After
+    // expansion the template's `tmp` is renamed (carries a `$`), while the
+    // spliced capture keeps the original `tmp`.
+    let src = "macro doubled { ($x:expr) => { { let tmp = ($x); tmp + tmp } } }\n\
+               let r = doubled!(tmp)\n";
+    let out = expand_render(src);
+    // The capture (`($x)` -> `( tmp )`) keeps the bare name.
+    assert!(out.contains("( tmp )"), "capture not preserved: {}", out);
+    // The template binding and its uses are renamed away from `tmp`.
+    assert!(out.contains("let tmp$"), "binding not renamed: {}", out);
+    // No bare `let tmp ` remains (the introduced binding must be gensym'd).
+    assert!(!out.contains("let tmp "), "binding leaked: {}", out);
+}
+
+#[test]
+fn hygiene_renames_are_consistent_within_one_expansion() {
+    let src = "macro doubled { ($x:expr) => { { let tmp = ($x); tmp + tmp } } }\n\
+               let r = doubled!(7)\n";
+    let out = expand_render(src);
+    // Collect the renamed `tmp$N` spellings; the binding and both uses must
+    // share one fresh name.
+    let names: Vec<&str> = out
+        .split_whitespace()
+        .filter(|w| w.starts_with("tmp$"))
+        .collect();
+    assert_eq!(names.len(), 3, "expected one binding and two uses: {}", out);
+    assert!(
+        names.iter().all(|n| *n == names[0]),
+        "inconsistent rename: {}",
+        out
+    );
+}
+
+#[test]
+fn missing_repetition_marker_is_an_error() {
+    let src = "macro bad { ($($x:expr),) => { ($x) } }\nlet s = bad!(1)\n";
+    let e = expand_tokens(&lex(src)).expect_err("missing marker");
+    assert!(
+        format!("{}", e).contains("must end with `*` or `+`"),
+        "got: {}",
+        e
+    );
 }
