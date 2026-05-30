@@ -209,7 +209,24 @@ fn supported_runtime() -> Option<RuntimeStaticLib> {
     }
 }
 
+/// Stack for the compile worker thread. The `raven` binary compiles on a
+/// large-stack worker (issue #172) because lowering recurses with source
+/// nesting; the golden suite compiles in process, so it does the same to
+/// stay clear of the default test-thread stack on every host.
+const COMPILER_STACK_SIZE: usize = 512 * 1024 * 1024;
+
 fn build_object(source: &str, path: &Path) -> Result<Vec<u8>, String> {
+    let source = source.to_string();
+    let path = path.to_path_buf();
+    std::thread::Builder::new()
+        .stack_size(COMPILER_STACK_SIZE)
+        .spawn(move || build_object_inner(&source, &path))
+        .expect("spawn compile worker")
+        .join()
+        .expect("compile worker panicked")
+}
+
+fn build_object_inner(source: &str, path: &Path) -> Result<Vec<u8>, String> {
     let tokens = Lexer::new(source.to_string(), path.to_path_buf())
         .tokenize()
         .map_err(|e| format!("lex: {}", e))?;

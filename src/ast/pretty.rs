@@ -295,6 +295,12 @@ fn pretty_stmt(buf: &mut String, stmt: &Stmt, depth: usize) {
             indent(buf, depth);
             buf.push_str(")\n");
         }
+        StmtKind::Spawn(e) => {
+            buf.push_str("(spawn\n");
+            pretty_expr(buf, e, depth + 1);
+            indent(buf, depth);
+            buf.push_str(")\n");
+        }
         StmtKind::Assign { target, op, value } => {
             writeln!(buf, "(assign op={}", assign_op(*op)).unwrap();
             pretty_expr(buf, target, depth + 1);

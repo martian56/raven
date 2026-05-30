@@ -271,7 +271,7 @@ fn walk_stmt(
             }
         }
         StmtKind::Continue => {}
-        StmtKind::Defer(e) => walk_expr(e, scope, map)?,
+        StmtKind::Defer(e) | StmtKind::Spawn(e) => walk_expr(e, scope, map)?,
         StmtKind::Assign { target, value, .. } => {
             walk_expr(target, scope, map)?;
             walk_expr(value, scope, map)?;

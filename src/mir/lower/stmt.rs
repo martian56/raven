@@ -50,7 +50,36 @@ pub fn lower_stmt(cx: &mut LowerCx<'_>, stmt: &HirStmt) {
             }
         },
         HirStmtKind::Defer(e) => lower_defer(cx, e),
+        HirStmtKind::Spawn(e) => lower_spawn(cx, e),
     }
+}
+
+/// Lower `spawn expr` to a `raven_go_spawn(closure)` call.
+///
+/// The operand evaluates to a `fun() -> Unit` closure value; the call
+/// hands it to the runtime, which starts a goroutine running it. See
+/// `docs/v2/specs/concurrency.md`.
+fn lower_spawn(cx: &mut LowerCx<'_>, e: &HirExpr) {
+    let closure_op = super::expr::lower_expr(cx, e);
+    let closure_ty = MirType::Function {
+        params: Vec::new(),
+        ret: Box::new(MirType::Unit),
+    };
+    let closure = cx.builder.fresh_temp("go_closure", closure_ty);
+    cx.builder
+        .assign(cx.current, closure, MirRvalue::Use(closure_op));
+    let dst = cx.builder.fresh_temp("go_spawn", MirType::Unit);
+    cx.builder.assign(
+        cx.current,
+        dst,
+        MirRvalue::Call {
+            callee: MirFnRef {
+                mangled: crate::codegen::intrinsics::GO_SPAWN_FN.to_string(),
+                origin: None,
+            },
+            args: vec![MirOperand::Copy(closure)],
+        },
+    );
 }
 
 /// Lower `defer expr` to a runtime defer-frame registration.

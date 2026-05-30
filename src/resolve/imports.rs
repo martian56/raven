@@ -94,6 +94,7 @@ pub const STDLIB_MODULES: &[&str] = &[
     "regex",
     "process",
     "ffi",
+    "sync",
 ];
 
 /// Resolve every import declaration in `file`, inserting alias /

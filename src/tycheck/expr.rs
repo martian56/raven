@@ -646,6 +646,15 @@ impl<'a, 'b> Checker<'a, 'b> {
             StmtKind::Defer(e) => {
                 self.check_expr(e)?;
             }
+            StmtKind::Spawn(e) => {
+                // The goroutine body must be a `fun() -> Unit` closure.
+                let ty = self.check_expr(e)?;
+                let expected = Ty::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Ty::Unit),
+                };
+                self.unify(&expected, &ty, &e.span)?;
+            }
             StmtKind::Assign { target, op, value } => {
                 let target_ty = self.check_expr(target)?;
                 let value_ty = self.check_expr(value)?;

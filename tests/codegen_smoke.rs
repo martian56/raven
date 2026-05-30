@@ -168,6 +168,17 @@ fn closure_capture_program_compiles_and_runs() {
 }
 
 #[test]
+fn concurrency_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // `spawn` starts goroutines that communicate over channels on the
+    // cooperative scheduler. Producer/consumer, fan-in, and a cooperative
+    // interleave each sum to 15, deterministically.
+    compile_link_run_and_check("use_concurrency.rv", "15\n15\n15\n", &runtime);
+}
+
+#[test]
 fn nested_defer_runs_at_function_return() {
     let Some(runtime) = supported_runtime() else {
         return;
@@ -1340,7 +1351,23 @@ fn compile_link_run_and_check(name: &str, expected: &str, runtime: &RuntimeStati
     );
 }
 
+/// Stack for the compile worker thread. Matches the `raven` binary's
+/// large-stack worker (issue #172): lowering recurses with source nesting,
+/// so compiling in process on the default test-thread stack can overflow.
+const COMPILER_STACK_SIZE: usize = 512 * 1024 * 1024;
+
 fn build_object(source: &str, path: &Path) -> Result<Vec<u8>, String> {
+    let source = source.to_string();
+    let path = path.to_path_buf();
+    std::thread::Builder::new()
+        .stack_size(COMPILER_STACK_SIZE)
+        .spawn(move || build_object_inner(&source, &path))
+        .expect("spawn compile worker")
+        .join()
+        .expect("compile worker panicked")
+}
+
+fn build_object_inner(source: &str, path: &Path) -> Result<Vec<u8>, String> {
     let tokens = Lexer::new(source.to_string(), path.to_path_buf())
         .tokenize()
         .map_err(|e| format!("lex: {}", e))?;

@@ -251,6 +251,7 @@ pub(crate) fn describe_token(kind: &TokenKind) -> String {
         TokenKind::As => "`as`".to_string(),
         TokenKind::Extern => "`extern`".to_string(),
         TokenKind::Defer => "`defer`".to_string(),
+        TokenKind::Spawn => "`spawn`".to_string(),
         TokenKind::True => "`true`".to_string(),
         TokenKind::False => "`false`".to_string(),
         TokenKind::SelfLower => "`self`".to_string(),

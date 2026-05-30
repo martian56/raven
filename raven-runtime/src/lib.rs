@@ -16,6 +16,7 @@
 
 pub mod gc;
 pub mod object;
+pub mod sched;
 
 pub use gc::{
     raven_defer_enter_frame, raven_defer_push, raven_defer_run_frame, raven_gc_alloc,
@@ -33,6 +34,10 @@ pub use object::{
     raven_struct_new, Box as RavenBox, Closure as RavenClosure, List as RavenList, Map as RavenMap,
     MapEntry, ObjectHeader, Set as RavenSet, SetEntry, String as RavenString, GC_MARK_BIT,
     OBJECT_ALIGN, TAG_BOX, TAG_CLOSURE, TAG_LIST, TAG_MAP, TAG_SET, TAG_STRING, TAG_STRUCT,
+};
+pub use sched::{
+    raven_channel_new, raven_channel_new_buffered, raven_channel_recv, raven_channel_send,
+    raven_go_spawn, raven_go_yield,
 };
 
 use std::alloc::{self, Layout};

@@ -348,6 +348,10 @@ impl ModuleCx {
         sig = self.make_sig(&[ptr], &[]);
         self.declare_runtime(intrinsics::RUNTIME_DEFER_PUSH, &sig)?;
 
+        // raven_go_spawn(closure ptr)
+        sig = self.make_sig(&[ptr], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_GO_SPAWN, &sig)?;
+
         // raven_list_new(element_size: u32, element_align: u32, cap: u32,
         //                elements_are_gc_ptrs: u32) -> List ptr
         sig = self.make_sig(&[i32t, i32t, i32t, i32t], &[ptr]);

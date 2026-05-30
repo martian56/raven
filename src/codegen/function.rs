@@ -2047,6 +2047,25 @@ fn lower_intrinsic(
             builder.ins().call(local_ref, &[closure]);
             Ok(None)
         }
+        intrinsics::GO_SPAWN_FN => {
+            // Start a goroutine running the closure operand.
+            if args.len() != 1 {
+                return Err(CodegenError::Unsupported(format!(
+                    "__go_spawn intrinsic expects 1 arg, got {}",
+                    args.len()
+                )));
+            }
+            let closure = require_value(
+                lower_operand(cx, builder, &args[0], slots)?,
+                "__go_spawn closure",
+            )?;
+            let func_id = cx
+                .runtime_id(intrinsics::RUNTIME_GO_SPAWN)
+                .expect("go spawn declared at module init");
+            let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
+            builder.ins().call(local_ref, &[closure]);
+            Ok(None)
+        }
         _ => Err(CodegenError::Unsupported(format!(
             "unknown intrinsic: {}",
             mangled

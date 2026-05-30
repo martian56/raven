@@ -64,6 +64,15 @@ impl Parser {
                     span,
                 })
             }
+            TokenKind::Spawn => {
+                self.advance();
+                let value = self.parse_expr()?;
+                let span = merge_spans(&start_span, &value.span);
+                Ok(Stmt {
+                    kind: StmtKind::Spawn(value),
+                    span,
+                })
+            }
             _ => self.parse_expr_or_assign_stmt(),
         }
     }
