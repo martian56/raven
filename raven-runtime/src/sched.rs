@@ -59,6 +59,12 @@ struct Channel {
 struct Scheduler {
     goroutines: HashMap<usize, Goroutine>,
     ready: VecDeque<usize>,
+    /// Goroutines parked on a channel wait list. A blocked goroutine is
+    /// not runnable until a counterpart wakes it (moving it to `ready`).
+    /// Tracked explicitly so the deadlock check can tell a blocked current
+    /// goroutine (notably main, whose id stays `current` while it drives
+    /// the scheduler loop) from a runnable one.
+    blocked: std::collections::HashSet<usize>,
     current: usize,
     next_id: usize,
     channels: HashMap<i64, Channel>,
@@ -108,6 +114,7 @@ impl Scheduler {
         Scheduler {
             goroutines,
             ready: VecDeque::new(),
+            blocked: std::collections::HashSet::new(),
             current: 0,
             next_id: 1,
             channels: HashMap::new(),
@@ -282,9 +289,10 @@ fn run_scheduler_until_current_ready() {
     }
 }
 
-/// Whether goroutine `id` is currently runnable (ready or running).
+/// Whether goroutine `id` is currently runnable: queued ready, or it is
+/// the current goroutine and not parked on a channel.
 fn is_runnable(sched: &Scheduler, id: usize) -> bool {
-    sched.ready.contains(&id) || sched.current == id
+    sched.ready.contains(&id) || (sched.current == id && !sched.blocked.contains(&id))
 }
 
 /// Switch the live GC root chain from goroutine `from` to goroutine `to`
@@ -375,18 +383,29 @@ pub extern "C" fn raven_go_yield() {
 /// Park the current goroutine (it is already on a channel wait list) and
 /// switch to the scheduler. On return the goroutine has been woken.
 fn block_current() {
-    let is_main = SCHED.with(|s| s.borrow().current == 0);
+    let (is_main, me) = SCHED.with(|s| {
+        let mut sched = s.borrow_mut();
+        let me = sched.current;
+        sched.blocked.insert(me);
+        (me == 0, me)
+    });
     if is_main {
         run_scheduler_until_current_ready();
     } else {
         suspend_current(Suspend::Blocked);
     }
+    // Woken: no longer blocked.
+    SCHED.with(|s| {
+        s.borrow_mut().blocked.remove(&me);
+    });
 }
 
-/// Move goroutine `id` back onto the ready queue (waking it).
+/// Move goroutine `id` back onto the ready queue (waking it). Clears its
+/// blocked flag so the deadlock check sees it as runnable again.
 fn wake(id: usize) {
     SCHED.with(|s| {
         let mut sched = s.borrow_mut();
+        sched.blocked.remove(&id);
         if !sched.ready.contains(&id) {
             sched.ready.push_back(id);
         }
@@ -674,5 +693,50 @@ mod tests {
             let reported = raven_channel_recv(ready);
             assert_eq!(reported as u32, crate::object::TAG_STRING);
         });
+    }
+
+    // Body that blocks forever on an empty channel, never woken.
+    extern "C" fn blocker_body(env: *mut u8) {
+        let ch = unsafe { *(env as *const i64) };
+        let _ = raven_channel_recv(ch);
+    }
+
+    #[test]
+    fn all_goroutines_blocked_is_a_deadlock() {
+        // The deadlock path exits the process, so run it in a child: this
+        // test re-execs the test binary with a trigger env var. The child
+        // spawns a goroutine that blocks on an empty channel and then main
+        // blocks on a second empty channel, so every goroutine is parked.
+        if std::env::var("RAVEN_SCHED_DEADLOCK_CHILD").is_ok() {
+            let go_ch = raven_channel_new();
+            spawn_with_env(blocker_body, &[go_ch]);
+            let main_ch = raven_channel_new();
+            // Main blocks with no sender anywhere: deadlock, exit 101.
+            let _ = raven_channel_recv(main_ch);
+            // Unreachable on a correct deadlock detector.
+            std::process::exit(0);
+        }
+        let exe = std::env::current_exe().expect("test exe path");
+        let status = std::process::Command::new(exe)
+            .args([
+                "sched::tests::all_goroutines_blocked_is_a_deadlock",
+                "--exact",
+                "--nocapture",
+            ])
+            .env("RAVEN_SCHED_DEADLOCK_CHILD", "1")
+            .output()
+            .expect("spawn child");
+        // The child must exit 101 (the deadlock panic code), not 0.
+        assert_eq!(
+            status.status.code(),
+            Some(101),
+            "expected deadlock exit 101, got {:?}; stderr: {}",
+            status.status.code(),
+            String::from_utf8_lossy(&status.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&status.stderr).contains("deadlock"),
+            "expected a deadlock diagnostic on stderr"
+        );
     }
 }
