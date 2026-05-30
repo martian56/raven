@@ -137,6 +137,11 @@ pub enum HirExprKind {
     Call {
         callee: Box<HirExpr>,
         args: Vec<HirExpr>,
+        /// Resolved explicit type arguments written at the call site
+        /// (`f<Int>()`), in declaration order. Carried so MIR can bind a
+        /// callee's generic parameters that the value arguments do not pin
+        /// down. Empty when the call wrote no type arguments.
+        type_args: Vec<super::ty::HirTy>,
     },
     MethodCall {
         receiver: Box<HirExpr>,
@@ -218,6 +223,16 @@ pub enum HirExprKind {
         variant: usize,
         args: Vec<HirExpr>,
     },
+
+    /// `type_name<T>()` compile-time reflection builtin. Carries the
+    /// resolved type argument (a `Ty::Param` for a generic parameter, or a
+    /// concrete type), grounded per monomorphization in MIR and rendered to
+    /// a `String` constant. See `docs/v2/specs/reflection.md`.
+    TypeName(HirTy),
+    /// `field_names<T>()` compile-time reflection builtin. Carries the
+    /// resolved struct type argument, grounded per monomorphization in MIR
+    /// and lowered to a `List<String>` of the struct's field names.
+    FieldNames(HirTy),
 
     // ----- lambda -----
     Lambda {

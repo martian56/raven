@@ -114,6 +114,21 @@ fn derive_program_compiles_and_runs() {
 }
 
 #[test]
+fn reflection_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // `type_name<T>()` renders a type's name and `field_names<T>()` yields a
+    // struct's fields. The generic `describe<T>` and `introspect<T>` resolve
+    // per monomorphization, so the same body prints `Int` then `Point`.
+    compile_link_run_and_check(
+        "use_reflection.rv",
+        "Int\nString\nPoint\n2\nx\ny\nInt\nPoint\nintrospect Point\nfield x\nfield y\n",
+        &runtime,
+    );
+}
+
+#[test]
 fn derive_json_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

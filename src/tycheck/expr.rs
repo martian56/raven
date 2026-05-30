@@ -861,6 +861,14 @@ impl<'a, 'b> Checker<'a, 'b> {
             for g in generics {
                 explicit_args.push(self.resolve_ast_ty(g)?);
             }
+            // Record the resolved explicit type arguments at the use site so
+            // MIR can bind a callee's generic parameters that the value
+            // arguments do not pin down (a `f<T>()` with no argument carrying
+            // `T`). Resolved here under the enclosing generic scope, so a
+            // `T` argument stays a `Ty::Param` and grounds per monomorphization.
+            if !explicit_args.is_empty() {
+                self.record_type_args(span, explicit_args.clone());
+            }
             self.type_of_binding(&binding, span, &explicit_args)
         } else {
             Err(RavenError::ty(
@@ -1169,9 +1177,15 @@ impl<'a, 'b> Checker<'a, 'b> {
         // only call form we recognize for variants is `Some(x)`,
         // `Ok(x)`, `Err(x)` which arrive as `Call { callee: Ident, .. }`
         // without a resolver binding.
-        if let ExprKind::Ident { name, .. } = &callee.kind {
+        if let ExprKind::Ident { name, generics } = &callee.kind {
             if self.resolved.map.lookup(&callee.span).is_none() {
-                return self.check_builtin_constructor_call(name, args, span);
+                return self.check_builtin_constructor_call(
+                    name,
+                    generics,
+                    &callee.span,
+                    args,
+                    span,
+                );
             }
         }
 
@@ -1228,10 +1242,14 @@ impl<'a, 'b> Checker<'a, 'b> {
     fn check_builtin_constructor_call(
         &mut self,
         name: &str,
+        generics: &[crate::ast::Type],
+        callee_span: &Span,
         args: &[Expr],
         span: &Span,
     ) -> Result<Ty, RavenError> {
         match name {
+            "type_name" => self.check_reflection_builtin(name, generics, callee_span, args, span),
+            "field_names" => self.check_reflection_builtin(name, generics, callee_span, args, span),
             "Some" => {
                 if args.len() != 1 {
                     return Err(RavenError::ty(
@@ -1388,6 +1406,61 @@ impl<'a, 'b> Checker<'a, 'b> {
                 span.clone(),
             )),
         }
+    }
+
+    /// Check a compile-time reflection builtin (`type_name<T>()` or
+    /// `field_names<T>()`). Both take exactly one type argument and no value
+    /// arguments. The resolved type argument is recorded under the callee
+    /// span so HIR lowering can carry it (a generic parameter `T` resolves
+    /// to `Ty::Param`, grounded per monomorphization in MIR). See
+    /// `docs/v2/specs/reflection.md`.
+    fn check_reflection_builtin(
+        &mut self,
+        name: &str,
+        generics: &[crate::ast::Type],
+        callee_span: &Span,
+        args: &[Expr],
+        span: &Span,
+    ) -> Result<Ty, RavenError> {
+        if !args.is_empty() {
+            return Err(RavenError::ty(
+                TypeError::WrongArity {
+                    func: name.to_string(),
+                    expected: 0,
+                    actual: args.len(),
+                },
+                span.clone(),
+            ));
+        }
+        if generics.len() != 1 {
+            return Err(RavenError::ty(
+                TypeError::GenericArityMismatch {
+                    decl: name.to_string(),
+                    expected: 1,
+                    actual: generics.len(),
+                },
+                span.clone(),
+            ));
+        }
+        let arg_ty = self.resolve_ast_ty(&generics[0])?;
+        if name == "field_names" && !matches!(arg_ty.strip_self(), Ty::Struct { .. } | Ty::Param(_))
+        {
+            return Err(RavenError::ty(
+                TypeError::Custom(format!(
+                    "`field_names` requires a struct type, got `{}`",
+                    arg_ty
+                )),
+                span.clone(),
+            ));
+        }
+        // Record the resolved type argument at the callee span. HIR lowering
+        // reads it to build the reflection node; the call's own result span
+        // keeps the result type (`String` or `List<String>`).
+        self.record(callee_span, arg_ty);
+        Ok(match name {
+            "field_names" => Ty::List(Box::new(Ty::Str)),
+            _ => Ty::Str,
+        })
     }
 
     /// Reject a stdlib intrinsic call whose argument count differs from
@@ -2342,6 +2415,10 @@ impl<'a, 'b> Checker<'a, 'b> {
 
     fn record(&mut self, span: &Span, ty: Ty) {
         self.types.types.insert(UseKey::from_span(span), ty);
+    }
+
+    fn record_type_args(&mut self, span: &Span, args: Vec<Ty>) {
+        self.types.record_type_args(span, args);
     }
 
     /// Type an interpolated string literal. The whole literal has type

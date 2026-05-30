@@ -592,3 +592,40 @@ fn map_literal_requires_collections_import() {
     let err = check_with_prelude("fun main() {\n    let m = [\"a\": 1]\n}\n").unwrap_err();
     assert!(matches!(err, RavenError::Type(_, _, _)), "got: {}", err);
 }
+
+#[test]
+fn type_name_accepts_scalar_and_struct() {
+    check(
+        r#"
+        struct Point { x: Int, y: Int }
+        fun a() -> String = type_name<Int>()
+        fun b() -> String = type_name<Point>()
+    "#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn field_names_yields_list_of_string() {
+    check(
+        r#"
+        struct Point { x: Int, y: Int }
+        fun a() -> List<String> = field_names<Point>()
+    "#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn type_name_resolves_a_generic_parameter() {
+    check("fun describe<T>() -> String = type_name<T>()\n").unwrap();
+}
+
+#[test]
+fn field_names_on_scalar_is_rejected() {
+    let err = check("fun a() -> List<String> = field_names<Int>()\n").unwrap_err();
+    match err {
+        RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::Custom(_))),
+        other => panic!("expected a type error, got {:?}", other),
+    }
+}

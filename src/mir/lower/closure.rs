@@ -311,6 +311,8 @@ fn collect_free_expr(
         | HirExprKind::Unit
         | HirExprKind::SelfValue
         | HirExprKind::NoneCtor
+        | HirExprKind::TypeName(_)
+        | HirExprKind::FieldNames(_)
         | HirExprKind::Continue => {}
         HirExprKind::Ident(name) => record_use(name, bound, seen, out),
         HirExprKind::Array(items) => {
@@ -335,7 +337,7 @@ fn collect_free_expr(
             collect_free_expr(lhs, bound, seen, out);
             collect_free_expr(rhs, bound, seen, out);
         }
-        HirExprKind::Call { callee, args } => {
+        HirExprKind::Call { callee, args, .. } => {
             collect_free_expr(callee, bound, seen, out);
             for a in args {
                 collect_free_expr(a, bound, seen, out);

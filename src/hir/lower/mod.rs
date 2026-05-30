@@ -85,6 +85,25 @@ impl<'a> LowerCtx<'a> {
         self.typed.types.lookup(span).cloned().unwrap_or(Ty::Error)
     }
 
+    /// Resolved explicit type arguments recorded at a call's callee span,
+    /// or an empty vector when the call wrote none.
+    pub(crate) fn type_args_at(&self, span: &Span) -> Vec<Ty> {
+        self.typed
+            .types
+            .lookup_type_args(span)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// True when the use site at `span` has no resolver binding. The
+    /// reflection builtins (`type_name`, `field_names`) and `print` reach
+    /// HIR as unbound identifiers; a user binding (an import or a local)
+    /// would record a binding here, in which case the call is an ordinary
+    /// one.
+    pub(crate) fn is_unbound_builtin(&self, span: &Span) -> bool {
+        self.resolved.map.lookup(span).is_none()
+    }
+
     /// Resolve an identifier use site to the declared name of the
     /// top level function it binds to, if any.
     ///
@@ -347,6 +366,7 @@ fn lower_function(
         name: f.name.clone(),
         params,
         ret,
+        generics: sigs.iter().map(|s| s.id.clone()).collect(),
         body,
         span: f.span.clone(),
     })

@@ -630,3 +630,97 @@ fn gc_pointer_captures_are_ordered_first() {
         _ => unreachable!(),
     }
 }
+
+// ----- Compile-time reflection -----
+
+/// Collect every `String` constant assigned anywhere in a function, in
+/// statement order. Reflection builtins lower to such constants.
+fn str_constants(f: &MirFunction) -> Vec<String> {
+    let mut out = Vec::new();
+    for block in &f.blocks {
+        for stmt in &block.statements {
+            if let MirStatement::Assign { rvalue, .. } = stmt {
+                match rvalue {
+                    MirRvalue::Use(MirOperand::Const(MirConstant::Str(s))) => out.push(s.clone()),
+                    MirRvalue::ArrayLit { elements, .. } => {
+                        for e in elements {
+                            if let MirOperand::Const(MirConstant::Str(s)) = e {
+                                out.push(s.clone());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn type_name_on_scalar_lowers_to_name_constant() {
+    let prog = compile("fun f() -> String = type_name<Int>()\n");
+    let f = find_fn(&prog, "f");
+    assert!(
+        str_constants(f).contains(&"Int".to_string()),
+        "type_name<Int>() should lower to the constant \"Int\""
+    );
+}
+
+#[test]
+fn type_name_on_struct_lowers_to_name_constant() {
+    let prog = compile(
+        r#"
+        struct Point { x: Int, y: Int }
+        fun f() -> String = type_name<Point>()
+    "#,
+    );
+    let f = find_fn(&prog, "f");
+    assert!(str_constants(f).contains(&"Point".to_string()));
+}
+
+#[test]
+fn field_names_on_struct_lowers_to_field_constants() {
+    let prog = compile(
+        r#"
+        struct Point { x: Int, y: Int }
+        fun f() -> List<String> = field_names<Point>()
+    "#,
+    );
+    let f = find_fn(&prog, "f");
+    let consts = str_constants(f);
+    assert_eq!(consts, vec!["x".to_string(), "y".to_string()]);
+}
+
+#[test]
+fn type_name_on_generic_param_resolves_per_monomorphization() {
+    // `describe<T>` is instantiated at two concrete types. Each
+    // monomorphization grounds the body's `type_name<T>()` to the concrete
+    // name, so the two specialized functions carry different constants.
+    let prog = compile(
+        r#"
+        struct Point { x: Int, y: Int }
+        fun describe<T>() -> String = type_name<T>()
+        fun main() {
+            let a = describe<Int>()
+            let b = describe<Point>()
+        }
+    "#,
+    );
+    let names: Vec<String> = prog
+        .functions
+        .iter()
+        .filter(|f| f.origin == "describe")
+        .flat_map(str_constants)
+        .collect();
+    assert!(
+        names.contains(&"Int".to_string()),
+        "an instantiation should render Int, got {:?}",
+        names
+    );
+    assert!(
+        names.contains(&"Point".to_string()),
+        "the other instantiation should render Point, got {:?}",
+        names
+    );
+}

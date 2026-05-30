@@ -301,7 +301,7 @@ fn pretty_expr(buf: &mut String, expr: &HirExpr, depth: usize) {
             indent(buf, depth);
             buf.push_str(")\n");
         }
-        HirExprKind::Call { callee, args } => {
+        HirExprKind::Call { callee, args, .. } => {
             writeln!(buf, "(call ty={}", expr.ty).unwrap();
             pretty_expr(buf, callee, depth + 1);
             for a in args {
@@ -477,6 +477,12 @@ fn pretty_expr(buf: &mut String, expr: &HirExpr, depth: usize) {
             }
             indent(buf, depth);
             buf.push_str(")\n");
+        }
+        HirExprKind::TypeName(arg) => {
+            writeln!(buf, "(type-name arg={} ty={})", arg, expr.ty).unwrap()
+        }
+        HirExprKind::FieldNames(arg) => {
+            writeln!(buf, "(field-names arg={} ty={})", arg, expr.ty).unwrap()
         }
         HirExprKind::Lambda { params, ret, body } => {
             write!(buf, "(lambda ret={} params=(", ret).unwrap();
