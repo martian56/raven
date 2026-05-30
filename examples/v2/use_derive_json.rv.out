@@ -1,0 +1,11 @@
+{"x":1,"y":2}
+true
+{"start":{"x":0,"y":0},"end":{"x":3,"y":4}}
+true
+{"first":7,"second":true}
+true
+{"tag":"Rect","values":[2,5]}
+true
+{"tag":"Dot","values":[]}
+true
+missing field y

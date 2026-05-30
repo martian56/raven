@@ -31,8 +31,10 @@ and attaches the trait list to the following struct or enum as a
 than `derive`, is a parse error. A type with no attribute carries an empty
 derive list and is unaffected.
 
-The four supported traits in this slice are `Eq`, `Hash`, `ToString`, and
-`Debug`. Naming any other trait (for example `Ord`) is a compile error.
+The supported traits are `Eq`, `Hash`, `ToString`, `Debug`, `ToJson`, and
+`FromJson`. Naming any other trait (for example `Ord`) is a compile error.
+`ToJson` and `FromJson` provide JSON serialization on top of `std/json`; see
+their section below and the [std/json spec](std-json.md).
 
 ## Expansion
 
@@ -51,6 +53,10 @@ missing bound with its normal `trait bound ... is not satisfied` diagnostic.
 `@derive(Debug)` produces an `impl Debug`, and the `Debug` trait lives in
 `std/fmt` rather than the prelude. The expander force-merges `std/fmt` when
 any type derives `Debug`, so the user needs no explicit `import std/fmt`.
+Likewise `@derive(ToJson)` and `@derive(FromJson)` reference the `JsonValue`
+tree and the JSON traits in `std/json`, so the expander force-merges
+`std/json` (which transitively pulls in `std/error` and `std/collections`)
+when any type derives one of them.
 
 ## Generated impl shapes
 
@@ -115,6 +121,61 @@ to_string -> User { name: ann, age: 30 }
 debug     -> User { name: "ann", age: 30 }
 ```
 
+### ToJson
+
+```raven
+fun to_json(self) -> JsonValue
+```
+
+* Struct: a JSON object keyed by field name, each value the field's own
+  `to_json()`. `Point { x: 1, y: 2 }` serializes to `{"x":1,"y":2}`.
+* Enum: a tagged object `{"tag": "Variant", "values": [p0, p1, ...]}`, where
+  the payload slots are each value's `to_json()` and a unit variant has an
+  empty `values` array. `Shape.Rect(2, 5)` serializes to
+  `{"tag":"Rect","values":[2,5]}`, and `Shape.Dot` to
+  `{"tag":"Dot","values":[]}`.
+
+Object key order follows the `Map` hash-bucket layout of `std/json`, not
+source order. Combine `to_json` with `stringify` to get a `String`.
+
+### FromJson
+
+```raven
+fun from_json(j: JsonValue) -> Result<Self, Error>
+```
+
+`from_json` is an associated function (it takes no `self`), so it is called
+as `Point.from_json(j)`. The `FromJson` trait declares the method with `Self`
+in the return, but the generated impl writes the concrete type, because the
+type checker does not yet accept `Self` as a non-receiver type in a method
+signature (the same limitation `Eq` works around). So `@derive(FromJson)` on
+`Point` generates `impl FromJson for Point { fun from_json(j) -> Result<Point,
+Error> { ... } }`.
+
+* Struct: read each field from the object by name, decode it to the field's
+  declared type, propagate a missing or wrong-typed field as an `Err`, then
+  construct the struct.
+* Enum: read the `tag` string, dispatch to the matching variant, decode each
+  payload slot positionally from the `values` array, and return an `Err` on an
+  unknown tag.
+
+The derived `from_json` calls a small set of helper free functions that the
+derive pass emits into the program once (a generic decode dispatcher plus
+object/array accessors). They cannot live in `std/json` because a bundled
+free function is namespaced (`std.json.f`) and so not callable by its bare
+name from generated source.
+
+### Scalar, List, and Option impls
+
+`std/json` hand-writes the `ToJson`/`FromJson` impls that field recursion
+bottoms out on: `Int`, `Float`, `Bool`, `String`, `List<T: ToJson/FromJson>`,
+and `Option<T: ToJson/FromJson>`. `Int` and `Float` both serialize to a JSON
+number; `Bool` to a JSON bool; `String` to a JSON string; `List<T>` to a JSON
+array; and `Option<T>` to `null` or the inner value. An `Int` round-trips
+through `Float` (JSON has one number type) and loses precision beyond 2^53,
+the IEEE 754 double mantissa. The derive only generates impls for user
+structs and enums; it never generates impls for the built-in types.
+
 ## Generics
 
 For a generic type the synthesized impl is generic with the derived trait as
@@ -137,20 +198,23 @@ impl<A: Eq, B: Eq> Eq for Pair<A, B> {
 
 The bound is required because `equals` on a field of type `A` needs
 `A: Eq`. The same rule applies to each trait: `Hash` emits `A: Hash`,
-`ToString` emits `A: ToString`, and so on.
+`ToString` emits `A: ToString`, `ToJson` emits `A: ToJson`, `FromJson` emits
+`A: FromJson`, and so on. So `@derive(ToJson)` on `Pair<A, B>` generates
+`impl<A: ToJson, B: ToJson> ToJson for Pair<A, B>`.
 
 ## Limitations
 
-* Only `Eq`, `Hash`, `ToString`, and `Debug` are supported. `Ord` and other
-  traits are not derivable yet.
+* Only `Eq`, `Hash`, `ToString`, `Debug`, `ToJson`, and `FromJson` are
+  supported. `Ord` and other traits are not derivable yet.
 * Enum variants with struct-style (named-field) payloads, for example
   `V(a: Int)`, are rejected with a clear error. Unit and tuple variants are
   fully supported.
 * `Debug` reuses the `ToString` field shape with `debug()` formatting rather
   than offering a separate layout.
+* A derived `FromJson` reads only the keys it declares; extra object members
+  are ignored, and a `Number` decodes to `Int` by truncation toward zero.
 
 ## Follow-ups
 
 Derive is the first metaprogramming slice. Later slices build on it:
-declarative and procedural macros, compile-time and runtime reflection, and
-a `derive(ToJson/FromJson)` slice on top of `std/json`.
+declarative and procedural macros, and compile-time and runtime reflection.
