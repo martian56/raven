@@ -58,7 +58,7 @@ export function activate(context: vscode.ExtensionContext) {
             const types = [
                 'Int', 'Float', 'Bool', 'String', 'Char', 'Unit',
                 'Option', 'Result', 'List', 'Map', 'Set',
-                'CInt', 'CLong', 'CSize', 'CStr', 'CPtr', 'CDouble'
+                'CInt', 'CLong', 'CSize', 'CStr', 'CPtr', 'CFloat', 'CDouble'
             ];
 
             const completions: vscode.CompletionItem[] = [];

@@ -326,6 +326,18 @@ fn ffi_abs_program_compiles_and_runs() {
 }
 
 #[test]
+fn ffi_cfloat_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A single-precision FFI type: `sqrtf(x: CFloat) -> CFloat` takes and
+    // returns a C `float`. The Raven `Float` argument 16.0 is narrowed to
+    // f32 at the call (fdemote) and the f32 result is widened back to f64
+    // (fpromote) before printing; sqrtf(16.0) is 4.
+    compile_link_run_and_check("ffi_cfloat.rv", "4\n", &runtime);
+}
+
+#[test]
 fn use_ffi_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

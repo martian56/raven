@@ -181,6 +181,26 @@ fn compiles_extern_c_call_with_int_literal() {
 }
 
 #[test]
+fn compiles_extern_c_call_with_cfloat() {
+    // A single-precision FFI type: sqrtf(CFloat) -> CFloat. Exercises the
+    // f64-to-f32 narrowing of the Float argument at the call (fdemote) and
+    // the f32-to-f64 widening of the result for printing (fpromote).
+    let src = r#"
+        extern "C" {
+            fun sqrtf(x: CFloat) -> CFloat
+        }
+        fun main() {
+            let r = sqrtf(16.0)
+            print(r)
+        }
+    "#;
+    let prog = compile(src);
+    assert!(prog.externs.iter().any(|e| e.name == "sqrtf"));
+    let object = compile_program(&prog).expect("codegen extern sqrtf");
+    assert!(object.len() > 64);
+}
+
+#[test]
 fn compiles_float_arithmetic() {
     let prog = compile("fun mix(x: Float, y: Float) -> Float { return x * y + 1.0 }");
     let object = compile_program(&prog).expect("codegen float");

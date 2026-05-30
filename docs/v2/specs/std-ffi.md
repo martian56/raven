@@ -51,7 +51,8 @@ text without interior NUL bytes round-trips exactly.
 
 The C ABI primitives recognized by the type checker, with their machine
 mappings. `CInt`/`CLong`/`CSize`/`CStr`/`CPtr<T>` are specified in
-`docs/v2/specs/ffi.md`; `CDouble` is added here.
+`docs/v2/specs/ffi.md`; `CFloat` and `CDouble` are added here. The C
+numeric FFI types are now complete.
 
 | Raven type | C type         | Cranelift ABI type    |
 |------------|----------------|-----------------------|
@@ -59,6 +60,7 @@ mappings. `CInt`/`CLong`/`CSize`/`CStr`/`CPtr<T>` are specified in
 | `CLong`    | `long`         | `i64`                 |
 | `CSize`    | `size_t`       | pointer width (`i64`) |
 | `CStr`     | `const char *` | pointer width (`i64`) |
+| `CFloat`   | `float`        | `f32`                 |
 | `CDouble`  | `double`       | `f64`                 |
 | `CPtr<T>`  | `T *` (opaque) | pointer width (`i64`) |
 
@@ -68,17 +70,16 @@ accepted where a `CDouble` parameter is expected with no conversion at the
 call boundary, and a `CDouble` return is an `f64`. A libm function such as
 `sqrt(x: CDouble) -> CDouble` is callable with a `Float`.
 
+`CFloat` is C `float` (an f32). A Raven `Float` is f64, so it does not
+share `CFloat`'s representation the way it does `CDouble`'s. A `Float`
+argument is still accepted where a `CFloat` parameter is expected: the
+back end narrows the f64 to f32 at the call boundary with `fdemote`, and a
+`CFloat` return is widened back to an f64 `Float` with `fpromote` before it
+is used. A single-precision CRT/libm function such as
+`sqrtf(x: CFloat) -> CFloat` is callable with a `Float` and its result
+prints and interpolates as a `Float`.
+
 `CString` is accepted as an alias for `CStr`.
-
-### CFloat (deferred)
-
-C `float` (`CFloat`, an f32) is not provided in this release. A Raven
-`Float` is f64, so passing one to a C `float` parameter or reading a C
-`float` return would require an `fdemote`/`fpromote` narrowing at the call
-boundary that the codegen FFI path does not yet emit. Shipping the f32
-type without that conversion would be a silently wrong ABI, so the variant
-is deferred rather than half-wired. `CDouble` covers the common floating
-case (libm and most C math take `double`).
 
 ## C string literals
 
@@ -131,12 +132,13 @@ The C integer results print through `print`. The integer FFI types
 narrower one is sign-extended) and rendering through the `Int` to-string
 path, so a `CSize` or `CInt` can be printed or interpolated into a
 `"${...}"` string directly. `CSize` is treated as a signed `Int`, correct
-for realistic sizes (below 2^63).
+for realistic sizes (below 2^63). The float FFI types (`CFloat`,
+`CDouble`) satisfy `ToString` the same way through the `Float` to-string
+path; a `CFloat` widens its f32 to f64 first.
 
 ## Out of scope
 
 * A `free`/`drop` for buffers from `to_cstr` (copy-and-leak semantics).
-* C `float` (`CFloat`); deferred as noted above.
 * Everything listed out of scope in `docs/v2/specs/ffi.md` (struct by
   value, variadics, callbacks into Raven, `CPtr<T>` dereference, non-CRT
   libraries).

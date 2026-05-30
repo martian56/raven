@@ -421,7 +421,9 @@ impl<'a, 'b> Checker<'a, 'b> {
             // they widen to `Int` at the use site (HIR lowering inserts the
             // cast) and render through the `Int` to-string path, so a C call
             // result such as `strlen(c"hi")` can be printed or interpolated.
-            t if is_int_ffi(t) => Ok(()),
+            // The float C FFI types render through the `Float` path the same
+            // way (`CFloat` widens f32 to f64 first).
+            t if is_int_ffi(t) || is_float_ffi(t) => Ok(()),
             Ty::Var(v) => {
                 self.infer
                     .add_bound(*v, "ToString".to_string(), span.clone());
@@ -1228,9 +1230,13 @@ impl<'a, 'b> Checker<'a, 'b> {
             }
             // A `CDouble` parameter is C `double` (f64), the same
             // representation a Raven `Float` uses, so a `Float` argument
-            // passes directly with no conversion at the call.
-            if matches!(resolved_param.strip_self(), Ty::Ffi(FfiTy::CDouble))
-                && matches!(resolved_arg.strip_self(), Ty::Float)
+            // passes directly with no conversion at the call. A `CFloat`
+            // parameter is C `float` (f32); a `Float` argument is accepted
+            // and the back end narrows it to f32 at the call boundary.
+            if matches!(
+                resolved_param.strip_self(),
+                Ty::Ffi(FfiTy::CDouble) | Ty::Ffi(FfiTy::CFloat)
+            ) && matches!(resolved_arg.strip_self(), Ty::Float)
             {
                 continue;
             }
@@ -2450,8 +2456,9 @@ impl<'a, 'b> Checker<'a, 'b> {
                 continue;
             }
             // The integer C FFI types widen to `Int` and render through the
-            // `Int` to-string path (HIR lowering inserts the cast).
-            if is_int_ffi(stripped) {
+            // `Int` to-string path (HIR lowering inserts the cast). The
+            // float C FFI types render through the `Float` path.
+            if is_int_ffi(stripped) || is_float_ffi(stripped) {
                 continue;
             }
             if let Ty::Param(p) = stripped {
@@ -2618,6 +2625,10 @@ fn is_int_ffi(ty: &Ty) -> bool {
         ty,
         Ty::Ffi(FfiTy::CInt) | Ty::Ffi(FfiTy::CLong) | Ty::Ffi(FfiTy::CSize)
     )
+}
+
+fn is_float_ffi(ty: &Ty) -> bool {
+    matches!(ty, Ty::Ffi(FfiTy::CFloat) | Ty::Ffi(FfiTy::CDouble))
 }
 
 fn ty_custom(msg: &str, span: &Span) -> RavenError {

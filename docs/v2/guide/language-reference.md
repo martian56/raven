@@ -455,9 +455,13 @@ C types map to C as follows:
 | `CLong` | `long`         | 64-bit |
 | `CSize` | `size_t`       | pointer width (64-bit) |
 | `CStr`  | `const char *` | pointer width |
+| `CFloat` | `float`       | 32-bit |
 | `CDouble` | `double`     | 64-bit |
 
 A native `Int` is accepted where an integer C type is expected, and a
-`c"..."` literal where a `CStr` is expected. To pass a runtime `String`
+`c"..."` literal where a `CStr` is expected. A native `Float` is accepted
+where a `CFloat` or `CDouble` is expected; for `CFloat` the value is
+narrowed to f32 at the call and a `CFloat` return is widened back to a
+`Float`. To pass a runtime `String`
 to C, convert it with [`std/ffi`](standard-library.md#stdffi)'s
 `to_cstr`; a native `String` is not itself a valid `const char *`.

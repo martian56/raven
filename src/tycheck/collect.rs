@@ -632,6 +632,7 @@ fn resolve_type_path(
         // older `extern` signatures keep checking. Both denote a pointer
         // to a null-terminated byte buffer.
         "CStr" | "CString" => return ok_zero_generics(head, Ty::Ffi(FfiTy::CStr)),
+        "CFloat" => return ok_zero_generics(head, Ty::Ffi(FfiTy::CFloat)),
         "CDouble" => return ok_zero_generics(head, Ty::Ffi(FfiTy::CDouble)),
         "CPtr" => {
             let inner = expect_one_generic(head, resolved, env, self_ty, scope)?;

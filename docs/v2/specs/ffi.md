@@ -67,6 +67,7 @@ not silently passed where the C ABI expects a foreign one.
 | `CLong`    | `long`           | `i64`                  |
 | `CSize`    | `size_t`         | pointer width (`i64`)  |
 | `CStr`     | `const char *`   | pointer width (`i64`)  |
+| `CFloat`   | `float`          | `f32`                  |
 | `CDouble`  | `double`         | `f64`                  |
 | `CPtr<T>`  | `T *` (opaque)   | pointer width (`i64`)  |
 
@@ -74,8 +75,13 @@ not silently passed where the C ABI expects a foreign one.
 targets. `CLong` and `CSize` are 64-bit on the 64-bit targets Raven
 supports. `CStr`, `CSize`, and `CPtr<T>` are all pointer width. `CDouble`
 is C `double`, the same `f64` representation a Raven `Float` already uses,
-so a `Float` argument is accepted where a `CDouble` is expected. C `float`
-(`CFloat`) is not yet provided; see `docs/v2/specs/std-ffi.md`.
+so a `Float` argument is accepted where a `CDouble` is expected with no
+conversion at the call. `CFloat` is C `float` (`f32`). A `Float` argument
+is accepted where a `CFloat` is expected: the back end narrows the f64 to
+f32 at the call boundary (`fdemote`), and a `CFloat` return is widened back
+to an f64 `Float` (`fpromote`) before use. The C numeric FFI types are now
+complete: `CInt`, `CLong`, `CSize`, `CFloat`, `CDouble`, plus `CStr` and
+`CPtr<T>` for pointers.
 
 `CPtr<T>` is a typed but opaque pointer in v2.0: the pointee type is kept
 for documentation and future conversions, but the back end treats the
