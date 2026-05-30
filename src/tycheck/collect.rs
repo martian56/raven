@@ -634,6 +634,7 @@ fn resolve_type_path(
         "CStr" | "CString" => return ok_zero_generics(head, Ty::Ffi(FfiTy::CStr)),
         "CFloat" => return ok_zero_generics(head, Ty::Ffi(FfiTy::CFloat)),
         "CDouble" => return ok_zero_generics(head, Ty::Ffi(FfiTy::CDouble)),
+        "CFnPtr" => return ok_zero_generics(head, Ty::Ffi(FfiTy::CFnPtr)),
         "CPtr" => {
             let inner = expect_one_generic(head, resolved, env, self_ty, scope)?;
             return Ok(Ty::Ffi(FfiTy::CPtr(Box::new(inner))));

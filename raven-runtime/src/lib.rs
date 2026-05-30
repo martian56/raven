@@ -633,6 +633,46 @@ pub extern "C" fn raven_ffi_fill_i32(p: *mut i32, n: i32, val: i32) {
     }
 }
 
+/// Test helper: sort the first `n` 32-bit slots at `p` with the C library
+/// `qsort`, using `cmp` as the comparator.
+///
+/// Proves a non-capturing top-level Raven function passed as a `CFnPtr`
+/// is invoked correctly by C: the C `qsort` calls back into the Raven
+/// comparator for each pair. Used by `examples/v2/ffi_callback.rv`.
+///
+/// # Safety
+///
+/// `p` must point to at least `n` writable `i32` slots, and `cmp` must be
+/// a valid comparator that reads two `*const i32` arguments.
+#[no_mangle]
+pub extern "C" fn raven_ffi_qsort_i32(
+    p: *mut i32,
+    n: usize,
+    cmp: extern "C" fn(*const i32, *const i32) -> i32,
+) {
+    extern "C" {
+        fn qsort(
+            base: *mut core::ffi::c_void,
+            nmemb: usize,
+            size: usize,
+            compar: extern "C" fn(*const i32, *const i32) -> i32,
+        );
+    }
+    if p.is_null() || n == 0 {
+        return;
+    }
+    // SAFETY: the caller guarantees `n` writable i32 slots at `p` and a
+    // valid comparator; `qsort` reads each pair through `cmp`.
+    unsafe {
+        qsort(
+            p as *mut core::ffi::c_void,
+            n,
+            core::mem::size_of::<i32>(),
+            cmp,
+        );
+    }
+}
+
 /// Return a non-deterministic 64-bit seed for entropy seeding.
 ///
 /// Mixes a high-resolution timestamp with the process id through a

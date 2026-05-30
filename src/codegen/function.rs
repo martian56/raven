@@ -57,7 +57,7 @@ pub fn cranelift_ty(ty: &MirType, ptr: CType) -> Option<CType> {
             MirFfiTy::CLong => types::I64,
             MirFfiTy::CFloat => types::F32,
             MirFfiTy::CDouble => types::F64,
-            MirFfiTy::CSize | MirFfiTy::CStr | MirFfiTy::CPtr(_) => ptr,
+            MirFfiTy::CSize | MirFfiTy::CStr | MirFfiTy::CPtr(_) | MirFfiTy::CFnPtr => ptr,
         }),
     }
 }
@@ -504,6 +504,7 @@ fn lower_rvalue(
         } => lower_ptr_offset(cx, builder, addr, count, pointee, slots),
         MirRvalue::PtrIsNull { addr } => lower_ptr_is_null(cx, builder, addr, slots),
         MirRvalue::PtrNull => Ok(Some(builder.ins().iconst(cx.pointer_type(), 0))),
+        MirRvalue::FnAddr { mangled } => Ok(Some(lower_fn_addr(cx, builder, mangled))),
         MirRvalue::PtrAlloc { count, pointee } => {
             lower_ptr_alloc(cx, builder, count, pointee, slots)
         }
@@ -598,6 +599,22 @@ fn lower_ptr_alloc(
     let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
     let inst = builder.ins().call(local_ref, &[bytes]);
     Ok(builder.inst_results(inst).first().copied())
+}
+
+/// Lower `FnAddr`: the address of a top-level function as a C function
+/// pointer. The function is compiled under the platform default (C)
+/// calling convention, so the address is callable directly by C. A
+/// missing symbol is a lowering bug; keep the program well formed with a
+/// null pointer rather than aborting the build.
+fn lower_fn_addr(cx: &mut ModuleCx, builder: &mut FunctionBuilder<'_>, mangled: &str) -> Value {
+    let ptr = cx.pointer_type();
+    match cx.function_id(mangled) {
+        Some(id) => {
+            let fref = cx.module().declare_func_in_func(id, builder.func);
+            builder.ins().func_addr(ptr, fref)
+        }
+        None => builder.ins().iconst(ptr, 0),
+    }
 }
 
 fn lower_operand(

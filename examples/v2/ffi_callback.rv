@@ -1,0 +1,36 @@
+// Pass a non-capturing top-level Raven function to C as a callback. The C
+// library `qsort` (reached through the runtime helper) calls back into the
+// Raven `compare` for each pair, proving a Raven function compiled under
+// the platform C ABI is invocable directly by C. The comparator does not
+// allocate, so no collection runs during the callback. See
+// docs/v2/specs/std-ffi.md.
+import std/ffi { alloc, free, load, store, offset }
+
+extern "C" {
+    fun raven_ffi_qsort_i32(p: CPtr<CInt>, n: CSize, cmp: CFnPtr)
+}
+
+// Ascending integer comparator: returns negative, zero, or positive like
+// a C comparator. Reads each operand through its raw pointer.
+fun compare(a: CPtr<CInt>, b: CPtr<CInt>) -> CInt {
+    return load<CInt>(a) - load<CInt>(b)
+}
+
+fun main() {
+    let buf = alloc<CInt>(5)
+    store<CInt>(buf, 30)
+    store<CInt>(offset<CInt>(buf, 1), 10)
+    store<CInt>(offset<CInt>(buf, 2), 50)
+    store<CInt>(offset<CInt>(buf, 3), 20)
+    store<CInt>(offset<CInt>(buf, 4), 40)
+
+    raven_ffi_qsort_i32(buf, 5, compare)
+
+    print(load<CInt>(buf))
+    print(load<CInt>(offset<CInt>(buf, 1)))
+    print(load<CInt>(offset<CInt>(buf, 2)))
+    print(load<CInt>(offset<CInt>(buf, 3)))
+    print(load<CInt>(offset<CInt>(buf, 4)))
+
+    free<CInt>(buf)
+}

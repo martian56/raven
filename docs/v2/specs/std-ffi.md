@@ -130,6 +130,7 @@ numeric FFI types are now complete.
 | `CFloat`   | `float`        | `f32`                 |
 | `CDouble`  | `double`       | `f64`                 |
 | `CPtr<T>`  | `T *` (opaque) | pointer width (`i64`) |
+| `CFnPtr`   | function ptr   | pointer width (`i64`) |
 
 `CDouble` is C `double`. It maps to `f64`, the exact representation a
 Raven `Float` already crosses the C ABI as, so a `Float` argument is
@@ -147,6 +148,63 @@ is used. A single-precision CRT/libm function such as
 prints and interpolates as a `Float`.
 
 `CString` is accepted as an alias for `CStr`.
+
+## Function-pointer callbacks
+
+`CFnPtr` is an untyped C function pointer (pointer width). It lets a C
+function that takes a callback call back into Raven. A non-capturing
+top-level Raven function can be passed where a `CFnPtr` is expected by
+naming it bare:
+
+```raven
+extern "C" {
+    fun qsort(base: CPtr<CInt>, count: CSize, size: CSize, cmp: CFnPtr)
+}
+
+fun compare(a: CPtr<CInt>, b: CPtr<CInt>) -> CInt {
+    return load<CInt>(a) - load<CInt>(b)
+}
+
+fun main() {
+    // ... fill a CInt buffer ...
+    qsort(buf, 5, 4, compare)
+}
+```
+
+Rules:
+
+* Only a bare name of a **non-capturing top-level function** is accepted.
+  A closure value (a local of function type, which carries a capture
+  environment C cannot supply) is rejected. Capturing closures as
+  callbacks are a follow-up (they need a userdata/trampoline mechanism).
+* The function's parameters and return must all be C-FFI types (`CInt`,
+  `CLong`, `CSize`, `CFloat`, `CDouble`, `CStr`, `CPtr<T>`, `CFnPtr`, or
+  `Unit` return) so the C ABI of the resulting pointer is well defined. A
+  function with a native `Int`/`Float`/`String` parameter or return is
+  rejected.
+* `CFnPtr` is untyped: the type checker does not verify the function's
+  signature matches what the C side expects. The signature match is the
+  programmer's responsibility, exactly as in C.
+
+### Call convention
+
+Ordinary Raven functions are already compiled under the platform default
+calling convention, which is the platform C ABI (WindowsFastcall on
+x86_64-pc-windows-msvc, SystemV on x86_64 Linux). It is the same
+convention `extern "C"` functions are called with. A Raven function whose
+signature uses only C-FFI types is therefore directly callable by C with
+no wrapper or thunk: passing a `CFnPtr` emits the function's address
+(`func_addr`) and hands it to C.
+
+### GC and allocation rule
+
+A Raven function runs its normal prologue and epilogue when invoked,
+including entering and leaving its GC shadow-stack frame, regardless of
+who calls it. A callback that does not allocate (the comparator above only
+loads and subtracts) never triggers a collection, so its frame is always
+consistent. Callbacks should avoid allocating; a callback that allocates
+is supported by the frame machinery but is outside what this slice
+verifies.
 
 ## C string literals
 
@@ -230,6 +288,8 @@ are read back after the C `raven_ffi_fill_i32` filled the buffer with `7`.
 
 * A `free`/`drop` for buffers from `to_cstr` (copy-and-leak semantics).
   Buffers from `alloc` do have `free`.
-* Everything listed out of scope in `docs/v2/specs/ffi.md` (struct by
-  value, variadics, callbacks into Raven, non-CRT libraries).
+* Capturing closures as callbacks (a userdata/trampoline mechanism beyond
+  the non-capturing top-level functions supported here).
+* The rest of what `docs/v2/specs/ffi.md` lists out of scope (struct by
+  value, variadics, non-CRT libraries).
 ```

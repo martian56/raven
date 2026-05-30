@@ -107,6 +107,12 @@ pub enum FfiTy {
     /// element stride of the `std/ffi` pointer surface. See
     /// `docs/v2/specs/std-ffi.md`.
     CPtr(Box<Ty>),
+    /// An untyped C function pointer. Maps to a pointer-width int. A
+    /// non-capturing top-level Raven function whose parameters and return
+    /// are all C-FFI types can be passed where a `CFnPtr` is expected; the
+    /// signature match is the programmer's responsibility, like C. See
+    /// `docs/v2/specs/std-ffi.md`.
+    CFnPtr,
 }
 
 impl fmt::Display for FfiTy {
@@ -119,6 +125,7 @@ impl fmt::Display for FfiTy {
             FfiTy::CFloat => f.write_str("CFloat"),
             FfiTy::CDouble => f.write_str("CDouble"),
             FfiTy::CPtr(inner) => write!(f, "CPtr<{}>", inner),
+            FfiTy::CFnPtr => f.write_str("CFnPtr"),
         }
     }
 }
