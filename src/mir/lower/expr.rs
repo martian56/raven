@@ -346,11 +346,9 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
         HirExprKind::PtrBuiltin { op, pointee, args } => {
             lower_ptr_builtin(cx, *op, pointee, args, ty)
         }
-        HirExprKind::ReflectBuiltin {
-            op,
-            type_arg,
-            args,
-        } => lower_reflect_builtin(cx, *op, type_arg.as_ref(), args, ty),
+        HirExprKind::ReflectBuiltin { op, type_arg, args } => {
+            lower_reflect_builtin(cx, *op, type_arg.as_ref(), args, ty)
+        }
     }
 }
 

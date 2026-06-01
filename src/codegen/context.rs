@@ -839,10 +839,9 @@ impl ModuleCx {
                         .type_ids
                         .map(|gv| builder.ins().symbol_value(ptr, gv))
                         .unwrap_or(null);
-                    let gc = r
-                        .gc
-                        .map(|gv| builder.ins().symbol_value(ptr, gv))
-                        .unwrap_or(null);
+                    let gc =
+                        r.gc.map(|gv| builder.ins().symbol_value(ptr, gv))
+                            .unwrap_or(null);
                     builder
                         .ins()
                         .call(treg, &[tid, name, is_struct, fc, names, type_ids, gc]);

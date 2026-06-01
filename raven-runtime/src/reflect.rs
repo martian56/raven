@@ -257,7 +257,7 @@ pub extern "C" fn raven_any_get_field(a: *const Box, name: *const RavenString) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::{CStr, CString};
+    use std::ffi::CString;
 
     fn register_point() -> (CString, CString, CString) {
         let name = CString::new("Point").unwrap();
@@ -354,8 +354,8 @@ mod tests {
     fn any_keeps_a_heap_struct_payload_alive_across_collection() {
         std::thread::spawn(|| {
             use crate::gc::{
-                raven_gc_collect, raven_gc_live_objects, raven_gc_pop_roots, raven_gc_push_root,
-                raven_struct_register,
+                raven_gc_collect, raven_gc_enter_frame, raven_gc_leave_frame,
+                raven_gc_live_objects, raven_struct_register,
             };
             use crate::object::{raven_string_new, raven_struct_new};
             let _keep = register_point();
@@ -373,19 +373,28 @@ mod tests {
             // root only the Any. The struct and string are reachable solely
             // through the Any now.
             let a = raven_any_new(s as u64, 3, 1);
+            // Root the Any through the frame ABI codegen emits: the local
+            // holding the Any lives in `root`, and the registered array entry
+            // is the *address* of that slot.
             let mut root: *mut u8 = a as *mut u8;
-            raven_gc_push_root(&mut root as *mut *mut u8);
+            let mut frame: [*mut *mut u8; 1] = [&mut root as *mut *mut u8];
+            raven_gc_enter_frame(frame.as_mut_ptr() as *mut *mut u8, 1);
             // Any box + struct + string = 3 live objects.
             assert_eq!(raven_gc_live_objects(), 3);
             raven_gc_collect();
-            // All three survive because the Any keeps its payload alive.
+            // All three survive because the Any keeps its payload alive and
+            // the struct's field mask keeps tracing its String field.
             assert_eq!(raven_gc_live_objects(), 3);
-            // SAFETY: read slot 0 back through the surviving struct.
+            // SAFETY: read both fields back through the surviving struct; the
+            // scalar is intact and the String pointer still points at the
+            // surviving string.
             unsafe {
                 let fields = raven_struct_fields(s) as *const u64;
                 assert_eq!(fields.add(0).read(), 99);
+                assert_eq!(fields.add(1).read(), name as u64);
+                assert_eq!((*name).header.tag, crate::object::TAG_STRING);
             }
-            raven_gc_pop_roots(1);
+            raven_gc_leave_frame();
             raven_gc_collect();
             assert_eq!(raven_gc_live_objects(), 0);
         })
@@ -405,7 +414,6 @@ mod tests {
             unsafe {
                 assert_eq!((*list).header.len, 0);
             }
-            let _ = CStr::from_bytes_with_nul(b"x\0");
         })
         .join()
         .unwrap();

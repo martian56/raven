@@ -1,0 +1,8 @@
+type: User
+field id = 7
+field name = ada
+cast id to Int: 7
+cast name to String: ada
+cast id to String: none
+gc id = 7
+gc name = ada

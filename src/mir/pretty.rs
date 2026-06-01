@@ -328,9 +328,7 @@ fn pretty_rvalue(buf: &mut String, r: &MirRvalue) {
             pretty_operand(buf, value);
             buf.push(')');
         }
-        MirRvalue::AnyCast {
-            any, target_ty, ..
-        } => {
+        MirRvalue::AnyCast { any, target_ty, .. } => {
             write!(buf, "(any-cast {} ", target_ty).unwrap();
             pretty_operand(buf, any);
             buf.push(')');

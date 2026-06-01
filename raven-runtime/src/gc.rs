@@ -284,8 +284,14 @@ pub extern "C" fn raven_gc_enter_frame(roots: *mut *mut u8, count: usize) {
         FRAMES.with(|f| f.borrow_mut().push(stack.len()));
         if !roots.is_null() {
             for i in 0..count {
+                // Each array entry is itself a slot address (the address of
+                // a stack local that holds a GC pointer), so read the entry
+                // to recover the slot address and push that. Pushing the
+                // entry's own address instead would add one extra level of
+                // indirection and make the collector read a stack address
+                // rather than the live GC pointer.
                 // SAFETY: caller guarantees `roots` has `count` entries.
-                let slot = unsafe { roots.add(i) };
+                let slot = unsafe { *roots.add(i) } as RootSlot;
                 stack.push(slot);
             }
         }
@@ -802,6 +808,38 @@ mod collector_tests {
     }
 
     #[test]
+    fn frame_root_array_holds_slot_addresses() {
+        isolated(|| {
+            // Exercise the exact frame ABI codegen emits: the local holding
+            // a GC pointer lives in its own slot, and the root array holds
+            // the *address* of that slot, not the pointer. A collection must
+            // trace through the slot address to the live object, and the
+            // object (with its transitive payload) must survive.
+            let mut slot: *mut u8 = {
+                let inner = raven_string_new(4);
+                let list = raven_list_new(8, 8, 1, 1);
+                // SAFETY: the list has one pointer slot.
+                unsafe {
+                    let slots = (*list).elements as *mut *mut u8;
+                    slots.write(inner as *mut u8);
+                    (*list).header.len = 1;
+                }
+                list as *mut u8
+            };
+            // The root array entry is the address of `slot`.
+            let mut roots: [*mut *mut u8; 1] = [&mut slot as *mut *mut u8];
+            raven_gc_enter_frame(roots.as_mut_ptr() as *mut *mut u8, 1);
+            assert_eq!(raven_gc_live_objects(), 2);
+            raven_gc_collect();
+            // Both the list and the string it points at survive.
+            assert_eq!(raven_gc_live_objects(), 2);
+            raven_gc_leave_frame();
+            raven_gc_collect();
+            assert_eq!(raven_gc_live_objects(), 0);
+        });
+    }
+
+    #[test]
     fn transitively_reachable_object_survives() {
         isolated(|| {
             // A list of one GC pointer that points at a string. Root the
@@ -1055,11 +1093,18 @@ mod collector_tests {
             // Keep a bounded working set of rooted lists while churning
             // many short-lived strings. Liveness must stay bounded.
             const WORKING_SET: usize = 4;
-            let mut roots: [*mut u8; WORKING_SET] = [std::ptr::null_mut(); WORKING_SET];
-            for r in roots.iter_mut() {
-                *r = raven_list_new(8, 8, 0, 1) as *mut u8;
+            // The working-set pointers live in their own slots; the root
+            // array holds the *addresses* of those slots, matching the
+            // frame ABI codegen emits.
+            let mut slots: [*mut u8; WORKING_SET] = [std::ptr::null_mut(); WORKING_SET];
+            for s in slots.iter_mut() {
+                *s = raven_list_new(8, 8, 0, 1) as *mut u8;
             }
-            raven_gc_enter_frame(roots.as_mut_ptr(), WORKING_SET);
+            let mut roots: [*mut *mut u8; WORKING_SET] = [std::ptr::null_mut(); WORKING_SET];
+            for (r, s) in roots.iter_mut().zip(slots.iter_mut()) {
+                *r = s as *mut *mut u8;
+            }
+            raven_gc_enter_frame(roots.as_mut_ptr() as *mut *mut u8, WORKING_SET);
 
             let mut peak = 0usize;
             for i in 0..5000usize {

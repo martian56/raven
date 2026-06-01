@@ -510,9 +510,7 @@ fn lower_rvalue(
         MirRvalue::PtrAlloc { count, pointee } => {
             lower_ptr_alloc(cx, builder, count, pointee, slots)
         }
-        MirRvalue::AnyBox { value, value_ty } => {
-            lower_any_box(cx, builder, value, value_ty, slots)
-        }
+        MirRvalue::AnyBox { value, value_ty } => lower_any_box(cx, builder, value, value_ty, slots),
         MirRvalue::AnyCast {
             any,
             target_ty,
@@ -649,7 +647,11 @@ fn lower_any_box(
     // still gets a stable id with a zero mask, which is sound because such
     // a value is never the GC root of its own fields.
     let type_id = cx.intern_descriptor(&value_ty.mangle(), 0);
-    let is_gc = if layout::is_gc_pointer(value_ty) { 1 } else { 0 };
+    let is_gc = if layout::is_gc_pointer(value_ty) {
+        1
+    } else {
+        0
+    };
     let tid = builder.ins().iconst(types::I32, type_id as i64);
     let gc = builder.ins().iconst(types::I32, is_gc);
     let func_id = cx
