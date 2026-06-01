@@ -30,9 +30,11 @@ pub struct Box {
     /// Nonzero when the inline payload is a single GC pointer the
     /// collector traces; zero for a scalar payload.
     pub payload_is_gc_ptr: u32,
-    /// Reserved padding; keeps the inline payload 8-byte aligned.
-    /// Always zero.
-    pub _pad: u32,
+    /// Runtime type id when the box is used as an `Any` (see
+    /// `crate::reflect`); zero for a plain primitive box. Reusing this
+    /// formerly reserved word keeps the box header 8-byte aligned with no
+    /// size change.
+    pub type_id: u32,
 }
 
 /// Allocate a fresh `Box` whose inline payload is `payload_size` bytes
@@ -66,7 +68,7 @@ pub extern "C" fn raven_box_new(
             Box {
                 header: ObjectHeader::new(TAG_BOX, payload_size, 1),
                 payload_is_gc_ptr,
-                _pad: 0,
+                type_id: 0,
             },
         );
     }
@@ -113,6 +115,7 @@ mod tests {
         assert_eq!(size_of::<Box>(), 24);
         assert_eq!(offset_of!(Box, header), 0);
         assert_eq!(offset_of!(Box, payload_is_gc_ptr), 16);
+        assert_eq!(offset_of!(Box, type_id), 20);
         assert_eq!(BOX_PAYLOAD_OFFSET, 24);
     }
 
@@ -126,7 +129,7 @@ mod tests {
             assert_eq!((*b).header.len, 8);
             assert_eq!((*b).header.cap, 1);
             assert_eq!((*b).payload_is_gc_ptr, 0);
-            assert_eq!((*b)._pad, 0);
+            assert_eq!((*b).type_id, 0);
         }
         let payload = raven_box_payload(b);
         assert!(!payload.is_null());

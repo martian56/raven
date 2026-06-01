@@ -99,10 +99,12 @@ pub fn lower_lambda(
         func: lifted,
         nested,
         pending,
+        reflect_types,
     } = lift_body(cx, &lifted_name, params, ret_ty, body, &captures);
     cx.lifted.push(lifted);
     cx.lifted.extend(nested);
     cx.pending_calls.extend(pending);
+    cx.reflect_types.extend(reflect_types);
 
     let capture_ops = captures
         .iter()
@@ -133,6 +135,7 @@ struct LiftedBody {
     func: MirFunction,
     nested: Vec<MirFunction>,
     pending: Vec<(DeclId, SubstMap)>,
+    reflect_types: std::collections::HashMap<String, super::super::ir::ReflectType>,
 }
 
 /// Lift a lambda body into a standalone `MirFunction`.
@@ -184,6 +187,7 @@ fn lift_body(
         lifted: Vec::new(),
         lambda_seq: 0,
         enclosing: name.to_string(),
+        reflect_types: std::collections::HashMap::new(),
     };
 
     // Read each capture from the env into a local bound under its source
@@ -225,10 +229,12 @@ fn lift_body(
     // function so the monomorphizer instantiates every callee the
     // closure reaches. Without this they would be dropped with `body_cx`.
     let pending = std::mem::take(&mut body_cx.pending_calls);
+    let reflect_types = std::mem::take(&mut body_cx.reflect_types);
     LiftedBody {
         func: body_cx.builder.finish(entry),
         nested,
         pending,
+        reflect_types,
     }
 }
 
@@ -349,6 +355,11 @@ fn collect_free_expr(
             }
         }
         HirExprKind::PtrBuiltin { args, .. } => {
+            for a in args {
+                collect_free_expr(a, bound, seen, out);
+            }
+        }
+        HirExprKind::ReflectBuiltin { args, .. } => {
             for a in args {
                 collect_free_expr(a, bound, seen, out);
             }

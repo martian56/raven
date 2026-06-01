@@ -193,6 +193,24 @@ pub const RUNTIME_FFI_ALLOC: &str = "raven_ffi_alloc";
 /// Runtime symbol: `raven_ffi_free(p: ptr)`. Backs the `__ptr_free` builtin.
 pub const RUNTIME_FFI_FREE: &str = "raven_ffi_free";
 
+/// Runtime reflection symbols. See `docs/v2/specs/runtime-reflection.md`.
+///
+/// `raven_type_register(type_id, name, is_struct, field_count, field_names,
+/// field_type_ids, field_is_gc_ptr)` registers one type's metadata.
+pub const RUNTIME_TYPE_REGISTER: &str = "raven_type_register";
+/// `raven_any_new(value, type_id, is_gc_ptr) -> Any` boxes a value.
+pub const RUNTIME_ANY_NEW: &str = "raven_any_new";
+/// `raven_any_type_id(Any) -> u32` reads the boxed runtime type id.
+pub const RUNTIME_ANY_TYPE_ID: &str = "raven_any_type_id";
+/// `raven_any_payload(Any) -> u64` reads the boxed payload word.
+pub const RUNTIME_ANY_PAYLOAD: &str = "raven_any_payload";
+/// `raven_any_type_name(Any) -> String` renders the runtime type name.
+pub const RUNTIME_ANY_TYPE_NAME: &str = "raven_any_type_name";
+/// `raven_any_field_names(Any) -> List<String>` lists struct field names.
+pub const RUNTIME_ANY_FIELD_NAMES: &str = "raven_any_field_names";
+/// `raven_any_get_field(Any, name) -> Any` reads a struct field by name.
+pub const RUNTIME_ANY_GET_FIELD: &str = "raven_any_get_field";
+
 /// True when `mangled` is one of the recognized intrinsics.
 pub fn is_intrinsic(mangled: &str) -> bool {
     matches!(

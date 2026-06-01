@@ -62,6 +62,22 @@ pub enum PtrBuiltinOp {
     Null,
 }
 
+/// The runtime reflection operations carried by
+/// [`HirExprKind::ReflectBuiltin`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReflectBuiltinOp {
+    /// `to_any<T>(v)`: box `v` into an `Any` tagged with `T`'s runtime id.
+    ToAny,
+    /// `cast<T>(a)`: checked downcast of an `Any` to `Option<T>`.
+    Cast,
+    /// `type_name_of(a)`: the runtime type name of the value in `a`.
+    TypeNameOf,
+    /// `field_names_of(a)`: the struct field names of the value in `a`.
+    FieldNamesOf,
+    /// `get_field(a, name)`: the named field of the struct in `a`, boxed.
+    GetField,
+}
+
 /// Binary infix operators. Compound assignment is gone (it is desugared
 /// in the lowering pass), so this matches the AST one for one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -262,6 +278,19 @@ pub enum HirExprKind {
     PtrBuiltin {
         op: PtrBuiltinOp,
         pointee: HirTy,
+        args: Vec<HirExpr>,
+    },
+
+    /// A runtime reflection builtin (`to_any`, `cast`, `type_name_of`,
+    /// `field_names_of`, `get_field`). `type_arg` carries the resolved type
+    /// argument `T` for `to_any<T>` (the boxed type) and `cast<T>` (the
+    /// downcast target), grounded per monomorphization in MIR so the box or
+    /// compare uses the concrete runtime type tag; it is `None` for the
+    /// other three. `args` are the lowered value operands. See
+    /// `docs/v2/specs/runtime-reflection.md`.
+    ReflectBuiltin {
+        op: ReflectBuiltinOp,
+        type_arg: Option<HirTy>,
         args: Vec<HirExpr>,
     },
 

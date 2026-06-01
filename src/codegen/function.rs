@@ -47,7 +47,9 @@ pub fn cranelift_ty(ty: &MirType, ptr: CType) -> Option<CType> {
         | MirType::Function { .. }
         // A `dyn Trait` value is a single GC pointer to a boxed fat
         // pointer `{ data, vtable }`; see the heap layout note below.
-        | MirType::Dyn { .. } => Some(ptr),
+        | MirType::Dyn { .. }
+        // An `Any` is a single GC pointer to an `Any` box.
+        | MirType::Any => Some(ptr),
         // C FFI primitives map to their C ABI machine types. `CInt` is a
         // 32-bit C `int`; `CLong`, `CSize`, `CStr`, and `CPtr<T>` are all
         // pointer-width on the 64-bit targets Raven supports. See
@@ -508,6 +510,25 @@ fn lower_rvalue(
         MirRvalue::PtrAlloc { count, pointee } => {
             lower_ptr_alloc(cx, builder, count, pointee, slots)
         }
+        MirRvalue::AnyBox { value, value_ty } => {
+            lower_any_box(cx, builder, value, value_ty, slots)
+        }
+        MirRvalue::AnyCast {
+            any,
+            target_ty,
+            option_ty,
+        } => lower_any_cast(cx, builder, any, target_ty, option_ty, slots),
+        MirRvalue::AnyTypeName { any } => {
+            lower_any_runtime_call(cx, builder, intrinsics::RUNTIME_ANY_TYPE_NAME, any, slots)
+        }
+        MirRvalue::AnyFieldNames { any } => {
+            lower_any_runtime_call(cx, builder, intrinsics::RUNTIME_ANY_FIELD_NAMES, any, slots)
+        }
+        MirRvalue::AnyGetField {
+            any,
+            name,
+            option_ty,
+        } => lower_any_get_field(cx, builder, any, name, option_ty, slots),
     }
 }
 
@@ -599,6 +620,166 @@ fn lower_ptr_alloc(
     let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
     let inst = builder.ins().call(local_ref, &[bytes]);
     Ok(builder.inst_results(inst).first().copied())
+}
+
+/// Lower `to_any<T>(v)`: box `value` into a fresh `Any` tagged with `T`'s
+/// runtime type id. A scalar payload is widened into the eight-byte slot; a
+/// GC-pointer payload sets the box's traced flag so the collector keeps it
+/// alive through the `Any`. See `docs/v2/specs/runtime-reflection.md`.
+fn lower_any_box(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    value: &MirOperand,
+    value_ty: &MirType,
+    slots: &[LocalSlot],
+) -> Result<RValue, CodegenError> {
+    let ptr = cx.pointer_type();
+    let v = lower_operand(cx, builder, value, slots)?;
+    let payload = widen_to_slot(builder, v, ptr);
+    // The payload word is passed as u64; widen the pointer-width slot to
+    // i64 when the target is 32-bit, else it is already i64.
+    let payload = if builder.func.dfg.value_type(payload) == types::I64 {
+        payload
+    } else {
+        builder.ins().uextend(types::I64, payload)
+    };
+    // The struct (or scalar) descriptor was interned at its construction
+    // site with the correct mask; re-interning by mangle returns that id
+    // and keeps the prior mask. A type only ever boxed (never built here)
+    // still gets a stable id with a zero mask, which is sound because such
+    // a value is never the GC root of its own fields.
+    let type_id = cx.intern_descriptor(&value_ty.mangle(), 0);
+    let is_gc = if layout::is_gc_pointer(value_ty) { 1 } else { 0 };
+    let tid = builder.ins().iconst(types::I32, type_id as i64);
+    let gc = builder.ins().iconst(types::I32, is_gc);
+    let func_id = cx
+        .runtime_id(intrinsics::RUNTIME_ANY_NEW)
+        .expect("any new declared at module init");
+    let fref = cx.module().declare_func_in_func(func_id, builder.func);
+    let inst = builder.ins().call(fref, &[payload, tid, gc]);
+    Ok(builder.inst_results(inst).first().copied())
+}
+
+/// Lower a one-argument `Any` runtime call (`type_name_of`,
+/// `field_names_of`): pass the `Any` pointer and return the heap result.
+fn lower_any_runtime_call(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    symbol: &'static str,
+    any: &MirOperand,
+    slots: &[LocalSlot],
+) -> Result<RValue, CodegenError> {
+    let a = require_value(lower_operand(cx, builder, any, slots)?, "any operand")?;
+    let func_id = cx
+        .runtime_id(symbol)
+        .expect("any runtime symbol declared at module init");
+    let fref = cx.module().declare_func_in_func(func_id, builder.func);
+    let inst = builder.ins().call(fref, &[a]);
+    Ok(builder.inst_results(inst).first().copied())
+}
+
+/// Lower `cast<T>(a)`: a checked downcast to `Option<T>`. Compares the
+/// boxed runtime type id against `T`'s id and builds one `Option<T>` enum
+/// whose discriminant and payload are chosen by the comparison: `Some` with
+/// the payload reinterpreted as `T` on a match, `None` (with a null
+/// payload) otherwise. The branch-free `select` keeps the rvalue a single
+/// value. See `docs/v2/specs/runtime-reflection.md`.
+fn lower_any_cast(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    any: &MirOperand,
+    target_ty: &MirType,
+    option_ty: &MirType,
+    slots: &[LocalSlot],
+) -> Result<RValue, CodegenError> {
+    let ptr = cx.pointer_type();
+    let a = require_value(lower_operand(cx, builder, any, slots)?, "cast any")?;
+    let target_id = cx.intern_descriptor(&target_ty.mangle(), 0);
+
+    // Read the boxed runtime type id and the payload word.
+    let tid_fn = cx
+        .runtime_id(intrinsics::RUNTIME_ANY_TYPE_ID)
+        .expect("any type id declared at module init");
+    let tid_ref = cx.module().declare_func_in_func(tid_fn, builder.func);
+    let tid_inst = builder.ins().call(tid_ref, &[a]);
+    let boxed_id = builder.inst_results(tid_inst)[0];
+
+    let pay_fn = cx
+        .runtime_id(intrinsics::RUNTIME_ANY_PAYLOAD)
+        .expect("any payload declared at module init");
+    let pay_ref = cx.module().declare_func_in_func(pay_fn, builder.func);
+    let pay_inst = builder.ins().call(pay_ref, &[a]);
+    let payload = builder.inst_results(pay_inst)[0]; // i64
+
+    let want = builder.ins().iconst(types::I32, target_id as i64);
+    let matches = builder.ins().icmp(IntCC::Equal, boxed_id, want);
+
+    // Build the Option<T> enum: slot 0 discriminant, slot 1 payload.
+    let mask = layout::enum_pointer_mask(std::slice::from_ref(target_ty));
+    let opt_type_id = cx.merge_descriptor(&option_ty.mangle(), mask);
+    let obj = call_struct_new(cx, builder, 2, opt_type_id, ptr);
+    let base = call_struct_fields(cx, builder, obj, ptr);
+
+    // discriminant: Some == 0 on match, None == 1 otherwise.
+    let some_disc = builder.ins().iconst(ptr, 0);
+    let none_disc = builder.ins().iconst(ptr, 1);
+    let disc = builder.ins().select(matches, some_disc, none_disc);
+    builder
+        .ins()
+        .store(MemFlags::new(), disc, base, layout::slot_offset(0));
+
+    // payload: the boxed payload word narrowed to the slot on match, else 0.
+    let payload_slot = if ptr == types::I64 {
+        payload
+    } else {
+        builder.ins().ireduce(ptr, payload)
+    };
+    let zero = builder.ins().iconst(ptr, 0);
+    let stored = builder.ins().select(matches, payload_slot, zero);
+    builder
+        .ins()
+        .store(MemFlags::new(), stored, base, layout::slot_offset(1));
+    Ok(Some(obj))
+}
+
+/// Lower `get_field(a, name)`: call the runtime to read the named field as
+/// an `Any` (or null), then wrap it into `Option<Any>` (`Some(any)` when
+/// non-null, `None` when null). See `docs/v2/specs/runtime-reflection.md`.
+fn lower_any_get_field(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    any: &MirOperand,
+    name: &MirOperand,
+    option_ty: &MirType,
+    slots: &[LocalSlot],
+) -> Result<RValue, CodegenError> {
+    let ptr = cx.pointer_type();
+    let a = require_value(lower_operand(cx, builder, any, slots)?, "get_field any")?;
+    let n = require_value(lower_operand(cx, builder, name, slots)?, "get_field name")?;
+    let func_id = cx
+        .runtime_id(intrinsics::RUNTIME_ANY_GET_FIELD)
+        .expect("any get field declared at module init");
+    let fref = cx.module().declare_func_in_func(func_id, builder.func);
+    let inst = builder.ins().call(fref, &[a, n]);
+    let field_any = builder.inst_results(inst)[0]; // Any ptr or null
+
+    // Wrap into Option<Any>: the payload slot holds a GC pointer.
+    let mask = layout::enum_pointer_mask(std::slice::from_ref(&MirType::Any));
+    let opt_type_id = cx.merge_descriptor(&option_ty.mangle(), mask);
+    let obj = call_struct_new(cx, builder, 2, opt_type_id, ptr);
+    let base = call_struct_fields(cx, builder, obj, ptr);
+
+    let is_some = builder.ins().icmp_imm(IntCC::NotEqual, field_any, 0);
+    let some_disc = builder.ins().iconst(ptr, 0);
+    let none_disc = builder.ins().iconst(ptr, 1);
+    let disc = builder.ins().select(is_some, some_disc, none_disc);
+    builder
+        .ins()
+        .store(MemFlags::new(), disc, base, layout::slot_offset(0));
+    builder
+        .ins()
+        .store(MemFlags::new(), field_any, base, layout::slot_offset(1));
+    Ok(Some(obj))
 }
 
 /// Lower `FnAddr`: the address of a top-level function as a C function
@@ -893,7 +1074,11 @@ fn lower_struct_create(
 ) -> Result<RValue, CodegenError> {
     let ptr = cx.pointer_type();
     let mask = layout::struct_pointer_mask(field_tys);
-    let type_id = cx.intern_descriptor(&ty.mangle(), mask);
+    // Merge rather than keep-first so a prior interning of this type with a
+    // zero mask (for example a `to_any<T>` box site reached first) cannot
+    // drop the struct's real pointer-field bits. Unioning the same mask is
+    // idempotent.
+    let type_id = cx.merge_descriptor(&ty.mangle(), mask);
 
     // Evaluate field operands before the allocation so their values are
     // in registers; the allocation may collect, but the operands here are

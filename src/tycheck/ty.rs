@@ -189,6 +189,12 @@ pub enum Ty {
     /// `Self` inside an `impl` block, bound to the implementing type.
     /// The contained type is the implementing type for convenience.
     SelfTy(Box<Ty>),
+    /// `Any`: a value of any concrete type boxed with its runtime type
+    /// identity. The runtime reflection builtins (`to_any`, `cast`,
+    /// `type_name_of`, `field_names_of`, `get_field`) produce and consume
+    /// it. Represented at runtime as a single GC pointer to an `Any` box.
+    /// See `docs/v2/specs/runtime-reflection.md`.
+    Any,
     /// A C FFI primitive type (`CInt`, `CStr`, `CPtr<T>`, ...). Used in
     /// `extern "C"` signatures and `c"..."` literals.
     Ffi(FfiTy),
@@ -268,6 +274,7 @@ impl fmt::Display for Ty {
                 }
                 write!(f, ") -> {}", ret)
             }
+            Ty::Any => f.write_str("Any"),
             Ty::Dyn { name, .. } => write!(f, "dyn {}", name),
             Ty::SelfTy(inner) => write!(f, "Self/* = {} */", inner),
             Ty::Ffi(ffi) => write!(f, "{}", ffi),

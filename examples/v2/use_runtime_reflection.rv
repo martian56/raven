@@ -1,0 +1,109 @@
+// Runtime reflection: box a value into Any, read its runtime type name,
+// walk its struct fields, read each field back through get_field, and cast
+// each field Any to its concrete type. This is the "given an unknown value,
+// inspect its type and fields" pattern a validation or serialization
+// framework uses. See docs/v2/specs/runtime-reflection.md.
+//
+// Compiling and running this prints:
+//   type: User
+//   field id = 7
+//   field name = ada
+//   cast id to Int: 7
+//   cast name to String: ada
+//   cast id to String: none
+//   gc id = 7
+//   gc name = ada
+struct User {
+    id: Int,
+    name: String
+}
+
+fun describe(a: Any) {
+    print("type: ${type_name_of(a)}")
+    let fields = field_names_of(a)
+    for f in fields {
+        let value = get_field(a, f)
+        match value {
+            Some(v) -> {
+                let as_int = cast<Int>(v)
+                match as_int {
+                    Some(n) -> print("field ${f} = ${n}"),
+                    None -> {
+                        let as_str = cast<String>(v)
+                        match as_str {
+                            Some(s) -> print("field ${f} = ${s}"),
+                            None -> print("field ${f} = ?"),
+                        }
+                    },
+                }
+            },
+            None -> print("field ${f}: missing"),
+        }
+    }
+}
+
+fun main() {
+    let u = User { id: 7, name: "ada" }
+    let a = to_any<User>(u)
+    describe(a)
+
+    // cast<T> succeeds for the right T and is None for a wrong T.
+    let id_any = get_field(a, "id")
+    match id_any {
+        Some(v) -> {
+            match cast<Int>(v) {
+                Some(n) -> print("cast id to Int: ${n}"),
+                None -> print("cast id to Int: none"),
+            }
+        },
+        None -> print("cast id to Int: missing"),
+    }
+    let name_any = get_field(a, "name")
+    match name_any {
+        Some(v) -> {
+            match cast<String>(v) {
+                Some(s) -> print("cast name to String: ${s}"),
+                None -> print("cast name to String: none"),
+            }
+        },
+        None -> print("cast name to String: missing"),
+    }
+    match id_any {
+        Some(v) -> {
+            match cast<String>(v) {
+                Some(s) -> print("cast id to String: ${s}"),
+                None -> print("cast id to String: none"),
+            }
+        },
+        None -> print("cast id to String: missing"),
+    }
+
+    // GC soundness: box a freshly allocated struct, drop other references,
+    // allocate enough to encourage a collection, then read the fields back
+    // through the Any. The Any is the only reference to the payload, so a
+    // correct read proves the Any keeps its payload alive across collection.
+    let live = to_any<User>(User { id: 7, name: "ada" })
+    let sink = 0
+    for i in 0..40000 {
+        let junk = User { id: i, name: "junk" }
+        sink = sink + junk.id
+    }
+    match get_field(live, "id") {
+        Some(v) -> {
+            match cast<Int>(v) {
+                Some(n) -> print("gc id = ${n}"),
+                None -> print("gc id = ?"),
+            }
+        },
+        None -> print("gc id: missing"),
+    }
+    match get_field(live, "name") {
+        Some(v) -> {
+            match cast<String>(v) {
+                Some(s) -> print("gc name = ${s}"),
+                None -> print("gc name = ?"),
+            }
+        },
+        None -> print("gc name: missing"),
+    }
+}

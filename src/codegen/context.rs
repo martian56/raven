@@ -29,6 +29,33 @@ pub struct StructDescriptor {
     pub ptr_mask: u64,
 }
 
+/// Resolved data symbols for one type's reflection metadata. The main shim
+/// loads each symbol's address and passes them to `raven_type_register`.
+struct ReflectRegistration {
+    type_id: u32,
+    name_id: DataId,
+    is_struct: bool,
+    field_count: u32,
+    /// Pointer array of field-name C strings, `None` for a non-struct.
+    names_arr: Option<DataId>,
+    /// `u32` array of field type ids, `None` when there are no fields.
+    type_ids_arr: Option<DataId>,
+    /// `u32` array of per-field GC flags, `None` when there are no fields.
+    gc_arr: Option<DataId>,
+}
+
+/// A `ReflectRegistration` whose data symbols have been resolved to
+/// in-function global values, ready for the shim builder to load.
+struct ResolvedReflect {
+    type_id: u32,
+    name: cranelift_codegen::ir::GlobalValue,
+    is_struct: bool,
+    field_count: u32,
+    names: Option<cranelift_codegen::ir::GlobalValue>,
+    type_ids: Option<cranelift_codegen::ir::GlobalValue>,
+    gc: Option<cranelift_codegen::ir::GlobalValue>,
+}
+
 /// Per module Cranelift state.
 ///
 /// The struct deliberately keeps the `ObjectModule` private; every
@@ -77,6 +104,8 @@ pub struct ModuleCx {
     vtables: HashMap<String, DataId>,
     /// Counter handing out unique vtable data symbol names.
     vtable_counter: u32,
+    /// Counter handing out unique reflection-metadata data symbol names.
+    reflect_counter: u32,
     /// C layouts of `@repr(C)` structs, keyed by mangled struct name. A
     /// call site marshals a struct argument or return against this layout
     /// when crossing the C ABI by value. Empty when the program declares
@@ -116,6 +145,7 @@ impl ModuleCx {
             next_type_id: 0,
             vtables: HashMap::new(),
             vtable_counter: 0,
+            reflect_counter: 0,
             repr_c_structs: HashMap::new(),
         }
     }
@@ -175,6 +205,85 @@ impl ModuleCx {
         self.module.define_data(data_id, &desc)?;
         self.vtables.insert(key.to_string(), data_id);
         Ok(data_id)
+    }
+
+    /// Emit the read-only data for one type's reflection metadata and
+    /// return the descriptor the main shim needs to call `raven_type_register`.
+    /// The type id matches the GC descriptor id (interned by mangle), so a
+    /// boxed value's runtime id and its metadata always agree. See
+    /// `docs/v2/specs/runtime-reflection.md`.
+    fn intern_reflect_metadata(
+        &mut self,
+        mangle: &str,
+        info: &crate::mir::ReflectType,
+    ) -> Result<ReflectRegistration, CodegenError> {
+        let type_id = self.intern_descriptor(mangle, 0);
+        let name_id = self.intern_cstring(info.name.as_bytes())?;
+
+        // Resolve each field's type id (by mangle) and intern its name.
+        let field_count = info.fields.len();
+        let mut field_name_ids = Vec::with_capacity(field_count);
+        let mut field_type_ids = Vec::with_capacity(field_count);
+        let mut field_gc = Vec::with_capacity(field_count);
+        for f in &info.fields {
+            field_name_ids.push(self.intern_cstring(f.name.as_bytes())?);
+            field_type_ids.push(self.intern_descriptor(&f.type_mangle, 0));
+            field_gc.push(if f.is_gc_ptr { 1u32 } else { 0u32 });
+        }
+
+        let ptr_bytes = self.pointer_type().bytes() as usize;
+        // An array of pointers to the field-name C strings, filled by a data
+        // relocation per slot.
+        let names_arr = if field_count == 0 {
+            None
+        } else {
+            let n = format!("__raven_reflect_names_{}", self.reflect_counter);
+            self.reflect_counter += 1;
+            let id = self.module.declare_data(&n, Linkage::Local, false, false)?;
+            let mut desc = DataDescription::new();
+            desc.set_align(8);
+            desc.define(vec![0u8; ptr_bytes * field_count].into_boxed_slice());
+            for (i, name_id) in field_name_ids.iter().enumerate() {
+                let gv = self.module.declare_data_in_data(*name_id, &mut desc);
+                desc.write_data_addr((i * ptr_bytes) as u32, gv, 0);
+            }
+            self.module.define_data(id, &desc)?;
+            Some(id)
+        };
+
+        // An array of u32 field type ids, and an array of u32 gc flags.
+        let type_ids_arr = self.intern_u32_array(&field_type_ids)?;
+        let gc_arr = self.intern_u32_array(&field_gc)?;
+
+        Ok(ReflectRegistration {
+            type_id,
+            name_id,
+            is_struct: info.is_struct,
+            field_count: field_count as u32,
+            names_arr,
+            type_ids_arr,
+            gc_arr,
+        })
+    }
+
+    /// Intern a `u32` array as a read-only data symbol, or `None` when
+    /// empty. Little-endian, matching the target ABIs Raven supports.
+    fn intern_u32_array(&mut self, values: &[u32]) -> Result<Option<DataId>, CodegenError> {
+        if values.is_empty() {
+            return Ok(None);
+        }
+        let n = format!("__raven_reflect_u32_{}", self.reflect_counter);
+        self.reflect_counter += 1;
+        let id = self.module.declare_data(&n, Linkage::Local, false, false)?;
+        let mut bytes = Vec::with_capacity(values.len() * 4);
+        for v in values {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        let mut desc = DataDescription::new();
+        desc.set_align(4);
+        desc.define(bytes.into_boxed_slice());
+        self.module.define_data(id, &desc)?;
+        Ok(Some(id))
     }
 
     /// Return the descriptor id for an aggregate type, assigning a fresh
@@ -455,6 +564,37 @@ impl ModuleCx {
         sig = self.make_sig(&[ptr], &[]);
         self.declare_runtime(intrinsics::RUNTIME_FFI_FREE, &sig)?;
 
+        // Runtime reflection. See `docs/v2/specs/runtime-reflection.md`.
+        // raven_type_register(type_id: u32, name: ptr, is_struct: u32,
+        //   field_count: u32, field_names: ptr, field_type_ids: ptr,
+        //   field_is_gc_ptr: ptr)
+        sig = self.make_sig(&[i32t, ptr, i32t, i32t, ptr, ptr, ptr], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_TYPE_REGISTER, &sig)?;
+
+        // raven_any_new(value: u64, type_id: u32, is_gc_ptr: u32) -> Any ptr
+        sig = self.make_sig(&[i64t, i32t, i32t], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_ANY_NEW, &sig)?;
+
+        // raven_any_type_id(Any ptr) -> u32
+        sig = self.make_sig(&[ptr], &[i32t]);
+        self.declare_runtime(intrinsics::RUNTIME_ANY_TYPE_ID, &sig)?;
+
+        // raven_any_payload(Any ptr) -> u64
+        sig = self.make_sig(&[ptr], &[i64t]);
+        self.declare_runtime(intrinsics::RUNTIME_ANY_PAYLOAD, &sig)?;
+
+        // raven_any_type_name(Any ptr) -> String ptr
+        sig = self.make_sig(&[ptr], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_ANY_TYPE_NAME, &sig)?;
+
+        // raven_any_field_names(Any ptr) -> List ptr
+        sig = self.make_sig(&[ptr], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_ANY_FIELD_NAMES, &sig)?;
+
+        // raven_any_get_field(Any ptr, name String ptr) -> Any ptr
+        sig = self.make_sig(&[ptr, ptr], &[ptr]);
+        self.declare_runtime(intrinsics::RUNTIME_ANY_GET_FIELD, &sig)?;
+
         Ok(())
     }
 
@@ -598,20 +738,33 @@ impl ModuleCx {
             self.define_one(func)?;
         }
         if self.main_entry.is_some() {
-            self.define_main_shim()?;
+            self.define_main_shim(program)?;
         }
         Ok(())
     }
 
-    /// Emit the body of the `int main(void)` shim: call the Raven
-    /// `main`, discard its result, and return `0`.
-    fn define_main_shim(&mut self) -> Result<(), CodegenError> {
+    /// Emit the body of the `int main(void)` shim: register every type's GC
+    /// descriptor and reflection metadata, then call the Raven `main`,
+    /// discard its result, and return `0`.
+    fn define_main_shim(&mut self, program: &MirProgram) -> Result<(), CodegenError> {
         let MainEntry { shim, raven_main } = self
             .main_entry
             .as_ref()
             .expect("define_main_shim called without a declared main");
         let shim = *shim;
         let raven_main = *raven_main;
+
+        // Intern reflection metadata first: interning a field's or a boxed
+        // type's id may mint a fresh descriptor, so this must run before the
+        // descriptor snapshot below so every new id is also GC-registered.
+        // Order by mangle for deterministic output.
+        let mut reflect_keys: Vec<&String> = program.reflect_types.keys().collect();
+        reflect_keys.sort();
+        let mut registrations = Vec::with_capacity(reflect_keys.len());
+        for key in reflect_keys {
+            let info = &program.reflect_types[key];
+            registrations.push(self.intern_reflect_metadata(key, info)?);
+        }
 
         let mut ctx = Context::new();
         ctx.func.signature = {
@@ -628,6 +781,29 @@ impl ModuleCx {
         let register_id = self.runtime_id(intrinsics::RUNTIME_STRUCT_REGISTER);
         let register_ref =
             register_id.map(|id| self.module.declare_func_in_func(id, &mut ctx.func));
+        let type_register_id = self.runtime_id(intrinsics::RUNTIME_TYPE_REGISTER);
+        let type_register_ref =
+            type_register_id.map(|id| self.module.declare_func_in_func(id, &mut ctx.func));
+        // Resolve each registration's data symbols to in-function refs.
+        let ptr = self.pointer_type();
+        let resolved: Vec<ResolvedReflect> = registrations
+            .iter()
+            .map(|r| ResolvedReflect {
+                type_id: r.type_id,
+                name: self.module.declare_data_in_func(r.name_id, &mut ctx.func),
+                is_struct: r.is_struct,
+                field_count: r.field_count,
+                names: r
+                    .names_arr
+                    .map(|d| self.module.declare_data_in_func(d, &mut ctx.func)),
+                type_ids: r
+                    .type_ids_arr
+                    .map(|d| self.module.declare_data_in_func(d, &mut ctx.func)),
+                gc: r
+                    .gc_arr
+                    .map(|d| self.module.declare_data_in_func(d, &mut ctx.func)),
+            })
+            .collect();
         let mut builder_ctx = FunctionBuilderContext::new();
         {
             let mut builder = FunctionBuilder::new(&mut ctx.func, &mut builder_ctx);
@@ -642,6 +818,34 @@ impl ModuleCx {
                     let id = builder.ins().iconst(types::I32, d.type_id as i64);
                     let mask = builder.ins().iconst(types::I64, d.ptr_mask as i64);
                     builder.ins().call(reg, &[id, mask]);
+                }
+            }
+            // Register runtime reflection metadata so a boxed value can
+            // report its name and walk its fields.
+            if let Some(treg) = type_register_ref {
+                let null = builder.ins().iconst(ptr, 0);
+                for r in &resolved {
+                    let tid = builder.ins().iconst(types::I32, r.type_id as i64);
+                    let name = builder.ins().symbol_value(ptr, r.name);
+                    let is_struct = builder
+                        .ins()
+                        .iconst(types::I32, if r.is_struct { 1 } else { 0 });
+                    let fc = builder.ins().iconst(types::I32, r.field_count as i64);
+                    let names = r
+                        .names
+                        .map(|gv| builder.ins().symbol_value(ptr, gv))
+                        .unwrap_or(null);
+                    let type_ids = r
+                        .type_ids
+                        .map(|gv| builder.ins().symbol_value(ptr, gv))
+                        .unwrap_or(null);
+                    let gc = r
+                        .gc
+                        .map(|gv| builder.ins().symbol_value(ptr, gv))
+                        .unwrap_or(null);
+                    builder
+                        .ins()
+                        .call(treg, &[tid, name, is_struct, fc, names, type_ids, gc]);
                 }
             }
             // The Raven `main` returns unit, so there is no result value

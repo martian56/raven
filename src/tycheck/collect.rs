@@ -687,6 +687,7 @@ fn resolve_type_path(
         "Char" => return ok_zero_generics(head, Ty::Char),
         "String" => return ok_zero_generics(head, Ty::Str),
         "Unit" => return ok_zero_generics(head, Ty::Unit),
+        "Any" => return ok_zero_generics(head, Ty::Any),
         "Option" => {
             let inner = expect_one_generic(head, resolved, env, self_ty, scope)?;
             return Ok(Ty::Option(Box::new(inner)));

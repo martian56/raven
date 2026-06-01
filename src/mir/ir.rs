@@ -260,6 +260,43 @@ pub enum MirRvalue {
         param_tys: Vec<MirType>,
         ret_ty: MirType,
     },
+    /// `to_any<T>(v)`: box `value` (of `value_ty`) into a fresh `Any`,
+    /// tagging it with `value_ty`'s runtime type id. The back end interns
+    /// the id, widens a scalar value into the eight-byte payload, and sets
+    /// the GC-pointer flag from `value_ty`. See
+    /// `docs/v2/specs/runtime-reflection.md`.
+    AnyBox {
+        value: MirOperand,
+        value_ty: MirType,
+    },
+    /// `cast<T>(a)`: checked downcast of the `Any` `any` to `Option<T>`.
+    /// The back end compares the box's runtime type id against `target_ty`'s
+    /// id; on a match it builds `Some(payload-as-T)`, otherwise `None`.
+    /// `option_ty` is the `Option<T>` result type used to lay out the enum.
+    AnyCast {
+        any: MirOperand,
+        target_ty: MirType,
+        option_ty: MirType,
+    },
+    /// `type_name_of(a)`: the runtime type name of the value in `any`, as a
+    /// fresh `String`.
+    AnyTypeName {
+        any: MirOperand,
+    },
+    /// `field_names_of(a)`: the struct field names of the value in `any`, as
+    /// a fresh `List<String>` (empty for a non-struct).
+    AnyFieldNames {
+        any: MirOperand,
+    },
+    /// `get_field(a, name)`: the field named `name` of the struct in `any`,
+    /// boxed as `Option<Any>` (`None` when absent or not a struct). The
+    /// back end calls the runtime, then wraps the returned pointer (or
+    /// null) into the option.
+    AnyGetField {
+        any: MirOperand,
+        name: MirOperand,
+        option_ty: MirType,
+    },
 }
 
 /// One statement inside a basic block.
@@ -406,6 +443,30 @@ pub struct ReprCLayout {
     pub fields: Vec<ReprCField>,
 }
 
+/// One field of a reflectable type: its declared name, the mangled name
+/// of its type (so the back end can resolve the field's runtime type id),
+/// and whether the field slot holds a GC pointer.
+#[derive(Debug, Clone)]
+pub struct ReflectField {
+    pub name: String,
+    pub type_mangle: String,
+    pub is_gc_ptr: bool,
+}
+
+/// Runtime reflection metadata for one monomorphic type. The back end
+/// emits one `raven_type_register` call per entry at program startup so a
+/// boxed value of the type can report its name and (for a struct) walk its
+/// fields. See `docs/v2/specs/runtime-reflection.md`.
+#[derive(Debug, Clone)]
+pub struct ReflectType {
+    /// The rendered type name (`Point`, `Int`, `Pair<Int, String>`).
+    pub name: String,
+    /// True when the type is a struct with reflectable fields.
+    pub is_struct: bool,
+    /// Fields in declaration order. Empty for a non-struct.
+    pub fields: Vec<ReflectField>,
+}
+
 /// One full MIR program: a flat list of monomorphic functions plus the
 /// foreign functions declared in `extern` blocks.
 #[derive(Debug, Clone)]
@@ -419,6 +480,10 @@ pub struct MirProgram {
     /// can cross the FFI by value; the back end consults it at an extern
     /// call boundary to marshal a struct argument or return.
     pub repr_c_structs: HashMap<String, ReprCLayout>,
+    /// Runtime reflection metadata, keyed by mangled type name. Populated
+    /// for every type boxed into an `Any` (and transitively their field
+    /// types). The back end registers each with the runtime at startup.
+    pub reflect_types: HashMap<String, ReflectType>,
 }
 
 impl MirProgram {
@@ -427,6 +492,7 @@ impl MirProgram {
             functions: Vec::new(),
             externs: Vec::new(),
             repr_c_structs: HashMap::new(),
+            reflect_types: HashMap::new(),
         }
     }
 }

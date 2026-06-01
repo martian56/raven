@@ -16,6 +16,7 @@
 
 pub mod gc;
 pub mod object;
+pub mod reflect;
 pub mod sched;
 
 pub use gc::{
@@ -34,6 +35,10 @@ pub use object::{
     raven_struct_new, Box as RavenBox, Closure as RavenClosure, List as RavenList, Map as RavenMap,
     MapEntry, ObjectHeader, Set as RavenSet, SetEntry, String as RavenString, GC_MARK_BIT,
     OBJECT_ALIGN, TAG_BOX, TAG_CLOSURE, TAG_LIST, TAG_MAP, TAG_SET, TAG_STRING, TAG_STRUCT,
+};
+pub use reflect::{
+    raven_any_field_names, raven_any_get_field, raven_any_new, raven_any_payload, raven_any_type_id,
+    raven_any_type_name, raven_type_register,
 };
 pub use sched::{
     raven_channel_new, raven_channel_new_buffered, raven_channel_recv, raven_channel_send,
