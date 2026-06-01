@@ -104,7 +104,9 @@ thread_local! {
     /// Allocation high-water mark: a collection runs before serving an
     /// allocation that would carry `bytes_allocated` past this. Reset
     /// after each collection to a multiple of the surviving live bytes.
-    static THRESHOLD: Cell<usize> = const { Cell::new(INITIAL_THRESHOLD) };
+    /// Initialised from `collection_floor()`, which honours the
+    /// `RAVEN_GC_THRESHOLD` override.
+    static THRESHOLD: Cell<usize> = Cell::new(collection_floor());
 
     /// Per-struct-type GC pointer descriptors. The key is the type id the
     /// back-end assigns to each monomorphic struct type; the value is a
@@ -230,8 +232,27 @@ fn for_each_defer_root(work: &mut Vec<*mut ObjectHeader>) {
     });
 }
 
-/// Initial and floor collection threshold in bytes (1 MiB).
+/// Default collection floor in bytes (1 MiB) when no override is set.
 const INITIAL_THRESHOLD: usize = 1024 * 1024;
+
+/// The collection floor in bytes: the smallest the threshold is ever set
+/// to. Defaults to `INITIAL_THRESHOLD`, but a test or a stress program may
+/// lower (or raise) it by setting `RAVEN_GC_THRESHOLD` to a byte count, so
+/// collections fire after only a few allocations and the frame-based root
+/// paths are exercised deterministically. An unset, empty, zero, or
+/// unparseable value leaves the default unchanged. Read once and cached so
+/// every thread observes the same floor.
+fn collection_floor() -> usize {
+    use std::sync::OnceLock;
+    static FLOOR: OnceLock<usize> = OnceLock::new();
+    *FLOOR.get_or_init(|| {
+        std::env::var("RAVEN_GC_THRESHOLD")
+            .ok()
+            .and_then(|v| v.trim().parse::<usize>().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(INITIAL_THRESHOLD)
+    })
+}
 
 /// Register a single root slot on the shadow stack.
 ///
@@ -426,7 +447,7 @@ fn collect() {
     // below the floor, so a large live set collects less often and a
     // small one keeps a tight ceiling.
     let live = BYTES_ALLOCATED.with(|b| b.get());
-    let next = INITIAL_THRESHOLD.max(live.saturating_mul(2));
+    let next = collection_floor().max(live.saturating_mul(2));
     THRESHOLD.with(|t| t.set(next));
 }
 
@@ -1202,6 +1223,350 @@ mod collector_tests {
                 "expected automatic collection to bound liveness, got {}",
                 raven_gc_live_objects()
             );
+            raven_gc_collect();
+            assert_eq!(raven_gc_live_objects(), 0);
+        });
+    }
+}
+
+/// Stress coverage: each live object kind is rooted through the frame ABI
+/// and held across many real allocations that force repeated collections,
+/// then its transitive contents are verified intact. These mirror the
+/// per-kind tracing tests but drive collections under churn rather than a
+/// single forced cycle, so a rooting or tracing regression that only shows
+/// up after several collections (like the slot-indirection bug) is caught.
+#[cfg(test)]
+mod stress_tests {
+    use super::*;
+    use crate::object::{
+        raven_box_new, raven_box_payload, raven_closure_captures, raven_closure_new,
+        raven_list_new, raven_list_push, raven_map_buckets, raven_map_new, raven_set_buckets,
+        raven_set_new, raven_string_byte_at, raven_string_new, raven_struct_fields,
+        raven_struct_new,
+    };
+
+    fn isolated(body: impl FnOnce() + Send + 'static) {
+        std::thread::spawn(body).join().unwrap();
+    }
+
+    extern "C" fn dummy_body() {}
+
+    /// Allocate a String of `cap` bytes and write `cap` distinct marker
+    /// bytes into it so a later read can prove the buffer is intact.
+    fn marked_string(cap: u32, seed: u8) -> *mut crate::object::String {
+        let s = raven_string_new(cap);
+        assert!(!s.is_null());
+        // SAFETY: the string owns `cap` writable bytes.
+        unsafe {
+            let bytes = crate::object::raven_string_bytes(s) as *mut u8;
+            for i in 0..cap as usize {
+                bytes.add(i).write(seed.wrapping_add(i as u8));
+            }
+            (*s).header.len = cap;
+        }
+        s
+    }
+
+    /// Assert a String built by `marked_string(cap, seed)` still holds its
+    /// markers, proving the body survived collections unfreed and intact.
+    fn assert_marked(s: *mut crate::object::String, cap: u32, seed: u8) {
+        assert!(!s.is_null());
+        for i in 0..cap as usize {
+            let got = raven_string_byte_at(s, i);
+            assert_eq!(
+                got as u8,
+                seed.wrapping_add(i as u8),
+                "string byte {i} corrupted after collection"
+            );
+        }
+    }
+
+    /// Churn `n` unrooted strings, forcing a collection every `every`
+    /// allocations so the rooted working set is repeatedly swept around, and
+    /// a final collection so only the rooted set remains. The rooted objects
+    /// are visited by every one of those collections; a regression that
+    /// freed or corrupted a live object would show up on the next read.
+    fn churn(n: usize, every: usize) {
+        for i in 0..n {
+            let _garbage = raven_string_new(16);
+            if every != 0 && i % every == 0 {
+                raven_gc_collect();
+            }
+        }
+        // Sweep away the last batch of unrooted churn strings so a following
+        // live-object count sees exactly the rooted working set.
+        raven_gc_collect();
+    }
+
+    #[test]
+    fn struct_with_string_field_survives_churn() {
+        isolated(|| {
+            // Type 10: slot 0 scalar Int, slot 1 a GC String pointer.
+            raven_struct_register(10, 0b10);
+            let inner = marked_string(8, 0x40);
+            let s = raven_struct_new(2, 10);
+            // SAFETY: two field slots.
+            unsafe {
+                let fields = raven_struct_fields(s) as *mut u64;
+                fields.add(0).write(1234);
+                fields.add(1).write(inner as u64);
+            }
+            let mut slot: *mut u8 = s as *mut u8;
+            let mut roots: [*mut *mut u8; 1] = [&mut slot as *mut *mut u8];
+            raven_gc_enter_frame(roots.as_mut_ptr() as *mut *mut u8, 1);
+            churn(20_000, 256);
+            // SAFETY: the rooted struct and its String field survive.
+            unsafe {
+                let fields = raven_struct_fields(s) as *const u64;
+                assert_eq!(fields.add(0).read(), 1234);
+                assert_eq!(fields.add(1).read(), inner as u64);
+            }
+            assert_marked(inner, 8, 0x40);
+            raven_gc_leave_frame();
+            raven_gc_collect();
+            assert_eq!(raven_gc_live_objects(), 0);
+        });
+    }
+
+    #[test]
+    fn nested_struct_survives_churn() {
+        isolated(|| {
+            // Outer type 11: slot 0 a GC pointer to an inner struct.
+            // Inner type 12: slot 0 a GC String pointer.
+            raven_struct_register(11, 0b1);
+            raven_struct_register(12, 0b1);
+            let inner_str = marked_string(6, 0x10);
+            let inner = raven_struct_new(1, 12);
+            let outer = raven_struct_new(1, 11);
+            // SAFETY: one field slot each.
+            unsafe {
+                (raven_struct_fields(inner) as *mut u64).write(inner_str as u64);
+                (raven_struct_fields(outer) as *mut u64).write(inner as u64);
+            }
+            let mut slot: *mut u8 = outer as *mut u8;
+            let mut roots: [*mut *mut u8; 1] = [&mut slot as *mut *mut u8];
+            raven_gc_enter_frame(roots.as_mut_ptr() as *mut *mut u8, 1);
+            // Outer + inner struct + inner string are all live transitively.
+            assert_eq!(raven_gc_live_objects(), 3);
+            churn(20_000, 256);
+            assert_eq!(raven_gc_live_objects(), 3);
+            // SAFETY: walk outer -> inner -> string after the churn.
+            unsafe {
+                let inner_again =
+                    (raven_struct_fields(outer) as *const u64).read() as *mut ObjectHeader;
+                assert_eq!(inner_again, inner);
+                let str_again = (raven_struct_fields(inner_again) as *const u64).read()
+                    as *mut crate::object::String;
+                assert_eq!(str_again, inner_str);
+            }
+            assert_marked(inner_str, 6, 0x10);
+            raven_gc_leave_frame();
+            raven_gc_collect();
+            assert_eq!(raven_gc_live_objects(), 0);
+        });
+    }
+
+    #[test]
+    fn list_of_structs_survives_churn() {
+        isolated(|| {
+            // A List of GC pointers, each a struct whose slot 0 is a String.
+            raven_struct_register(13, 0b1);
+            const N: u32 = 16;
+            let list = raven_list_new(8, 8, 0, 1);
+            for i in 0..N {
+                let str_i = marked_string(4, (i as u8).wrapping_mul(7));
+                let st = raven_struct_new(1, 13);
+                // SAFETY: one field slot.
+                unsafe {
+                    (raven_struct_fields(st) as *mut u64).write(str_i as u64);
+                }
+                let elem = st as u64;
+                raven_list_push(list, &elem as *const u64 as *const u8);
+            }
+            let mut slot: *mut u8 = list as *mut u8;
+            let mut roots: [*mut *mut u8; 1] = [&mut slot as *mut *mut u8];
+            raven_gc_enter_frame(roots.as_mut_ptr() as *mut *mut u8, 1);
+            // list + N structs + N strings.
+            assert_eq!(raven_gc_live_objects() as u32, 1 + 2 * N);
+            churn(20_000, 256);
+            assert_eq!(raven_gc_live_objects() as u32, 1 + 2 * N);
+            // Read each element back through the list and verify its String.
+            // SAFETY: the list holds N pointer slots in its element buffer.
+            unsafe {
+                let elems = (*list).elements as *const *mut u8;
+                for i in 0..N {
+                    let st = elems.add(i as usize).read() as *mut ObjectHeader;
+                    let str_i = (raven_struct_fields(st) as *const u64).read()
+                        as *mut crate::object::String;
+                    assert_marked(str_i, 4, (i as u8).wrapping_mul(7));
+                }
+            }
+            raven_gc_leave_frame();
+            raven_gc_collect();
+            assert_eq!(raven_gc_live_objects(), 0);
+        });
+    }
+
+    #[test]
+    fn map_entries_survive_churn() {
+        isolated(|| {
+            // A Map with GC String keys and GC String values across several
+            // buckets, rooted while strings churn around it.
+            const N: usize = 6;
+            let map = raven_map_new(16, 1, 1);
+            let mut keys = [std::ptr::null_mut::<crate::object::String>(); N];
+            let mut vals = [std::ptr::null_mut::<crate::object::String>(); N];
+            // SAFETY: write N entries into distinct buckets.
+            unsafe {
+                let buckets = raven_map_buckets(map);
+                for i in 0..N {
+                    let k = marked_string(4, 0x20 + i as u8);
+                    let v = marked_string(4, 0x60 + i as u8);
+                    keys[i] = k;
+                    vals[i] = v;
+                    let e = &mut *buckets.add(i);
+                    e.hash = (i as u64) + 1;
+                    e.key = k as *mut u8;
+                    e.value = v as *mut u8;
+                }
+                (*map).header.len = N as u32;
+            }
+            let mut slot: *mut u8 = map as *mut u8;
+            let mut roots: [*mut *mut u8; 1] = [&mut slot as *mut *mut u8];
+            raven_gc_enter_frame(roots.as_mut_ptr() as *mut *mut u8, 1);
+            // map + N keys + N values.
+            assert_eq!(raven_gc_live_objects(), 1 + 2 * N);
+            churn(20_000, 256);
+            assert_eq!(raven_gc_live_objects(), 1 + 2 * N);
+            for (i, (&k, &v)) in keys.iter().zip(vals.iter()).enumerate() {
+                assert_marked(k, 4, 0x20 + i as u8);
+                assert_marked(v, 4, 0x60 + i as u8);
+            }
+            raven_gc_leave_frame();
+            raven_gc_collect();
+            assert_eq!(raven_gc_live_objects(), 0);
+        });
+    }
+
+    #[test]
+    fn set_elements_survive_churn() {
+        isolated(|| {
+            const N: usize = 6;
+            let set = raven_set_new(16, 1);
+            let mut elems = [std::ptr::null_mut::<crate::object::String>(); N];
+            // SAFETY: write N elements into distinct buckets.
+            unsafe {
+                let buckets = raven_set_buckets(set);
+                for (i, slot) in elems.iter_mut().enumerate() {
+                    let e_str = marked_string(4, 0x80 + i as u8);
+                    *slot = e_str;
+                    let e = &mut *buckets.add(i);
+                    e.hash = (i as u64) + 1;
+                    e.element = e_str as *mut u8;
+                }
+                (*set).header.len = N as u32;
+            }
+            let mut slot: *mut u8 = set as *mut u8;
+            let mut roots: [*mut *mut u8; 1] = [&mut slot as *mut *mut u8];
+            raven_gc_enter_frame(roots.as_mut_ptr() as *mut *mut u8, 1);
+            assert_eq!(raven_gc_live_objects(), 1 + N);
+            churn(20_000, 256);
+            assert_eq!(raven_gc_live_objects(), 1 + N);
+            for (i, &e) in elems.iter().enumerate() {
+                assert_marked(e, 4, 0x80 + i as u8);
+            }
+            raven_gc_leave_frame();
+            raven_gc_collect();
+            assert_eq!(raven_gc_live_objects(), 0);
+        });
+    }
+
+    #[test]
+    fn closure_captures_survive_churn() {
+        isolated(|| {
+            // A closure capturing two GC String pointers, invoked-equivalent
+            // by reading the captures back after churn.
+            let cap0 = marked_string(5, 0xA0);
+            let cap1 = marked_string(5, 0xC0);
+            let closure = raven_closure_new(dummy_body as *const u8, 16, 8, 2, 2);
+            // SAFETY: two leading pointer-sized capture slots.
+            unsafe {
+                let caps = raven_closure_captures(closure) as *mut *mut u8;
+                caps.add(0).write(cap0 as *mut u8);
+                caps.add(1).write(cap1 as *mut u8);
+            }
+            let mut slot: *mut u8 = closure as *mut u8;
+            let mut roots: [*mut *mut u8; 1] = [&mut slot as *mut *mut u8];
+            raven_gc_enter_frame(roots.as_mut_ptr() as *mut *mut u8, 1);
+            assert_eq!(raven_gc_live_objects(), 3);
+            churn(20_000, 256);
+            assert_eq!(raven_gc_live_objects(), 3);
+            // SAFETY: read the captures back; both strings must be intact.
+            unsafe {
+                let caps = raven_closure_captures(closure) as *const *mut u8;
+                assert_eq!(caps.add(0).read() as *mut crate::object::String, cap0);
+                assert_eq!(caps.add(1).read() as *mut crate::object::String, cap1);
+            }
+            assert_marked(cap0, 5, 0xA0);
+            assert_marked(cap1, 5, 0xC0);
+            raven_gc_leave_frame();
+            raven_gc_collect();
+            assert_eq!(raven_gc_live_objects(), 0);
+        });
+    }
+
+    #[test]
+    fn any_box_payload_survives_churn() {
+        isolated(|| {
+            // A Box wrapping the only reference to a heap String, mirroring an
+            // Any-boxed heap value held across reflection.
+            let inner = marked_string(7, 0xE0);
+            let boxed = raven_box_new(8, 8, 1);
+            // SAFETY: the payload holds one GC pointer.
+            unsafe {
+                let payload = raven_box_payload(boxed) as *mut *mut u8;
+                payload.write(inner as *mut u8);
+            }
+            let mut slot: *mut u8 = boxed as *mut u8;
+            let mut roots: [*mut *mut u8; 1] = [&mut slot as *mut *mut u8];
+            raven_gc_enter_frame(roots.as_mut_ptr() as *mut *mut u8, 1);
+            assert_eq!(raven_gc_live_objects(), 2);
+            churn(20_000, 256);
+            assert_eq!(raven_gc_live_objects(), 2);
+            // SAFETY: read the payload back through the box.
+            unsafe {
+                let payload = raven_box_payload(boxed) as *const *mut u8;
+                assert_eq!(payload.read() as *mut crate::object::String, inner);
+            }
+            assert_marked(inner, 7, 0xE0);
+            raven_gc_leave_frame();
+            raven_gc_collect();
+            assert_eq!(raven_gc_live_objects(), 0);
+        });
+    }
+
+    #[test]
+    fn parked_defer_closure_survives_churn() {
+        isolated(|| {
+            // A deferred thunk capturing a GC String, parked across heavy
+            // allocation before it runs.
+            let captured = marked_string(5, 0x33);
+            let closure = raven_closure_new(dummy_body as *const u8, 8, 8, 1, 1);
+            // SAFETY: one capture slot.
+            unsafe {
+                let caps = raven_closure_captures(closure) as *mut *mut u8;
+                caps.write(captured as *mut u8);
+            }
+            raven_defer_enter_frame();
+            raven_defer_push(closure);
+            churn(20_000, 256);
+            // SAFETY: the parked closure's capture survived.
+            unsafe {
+                let caps = raven_closure_captures(closure) as *const *mut u8;
+                assert_eq!(caps.read() as *mut crate::object::String, captured);
+            }
+            assert_marked(captured, 5, 0x33);
+            raven_defer_run_frame();
             raven_gc_collect();
             assert_eq!(raven_gc_live_objects(), 0);
         });

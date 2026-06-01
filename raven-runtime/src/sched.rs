@@ -696,6 +696,60 @@ mod tests {
         });
     }
 
+    // Like gc_holder_body but it writes distinct marker bytes into its
+    // string and reports them back so main can verify the buffer is intact,
+    // not merely that the header tag survived. env: [ready_chan, go_chan].
+    extern "C" fn gc_marker_body(env: *mut u8) {
+        let p = env as *const i64;
+        let ready = unsafe { *p };
+        let go = unsafe { *p.add(1) };
+        let mut s = crate::object::raven_string_new(8);
+        // SAFETY: write 8 marker bytes 0..8 into the owned buffer.
+        unsafe {
+            let bytes = crate::object::raven_string_bytes(s) as *mut u8;
+            for i in 0..8u8 {
+                bytes.add(i as usize).write(i.wrapping_mul(3));
+            }
+            (*s).header.len = 8;
+        }
+        let mut roots: [*mut *mut u8; 1] = [&mut s as *mut _ as *mut *mut u8];
+        crate::gc::raven_gc_enter_frame(roots.as_mut_ptr() as *mut *mut u8, 1);
+        raven_channel_send(ready, 1);
+        let _ = raven_channel_recv(go);
+        // Sum the marker bytes through the surviving buffer. A freed or
+        // corrupted buffer would not sum to the expected value.
+        let mut sum = 0i64;
+        for i in 0..8usize {
+            sum += crate::object::raven_string_byte_at(s, i) as i64;
+        }
+        crate::gc::raven_gc_leave_frame();
+        raven_channel_send(ready, sum);
+    }
+
+    #[test]
+    fn parked_goroutine_string_survives_heavy_allocation() {
+        isolated(|| {
+            let ready = raven_channel_new_buffered(2);
+            let go = raven_channel_new_buffered(1);
+            spawn_with_env(gc_marker_body, &[ready, go]);
+            assert_eq!(raven_channel_recv(ready), 1);
+            // Allocate heavily and collect repeatedly while the goroutine is
+            // parked. Its string is reachable only through the parked
+            // goroutine's saved root chain.
+            for i in 0..30_000usize {
+                let _garbage = crate::object::raven_string_new(16);
+                if i % 256 == 0 {
+                    crate::gc::raven_gc_collect();
+                }
+            }
+            crate::gc::raven_gc_collect();
+            raven_channel_send(go, 0);
+            // Expected sum of i*3 for i in 0..8 = 3 * (0+1+...+7) = 84.
+            let expected: i64 = (0..8i64).map(|i| (i * 3) & 0xFF).sum();
+            assert_eq!(raven_channel_recv(ready), expected);
+        });
+    }
+
     // Body that blocks forever on an empty channel, never woken.
     extern "C" fn blocker_body(env: *mut u8) {
         let ch = unsafe { *(env as *const i64) };
