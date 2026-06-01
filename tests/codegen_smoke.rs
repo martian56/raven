@@ -1245,6 +1245,44 @@ fn process_program_compiles_and_runs() {
     );
 }
 
+#[test]
+fn gc_stress_survives_repeated_collections() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // The GC stress program holds a live root of every heap object kind
+    // (struct with a String field, nested struct, list of strings, hash Map
+    // and Set, a closure capturing a heap-derived value, an Any-boxed heap
+    // value read back through reflection, a defer-captured value, and a
+    // goroutine that parks heap state on a channel) across heavy allocation,
+    // then reads each back. Driven under a very low RAVEN_GC_THRESHOLD so a
+    // collection fires every few allocations, and run many times: the bug
+    // class this guards against (a live object freed mid-collection) was
+    // nondeterministic, so a single pass could pass by luck.
+    let example = build_example_binary("gc_stress.rv", &runtime);
+    let expected = "struct 7 ada\nnested 99 deep\nlist 0 a\nlist 2 c\nmap x\nset 2\n\
+                    closure 142\nany 7 ada\ndefer 55\ngo 8\n";
+    // A tight threshold (256 bytes) forces a collection after only a handful
+    // of allocations, so every run exercises the frame-based root paths hard.
+    for run in 0..12 {
+        let output = Command::new(&example.binary)
+            .env("RAVEN_GC_THRESHOLD", "256")
+            .output()
+            .expect("run gc_stress binary");
+        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        if !output.status.success() || stdout != expected {
+            cleanup(&example.tmp);
+            panic!(
+                "gc_stress run {run} diverged under collection pressure: \
+                 status={:?}\n  expected: {expected:?}\n  actual:   {stdout:?}\n  stderr: {stderr}",
+                output.status
+            );
+        }
+    }
+    cleanup(&example.tmp);
+}
+
 /// A compiled example binary plus the temp dir holding it, so the caller
 /// can run the binary and then clean up.
 struct ExampleBinary {

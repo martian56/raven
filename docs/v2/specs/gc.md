@@ -293,11 +293,25 @@ Allocation goes through `raven_gc_alloc(size, align, tag)`:
 2. Allocate the object body through the raw allocator, zero it, register
    it in the all-objects list, bump the counters, and return it.
 
-The threshold starts at `1 MiB`. After a collection it is reset to
-`max(1 MiB, 2 * bytes_live_after_sweep)`, so a program with a large live
-set collects less often while a program with a small live set keeps a
-tight ceiling. This is the standard "allocation high-water mark"
-heuristic; it bounds heap growth to a constant factor of the live set.
+The threshold starts at the collection floor (default `1 MiB`). After a
+collection it is reset to `max(floor, 2 * bytes_live_after_sweep)`, so a
+program with a large live set collects less often while a program with a
+small live set keeps a tight ceiling. This is the standard "allocation
+high-water mark" heuristic; it bounds heap growth to a constant factor of
+the live set.
+
+### Threshold override for testing
+
+The collection floor reads the `RAVEN_GC_THRESHOLD` environment variable
+once at startup. When it is set to a positive byte count the floor (and so
+the starting and post-collection threshold) is lowered or raised to that
+value; an unset, empty, zero, or unparseable value leaves the `1 MiB`
+default unchanged. Lowering it to a few hundred bytes makes a collection
+fire after only a handful of allocations, so a test or a stress program
+exercises the frame-based root paths on nearly every allocation without
+allocating gigabytes. The override changes only collection pacing, never
+correctness: a program prints the same output at any threshold. It is a
+test and diagnostics hook; production runs leave it unset.
 
 `raven_gc_collect()` forces a full collection regardless of the
 threshold. It exists for deterministic testing and for any future
@@ -358,3 +372,40 @@ in `raven-runtime/tests/` cover:
   sees the union of all active frames' roots.
 * **Threshold trigger.** Allocating past the threshold triggers an
   automatic collection without an explicit `raven_gc_collect` call.
+* **Per-kind churn stress.** For each object kind (struct with a String
+  field, nested struct, list of structs, hash `Map` and `Set`, closure
+  captures, an `Any`/`Box` payload, and a parked deferred closure), a
+  rooted instance is held across thousands of real allocations that force
+  repeated collections, then its transitive contents are read back and
+  asserted intact. A parked goroutine's heap value is held across heavy
+  main-goroutine allocation and verified after it unblocks, exercising the
+  scheduler's parked-root scan under pressure.
+
+### End-to-end stress suite
+
+The unit tests play codegen's role by hand. To check the real frame
+emission, `examples/v2/gc_stress.rv` holds a live root of every heap object
+kind across heavy allocation and reads each back, producing deterministic
+output. The `gc_stress_survives_repeated_collections` smoke test compiles
+and links it, then runs it many times under a low `RAVEN_GC_THRESHOLD` so a
+collection fires every few allocations. Because a freed-live-object bug is
+nondeterministic, repeating the run is what makes the test reliable: a
+single pass can pass by luck.
+
+This suite first surfaced, and the back end then fixed, a class of rooting
+gaps where a heap temporary an rvalue builds is left unrooted across a
+later allocation in the same expression:
+
+* **Aggregate construction.** A struct, enum, or list literal allocates
+  its body, then evaluates and stores fields or elements that may
+  themselves allocate (a String-literal or interpolated field). The body
+  is allocated first and rooted through a single shadow-stack slot
+  (`raven_gc_push_root`/`raven_gc_pop_roots`) for the duration of the fill,
+  so a partially built aggregate and the values already stored survive a
+  collection.
+* **Interpolation parts.** A string interpolation folds its parts with
+  `raven_string_concat`, which allocates internally. Every part, literal
+  text included, is bound to a rooted temp so it is not freed mid-concat.
+* **Reflection wrapping.** `get_field` boxes a field into a fresh `Any`,
+  then allocates the `Option<Any>` wrapper. The new `Any` is rooted across
+  that wrapper allocation so it is not freed before it is stored.

@@ -1,0 +1,146 @@
+// golden:skip
+// GC stress: hold a live root of every heap object kind across heavy
+// allocation that forces repeated collections, then read each back and
+// prove it survived intact. Run under a low RAVEN_GC_THRESHOLD so a
+// collection fires every few allocations and the frame-based root paths
+// are exercised hard. Output is deterministic at any threshold because it
+// only reports the verified-correct live values.
+//
+// Expected output:
+//   struct 7 ada
+//   nested 99 deep
+//   list 0 a
+//   list 2 c
+//   map x
+//   set 2
+//   closure 142
+//   any 7 ada
+//   defer 55
+//   go 8
+
+import std/collections { Map, Set }
+import std/sync { channel, channel_buffered }
+
+struct Inner { tag: Int, name: String }
+struct Outer { id: Int, inner: Inner }
+
+struct User { id: Int, name: String }
+
+// Allocate `n` throwaway structs so the collector runs repeatedly while
+// the caller's roots stay live. Returns a folded sum so the work is not
+// dead-code eliminated.
+fun churn(n: Int) -> Int {
+    let acc = 0
+    let i = 0
+    while i < n {
+        let junk = User { id: i, name: "junk" }
+        acc = acc + junk.id
+        i = i + 1
+    }
+    return acc
+}
+
+fun deferred_value(out: Map<String, Int>) -> Int {
+    defer out.set("deferred", 55)
+    let _ = churn(4000)
+    return 0
+}
+
+fun main() {
+    // Struct with a String field, held across churn.
+    let u = User { id: 7, name: "ada" }
+    let _a = churn(4000)
+    print("struct ${u.id} ${u.name}")
+
+    // Nested struct: an Outer whose field is an Inner with a String.
+    let o = Outer { id: 1, inner: Inner { tag: 99, name: "deep" } }
+    let _b = churn(4000)
+    print("nested ${o.inner.tag} ${o.inner.name}")
+
+    // A list of String values read back after churn.
+    let words = ["a", "b", "c"]
+    words.push("d")
+    let _c = churn(4000)
+    print("list 0 ${words[0]}")
+    print("list 2 ${words[2]}")
+
+    // A hash-backed Map<String, String> and Set<Int> surviving churn.
+    let m = Map.new()
+    m.set("k", "x")
+    let s = Set.new()
+    s.add(1)
+    s.add(2)
+    s.add(2)
+    let _d = churn(4000)
+    match m.get("k") {
+        Some(v) -> print("map ${v}")
+        None -> print("map MISSING")
+    }
+    print("set ${s.len()}")
+
+    // A closure capturing a heap-derived value, invoked after churn.
+    let base = 100
+    let add42 = fun(x: Int) -> Int = x + base + 42
+    let _e = churn(4000)
+    print("closure ${add42(0)}")
+
+    // Any-boxed heap struct read back through reflection after churn.
+    let boxed = to_any<User>(User { id: 7, name: "ada" })
+    let _f = churn(4000)
+    let id_field = get_field(boxed, "id")
+    let name_field = get_field(boxed, "name")
+    let id_text = "?"
+    let name_text = "?"
+    match id_field {
+        Some(v) -> {
+            match cast<Int>(v) {
+                Some(n) -> { id_text = "${n}" }
+                None -> { id_text = "?" }
+            }
+        }
+        None -> { id_text = "?" }
+    }
+    match name_field {
+        Some(v) -> {
+            match cast<String>(v) {
+                Some(t) -> { name_text = t }
+                None -> { name_text = "?" }
+            }
+        }
+        None -> { name_text = "?" }
+    }
+    print("any ${id_text} ${name_text}")
+
+    // A defer-captured value: the deferred closure writes into a Map that
+    // outlives the call, with churn before the defer fires.
+    let out = Map.new()
+    let _g = deferred_value(out)
+    match out.get("deferred") {
+        Some(v) -> print("defer ${v}")
+        None -> print("defer MISSING")
+    }
+
+    // Goroutine-parked roots: a goroutine holds heap values (a list it
+    // builds) and blocks on a channel while main allocates heavily, then
+    // unblocks and reports a value derived from its surviving data.
+    let ready = channel_buffered(2)
+    let go = channel_buffered(1)
+    spawn(fun() -> Unit {
+        let mine = ["p", "qq", "rrr"]
+        mine.push("ssss")
+        ready.send(1)
+        let _ = go.recv()
+        // Read the surviving list back: confirm the last element is intact
+        // and report a value derived from the live list length.
+        let total = 0
+        if mine[3] == "ssss" {
+            total = mine.len() * 2
+        }
+        ready.send(total)
+    })
+    let _signal = ready.recv()
+    let _h = churn(8000)
+    go.send(0)
+    let parked = ready.recv()
+    print("go ${parked}")
+}
