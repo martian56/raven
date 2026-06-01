@@ -409,3 +409,42 @@ later allocation in the same expression:
 * **Reflection wrapping.** `get_field` boxes a field into a fresh `Any`,
   then allocates the `Option<Any>` wrapper. The new `Any` is rooted across
   that wrapper allocation so it is not freed before it is stored.
+* **Call arguments.** A call with more than one argument evaluates each
+  argument in turn. A String-literal argument promotes to a fresh heap
+  String at the call site (see [`lower_constant`]); a later argument's
+  promotion, or an allocating runtime callee (for example
+  `raven_string_concat`), would otherwise free an earlier String argument
+  before the call reads it. Each freshly promoted String argument is rooted
+  across the remaining argument evaluation and the call, then popped. This
+  covers direct calls, string-runtime calls (`concat`, `==`), the
+  `__str_concat` and `__str_substring` method intrinsics (whose runtime
+  callees allocate), and the desugared `.set`/`.add`/`.insert` calls that
+  build hash collections from String literals.
+
+### Allocation-site rooting audit
+
+Every codegen path that allocates was audited against the invariant that any
+heap value live across an allocating call is reachable from the shadow stack
+(a rooted local, the function root frame, or a `raven_gc_push_root` temp).
+The status of each site:
+
+| Allocation site | Builds a heap value held across a later allocation? | Rooting |
+| --- | --- | --- |
+| `MirRvalue::Use` of a `Const::Str` | No (single alloc, result stored to a rooted local) | Frame slot on store |
+| Struct / enum / list literal | Yes (body, then allocating fields/elements) | Body rooted via temp slot for the fill |
+| String interpolation | Yes (parts folded through allocating concat) | Every part bound to a rooted temp |
+| `AnyGetField` (`get_field`) | Yes (boxed `Any`, then `Option` wrapper) | `Any` rooted across the wrapper alloc |
+| Call with multiple args | Yes (String-literal arg across later arg / callee alloc) | Each promoted String arg rooted across the call |
+| `__str_concat` / `__str_substring` intrinsics | Yes (String-literal source across the allocating callee) | Source rooted across the call |
+| `AnyBox` (`to_any`) | No (single alloc; payload is a rooted local or scalar) | None needed |
+| `AnyCast` (`cast`) | No (reads payload word, then one `Option` alloc; no prior heap temp) | None needed |
+| `AnyTypeName` / `AnyFieldNames` | No (single alloc from a rooted `Any` operand) | None needed |
+| `ClosureCreate` | No (captures are `Copy` of rooted locals; evaluated before the one alloc) | None needed |
+| `DynCoerce` | No (single fat-pointer alloc; value is a rooted local) | None needed |
+| `Cast` (numeric) | No (no allocation) | N/A |
+| `marshal_reg_to_struct` (FFI return) | No (single struct alloc; fields are scalar words) | None needed |
+| `print` / `panic` string arg | No (literal takes the static byte path; heap String is a rooted local) | None needed |
+
+The randomized generator in `tests/gc_rooting_stress.rs` exercises the rooted
+sites under `RAVEN_GC_THRESHOLD=1` across many program shapes; reverting any
+of the fixes above makes it fail deterministically.

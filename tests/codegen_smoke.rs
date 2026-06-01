@@ -1283,6 +1283,38 @@ fn gc_stress_survives_repeated_collections() {
     cleanup(&example.tmp);
 }
 
+#[test]
+fn gc_call_args_survive_repeated_collections() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Regression for the call-site rooting gap: a String-literal argument is
+    // promoted to a fresh heap String at the call site and must stay rooted
+    // across the allocation of later arguments and the call. Before the fix
+    // the first argument was freed mid-call under collection pressure and
+    // read back as garbage or the wrong word. Driven under a low threshold
+    // and repeated, since the freed-live-object bug is nondeterministic.
+    let example = build_example_binary("gc_call_args.rv", &runtime);
+    let expected = "first alpha\njoined ab\npick omega\n";
+    for run in 0..12 {
+        let output = Command::new(&example.binary)
+            .env("RAVEN_GC_THRESHOLD", "1")
+            .output()
+            .expect("run gc_call_args binary");
+        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        if !output.status.success() || stdout != expected {
+            cleanup(&example.tmp);
+            panic!(
+                "gc_call_args run {run} diverged under collection pressure: \
+                 status={:?}\n  expected: {expected:?}\n  actual:   {stdout:?}\n  stderr: {stderr}",
+                output.status
+            );
+        }
+    }
+    cleanup(&example.tmp);
+}
+
 /// A compiled example binary plus the temp dir holding it, so the caller
 /// can run the binary and then clean up.
 struct ExampleBinary {
