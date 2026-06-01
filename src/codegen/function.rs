@@ -1222,6 +1222,47 @@ fn pop_temp_root(
     builder.ins().stack_load(ptr, slot, 0)
 }
 
+/// Spill `obj` to a one-pointer stack slot and register it as a single GC
+/// root, without returning the slot. Used to keep a freshly built heap
+/// value alive across further allocations when the caller pops a batch of
+/// roots at once (with [`pop_n_roots`]) and does not need to reload the
+/// pointer (the value is non-moving, so the register stays valid).
+fn root_temp(cx: &mut ModuleCx, builder: &mut FunctionBuilder<'_>, obj: Value, ptr: CType) {
+    let slot = builder
+        .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, ptr.bytes()));
+    builder.ins().stack_store(obj, slot, 0);
+    let slot_addr = builder.ins().stack_addr(ptr, slot, 0);
+    let push_id = cx
+        .runtime_id(intrinsics::RUNTIME_GC_PUSH_ROOT)
+        .expect("gc push root declared at module init");
+    let push_ref = cx.module().declare_func_in_func(push_id, builder.func);
+    builder.ins().call(push_ref, &[slot_addr]);
+}
+
+/// Pop `n` single roots registered with [`root_temp`]. A zero count emits
+/// nothing.
+fn pop_n_roots(cx: &mut ModuleCx, builder: &mut FunctionBuilder<'_>, n: usize, ptr: CType) {
+    if n == 0 {
+        return;
+    }
+    let pop_id = cx
+        .runtime_id(intrinsics::RUNTIME_GC_POP_ROOTS)
+        .expect("gc pop roots declared at module init");
+    let pop_ref = cx.module().declare_func_in_func(pop_id, builder.func);
+    let count = builder.ins().iconst(ptr, n as i64);
+    builder.ins().call(pop_ref, &[count]);
+}
+
+/// True when lowering this operand allocates a fresh heap value that the
+/// register holds as the only reference. A `Const::Str` promotes to a heap
+/// `String` at its use site (see [`lower_constant`]); a later allocation in
+/// the same rvalue would free it unless it is rooted across that
+/// allocation. Every other operand is a scalar constant or a copy of an
+/// already rooted local, so it needs no extra root.
+fn operand_allocates_heap(op: &MirOperand) -> bool {
+    matches!(op, MirOperand::Const(MirConstant::Str(_)))
+}
+
 /// Width in bytes of one `List` element slot. Every element, scalar or GC
 /// pointer, occupies one pointer-width slot, the same uniform width
 /// struct and enum fields use. Scalars narrower than a pointer are
@@ -1893,9 +1934,21 @@ fn lower_call(
     // every argument lowers as an ordinary operand (a String pointer or
     // a scalar) and the call returns a single result.
     if let Some(symbol) = intrinsics::string_runtime_symbol(&callee.mangled) {
+        let ptr = cx.pointer_type();
         let mut arg_vals = Vec::with_capacity(args.len());
+        // Root each freshly promoted String-literal argument across the
+        // evaluation of the remaining arguments and the call. A later
+        // argument (or the runtime callee, which allocates internally, for
+        // example `raven_string_concat`) can trigger a collection that would
+        // otherwise free an unrooted earlier argument before the call reads
+        // it.
+        let mut roots = 0usize;
         for a in args {
             if let Some(v) = lower_operand(cx, builder, a, slots)? {
+                if operand_allocates_heap(a) {
+                    root_temp(cx, builder, v, ptr);
+                    roots += 1;
+                }
                 arg_vals.push(v);
             }
         }
@@ -1904,6 +1957,7 @@ fn lower_call(
             .expect("string runtime symbol declared at module init");
         let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
         let inst = builder.ins().call(local_ref, &arg_vals);
+        pop_n_roots(cx, builder, roots, ptr);
         return Ok(builder.inst_results(inst).first().copied());
     }
     let func_id = cx.function_id(&callee.mangled).ok_or_else(|| {
@@ -1922,9 +1976,18 @@ fn lower_call(
         .map(|s| s.to_vec());
     let extern_ret: Option<MirType> = cx.extern_ret(&callee.mangled).cloned();
     let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
+    let ptr = cx.pointer_type();
     let mut arg_vals = Vec::with_capacity(args.len());
+    // Root each freshly promoted String-literal argument across the
+    // evaluation of the remaining arguments, so a collection a later
+    // argument triggers cannot free an earlier one before the call reads
+    // it. A repr(C) struct argument is marshalled into a register here and
+    // is not a heap value the callee retains, so only String literals need
+    // rooting. The roots are popped right after the call site.
+    let mut roots = 0usize;
     for (i, a) in args.iter().enumerate() {
         if let Some(v) = lower_operand(cx, builder, a, slots)? {
+            let allocates = operand_allocates_heap(a);
             let v = match &extern_param_tys {
                 Some(tys) => match tys.get(i) {
                     Some(pt) if is_extern && is_repr_c_struct(cx, pt) => {
@@ -1935,10 +1998,15 @@ fn lower_call(
                 },
                 None => v,
             };
+            if allocates {
+                root_temp(cx, builder, v, ptr);
+                roots += 1;
+            }
             arg_vals.push(v);
         }
     }
     let inst = builder.ins().call(local_ref, &arg_vals);
+    pop_n_roots(cx, builder, roots, ptr);
     let result = builder.inst_results(inst).first().copied();
     // A by-value struct return arrives as the single register the ABI
     // returns it in; rebuild a Raven heap struct from its packed bytes.
@@ -2211,10 +2279,18 @@ fn lower_intrinsic(
                     args.len()
                 )));
             }
+            let ptr = cx.pointer_type();
             let s = require_value(
                 lower_operand(cx, builder, &args[0], slots)?,
                 "__str_substring string argument",
             )?;
+            // Root a String-literal source across the allocating
+            // `raven_string_substring` so it is not freed before the call.
+            let mut roots = 0usize;
+            if operand_allocates_heap(&args[0]) {
+                root_temp(cx, builder, s, ptr);
+                roots += 1;
+            }
             let start = require_value(
                 lower_operand(cx, builder, &args[1], slots)?,
                 "__str_substring start argument",
@@ -2223,13 +2299,14 @@ fn lower_intrinsic(
                 lower_operand(cx, builder, &args[2], slots)?,
                 "__str_substring end argument",
             )?;
-            let start = to_pointer_width(builder, start, cx.pointer_type());
-            let end = to_pointer_width(builder, end, cx.pointer_type());
+            let start = to_pointer_width(builder, start, ptr);
+            let end = to_pointer_width(builder, end, ptr);
             let func_id = cx
                 .runtime_id(intrinsics::RUNTIME_STRING_SUBSTRING)
                 .expect("string-substring runtime symbol declared at module init");
             let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
             let inst = builder.ins().call(local_ref, &[s, start, end]);
+            pop_n_roots(cx, builder, roots, ptr);
             Ok(builder.inst_results(inst).first().copied())
         }
         intrinsics::STR_FROM_BYTE => {
@@ -2261,10 +2338,20 @@ fn lower_intrinsic(
                     args.len()
                 )));
             }
+            let ptr = cx.pointer_type();
             let a = require_value(
                 lower_operand(cx, builder, &args[0], slots)?,
                 "__str_concat first argument",
             )?;
+            // Root the first operand across the second's evaluation and the
+            // concat call: a String-literal first operand promotes to a heap
+            // String, and the second operand's promotion or the allocating
+            // `raven_string_concat` would otherwise free it before the call.
+            let mut roots = 0usize;
+            if operand_allocates_heap(&args[0]) {
+                root_temp(cx, builder, a, ptr);
+                roots += 1;
+            }
             let b = require_value(
                 lower_operand(cx, builder, &args[1], slots)?,
                 "__str_concat second argument",
@@ -2274,6 +2361,7 @@ fn lower_intrinsic(
                 .expect("string-concat runtime symbol declared at module init");
             let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
             let inst = builder.ins().call(local_ref, &[a, b]);
+            pop_n_roots(cx, builder, roots, ptr);
             Ok(builder.inst_results(inst).first().copied())
         }
         intrinsics::DEFER_PUSH_FN => {
