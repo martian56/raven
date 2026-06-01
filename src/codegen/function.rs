@@ -765,10 +765,18 @@ fn lower_any_get_field(
     let inst = builder.ins().call(fref, &[a, n]);
     let field_any = builder.inst_results(inst)[0]; // Any ptr or null
 
+    // Root the freshly built field Any across the Option allocation below:
+    // `call_struct_new` can trigger a collection, and the only reference to
+    // this new Any is the unrooted register here, so it would be freed
+    // before it is stored into the Option. A null (the None case) roots
+    // harmlessly.
+    let field_root = push_temp_root(cx, builder, field_any, ptr);
+
     // Wrap into Option<Any>: the payload slot holds a GC pointer.
     let mask = layout::enum_pointer_mask(std::slice::from_ref(&MirType::Any));
     let opt_type_id = cx.merge_descriptor(&option_ty.mangle(), mask);
     let obj = call_struct_new(cx, builder, 2, opt_type_id, ptr);
+    let field_any = pop_temp_root(cx, builder, field_root, ptr);
     let base = call_struct_fields(cx, builder, obj, ptr);
 
     let is_some = builder.ins().icmp_imm(IntCC::NotEqual, field_any, 0);
@@ -1082,22 +1090,25 @@ fn lower_struct_create(
     // idempotent.
     let type_id = cx.merge_descriptor(&ty.mangle(), mask);
 
-    // Evaluate field operands before the allocation so their values are
-    // in registers; the allocation may collect, but the operands here are
-    // either constants or reads of already-rooted locals.
-    let mut field_vals = Vec::with_capacity(fields.len());
-    for f in fields {
-        let v = lower_operand(cx, builder, f, slots)?;
-        field_vals.push(widen_to_slot(builder, v, ptr));
-    }
-
+    // Allocate the struct first and root it for the duration of field
+    // evaluation. A field operand can itself allocate (a String-literal or
+    // interpolated field promotes to a heap String), which can trigger a
+    // collection; the partially built struct and the fields already stored
+    // must stay reachable across it. Each field value is unrooted only
+    // between its production and its immediate store into the rooted struct,
+    // with no allocation in between.
     let obj = call_struct_new(cx, builder, fields.len() as i64, type_id, ptr);
-    let base = call_struct_fields(cx, builder, obj, ptr);
-    for (i, v) in field_vals.into_iter().enumerate() {
+    let root = push_temp_root(cx, builder, obj, ptr);
+    for (i, f) in fields.iter().enumerate() {
+        let v = lower_operand(cx, builder, f, slots)?;
+        let v = widen_to_slot(builder, v, ptr);
+        let obj = builder.ins().stack_load(ptr, root, 0);
+        let base = call_struct_fields(cx, builder, obj, ptr);
         builder
             .ins()
             .store(MemFlags::new(), v, base, layout::slot_offset(i));
     }
+    let obj = pop_temp_root(cx, builder, root, ptr);
     Ok(Some(obj))
 }
 
@@ -1123,26 +1134,30 @@ fn lower_enum_create(
     let key = ty.mangle();
     let type_id = cx.merge_descriptor(&key, mask);
 
-    let mut payload_vals = Vec::with_capacity(payload.len());
-    for p in payload {
-        let v = lower_operand(cx, builder, p, slots)?;
-        payload_vals.push(widen_to_slot(builder, v, ptr));
-    }
-
+    // Allocate the enum value first and root it while the payload is
+    // evaluated, for the same reason struct creation does: a payload
+    // operand can allocate and trigger a collection, and the partially
+    // built value must stay reachable across it.
     let field_count = 1 + payload.len() as i64;
     let obj = call_struct_new(cx, builder, field_count, type_id, ptr);
-    let base = call_struct_fields(cx, builder, obj, ptr);
+    let root = push_temp_root(cx, builder, obj, ptr);
     // Slot 0: the discriminant.
+    let base = call_struct_fields(cx, builder, obj, ptr);
     let disc = builder.ins().iconst(ptr, variant as i64);
     builder
         .ins()
         .store(MemFlags::new(), disc, base, layout::slot_offset(0));
     // Slots 1..: the payload.
-    for (i, v) in payload_vals.into_iter().enumerate() {
+    for (i, p) in payload.iter().enumerate() {
+        let v = lower_operand(cx, builder, p, slots)?;
+        let v = widen_to_slot(builder, v, ptr);
+        let obj = builder.ins().stack_load(ptr, root, 0);
+        let base = call_struct_fields(cx, builder, obj, ptr);
         builder
             .ins()
             .store(MemFlags::new(), v, base, layout::slot_offset(i + 1));
     }
+    let obj = pop_temp_root(cx, builder, root, ptr);
     Ok(Some(obj))
 }
 
@@ -1165,6 +1180,46 @@ fn lower_field_access(
         .ins()
         .load(ptr, MemFlags::new(), fields, layout::slot_offset(index));
     Ok(Some(raw))
+}
+
+/// Spill a freshly allocated heap object into a one-pointer stack slot and
+/// register that slot as a single GC root, keeping the object (and any GC
+/// pointers later stored into it) reachable across further allocations that
+/// run while the object is still being filled. Returns the slot so the
+/// caller can reload the rooted pointer; pair with `pop_temp_root`.
+fn push_temp_root(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    obj: Value,
+    ptr: CType,
+) -> StackSlot {
+    let slot = builder
+        .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, ptr.bytes()));
+    builder.ins().stack_store(obj, slot, 0);
+    let slot_addr = builder.ins().stack_addr(ptr, slot, 0);
+    let push_id = cx
+        .runtime_id(intrinsics::RUNTIME_GC_PUSH_ROOT)
+        .expect("gc push root declared at module init");
+    let push_ref = cx.module().declare_func_in_func(push_id, builder.func);
+    builder.ins().call(push_ref, &[slot_addr]);
+    slot
+}
+
+/// Pop the single root `push_temp_root` registered and reload the rooted
+/// pointer from its slot (the authoritative value the collector observed).
+fn pop_temp_root(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    slot: StackSlot,
+    ptr: CType,
+) -> Value {
+    let pop_id = cx
+        .runtime_id(intrinsics::RUNTIME_GC_POP_ROOTS)
+        .expect("gc pop roots declared at module init");
+    let pop_ref = cx.module().declare_func_in_func(pop_id, builder.func);
+    let one = builder.ins().iconst(ptr, 1);
+    builder.ins().call(pop_ref, &[one]);
+    builder.ins().stack_load(ptr, slot, 0)
 }
 
 /// Width in bytes of one `List` element slot. Every element, scalar or GC
@@ -1203,18 +1258,17 @@ fn lower_array_lit(
     };
     let gc_ptrs = layout::is_gc_pointer(elem_ty);
 
-    // Evaluate every element before the allocation so their values are in
-    // registers; each operand is a copy of an already-rooted local or a
-    // constant. The list is built right after, and each push copies the
-    // spilled value in, so no element pointer is left dangling across a
-    // collection the allocation may trigger.
-    let mut elem_vals = Vec::with_capacity(elements.len());
-    for e in elements {
-        let v = lower_operand(cx, builder, e, slots)?;
-        elem_vals.push(widen_to_slot(builder, v, ptr));
-    }
-
+    // Allocate the empty list first and root it through a single shadow
+    // stack slot for the whole build. Evaluating a later element can
+    // allocate (a String-literal element promotes to a heap String, and an
+    // interpolated element allocates), which can trigger a collection; the
+    // list and the elements already pushed into it must stay reachable
+    // across that collection. Rooting the list keeps its pushed elements
+    // alive transitively. Each element value is unrooted only between its
+    // own production and its immediate push, with no allocation in between,
+    // so it is never live across a collection on its own.
     let list = call_list_new(cx, builder, elements.len() as i64, gc_ptrs);
+    let root = push_temp_root(cx, builder, list, ptr);
 
     // One reusable scratch slot the size of a single element; each push
     // writes the next value into it and passes its address.
@@ -1226,11 +1280,18 @@ fn lower_array_lit(
     let push_id = cx
         .runtime_id(intrinsics::RUNTIME_LIST_PUSH)
         .expect("list push declared at module init");
-    for v in elem_vals {
+    for e in elements {
+        let v = lower_operand(cx, builder, e, slots)?;
+        let v = widen_to_slot(builder, v, ptr);
         builder.ins().stack_store(v, scratch, 0);
+        // Reload the rooted list so the push targets the authoritative
+        // pointer the collector observes through the slot.
+        let list = builder.ins().stack_load(ptr, root, 0);
         let push_ref = cx.module().declare_func_in_func(push_id, builder.func);
         builder.ins().call(push_ref, &[list, scratch_addr]);
     }
+
+    let list = pop_temp_root(cx, builder, root, ptr);
     Ok(Some(list))
 }
 

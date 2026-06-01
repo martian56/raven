@@ -445,6 +445,14 @@ impl ModuleCx {
         sig = self.make_sig(&[], &[]);
         self.declare_runtime(intrinsics::RUNTIME_GC_LEAVE_FRAME, &sig)?;
 
+        // raven_gc_push_root(slot: ptr)
+        sig = self.make_sig(&[ptr], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_GC_PUSH_ROOT, &sig)?;
+
+        // raven_gc_pop_roots(n: usize)
+        sig = self.make_sig(&[ptr], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_GC_POP_ROOTS, &sig)?;
+
         // raven_defer_enter_frame()
         sig = self.make_sig(&[], &[]);
         self.declare_runtime(intrinsics::RUNTIME_DEFER_ENTER_FRAME, &sig)?;

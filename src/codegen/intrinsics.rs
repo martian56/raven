@@ -135,6 +135,14 @@ pub const RUNTIME_GC_ENTER_FRAME: &str = "raven_gc_enter_frame";
 /// Runtime C symbol leaving the most recent GC root frame.
 pub const RUNTIME_GC_LEAVE_FRAME: &str = "raven_gc_leave_frame";
 
+/// Runtime C symbol registering a single root slot. Used to keep a heap
+/// temporary that an rvalue builds across further allocations reachable
+/// before it is stored into its rooted destination local.
+pub const RUNTIME_GC_PUSH_ROOT: &str = "raven_gc_push_root";
+
+/// Runtime C symbol popping the last `n` single root slots.
+pub const RUNTIME_GC_POP_ROOTS: &str = "raven_gc_pop_roots";
+
 /// Runtime C symbol opening a per-call defer frame.
 pub const RUNTIME_DEFER_ENTER_FRAME: &str = "raven_defer_enter_frame";
 

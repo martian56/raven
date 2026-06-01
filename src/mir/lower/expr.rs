@@ -789,11 +789,25 @@ fn lower_string_eq(
 /// An empty interpolation, or one with no parts, still yields a valid
 /// (empty) `String`.
 fn lower_interpolate(cx: &mut LowerCx<'_>, parts: &[InterpolPart], ty: MirType) -> MirOperand {
-    // Build the per-part String operands first.
+    // Build the per-part String operands first. Each part is bound to a
+    // temp local so it lives in a GC-rooted slot: the fold calls
+    // `raven_string_concat`, which allocates internally and can trigger a
+    // collection, and an unrooted literal-text part (a bare `Const::Str`
+    // codegen promotes to a heap String at the call site) would be freed
+    // mid-concat. Binding every part, text and expression alike, keeps it
+    // reachable across the concat chain.
     let mut operands: Vec<MirOperand> = Vec::with_capacity(parts.len());
     for p in parts {
         match p {
-            InterpolPart::Text(s) => operands.push(MirOperand::Const(MirConstant::Str(s.clone()))),
+            InterpolPart::Text(s) => {
+                let dst = cx.builder.fresh_temp("interp_text", MirType::Str);
+                cx.builder.assign(
+                    cx.current,
+                    dst,
+                    MirRvalue::Use(MirOperand::Const(MirConstant::Str(s.clone()))),
+                );
+                operands.push(MirOperand::Copy(dst));
+            }
             InterpolPart::Expr(e) => operands.push(stringify_part(cx, e)),
         }
     }
