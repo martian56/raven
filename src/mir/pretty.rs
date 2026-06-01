@@ -323,6 +323,33 @@ fn pretty_rvalue(buf: &mut String, r: &MirRvalue) {
             pretty_operand(buf, count);
             buf.push(')');
         }
+        MirRvalue::AnyBox { value, value_ty } => {
+            write!(buf, "(any-box {} ", value_ty).unwrap();
+            pretty_operand(buf, value);
+            buf.push(')');
+        }
+        MirRvalue::AnyCast { any, target_ty, .. } => {
+            write!(buf, "(any-cast {} ", target_ty).unwrap();
+            pretty_operand(buf, any);
+            buf.push(')');
+        }
+        MirRvalue::AnyTypeName { any } => {
+            buf.push_str("(any-type-name ");
+            pretty_operand(buf, any);
+            buf.push(')');
+        }
+        MirRvalue::AnyFieldNames { any } => {
+            buf.push_str("(any-field-names ");
+            pretty_operand(buf, any);
+            buf.push(')');
+        }
+        MirRvalue::AnyGetField { any, name, .. } => {
+            buf.push_str("(any-get-field ");
+            pretty_operand(buf, any);
+            buf.push(' ');
+            pretty_operand(buf, name);
+            buf.push(')');
+        }
     }
 }
 

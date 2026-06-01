@@ -150,6 +150,11 @@ pub struct LowerCx<'a> {
     /// Mangled name of the enclosing function, used to derive lifted
     /// closure names so two enclosing functions never collide.
     pub enclosing: String,
+    /// Runtime reflection metadata collected while lowering this function,
+    /// keyed by mangled type name. Each type boxed into an `Any` (and
+    /// transitively its field types) gets one entry; the monomorphizer
+    /// drains these into the program for the back end to register.
+    pub reflect_types: HashMap<String, super::ir::ReflectType>,
 }
 
 impl LowerCx<'_> {
@@ -270,6 +275,7 @@ pub struct LoweredFunction {
     pub func: MirFunction,
     pub pending: Vec<(DeclId, SubstMap)>,
     pub lifted: Vec<MirFunction>,
+    pub reflect_types: HashMap<String, super::ir::ReflectType>,
 }
 
 /// Lower one HIR function under the given substitution. Returns the
@@ -305,6 +311,7 @@ pub fn lower_function(
         lifted: Vec::new(),
         lambda_seq: 0,
         enclosing: mangled,
+        reflect_types: HashMap::new(),
     };
 
     let body = hir
@@ -333,9 +340,11 @@ pub fn lower_function(
 
     let pending = std::mem::take(&mut cx.pending_calls);
     let lifted = std::mem::take(&mut cx.lifted);
+    let reflect_types = std::mem::take(&mut cx.reflect_types);
     LoweredFunction {
         func: cx.builder.finish(entry),
         pending,
         lifted,
+        reflect_types,
     }
 }

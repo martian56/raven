@@ -110,8 +110,17 @@ fn frame_api_roots_a_graph_cross_crate() {
         // map, map_key, map_value, closure, captured, boxed, boxed_inner.
         assert_eq!(raven_gc_live_objects(), 7);
 
-        let mut roots: [*mut u8; 3] = [map as *mut u8, closure as *mut u8, boxed as *mut u8];
-        raven_gc_enter_frame(roots.as_mut_ptr(), roots.len());
+        // The container pointers live in their own slots; the frame's root
+        // array holds the *addresses* of those slots, matching the ABI
+        // codegen emits (each entry is a slot address the collector
+        // dereferences to read the live pointer).
+        let mut slots: [*mut u8; 3] = [map as *mut u8, closure as *mut u8, boxed as *mut u8];
+        let mut roots: [*mut *mut u8; 3] = [
+            &mut slots[0] as *mut *mut u8,
+            &mut slots[1] as *mut *mut u8,
+            &mut slots[2] as *mut *mut u8,
+        ];
+        raven_gc_enter_frame(roots.as_mut_ptr() as *mut *mut u8, roots.len());
         raven_gc_collect();
         assert_eq!(raven_gc_live_objects(), 7);
 
@@ -127,11 +136,18 @@ fn bounded_liveness_stress_cross_crate() {
         // Root a small working set, then churn many unrooted strings.
         // Liveness must stay bounded and the working set must survive.
         const WORKING_SET: usize = 8;
-        let mut roots: [*mut u8; WORKING_SET] = [std::ptr::null_mut(); WORKING_SET];
-        for r in roots.iter_mut() {
-            *r = raven_string_new(8) as *mut u8;
+        // The working-set pointers live in their own slots; the root array
+        // holds the *addresses* of those slots, matching the frame ABI
+        // codegen emits.
+        let mut slots: [*mut u8; WORKING_SET] = [std::ptr::null_mut(); WORKING_SET];
+        for s in slots.iter_mut() {
+            *s = raven_string_new(8) as *mut u8;
         }
-        raven_gc_enter_frame(roots.as_mut_ptr(), WORKING_SET);
+        let mut roots: [*mut *mut u8; WORKING_SET] = [std::ptr::null_mut(); WORKING_SET];
+        for (r, s) in roots.iter_mut().zip(slots.iter_mut()) {
+            *r = s as *mut *mut u8;
+        }
+        raven_gc_enter_frame(roots.as_mut_ptr() as *mut *mut u8, WORKING_SET);
 
         let mut peak = 0usize;
         for i in 0..20_000usize {

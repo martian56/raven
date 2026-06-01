@@ -7,6 +7,7 @@ use crate::tycheck::Ty;
 
 use crate::hir::expr::{
     HirArm, HirBinaryOp, HirBlock, HirExpr, HirExprKind, HirUnaryOp, InterpolPart, PtrBuiltinOp,
+    ReflectBuiltinOp,
 };
 use crate::hir::pattern::{HirPattern, HirPatternKind};
 use crate::hir::stmt::{HirAssignTarget, HirStmt, HirStmtKind};
@@ -202,6 +203,22 @@ pub(crate) fn lower_expr(
                             HirExprKind::PtrBuiltin {
                                 op,
                                 pointee,
+                                args: lowered,
+                            },
+                            ty,
+                            span,
+                        ));
+                    }
+                    if let Some((op, has_type_arg)) = reflect_builtin_op(name) {
+                        let type_arg = has_type_arg.then(|| cx.ty_at(&callee.span));
+                        let mut lowered = Vec::with_capacity(args.len());
+                        for a in args {
+                            lowered.push(lower_expr(a, &Ty::Error, cx)?);
+                        }
+                        return Ok(make_expr(
+                            HirExprKind::ReflectBuiltin {
+                                op,
+                                type_arg,
                                 args: lowered,
                             },
                             ty,
@@ -619,6 +636,20 @@ fn ptr_builtin_op(name: &str) -> Option<PtrBuiltinOp> {
         "__ptr_offset" => PtrBuiltinOp::Offset,
         "__ptr_is_null" => PtrBuiltinOp::IsNull,
         "__ptr_null" => PtrBuiltinOp::Null,
+        _ => return None,
+    })
+}
+
+/// Map a runtime reflection builtin name to its op, or `None` for any
+/// other identifier. The second element is true when the builtin carries a
+/// type argument recorded at the callee span (`to_any<T>`, `cast<T>`).
+fn reflect_builtin_op(name: &str) -> Option<(ReflectBuiltinOp, bool)> {
+    Some(match name {
+        "to_any" => (ReflectBuiltinOp::ToAny, true),
+        "cast" => (ReflectBuiltinOp::Cast, true),
+        "type_name_of" => (ReflectBuiltinOp::TypeNameOf, false),
+        "field_names_of" => (ReflectBuiltinOp::FieldNamesOf, false),
+        "get_field" => (ReflectBuiltinOp::GetField, false),
         _ => return None,
     })
 }

@@ -72,6 +72,9 @@ pub enum MirType {
     /// matching Cranelift ABI type for an `extern "C"` parameter,
     /// return, or `c"..."` literal.
     Ffi(MirFfiTy),
+    /// `Any`: a boxed value plus its runtime type tag. Lowered as a single
+    /// GC pointer to an `Any` box. See `docs/v2/specs/runtime-reflection.md`.
+    Any,
 }
 
 impl MirType {
@@ -114,6 +117,7 @@ impl MirType {
             },
             Ty::SelfTy(inner) => MirType::from_ty(inner),
             Ty::Ffi(ffi) => MirType::Ffi(MirFfiTy::from_ffi(ffi)),
+            Ty::Any => MirType::Any,
             Ty::Error => MirType::Unit,
             Ty::Param(_) | Ty::Var(_) => MirType::Unit,
         }
@@ -147,6 +151,7 @@ impl MirType {
             }
             MirType::Dyn { name, .. } => format!("dyn_{}", name),
             MirType::Ffi(ffi) => ffi.mangle(),
+            MirType::Any => "Any".into(),
         }
     }
 
@@ -204,6 +209,7 @@ impl fmt::Display for MirType {
             }
             MirType::Dyn { name, .. } => write!(f, "dyn {}", name),
             MirType::Ffi(ffi) => write!(f, "{}", ffi),
+            MirType::Any => f.write_str("Any"),
         }
     }
 }

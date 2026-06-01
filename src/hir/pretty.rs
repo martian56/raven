@@ -503,6 +503,23 @@ fn pretty_expr(buf: &mut String, expr: &HirExpr, depth: usize) {
             indent(buf, depth);
             buf.push_str(")\n");
         }
+        HirExprKind::ReflectBuiltin { op, type_arg, args } => {
+            let arg = type_arg
+                .as_ref()
+                .map(|t| t.to_string())
+                .unwrap_or_else(|| "-".into());
+            writeln!(
+                buf,
+                "(reflect-builtin {:?} type_arg={} ty={}",
+                op, arg, expr.ty
+            )
+            .unwrap();
+            for a in args {
+                pretty_expr(buf, a, depth + 1);
+            }
+            indent(buf, depth);
+            buf.push_str(")\n");
+        }
         HirExprKind::Lambda { params, ret, body } => {
             write!(buf, "(lambda ret={} params=(", ret).unwrap();
             for (i, (name, ty, _)) in params.iter().enumerate() {

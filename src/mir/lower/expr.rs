@@ -8,11 +8,12 @@
 
 use crate::hir::expr::{
     HirBinaryOp, HirBlock, HirExpr, HirExprKind, HirUnaryOp, InterpolPart, PtrBuiltinOp,
+    ReflectBuiltinOp,
 };
 
 use super::super::ir::{
     ListMethodOp, MirBinOp, MirBlockId, MirConstant, MirFnRef, MirLocal, MirOperand, MirRvalue,
-    MirStatement, MirTerminator, MirUnOp,
+    MirStatement, MirTerminator, MirUnOp, ReflectField, ReflectType,
 };
 use super::super::ty::{MirFfiTy, MirType};
 use super::{mir_ty, stmt, LoopFrame, LowerCx};
@@ -344,6 +345,139 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
         HirExprKind::FieldNames(arg) => lower_field_names(cx, arg, ty),
         HirExprKind::PtrBuiltin { op, pointee, args } => {
             lower_ptr_builtin(cx, *op, pointee, args, ty)
+        }
+        HirExprKind::ReflectBuiltin { op, type_arg, args } => {
+            lower_reflect_builtin(cx, *op, type_arg.as_ref(), args, ty)
+        }
+    }
+}
+
+/// Record runtime reflection metadata for `mty` (and transitively any
+/// struct field types) into the function's accumulator, keyed by the
+/// mangled type name. Idempotent: a type already recorded is skipped, so
+/// the recursion over field types terminates on cycles.
+fn record_reflect_type(cx: &mut LowerCx<'_>, mty: &MirType) {
+    let key = mty.mangle();
+    if cx.reflect_types.contains_key(&key) {
+        return;
+    }
+    let (is_struct, fields) = match mty {
+        MirType::Struct { name, .. } => {
+            let decl = cx.decls.structs.get(name.as_str());
+            let fields: Vec<ReflectField> = decl
+                .map(|s| {
+                    s.fields
+                        .iter()
+                        .map(|(fname, fty, _)| {
+                            let fmty = mir_ty(fty, cx.subst);
+                            ReflectField {
+                                name: fname.clone(),
+                                type_mangle: fmty.mangle(),
+                                is_gc_ptr: crate::codegen::layout::is_gc_pointer(&fmty),
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            (true, fields)
+        }
+        _ => (false, Vec::new()),
+    };
+    // Insert before recursing so a self-referential struct stops.
+    cx.reflect_types.insert(
+        key,
+        ReflectType {
+            name: format!("{}", mty),
+            is_struct,
+            fields: fields.clone(),
+        },
+    );
+    if let MirType::Struct { name, .. } = mty {
+        if let Some(decl) = cx.decls.structs.get(name.as_str()).copied() {
+            for (_, fty, _) in &decl.fields {
+                let fmty = mir_ty(fty, cx.subst);
+                record_reflect_type(cx, &fmty);
+            }
+        }
+    }
+}
+
+/// Lower a runtime reflection builtin. The boxed/target type argument is
+/// grounded under the current substitution; reflection metadata for it is
+/// recorded so the back end registers the runtime type record. See
+/// `docs/v2/specs/runtime-reflection.md`.
+fn lower_reflect_builtin(
+    cx: &mut LowerCx<'_>,
+    op: ReflectBuiltinOp,
+    type_arg: Option<&crate::tycheck::Ty>,
+    args: &[HirExpr],
+    ty: MirType,
+) -> MirOperand {
+    let ops: Vec<MirOperand> = args.iter().map(|a| lower_expr(cx, a)).collect();
+    match op {
+        ReflectBuiltinOp::ToAny => {
+            let value_ty = mir_ty(type_arg.expect("to_any carries a type argument"), cx.subst);
+            record_reflect_type(cx, &value_ty);
+            let dst = cx.builder.fresh_temp("any_box", ty);
+            cx.builder.assign(
+                cx.current,
+                dst,
+                MirRvalue::AnyBox {
+                    value: ops[0].clone(),
+                    value_ty,
+                },
+            );
+            MirOperand::Copy(dst)
+        }
+        ReflectBuiltinOp::Cast => {
+            let target_ty = mir_ty(type_arg.expect("cast carries a type argument"), cx.subst);
+            record_reflect_type(cx, &target_ty);
+            let dst = cx.builder.fresh_temp("any_cast", ty.clone());
+            cx.builder.assign(
+                cx.current,
+                dst,
+                MirRvalue::AnyCast {
+                    any: ops[0].clone(),
+                    target_ty,
+                    option_ty: ty,
+                },
+            );
+            MirOperand::Copy(dst)
+        }
+        ReflectBuiltinOp::TypeNameOf => {
+            let dst = cx.builder.fresh_temp("type_name_of", ty);
+            cx.builder.assign(
+                cx.current,
+                dst,
+                MirRvalue::AnyTypeName {
+                    any: ops[0].clone(),
+                },
+            );
+            MirOperand::Copy(dst)
+        }
+        ReflectBuiltinOp::FieldNamesOf => {
+            let dst = cx.builder.fresh_temp("field_names_of", ty);
+            cx.builder.assign(
+                cx.current,
+                dst,
+                MirRvalue::AnyFieldNames {
+                    any: ops[0].clone(),
+                },
+            );
+            MirOperand::Copy(dst)
+        }
+        ReflectBuiltinOp::GetField => {
+            let dst = cx.builder.fresh_temp("get_field", ty.clone());
+            cx.builder.assign(
+                cx.current,
+                dst,
+                MirRvalue::AnyGetField {
+                    any: ops[0].clone(),
+                    name: ops[1].clone(),
+                    option_ty: ty,
+                },
+            );
+            MirOperand::Copy(dst)
         }
     }
 }

@@ -1359,6 +1359,9 @@ impl<'a, 'b> Checker<'a, 'b> {
             | "__ptr_is_null" | "__ptr_null" => {
                 self.check_ptr_builtin(name, generics, callee_span, args, span)
             }
+            "to_any" | "cast" | "type_name_of" | "field_names_of" | "get_field" => {
+                self.check_runtime_reflection_builtin(name, generics, callee_span, args, span)
+            }
             "Some" => {
                 if args.len() != 1 {
                     return Err(RavenError::ty(
@@ -1570,6 +1573,109 @@ impl<'a, 'b> Checker<'a, 'b> {
             "field_names" => Ty::List(Box::new(Ty::Str)),
             _ => Ty::Str,
         })
+    }
+
+    /// Check a runtime reflection builtin (`to_any`, `cast`,
+    /// `type_name_of`, `field_names_of`, `get_field`). `to_any<T>(v)` boxes
+    /// a `T` into `Any`; `cast<T>(a)` is a checked downcast to `Option<T>`.
+    /// Both carry the type argument `T` at the callee span so MIR grounds it
+    /// per monomorphization (the box site knows the static tag, the cast site
+    /// knows the tag to compare). The other three take an `Any` value and no
+    /// type argument. See `docs/v2/specs/runtime-reflection.md`.
+    fn check_runtime_reflection_builtin(
+        &mut self,
+        name: &str,
+        generics: &[crate::ast::Type],
+        callee_span: &Span,
+        args: &[Expr],
+        span: &Span,
+    ) -> Result<Ty, RavenError> {
+        let wrong_arity = |actual: usize, expected: usize| {
+            RavenError::ty(
+                TypeError::WrongArity {
+                    func: name.to_string(),
+                    expected,
+                    actual,
+                },
+                span.clone(),
+            )
+        };
+        let wrong_generics = |actual: usize, expected: usize| {
+            RavenError::ty(
+                TypeError::GenericArityMismatch {
+                    decl: name.to_string(),
+                    expected,
+                    actual,
+                },
+                span.clone(),
+            )
+        };
+        match name {
+            "to_any" => {
+                if generics.len() != 1 {
+                    return Err(wrong_generics(generics.len(), 1));
+                }
+                if args.len() != 1 {
+                    return Err(wrong_arity(args.len(), 1));
+                }
+                let declared = self.resolve_ast_ty(&generics[0])?;
+                let actual = self.check_expr(&args[0])?;
+                self.unify(&declared, &actual, &args[0].span)?;
+                // Record the boxed type at the callee span so MIR grounds it
+                // per monomorphization to pick the runtime type tag.
+                self.record(callee_span, declared);
+                Ok(Ty::Any)
+            }
+            "cast" => {
+                if generics.len() != 1 {
+                    return Err(wrong_generics(generics.len(), 1));
+                }
+                if args.len() != 1 {
+                    return Err(wrong_arity(args.len(), 1));
+                }
+                let target = self.resolve_ast_ty(&generics[0])?;
+                let a = self.check_expr(&args[0])?;
+                self.unify(&Ty::Any, &a, &args[0].span)?;
+                self.record(callee_span, target.clone());
+                Ok(Ty::Option(Box::new(target)))
+            }
+            "type_name_of" => {
+                if !generics.is_empty() {
+                    return Err(wrong_generics(generics.len(), 0));
+                }
+                if args.len() != 1 {
+                    return Err(wrong_arity(args.len(), 1));
+                }
+                let a = self.check_expr(&args[0])?;
+                self.unify(&Ty::Any, &a, &args[0].span)?;
+                Ok(Ty::Str)
+            }
+            "field_names_of" => {
+                if !generics.is_empty() {
+                    return Err(wrong_generics(generics.len(), 0));
+                }
+                if args.len() != 1 {
+                    return Err(wrong_arity(args.len(), 1));
+                }
+                let a = self.check_expr(&args[0])?;
+                self.unify(&Ty::Any, &a, &args[0].span)?;
+                Ok(Ty::List(Box::new(Ty::Str)))
+            }
+            "get_field" => {
+                if !generics.is_empty() {
+                    return Err(wrong_generics(generics.len(), 0));
+                }
+                if args.len() != 2 {
+                    return Err(wrong_arity(args.len(), 2));
+                }
+                let a = self.check_expr(&args[0])?;
+                self.unify(&Ty::Any, &a, &args[0].span)?;
+                let n = self.check_expr(&args[1])?;
+                self.unify(&Ty::Str, &n, &args[1].span)?;
+                Ok(Ty::Option(Box::new(Ty::Any)))
+            }
+            _ => unreachable!("unhandled runtime reflection builtin {name}"),
+        }
     }
 
     /// Check a raw-pointer FFI builtin (`__ptr_load`, `__ptr_store`,

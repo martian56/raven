@@ -145,6 +145,11 @@ pub fn monomorphize(hir: &HirProgram) -> Result<MirProgram, RavenError> {
         for next in lowered.pending {
             worklist.push(next);
         }
+        // Reflection metadata for any type boxed in this function. The
+        // back end registers each entry with the runtime at startup.
+        for (mangle, info) in lowered.reflect_types {
+            program.reflect_types.entry(mangle).or_insert(info);
+        }
     }
 
     Ok(program)

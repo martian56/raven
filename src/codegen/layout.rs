@@ -54,6 +54,10 @@ pub fn is_gc_pointer(ty: &MirType) -> bool {
             // pointer; the collector traces the box, which in turn traces
             // the data word it holds.
             | MirType::Dyn { .. }
+            // An `Any` is a single GC pointer to its box; the collector
+            // traces the box, which keeps a heap payload alive through the
+            // box's `payload_is_gc_ptr` flag.
+            | MirType::Any
     )
 }
 

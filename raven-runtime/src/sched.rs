@@ -653,11 +653,12 @@ mod tests {
         let go = unsafe { *p.add(1) };
         // Allocate a GC string and keep it rooted in a frame for the rest
         // of the body, exactly as compiled code would.
-        let s = crate::object::raven_string_new(16);
-        // The frame's roots array holds the GC pointer slots directly;
-        // `raven_gc_enter_frame` registers the address of each slot.
-        let mut roots: [*mut u8; 1] = [s as *mut u8];
-        crate::gc::raven_gc_enter_frame(roots.as_mut_ptr(), 1);
+        let mut s = crate::object::raven_string_new(16);
+        // The GC pointer lives in the `s` slot; the frame's root array holds
+        // the *address* of that slot, and the collector dereferences it to
+        // read the live pointer, exactly as compiled code emits.
+        let mut roots: [*mut *mut u8; 1] = [&mut s as *mut _ as *mut *mut u8];
+        crate::gc::raven_gc_enter_frame(roots.as_mut_ptr() as *mut *mut u8, 1);
         // Tell main we have allocated and are about to block. Send a plain
         // sentinel, not the pointer, so the string is reachable ONLY
         // through this parked goroutine's saved root chain (not through a
