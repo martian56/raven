@@ -1,0 +1,43 @@
+# Categorizes the automatically generated release notes (the "What's
+# Changed" section) by pull request label. The release workflow turns
+# this on with generate_release_notes. A pull request lands in the first
+# category whose labels it carries; "New Contributors" is added by GitHub.
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+      - duplicate
+      - invalid
+  categories:
+    - title: Bug Fixes
+      labels:
+        - type/bug
+        - bug
+    - title: Language and Compiler
+      labels:
+        - area/lexer
+        - area/parser
+        - area/ast
+        - area/resolver
+        - area/tycheck
+        - area/hir-mir
+        - area/codegen
+        - area/runtime
+        - area/gc
+    - title: Standard Library
+      labels:
+        - area/stdlib
+        - area/ffi
+    - title: Tooling and Packaging
+      labels:
+        - area/rvpm
+        - area/formatter
+        - area/tooling
+        - area/ci
+    - title: Other Features
+      labels:
+        - type/feature
+        - enhancement
+    - title: Other Changes
+      labels:
+        - "*"

@@ -8,14 +8,13 @@ Release.
 
 ## Artifacts per platform
 
-The build matrix covers four targets. Each target produces a portable archive
+The build matrix covers three targets. Each target produces a portable archive
 and the platform native installer.
 
 | Target | Archive | Installer |
 |--------|---------|-----------|
 | Linux x86_64 (`x86_64-unknown-linux-gnu`) | `.tar.gz` | `.deb`, `.rpm` |
 | Windows x86_64 (`x86_64-pc-windows-msvc`) | `.zip` | `.msi` |
-| macOS x86_64 (`x86_64-apple-darwin`) | `.tar.gz` | `.pkg` |
 | macOS arm64 (`aarch64-apple-darwin`) | `.tar.gz` | `.pkg` |
 
 Every artifact bundles two binaries, `raven` (the compiler and build driver)

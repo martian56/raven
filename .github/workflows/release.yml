@@ -38,9 +38,6 @@ jobs:
           - name: windows-x86_64
             os: windows-latest
             target: x86_64-pc-windows-msvc
-          - name: macos-x86_64
-            os: macos-13
-            target: x86_64-apple-darwin
           - name: macos-arm64
             os: macos-14
             target: aarch64-apple-darwin
@@ -161,7 +158,10 @@ jobs:
           $v = "${{ steps.version.outputs.value }}"
           # cargo-wix derives the installer version from Cargo.toml; pass the
           # release version explicitly so the MSI matches the tag.
-          cargo wix --no-build --nocapture --target ${{ matrix.target }} `
+          # The workspace has more than one package, so name the one to
+          # package (the `raven` binary crate); cargo-wix otherwise errors
+          # with "Workspace detected. Please pass a package name."
+          cargo wix -p raven --no-build --nocapture --target ${{ matrix.target }} `
             --install-version $v --output "target/wix/raven-$v-${{ matrix.target }}.msi"
 
       - name: Sign Windows MSI (optional)
@@ -208,6 +208,23 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: Raven ${{ github.ref_name }}
+          # The categorized "What's Changed" and "New Contributors"
+          # sections are appended below this body. Categories come from
+          # .github/release.yml.
+          body: |
+            Raven ${{ github.ref_name }}, a statically typed, compiled language with a Cranelift backend, a tracing garbage collector, generics and traits, sum types, goroutines, a C FFI, and a package manager.
+
+            ## Install
+
+            Download the installer or archive for your platform from the assets below:
+
+            - Linux: `.deb`, `.rpm`, or `.tar.gz`
+            - Windows: `.msi` or `.zip`
+            - macOS (Apple Silicon): `.pkg` or `.tar.gz`
+
+            Each one installs the `raven` compiler and the `rvpm` package manager. Compiling a program also needs a C linker (the MSVC build tools on Windows, `cc` or `clang` on Linux and macOS).
+
+            The full changelog is in [CHANGELOG.md](https://github.com/martian56/raven/blob/main/CHANGELOG.md), and the docs are at [martian56.github.io/raven](https://martian56.github.io/raven/).
           generate_release_notes: true
           files: dist/*
           fail_on_unmatched_files: false
@@ -229,8 +246,6 @@ jobs:
             os: ubuntu-latest
           - name: windows-x86_64
             os: windows-latest
-          - name: macos-x86_64
-            os: macos-13
           - name: macos-arm64
             os: macos-14
     steps:
