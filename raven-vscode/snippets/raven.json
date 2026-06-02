@@ -242,5 +242,74 @@
       "print(\"${1:label}: ${${2:value}}\")"
     ],
     "description": "Print with string interpolation"
+  },
+  "Spawn Goroutine": {
+    "prefix": "spawn",
+    "body": [
+      "spawn(fun() -> Unit {",
+      "\t$0",
+      "})"
+    ],
+    "description": "Spawn a goroutine running a closure (std/sync)"
+  },
+  "Channel": {
+    "prefix": "channel",
+    "body": [
+      "let ${1:ch} = channel()"
+    ],
+    "description": "Create an unbuffered channel (import std/sync { channel })"
+  },
+  "Buffered Channel": {
+    "prefix": "channelb",
+    "body": [
+      "let ${1:ch} = channel_buffered(${2:8})"
+    ],
+    "description": "Create a buffered channel (import std/sync { channel_buffered })"
+  },
+  "Derive Attribute": {
+    "prefix": "derive",
+    "body": [
+      "@derive(${1:Eq, Hash, ToString, Debug})"
+    ],
+    "description": "Derive core trait impls for the type below"
+  },
+  "Repr C Attribute": {
+    "prefix": "repr",
+    "body": [
+      "@repr(C)"
+    ],
+    "description": "Give the struct below C memory layout"
+  },
+  "Macro Definition": {
+    "prefix": "macro",
+    "body": [
+      "macro ${1:name} { (${2:matcher}) => { ${3:template} } }"
+    ],
+    "description": "Define a declarative macro"
+  },
+  "To Any": {
+    "prefix": "toany",
+    "body": [
+      "to_any<${1:T}>(${2:value})"
+    ],
+    "description": "Box a value into Any for runtime reflection"
+  },
+  "Cast From Any": {
+    "prefix": "cast",
+    "body": [
+      "cast<${1:T}>(${2:value})"
+    ],
+    "description": "Downcast an Any to T, returning Option<T>"
+  },
+  "Trait With Method Body": {
+    "prefix": "traitm",
+    "body": [
+      "trait ${1:Name} {",
+      "\tfun ${2:method}(self) -> ${3:Unit} {",
+      "\t\t${4:body}",
+      "\t}",
+      "}"
+    ],
+    "description": "Define a trait with a default method body"
   }
 }

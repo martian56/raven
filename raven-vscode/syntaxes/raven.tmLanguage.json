@@ -6,11 +6,15 @@
     { "include": "#comments" },
     { "include": "#imports" },
     { "include": "#externBlock" },
+    { "include": "#attributes" },
+    { "include": "#macroDefinition" },
     { "include": "#bindings" },
     { "include": "#functionDeclarations" },
     { "include": "#typeDeclarations" },
     { "include": "#implDeclarations" },
     { "include": "#matchArrow" },
+    { "include": "#macroInvocation" },
+    { "include": "#metavariables" },
     { "include": "#keywords" },
     { "include": "#constants" },
     { "include": "#selfKeyword" },
@@ -91,6 +95,77 @@
         }
       ]
     },
+    "attributes": {
+      "patterns": [
+        {
+          "name": "meta.attribute.derive.raven",
+          "begin": "(@derive)\\s*(\\()",
+          "beginCaptures": {
+            "1": { "name": "keyword.control.attribute.raven" },
+            "2": { "name": "punctuation.section.parens.begin.raven" }
+          },
+          "end": "\\)",
+          "endCaptures": {
+            "0": { "name": "punctuation.section.parens.end.raven" }
+          },
+          "patterns": [
+            {
+              "name": "support.type.trait.raven",
+              "match": "\\b(Eq|Hash|ToString|Debug|ToJson|FromJson)\\b"
+            },
+            {
+              "name": "entity.name.type.raven",
+              "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+            },
+            {
+              "name": "punctuation.separator.comma.raven",
+              "match": ","
+            }
+          ]
+        },
+        {
+          "name": "meta.attribute.raven",
+          "match": "(@)([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.control.attribute.raven" },
+            "2": { "name": "keyword.control.attribute.raven" }
+          }
+        }
+      ]
+    },
+    "macroDefinition": {
+      "patterns": [
+        {
+          "match": "\\b(macro)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.macro.raven" },
+            "2": { "name": "entity.name.function.macro.raven" }
+          }
+        }
+      ]
+    },
+    "macroInvocation": {
+      "patterns": [
+        {
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)(!)\\s*(?=\\()",
+          "captures": {
+            "1": { "name": "entity.name.function.macro.raven" },
+            "2": { "name": "keyword.operator.macro.raven" }
+          }
+        }
+      ]
+    },
+    "metavariables": {
+      "patterns": [
+        {
+          "match": "(\\$)([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "punctuation.definition.variable.raven" },
+            "2": { "name": "variable.other.metavariable.raven" }
+          }
+        }
+      ]
+    },
     "bindings": {
       "patterns": [
         {
@@ -153,7 +228,11 @@
       "patterns": [
         {
           "name": "keyword.control.raven",
-          "match": "\\b(if|else|while|for|loop|in|break|continue|return|match|defer)\\b"
+          "match": "\\b(if|else|while|for|loop|in|break|continue|return|match|defer|spawn)\\b"
+        },
+        {
+          "name": "keyword.other.macro.raven",
+          "match": "\\b(macro)\\b"
         },
         {
           "name": "keyword.control.import.raven",
@@ -197,11 +276,11 @@
       "patterns": [
         {
           "name": "support.type.builtin.raven",
-          "match": "\\b(Int|Float|Bool|String|Char|Unit|Option|Result|List|Map|Set)\\b"
+          "match": "\\b(Int|Float|Bool|String|Char|Unit|Any|Option|Result|List|Map|Set|Channel)\\b"
         },
         {
           "name": "support.type.ffi.raven",
-          "match": "\\b(CInt|CLong|CSize|CStr|CPtr|CDouble|CChar|CFloat|CVoid)\\b"
+          "match": "\\b(CInt|CLong|CSize|CStr|CPtr|CDouble|CChar|CFloat|CVoid|CFnPtr)\\b"
         },
         {
           "name": "entity.name.type.raven",
