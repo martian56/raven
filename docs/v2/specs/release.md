@@ -17,9 +17,6 @@ and the platform native installer.
 | Windows x86_64 (`x86_64-pc-windows-msvc`) | `.zip` | `.msi` |
 | macOS arm64 (`aarch64-apple-darwin`) | `.tar.gz` | `.pkg` |
 
-macOS Intel (`x86_64-apple-darwin`) is not built: the `macos-13` runner is
-unreliable to schedule. It can be re-added to the matrix when needed.
-
 Every artifact bundles two binaries, `raven` (the compiler and build driver)
 and `rvpm` (the package manager), plus the `raven_runtime` static library.
 
