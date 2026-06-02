@@ -295,7 +295,21 @@ fn link_unix(
         // patterns in the Cranelift object (Relocations.cpp
         // addFixupFromRelocations). The classic linker handles them, so
         // select it explicitly.
-        cmd.args(["-Wl,-ld_classic", "-lpthread", "-ldl", "-lm"]);
+        //
+        // CoreFoundation is required by a runtime dependency
+        // (iana_time_zone, reached through the time stdlib). Rust's
+        // `#[link(kind = "framework")]` directives are not applied when
+        // the staticlib is handed to `cc` directly, so name the
+        // framework explicitly, the same way the MSVC path names its
+        // native libs.
+        cmd.args([
+            "-Wl,-ld_classic",
+            "-lpthread",
+            "-ldl",
+            "-lm",
+            "-framework",
+            "CoreFoundation",
+        ]);
     }
     let status = cmd
         .status()
