@@ -1,0 +1,13 @@
+// Deferred expressions run in reverse declaration order (LIFO) when the
+// enclosing function returns. The return value is computed first, then
+// the deferred calls fire, so this program prints 2 then 1 before main
+// observes the result.
+fun demo() -> Int {
+    defer print(1)
+    defer print(2)
+    return 0
+}
+
+fun main() {
+    let _ = demo()
+}

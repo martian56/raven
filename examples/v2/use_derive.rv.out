@@ -1,0 +1,14 @@
+true
+false
+Point { x: 1, y: 2 }
+Point { x: 1, y: 2 }
+true
+true
+false
+true
+false
+Circle(3)
+Dot
+true
+false
+Pair { first: 1, second: hi }

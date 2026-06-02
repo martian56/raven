@@ -1,0 +1,14 @@
+// golden:skip
+import std/encoding { hex_encode, hex_decode, base64_encode, base64_decode }
+import std/io { println }
+
+fun main() {
+    println(hex_encode("abc"))
+    println(base64_encode("abc"))
+    println(base64_encode("Man"))
+    println(base64_encode("Ma"))
+    println(base64_encode("M"))
+    print(hex_decode("616263") == "abc")
+    print(base64_decode("YWJj") == "abc")
+    print(base64_decode(base64_encode("hello, world")) == "hello, world")
+}

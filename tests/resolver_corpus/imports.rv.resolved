@@ -1,0 +1,8 @@
+(resolved
+  imports
+    [0] std/io -> StdlibModule(std/io)
+    [1] std/math -> StdlibModule(std/math)
+  uses
+    60..67 "println" -> ImportedItem(#0, println)
+    78..82 "math" -> ImportAlias(#1)
+)

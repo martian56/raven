@@ -1,0 +1,13 @@
+// golden:skip
+import std/hash { fnv1a, djb2, hash_int, combine }
+
+fun main() {
+    print(fnv1a("") == fnv1a(""))
+    print(fnv1a("abc") == fnv1a("abc"))
+    print(fnv1a("abc") == fnv1a("abd"))
+    print(djb2("hello") == djb2("hello"))
+    print(hash_int(1) == hash_int(1))
+    print(hash_int(1) == hash_int(2))
+    print(combine(1, 2) == combine(1, 2))
+    print(combine(1, 2) == combine(2, 1))
+}

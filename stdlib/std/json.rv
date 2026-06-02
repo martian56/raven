@@ -1,0 +1,771 @@
+// std/json: a JSON parser and serializer in pure Raven over the byte
+// intrinsics. `parse` is a recursive descent parser returning
+// Result<JsonValue, Error>; `stringify` is a compact serializer. All JSON
+// numbers parse to Float, so integers beyond the 53-bit mantissa lose
+// precision. See docs/v2/specs/std-json.md.
+
+import std/collections
+import std/error
+import std/string
+
+extern "C" {
+    fun raven_int_to_float(x: Int) -> Float
+    fun raven_float_to_int(x: Float) -> Int
+}
+
+// The JSON value tree. Construct variants with the qualified form
+// (`JsonValue.Null`, `JsonValue.Number(1.0)`, ...); match with the bare
+// variant names. Object preserves insertion order through the underlying
+// Map's parallel key and value lists.
+enum JsonValue {
+    Null,
+    Bool(Bool),
+    Number(Float),
+    Str(String),
+    Array(List<JsonValue>),
+    Object(Map<String, JsonValue>),
+}
+
+// A JsonError is an std/error `Error` tagged with kind "json". Raven has
+// no type alias and a bundled module cannot call another bundled module's
+// free functions, so the struct literal is built directly here.
+fun json_error(msg: String) -> Error {
+    return Error { kind: "json", message: msg }
+}
+
+// Parser cursor: the input bytes and the current byte offset. A shared
+// Cursor is threaded through the recursive helpers, which advance it by
+// mutating `pos`.
+struct Cursor {
+    text: String,
+    pos: Int,
+}
+
+impl Cursor {
+    fun at_end(self) -> Bool {
+        return self.pos >= __str_len(self.text)
+    }
+
+    // Current byte, or -1 at end of input.
+    fun peek(self) -> Int {
+        if self.pos >= __str_len(self.text) {
+            return -1
+        }
+        return __str_byte_at(self.text, self.pos)
+    }
+
+    fun advance(self) {
+        self.pos = self.pos + 1
+    }
+
+    fun skip_ws(self) {
+        let scanning = true
+        while scanning {
+            let b = self.peek()
+            if b == 32 {
+                self.pos = self.pos + 1
+            } else if b == 9 {
+                self.pos = self.pos + 1
+            } else if b == 10 {
+                self.pos = self.pos + 1
+            } else if b == 13 {
+                self.pos = self.pos + 1
+            } else {
+                scanning = false
+            }
+        }
+    }
+}
+
+fun is_digit(b: Int) -> Bool {
+    return b >= 48 && b <= 57
+}
+
+// Append the UTF-8 encoding of a Unicode code point to `out`.
+fun encode_utf8(out: String, cp: Int) -> String {
+    if cp < 128 {
+        return __str_concat(out, __str_from_byte(cp))
+    }
+    if cp < 2048 {
+        let b0 = 192 | (cp >> 6)
+        let b1 = 128 | (cp & 63)
+        return __str_concat(__str_concat(out, __str_from_byte(b0)), __str_from_byte(b1))
+    }
+    if cp < 65536 {
+        let b0 = 224 | (cp >> 12)
+        let b1 = 128 | ((cp >> 6) & 63)
+        let b2 = 128 | (cp & 63)
+        let r = __str_concat(out, __str_from_byte(b0))
+        r = __str_concat(r, __str_from_byte(b1))
+        return __str_concat(r, __str_from_byte(b2))
+    }
+    let b0 = 240 | (cp >> 18)
+    let b1 = 128 | ((cp >> 12) & 63)
+    let b2 = 128 | ((cp >> 6) & 63)
+    let b3 = 128 | (cp & 63)
+    let r = __str_concat(out, __str_from_byte(b0))
+    r = __str_concat(r, __str_from_byte(b1))
+    r = __str_concat(r, __str_from_byte(b2))
+    return __str_concat(r, __str_from_byte(b3))
+}
+
+// Value of one hex digit byte, or -1 when it is not a hex digit.
+fun hex_nibble(b: Int) -> Int {
+    if b >= 48 && b <= 57 {
+        return b - 48
+    }
+    if b >= 97 && b <= 102 {
+        return b - 87
+    }
+    if b >= 65 && b <= 70 {
+        return b - 55
+    }
+    return -1
+}
+
+// Read four hex digits starting at the cursor, returning the 16-bit code
+// unit or -1 on a non-hex digit or short input. Advances the cursor over
+// the digits read.
+fun read_hex4(c: Cursor) -> Int {
+    let value = 0
+    let i = 0
+    while i < 4 {
+        let n = hex_nibble(c.peek())
+        if n < 0 {
+            return -1
+        }
+        value = (value << 4) | n
+        c.advance()
+        i = i + 1
+    }
+    return value
+}
+
+// Parse the body of a string literal after the opening quote. Returns the
+// decoded String, or an Err on a bad escape or unterminated input. The
+// cursor ends just past the closing quote.
+fun parse_string(c: Cursor) -> Result<String, Error> {
+    let out = ""
+    let scanning = true
+    while scanning {
+        if c.at_end() {
+            return Err(json_error("unterminated string"))
+        }
+        let b = c.peek()
+        c.advance()
+        if b == 34 {
+            scanning = false
+        } else if b == 92 {
+            let e = c.peek()
+            c.advance()
+            if e == 34 {
+                out = __str_concat(out, __str_from_byte(34))
+            } else if e == 92 {
+                out = __str_concat(out, __str_from_byte(92))
+            } else if e == 47 {
+                out = __str_concat(out, __str_from_byte(47))
+            } else if e == 98 {
+                out = __str_concat(out, __str_from_byte(8))
+            } else if e == 102 {
+                out = __str_concat(out, __str_from_byte(12))
+            } else if e == 110 {
+                out = __str_concat(out, __str_from_byte(10))
+            } else if e == 114 {
+                out = __str_concat(out, __str_from_byte(13))
+            } else if e == 116 {
+                out = __str_concat(out, __str_from_byte(9))
+            } else if e == 117 {
+                let cp = read_hex4(c)
+                if cp < 0 {
+                    return Err(json_error("bad unicode escape"))
+                }
+                if cp >= 55296 && cp <= 56319 {
+                    // High surrogate: decode an astral code point when a
+                    // low surrogate follows, else emit U+FFFD.
+                    if c.peek() == 92 {
+                        c.advance()
+                        if c.peek() == 117 {
+                            c.advance()
+                            let low = read_hex4(c)
+                            if low >= 56320 && low <= 57343 {
+                                let astral = 65536 + ((cp - 55296) << 10) + (low - 56320)
+                                out = encode_utf8(out, astral)
+                            } else {
+                                out = encode_utf8(out, 65533)
+                            }
+                        } else {
+                            out = encode_utf8(out, 65533)
+                        }
+                    } else {
+                        out = encode_utf8(out, 65533)
+                    }
+                } else if cp >= 56320 && cp <= 57343 {
+                    out = encode_utf8(out, 65533)
+                } else {
+                    out = encode_utf8(out, cp)
+                }
+            } else {
+                return Err(json_error("bad escape"))
+            }
+        } else {
+            out = __str_concat(out, __str_from_byte(b))
+        }
+    }
+    return Ok(out)
+}
+
+// Parse a JSON number into a Float. The cursor is positioned at the first
+// byte of the number (an optional minus or a digit). Integer digits build
+// a Float through raven_int_to_float; fraction digits divide by powers of
+// ten; an exponent scales the result.
+fun parse_number(c: Cursor) -> Result<Float, Error> {
+    let negative = false
+    if c.peek() == 45 {
+        negative = true
+        c.advance()
+    }
+    if !is_digit(c.peek()) {
+        return Err(json_error("invalid number"))
+    }
+    let int_value = 0.0
+    while is_digit(c.peek()) {
+        let d = c.peek() - 48
+        int_value = int_value * 10.0 + raven_int_to_float(d)
+        c.advance()
+    }
+    let value = int_value
+    if c.peek() == 46 {
+        c.advance()
+        if !is_digit(c.peek()) {
+            return Err(json_error("invalid fraction"))
+        }
+        let scale = 1.0
+        let frac = 0.0
+        while is_digit(c.peek()) {
+            let d = c.peek() - 48
+            frac = frac * 10.0 + raven_int_to_float(d)
+            scale = scale * 10.0
+            c.advance()
+        }
+        value = value + frac / scale
+    }
+    let e = c.peek()
+    if e == 101 || e == 69 {
+        c.advance()
+        let exp_negative = false
+        if c.peek() == 43 {
+            c.advance()
+        } else if c.peek() == 45 {
+            exp_negative = true
+            c.advance()
+        }
+        if !is_digit(c.peek()) {
+            return Err(json_error("invalid exponent"))
+        }
+        let exp = 0
+        while is_digit(c.peek()) {
+            exp = exp * 10 + (c.peek() - 48)
+            c.advance()
+        }
+        let factor = 1.0
+        let i = 0
+        while i < exp {
+            factor = factor * 10.0
+            i = i + 1
+        }
+        if exp_negative {
+            value = value / factor
+        } else {
+            value = value * factor
+        }
+    }
+    if negative {
+        value = 0.0 - value
+    }
+    return Ok(value)
+}
+
+// True when the next bytes spell `word`; advances over them on a match.
+fun match_keyword(c: Cursor, word: String) -> Bool {
+    let n = __str_len(word)
+    let i = 0
+    while i < n {
+        if __str_byte_at(c.text, c.pos + i) != __str_byte_at(word, i) {
+            return false
+        }
+        i = i + 1
+    }
+    c.pos = c.pos + n
+    return true
+}
+
+fun parse_value(c: Cursor) -> Result<JsonValue, Error> {
+    c.skip_ws()
+    let b = c.peek()
+    if b == 123 {
+        return parse_object(c)
+    }
+    if b == 91 {
+        return parse_array(c)
+    }
+    if b == 34 {
+        c.advance()
+        let s = parse_string(c)?
+        return Ok(JsonValue.Str(s))
+    }
+    if b == 116 {
+        if match_keyword(c, "true") {
+            return Ok(JsonValue.Bool(true))
+        }
+        return Err(json_error("invalid token"))
+    }
+    if b == 102 {
+        if match_keyword(c, "false") {
+            return Ok(JsonValue.Bool(false))
+        }
+        return Err(json_error("invalid token"))
+    }
+    if b == 110 {
+        if match_keyword(c, "null") {
+            return Ok(JsonValue.Null)
+        }
+        return Err(json_error("invalid token"))
+    }
+    if b == 45 || is_digit(b) {
+        let n = parse_number(c)?
+        return Ok(JsonValue.Number(n))
+    }
+    return Err(json_error("unexpected byte at offset ".concat(offset_str(c.pos))))
+}
+
+fun parse_array(c: Cursor) -> Result<JsonValue, Error> {
+    c.advance()
+    let items: List<JsonValue> = []
+    c.skip_ws()
+    if c.peek() == 93 {
+        c.advance()
+        return Ok(JsonValue.Array(items))
+    }
+    let scanning = true
+    while scanning {
+        let v = parse_value(c)?
+        items.push(v)
+        c.skip_ws()
+        let b = c.peek()
+        if b == 44 {
+            c.advance()
+        } else if b == 93 {
+            c.advance()
+            scanning = false
+        } else {
+            return Err(json_error("expected , or ] in array"))
+        }
+    }
+    return Ok(JsonValue.Array(items))
+}
+
+fun parse_object(c: Cursor) -> Result<JsonValue, Error> {
+    c.advance()
+    let map: Map<String, JsonValue> = Map.new()
+    c.skip_ws()
+    if c.peek() == 125 {
+        c.advance()
+        return Ok(JsonValue.Object(map))
+    }
+    let scanning = true
+    while scanning {
+        c.skip_ws()
+        if c.peek() != 34 {
+            return Err(json_error("expected string key in object"))
+        }
+        c.advance()
+        let key = parse_string(c)?
+        c.skip_ws()
+        if c.peek() != 58 {
+            return Err(json_error("expected : in object"))
+        }
+        c.advance()
+        let v = parse_value(c)?
+        map.set(key, v)
+        c.skip_ws()
+        let b = c.peek()
+        if b == 44 {
+            c.advance()
+        } else if b == 125 {
+            c.advance()
+            scanning = false
+        } else {
+            return Err(json_error("expected , or } in object"))
+        }
+    }
+    return Ok(JsonValue.Object(map))
+}
+
+// Render a non-negative byte offset as decimal.
+fun offset_str(n: Int) -> String {
+    if n == 0 {
+        return "0"
+    }
+    let digits = ""
+    let v = n
+    while v > 0 {
+        digits = __str_concat(__str_from_byte(48 + (v - (v / 10) * 10)), digits)
+        v = v / 10
+    }
+    return digits
+}
+
+// Parse `text` as a single JSON value. Trailing content other than
+// whitespace after the top-level value is rejected.
+fun parse(text: String) -> Result<JsonValue, Error> {
+    let c = Cursor { text: text, pos: 0 }
+    let v = parse_value(c)?
+    c.skip_ws()
+    if !c.at_end() {
+        return Err(json_error("trailing content at offset ".concat(offset_str(c.pos))))
+    }
+    return Ok(v)
+}
+
+// Append the JSON string escaping of `s` (without surrounding quotes) to
+// `out`. Control bytes below 0x20 become \uXXXX; quote and backslash are
+// escaped; every other byte passes through unchanged.
+fun escape_string(out: String, s: String) -> String {
+    let n = __str_len(s)
+    let i = 0
+    let r = out
+    while i < n {
+        let b = __str_byte_at(s, i)
+        if b == 34 {
+            r = __str_concat(r, "\\\"")
+        } else if b == 92 {
+            r = __str_concat(r, "\\\\")
+        } else if b == 8 {
+            r = __str_concat(r, "\\b")
+        } else if b == 12 {
+            r = __str_concat(r, "\\f")
+        } else if b == 10 {
+            r = __str_concat(r, "\\n")
+        } else if b == 13 {
+            r = __str_concat(r, "\\r")
+        } else if b == 9 {
+            r = __str_concat(r, "\\t")
+        } else if b < 32 {
+            r = __str_concat(r, "\\u00")
+            r = __str_concat(r, __str_from_byte(hex_digit(b >> 4)))
+            r = __str_concat(r, __str_from_byte(hex_digit(b & 15)))
+        } else {
+            r = __str_concat(r, __str_from_byte(b))
+        }
+        i = i + 1
+    }
+    return r
+}
+
+fun hex_digit(v: Int) -> Int {
+    if v < 10 {
+        return 48 + v
+    }
+    return 87 + v
+}
+
+// Compact (non-pretty) serialization. A whole-number Float renders the way
+// the runtime's Float-to-string does (for example 1 prints as `1`).
+fun stringify(value: JsonValue) -> String {
+    return match value {
+        Null -> "null",
+        Bool(b) -> {
+            if b {
+                "true"
+            } else {
+                "false"
+            }
+        },
+        Number(n) -> n.to_string(),
+        Str(s) -> {
+            let q = __str_concat("\"", escape_string("", s))
+            __str_concat(q, "\"")
+        },
+        Array(items) -> {
+            let out = "["
+            let i = 0
+            let n = items.len()
+            while i < n {
+                if i > 0 {
+                    out = __str_concat(out, ",")
+                }
+                out = __str_concat(out, stringify(items[i]))
+                i = i + 1
+            }
+            __str_concat(out, "]")
+        },
+        Object(map) -> {
+            let out = "{"
+            let keys = map.keys()
+            let values = map.values()
+            let i = 0
+            let n = keys.len()
+            while i < n {
+                if i > 0 {
+                    out = __str_concat(out, ",")
+                }
+                let kq = __str_concat("\"", escape_string("", keys[i]))
+                out = __str_concat(out, __str_concat(kq, "\":"))
+                out = __str_concat(out, stringify(values[i]))
+                i = i + 1
+            }
+            __str_concat(out, "}")
+        },
+    }
+}
+
+// The accessor methods forward to free functions that take the value as a
+// plain parameter. Matching a `self` receiver and then reading the bound
+// payload hits a back-end limitation that corrupts the extracted value, so
+// every payload-reading accessor goes through a free helper.
+impl JsonValue {
+    fun is_null(self) -> Bool {
+        return value_is_null(self)
+    }
+
+    fun as_bool(self) -> Option<Bool> {
+        return value_as_bool(self)
+    }
+
+    fun as_number(self) -> Option<Float> {
+        return value_as_number(self)
+    }
+
+    fun as_string(self) -> Option<String> {
+        return value_as_string(self)
+    }
+
+    // Object member by key, or None when the value is not an object or the
+    // key is absent.
+    fun get(self, key: String) -> Option<JsonValue> {
+        return object_get(self, key)
+    }
+
+    // Array element by index, or None when out of range or not an array.
+    fun at(self, i: Int) -> Option<JsonValue> {
+        return array_at(self, i)
+    }
+}
+
+fun value_is_null(value: JsonValue) -> Bool {
+    return match value {
+        Null -> true,
+        _ -> false,
+    }
+}
+
+fun value_as_bool(value: JsonValue) -> Option<Bool> {
+    return match value {
+        Bool(b) -> Some(b),
+        _ -> None,
+    }
+}
+
+fun value_as_number(value: JsonValue) -> Option<Float> {
+    return match value {
+        Number(n) -> Some(n),
+        _ -> None,
+    }
+}
+
+fun value_as_string(value: JsonValue) -> Option<String> {
+    return match value {
+        Str(s) -> Some(s),
+        _ -> None,
+    }
+}
+
+fun object_get(value: JsonValue, key: String) -> Option<JsonValue> {
+    return match value {
+        Object(map) -> map.get(key),
+        _ -> None,
+    }
+}
+
+fun array_at(value: JsonValue, i: Int) -> Option<JsonValue> {
+    return match value {
+        Array(items) -> {
+            if i < 0 {
+                None
+            } else if i >= items.len() {
+                None
+            } else {
+                Some(items[i])
+            }
+        },
+        _ -> None,
+    }
+}
+
+// ----- JSON serialization traits -----
+//
+// `ToJson` turns a value into a `JsonValue`; pair it with `stringify` for a
+// String. `FromJson` reads a `JsonValue` back, returning an `Error` when the
+// shape does not match. `from_json` is an associated function: call it as
+// `Point.from_json(j)` for a user type, or route a field through the generic
+// `from_json_value` helper so the type parameter selects the impl.
+//
+// `@derive(ToJson, FromJson)` synthesizes these for user structs and enums.
+// See docs/v2/specs/derive.md for the struct/enum JSON encodings.
+
+trait ToJson {
+    fun to_json(self) -> JsonValue
+}
+
+trait FromJson {
+    fun from_json(j: JsonValue) -> Result<Self, Error>
+}
+
+// Decode `j` as a `T`, with `T` chosen by the expected result type, so
+// scalar, List, Option, and user-type members decode uniformly through one
+// call (`T.from_json` dispatches on the type parameter). The built-in List
+// and Option impls use it; a hand-written FromJson impl can too.
+fun from_json_value<T: FromJson>(j: JsonValue) -> Result<T, Error> {
+    return T.from_json(j)
+}
+
+// Read object member `key`, or an Err when `j` is not an object or the key
+// is absent. Useful in a hand-written `from_json` to fetch a field before
+// decoding it (`@derive(FromJson)` emits its own equivalent helper).
+fun json_field(j: JsonValue, key: String) -> Result<JsonValue, Error> {
+    return match object_get(j, key) {
+        Some(v) -> Ok(v),
+        None -> Err(json_error("missing field ".concat(key))),
+    }
+}
+
+// ----- Built-in ToJson/FromJson impls -----
+//
+// These bottom out field recursion. Int and Float both serialize to a JSON
+// number; an Int round-trips through Float and loses precision beyond 2^53
+// (the IEEE 754 double mantissa). Bool maps to a JSON bool, String to a JSON
+// string, List<T> to a JSON array, and Option<T> to null or the inner value.
+
+impl ToJson for Int {
+    fun to_json(self) -> JsonValue {
+        return JsonValue.Number(raven_int_to_float(self))
+    }
+}
+
+impl FromJson for Int {
+    fun from_json(j: JsonValue) -> Result<Int, Error> {
+        return match j {
+            Number(n) -> Ok(raven_float_to_int(n)),
+            _ -> Err(json_error("expected a number")),
+        }
+    }
+}
+
+impl ToJson for Float {
+    fun to_json(self) -> JsonValue {
+        return JsonValue.Number(self)
+    }
+}
+
+impl FromJson for Float {
+    fun from_json(j: JsonValue) -> Result<Float, Error> {
+        return match j {
+            Number(n) -> Ok(n),
+            _ -> Err(json_error("expected a number")),
+        }
+    }
+}
+
+impl ToJson for Bool {
+    fun to_json(self) -> JsonValue {
+        return JsonValue.Bool(self)
+    }
+}
+
+impl FromJson for Bool {
+    fun from_json(j: JsonValue) -> Result<Bool, Error> {
+        return match j {
+            Bool(b) -> Ok(b),
+            _ -> Err(json_error("expected a bool")),
+        }
+    }
+}
+
+impl ToJson for String {
+    fun to_json(self) -> JsonValue {
+        return JsonValue.Str(self)
+    }
+}
+
+impl FromJson for String {
+    fun from_json(j: JsonValue) -> Result<String, Error> {
+        return match j {
+            Str(s) -> Ok(s),
+            _ -> Err(json_error("expected a string")),
+        }
+    }
+}
+
+impl<T: ToJson> ToJson for List<T> {
+    fun to_json(self) -> JsonValue {
+        let items: List<JsonValue> = []
+        let i = 0
+        let n = self.len()
+        while i < n {
+            items.push(self[i].to_json())
+            i = i + 1
+        }
+        return JsonValue.Array(items)
+    }
+}
+
+impl<T: FromJson> FromJson for List<T> {
+    fun from_json(j: JsonValue) -> Result<List<T>, Error> {
+        return list_from_json(j)
+    }
+}
+
+// The List FromJson body lives in a free function: matching a `self`-less
+// JsonValue payload and pushing decoded elements through the generic helper
+// keeps the element type inference straightforward.
+fun list_from_json<T: FromJson>(j: JsonValue) -> Result<List<T>, Error> {
+    return match j {
+        Array(items) -> {
+            let out: List<T> = []
+            let i = 0
+            let n = items.len()
+            while i < n {
+                let elem: T = from_json_value(items[i])?
+                out.push(elem)
+                i = i + 1
+            }
+            Ok(out)
+        },
+        _ -> Err(json_error("expected an array")),
+    }
+}
+
+impl<T: ToJson> ToJson for Option<T> {
+    fun to_json(self) -> JsonValue {
+        return match self {
+            Some(v) -> v.to_json(),
+            None -> JsonValue.Null,
+        }
+    }
+}
+
+impl<T: FromJson> FromJson for Option<T> {
+    fun from_json(j: JsonValue) -> Result<Option<T>, Error> {
+        return option_from_json(j)
+    }
+}
+
+fun option_from_json<T: FromJson>(j: JsonValue) -> Result<Option<T>, Error> {
+    return match j {
+        Null -> Ok(None),
+        _ -> {
+            let v: T = from_json_value(j)?
+            Ok(Some(v))
+        },
+    }
+}

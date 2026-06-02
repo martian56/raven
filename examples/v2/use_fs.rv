@@ -1,0 +1,40 @@
+// golden:skip
+import std/fs { write, read, append, size, exists, is_file, is_dir, remove_file }
+import std/io { println }
+
+fun main() {
+    let path = "raven_fs_smoke_7Q.txt"
+
+    match write(path, "hello") {
+        Ok(_) -> println("wrote"),
+        Err(e) -> println("write failed"),
+    }
+    println("${exists(path)}")
+    println("${is_file(path)}")
+    println("${is_dir(path)}")
+    match read(path) {
+        Ok(s) -> println(s),
+        Err(e) -> println("read failed"),
+    }
+    match append(path, " world") {
+        Ok(_) -> println("appended"),
+        Err(e) -> println("append failed"),
+    }
+    match read(path) {
+        Ok(s) -> println(s),
+        Err(e) -> println("read failed"),
+    }
+    match size(path) {
+        Ok(n) -> println("${n}"),
+        Err(e) -> println("size failed"),
+    }
+    match remove_file(path) {
+        Ok(_) -> println("removed"),
+        Err(e) -> println("remove failed"),
+    }
+    println("${exists(path)}")
+    match read("raven_fs_definitely_missing_7Q.txt") {
+        Ok(s) -> println(s),
+        Err(e) -> println("read failed"),
+    }
+}

@@ -1,0 +1,9 @@
+fun id_int(x: Int) -> Int = x
+
+fun id_str(x: String) -> String = x
+
+fun caller() -> Int {
+    let a = id_int(1);
+    let b = id_str("hi");
+    return a
+}

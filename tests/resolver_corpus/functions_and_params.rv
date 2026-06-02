@@ -1,0 +1,3 @@
+fun add(a: Int, b: Int) -> Int = a + b
+fun mul(a: Int, b: Int) -> Int = a * b
+fun mix(a: Int, b: Int) -> Int = add(a, b) + mul(a, b)

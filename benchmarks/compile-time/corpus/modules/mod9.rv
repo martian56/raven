@@ -1,0 +1,159 @@
+import std/string
+
+struct Vec2_9 { x: Int, y: Int }
+
+impl Vec2_9 {
+    fun add(self, o: Vec2_9) -> Vec2_9 {
+        return Vec2_9 { x: self.x + o.x, y: self.y + o.y }
+    }
+    fun scale(self, k: Int) -> Vec2_9 {
+        return Vec2_9 { x: self.x * k, y: self.y * k }
+    }
+    fun magnitude_sq(self) -> Int {
+        return self.x * self.x + self.y * self.y
+    }
+}
+
+struct Node_9 { id: Int, weight: Int, label: String }
+
+impl Node_9 {
+    fun heavier(self, other: Node_9) -> Bool {
+        return self.weight > other.weight
+    }
+    fun retag(self, n: String) -> Node_9 {
+        return Node_9 { id: self.id, weight: self.weight, label: n }
+    }
+}
+
+enum Shape_9 {
+    Circle,
+    Square,
+    Triangle,
+    Hexagon,
+}
+
+fun classify_9(s: Shape_9) -> Int {
+    return match s {
+        Circle -> 18,
+        Square -> 18 * 2,
+        Triangle -> 18 * 3,
+        Hexagon -> 18 * 6,
+    }
+}
+
+enum Outcome_9 {
+    Pass,
+    Fail,
+    Skip,
+}
+
+fun grade_9(score: Int) -> Outcome_9 {
+    if score >= 60 {
+        return Outcome_9.Pass
+    }
+    if score >= 30 {
+        return Outcome_9.Skip
+    }
+    return Outcome_9.Fail
+}
+
+fun grade_points_9(o: Outcome_9) -> Int {
+    return match o {
+        Pass -> 100,
+        Fail -> 0,
+        Skip -> 50,
+    }
+}
+
+struct Pair_9<T> { first: T, second: T }
+
+impl<T> Pair_9<T> {
+    fun left(self) -> T = self.first
+    fun right(self) -> T = self.second
+}
+
+struct Wrap_9<T> { inner: T }
+
+impl<T> Wrap_9<T> {
+    fun get(self) -> T = self.inner
+    fun mapped<U>(self, f: fun(T) -> U) -> U = f(self.inner)
+}
+
+trait Score_9 {
+    fun score(self) -> Int
+}
+
+impl Score_9 for Node_9 {
+    fun score(self) -> Int = self.id * 10 + self.weight
+}
+
+impl Score_9 for Vec2_9 {
+    fun score(self) -> Int = self.magnitude_sq()
+}
+
+fun ranked_9<T: Score_9>(x: T) -> Int = x.score()
+
+fun identity_9<T>(x: T) -> T = x
+
+fun maybe_9(n: Int) -> Option<Int> {
+    if n > 18 {
+        return Some(n * 2)
+    }
+    return None
+}
+
+fun unwrap_or_9(x: Option<Int>, fallback: Int) -> Int {
+    return match x {
+        None -> fallback,
+        Some(v) -> v,
+    }
+}
+
+fun accumulate_9(limit: Int) -> Int {
+    let total = 0
+    let i = 0
+    while i < limit {
+        if i % 2 == 0 {
+            total = total + i
+        } else {
+            total = total - 1
+        }
+        i = i + 1
+    }
+    return total
+}
+
+fun sweep_9(limit: Int) -> Int {
+    let total = 0
+    for k in 0..limit {
+        total = total + classify_9(Shape_9.Triangle) + k
+    }
+    return total
+}
+
+fun fib_9(n: Int) -> Int {
+    if n < 2 {
+        return n
+    }
+    return fib_9(n - 1) + fib_9(n - 2)
+}
+
+fun compute_9(seed: Int) -> Int {
+    let v = Vec2_9 { x: seed, y: seed + 18 }
+    let w = v.add(Vec2_9 { x: 2, y: 3 }).scale(2)
+    let node = Node_9 { id: seed, weight: 18, label: "n" }
+    let tagged = node.retag("tagged")
+    let p = Pair_9 { first: w.x, second: w.y }
+    let q = Pair_9 { first: tagged.label, second: "z" }
+    let boxed = Wrap_9 { inner: seed }
+    let doubled = boxed.mapped(fun(x: Int) -> Int = x * 2)
+    let big = boxed.mapped(fun(x: Int) -> Bool = x > 18)
+    let m = unwrap_or_9(maybe_9(seed), 0)
+    let g = grade_points_9(grade_9(seed))
+    let r = ranked_9(tagged) + ranked_9(v)
+    let extra = if big { 1 } else { 0 }
+    return p.left() + p.right() + w.magnitude_sq() + identity_9(doubled)
+        + m + g + r + accumulate_9(18) + sweep_9(18)
+        + fib_9(8) + classify_9(Shape_9.Hexagon) + extra
+        + q.left().length()
+}

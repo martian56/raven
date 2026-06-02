@@ -1,0 +1,159 @@
+import std/string
+
+struct Vec2_21 { x: Int, y: Int }
+
+impl Vec2_21 {
+    fun add(self, o: Vec2_21) -> Vec2_21 {
+        return Vec2_21 { x: self.x + o.x, y: self.y + o.y }
+    }
+    fun scale(self, k: Int) -> Vec2_21 {
+        return Vec2_21 { x: self.x * k, y: self.y * k }
+    }
+    fun magnitude_sq(self) -> Int {
+        return self.x * self.x + self.y * self.y
+    }
+}
+
+struct Node_21 { id: Int, weight: Int, label: String }
+
+impl Node_21 {
+    fun heavier(self, other: Node_21) -> Bool {
+        return self.weight > other.weight
+    }
+    fun retag(self, n: String) -> Node_21 {
+        return Node_21 { id: self.id, weight: self.weight, label: n }
+    }
+}
+
+enum Shape_21 {
+    Circle,
+    Square,
+    Triangle,
+    Hexagon,
+}
+
+fun classify_21(s: Shape_21) -> Int {
+    return match s {
+        Circle -> 10,
+        Square -> 10 * 2,
+        Triangle -> 10 * 3,
+        Hexagon -> 10 * 6,
+    }
+}
+
+enum Outcome_21 {
+    Pass,
+    Fail,
+    Skip,
+}
+
+fun grade_21(score: Int) -> Outcome_21 {
+    if score >= 60 {
+        return Outcome_21.Pass
+    }
+    if score >= 30 {
+        return Outcome_21.Skip
+    }
+    return Outcome_21.Fail
+}
+
+fun grade_points_21(o: Outcome_21) -> Int {
+    return match o {
+        Pass -> 100,
+        Fail -> 0,
+        Skip -> 50,
+    }
+}
+
+struct Pair_21<T> { first: T, second: T }
+
+impl<T> Pair_21<T> {
+    fun left(self) -> T = self.first
+    fun right(self) -> T = self.second
+}
+
+struct Wrap_21<T> { inner: T }
+
+impl<T> Wrap_21<T> {
+    fun get(self) -> T = self.inner
+    fun mapped<U>(self, f: fun(T) -> U) -> U = f(self.inner)
+}
+
+trait Score_21 {
+    fun score(self) -> Int
+}
+
+impl Score_21 for Node_21 {
+    fun score(self) -> Int = self.id * 10 + self.weight
+}
+
+impl Score_21 for Vec2_21 {
+    fun score(self) -> Int = self.magnitude_sq()
+}
+
+fun ranked_21<T: Score_21>(x: T) -> Int = x.score()
+
+fun identity_21<T>(x: T) -> T = x
+
+fun maybe_21(n: Int) -> Option<Int> {
+    if n > 10 {
+        return Some(n * 2)
+    }
+    return None
+}
+
+fun unwrap_or_21(x: Option<Int>, fallback: Int) -> Int {
+    return match x {
+        None -> fallback,
+        Some(v) -> v,
+    }
+}
+
+fun accumulate_21(limit: Int) -> Int {
+    let total = 0
+    let i = 0
+    while i < limit {
+        if i % 2 == 0 {
+            total = total + i
+        } else {
+            total = total - 1
+        }
+        i = i + 1
+    }
+    return total
+}
+
+fun sweep_21(limit: Int) -> Int {
+    let total = 0
+    for k in 0..limit {
+        total = total + classify_21(Shape_21.Triangle) + k
+    }
+    return total
+}
+
+fun fib_21(n: Int) -> Int {
+    if n < 2 {
+        return n
+    }
+    return fib_21(n - 1) + fib_21(n - 2)
+}
+
+fun compute_21(seed: Int) -> Int {
+    let v = Vec2_21 { x: seed, y: seed + 10 }
+    let w = v.add(Vec2_21 { x: 2, y: 3 }).scale(2)
+    let node = Node_21 { id: seed, weight: 10, label: "n" }
+    let tagged = node.retag("tagged")
+    let p = Pair_21 { first: w.x, second: w.y }
+    let q = Pair_21 { first: tagged.label, second: "z" }
+    let boxed = Wrap_21 { inner: seed }
+    let doubled = boxed.mapped(fun(x: Int) -> Int = x * 2)
+    let big = boxed.mapped(fun(x: Int) -> Bool = x > 10)
+    let m = unwrap_or_21(maybe_21(seed), 0)
+    let g = grade_points_21(grade_21(seed))
+    let r = ranked_21(tagged) + ranked_21(v)
+    let extra = if big { 1 } else { 0 }
+    return p.left() + p.right() + w.magnitude_sq() + identity_21(doubled)
+        + m + g + r + accumulate_21(10) + sweep_21(10)
+        + fib_21(8) + classify_21(Shape_21.Hexagon) + extra
+        + q.left().length()
+}

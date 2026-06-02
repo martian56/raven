@@ -1,0 +1,188 @@
+// std/core: the prelude, auto-imported into every program. See
+// docs/v2/specs/core-traits.md.
+
+trait ToString {
+    fun to_string(self) -> String
+}
+
+trait Eq {
+    fun equals(self, other: Self) -> Bool
+}
+
+trait Ord {
+    // Negative when self < other, zero when equal, positive when self > other.
+    fun compare(self, other: Self) -> Int
+}
+
+trait Hash {
+    fun hash(self) -> Int
+}
+
+trait Iterator<T> {
+    fun next(self) -> Option<T>
+}
+
+impl ToString for Int {
+    fun to_string(self) -> String = "${self}"
+}
+
+impl ToString for Float {
+    fun to_string(self) -> String = "${self}"
+}
+
+impl ToString for Bool {
+    fun to_string(self) -> String = "${self}"
+}
+
+impl ToString for Char {
+    fun to_string(self) -> String = "${self}"
+}
+
+// `String` is already text: `to_string` is the identity.
+impl ToString for String {
+    fun to_string(self) -> String = self
+}
+
+// ----- Eq for the built-in scalar types -----
+
+impl Eq for Int {
+    fun equals(self, other: Int) -> Bool = self == other
+}
+
+impl Eq for Float {
+    fun equals(self, other: Float) -> Bool = self == other
+}
+
+impl Eq for Bool {
+    fun equals(self, other: Bool) -> Bool = self == other
+}
+
+impl Eq for Char {
+    fun equals(self, other: Char) -> Bool = self == other
+}
+
+impl Eq for String {
+    fun equals(self, other: String) -> Bool {
+        let a = __str_len(self)
+        let b = __str_len(other)
+        if a != b {
+            return false
+        }
+        let i = 0
+        while i < a {
+            if __str_byte_at(self, i) != __str_byte_at(other, i) {
+                return false
+            }
+            i = i + 1
+        }
+        true
+    }
+}
+
+// ----- Ord for the built-in scalar types -----
+
+impl Ord for Int {
+    fun compare(self, other: Int) -> Int {
+        if self < other {
+            return -1
+        }
+        if self > other {
+            return 1
+        }
+        0
+    }
+}
+
+impl Ord for Float {
+    fun compare(self, other: Float) -> Int {
+        if self < other {
+            return -1
+        }
+        if self > other {
+            return 1
+        }
+        0
+    }
+}
+
+impl Ord for Char {
+    fun compare(self, other: Char) -> Int {
+        if self < other {
+            return -1
+        }
+        if self > other {
+            return 1
+        }
+        0
+    }
+}
+
+// `false` sorts before `true`, matching the usual boolean ordering.
+impl Ord for Bool {
+    fun compare(self, other: Bool) -> Int {
+        if self == other {
+            return 0
+        }
+        if other {
+            return -1
+        }
+        1
+    }
+}
+
+impl Ord for String {
+    fun compare(self, other: String) -> Int {
+        let a = __str_len(self)
+        let b = __str_len(other)
+        let limit = a
+        if b < a {
+            limit = b
+        }
+        let i = 0
+        while i < limit {
+            let ca = __str_byte_at(self, i)
+            let cb = __str_byte_at(other, i)
+            if ca < cb {
+                return -1
+            }
+            if ca > cb {
+                return 1
+            }
+            i = i + 1
+        }
+        if a < b {
+            return -1
+        }
+        if a > b {
+            return 1
+        }
+        0
+    }
+}
+
+// Hash for Char is deferred until a Char-to-Int primitive lands.
+impl Hash for Int {
+    fun hash(self) -> Int = self
+}
+
+impl Hash for Bool {
+    fun hash(self) -> Int {
+        if self {
+            return 1
+        }
+        0
+    }
+}
+
+impl Hash for String {
+    fun hash(self) -> Int {
+        let n = __str_len(self)
+        let h = 0
+        let i = 0
+        while i < n {
+            h = h * 31 + __str_byte_at(self, i)
+            i = i + 1
+        }
+        h
+    }
+}

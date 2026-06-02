@@ -1,0 +1,24 @@
+(hir
+  (fn "bool_to_int" params=("b":Bool) ret=Int
+    (body ty=()
+      (let "n" ty=Int
+        (match ty=Int
+          (ident "b" ty=Bool)
+          (arm
+            (pat true)
+            (int 1 ty=Int)
+          )
+          (arm
+            (pat false)
+            (int 0 ty=Int)
+          )
+        )
+      )
+      (stmt-expr
+        (return ty=<error>
+          (ident "n" ty=Int)
+        )
+      )
+    )
+  )
+)

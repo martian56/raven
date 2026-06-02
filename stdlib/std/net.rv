@@ -1,0 +1,145 @@
+// std/net: TCP client and server over the raven-runtime C ABI. Sockets
+// cannot cross the FFI, so the runtime keeps them in a registry keyed by an
+// opaque integer id and hands Raven that id; TcpStream and TcpListener wrap
+// the id. Fallible ops return Result<T, Error> tagged with kind "net" via
+// the runtime's thread-local last-error slot. A program is a client or a
+// server, not both at once, because Raven v2 has no threads. See
+// docs/v2/specs/std-net.md.
+
+import std/error { error_kind }
+import std/string
+
+struct TcpStream {
+    id: Int,
+}
+
+struct TcpListener {
+    id: Int,
+}
+
+extern "C" {
+    fun raven_net_last_error() -> String
+    fun raven_net_connect(addr: String) -> Int
+    fun raven_net_listen(addr: String) -> Int
+    fun raven_net_accept(listener_id: Int) -> Int
+    fun raven_net_read(stream_id: Int, max: Int) -> String
+    fun raven_net_write(stream_id: Int, data: String) -> Int
+    fun raven_net_close(stream_id: Int)
+    fun raven_net_set_read_timeout_ms(stream_id: Int, ms: Int)
+    fun raven_dns_lookup(host: String) -> String
+    fun raven_net_reachable(addr: String) -> Bool
+}
+
+// An Error tagged with kind "net", its message a context prefix joined to
+// the runtime's last-error text.
+fun net_error(ctx: String) -> Error {
+    return error_kind("net", ctx.concat(": ").concat(raven_net_last_error()))
+}
+
+// Connect a TCP stream to `addr` ("host:port").
+fun connect(addr: String) -> Result<TcpStream, Error> {
+    let id = raven_net_connect(addr)
+    if id == 0 {
+        return Err(net_error("connect"))
+    }
+    if raven_net_last_error().length() > 0 {
+        return Err(net_error("connect"))
+    }
+    return Ok(TcpStream { id: id })
+}
+
+// Bind a TCP listener to `addr` ("host:port").
+fun listen(addr: String) -> Result<TcpListener, Error> {
+    let id = raven_net_listen(addr)
+    if id == 0 {
+        return Err(net_error("listen"))
+    }
+    if raven_net_last_error().length() > 0 {
+        return Err(net_error("listen"))
+    }
+    return Ok(TcpListener { id: id })
+}
+
+impl TcpListener {
+    // Block until a connection arrives and return the accepted stream.
+    fun accept(self) -> Result<TcpStream, Error> {
+        let id = raven_net_accept(self.id)
+        if id == 0 {
+            return Err(net_error("accept"))
+        }
+        if raven_net_last_error().length() > 0 {
+            return Err(net_error("accept"))
+        }
+        return Ok(TcpStream { id: id })
+    }
+}
+
+impl TcpStream {
+    // Read up to `max` bytes, returning them as a String byte buffer. A
+    // clean EOF yields Ok("").
+    fun read(self, max: Int) -> Result<String, Error> {
+        let data = raven_net_read(self.id, max)
+        if raven_net_last_error().length() > 0 {
+            return Err(net_error("read"))
+        }
+        return Ok(data)
+    }
+
+    // Write all bytes of `data`, returning the count written.
+    fun write(self, data: String) -> Result<Int, Error> {
+        let n = raven_net_write(self.id, data)
+        if n < 0 {
+            return Err(net_error("write"))
+        }
+        if raven_net_last_error().length() > 0 {
+            return Err(net_error("write"))
+        }
+        return Ok(n)
+    }
+
+    // Set the read timeout in milliseconds. A value of 0 means no timeout.
+    fun set_read_timeout_ms(self, ms: Int) {
+        raven_net_set_read_timeout_ms(self.id, ms)
+    }
+
+    // Close the stream, releasing the runtime-side socket.
+    fun close(self) {
+        raven_net_close(self.id)
+    }
+}
+
+// Resolve `host` to its IP addresses. An empty result yields an empty list.
+fun dns_lookup(host: String) -> Result<List<String>, Error> {
+    let joined = raven_dns_lookup(host)
+    if raven_net_last_error().length() > 0 {
+        return Err(net_error("dns_lookup"))
+    }
+    return Ok(split_lines(joined))
+}
+
+// Whether `addr` ("host:port") accepts a TCP connection within a short
+// timeout. A non-failing probe: never returns an error.
+fun reachable(addr: String) -> Bool {
+    return raven_net_reachable(addr)
+}
+
+// Split `s` on `\n` into a list. An empty string yields an empty list (not
+// a one-element list of ""), so an empty lookup maps to an empty list.
+fun split_lines(s: String) -> List<String> {
+    let out: List<String> = []
+    if s.length() == 0 {
+        return out
+    }
+    let n = s.length()
+    let start = 0
+    let i = 0
+    while i < n {
+        if s.char_at(i).starts_with("\n") {
+            out.push(s.substring(start, i))
+            start = i + 1
+        }
+        i = i + 1
+    }
+    out.push(s.substring(start, n))
+    return out
+}

@@ -1,0 +1,19 @@
+// golden:skip
+import std/string
+import std/io { println }
+
+fun main() {
+    println("hello".to_upper())
+    println("WORLD".to_lower())
+    println("  spaced  ".trim())
+    println("ab".repeat(3))
+    println("a-b-c".replace("-", "+"))
+    println("raven".substring(1, 4))
+    if "hello world".contains("world") {
+        println("contains: yes")
+    } else {
+        println("contains: no")
+    }
+    print("hello".index_of("llo"))
+    print("hello".index_of("zzz"))
+}

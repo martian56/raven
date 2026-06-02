@@ -1,0 +1,23 @@
+// golden:skip
+import std/net { connect }
+import std/env { get_env }
+import std/io { println }
+
+fun main() {
+    let addr = get_env("RAVEN_NET_ADDR")
+    match connect(addr) {
+        Ok(s) -> {
+            s.set_read_timeout_ms(2000)
+            match s.write("ping") {
+                Ok(n) -> {},
+                Err(e) -> println("write failed"),
+            }
+            match s.read(64) {
+                Ok(data) -> println(data),
+                Err(e) -> println("read failed"),
+            }
+            s.close()
+        },
+        Err(e) -> println("connect failed"),
+    }
+}

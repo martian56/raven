@@ -1,0 +1,41 @@
+// std/test: assertions for writing test programs in Raven. A test is a
+// Raven program whose `main` calls these assertions; a failed assertion
+// calls the runtime panic, aborting with a message and a nonzero exit.
+// There is no discovery or registration framework. See
+// docs/v2/specs/std-test.md.
+
+fun assert(cond: Bool) {
+    if !cond {
+        __panic("assertion failed")
+    }
+}
+
+fun assert_msg(cond: Bool, msg: String) {
+    if !cond {
+        __panic(msg)
+    }
+}
+
+fun assert_true(cond: Bool) {
+    if !cond {
+        __panic("assertion failed: expected true")
+    }
+}
+
+fun assert_false(cond: Bool) {
+    if cond {
+        __panic("assertion failed: expected false")
+    }
+}
+
+fun assert_eq_int(a: Int, b: Int) {
+    if a != b {
+        __panic("assertion failed: ${a} != ${b}")
+    }
+}
+
+fun assert_eq_str(a: String, b: String) {
+    if a != b {
+        __panic("assertion failed: ${a} != ${b}")
+    }
+}

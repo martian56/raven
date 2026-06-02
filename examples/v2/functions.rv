@@ -1,0 +1,14 @@
+// Function definitions, parameters, and return values.
+fun add(a: Int, b: Int) -> Int {
+    return a + b
+}
+
+fun square(n: Int) -> Int = n * n
+
+fun greet(name: String) -> String = "Hello, ${name}!"
+
+fun main() {
+    print(add(7, 8))
+    print(square(6))
+    print(greet("Raven"))
+}

@@ -1,0 +1,33 @@
+// For loops over ranges and lists, lowered to counter and index loops.
+// Compiling and running this prints 10, 15, then 7 on their own lines.
+fun main() {
+    // Range loop: sum 0 + 1 + 2 + 3 + 4 = 10.
+    let sum = 0
+    for x in 0..5 {
+        sum = sum + x
+    }
+    print(sum)            // 10
+
+    // List loop: sum the three elements 3 + 5 + 7 = 15.
+    let xs = [3, 5, 7]
+    let total = 0
+    for v in xs {
+        total = total + v
+    }
+    print(total)          // 15
+
+    // break and continue: continue still advances the counter. Over
+    // 0..10 we skip i == 5 with continue and stop at i == 8 with break,
+    // so we count 0, 1, 2, 3, 4, 6, 7 = 7 iterations.
+    let count = 0
+    for i in 0..10 {
+        if i == 5 {
+            continue
+        }
+        if i == 8 {
+            break
+        }
+        count = count + 1
+    }
+    print(count)          // 7
+}

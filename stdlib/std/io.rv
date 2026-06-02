@@ -1,0 +1,22 @@
+// std/io: standard input and output. The `__io_*` intrinsics are lowered
+// by the compiler to the raven-runtime C ABI symbols.
+
+fun print(s: String) {
+    __io_print_str(s)
+}
+
+fun println(s: String) {
+    __io_println_str(s)
+}
+
+// Print `prompt` with no trailing newline, then read one line from stdin
+// without its newline. Empty at end of input.
+fun input(prompt: String) -> String {
+    __io_print_str(prompt)
+    __io_read_line()
+}
+
+// Read one line from stdin without its newline. Empty at end of input.
+fun read_line() -> String {
+    __io_read_line()
+}

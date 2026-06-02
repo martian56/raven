@@ -1,0 +1,42 @@
+(mir
+  (fn "caller" origin="caller" ret=Int
+    (params)
+    (locals
+      (_0 Int "a" param=false)
+      (_1 Int "call_1" param=false)
+      (_2 String "b" param=false)
+      (_3 String "call_3" param=false)
+    )
+    (entry bb0)
+    (bb0
+      (assign _1 (call "id_int" 1))
+      (assign _0 (use _1))
+      (assign _3 (call "id_str" "hi"))
+      (assign _2 (use _3))
+      (return _0)
+    )
+    (bb1
+      (unreachable)
+    )
+  )
+  (fn "id_str" origin="id_str" ret=String
+    (params (_0: String "x"))
+    (locals
+      (_0 String "x" param=true)
+    )
+    (entry bb0)
+    (bb0
+      (return _0)
+    )
+  )
+  (fn "id_int" origin="id_int" ret=Int
+    (params (_0: Int "x"))
+    (locals
+      (_0 Int "x" param=true)
+    )
+    (entry bb0)
+    (bb0
+      (return _0)
+    )
+  )
+)

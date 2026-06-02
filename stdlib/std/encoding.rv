@@ -1,0 +1,174 @@
+// std/encoding: hex and standard base64 over the bytes of a String.
+// Raven String is a byte buffer; input is treated as raw bytes. See
+// docs/v2/specs/std-encoding.md.
+
+// Map a 0..15 nibble to its lowercase hex digit byte.
+fun hex_digit(v: Int) -> Int {
+    if v < 10 {
+        return 48 + v
+    }
+    return 87 + v
+}
+
+// Map a hex digit byte (0-9, a-f, A-F) to its 0..15 value. Any other
+// byte maps to 0.
+fun hex_value(b: Int) -> Int {
+    if b >= 48 {
+        if b <= 57 {
+            return b - 48
+        }
+    }
+    if b >= 97 {
+        if b <= 102 {
+            return b - 87
+        }
+    }
+    if b >= 65 {
+        if b <= 70 {
+            return b - 55
+        }
+    }
+    return 0
+}
+
+fun hex_encode(s: String) -> String {
+    let n = __str_len(s)
+    let out = ""
+    let i = 0
+    while i < n {
+        let b = __str_byte_at(s, i)
+        out = __str_concat(out, __str_from_byte(hex_digit(b >> 4)))
+        out = __str_concat(out, __str_from_byte(hex_digit(b & 15)))
+        i = i + 1
+    }
+    return out
+}
+
+// Inverse of hex_encode. Assumes even length; a trailing odd byte is
+// ignored. Non-hex bytes decode as 0.
+fun hex_decode(s: String) -> String {
+    let n = __str_len(s)
+    let out = ""
+    let i = 0
+    while i + 1 < n {
+        let hi = hex_value(__str_byte_at(s, i))
+        let lo = hex_value(__str_byte_at(s, i + 1))
+        out = __str_concat(out, __str_from_byte((hi << 4) | lo))
+        i = i + 2
+    }
+    if i < n {
+        // Lone final digit: treat as the high nibble of a zero-padded byte.
+        out = __str_concat(out, __str_from_byte(hex_value(__str_byte_at(s, i)) << 4))
+    }
+    return out
+}
+
+// Map a 0..63 sextet to its standard base64 alphabet byte (A-Z, a-z,
+// 0-9, +, /).
+fun b64_digit(v: Int) -> Int {
+    if v < 26 {
+        return 65 + v
+    }
+    if v < 52 {
+        return 71 + v
+    }
+    if v < 62 {
+        return v - 4
+    }
+    if v == 62 {
+        return 43
+    }
+    return 47
+}
+
+// Map a base64 alphabet byte to its 0..63 value. Any other byte
+// (including padding) maps to 0; callers track padding separately.
+fun b64_value(b: Int) -> Int {
+    if b >= 65 {
+        if b <= 90 {
+            return b - 65
+        }
+    }
+    if b >= 97 {
+        if b <= 122 {
+            return b - 71
+        }
+    }
+    if b >= 48 {
+        if b <= 57 {
+            return b + 4
+        }
+    }
+    if b == 43 {
+        return 62
+    }
+    if b == 47 {
+        return 63
+    }
+    return 0
+}
+
+fun base64_encode(s: String) -> String {
+    let n = __str_len(s)
+    let out = ""
+    let i = 0
+    while i + 3 <= n {
+        let b0 = __str_byte_at(s, i)
+        let b1 = __str_byte_at(s, i + 1)
+        let b2 = __str_byte_at(s, i + 2)
+        out = __str_concat(out, __str_from_byte(b64_digit(b0 >> 2)))
+        out = __str_concat(out, __str_from_byte(b64_digit(((b0 & 3) << 4) | (b1 >> 4))))
+        out = __str_concat(out, __str_from_byte(b64_digit(((b1 & 15) << 2) | (b2 >> 6))))
+        out = __str_concat(out, __str_from_byte(b64_digit(b2 & 63)))
+        i = i + 3
+    }
+    let rem = n - i
+    if rem == 1 {
+        let b0 = __str_byte_at(s, i)
+        out = __str_concat(out, __str_from_byte(b64_digit(b0 >> 2)))
+        out = __str_concat(out, __str_from_byte(b64_digit((b0 & 3) << 4)))
+        out = __str_concat(out, "==")
+    }
+    if rem == 2 {
+        let b0 = __str_byte_at(s, i)
+        let b1 = __str_byte_at(s, i + 1)
+        out = __str_concat(out, __str_from_byte(b64_digit(b0 >> 2)))
+        out = __str_concat(out, __str_from_byte(b64_digit(((b0 & 3) << 4) | (b1 >> 4))))
+        out = __str_concat(out, __str_from_byte(b64_digit((b1 & 15) << 2)))
+        out = __str_concat(out, "=")
+    }
+    return out
+}
+
+// Inverse of base64_encode. Trailing `=` padding sets how many bytes the
+// final group yields. Input length not a multiple of 4 decodes what it
+// can; stray non-alphabet bytes contribute 0.
+fun base64_decode(s: String) -> String {
+    let n = __str_len(s)
+    let out = ""
+    let i = 0
+    while i + 4 <= n {
+        let c0 = __str_byte_at(s, i)
+        let c1 = __str_byte_at(s, i + 1)
+        let c2 = __str_byte_at(s, i + 2)
+        let c3 = __str_byte_at(s, i + 3)
+        let v0 = b64_value(c0)
+        let v1 = b64_value(c1)
+        let v2 = b64_value(c2)
+        let v3 = b64_value(c3)
+        let o0 = ((v0 << 2) | (v1 >> 4)) & 255
+        out = __str_concat(out, __str_from_byte(o0))
+        if c2 != 61 {
+            let o1 = (((v1 & 15) << 4) | (v2 >> 2)) & 255
+            out = __str_concat(out, __str_from_byte(o1))
+        }
+        if c2 != 61 {
+            if c3 != 61 {
+                let o2 = (((v2 & 3) << 6) | v3) & 255
+                out = __str_concat(out, __str_from_byte(o2))
+            }
+        }
+        i = i + 4
+    }
+    return out
+}

@@ -1,0 +1,7 @@
+// golden:skip
+// A deterministic child process for the std/process smoke test: prints 7
+// then a newline (the builtin `print` adds the newline). The parent runs
+// this compiled binary and inspects its exit code and stdout.
+fun main() {
+    print(7)
+}

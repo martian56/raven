@@ -1,0 +1,10 @@
+// A struct value built on the heap, passed by reference, and read back.
+// Compiling and running this prints 7.
+struct Point { x: Int, y: Int }
+
+fun add_coords(p: Point) -> Int = p.x + p.y
+
+fun main() {
+    let p = Point { x: 3, y: 4 }
+    print(add_coords(p))
+}

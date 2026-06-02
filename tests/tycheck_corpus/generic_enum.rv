@@ -1,0 +1,11 @@
+enum Either<L, R> {
+    Left(L),
+    Right(R),
+}
+
+fun unwrap_left(e: Either<Int, String>) -> Int {
+    return match e {
+        Left(x) -> x,
+        Right(_) -> 0,
+    }
+}

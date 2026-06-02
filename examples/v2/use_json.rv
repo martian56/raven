@@ -1,0 +1,18 @@
+// golden:skip
+import std/json { parse, stringify }
+import std/io { println }
+
+fun main() {
+    match parse("{\"a\": 1, \"b\": [true, null, \"hi\"]}") {
+        Ok(v) -> println(stringify(v)),
+        Err(e) -> println("parse failed"),
+    }
+    match parse("\"x\\ny \\u0041\"") {
+        Ok(v) -> println(stringify(v)),
+        Err(e) -> println("parse failed"),
+    }
+    match parse("{ bad ]") {
+        Ok(v) -> println("ok"),
+        Err(e) -> println("parse failed"),
+    }
+}

@@ -1,0 +1,13 @@
+enum Shape {
+    Circle(radius: Float)
+    Square(side: Float)
+    Empty
+}
+
+fun area(s: Shape) -> Float {
+    match s {
+        Circle { radius: r } -> r * r
+        Square { side: w } -> w * w
+        Empty -> 0.0
+    }
+}

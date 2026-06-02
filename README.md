@@ -26,63 +26,76 @@
 
 ## Why Raven
 
-- Fast runtime and modern tooling built in Rust.
-- Clean syntax with static typing.
-- Structs, enums, modules, and rich standard library.
-- CLI and REPL workflow for quick iteration.
-- VS Code extension for syntax and developer ergonomics.
+- Compiled to native machine code through Cranelift, into a single static binary.
+- Static typing with generics, traits, and sum types checked by an exhaustive `match`.
+- A tracing garbage collector and `Result`/`Option` instead of `null`.
+- Goroutines and channels for concurrency, and a C FFI for native libraries.
+- A package manager (`rvpm`), one canonical formatter, and a VS Code extension.
 
 ## Quick Example
 
 ```rust
 struct User {
-    name: string,
-    age: int
+    name: String,
+    age: Int,
 }
 
-fun greet(user: User) -> void {
-    print(format("Hello {}, you are {}!", user.name, user.age));
+fun greet(user: User) -> String {
+    return "Hello ${user.name}, you are ${user.age}"
 }
 
-let u: User = User { name: "Raven", age: 1 };
-greet(u);
+fun main() {
+    let u = User { name: "Raven", age: 2 }
+    print(greet(u))
+}
 ```
+
+## Install
+
+Download the installer or archive for your platform from the [releases page](https://github.com/martian56/raven/releases):
+
+- Linux: `.deb`, `.rpm`, or `.tar.gz`
+- Windows: `.msi` or `.zip`
+- macOS: `.pkg` or `.tar.gz` (Apple Silicon)
+
+This installs the `raven` compiler and the `rvpm` package manager and adds them to your `PATH`. Compiling a program also needs a C linker on your machine (the MSVC build tools on Windows, `cc`/`clang` on Linux and macOS).
 
 ## Quick Start
 
 ```bash
-# Build from source
+# Compile a source file to a native binary
+raven build hello.rv -o hello
+./hello
+```
+
+Project workflow with `rvpm`:
+
+```bash
+rvpm init my_app
+cd my_app
+rvpm run          # builds and runs src/main.rv
+rvpm fmt          # format the .rv sources
+```
+
+### Build from source
+
+For contributors, or to track the latest commit:
+
+```bash
 git clone https://github.com/martian56/raven.git
 cd raven
 cargo build --release
-
-# Run a file
-./target/release/raven hello.rv
-
-# Type-check only (no run)
-./target/release/raven hello.rv -c
-
-# REPL
-./target/release/raven
 ```
 
-**Project workflow** (optional `rv.toml`):
-
-```bash
-./target/release/rvpm init my_app
-cd my_app
-./target/release/rvpm run          # runs src/main.rv
-./target/release/rvpm fmt          # format .rv sources (see [fmt] in rv.toml)
-```
-
-Or get the installer for your OS from the [releases](https://github.com/martian56/raven/releases) page.
+The `raven` and `rvpm` binaries land in `target/release/`.
 
 ## Learn More
 
 - Full docs: [https://martian56.github.io/raven/](https://martian56.github.io/raven/)
 - Project website: [https://raven.ufazien.com/](https://raven.ufazien.com/)
-- Standard library overview: [https://martian56.github.io/raven/standard-library/overview/](https://martian56.github.io/raven/standard-library/overview/)
-- Examples: [https://martian56.github.io/raven/examples/basic/](https://martian56.github.io/raven/examples/basic/)
+- Getting started: [https://martian56.github.io/raven/v2/guide/getting-started/](https://martian56.github.io/raven/v2/guide/getting-started/)
+- Language reference: [https://martian56.github.io/raven/v2/guide/language-reference/](https://martian56.github.io/raven/v2/guide/language-reference/)
+- Standard library: [https://martian56.github.io/raven/v2/guide/standard-library/](https://martian56.github.io/raven/v2/guide/standard-library/)
 
 ## Technologies Used
 

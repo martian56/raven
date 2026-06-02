@@ -1,0 +1,88 @@
+// std/path: POSIX-style path manipulation on `/` separators. Built on the
+// `String` methods from std/string. Windows `\` handling is out of scope.
+
+import std/string
+
+// Byte index of the last `/`, or -1 when none.
+fun last_slash(p: String) -> Int {
+    let i = p.length() - 1
+    while i >= 0 {
+        if p.char_at(i).starts_with("/") {
+            return i
+        }
+        i = i - 1
+    }
+    return -1
+}
+
+fun join(a: String, b: String) -> String {
+    if a.length() == 0 {
+        return b
+    }
+    if b.length() == 0 {
+        return a
+    }
+    let a_slash = a.ends_with("/")
+    let b_slash = b.starts_with("/")
+    if a_slash {
+        if b_slash {
+            return a.concat(b.substring(1, b.length()))
+        }
+        return a.concat(b)
+    }
+    if b_slash {
+        return a.concat(b)
+    }
+    return a.concat("/").concat(b)
+}
+
+fun basename(p: String) -> String {
+    let i = last_slash(p)
+    if i < 0 {
+        return p
+    }
+    return p.substring(i + 1, p.length())
+}
+
+fun dirname(p: String) -> String {
+    let i = last_slash(p)
+    if i < 0 {
+        return "."
+    }
+    if i == 0 {
+        return "/"
+    }
+    return p.substring(0, i)
+}
+
+// Substring after the last `.` in the basename, or "" when none. A leading
+// dot (a dotfile such as ".gitignore") is not an extension.
+fun extension(p: String) -> String {
+    let base = basename(p)
+    let n = base.length()
+    let i = n - 1
+    while i > 0 {
+        if base.char_at(i).starts_with(".") {
+            return base.substring(i + 1, n)
+        }
+        i = i - 1
+    }
+    return ""
+}
+
+fun stem(p: String) -> String {
+    let base = basename(p)
+    let n = base.length()
+    let i = n - 1
+    while i > 0 {
+        if base.char_at(i).starts_with(".") {
+            return base.substring(0, i)
+        }
+        i = i - 1
+    }
+    return base
+}
+
+fun is_absolute(p: String) -> Bool {
+    return p.starts_with("/")
+}

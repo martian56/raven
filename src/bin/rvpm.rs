@@ -1,343 +1,373 @@
-//! Raven package manager (`init`, `run`, `fmt`, …).
+//! The rvpm package manager command line entry point.
+//!
+//! rvpm manages Raven packages described by an `rv.toml` manifest. This
+//! binary is intentionally thin: it parses arguments and dispatches to
+//! library code in `raven::manifest`, `raven::pkg`, `raven::lock`, and
+//! `raven::ops`.
 
-use clap::{Arg, Command};
-use raven::format::{format_source_with_options, FormatOptions};
-use std::fs;
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::process::ExitCode;
 
-const DEFAULT_MAIN_RV: &str = r#"// Raven program - run with: rvpm run
-fun main() -> void {
-    print("Hello from Raven!");
-}
+use raven::format::format_source;
+use raven::lock::{self, LockFile, LOCK_FILE_NAME};
+use raven::manifest::init::{init_project, name_from_dir, InitError};
+use raven::manifest::Manifest;
+use raven::ops;
+use raven::pkg;
+use raven::resolve::GithubPath;
 
-main();
-"#;
-
-const DEFAULT_RV_TOML: &str = r#"[package]
-name = "my_project"
-version = "0.1.0"
-authors = []
-
-[dependencies]
-# Add packages here, e.g.:
-# math = "1.0"
-
-# [fmt]
-# indent_width = 4
-# wrap_width = 88
-"#;
-
-fn main() {
-    let matches = Command::new("rvpm")
-        .version(env!("CARGO_PKG_VERSION"))
-        .about("Raven Package Manager")
-        .subcommand(
-            Command::new("init")
-                .about("Create a new Raven project")
-                .arg(
-                    Arg::new("name")
-                        .help("Project name (default: current directory name)")
-                        .default_value("."),
-                ),
-        )
-        .subcommand(Command::new("install").about("Install dependencies from rv.toml"))
-        .subcommand(
-            Command::new("add")
-                .about("Add a dependency")
-                .arg(Arg::new("package").required(true)),
-        )
-        .subcommand(Command::new("run").about("Run the project"))
-        .subcommand(
-            Command::new("fmt")
-                .about("Format Raven source files (optional [fmt] in rv.toml: indent_width, wrap_width)")
-                .arg(
-                    Arg::new("paths")
-                        .help("Files or directories to format (default: project src/)")
-                        .num_args(0..),
-                )
-                .arg(
-                    Arg::new("check")
-                        .long("check")
-                        .help("Fail if any file would change (CI / verify formatted)")
-                        .action(clap::ArgAction::SetTrue),
-                ),
-        )
-        .get_matches();
-
-    match matches.subcommand() {
-        Some(("init", sub_matches)) => {
-            let name = sub_matches.get_one::<String>("name").unwrap();
-            if let Err(e) = cmd_init(name) {
-                eprintln!("Error: {}", e);
-                std::process::exit(1);
+fn main() -> ExitCode {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        None | Some("help") | Some("--help") | Some("-h") => {
+            print_usage();
+            ExitCode::SUCCESS
+        }
+        Some("init") => match cmd_init(&args[1..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("rvpm: {}", e);
+                ExitCode::from(1)
             }
-        }
-        Some(("install", _)) => {
-            eprintln!("rvpm install: not yet implemented");
-            std::process::exit(1);
-        }
-        Some(("add", _)) => {
-            eprintln!("rvpm add: not yet implemented");
-            std::process::exit(1);
-        }
-        Some(("run", _)) => {
-            if let Err(e) = cmd_run() {
-                eprintln!("Error: {}", e);
-                std::process::exit(1);
+        },
+        Some("fetch") => match cmd_fetch(&args[1..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("rvpm: {}", e);
+                ExitCode::from(1)
             }
-        }
-        Some(("fmt", sub_matches)) => {
-            let paths: Vec<String> = sub_matches
-                .get_many::<String>("paths")
-                .map(|p| p.cloned().collect())
-                .unwrap_or_default();
-            let check = sub_matches.get_flag("check");
-            if let Err(e) = cmd_fmt(&paths, check) {
-                eprintln!("Error: {}", e);
-                std::process::exit(1);
+        },
+        Some("lock") => match cmd_lock() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("rvpm: {}", e);
+                ExitCode::from(1)
             }
-        }
-        _ => {
-            let _ = io::stderr().write_fmt(format_args!(
-                "Usage: rvpm <COMMAND>\n\nCommands:\n  init     Create a new Raven project\n  install  Install dependencies\n  add      Add a dependency\n  run      Run the project\n  fmt      Format Raven source files\n"
-            ));
-            std::process::exit(1);
+        },
+        Some("add") => run(cmd_add(&args[1..])),
+        Some("install") => run(cmd_install(&args[1..])),
+        Some("update") => run(cmd_update(&args[1..])),
+        Some("build") => run(cmd_build(&args[1..])),
+        Some("run") => cmd_run(&args[1..]),
+        Some("fmt") => cmd_fmt(&args[1..]),
+        Some(other) => {
+            eprintln!("rvpm: unknown subcommand '{}'", other);
+            eprintln!("Run 'rvpm help' for usage.");
+            ExitCode::from(1)
         }
     }
 }
 
-fn cmd_init(name: &str) -> Result<(), String> {
-    let project_dir = Path::new(name);
-    let project_name = if name == "." {
-        std::env::current_dir()
-            .ok()
-            .and_then(|p| p.file_name().map(|s| s.to_string_lossy().into_owned()))
-            .unwrap_or_else(|| "my_project".to_string())
-    } else {
-        name.to_string()
+fn cmd_init(args: &[String]) -> Result<(), InitError> {
+    let cwd = std::env::current_dir().map_err(InitError::Io)?;
+    let name = match args.first() {
+        Some(n) => n.clone(),
+        None => name_from_dir(&cwd),
     };
-
-    if name != "." && project_dir.exists() {
-        if let Ok(entries) = project_dir.read_dir() {
-            if entries.count() > 0 {
-                return Err(format!(
-                    "Directory '{}' already exists and is not empty",
-                    name
-                ));
-            }
-        }
-    } else if name == "." && project_dir.join("rv.toml").exists() {
-        return Err(
-            "rv.toml already exists here. Remove it or use a different directory.".to_string(),
-        );
-    }
-
-    let src_dir = project_dir.join("src");
-    let rv_env_dir = project_dir.join("rv_env");
-    let rv_env_packages = rv_env_dir.join("packages");
-
-    fs::create_dir_all(&src_dir).map_err(|e| format!("Failed to create src/: {}", e))?;
-    fs::create_dir_all(&rv_env_packages)
-        .map_err(|e| format!("Failed to create rv_env/packages/: {}", e))?;
-
-    let rv_toml = DEFAULT_RV_TOML.replace("my_project", &project_name);
-    fs::write(project_dir.join("rv.toml"), rv_toml)
-        .map_err(|e| format!("Failed to write rv.toml: {}", e))?;
-
-    fs::write(src_dir.join("main.rv"), DEFAULT_MAIN_RV)
-        .map_err(|e| format!("Failed to write src/main.rv: {}", e))?;
-
-    let gitignore_path = project_dir.join(".gitignore");
-    if !gitignore_path.exists() {
-        let _ = fs::write(
-            gitignore_path,
-            "# rvpm - installed packages\nrv_env/packages/\n",
-        );
-    }
-
-    println!("Created Raven project '{}'", project_name);
+    let dir = PathBuf::from(".");
+    init_project(&dir, &name)?;
+    println!("Created package '{}'", name);
     println!("  rv.toml");
     println!("  src/main.rv");
-    println!("  rv_env/");
-    println!();
-    let next_msg = if name == "." {
-        "Next: rvpm run".to_string()
-    } else {
-        format!("Next: cd {} && rvpm run", name)
-    };
-    println!("{}", next_msg);
-
     Ok(())
 }
 
-fn cmd_run() -> Result<(), String> {
-    let cwd = std::env::current_dir().map_err(|e| format!("{}", e))?;
-    let mut dir = cwd.as_path();
+fn cmd_fetch(args: &[String]) -> Result<(), String> {
+    let spec = args
+        .first()
+        .ok_or_else(|| "fetch needs a 'github.com/<user>/<repo>@<version>' argument".to_string())?;
+    let (path, version) = spec
+        .rsplit_once('@')
+        .ok_or_else(|| format!("'{}' is missing an '@<version>' suffix", spec))?;
+    let gh = GithubPath::parse(path)
+        .ok_or_else(|| format!("'{}' is not a 'github.com/<user>/<repo>' path", path))?;
+    let dir = pkg::fetch(&gh.host, &gh.user, &gh.repo, version).map_err(|e| e.to_string())?;
+    println!("{}", dir.display());
+    Ok(())
+}
 
-    loop {
-        let rv_toml = dir.join("rv.toml");
-        if rv_toml.exists() {
-            let main_rv = dir.join("src").join("main.rv");
-            if !main_rv.exists() {
-                return Err(
-                    "src/main.rv not found. Run 'rvpm init' to create a project.".to_string(),
-                );
-            }
-            let status = std::process::Command::new("raven")
-                .arg(main_rv)
-                .current_dir(dir)
-                .status()
-                .map_err(|e| format!("Failed to run raven: {}. Is 'raven' in PATH?", e))?;
-            std::process::exit(status.code().unwrap_or(1));
+/// Generate or validate `rv.lock` for the package in the current
+/// directory. Generates when the lock is absent or does not cover every
+/// dependency in `rv.toml`; otherwise validates the existing lock against
+/// the cache. The full install/build UX lands in later releases; this is a
+/// way to exercise resolution and validation directly.
+fn cmd_lock() -> Result<(), String> {
+    let manifest = Manifest::load("rv.toml").map_err(|e| e.to_string())?;
+    let lock_path = std::path::Path::new(LOCK_FILE_NAME);
+
+    if lock_path.exists() {
+        let existing = LockFile::load(lock_path).map_err(|e| e.to_string())?;
+        if existing.covers(&manifest) {
+            lock::validate_lock(&existing).map_err(|e| e.to_string())?;
+            println!("rv.lock is up to date and verified");
+            return Ok(());
         }
-        dir = match dir.parent() {
-            Some(p) => p,
-            None => {
-                return Err(
-                    "Not a Raven project (no rv.toml found). Run 'rvpm init' first.".to_string(),
-                );
+    }
+
+    let lock = lock::resolve_and_lock(&manifest).map_err(|e| e.to_string())?;
+    lock.write(lock_path).map_err(|e| e.to_string())?;
+    println!(
+        "Wrote {} with {} package(s)",
+        LOCK_FILE_NAME,
+        lock.packages.len()
+    );
+    Ok(())
+}
+
+/// Print a command's outcome lines, mapping its error to a non-zero exit.
+fn run(result: Result<Vec<String>, String>) -> ExitCode {
+    match result {
+        Ok(lines) => {
+            for line in lines {
+                println!("{}", line);
             }
-        };
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("rvpm: {}", e);
+            ExitCode::from(1)
+        }
     }
 }
 
-fn find_rv_project_root() -> Result<PathBuf, String> {
+/// Append (or update) a dependency in rv.toml, then resolve and write
+/// rv.lock. Accepts `github.com/<user>/<repo>` with an optional
+/// `@<version>`; without a version a placeholder constraint is recorded.
+fn cmd_add(args: &[String]) -> Result<Vec<String>, String> {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        return Ok(vec![add_usage()]);
+    }
+    let spec = args
+        .first()
+        .ok_or_else(|| format!("add needs a package argument\n{}", add_usage()))?;
+    let (path, version) = match spec.rsplit_once('@') {
+        Some((p, v)) => (p, Some(v)),
+        None => (spec.as_str(), None),
+    };
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    let mut dir = cwd.as_path();
-    loop {
-        if dir.join("rv.toml").exists() {
-            return Ok(dir.to_path_buf());
+    let report = ops::add(&cwd, path, version).map_err(|e| e.to_string())?;
+    Ok(report.outcome_lines)
+}
+
+/// Re-resolve rv.toml against rv.lock and fill the cache, validating an
+/// existing lock or writing a fresh one.
+fn cmd_install(args: &[String]) -> Result<Vec<String>, String> {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        return Ok(vec![install_usage()]);
+    }
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let (_outcome, report) = ops::install(&cwd).map_err(|e| e.to_string())?;
+    Ok(report.outcome_lines)
+}
+
+/// Re-resolve rv.toml and rewrite rv.lock, for one named package or all.
+fn cmd_update(args: &[String]) -> Result<Vec<String>, String> {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        return Ok(vec![update_usage()]);
+    }
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let package = args.first().map(String::as_str);
+    let report = ops::update(&cwd, package).map_err(|e| e.to_string())?;
+    Ok(report.outcome_lines)
+}
+
+/// Build the package in the current directory: ensure dependencies are
+/// installed, then compile `src/main.rv` to `target/raven-out/<name>`.
+fn cmd_build(args: &[String]) -> Result<Vec<String>, String> {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        return Ok(vec![build_usage()]);
+    }
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let report = ops::build(&cwd).map_err(|e| e.to_string())?;
+    Ok(report.outcome_lines)
+}
+
+/// Build the package then run the produced binary, forwarding any args
+/// after `run` to the program and exiting with its code.
+fn cmd_run(args: &[String]) -> ExitCode {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", run_usage());
+        return ExitCode::SUCCESS;
+    }
+    let cwd = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("rvpm: {}", e);
+            return ExitCode::from(1);
         }
-        dir = dir.parent().ok_or_else(|| {
-            "Not a Raven project (no rv.toml found). Run 'rvpm init' or pass explicit paths."
-                .to_string()
-        })?;
+    };
+    match ops::run_package(&cwd, args) {
+        Ok(code) => {
+            let code: u8 = code.try_into().unwrap_or(1);
+            ExitCode::from(code)
+        }
+        Err(e) => {
+            eprintln!("rvpm: {}", e);
+            ExitCode::from(1)
+        }
     }
 }
 
-fn collect_rv_files(path: &Path) -> Result<Vec<PathBuf>, String> {
-    let mut out = Vec::new();
-    if path.is_dir() {
-        for entry in fs::read_dir(path).map_err(|e| format!("{}: {}", path.display(), e))? {
-            let entry = entry.map_err(|e| e.to_string())?;
-            let p = entry.path();
-            if p.is_dir() {
-                out.extend(collect_rv_files(&p)?);
-            } else if p.extension().is_some_and(|e| e == "rv") {
-                out.push(p);
+/// Format Raven sources in place, or check formatting with `--check`.
+///
+/// With no path arguments, formats every `.rv` file under the project
+/// `src/` directory. With `--check`, no file is written: the command lists
+/// files that are not canonically formatted and exits non-zero if any are.
+fn cmd_fmt(args: &[String]) -> ExitCode {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", fmt_usage());
+        return ExitCode::SUCCESS;
+    }
+    let check = args.iter().any(|a| a == "--check");
+    let paths: Vec<&String> = args.iter().filter(|a| !a.starts_with('-')).collect();
+
+    let files = if paths.is_empty() {
+        match collect_rv_files(PathBuf::from("src")) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("rvpm: {}", e);
+                return ExitCode::from(1);
             }
         }
-    } else if path.is_file() {
-        if path.extension().is_some_and(|e| e == "rv") {
-            out.push(path.to_path_buf());
-        } else {
-            return Err(format!(
-                "Not a Raven source file (expected .rv): {}",
-                path.display()
-            ));
-        }
-    }
-    out.sort();
-    out.dedup();
-    Ok(out)
-}
-
-fn normalize_nl(s: &str) -> String {
-    s.replace("\r\n", "\n")
-}
-
-fn cmd_fmt(paths: &[String], check: bool) -> Result<(), String> {
-    let project_root = find_rv_project_root().ok();
-    let fmt_opts = project_root
-        .as_ref()
-        .map(|r| FormatOptions::from_rv_toml(&r.join("rv.toml")))
-        .unwrap_or_default();
-
-    let files: Vec<PathBuf> = if paths.is_empty() {
-        let root = project_root.ok_or_else(|| {
-            "Not a Raven project (no rv.toml found). Run 'rvpm init' or pass explicit paths."
-                .to_string()
-        })?;
-        let src = root.join("src");
-        if !src.is_dir() {
-            return Err(format!(
-                "No src/ directory at {}. Pass explicit paths or create src/.",
-                root.display()
-            ));
-        }
-        collect_rv_files(&src)?
     } else {
-        let mut all = Vec::new();
-        for p in paths {
-            let path = Path::new(p);
-            if !path.exists() {
-                return Err(format!("Path not found: {}", p));
-            }
+        let mut acc = Vec::new();
+        for p in &paths {
+            let path = PathBuf::from(p);
             if path.is_dir() {
-                all.extend(collect_rv_files(path)?);
-            } else if path.extension().is_some_and(|e| e == "rv") {
-                all.push(path.to_path_buf());
+                match collect_rv_files(path) {
+                    Ok(mut f) => acc.append(&mut f),
+                    Err(e) => {
+                        eprintln!("rvpm: {}", e);
+                        return ExitCode::from(1);
+                    }
+                }
             } else {
-                return Err(format!(
-                    "Not a Raven source file (expected .rv): {}",
-                    path.display()
-                ));
+                acc.push(path);
             }
         }
-        all.sort();
-        all.dedup();
-        all
+        acc
     };
 
     if files.is_empty() {
-        println!("No .rv files to format.");
-        return Ok(());
+        eprintln!("rvpm: no .rv files to format");
+        return ExitCode::from(1);
     }
 
-    let mut changed = Vec::new();
-    let mut errors = Vec::new();
-
-    for file in &files {
-        let source = fs::read_to_string(file).map_err(|e| format!("{}: {}", file.display(), e))?;
-        let normalized = normalize_nl(&source);
-        let formatted =
-            match format_source_with_options(&normalized, &file.display().to_string(), &fmt_opts) {
-                Ok(s) => s,
-                Err(e) => {
-                    errors.push(format!("{}: {}", file.display(), e.format()));
-                    continue;
-                }
-            };
-
-        if normalized == formatted {
+    let mut changed: Vec<PathBuf> = Vec::new();
+    let mut errored = false;
+    for path in &files {
+        let src = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("rvpm: {}: {}", path.display(), e);
+                errored = true;
+                continue;
+            }
+        };
+        let formatted = match format_source(&src) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("rvpm: {}: {}", path.display(), e);
+                errored = true;
+                continue;
+            }
+        };
+        if formatted == src {
             continue;
         }
-
         if check {
-            changed.push(file.display().to_string());
+            changed.push(path.clone());
+        } else if let Err(e) = std::fs::write(path, &formatted) {
+            eprintln!("rvpm: {}: {}", path.display(), e);
+            errored = true;
         } else {
-            fs::write(file, &formatted).map_err(|e| format!("{}: {}", file.display(), e))?;
-            println!("Formatted {}", file.display());
+            println!("formatted {}", path.display());
         }
     }
 
-    if !errors.is_empty() {
-        for err in errors {
-            eprintln!("{}", err);
-        }
-        return Err("fmt: one or more files failed to parse.".to_string());
+    if errored {
+        return ExitCode::from(1);
     }
-
-    if check && !changed.is_empty() {
-        for path in &changed {
-            eprintln!("Would reformat: {}", path);
+    if check {
+        if changed.is_empty() {
+            return ExitCode::SUCCESS;
         }
-        return Err(format!(
-            "fmt --check: {} file(s) need formatting.",
-            changed.len()
-        ));
+        eprintln!("The following files are not formatted:");
+        for p in &changed {
+            eprintln!("  {}", p.display());
+        }
+        return ExitCode::from(1);
     }
+    ExitCode::SUCCESS
+}
 
-    Ok(())
+/// Recursively collect `.rv` files under `dir`, sorted for deterministic
+/// output.
+fn collect_rv_files(dir: PathBuf) -> Result<Vec<PathBuf>, String> {
+    if !dir.exists() {
+        return Err(format!("'{}' does not exist", dir.display()));
+    }
+    let mut out = Vec::new();
+    let mut stack = vec![dir];
+    while let Some(d) = stack.pop() {
+        let entries = std::fs::read_dir(&d).map_err(|e| format!("{}: {}", d.display(), e))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().and_then(|s| s.to_str()) == Some("rv") {
+                out.push(path);
+            }
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+fn fmt_usage() -> String {
+    "Usage: rvpm fmt [--check] [paths...]".to_string()
+}
+
+fn build_usage() -> String {
+    "Usage: rvpm build".to_string()
+}
+
+fn run_usage() -> String {
+    "Usage: rvpm run [program arguments]".to_string()
+}
+
+fn add_usage() -> String {
+    "Usage: rvpm add github.com/<user>/<repo>[@<version>]".to_string()
+}
+
+fn install_usage() -> String {
+    "Usage: rvpm install".to_string()
+}
+
+fn update_usage() -> String {
+    "Usage: rvpm update [github.com/<user>/<repo>]".to_string()
+}
+
+fn print_usage() {
+    println!("rvpm: the Raven package manager");
+    println!();
+    println!("Usage:");
+    println!("  rvpm <command> [arguments]");
+    println!();
+    println!("Commands:");
+    println!("  init [name]    Scaffold a new package in the current directory");
+    println!("  add <pkg>      Add a dependency to rv.toml, then resolve and write rv.lock");
+    println!("  install        Resolve rv.toml against rv.lock and fill the cache");
+    println!("  update [pkg]   Re-resolve rv.toml and rewrite rv.lock for one package or all");
+    println!("  build          Compile src/main.rv to target/raven-out/<name>");
+    println!("  run [args]     Build the package then run it, forwarding args");
+    println!("  fmt [paths]    Format .rv files in place (--check to verify only)");
+    println!("  fetch <pkg>    Fetch 'github.com/<user>/<repo>@<version>' into the shared cache");
+    println!("  lock           Generate or validate rv.lock for the current package");
+    println!("  help           Print this message");
+    println!();
+    println!("Package arguments use the 'github.com/<user>/<repo>' form.");
+    println!("For 'add', append '@<version>' to pin a git tag or branch; without it");
+    println!("a placeholder constraint is recorded.");
 }

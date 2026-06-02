@@ -1,0 +1,9 @@
+struct Box<T> {
+    value: T,
+}
+
+impl<T> Box<T> {
+    fun get(self) -> T = self.value
+}
+
+fun read(b: Box<Int>) -> Int = b.get()

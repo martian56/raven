@@ -1,0 +1,11 @@
+// C FFI with a non-pointer foreign type. libc `abs(int) -> int` takes
+// and returns a C `int` (CInt, 32-bit). A negative literal is passed and
+// its absolute value is printed: abs(-7) is 7.
+extern "C" {
+    fun abs(x: CInt) -> CInt
+}
+
+fun main() {
+    let n = abs(-7)
+    print(n)
+}

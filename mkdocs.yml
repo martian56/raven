@@ -81,25 +81,32 @@ plugins:
 
 nav:
   - Home: index.md
-  - Getting Started:
-    - Installation: getting-started/installation.md
-    - Quick Start: getting-started/quick-start.md
-    - rvpm and formatting: getting-started/rvpm-and-format.md
-  - Language Reference:
-    - Syntax: syntax.md
-    - Data Types: language-reference/data-types.md
-  - Standard Library:
-    - Overview: standard-library/overview.md
-  - Examples:
-    - Basic Examples: examples/basic.md
-  - Development:
-    - Contributing: development/contributing.md
-    - Roadmap: PRODUCTION_ROADMAP.md
-    - Standard Library Spec: STDLIB_SPEC.md
-  - Resources:
-    - VS Code Extension: resources/vscode-extension.md
-    - GitHub Repository: https://github.com/martian56/raven
-    - VS Code Marketplace: https://marketplace.visualstudio.com/items?itemName=martian56.raven-language
+  - Getting Started: v2/guide/getting-started.md
+  - Language Reference: v2/guide/language-reference.md
+  - Standard Library: v2/guide/standard-library.md
+  - rvpm: v2/guide/rvpm.md
+  - Migrate from v1: v2/migration.md
+  - v1 docs:
+    - About these docs: v1/about.md
+    - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quick Start: getting-started/quick-start.md
+      - rvpm and formatting: getting-started/rvpm-and-format.md
+    - Language Reference:
+      - Syntax: syntax.md
+      - Data Types: language-reference/data-types.md
+    - Standard Library:
+      - Overview: standard-library/overview.md
+    - Examples:
+      - Basic Examples: examples/basic.md
+    - Development:
+      - Contributing: development/contributing.md
+      - Roadmap: PRODUCTION_ROADMAP.md
+      - Standard Library Spec: STDLIB_SPEC.md
+    - Resources:
+      - VS Code Extension: resources/vscode-extension.md
+  - GitHub: https://github.com/martian56/raven
+  - VS Code Marketplace: https://marketplace.visualstudio.com/items?itemName=martian56.raven-language
 
 extra:
   social:

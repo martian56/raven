@@ -1,0 +1,21 @@
+// Core trait prelude end to end: a generic function bounded by the
+// auto-imported `ToString` trait, dispatched to the built-in impls for
+// `Int` and `Bool`, plus a user struct that implements the trait. No
+// `import std/core` line is needed: the prelude is always in scope.
+//
+// Expected output, each on its own line: 42, true, (3, 4).
+
+struct Point { x: Int, y: Int }
+
+impl ToString for Point {
+    fun to_string(self) -> String = "(${self.x}, ${self.y})"
+}
+
+fun describe<T: ToString>(x: T) -> String = x.to_string()
+
+fun main() {
+    print(describe(42))
+    print(describe(true))
+    let p = Point { x: 3, y: 4 }
+    print(p.to_string())
+}

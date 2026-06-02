@@ -1,0 +1,63 @@
+// golden:skip
+// Regression for a GC rooting gap at call sites with multiple String
+// arguments. Each String literal argument promotes to a fresh heap String
+// at the call site; before the fix the first argument was left unrooted
+// across the allocation of later arguments (and across an allocating
+// runtime callee), so a collection freed it before the call read it. Run
+// under a low RAVEN_GC_THRESHOLD a freed first argument prints as garbage
+// or the wrong word. Output is deterministic and reports only intact data.
+//
+// Expected output:
+//   first alpha
+//   joined ab
+//   pick omega
+
+import std/string
+
+fun first(a: String, b: String) -> String {
+    return a
+}
+
+fun churn(n: Int) -> Int {
+    let acc = 0
+    let i = 0
+    while i < n {
+        let junk = first("scratch", "discard")
+        if junk == "scratch" {
+            acc = acc + 1
+        }
+        i = i + 1
+    }
+    return acc
+}
+
+fun pick(a: String, b: String) -> String {
+    let r = b
+    if a == "key" {
+        r = a
+    }
+    return r
+}
+
+fun main() {
+    // Two String-literal arguments: the first must survive the second's
+    // allocation and the call. churn forces collections in between.
+    let _a = churn(40)
+    let f = first("alpha", "beta")
+    let _b = churn(40)
+    print("first ${f}")
+
+    // A two-String-literal concat: the left operand is promoted then must
+    // survive both the right operand's promotion and the allocating concat.
+    let _c = churn(40)
+    let j = "a".concat("b")
+    let _d = churn(40)
+    print("joined ${j}")
+
+    // The first argument's content is actually read inside the callee, so
+    // corruption flips the branch. "alpha" != "key", so pick returns "omega".
+    let _e = churn(40)
+    let p = pick("alpha", "omega")
+    let _f = churn(40)
+    print("pick ${p}")
+}

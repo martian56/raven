@@ -1,0 +1,25 @@
+// golden:skip
+import std/collections
+import std/io { println }
+
+fun main() {
+    let s = Set.new()
+    s.add(1)
+    s.add(2)
+    s.add(2)
+    print(s.len())
+    print(s.contains(2))
+    s.remove(2)
+    print(s.contains(2))
+
+    let m = Map.new()
+    m.set("a", 10)
+    m.set("b", 20)
+    m.set("a", 99)
+    print(m.len())
+    match m.get("a") {
+        Some(v) -> print(v)
+        None -> print(0)
+    }
+    print(m.has("z"))
+}

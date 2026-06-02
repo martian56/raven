@@ -1,0 +1,18 @@
+[package]
+name = "raven-runtime"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Runtime support library that compiled Raven programs link against"
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+name = "raven_runtime"
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+corosensei = "0.3.4"
+regex = "1"
+ureq = "2.12"

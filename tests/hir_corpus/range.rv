@@ -1,0 +1,5 @@
+fun take_range() -> Int {
+    let xs = 0..10;
+    let ys = 0..=5;
+    return 0
+}

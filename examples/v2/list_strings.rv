@@ -1,0 +1,11 @@
+// A list whose elements are heap String values, exercising the
+// GC-pointer element path: the list traces each element pointer, so the
+// strings stay reachable through the list across allocations. Compiling
+// and running this prints raven, then bird, then 3.
+fun main() {
+    let words = ["raven", "crow"]
+    words.push("bird")
+    print(words[0])       // raven
+    print(words[2])       // bird
+    print(words.len()) // 3
+}

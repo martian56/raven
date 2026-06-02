@@ -1,0 +1,22 @@
+// golden:skip
+// Selective import of bundled types: `Map` and `Set` are pulled in by
+// name without a double-declaration of the merged type (issue #184).
+import std/collections { Map, Set }
+import std/io { println }
+
+fun main() {
+    let s = Set.new()
+    s.add(1)
+    s.add(2)
+    s.add(2)
+    print(s.len())
+
+    let m = Map.new()
+    m.set("a", 10)
+    m.set("a", 99)
+    print(m.len())
+    match m.get("a") {
+        Some(v) -> print(v)
+        None -> print(0)
+    }
+}

@@ -1,0 +1,11 @@
+fun find(xs: List<Int>, target: Int) -> Int? {
+    for x in xs {
+        if x == target {
+            return x
+        }
+    }
+}
+
+fun first_or_fail(xs: List<Int>) -> Int {
+    xs.first()?
+}

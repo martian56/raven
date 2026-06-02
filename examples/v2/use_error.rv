@@ -1,0 +1,31 @@
+// golden:skip
+import std/error { error, unwrap_or, is_ok, is_err, ok }
+import std/io { println }
+
+fun divide(a: Int, b: Int) -> Result<Int, Error> {
+    if b == 0 {
+        return Err(error("divide by zero"))
+    }
+    return Ok(a / b)
+}
+
+fun main() {
+    match divide(10, 2) {
+        Ok(v) -> print(v)
+        Err(e) -> print(e)
+    }
+    let r = divide(1, 0)
+    print(is_ok(r))
+    print(is_err(r))
+    print(unwrap_or(divide(1, 0), -1))
+    match divide(1, 0) {
+        Ok(v) -> print(v)
+        Err(e) -> print(e.message())
+    }
+    let wrapped = error("disk full").with_context("save config")
+    print(wrapped.to_string())
+    match ok(divide(8, 4)) {
+        Some(v) -> print(v)
+        None -> print(0)
+    }
+}

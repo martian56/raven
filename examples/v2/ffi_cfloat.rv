@@ -1,0 +1,12 @@
+// C FFI with a single-precision foreign type. The CRT/libm `sqrtf`
+// takes and returns a C `float` (CFloat, 32-bit). A Raven `Float` (f64)
+// argument is narrowed to f32 at the call boundary and the f32 result is
+// widened back to a `Float` before it is printed. sqrtf(16.0) is 4.
+extern "C" {
+    fun sqrtf(x: CFloat) -> CFloat
+}
+
+fun main() {
+    let r = sqrtf(16.0)
+    print(r)
+}

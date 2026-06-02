@@ -1,0 +1,19 @@
+// golden:skip
+import std/path { join, basename, dirname, extension, stem, is_absolute }
+import std/io { println }
+
+fun main() {
+    println(join("a/b", "c.txt"))
+    println(join("a/b/", "c.txt"))
+    println(basename("a/b/c.txt"))
+    println(dirname("a/b/c.txt"))
+    println(dirname("file.txt"))
+    println(extension("a/b/c.txt"))
+    println(stem("a/b/c.txt"))
+    println(extension("README"))
+    if is_absolute("/etc/hosts") {
+        println("absolute")
+    } else {
+        println("relative")
+    }
+}

@@ -1,0 +1,7 @@
+fun bool_to_int(b: Bool) -> Int {
+    let n = match b {
+        true -> 1,
+        false -> 0,
+    };
+    return n
+}

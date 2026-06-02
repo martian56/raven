@@ -1,8 +1,0 @@
-// deterministic builtin coverage: len, parse_int, char_code
-print(len("hello"));
-let nums: int[] = [1, 2, 3, 4];
-print(len(nums));
-print(parse_int("42"));
-print(parse_int("abc"));
-print(char_code("A"));
-print(char_code("a"));

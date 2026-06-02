@@ -4,87 +4,289 @@ on:
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version label for manual artifact builds (for example 2.0.0-test)'
+        required: false
+        default: '0.0.0-dev'
 
 permissions:
   contents: write
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  release-linux:
-    runs-on: ubuntu-latest
+  # Build per target. Each job produces a tarball or zip plus the native
+  # installer for its platform. The raven_runtime static library is placed
+  # next to the binaries in every artifact so the installed compiler locates
+  # it when linking user programs without any environment configuration. The
+  # v2 standard library is embedded in the binaries via include_str!, so no
+  # .rv files are shipped as separate assets.
+  build:
+    name: build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - name: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - name: macos-arm64
+            os: macos-14
+            target: aarch64-apple-darwin
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install packaging tools
+      - name: Resolve version
+        id: version
+        shell: bash
         run: |
-          cargo install cargo-deb
-          cargo install cargo-generate-rpm
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            v="${GITHUB_REF_NAME#v}"
+          else
+            v="${{ github.event.inputs.version }}"
+          fi
+          echo "value=$v" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $v"
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
 
       - name: Build release
-        run: cargo build --release
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+          cargo build --release --target ${{ matrix.target }} -p raven-runtime
 
-      - name: Create .deb package
-        run: cargo deb --no-strip
+      - name: Stage tarball (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          v="${{ steps.version.outputs.value }}"
+          dir="raven-$v-${{ matrix.target }}"
+          bindir="target/${{ matrix.target }}/release"
+          mkdir -p "stage/$dir"
+          cp "$bindir/raven" "stage/$dir/"
+          cp "$bindir/rvpm" "stage/$dir/"
+          cp "$bindir/libraven_runtime.a" "stage/$dir/"
+          cp README.md "stage/$dir/" || true
+          cat > "stage/$dir/LAYOUT.txt" <<'EOF'
+          Raven toolchain layout.
 
-      - name: Create .rpm package
-        run: cargo generate-rpm
+          raven                compiler and build driver
+          rvpm                 package manager
+          libraven_runtime.a   runtime library the compiler links into programs
 
-      - name: Upload Linux artifacts to release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: Raven ${{ github.ref_name }}
-          generate_release_notes: true
-          files: |
-            target/debian/*.deb
-            target/generate-rpm/*.rpm
-          fail_on_unmatched_files: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          Keep libraven_runtime.a next to the raven binary, or set
+          RAVEN_RUNTIME_LIB to its path. A C toolchain (cc) must be on PATH so
+          raven can link compiled programs. The standard library is embedded in
+          the binaries, so no .rv files ship separately.
+          EOF
+          tar -C stage -czf "$dir.tar.gz" "$dir"
 
-  release-windows:
-    needs: release-linux
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
+      - name: Stage zip (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $v = "${{ steps.version.outputs.value }}"
+          $dir = "raven-$v-${{ matrix.target }}"
+          $bindir = "target/${{ matrix.target }}/release"
+          New-Item -ItemType Directory -Force -Path "stage/$dir" | Out-Null
+          Copy-Item "$bindir/raven.exe" "stage/$dir/"
+          Copy-Item "$bindir/rvpm.exe" "stage/$dir/"
+          Copy-Item "$bindir/raven_runtime.lib" "stage/$dir/"
+          if (Test-Path README.md) { Copy-Item README.md "stage/$dir/" }
+          $layout = @'
+          Raven toolchain layout.
 
-      - name: Build release
-        run: cargo build --release
+          raven.exe            compiler and build driver
+          rvpm.exe             package manager
+          raven_runtime.lib    runtime library the compiler links into programs
 
-      - name: Install WiX and create .msi installer
+          Keep raven_runtime.lib next to raven.exe, or set RAVEN_RUNTIME_LIB to
+          its path. The MSVC build tools (link.exe) must be available so raven
+          can link compiled programs. The standard library is embedded in the
+          binaries, so no .rv files ship separately.
+          '@
+          Set-Content -Path "stage/$dir/LAYOUT.txt" -Value $layout -Encoding ascii
+          Compress-Archive -Path "stage/$dir/*" -DestinationPath "$dir.zip" -Force
+
+      - name: Build Linux packages
+        if: matrix.name == 'linux-x86_64'
+        shell: bash
+        run: |
+          cargo install cargo-deb --locked || cargo install cargo-deb
+          cargo install cargo-generate-rpm --locked || cargo install cargo-generate-rpm
+          # cargo-deb and cargo-generate-rpm read assets from target/release,
+          # so mirror the target-specific artifacts there.
+          mkdir -p target/release
+          cp target/${{ matrix.target }}/release/raven target/release/raven
+          cp target/${{ matrix.target }}/release/rvpm target/release/rvpm
+          cp target/${{ matrix.target }}/release/libraven_runtime.a target/release/libraven_runtime.a
+          cargo deb --no-build --no-strip
+          cargo generate-rpm
+
+      - name: Build macOS package
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          v="${{ steps.version.outputs.value }}"
+          bindir="target/${{ matrix.target }}/release"
+          root="pkgroot/usr/local/bin"
+          mkdir -p "$root"
+          cp "$bindir/raven" "$root/"
+          cp "$bindir/rvpm" "$root/"
+          cp "$bindir/libraven_runtime.a" "$root/"
+          pkgbuild --root pkgroot --identifier com.martian56.raven \
+            --version "$v" --install-location / \
+            "raven-$v-${{ matrix.target }}.pkg"
+
+      - name: Build Windows MSI
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
           choco install wixtoolset --version 3.14.0 --allow-downgrade --yes
-          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-          cargo install cargo-wix
-          cargo wix --no-build --target-bin-dir target/release -o target/wix/ --nocapture
+          cargo install cargo-wix --locked
+          $v = "${{ steps.version.outputs.value }}"
+          # An MSI ProductVersion must be numeric (X.Y.Z), so strip any
+          # prerelease suffix (for example 2.0.0-rc1 becomes 2.0.0). The
+          # filename keeps the full version label.
+          $msiVersion = ($v -split '-')[0]
+          # cargo-wix derives the installer version from Cargo.toml; pass the
+          # release version explicitly so the MSI matches the tag.
+          # The workspace has more than one package, so name the one to
+          # package (the `raven` binary crate); cargo-wix otherwise errors
+          # with "Workspace detected. Please pass a package name."
+          cargo wix -p raven --no-build --nocapture --target ${{ matrix.target }} `
+            --install-version $msiVersion --output "target/wix/raven-$v-${{ matrix.target }}.msi"
 
-      - name: Create .exe bootstrapper (setup installer)
+      - name: Sign Windows MSI (optional)
+        if: ${{ runner.os == 'Windows' && env.WINDOWS_CERT_BASE64 != '' }}
+        shell: pwsh
+        env:
+          WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
         run: |
-          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-          $msi = (Get-ChildItem target\wix\*.msi | Select-Object -First 1)
-          $version = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"(.*)"$').Matches[0].Groups[1].Value
-          candle -ext WixBalExtension -dMsiPath="$($msi.FullName)" -dVersion="$version" bundle.wxs
-          light -ext WixBalExtension bundle.wixobj -o "target\wix\raven-setup-$version.exe"
+          Write-Host "Signing the MSI with the provided Authenticode certificate."
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\cert.pfx", [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
+          $msi = Get-ChildItem target/wix/*.msi | Select-Object -First 1
+          & signtool sign /f "$env:RUNNER_TEMP\cert.pfx" /p $env:WINDOWS_CERT_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $msi.FullName
 
-      - name: Create portable .zip
+      - name: Sign macOS package (optional)
+        if: ${{ runner.os == 'macOS' && env.APPLE_INSTALLER_IDENTITY != '' }}
+        shell: bash
+        env:
+          APPLE_INSTALLER_IDENTITY: ${{ secrets.APPLE_INSTALLER_IDENTITY }}
         run: |
-          New-Item -ItemType Directory -Force -Path release
-          Copy-Item target/release/raven.exe release/
-          Copy-Item target/release/rvpm.exe release/
-          New-Item -ItemType Directory -Force -Path release/lib
-          Copy-Item lib/*.rv release/lib/
-          Push-Location release
-          Compress-Archive -Path * -DestinationPath ../raven-${{ github.ref_name }}-x86_64-pc-windows-msvc.zip -Force
-          Pop-Location
+          v="${{ steps.version.outputs.value }}"
+          pkg="raven-$v-${{ matrix.target }}.pkg"
+          productsign --sign "$APPLE_INSTALLER_IDENTITY" "$pkg" "signed-$pkg"
+          mv "signed-$pkg" "$pkg"
 
-      - name: Upload Windows artifacts to release
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          shopt -s nullglob
+          for f in *.tar.gz *.zip *.pkg target/debian/*.deb target/generate-rpm/*.rpm target/wix/*.msi; do
+            cp "$f" dist/
+          done
+          ls -l dist
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: dist/*
+          retention-days: 7
+
+      - name: Upload to release
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           name: Raven ${{ github.ref_name }}
-          files: |
-            target/wix/*.msi
-            target/wix/*.exe
-            raven-${{ github.ref_name }}-x86_64-pc-windows-msvc.zip
-          fail_on_unmatched_files: true
+          # The categorized "What's Changed" and "New Contributors"
+          # sections are appended below this body. Categories come from
+          # .github/release.yml.
+          body: |
+            Raven ${{ github.ref_name }}, a statically typed, compiled language with a Cranelift backend, a tracing garbage collector, generics and traits, sum types, goroutines, a C FFI, and a package manager.
+
+            ## Install
+
+            Download the installer or archive for your platform from the assets below:
+
+            - Linux: `.deb`, `.rpm`, or `.tar.gz`
+            - Windows: `.msi` or `.zip`
+            - macOS (Apple Silicon): `.pkg` or `.tar.gz`
+
+            Each one installs the `raven` compiler and the `rvpm` package manager. Compiling a program also needs a C linker (the MSVC build tools on Windows, `cc` or `clang` on Linux and macOS).
+
+            The full changelog is in [CHANGELOG.md](https://github.com/martian56/raven/blob/main/CHANGELOG.md), and the docs are at [martian56.github.io/raven](https://martian56.github.io/raven/).
+          generate_release_notes: true
+          files: dist/*
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Install or extract each produced artifact on a clean runner, then compile
+  # and run a hello-world program with the installed toolchain. This proves the
+  # artifact ships a usable compiler that can find its runtime library and link.
+  smoke:
+    name: smoke ${{ matrix.name }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+          - name: windows-x86_64
+            os: windows-latest
+          - name: macos-arm64
+            os: macos-14
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: dist
+
+      - name: Smoke test (Unix tarball)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -e
+          tar -xzf dist/*.tar.gz
+          dir="$(find . -maxdepth 1 -type d -name 'raven-*' | head -n1)"
+          export PATH="$PWD/$dir:$PATH"
+          export RAVEN_RUNTIME_LIB="$PWD/$dir/libraven_runtime.a"
+          printf 'fun main() { print("hello") }\n' > hello.rv
+          raven build hello.rv -o hello
+          out="$(./hello)"
+          echo "program output: $out"
+          test "$out" = "hello"
+
+      - name: Smoke test (Windows zip)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem dist/*.zip | Select-Object -First 1
+          Expand-Archive -Path $zip.FullName -DestinationPath extracted -Force
+          $bin = (Get-ChildItem extracted -Directory | Select-Object -First 1).FullName
+          if (-not $bin) { $bin = "extracted" }
+          $env:PATH = "$bin;$env:PATH"
+          $env:RAVEN_RUNTIME_LIB = "$bin\raven_runtime.lib"
+          Set-Content -Path hello.rv -Value 'fun main() { print("hello") }' -Encoding ascii
+          & "$bin\raven.exe" build hello.rv -o hello.exe
+          $out = (& ".\hello.exe")
+          Write-Host "program output: $out"
+          if ($out -ne "hello") { exit 1 }

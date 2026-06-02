@@ -30,6 +30,7 @@ test_*.txt
 *.txt
 !README.txt
 !LICENSE.txt
+!benchmarks/compile-time/baseline.txt
 
 # Build artifacts (keep release builds for installer)
 target/debug/

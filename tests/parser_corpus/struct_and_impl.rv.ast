@@ -1,0 +1,51 @@
+(file
+  (struct "Point"
+    (field "x": Float)
+    (field "y": Float)
+  )
+  (trait "Distance"
+    (fn "dist" params=("self":Self) ret=Float
+      (body-none)
+    )
+  )
+  (impl trait=Distance for=Point
+    (fn "dist" params=("self":Self) ret=Float
+      (body
+        (trailing
+          (binary +
+            (binary *
+              (field "x"
+                (self)
+              )
+              (field "x"
+                (self)
+              )
+            )
+            (binary *
+              (field "y"
+                (self)
+              )
+              (field "y"
+                (self)
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+  (fn "origin" params=() ret=Point
+    (body
+      (trailing
+        (struct-lit "Point"
+          (field-init "x"
+            (float 0)
+          )
+          (field-init "y"
+            (float 0)
+          )
+        )
+      )
+    )
+  )
+)

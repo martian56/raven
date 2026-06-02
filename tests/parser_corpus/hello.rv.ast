@@ -1,0 +1,12 @@
+(file
+  (fn "main" params=()
+    (body
+      (trailing
+        (call
+          (ident "print")
+          (str "hello, world")
+        )
+      )
+    )
+  )
+)

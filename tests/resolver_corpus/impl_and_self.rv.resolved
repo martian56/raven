@@ -1,0 +1,8 @@
+(resolved
+  imports
+  uses
+    47..52 "Point" -> Struct(#0)
+    75..79 "Self" -> SelfType
+    82..102 "Point { x: 0, y: 0 }" -> Struct(#0)
+    132..136 "self" -> SelfValue
+)

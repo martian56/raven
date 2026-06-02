@@ -1,0 +1,7 @@
+(resolved
+  imports
+  uses
+    76..77 "x" -> Local@58..67
+    88..89 "x" -> Local@26..35
+    92..93 "y" -> Local@40..83
+)

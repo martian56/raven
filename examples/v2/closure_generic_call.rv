@@ -1,0 +1,16 @@
+// A generic function reachable only through a closure body. `identity`
+// is generic and is never called directly: the only call site is inside
+// the lambda `f`, which `apply` invokes indirectly. The monomorphizer
+// must still emit the `identity<Int>` instantiation, since the lifted
+// closure body's generic call sites feed the same worklist as an
+// ordinary function body. apply(f, 41) computes identity(41) + 1 = 42.
+fun identity<T>(x: T) -> T = x
+
+fun apply(f: fun(Int) -> Int, x: Int) -> Int {
+    return f(x)
+}
+
+fun main() {
+    let f = fun(x: Int) -> Int = identity(x) + 1
+    print(apply(f, 41))
+}

@@ -1,0 +1,1 @@
+fun mix(a: Int, b: Int, c: Int) -> Int = a + b * c - (a / b) % c

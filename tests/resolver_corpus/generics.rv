@@ -1,0 +1,2 @@
+fun first<T>(a: T, b: T) -> T = a
+fun apply<T>(x: T) -> T = first(x, x)

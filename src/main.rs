@@ -1,282 +1,165 @@
-use clap::{Arg, Command};
-use raven::code_gen::Interpreter;
-use raven::lexer::Lexer;
-use raven::parser::Parser;
-use raven::repl::delimiter_depth;
-use raven::type_checker::TypeChecker;
-use std::fs;
-use std::process;
+//! Raven v2 compiler entry point.
+//!
+//! Supports:
+//!   raven build <source.rv> [-o <output>]
+//!     Compile a single source file to a native executable.
+//!   raven help | --help | -h     Print usage.
+//!   raven --version | -V         Print the compiler version.
+//!   raven                        Print usage.
+//!
+//! The `build` subcommand runs the entire v2 pipeline (lex, parse,
+//! resolve, type check, HIR, MIR) and feeds the resulting `MirProgram`
+//! to the Cranelift back end. The relocatable object is then linked
+//! with the `raven-runtime` staticlib by the toolchain-aware linker
+//! (MSVC `link.exe` on windows-msvc, `cc` elsewhere). The reusable
+//! pipeline lives in `raven::driver` so `rvpm build` can drive it with a
+//! package context.
 
-fn main() {
-    let matches = Command::new("Raven")
-        .version(env!("CARGO_PKG_VERSION"))
-        .author("martian56 <https://github.com/martian56>")
-        .about("Raven compiler and interpreter")
-        .arg(
-            Arg::new("file")
-                .help("The Raven source file to execute")
-                .required(false)
-                .num_args(0..=1),
-        )
-        .arg(
-            Arg::new("verbose")
-                .short('v')
-                .long("verbose")
-                .help("Enable verbose output (show tokens, AST, etc.)")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("check")
-                .short('c')
-                .long("check")
-                .help("Only check syntax and types, don't run")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("ast")
-                .long("show-ast")
-                .help("Display the Abstract Syntax Tree")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .get_matches();
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
-    let verbose = matches.get_flag("verbose");
-    let check_only = matches.get_flag("check");
-    let show_ast = matches.get_flag("ast");
+use raven::driver::{self, DriverError};
 
-    if let Some(file_name) = matches.get_one::<String>("file") {
-        execute_file(file_name, verbose, check_only, show_ast);
-    } else {
-        start_repl(verbose);
+/// Stack size for the compiler worker thread.
+///
+/// Lowering, type checking, and codegen recurse on the structure of the
+/// program, so a deeply nested expression drives the recursion as deep
+/// as the nesting. The default main-thread stack (1 MB on Windows) is
+/// too small for ordinary nesting in debug builds, where stack frames
+/// are large. Run the work on a thread with a generous stack instead,
+/// the same approach rustc takes. The reservation is virtual address
+/// space; the OS commits pages only as they are touched.
+const COMPILER_STACK_SIZE: usize = 512 * 1024 * 1024;
+
+fn main() -> ExitCode {
+    let worker = std::thread::Builder::new()
+        .stack_size(COMPILER_STACK_SIZE)
+        .spawn(run)
+        .expect("spawn compiler worker thread");
+    match worker.join() {
+        Ok(code) => code,
+        Err(_) => ExitCode::from(101),
     }
 }
 
-fn execute_file(file_name: &str, verbose: bool, check_only: bool, show_ast: bool) {
-    let source_code = fs::read_to_string(file_name).unwrap_or_else(|err| {
-        eprintln!("❌ Failed to read file '{}': {}", file_name, err);
-        process::exit(1);
-    });
-
-    if verbose {
-        println!("📁 Reading file: {}", file_name);
-        println!("─────────────────────────────────────────");
-    }
-
-    if verbose {
-        println!("\n🔍 LEXING...");
-    }
-
-    let lexer = Lexer::new(source_code.clone());
-
-    if verbose {
-        let mut lex_clone = Lexer::new(source_code.clone());
-        let mut tokens = Vec::new();
-        loop {
-            let token = lex_clone.next_token();
-            if token == raven::lexer::TokenType::EOF {
-                tokens.push(token);
-                break;
-            }
-            tokens.push(token);
+fn run() -> ExitCode {
+    let args: Vec<String> = std::env::args().collect();
+    let Some(first) = args.get(1) else {
+        print_usage();
+        return ExitCode::SUCCESS;
+    };
+    match first.as_str() {
+        "help" | "--help" | "-h" => {
+            print_usage();
+            ExitCode::SUCCESS
         }
-        println!("   Tokens: {:?}", tokens);
-    }
-
-    if verbose {
-        println!("\n🌳 PARSING...");
-    }
-
-    let mut parser = Parser::new(lexer, source_code.clone());
-    let ast = parser.parse().unwrap_or_else(|e| {
-        eprintln!(
-            "\n❌ Parse error: {}",
-            e.with_filename(file_name.to_string()).format()
-        );
-        process::exit(1);
-    });
-
-    if verbose {
-        println!("   ✅ Parsing successful!");
-        println!("\n📜 Abstract Syntax Tree:");
-        println!("{:?}", ast);
-    }
-
-    if verbose {
-        println!("\n🔎 TYPE CHECKING...");
-    }
-
-    let mut type_checker = TypeChecker::new();
-    type_checker.check(&ast).unwrap_or_else(|e| {
-        eprintln!("\n❌ Type error (in {}):\n{}", file_name, e);
-        process::exit(1);
-    });
-
-    if verbose {
-        println!("   ✅ Type checking passed!");
-    }
-
-    if check_only {
-        if verbose {
-            println!("\n─────────────────────────────────────────");
-            println!("✅ Syntax and type checking completed successfully!");
+        "--version" | "-V" => {
+            print_version();
+            ExitCode::SUCCESS
         }
-        return;
-    }
-
-    if show_ast {
-        println!("\n📜 Abstract Syntax Tree:");
-        println!("{:#?}", ast);
-        return;
-    }
-
-    if verbose {
-        println!("\n🚀 EXECUTING...");
-        println!("─────────────────────────────────────────");
-    }
-
-    let mut interpreter = Interpreter::new();
-    match interpreter.execute(&ast) {
-        Ok(_) => {
-            if verbose {
-                println!("\n─────────────────────────────────────────");
-                println!("✅ Program executed successfully!");
+        "build" => match run_build(&args[2..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("raven: {}", e);
+                ExitCode::from(1)
             }
-        }
-        Err(e) => {
-            eprintln!("\n❌ Runtime error: {}", e);
-            process::exit(1);
-        }
-    }
-}
-
-enum ReplInput {
-    /// stdin closed before any code
-    Eof,
-    Quit,
-    Help,
-    Code(String),
-}
-
-/// Read one logical snippet: multiple lines while `(` / `{` depth is non-zero (outside strings
-/// and comments). Single-line statements run as soon as delimiters balance.
-fn read_repl_snippet() -> Result<ReplInput, std::io::Error> {
-    use std::io::{self, Write};
-
-    let mut buffer = String::new();
-    loop {
-        if buffer.is_empty() {
-            print!("raven> ");
-        } else {
-            print!("...> ");
-        }
-        io::stdout().flush()?;
-
-        let mut line = String::new();
-        let n = io::stdin().read_line(&mut line)?;
-        if n == 0 {
-            if buffer.is_empty() {
-                return Ok(ReplInput::Eof);
-            }
-            return Ok(ReplInput::Code(buffer));
-        }
-
-        let trimmed = line.trim();
-        if buffer.is_empty() {
-            if trimmed == "exit" || trimmed == "quit" {
-                return Ok(ReplInput::Quit);
-            }
-            if trimmed == "help" {
-                return Ok(ReplInput::Help);
-            }
-            if trimmed.is_empty() {
-                continue;
-            }
-        }
-
-        buffer.push_str(&line);
-        let (p, b, bk) = delimiter_depth(&buffer);
-        if p > 0 || b > 0 || bk > 0 {
-            continue;
-        }
-        return Ok(ReplInput::Code(buffer));
-    }
-}
-
-fn start_repl(verbose: bool) {
-    println!("🐦 Welcome to Raven REPL!");
-    println!("Type 'exit' or 'quit' to exit, 'help' for help");
-    println!("Multi-line: keep typing until `()`, `{{}}`, and `[]` match (prompt changes to ...>)");
-    println!("─────────────────────────────────────────");
-
-    let mut interpreter = Interpreter::new();
-    let mut type_checker = TypeChecker::new();
-
-    loop {
-        match read_repl_snippet() {
-            Ok(ReplInput::Eof) => {
-                println!("Goodbye!");
-                break;
-            }
-            Ok(ReplInput::Quit) => {
-                println!("Goodbye!");
-                break;
-            }
-            Ok(ReplInput::Help) => {
-                println!("Available commands:");
-                println!("  exit, quit - Exit the REPL");
-                println!("  help - Show this help message");
-                println!("  Any Raven code - Execute the code (multi-line until delimiters match)");
-            }
-            Ok(ReplInput::Code(input)) => {
-                match process_repl_input(&input, &mut interpreter, &mut type_checker, verbose) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        eprintln!("❌ Error: {}", e);
-                    }
-                }
-            }
-            Err(error) => {
-                eprintln!("❌ Error reading input: {}", error);
-                break;
-            }
-        }
-    }
-}
-
-fn process_repl_input(
-    input: &str,
-    interpreter: &mut Interpreter,
-    type_checker: &mut TypeChecker,
-    verbose: bool,
-) -> Result<(), String> {
-    let lexer = Lexer::new(input.to_string());
-
-    if verbose {
-        println!("🔍 Input: {}", input);
-    }
-
-    let mut parser = Parser::new(lexer, input.to_string());
-    let ast = parser
-        .parse()
-        .map_err(|e| e.with_filename("<repl>".to_string()).format())?;
-
-    if verbose {
-        println!("🌳 AST: {:?}", ast);
-    }
-
-    type_checker.check(&ast)?;
-
-    if verbose {
-        println!("✅ Type check passed");
-    }
-
-    match interpreter.execute(&ast) {
-        Ok(value) => match value {
-            raven::code_gen::Value::Void => {}
-            _ => println!("{}", value),
         },
-        Err(e) => return Err(e),
+        other => {
+            eprintln!("raven: unknown subcommand '{}'", other);
+            eprintln!("Run 'raven help' for usage.");
+            ExitCode::from(2)
+        }
     }
+}
 
-    Ok(())
+fn print_version() {
+    println!("raven {}", env!("CARGO_PKG_VERSION"));
+}
+
+fn print_usage() {
+    println!("raven: the Raven compiler");
+    println!();
+    println!("Usage:");
+    println!("  raven <command> [arguments]");
+    println!();
+    println!("Commands:");
+    println!("  build <file.rv> [-o <output>]   Compile a source file to a native executable");
+    println!("  help                            Print this message");
+    println!();
+    println!("Options:");
+    println!("  -h, --help                      Print this message");
+    println!("  -V, --version                   Print the compiler version");
+    println!();
+    println!("To manage packages, use the 'rvpm' command.");
+}
+
+fn run_build(rest: &[String]) -> Result<(), BuildError> {
+    let opts = parse_build_args(rest)?;
+    // The single-file `raven build` has no package context, so external
+    // (`github.com/...`) imports stay deferred and surface as unresolved.
+    // Package-aware builds go through `rvpm build`.
+    driver::build_binary(&opts.input, &opts.output, None).map_err(BuildError::Driver)
+}
+
+#[derive(Debug)]
+struct BuildOpts {
+    input: PathBuf,
+    output: PathBuf,
+}
+
+fn parse_build_args(args: &[String]) -> Result<BuildOpts, BuildError> {
+    let mut input: Option<PathBuf> = None;
+    let mut output: Option<PathBuf> = None;
+    let mut i = 0;
+    while i < args.len() {
+        let a = &args[i];
+        if a == "-o" || a == "--output" {
+            i += 1;
+            if i >= args.len() {
+                return Err(BuildError::Args("expected an output path after -o".into()));
+            }
+            output = Some(PathBuf::from(&args[i]));
+        } else if a.starts_with('-') {
+            return Err(BuildError::Args(format!("unknown flag `{}`", a)));
+        } else if input.is_none() {
+            input = Some(PathBuf::from(a));
+        } else {
+            return Err(BuildError::Args(format!(
+                "unexpected positional argument `{}`",
+                a
+            )));
+        }
+        i += 1;
+    }
+    let input = input.ok_or_else(|| BuildError::Args("missing input source file".into()))?;
+    let output = output.unwrap_or_else(|| default_output_for(&input));
+    Ok(BuildOpts { input, output })
+}
+
+fn default_output_for(input: &Path) -> PathBuf {
+    let stem = input
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("a")
+        .to_string();
+    if cfg!(windows) {
+        PathBuf::from(format!("{}.exe", stem))
+    } else {
+        PathBuf::from(stem)
+    }
+}
+
+#[derive(Debug)]
+enum BuildError {
+    Args(String),
+    Driver(DriverError),
+}
+
+impl std::fmt::Display for BuildError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BuildError::Args(s) => write!(f, "{}", s),
+            BuildError::Driver(e) => write!(f, "{}", e),
+        }
+    }
 }

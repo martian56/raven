@@ -1,0 +1,319 @@
+// std/iter: lazy, single-pass iterator adapters over the Iterator trait.
+// See docs/v2/specs/std-iter.md.
+//
+// A bound that mentions a sibling parameter (`S: Iterator<T>`) must come
+// after it, so each adapter lists element types before its source type.
+
+struct ListIter<T> {
+    items: List<T>,
+    pos: Int,
+}
+
+impl<T> ListIter<T> {
+    fun next(self) -> Option<T> {
+        if self.pos >= self.items.len() {
+            return None
+        }
+        let v = self.items.get(self.pos)
+        self.pos = self.pos + 1
+        return Some(v)
+    }
+
+    fun map<U>(self, f: fun(T) -> U) -> MapIter<T, U, ListIter<T>> {
+        return MapIter { f: f, src: self }
+    }
+
+    fun filter(self, pred: fun(T) -> Bool) -> Filter<T, ListIter<T>> {
+        return Filter { pred: pred, src: self }
+    }
+
+    fun take(self, n: Int) -> Take<T, ListIter<T>> {
+        return Take { left: n, src: self }
+    }
+
+    fun skip(self, n: Int) -> Skip<T, ListIter<T>> {
+        return Skip { left: n, src: self }
+    }
+
+    fun enumerate(self) -> Enumerate<T, ListIter<T>> {
+        return Enumerate { idx: 0, src: self }
+    }
+}
+
+// Build a `ListIter<T>` over `xs`. The free-function form; the method
+// form `xs.iter()` is defined on `List<T>` below.
+fun from_list<T>(xs: List<T>) -> ListIter<T> {
+    return ListIter { items: xs, pos: 0 }
+}
+
+impl<T> List<T> {
+    fun iter(self) -> ListIter<T> {
+        return ListIter { items: self, pos: 0 }
+    }
+}
+
+// ----- MapIter: apply a closure to each element -----
+
+struct MapIter<T, U, S: Iterator<T>> {
+    f: fun(T) -> U,
+    src: S,
+}
+
+impl<T, U, S: Iterator<T>> MapIter<T, U, S> {
+    fun next(self) -> Option<U> {
+        return match self.src.next() {
+            None -> None,
+            Some(v) -> Some((self.f)(v)),
+        }
+    }
+
+    fun map<V>(self, g: fun(U) -> V) -> MapIter<U, V, MapIter<T, U, S>> {
+        return MapIter { f: g, src: self }
+    }
+
+    fun filter(self, pred: fun(U) -> Bool) -> Filter<U, MapIter<T, U, S>> {
+        return Filter { pred: pred, src: self }
+    }
+
+    fun take(self, n: Int) -> Take<U, MapIter<T, U, S>> {
+        return Take { left: n, src: self }
+    }
+
+    fun skip(self, n: Int) -> Skip<U, MapIter<T, U, S>> {
+        return Skip { left: n, src: self }
+    }
+
+    fun enumerate(self) -> Enumerate<U, MapIter<T, U, S>> {
+        return Enumerate { idx: 0, src: self }
+    }
+}
+
+// ----- Filter: keep elements that satisfy a predicate -----
+
+struct Filter<T, S: Iterator<T>> {
+    pred: fun(T) -> Bool,
+    src: S,
+}
+
+impl<T, S: Iterator<T>> Filter<T, S> {
+    fun next(self) -> Option<T> {
+        let done = false
+        while done == false {
+            match self.src.next() {
+                None -> {
+                    return None
+                }
+                Some(v) -> {
+                    if (self.pred)(v) {
+                        return Some(v)
+                    }
+                }
+            }
+        }
+        return None
+    }
+
+    fun map<U>(self, f: fun(T) -> U) -> MapIter<T, U, Filter<T, S>> {
+        return MapIter { f: f, src: self }
+    }
+
+    fun filter(self, pred: fun(T) -> Bool) -> Filter<T, Filter<T, S>> {
+        return Filter { pred: pred, src: self }
+    }
+
+    fun take(self, n: Int) -> Take<T, Filter<T, S>> {
+        return Take { left: n, src: self }
+    }
+
+    fun skip(self, n: Int) -> Skip<T, Filter<T, S>> {
+        return Skip { left: n, src: self }
+    }
+
+    fun enumerate(self) -> Enumerate<T, Filter<T, S>> {
+        return Enumerate { idx: 0, src: self }
+    }
+}
+
+// ----- Take: yield at most n elements -----
+
+struct Take<T, S: Iterator<T>> {
+    left: Int,
+    src: S,
+}
+
+impl<T, S: Iterator<T>> Take<T, S> {
+    fun next(self) -> Option<T> {
+        if self.left <= 0 {
+            return None
+        }
+        self.left = self.left - 1
+        return self.src.next()
+    }
+
+    fun map<U>(self, f: fun(T) -> U) -> MapIter<T, U, Take<T, S>> {
+        return MapIter { f: f, src: self }
+    }
+
+    fun filter(self, pred: fun(T) -> Bool) -> Filter<T, Take<T, S>> {
+        return Filter { pred: pred, src: self }
+    }
+
+    fun take(self, n: Int) -> Take<T, Take<T, S>> {
+        return Take { left: n, src: self }
+    }
+
+    fun skip(self, n: Int) -> Skip<T, Take<T, S>> {
+        return Skip { left: n, src: self }
+    }
+
+    fun enumerate(self) -> Enumerate<T, Take<T, S>> {
+        return Enumerate { idx: 0, src: self }
+    }
+}
+
+// ----- Skip: discard the first n elements, then pass through -----
+
+struct Skip<T, S: Iterator<T>> {
+    left: Int,
+    src: S,
+}
+
+impl<T, S: Iterator<T>> Skip<T, S> {
+    fun next(self) -> Option<T> {
+        while self.left > 0 {
+            self.left = self.left - 1
+            match self.src.next() {
+                None -> {
+                    return None
+                }
+                Some(v) -> {
+                    // discard and continue
+                }
+            }
+        }
+        return self.src.next()
+    }
+
+    fun map<U>(self, f: fun(T) -> U) -> MapIter<T, U, Skip<T, S>> {
+        return MapIter { f: f, src: self }
+    }
+
+    fun filter(self, pred: fun(T) -> Bool) -> Filter<T, Skip<T, S>> {
+        return Filter { pred: pred, src: self }
+    }
+
+    fun take(self, n: Int) -> Take<T, Skip<T, S>> {
+        return Take { left: n, src: self }
+    }
+
+    fun skip(self, n: Int) -> Skip<T, Skip<T, S>> {
+        return Skip { left: n, src: self }
+    }
+
+    fun enumerate(self) -> Enumerate<T, Skip<T, S>> {
+        return Enumerate { idx: 0, src: self }
+    }
+}
+
+// ----- Enumerate: pair each element with its running index -----
+
+// Raven has no tuples yet, so `Enumerate` yields this small record
+// instead of a `(Int, T)` pair. See the spec for the rationale.
+struct Indexed<T> {
+    index: Int,
+    value: T,
+}
+
+struct Enumerate<T, S: Iterator<T>> {
+    idx: Int,
+    src: S,
+}
+
+impl<T, S: Iterator<T>> Enumerate<T, S> {
+    fun next(self) -> Option<Indexed<T>> {
+        return match self.src.next() {
+            None -> None,
+            Some(v) -> {
+                let here = self.idx
+                self.idx = self.idx + 1
+                Some(Indexed { index: here, value: v })
+            },
+        }
+    }
+}
+
+// ----- Consumers: drive an iterator to completion -----
+//
+// These are free generic functions over any `S: Iterator<T>`. Raven has
+// no blanket trait impls, so a consumer cannot be a method shared by
+// every adapter. Writing them as free functions keeps a single
+// definition each: `collect(pipeline)` rather than a method per adapter
+// type. The pipeline is built with the adapter methods (`iter`, `map`,
+// `filter`, ...) and then handed to a consumer.
+
+// Gather every remaining element into a `List<T>`, in order.
+fun collect<T, S: Iterator<T>>(it: S) -> List<T> {
+    let out: List<T> = []
+    for x in it {
+        out.push(x)
+    }
+    return out
+}
+
+// Count the remaining elements.
+fun count<T, S: Iterator<T>>(it: S) -> Int {
+    let n = 0
+    for x in it {
+        n = n + 1
+    }
+    return n
+}
+
+// Left fold: combine the elements into a single accumulator. `init` is
+// the starting value and `f` folds the running accumulator with each
+// element.
+fun fold<T, A, S: Iterator<T>>(it: S, init: A, f: fun(A, T) -> A) -> A {
+    let acc = init
+    for x in it {
+        acc = f(acc, x)
+    }
+    return acc
+}
+
+// True when at least one element satisfies `pred`. Consumes the iterator
+// up to the first match.
+fun any<T, S: Iterator<T>>(it: S, pred: fun(T) -> Bool) -> Bool {
+    for x in it {
+        if pred(x) {
+            return true
+        }
+    }
+    return false
+}
+
+// True when every element satisfies `pred` (vacuously true when empty).
+fun all<T, S: Iterator<T>>(it: S, pred: fun(T) -> Bool) -> Bool {
+    for x in it {
+        if pred(x) == false {
+            return false
+        }
+    }
+    return true
+}
+
+// The first element satisfying `pred`, or `None` when none does.
+fun find<T, S: Iterator<T>>(it: S, pred: fun(T) -> Bool) -> Option<T> {
+    for x in it {
+        if pred(x) {
+            return Some(x)
+        }
+    }
+    return None
+}
+
+// Apply `f` to each element for its side effect.
+fun for_each<T, S: Iterator<T>>(it: S, f: fun(T) -> Unit) {
+    for x in it {
+        f(x)
+    }
+}

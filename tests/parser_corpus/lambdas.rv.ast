@@ -1,0 +1,53 @@
+(file
+  (fn "apply" params=("f":fun(Int) -> Int "x":Int) ret=Int
+    (body-expr
+      (call
+        (ident "f")
+        (ident "x")
+      )
+    )
+  )
+  (fn "double" params=("x":Int) ret=Int
+    (body
+      (let-stmt "f"
+        (lambda inferred=true params=("y")
+          (body
+            (trailing
+              (binary *
+                (ident "y")
+                (int 2)
+              )
+            )
+          )
+        )
+      )
+      (trailing
+        (call
+          (ident "apply")
+          (ident "f")
+          (ident "x")
+        )
+      )
+    )
+  )
+  (fn "verbose" params=() ret=Int
+    (body
+      (let-stmt "g"
+        (lambda inferred=false params=("x":Int) ret=Int
+          (body-expr
+            (binary +
+              (ident "x")
+              (int 1)
+            )
+          )
+        )
+      )
+      (trailing
+        (call
+          (ident "g")
+          (int 10)
+        )
+      )
+    )
+  )
+)

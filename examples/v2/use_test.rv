@@ -1,0 +1,17 @@
+// golden:skip
+// std/test assertions in a passing test program: every assertion holds,
+// so the program reaches the final line and exits zero. A failing
+// assertion would call the runtime panic and abort with a nonzero exit.
+import std/test { assert, assert_msg, assert_true, assert_false, assert_eq_int, assert_eq_str }
+import std/string
+import std/io { println }
+
+fun main() {
+    assert(1 + 1 == 2)
+    assert_msg(2 * 2 == 4, "math broke")
+    assert_true(10 > 3)
+    assert_false(3 > 10)
+    assert_eq_int(6 * 7, 42)
+    assert_eq_str("ab".concat("c"), "abc")
+    println("all passed")
+}

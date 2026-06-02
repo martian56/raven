@@ -1,0 +1,8 @@
+fun parse(s: String) -> Result<Int, String> {
+    return Ok(1)
+}
+
+fun caller(s: String) -> Result<Int, String> {
+    let v = parse(s)?;
+    return Ok(v + 1)
+}

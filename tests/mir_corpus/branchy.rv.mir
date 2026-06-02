@@ -1,0 +1,27 @@
+(mir
+  (fn "pick" origin="pick" ret=Int
+    (params (_0: Bool "c"))
+    (locals
+      (_0 Bool "c" param=true)
+      (_1 Int "if_1" param=false)
+    )
+    (entry bb0)
+    (bb0
+      (switch-int _0 cases=(0:bb2 1:bb1) otherwise=bb2)
+    )
+    (bb1
+      (assign _1 (use 1))
+      (goto bb3)
+    )
+    (bb2
+      (assign _1 (use 2))
+      (goto bb3)
+    )
+    (bb3
+      (return _1)
+    )
+    (bb4
+      (unreachable)
+    )
+  )
+)

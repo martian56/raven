@@ -1,0 +1,6 @@
+struct Box<T> {
+    value: T,
+}
+
+fun make_int_box() -> Box<Int> = Box { value: 1 }
+fun read(b: Box<Int>) -> Int = b.value

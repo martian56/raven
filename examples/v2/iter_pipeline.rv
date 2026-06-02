@@ -1,0 +1,30 @@
+// Lazy iterator pipeline end to end.
+//
+// `xs.iter()` bridges a List into the iterator world; `map` and `filter`
+// are lazy adapters that do no work until a consumer drives them. The
+// consumers (`collect`, `fold`, `count`) are generic over any
+// `S: Iterator<T>`. The element type `T` appears only in each consumer's
+// `Iterator<T>` bound and return type, never in a parameter, so the
+// monomorphizer recovers it by matching the declared return type against
+// the concrete call result. Prints 4, 180, 3.
+
+import std/iter { collect, fold, count }
+
+fun main() {
+    let xs = [1, 2, 3, 4, 5, 6]
+
+    // map then filter then collect into a List, then read its length.
+    let kept = collect(xs.iter().map(fun(x: Int) -> Int = x * 10).filter(fun(y: Int) -> Bool = y > 20))
+    print(kept.len())
+
+    // A fresh pipeline folded into a sum (30 + 40 + 50 + 60).
+    let total = fold(
+        xs.iter().map(fun(x: Int) -> Int = x * 10).filter(fun(y: Int) -> Bool = y > 20),
+        0,
+        fun(acc: Int, v: Int) -> Int = acc + v,
+    )
+    print(total)
+
+    // Count the elements a filter keeps (4, 5, 6).
+    print(count(xs.iter().filter(fun(y: Int) -> Bool = y > 3)))
+}

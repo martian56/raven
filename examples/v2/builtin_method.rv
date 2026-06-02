@@ -1,0 +1,9 @@
+// A method declared on a built-in type via an `impl` block.
+// Compiling and running this prints 42.
+impl Int {
+    fun doubled(self) -> Int = self * 2
+}
+
+fun main() {
+    print(21.doubled())
+}

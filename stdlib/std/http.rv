@@ -1,0 +1,78 @@
+// std/http: an HTTP/1.1 client over the raven-runtime C ABI, backed by
+// ureq. A ureq Response is consumed when its body is read, so the whole
+// request runs in one runtime call that eagerly captures the status,
+// reason, headers, and body into a registry entry keyed by an opaque
+// integer id; the extractors then read that entry by id. A non-2xx HTTP
+// status (404, 500) is a successful request that yielded a response, not
+// a transport error: only DNS, connect, and timeout failures take the Err
+// path through the runtime's thread-local last-error slot, tagged with
+// kind "http". See docs/v2/specs/std-http.md.
+
+import std/error { error_kind }
+
+struct HttpResponse {
+    status_code: Int,
+    status_text: String,
+    // Response headers as `Key: Value` lines joined by `\n`.
+    headers: String,
+    body: String,
+}
+
+extern "C" {
+    fun raven_http_last_error() -> String
+    fun raven_http_request(method: String, url: String, body: String, headers: String) -> Int
+    fun raven_http_status(id: Int) -> Int
+    fun raven_http_status_text(id: Int) -> String
+    fun raven_http_body(id: Int) -> String
+    fun raven_http_header(id: Int, name: String) -> String
+    fun raven_http_headers(id: Int) -> String
+    fun raven_http_free(id: Int)
+}
+
+// An Error tagged with kind "http", its message a context prefix joined to
+// the runtime's last-error text.
+fun http_error(ctx: String) -> Error {
+    return error_kind("http", ctx.concat(": ").concat(raven_http_last_error()))
+}
+
+// Run a request and assemble an HttpResponse, or an Err on transport
+// failure. The headers argument is `Key: Value` lines joined by `\n`, or
+// "" for none. A non-2xx HTTP status is still Ok: the runtime reports it
+// as a normal response.
+fun request(method: String, url: String, body: String, headers: String) -> Result<HttpResponse, Error> {
+    let id = raven_http_request(method, url, body, headers)
+    if id == 0 {
+        return Err(http_error(method))
+    }
+    if raven_http_last_error().length() > 0 {
+        return Err(http_error(method))
+    }
+    let resp = HttpResponse {
+        status_code: raven_http_status(id),
+        status_text: raven_http_status_text(id),
+        headers: raven_http_headers(id),
+        body: raven_http_body(id),
+    }
+    raven_http_free(id)
+    return Ok(resp)
+}
+
+// GET `url`.
+fun get(url: String) -> Result<HttpResponse, Error> {
+    return request("GET", url, "", "")
+}
+
+// POST `body` to `url`.
+fun post(url: String, body: String) -> Result<HttpResponse, Error> {
+    return request("POST", url, body, "")
+}
+
+// PUT `body` to `url`.
+fun put(url: String, body: String) -> Result<HttpResponse, Error> {
+    return request("PUT", url, body, "")
+}
+
+// DELETE `url`.
+fun delete(url: String) -> Result<HttpResponse, Error> {
+    return request("DELETE", url, "", "")
+}

@@ -1,0 +1,357 @@
+//! Internal type representation.
+//!
+//! The AST carries a textual `Type` that mirrors what the user wrote.
+//! The type checker uses its own [`Ty`] representation. It is resolved
+//! (paths are bound to declarations), normalized (the `T?` sugar is
+//! lifted into `Option<T>`), and cheap to compare.
+//!
+//! With generics, `Ty` gains two extra cases:
+//!
+//! * [`Ty::Param`] is a declared generic parameter, identified by the
+//!   declaration that introduces it (its owner span) plus an ordinal
+//!   index inside that declaration's parameter list.
+//! * [`Ty::Var`] is an inference variable, solved by the union-find
+//!   table in [`super::infer::InferCtx`].
+//!
+//! See `docs/v2/specs/generics.md` for the design rationale.
+
+use crate::resolve::DeclId;
+use crate::span::Span;
+use std::fmt;
+use std::path::PathBuf;
+use std::sync::Arc;
+
+/// Identifier for a declared generic parameter.
+///
+/// `owner` is the introducing declaration's span (matching the resolver's
+/// `Binding::GenericParam { owner, name }` value). `index` is the
+/// parameter's ordinal position in that declaration's parameter list.
+/// The pair is unique across the whole file.
+#[derive(Debug, Clone)]
+pub struct ParamId {
+    pub owner_file: Arc<PathBuf>,
+    pub owner_start: usize,
+    pub owner_end: usize,
+    pub index: usize,
+    pub name: String,
+}
+
+impl ParamId {
+    /// Build a parameter id from an owner span and index.
+    pub fn new(owner: &Span, index: usize, name: impl Into<String>) -> Self {
+        Self {
+            owner_file: owner.file.clone(),
+            owner_start: owner.start,
+            owner_end: owner.end,
+            index,
+            name: name.into(),
+        }
+    }
+}
+
+impl PartialEq for ParamId {
+    fn eq(&self, other: &Self) -> bool {
+        self.owner_start == other.owner_start
+            && self.owner_end == other.owner_end
+            && self.index == other.index
+            && *self.owner_file == *other.owner_file
+    }
+}
+
+impl Eq for ParamId {}
+
+impl std::hash::Hash for ParamId {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.owner_file.hash(state);
+        self.owner_start.hash(state);
+        self.owner_end.hash(state);
+        self.index.hash(state);
+    }
+}
+
+/// Identifier for an inference variable. Stable across the lifetime of
+/// a single [`super::infer::InferCtx`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct InferVarId(pub u32);
+
+/// A C FFI primitive type.
+///
+/// These are the foreign-function interface types recognized by the
+/// type checker for use in `extern "C"` blocks. They are deliberately
+/// kept distinct from the native Raven types (`Int`, `String`) so a
+/// program cannot accidentally pass a native value where the C ABI
+/// expects a foreign one. The codegen back end maps each to a concrete
+/// Cranelift ABI type. See `docs/v2/specs/ffi.md`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum FfiTy {
+    /// C `int`, 32-bit on the ABIs Raven targets. Maps to `i32`.
+    CInt,
+    /// C `long`, 64-bit on the ABIs Raven targets. Maps to `i64`.
+    CLong,
+    /// C `size_t`, pointer-width unsigned. Maps to a pointer-width int.
+    CSize,
+    /// `*const c_char`: a pointer to a null-terminated byte buffer.
+    /// Maps to a pointer-width int.
+    CStr,
+    /// C `float`, 32-bit IEEE float. Maps to `f32`. A Raven `Float`
+    /// (f64) argument is accepted where a `CFloat` is expected; the
+    /// back end narrows it to f32 at the call boundary and widens a
+    /// `CFloat` return back to f64.
+    CFloat,
+    /// C `double`, 64-bit IEEE float. Maps to `f64`, the same
+    /// representation a Raven `Float` already uses, so a `Float`
+    /// argument is accepted where a `CDouble` is expected.
+    CDouble,
+    /// A typed raw pointer `CPtr<T>`. Maps to a pointer-width int. The
+    /// pointee type drives the raw load/store width and the offset/alloc
+    /// element stride of the `std/ffi` pointer surface. See
+    /// `docs/v2/specs/std-ffi.md`.
+    CPtr(Box<Ty>),
+    /// An untyped C function pointer. Maps to a pointer-width int. A
+    /// non-capturing top-level Raven function whose parameters and return
+    /// are all C-FFI types can be passed where a `CFnPtr` is expected; the
+    /// signature match is the programmer's responsibility, like C. See
+    /// `docs/v2/specs/std-ffi.md`.
+    CFnPtr,
+}
+
+impl FfiTy {
+    /// C `(size, alignment)` in bytes for a scalar FFI field of a
+    /// `@repr(C)` struct, on the 64-bit ABIs Raven targets. `None` for a
+    /// type that is not a plain integer-class C scalar (floats and the
+    /// nested cases are excluded from the by-value struct slice). Used to
+    /// validate and lay out a repr(C) struct that crosses the FFI by value.
+    pub fn c_scalar_layout(&self) -> Option<(u32, u32)> {
+        match self {
+            FfiTy::CInt => Some((4, 4)),
+            FfiTy::CLong | FfiTy::CSize | FfiTy::CStr | FfiTy::CPtr(_) | FfiTy::CFnPtr => {
+                Some((8, 8))
+            }
+            FfiTy::CFloat | FfiTy::CDouble => None,
+        }
+    }
+}
+
+impl fmt::Display for FfiTy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FfiTy::CInt => f.write_str("CInt"),
+            FfiTy::CLong => f.write_str("CLong"),
+            FfiTy::CSize => f.write_str("CSize"),
+            FfiTy::CStr => f.write_str("CStr"),
+            FfiTy::CFloat => f.write_str("CFloat"),
+            FfiTy::CDouble => f.write_str("CDouble"),
+            FfiTy::CPtr(inner) => write!(f, "CPtr<{}>", inner),
+            FfiTy::CFnPtr => f.write_str("CFnPtr"),
+        }
+    }
+}
+
+/// A resolved internal type.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Ty {
+    /// `()` unit type.
+    Unit,
+    /// `Bool`.
+    Bool,
+    /// 64 bit signed integer.
+    Int,
+    /// 64 bit float.
+    Float,
+    /// A single Unicode scalar value.
+    Char,
+    /// A heap allocated string.
+    Str,
+    /// A user declared struct, with its type arguments.
+    Struct {
+        id: DeclId,
+        name: String,
+        args: Vec<Ty>,
+    },
+    /// A user declared enum, with its type arguments.
+    Enum {
+        id: DeclId,
+        name: String,
+        args: Vec<Ty>,
+    },
+    /// Built in `Option<T>`.
+    Option(Box<Ty>),
+    /// Built in `Result<T, E>`.
+    Result(Box<Ty>, Box<Ty>),
+    /// Built in `List<T>` (the type of array literals).
+    List(Box<Ty>),
+    /// A function value type: `fun(A, B) -> C`.
+    Function { params: Vec<Ty>, ret: Box<Ty> },
+    /// A `dyn Trait` trait object. `name` is the trait's short name and
+    /// `methods` is the trait's method names in declaration order, which
+    /// fixes the vtable slot order used by dynamic dispatch.
+    Dyn { name: String, methods: Vec<String> },
+    /// `Self` inside an `impl` block, bound to the implementing type.
+    /// The contained type is the implementing type for convenience.
+    SelfTy(Box<Ty>),
+    /// `Any`: a value of any concrete type boxed with its runtime type
+    /// identity. The runtime reflection builtins (`to_any`, `cast`,
+    /// `type_name_of`, `field_names_of`, `get_field`) produce and consume
+    /// it. Represented at runtime as a single GC pointer to an `Any` box.
+    /// See `docs/v2/specs/runtime-reflection.md`.
+    Any,
+    /// A C FFI primitive type (`CInt`, `CStr`, `CPtr<T>`, ...). Used in
+    /// `extern "C"` signatures and `c"..."` literals.
+    Ffi(FfiTy),
+    /// A declared generic parameter.
+    Param(ParamId),
+    /// An inference variable.
+    Var(InferVarId),
+    /// A placeholder used when an upstream error already reported the
+    /// problem. Always unifies with anything.
+    Error,
+}
+
+impl Ty {
+    /// True if this type is the special `Error` placeholder.
+    pub fn is_error(&self) -> bool {
+        matches!(self, Ty::Error)
+    }
+
+    /// Strip a leading `SelfTy` wrapper. Methods on `impl` blocks see
+    /// `self: SelfTy(T)` but inside the body comparisons should treat
+    /// the receiver as `T` directly.
+    pub fn strip_self(&self) -> &Ty {
+        match self {
+            Ty::SelfTy(inner) => inner,
+            other => other,
+        }
+    }
+
+    /// True if this type contains any unresolved inference variables.
+    pub fn has_var(&self) -> bool {
+        match self {
+            Ty::Var(_) => true,
+            Ty::Option(t) | Ty::List(t) | Ty::SelfTy(t) => t.has_var(),
+            Ty::Result(a, b) => a.has_var() || b.has_var(),
+            Ty::Struct { args, .. } | Ty::Enum { args, .. } => args.iter().any(|t| t.has_var()),
+            Ty::Function { params, ret } => params.iter().any(|t| t.has_var()) || ret.has_var(),
+            Ty::Ffi(FfiTy::CPtr(inner)) => inner.has_var(),
+            Ty::Dyn { .. } => false,
+            _ => false,
+        }
+    }
+}
+
+impl fmt::Display for Ty {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Ty::Unit => f.write_str("()"),
+            Ty::Bool => f.write_str("Bool"),
+            Ty::Int => f.write_str("Int"),
+            Ty::Float => f.write_str("Float"),
+            Ty::Char => f.write_str("Char"),
+            Ty::Str => f.write_str("String"),
+            Ty::Struct { name, args, .. } | Ty::Enum { name, args, .. } => {
+                f.write_str(name)?;
+                if !args.is_empty() {
+                    f.write_str("<")?;
+                    for (i, a) in args.iter().enumerate() {
+                        if i > 0 {
+                            f.write_str(", ")?;
+                        }
+                        write!(f, "{}", a)?;
+                    }
+                    f.write_str(">")?;
+                }
+                Ok(())
+            }
+            Ty::Option(inner) => write!(f, "Option<{}>", inner),
+            Ty::Result(t, e) => write!(f, "Result<{}, {}>", t, e),
+            Ty::List(inner) => write!(f, "List<{}>", inner),
+            Ty::Function { params, ret } => {
+                f.write_str("fun(")?;
+                for (i, p) in params.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{}", p)?;
+                }
+                write!(f, ") -> {}", ret)
+            }
+            Ty::Any => f.write_str("Any"),
+            Ty::Dyn { name, .. } => write!(f, "dyn {}", name),
+            Ty::SelfTy(inner) => write!(f, "Self/* = {} */", inner),
+            Ty::Ffi(ffi) => write!(f, "{}", ffi),
+            Ty::Param(p) => f.write_str(&p.name),
+            Ty::Var(v) => write!(f, "?{}", v.0),
+            Ty::Error => f.write_str("<error>"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_primitive_types() {
+        assert_eq!(format!("{}", Ty::Int), "Int");
+        assert_eq!(format!("{}", Ty::Bool), "Bool");
+        assert_eq!(format!("{}", Ty::Unit), "()");
+    }
+
+    #[test]
+    fn display_built_in_generics() {
+        let opt_int = Ty::Option(Box::new(Ty::Int));
+        assert_eq!(format!("{}", opt_int), "Option<Int>");
+        let res = Ty::Result(Box::new(Ty::Int), Box::new(Ty::Str));
+        assert_eq!(format!("{}", res), "Result<Int, String>");
+        let list = Ty::List(Box::new(Ty::Bool));
+        assert_eq!(format!("{}", list), "List<Bool>");
+    }
+
+    #[test]
+    fn display_function_type() {
+        let fty = Ty::Function {
+            params: vec![Ty::Int, Ty::Int],
+            ret: Box::new(Ty::Bool),
+        };
+        assert_eq!(format!("{}", fty), "fun(Int, Int) -> Bool");
+    }
+
+    #[test]
+    fn display_struct_with_args() {
+        let s = Ty::Struct {
+            id: DeclId(0),
+            name: "Box".into(),
+            args: vec![Ty::Int],
+        };
+        assert_eq!(format!("{}", s), "Box<Int>");
+    }
+
+    #[test]
+    fn display_param_and_var() {
+        let owner = Span::new(Arc::new(PathBuf::from("t.rv")), 0, 0, 1, 1);
+        let p = Ty::Param(ParamId::new(&owner, 0, "T"));
+        assert_eq!(format!("{}", p), "T");
+        let v = Ty::Var(InferVarId(3));
+        assert_eq!(format!("{}", v), "?3");
+    }
+
+    #[test]
+    fn has_var_walks_recursively() {
+        let owner = Span::new(Arc::new(PathBuf::from("t.rv")), 0, 0, 1, 1);
+        let _ = ParamId::new(&owner, 0, "T");
+        assert!(!Ty::Int.has_var());
+        let l = Ty::List(Box::new(Ty::Var(InferVarId(0))));
+        assert!(l.has_var());
+        let s = Ty::Struct {
+            id: DeclId(0),
+            name: "Box".into(),
+            args: vec![Ty::Var(InferVarId(1))],
+        };
+        assert!(s.has_var());
+    }
+
+    #[test]
+    fn error_unifies_marker() {
+        assert!(Ty::Error.is_error());
+        assert!(!Ty::Int.is_error());
+    }
+}

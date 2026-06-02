@@ -1,0 +1,13 @@
+(types
+  72..159 "{\n    return match c {\n        Red -> 0,\n        Green -> 1,\n        Blue -> 2,\n    }\n}" -> ()
+  85..157 "match c {\n        Red -> 0,\n        Green -> 1,\n        Blue -> 2,\n    }" -> Int
+  91..92 "c" -> Color
+  110..111 "0" -> Int
+  130..131 "1" -> Int
+  149..150 "2" -> Int
+  190..261 "{\n    return match c {\n        Red -> true,\n        _ -> false,\n    }\n}" -> ()
+  203..259 "match c {\n        Red -> true,\n        _ -> false,\n    }" -> Bool
+  209..210 "c" -> Color
+  228..232 "true" -> Bool
+  247..252 "false" -> Bool
+)

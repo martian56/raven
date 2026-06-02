@@ -1,0 +1,14 @@
+(types
+  84..88 "self" -> Self/* = Point */
+  84..90 "self.x" -> Int
+  118..122 "self" -> Self/* = Point */
+  118..124 "self.x" -> Int
+  118..133 "self.x + self.y" -> Int
+  127..131 "self" -> Self/* = Point */
+  127..133 "self.y" -> Int
+  159..179 "Point { x: 1, y: 2 }" -> Point
+  170..171 "1" -> Int
+  176..177 "2" -> Int
+  208..209 "p" -> Point
+  208..217 "p.get_x()" -> Int
+)

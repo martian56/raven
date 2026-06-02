@@ -1,0 +1,112 @@
+// std/regex: regular expressions over the raven-runtime C ABI, backed by
+// the Rust `regex` crate (RE2-style, no backreferences or lookaround). A
+// compiled pattern cannot cross the FFI, so the runtime keeps it in a
+// registry keyed by an opaque integer id and hands Raven that id; the
+// Regex struct wraps the id. compile is fallible and returns
+// Result<Regex, Error> tagged with kind "regex" via the runtime's
+// thread-local last-error slot. List results cross the FFI as `\n`-joined
+// Strings split back into a List in Raven. There is no destructor, so a
+// caller should `free` a pattern when done; not freeing leaks the
+// registry entry for the life of the process. See
+// docs/v2/specs/std-regex.md.
+
+import std/error
+
+struct Regex {
+    id: Int,
+}
+
+extern "C" {
+    fun raven_regex_last_error() -> String
+    fun raven_regex_compile(pattern: String) -> Int
+    fun raven_regex_is_match(id: Int, text: String) -> Bool
+    fun raven_regex_has_match(id: Int, text: String) -> Bool
+    fun raven_regex_find(id: Int, text: String) -> String
+    fun raven_regex_find_all(id: Int, text: String) -> String
+    fun raven_regex_captures(id: Int, text: String) -> String
+    fun raven_regex_replace_all(id: Int, text: String, repl: String) -> String
+    fun raven_regex_split(id: Int, text: String) -> String
+    fun raven_regex_free(id: Int)
+}
+
+// Compile `pattern` into a reusable Regex. An invalid pattern is an Err
+// tagged with kind "regex" carrying the underlying syntax error.
+fun compile(pattern: String) -> Result<Regex, Error> {
+    let id = raven_regex_compile(pattern)
+    if id == 0 {
+        return Err(Error { kind: "regex", message: raven_regex_last_error() })
+    }
+    return Ok(Regex { id: id })
+}
+
+impl Regex {
+    // Whether the pattern matches anywhere in `text`.
+    fun is_match(self, text: String) -> Bool {
+        return raven_regex_is_match(self.id, text)
+    }
+
+    // The first match in `text`, or None when there is no match. A
+    // matched empty string is Some("").
+    fun find(self, text: String) -> Option<String> {
+        if raven_regex_has_match(self.id, text) {
+            return Some(raven_regex_find(self.id, text))
+        }
+        return None
+    }
+
+    // Every non-overlapping match in `text`. No matches yields an empty
+    // list.
+    fun find_all(self, text: String) -> List<String> {
+        return split_lines(raven_regex_find_all(self.id, text))
+    }
+
+    // The capture groups of the first match: group 0 (the whole match)
+    // first, then groups 1, 2, and so on. An unmatched optional group is
+    // an empty string. No match yields an empty list.
+    fun captures(self, text: String) -> List<String> {
+        if raven_regex_has_match(self.id, text) {
+            return split_lines(raven_regex_captures(self.id, text))
+        }
+        let empty: List<String> = []
+        return empty
+    }
+
+    // Replace every match in `text` with `repl`. `$1`, `${1}`, and
+    // `$name` group references in `repl` are honored.
+    fun replace_all(self, text: String, repl: String) -> String {
+        return raven_regex_replace_all(self.id, text, repl)
+    }
+
+    // Split `text` on the pattern.
+    fun split(self, text: String) -> List<String> {
+        return split_lines(raven_regex_split(self.id, text))
+    }
+
+    // Release the compiled pattern. There is no destructor, so call this
+    // when done; not freeing leaks the registry entry.
+    fun free(self) {
+        raven_regex_free(self.id)
+    }
+}
+
+// Split `s` on `\n` into a list. An empty string yields an empty list (not
+// a one-element list of ""), so an empty runtime result maps to an empty
+// list.
+fun split_lines(s: String) -> List<String> {
+    let out: List<String> = []
+    if s.length() == 0 {
+        return out
+    }
+    let n = s.length()
+    let start = 0
+    let i = 0
+    while i < n {
+        if s.char_at(i).starts_with("\n") {
+            out.push(s.substring(start, i))
+            start = i + 1
+        }
+        i = i + 1
+    }
+    out.push(s.substring(start, n))
+    return out
+}

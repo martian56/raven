@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Raven - Modern Programming Language</title>
-    <meta name="description" content="Raven is a modern programming language built with Rust, combining the best features of Rust, Python, C++, Java, and Go. Fast, safe, expressive, and simple.">
-    <meta name="keywords" content="raven, programming language, rust, compiler, interpreter, modern language">
+    <meta name="description" content="Raven is a statically typed, compiled language. Traits, generics, and sum types up top, native code and a garbage collector underneath, with a C FFI when you need it.">
+    <meta name="keywords" content="raven, programming language, compiled, rust, cranelift, statically typed, garbage collected, generics, traits">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -42,8 +42,9 @@
                     <span class="title-subtitle">Modern Programming Language</span>
                 </h1>
                 <p class="hero-description">
-                    A fast, safe, and expressive programming language built with Rust. 
-                    Combining the best features of modern languages while maintaining simplicity and power.
+                    A statically typed, compiled language. Traits, generics, and sum types
+                    up top, native code and a small garbage collector underneath, and a C
+                    FFI for the moments you need it.
                 </p>
                 <div class="hero-buttons">
                     <a href="#download" class="btn btn-primary">Get Started</a>
@@ -51,16 +52,16 @@
                 </div>
                 <div class="hero-stats">
                     <div class="stat">
-                        <span class="stat-number" id="latest-release-version">v1.1.0</span>
+                        <span class="stat-number" id="latest-release-version">v2.0.0</span>
                         <span class="stat-label">Latest Release</span>
                     </div>
                     <div class="stat">
-                        <span class="stat-number">100%</span>
-                        <span class="stat-label">Rust Built</span>
+                        <span class="stat-number">Native</span>
+                        <span class="stat-label">Cranelift Backend</span>
                     </div>
                     <div class="stat">
-                        <span class="stat-number">Fast</span>
-                        <span class="stat-label">Performance</span>
+                        <span class="stat-number">Typed</span>
+                        <span class="stat-label">Generics &amp; Traits</span>
                     </div>
                 </div>
             </div>
@@ -75,11 +76,11 @@
                         <span class="code-title">hello.rv</span>
                     </div>
                     <div class="code-content">
-                        <pre><code><span class="keyword">fun</span> <span class="function">main</span>() <span class="operator">-></span> <span class="type">void</span> {
-    <span class="function">print</span>(<span class="string">"Hello, Raven!"</span>);
-    
-    <span class="keyword">let</span> <span class="variable">name</span>: <span class="type">string</span> <span class="operator">=</span> <span class="function">input</span>(<span class="string">"Enter your name: "</span>);
-    <span class="function">print</span>(<span class="function">format</span>(<span class="string">"Welcome, {}!"</span>, <span class="variable">name</span>));
+                        <pre><code><span class="keyword">fun</span> <span class="function">main</span>() {
+    <span class="keyword">let</span> <span class="variable">names</span> <span class="operator">=</span> [<span class="string">"Ada"</span>, <span class="string">"Alan"</span>, <span class="string">"Grace"</span>]
+    <span class="keyword">for</span> <span class="variable">name</span> <span class="keyword">in</span> <span class="variable">names</span> {
+        <span class="function">print</span>(<span class="string">"Hello, ${name}"</span>)
+    }
 }</code></pre>
                     </div>
                 </div>
@@ -94,44 +95,44 @@
             <div class="features-grid">
                 <div class="feature-card">
                     <div class="feature-icon">⚡</div>
-                    <h3 class="feature-title">Fast Performance</h3>
+                    <h3 class="feature-title">Native Compilation</h3>
                     <p class="feature-description">
-                        Built with Rust for maximum performance. Tree-walking interpreter with optimized execution.
+                        Compiled to native machine code through Cranelift. One static binary, no VM and no interpreter.
+                    </p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🧩</div>
+                    <h3 class="feature-title">A Real Type System</h3>
+                    <p class="feature-description">
+                        Generics with trait bounds, traits for polymorphism, and sum types checked by an exhaustive match.
                     </p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">🛡️</div>
-                    <h3 class="feature-title">Memory Safe</h3>
+                    <h3 class="feature-title">Safe by Default</h3>
                     <p class="feature-description">
-                        Rust's memory safety guarantees without garbage collection overhead.
+                        A tracing garbage collector handles memory, and Result and Option replace null. No manual frees, no null pointers.
                     </p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon">🎯</div>
-                    <h3 class="feature-title">Simple Syntax</h3>
+                    <div class="feature-icon">🧵</div>
+                    <h3 class="feature-title">Concurrency</h3>
                     <p class="feature-description">
-                        Clean, readable syntax inspired by Python with static typing for reliability.
+                        Lightweight goroutines with spawn, and channels for passing values between them.
                     </p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon">🔧</div>
-                    <h3 class="feature-title">Rich Features</h3>
+                    <div class="feature-icon">🔌</div>
+                    <h3 class="feature-title">C FFI</h3>
                     <p class="feature-description">
-                        Structs, enums, modules, file I/O, and comprehensive standard library.
+                        Call into native libraries with extern "C": numeric types, raw pointers, callbacks, and small structs by value.
                     </p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon">💻</div>
-                    <h3 class="feature-title">VS Code Support</h3>
+                    <div class="feature-icon">🛠️</div>
+                    <h3 class="feature-title">Metaprogramming &amp; Tooling</h3>
                     <p class="feature-description">
-                        Full syntax highlighting, snippets, and IntelliSense support in VS Code.
-                    </p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">📦</div>
-                    <h3 class="feature-title">Easy Installation</h3>
-                    <p class="feature-description">
-                        Windows installer available. Python-style CLI interface for familiar workflow.
+                        @derive and macros, compile-time and runtime reflection, GitHub-direct packages with rvpm, one formatter, and a VS Code extension.
                     </p>
                 </div>
             </div>
@@ -143,71 +144,95 @@
         <div class="container">
             <h2 class="section-title">Code Examples</h2>
             <div class="examples-tabs">
-                <button class="tab-btn active" data-tab="basic">Basic Syntax</button>
-                <button class="tab-btn" data-tab="structs">Structs & Enums</button>
-                <button class="tab-btn" data-tab="modules">Modules</button>
+                <button class="tab-btn active" data-tab="basics">Basics</button>
+                <button class="tab-btn" data-tab="traits">Traits &amp; Generics</button>
+                <button class="tab-btn" data-tab="sumtypes">Sum Types</button>
+                <button class="tab-btn" data-tab="concurrency">Concurrency</button>
             </div>
             <div class="examples-content">
-                <div class="tab-content active" id="basic">
+                <div class="tab-content active" id="basics">
                     <div class="code-example">
-                        <pre><code><span class="comment">// Variables and types</span>
-<span class="keyword">let</span> <span class="variable">name</span>: <span class="type">string</span> <span class="operator">=</span> <span class="string">"Raven"</span>;
-<span class="keyword">let</span> <span class="variable">version</span>: <span class="type">int</span> <span class="operator">=</span> <span class="number">1</span>;
-<span class="keyword">let</span> <span class="variable">isActive</span>: <span class="type">bool</span> <span class="operator">=</span> <span class="keyword">true</span>;
+                        <pre><code><span class="comment">// Inferred types, no semicolons</span>
+<span class="keyword">let</span> <span class="variable">name</span> <span class="operator">=</span> <span class="string">"Raven"</span>
+<span class="keyword">let</span> <span class="variable">version</span> <span class="operator">=</span> <span class="number">2</span>
 
-<span class="comment">// Arrays</span>
-<span class="keyword">let</span> <span class="variable">numbers</span>: <span class="type">int[]</span> <span class="operator">=</span> [<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>];
-<span class="variable">numbers</span>.<span class="function">push</span>(<span class="number">6</span>);
+<span class="comment">// Collections and literals</span>
+<span class="keyword">let</span> <span class="variable">numbers</span>: <span class="type">List</span>&lt;<span class="type">Int</span>&gt; <span class="operator">=</span> [<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>]
+<span class="keyword">let</span> <span class="variable">scores</span> <span class="operator">=</span> [<span class="string">"ada"</span>: <span class="number">95</span>, <span class="string">"alan"</span>: <span class="number">88</span>]
 
-<span class="comment">// Control flow</span>
-<span class="keyword">if</span> (<span class="variable">version</span> <span class="operator">></span> <span class="number">0</span>) {
-    <span class="function">print</span>(<span class="function">format</span>(<span class="string">"Raven v{} is ready!"</span>, <span class="variable">version</span>));
+<span class="comment">// Range-based for and string interpolation</span>
+<span class="keyword">for</span> <span class="variable">n</span> <span class="keyword">in</span> <span class="number">0</span>..<span class="number">3</span> {
+    <span class="function">print</span>(<span class="string">"${name} v${version}: ${n}"</span>)
 }</code></pre>
                     </div>
                 </div>
-                <div class="tab-content" id="structs">
+                <div class="tab-content" id="traits">
                     <div class="code-example">
-                        <pre><code><span class="comment">// Struct definition</span>
-<span class="keyword">struct</span> <span class="type">Person</span> {
-    <span class="variable">name</span>: <span class="type">string</span>,
-    <span class="variable">age</span>: <span class="type">int</span>,
-    <span class="variable">isActive</span>: <span class="type">bool</span>
+                        <pre><code><span class="comment">// A trait and an implementation</span>
+<span class="keyword">trait</span> <span class="type">Shape</span> {
+    <span class="keyword">fun</span> <span class="function">area</span>(<span class="keyword">self</span>) <span class="operator">-></span> <span class="type">Float</span>
 }
 
-<span class="comment">// Enum definition</span>
-<span class="keyword">enum</span> <span class="type">HttpStatus</span> {
-    <span class="variable">OK</span>,
-    <span class="variable">NotFound</span>,
-    <span class="variable">InternalError</span>
+<span class="keyword">struct</span> <span class="type">Circle</span> { <span class="variable">radius</span>: <span class="type">Float</span> }
+
+<span class="keyword">impl</span> <span class="type">Shape</span> <span class="keyword">for</span> <span class="type">Circle</span> {
+    <span class="keyword">fun</span> <span class="function">area</span>(<span class="keyword">self</span>) <span class="operator">-></span> <span class="type">Float</span> <span class="operator">=</span> <span class="number">3.14159</span> <span class="operator">*</span> <span class="keyword">self</span>.<span class="variable">radius</span> <span class="operator">*</span> <span class="keyword">self</span>.<span class="variable">radius</span>
 }
 
-<span class="comment">// Usage</span>
-<span class="keyword">let</span> <span class="variable">person</span>: <span class="type">Person</span> <span class="operator">=</span> <span class="type">Person</span> { 
-    <span class="variable">name</span>: <span class="string">"Alice"</span>, 
-    <span class="variable">age</span>: <span class="number">25</span>, 
-    <span class="variable">isActive</span>: <span class="keyword">true</span> 
-};
-
-<span class="keyword">let</span> <span class="variable">status</span>: <span class="type">HttpStatus</span> <span class="operator">=</span> <span class="type">HttpStatus</span>::<span class="variable">OK</span>;</code></pre>
+<span class="comment">// A generic function taking a closure</span>
+<span class="keyword">fun</span> <span class="function">max_by</span>&lt;<span class="type">T</span>&gt;(<span class="variable">a</span>: <span class="type">T</span>, <span class="variable">b</span>: <span class="type">T</span>, <span class="variable">key</span>: <span class="keyword">fun</span>(<span class="type">T</span>) <span class="operator">-></span> <span class="type">Int</span>) <span class="operator">-></span> <span class="type">T</span> {
+    <span class="keyword">if</span> <span class="variable">key</span>(<span class="variable">a</span>) <span class="operator">>=</span> <span class="variable">key</span>(<span class="variable">b</span>) { <span class="keyword">return</span> <span class="variable">a</span> }
+    <span class="keyword">return</span> <span class="variable">b</span>
+}</code></pre>
                     </div>
                 </div>
-                <div class="tab-content" id="modules">
+                <div class="tab-content" id="sumtypes">
                     <div class="code-example">
-                        <pre><code><span class="comment">// math.rv</span>
-<span class="keyword">export</span> <span class="keyword">fun</span> <span class="function">add</span>(<span class="variable">a</span>: <span class="type">int</span>, <span class="variable">b</span>: <span class="type">int</span>) <span class="operator">-></span> <span class="type">int</span> {
-    <span class="keyword">return</span> <span class="variable">a</span> <span class="operator">+</span> <span class="variable">b</span>;
+                        <pre><code><span class="comment">// An enum with payload variants</span>
+<span class="keyword">enum</span> <span class="type">Shape</span> {
+    <span class="variable">Circle</span>(<span class="type">Float</span>),
+    <span class="variable">Rect</span>(<span class="type">Float</span>, <span class="type">Float</span>),
 }
 
-<span class="keyword">export</span> <span class="keyword">fun</span> <span class="function">multiply</span>(<span class="variable">a</span>: <span class="type">int</span>, <span class="variable">b</span>: <span class="type">int</span>) <span class="operator">-></span> <span class="type">int</span> {
-    <span class="keyword">return</span> <span class="variable">a</span> <span class="operator">*</span> <span class="variable">b</span>;
+<span class="comment">// Construct with EnumName.Variant, match with bare names</span>
+<span class="keyword">fun</span> <span class="function">area</span>(<span class="variable">s</span>: <span class="type">Shape</span>) <span class="operator">-></span> <span class="type">Float</span> {
+    <span class="keyword">return</span> <span class="keyword">match</span> <span class="variable">s</span> {
+        <span class="variable">Circle</span>(<span class="variable">r</span>) <span class="operator">-></span> <span class="number">3.14159</span> <span class="operator">*</span> <span class="variable">r</span> <span class="operator">*</span> <span class="variable">r</span>,
+        <span class="variable">Rect</span>(<span class="variable">w</span>, <span class="variable">h</span>) <span class="operator">-></span> <span class="variable">w</span> <span class="operator">*</span> <span class="variable">h</span>,
+    }
 }
 
-<span class="comment">// main.rv</span>
-<span class="keyword">import</span> <span class="string">"math"</span>;
+<span class="comment">// Errors live in the type, propagated with ?</span>
+<span class="keyword">fun</span> <span class="function">half</span>(<span class="variable">n</span>: <span class="type">Int</span>) <span class="operator">-></span> <span class="type">Result</span>&lt;<span class="type">Int</span>, <span class="type">String</span>&gt; {
+    <span class="keyword">if</span> <span class="variable">n</span> <span class="operator">%</span> <span class="number">2</span> <span class="operator">!=</span> <span class="number">0</span> { <span class="keyword">return</span> <span class="function">Err</span>(<span class="string">"odd"</span>) }
+    <span class="keyword">return</span> <span class="function">Ok</span>(<span class="variable">n</span> <span class="operator">/</span> <span class="number">2</span>)
+}</code></pre>
+                    </div>
+                </div>
+                <div class="tab-content" id="concurrency">
+                    <div class="code-example">
+                        <pre><code><span class="comment">// Goroutines and channels</span>
+<span class="keyword">import</span> std/sync { channel }
 
-<span class="keyword">fun</span> <span class="function">main</span>() <span class="operator">-></span> <span class="type">void</span> {
-    <span class="keyword">let</span> <span class="variable">result</span>: <span class="type">int</span> <span class="operator">=</span> <span class="function">add</span>(<span class="number">5</span>, <span class="number">3</span>);
-    <span class="function">print</span>(<span class="function">format</span>(<span class="string">"5 + 3 = {}"</span>, <span class="variable">result</span>));
+<span class="keyword">fun</span> <span class="function">main</span>() {
+    <span class="keyword">let</span> <span class="variable">ch</span> <span class="operator">=</span> <span class="function">channel</span>()
+
+    <span class="comment">// A goroutine sends 1 through 5</span>
+    <span class="keyword">spawn</span>(<span class="keyword">fun</span>() <span class="operator">-></span> <span class="type">Unit</span> {
+        <span class="keyword">let</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">1</span>
+        <span class="keyword">while</span> <span class="variable">i</span> <span class="operator">&lt;=</span> <span class="number">5</span> {
+            <span class="variable">ch</span>.<span class="function">send</span>(<span class="variable">i</span>)
+            <span class="variable">i</span> <span class="operator">=</span> <span class="variable">i</span> <span class="operator">+</span> <span class="number">1</span>
+        }
+    })
+
+    <span class="keyword">let</span> <span class="variable">sum</span> <span class="operator">=</span> <span class="number">0</span>
+    <span class="keyword">let</span> <span class="variable">n</span> <span class="operator">=</span> <span class="number">0</span>
+    <span class="keyword">while</span> <span class="variable">n</span> <span class="operator">&lt;</span> <span class="number">5</span> {
+        <span class="variable">sum</span> <span class="operator">=</span> <span class="variable">sum</span> <span class="operator">+</span> <span class="variable">ch</span>.<span class="function">recv</span>()
+        <span class="variable">n</span> <span class="operator">=</span> <span class="variable">n</span> <span class="operator">+</span> <span class="number">1</span>
+    }
+    <span class="function">print</span>(<span class="variable">sum</span>)  <span class="comment">// 15</span>
 }</code></pre>
                     </div>
                 </div>
@@ -223,36 +248,36 @@
                 <div class="download-card">
                     <div class="download-icon">📀</div>
                     <h3 class="download-title">Release Packages</h3>
-                    <p class="download-description">Download prebuilt packages for Windows and Linux from the latest release</p>
+                    <p class="download-description">Prebuilt installers and archives for Linux, Windows, and macOS, from the latest release.</p>
                     <a href="https://github.com/martian56/raven/releases/latest" class="btn btn-primary" target="_blank">View Release Assets</a>
-                    <span class="download-size">Windows (.msi/.exe) • Linux (.deb/.rpm)</span>
+                    <span class="download-size">Linux (.deb/.rpm/.tar.gz) • Windows (.msi/.zip) • macOS (.pkg/.tar.gz)</span>
                 </div>
                 <div class="download-card">
                     <div class="download-icon">📦</div>
                     <h3 class="download-title">Source Code</h3>
-                    <p class="download-description">Build from source with Rust toolchain</p>
+                    <p class="download-description">Build from source with the Rust toolchain.</p>
                     <a href="https://github.com/martian56/raven" class="btn btn-secondary" target="_blank">View on GitHub</a>
-                    <span class="download-size">Build Required</span>
+                    <span class="download-size">cargo build --release</span>
                 </div>
                 <div class="download-card">
                     <div class="download-icon">🔌</div>
                     <h3 class="download-title">VS Code Extension</h3>
-                    <p class="download-description">Syntax highlighting and IntelliSense</p>
+                    <p class="download-description">Syntax highlighting and snippets.</p>
                     <a href="https://marketplace.visualstudio.com/items?itemName=martian56.raven-language" class="btn btn-secondary" target="_blank">Install Extension</a>
-                    <span class="download-size">15.65KB</span>
+                    <span class="download-size">Free</span>
                 </div>
             </div>
             <div class="install-instructions">
                 <h3>Quick Start</h3>
                 <div class="install-code">
-                    <pre><code><span class="comment"># Run a Raven program</span>
-raven hello.rv
+                    <pre><code><span class="comment"># Compile a source file to a native binary</span>
+raven build hello.rv -o hello
+./hello
 
-<span class="comment"># Start interactive REPL</span>
-raven
-
-<span class="comment"># Check syntax only</span>
-raven hello.rv -c</code></pre>
+<span class="comment"># Or start a project with the package manager</span>
+rvpm init my_app
+cd my_app
+rvpm run</code></pre>
                 </div>
             </div>
         </div>
@@ -264,24 +289,24 @@ raven hello.rv -c</code></pre>
             <h2 class="section-title">Documentation</h2>
             <div class="docs-grid">
                 <div class="doc-card">
+                    <h3>Getting Started</h3>
+                    <p>Install the toolchain and compile your first program</p>
+                    <a href="https://martian56.github.io/raven/v2/guide/getting-started/" class="doc-link" target="_blank">Start Here →</a>
+                </div>
+                <div class="doc-card">
                     <h3>Language Reference</h3>
-                    <p>Complete syntax guide and language features</p>
-                    <a href="https://martian56.github.io/raven/" class="doc-link" target="_blank">Read Docs →</a>
+                    <p>Every construct in the language, with examples</p>
+                    <a href="https://martian56.github.io/raven/v2/guide/language-reference/" class="doc-link" target="_blank">Read Docs →</a>
                 </div>
                 <div class="doc-card">
                     <h3>Standard Library</h3>
-                    <p>Built-in functions and modules reference</p>
-                    <a href="https://martian56.github.io/raven/standard-library/overview/" class="doc-link" target="_blank">Browse API →</a>
+                    <p>What each std module gives you</p>
+                    <a href="https://martian56.github.io/raven/v2/guide/standard-library/" class="doc-link" target="_blank">Browse API →</a>
                 </div>
                 <div class="doc-card">
-                    <h3>Examples</h3>
-                    <p>Sample programs and tutorials</p>
-                    <a href="https://martian56.github.io/raven/examples/basic/" class="doc-link" target="_blank">View Examples →</a>
-                </div>
-                <div class="doc-card">
-                    <h3>VS Code Extension</h3>
-                    <p>Installation and usage guide</p>
-                    <a href="https://marketplace.visualstudio.com/items?itemName=martian56.raven-language" class="doc-link" target="_blank">Extension Docs →</a>
+                    <h3>rvpm</h3>
+                    <p>Projects, dependencies, and builds</p>
+                    <a href="https://martian56.github.io/raven/v2/guide/rvpm/" class="doc-link" target="_blank">Package Manager →</a>
                 </div>
             </div>
         </div>
@@ -297,7 +322,7 @@ raven hello.rv -c</code></pre>
                         <span class="logo-text">Raven</span>
                     </div>
                     <p class="footer-description">
-                        Modern programming language built with Rust for developers who value performance, safety, and expressiveness.
+                        A statically typed, compiled language for people who want a real type system, native binaries, and C interop without the ceremony.
                     </p>
                 </div>
                 <div class="footer-links">
@@ -326,7 +351,7 @@ raven hello.rv -c</code></pre>
                 </div>
             </div>
             <div class="footer-bottom">
-                <p>&copy; 2025 Raven Programming Language. Made with ❤️ and Rust.</p>
+                <p>&copy; 2026 Raven Programming Language. Made with Rust.</p>
             </div>
         </div>
     </footer>

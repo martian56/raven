@@ -1,0 +1,129 @@
+import "./modules/mod0" { compute_0 }
+import "./modules/mod1" { compute_1 }
+import "./modules/mod2" { compute_2 }
+import "./modules/mod3" { compute_3 }
+import "./modules/mod4" { compute_4 }
+import "./modules/mod5" { compute_5 }
+import "./modules/mod6" { compute_6 }
+import "./modules/mod7" { compute_7 }
+import "./modules/mod8" { compute_8 }
+import "./modules/mod9" { compute_9 }
+import "./modules/mod10" { compute_10 }
+import "./modules/mod11" { compute_11 }
+import "./modules/mod12" { compute_12 }
+import "./modules/mod13" { compute_13 }
+import "./modules/mod14" { compute_14 }
+import "./modules/mod15" { compute_15 }
+import "./modules/mod16" { compute_16 }
+import "./modules/mod17" { compute_17 }
+import "./modules/mod18" { compute_18 }
+import "./modules/mod19" { compute_19 }
+import "./modules/mod20" { compute_20 }
+import "./modules/mod21" { compute_21 }
+import "./modules/mod22" { compute_22 }
+import "./modules/mod23" { compute_23 }
+import "./modules/mod24" { compute_24 }
+import "./modules/mod25" { compute_25 }
+import "./modules/mod26" { compute_26 }
+import "./modules/mod27" { compute_27 }
+import "./modules/mod28" { compute_28 }
+import "./modules/mod29" { compute_29 }
+import "./modules/mod30" { compute_30 }
+import "./modules/mod31" { compute_31 }
+import "./modules/mod32" { compute_32 }
+import "./modules/mod33" { compute_33 }
+import "./modules/mod34" { compute_34 }
+import "./modules/mod35" { compute_35 }
+import "./modules/mod36" { compute_36 }
+import "./modules/mod37" { compute_37 }
+import "./modules/mod38" { compute_38 }
+import "./modules/mod39" { compute_39 }
+import "./modules/mod40" { compute_40 }
+import "./modules/mod41" { compute_41 }
+import "./modules/mod42" { compute_42 }
+import "./modules/mod43" { compute_43 }
+import "./modules/mod44" { compute_44 }
+import "./modules/mod45" { compute_45 }
+import "./modules/mod46" { compute_46 }
+import "./modules/mod47" { compute_47 }
+import "./modules/mod48" { compute_48 }
+import "./modules/mod49" { compute_49 }
+import "./modules/mod50" { compute_50 }
+import "./modules/mod51" { compute_51 }
+import "./modules/mod52" { compute_52 }
+import "./modules/mod53" { compute_53 }
+import "./modules/mod54" { compute_54 }
+import "./modules/mod55" { compute_55 }
+import "./modules/mod56" { compute_56 }
+import "./modules/mod57" { compute_57 }
+import "./modules/mod58" { compute_58 }
+import "./modules/mod59" { compute_59 }
+import "./modules/mod60" { compute_60 }
+import "./modules/mod61" { compute_61 }
+
+fun main() {
+    let total = 0
+    total = total + compute_0(0 + 1)
+    total = total + compute_1(1 + 1)
+    total = total + compute_2(2 + 1)
+    total = total + compute_3(3 + 1)
+    total = total + compute_4(4 + 1)
+    total = total + compute_5(5 + 1)
+    total = total + compute_6(6 + 1)
+    total = total + compute_7(7 + 1)
+    total = total + compute_8(8 + 1)
+    total = total + compute_9(9 + 1)
+    total = total + compute_10(10 + 1)
+    total = total + compute_11(11 + 1)
+    total = total + compute_12(12 + 1)
+    total = total + compute_13(13 + 1)
+    total = total + compute_14(14 + 1)
+    total = total + compute_15(15 + 1)
+    total = total + compute_16(16 + 1)
+    total = total + compute_17(17 + 1)
+    total = total + compute_18(18 + 1)
+    total = total + compute_19(19 + 1)
+    total = total + compute_20(20 + 1)
+    total = total + compute_21(21 + 1)
+    total = total + compute_22(22 + 1)
+    total = total + compute_23(23 + 1)
+    total = total + compute_24(24 + 1)
+    total = total + compute_25(25 + 1)
+    total = total + compute_26(26 + 1)
+    total = total + compute_27(27 + 1)
+    total = total + compute_28(28 + 1)
+    total = total + compute_29(29 + 1)
+    total = total + compute_30(30 + 1)
+    total = total + compute_31(31 + 1)
+    total = total + compute_32(32 + 1)
+    total = total + compute_33(33 + 1)
+    total = total + compute_34(34 + 1)
+    total = total + compute_35(35 + 1)
+    total = total + compute_36(36 + 1)
+    total = total + compute_37(37 + 1)
+    total = total + compute_38(38 + 1)
+    total = total + compute_39(39 + 1)
+    total = total + compute_40(40 + 1)
+    total = total + compute_41(41 + 1)
+    total = total + compute_42(42 + 1)
+    total = total + compute_43(43 + 1)
+    total = total + compute_44(44 + 1)
+    total = total + compute_45(45 + 1)
+    total = total + compute_46(46 + 1)
+    total = total + compute_47(47 + 1)
+    total = total + compute_48(48 + 1)
+    total = total + compute_49(49 + 1)
+    total = total + compute_50(50 + 1)
+    total = total + compute_51(51 + 1)
+    total = total + compute_52(52 + 1)
+    total = total + compute_53(53 + 1)
+    total = total + compute_54(54 + 1)
+    total = total + compute_55(55 + 1)
+    total = total + compute_56(56 + 1)
+    total = total + compute_57(57 + 1)
+    total = total + compute_58(58 + 1)
+    total = total + compute_59(59 + 1)
+    total = total + compute_60(60 + 1)
+    total = total + compute_61(61 + 1)
+    print(total)
+}

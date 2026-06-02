@@ -1,35 +1,95 @@
-struct Person {
-    name: string,
-    age: int,
-    isActive: bool
+// Sample Raven v2 program for exercising the VS Code extension grammar.
+
+import std/io { println }
+import std/sync { channel, channel_buffered, yield_now }
+import std/ffi { alloc, free, load, store, offset }
+
+@derive(Eq, Hash, ToString, Debug)
+struct User {
+    id: Int,
+    name: String,
 }
 
-enum HttpStatus {
-    OK,
-    NotFound,
-    InternalError
+@repr(C)
+struct Header {
+    tag: CInt,
+    len: CInt,
 }
 
-// Sample Raven program for testing VS Code extension
-fun main() -> void {
-    print("Hello from Raven VS Code Extension!");
-    
-    let name: string = input("Enter your name: ");
-    print(format("Hello, {}!", name));
-    
-    let numbers: int[] = [1, 2, 3, 4, 5];
-    numbers.push(6);
-    print(format("Numbers: {}", numbers));
-    
-    let person: Person = Person { 
-        name: "Alice", 
-        age: 25, 
-        isActive: true 
-    };
-    
-    print(format("Person: {}, Age: {}", person.name, person.age));
-    
-    let status: HttpStatus = HttpStatus::OK;
-    print(format("Status: {}", status));
+// Declarative macro plus a call site below.
+macro twice { ($x:expr) => { ($x) + ($x) } }
+
+extern "C" {
+    fun raven_ffi_qsort_i32(p: CPtr<CInt>, n: CSize, cmp: CFnPtr)
 }
-main();
+
+struct Point<T> {
+    x: T,
+    y: T,
+}
+
+enum Shape {
+    Circle(Float),
+    Square(Float),
+}
+
+trait Area {
+    fun area(self) -> Float
+}
+
+impl Area for Shape {
+    fun area(self) -> Float = match self {
+        Circle(r) -> r * r * 3.14159,
+        Square(w) -> w * w,
+    }
+}
+
+fun describe<T: ToString>(value: T) -> String = value.to_string()
+
+extern "C" {
+    fun strlen(s: CStr) -> CSize
+}
+
+fun main() {
+    let name = "Raven"
+    let count = 0x2a
+    println("Hello, ${name}! count = ${count}")
+
+    let nums = [1, 2, 3, 4, 5]
+    let total = 0
+    for n in nums {
+        total += n
+    }
+    print(total)
+
+    for i in 0..3 {
+        if i == 1 {
+            continue
+        }
+        print(i)
+    }
+
+    let s = Shape.Circle(2.0)
+    print(describe(s.area()))
+
+    let n = strlen(c"hello")
+    print(n)
+
+    print(twice!(n + 1))
+
+    let u = User { id: 7, name: "ada" }
+    let a = to_any<User>(u)
+    print(type_name_of(a))
+
+    let ch = channel()
+    spawn(fun() -> Unit {
+        ch.send(1)
+        yield_now()
+    })
+    print(ch.recv())
+
+    let buf = alloc<CInt>(4)
+    store<CInt>(buf, 10)
+    print(load<CInt>(offset<CInt>(buf, 0)))
+    free<CInt>(buf)
+}
