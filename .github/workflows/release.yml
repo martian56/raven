@@ -206,6 +206,7 @@ jobs:
         with:
           name: ${{ matrix.name }}
           path: dist/*
+          retention-days: 7
 
       - name: Upload to release
         if: github.ref_type == 'tag'
