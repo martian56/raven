@@ -714,16 +714,20 @@ pub extern "C" fn raven_ffi_point_sum(p: RavenFfiPoint) -> i32 {
 
 /// Return a non-deterministic 64-bit seed for entropy seeding.
 ///
-/// Mixes a high-resolution timestamp with the process id through a
-/// splitmix64 finalizer so distinct calls differ. This is a seed source,
-/// not a cryptographic random generator.
+/// Mixes a high-resolution timestamp, the process id, and a process-global
+/// call counter through a splitmix64 finalizer. The counter guarantees
+/// successive calls differ even within one clock tick: the finalizer is a
+/// bijection, so distinct mixed inputs map to distinct outputs. This is a
+/// seed source, not a cryptographic random generator.
 #[no_mangle]
 pub extern "C" fn raven_random_entropy() -> i64 {
+    static SEQ: AtomicI64 = AtomicI64::new(0);
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed) as u64;
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0);
-    let mut z = nanos ^ (u64::from(process::id()) << 32);
+    let mut z = nanos ^ (u64::from(process::id()) << 32) ^ seq.wrapping_mul(0x9E3779B97F4A7C15);
     z = z.wrapping_add(0x9E3779B97F4A7C15);
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
@@ -1817,11 +1821,24 @@ pub extern "C" fn raven_process_free(id: i64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
     use std::mem::{align_of, size_of};
 
     #[test]
     fn object_header_is_sixteen_bytes() {
         assert_eq!(size_of::<ObjectHeader>(), 16);
+    }
+
+    #[test]
+    fn random_entropy_never_repeats_within_a_process() {
+        // The call counter must make successive seeds distinct even when
+        // many calls land in the same clock tick, so a fresh-per-call
+        // entropy seed (for example UUID v4) cannot collide.
+        let n = 100_000;
+        let mut seen = HashSet::with_capacity(n);
+        for _ in 0..n {
+            assert!(seen.insert(raven_random_entropy()), "entropy seed repeated");
+        }
     }
 
     #[test]
