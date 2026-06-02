@@ -48,34 +48,44 @@ let u: User = User { name: "Raven", age: 1 };
 greet(u);
 ```
 
+## Install
+
+Download the installer or archive for your platform from the [releases page](https://github.com/martian56/raven/releases):
+
+- Linux: `.deb`, `.rpm`, or `.tar.gz`
+- Windows: `.msi` or `.zip`
+- macOS: `.pkg` or `.tar.gz` (Intel and Apple Silicon)
+
+This installs the `raven` compiler and the `rvpm` package manager and adds them to your `PATH`. Compiling a program also needs a C linker on your machine (the MSVC build tools on Windows, `cc`/`clang` on Linux and macOS).
+
 ## Quick Start
 
 ```bash
-# Build from source
+# Compile a source file to a native binary
+raven build hello.rv -o hello
+./hello
+```
+
+Project workflow with `rvpm`:
+
+```bash
+rvpm init my_app
+cd my_app
+rvpm run          # builds and runs src/main.rv
+rvpm fmt          # format the .rv sources
+```
+
+### Build from source
+
+For contributors, or to track the latest commit:
+
+```bash
 git clone https://github.com/martian56/raven.git
 cd raven
 cargo build --release
-
-# Run a file
-./target/release/raven hello.rv
-
-# Type-check only (no run)
-./target/release/raven hello.rv -c
-
-# REPL
-./target/release/raven
 ```
 
-**Project workflow** (optional `rv.toml`):
-
-```bash
-./target/release/rvpm init my_app
-cd my_app
-./target/release/rvpm run          # runs src/main.rv
-./target/release/rvpm fmt          # format .rv sources (see [fmt] in rv.toml)
-```
-
-Or get the installer for your OS from the [releases](https://github.com/martian56/raven/releases) page.
+The `raven` and `rvpm` binaries land in `target/release/`.
 
 ## Learn More
 

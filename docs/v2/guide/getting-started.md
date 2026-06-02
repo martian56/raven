@@ -7,9 +7,21 @@ through Cranelift, linking against the Raven runtime.
 This page takes you from a single source file to a compiled binary, then
 to a managed project with `rvpm`.
 
-## Build the toolchain
+## Install
 
-Build the `raven` and `rvpm` binaries from source:
+Download the installer or archive for your platform from the
+[releases page](https://github.com/martian56/raven/releases): `.deb`,
+`.rpm`, or `.tar.gz` for Linux, `.msi` or `.zip` for Windows, and `.pkg`
+or `.tar.gz` for macOS (Intel and Apple Silicon). Each installs the
+`raven` compiler and the `rvpm` package manager and adds them to your
+`PATH`.
+
+Compiling a program also needs a C linker on your machine: the MSVC build
+tools on Windows, or `cc`/`clang` on Linux and macOS. The compiler uses it
+to link the final binary.
+
+To build from source instead (for contributors, or to track the latest
+commit):
 
 ```bash
 git clone https://github.com/martian56/raven.git

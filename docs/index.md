@@ -88,7 +88,9 @@ fun main() {
 
 ## Install
 
-The fastest path today is building from source:
+Download the installer or archive for your platform from the [releases page](https://github.com/martian56/raven/releases): `.deb`/`.rpm`/`.tar.gz` for Linux, `.msi`/`.zip` for Windows, and `.pkg`/`.tar.gz` for macOS (Intel and Apple Silicon). Each one installs the `raven` compiler and the `rvpm` package manager and adds them to your `PATH`. Compiling a program also needs a C linker (the MSVC build tools on Windows, `cc` or `clang` on Linux and macOS).
+
+If you would rather build from source, or want to track the latest commit:
 
 ```bash
 git clone https://github.com/martian56/raven.git
@@ -96,7 +98,7 @@ cd raven
 cargo build --release
 ```
 
-The `raven` and `rvpm` binaries land in `target/release/`. Add that directory to your `PATH`. Signed installers for Linux, Windows, and macOS are produced by the release workflow and attached to each tagged release on [GitHub](https://github.com/martian56/raven/releases).
+The `raven` and `rvpm` binaries land in `target/release/`.
 
 The [VS Code extension](https://marketplace.visualstudio.com/items?itemName=martian56.raven-language) adds syntax highlighting and snippets.
 
