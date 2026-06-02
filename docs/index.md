@@ -1,118 +1,105 @@
-# Welcome to Raven
+# Raven
 
-**Raven** is a modern programming language built with Rust, combining the best features of Rust, Python, C++, Java, and Go. It's designed to be fast, safe, expressive, and simple—without compromising power or performance.
+Raven is a statically typed, compiled language. You write high level code with traits, generics, and pattern matching, and the compiler turns it into a native binary through Cranelift. A small garbage collector handles memory, so there are no manual `free` calls and no borrow checker to argue with, and a C FFI is there for the moments you need to drop down to a native library.
 
-## 🚀 Why Raven?
+The short version: the readability of Python, the type system and sum types of Rust, the simplicity of Go, and real C interop, in one compiled language.
 
-- **🔥 Fast** like C++ - Built with Rust for maximum performance
-- **🛡️ Memory-safe** like Rust - No garbage collection overhead
-- **🧠 Readable** like Python - Clean, intuitive syntax
-- **🧱 Scalable** like Java - Robust type system
-- **🎯 Simple** like Go - Easy to learn and use
-
-## ✨ Key Features
-
-### **Professional CLI Interface**
-```bash
-# Execute files (Python-style)
-raven hello.rv
-
-# Interactive REPL
-raven
-
-# Type-check only (parse + types; no run)
-raven hello.rv -c
-
-# Optional: project helper (init, run, fmt)
-rvpm init my_app && cd my_app && rvpm run
-rvpm fmt
-```
-
-### **Modern Language Features**
-- **Static Typing** - Type safety without complexity
-- **Structs & Enums** - User-defined data structures
-- **Struct Methods** - OOP-style methods via `impl` blocks
-- **Modules** - Import/export system
-- **Standard Library** - Comprehensive built-in functions
-- **VS Code Support** - Full syntax highlighting and IntelliSense
-
-### **Rich Type System**
 ```raven
-// Basic types
-let name: string = "Raven";
-let version: int = 1;
-let isActive: bool = true;
-
-// Arrays
-let numbers: int[] = [1, 2, 3, 4, 5];
-
-// Structs
-struct Person {
-    name: string,
-    age: int,
-    isActive: bool
-}
-
-// Enums
-enum HttpStatus {
-    OK,
-    NotFound,
-    InternalError
+fun main() {
+    let names = ["Ada", "Alan", "Grace"]
+    for name in names {
+        print("Hello, ${name}")
+    }
 }
 ```
 
-## 📦 Installation
+```bash
+raven build hello.rv -o hello
+./hello
+```
 
-### **Windows Installer**
-Download the latest MSI from [GitHub Releases](https://github.com/martian56/raven/releases).
+## What you get
 
-### **VS Code Extension**
-Install the Raven language extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=martian56.raven-language).
+- **Native compilation.** Cranelift backend, single static binary, no VM and no interpreter.
+- **A real type system.** Generics with trait bounds, traits for polymorphism, and sum types (`enum` with payloads) checked by an exhaustive `match`.
+- **Errors in the open.** `Result<T, E>` and `Option<T>` with the `?` operator instead of exceptions or `null`. There is no `null` in the language.
+- **Garbage collected.** A tracing collector manages the heap. You allocate freely and never write a destructor.
+- **Concurrency.** Lightweight goroutines with `spawn` and channels for passing values between them.
+- **C FFI.** Declare `extern "C"` functions and call into native libraries, with C numeric types, pointers, callbacks, and small structs by value.
+- **Metaprogramming.** `@derive` for the common traits and JSON, declarative macros, and compile time plus runtime reflection.
+- **Tooling that ships with the language.** One canonical formatter (`rvpm fmt`), GitHub direct packages (`rvpm`), and a VS Code extension.
 
-### **Build from Source**
+## A fuller taste
+
+```raven
+import std/io { println }
+
+trait Shape {
+    fun area(self) -> Float
+}
+
+struct Circle { radius: Float }
+struct Rect { width: Float, height: Float }
+
+impl Shape for Circle {
+    fun area(self) -> Float = 3.14159 * self.radius * self.radius
+}
+
+impl Shape for Rect {
+    fun area(self) -> Float = self.width * self.height
+}
+
+enum Expr {
+    Lit(Int),
+    Add(List<Expr>),
+}
+
+impl Expr {
+    fun eval(self) -> Int {
+        return match self {
+            Lit(n) -> n,
+            Add(parts) -> {
+                let total = 0
+                for p in parts {
+                    total = total + p.eval()
+                }
+                total
+            },
+        }
+    }
+}
+
+fun main() {
+    let c = Circle { radius: 2.0 }
+    println("area = ${c.area()}")
+
+    let tree = Expr.Add([Expr.Lit(2), Expr.Lit(3), Expr.Lit(5)])
+    println("eval = ${tree.eval()}")
+}
+```
+
+## Get started
+
+- New here? Start with [Getting Started](v2/guide/getting-started.md). It takes you from a single file to a managed project.
+- Want the whole surface of the language? See the [Language Reference](v2/guide/language-reference.md).
+- Looking for what the standard library gives you? The [Standard Library](v2/guide/standard-library.md) page walks through every module.
+- Managing dependencies and builds? Read the [rvpm guide](v2/guide/rvpm.md).
+- Coming from Raven v1? The [migration guide](v2/migration.md) maps every breaking change.
+
+## Install
+
+The fastest path today is building from source:
+
 ```bash
 git clone https://github.com/martian56/raven.git
 cd raven
 cargo build --release
 ```
 
-## 🎯 Quick Start
+The `raven` and `rvpm` binaries land in `target/release/`. Add that directory to your `PATH`. Signed installers for Linux, Windows, and macOS are produced by the release workflow and attached to each tagged release on [GitHub](https://github.com/martian56/raven/releases).
 
-1. **Install Raven** using the Windows installer
-2. **Create a file** `hello.rv`:
-   ```raven
-   fun main() -> void {
-       print("Hello, Raven!");
-   }
-   
-   main();
-   ```
-3. **Run it**: `raven hello.rv`
-4. **Try the REPL**: `raven`
+The [VS Code extension](https://marketplace.visualstudio.com/items?itemName=martian56.raven-language) adds syntax highlighting and snippets.
 
-## 📚 Documentation
+## A note on versions
 
-- **[Language Reference](syntax.md)** - Complete syntax guide
-- **[Standard Library](standard-library/overview.md)** - Built-in functions and modules
-- **[rvpm and formatting](getting-started/rvpm-and-format.md)** - `rv.toml`, `rvpm fmt`, `[fmt]`
-- **[Examples](examples/basic.md)** - Sample programs and tutorials
-- **[VS Code Extension](resources/vscode-extension.md)** - Development environment setup
-
-## 🤝 Community
-
-- **GitHub**: [martian56/raven](https://github.com/martian56/raven)
-- **Issues**: Report bugs and request features
-- **Discussions**: Ask questions and share ideas
-
-## 🚀 What's Next?
-
-The current toolchain includes the interpreter, type checker, **rvpm** scaffolding (`init`, `run`, `fmt`), and optional **`[fmt]`** settings in `rv.toml`. Planned work includes:
-- Bytecode VM or compiled backend
-- Advanced type system (generics, traits)
-- Concurrency (async/await)
-- Full **rvpm** package install / registry
-- Language server protocol (LSP)
-
----
-
-**Ready to start coding with Raven?** Check out our [Getting Started Guide](getting-started/installation.md)!
+This site documents **Raven v2**, the compiled language. Raven v1 was a tree walking interpreter with a different syntax; its docs still live under [v1 docs](getting-started/installation.md) for anyone maintaining older code. If you are starting fresh, you want v2.

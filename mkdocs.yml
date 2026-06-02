@@ -81,13 +81,13 @@ plugins:
 
 nav:
   - Home: index.md
-  - v2:
-    - Getting Started: v2/guide/getting-started.md
-    - Language Reference: v2/guide/language-reference.md
-    - Standard Library: v2/guide/standard-library.md
-    - rvpm: v2/guide/rvpm.md
-    - Migration from v1: v2/migration.md
-  - v1 (maintenance):
+  - Getting Started: v2/guide/getting-started.md
+  - Language Reference: v2/guide/language-reference.md
+  - Standard Library: v2/guide/standard-library.md
+  - rvpm: v2/guide/rvpm.md
+  - Migrate from v1: v2/migration.md
+  - v1 docs:
+    - About these docs: v1/about.md
     - Getting Started:
       - Installation: getting-started/installation.md
       - Quick Start: getting-started/quick-start.md
@@ -105,7 +105,7 @@ nav:
       - Standard Library Spec: STDLIB_SPEC.md
     - Resources:
       - VS Code Extension: resources/vscode-extension.md
-  - Repository: https://github.com/martian56/raven
+  - GitHub: https://github.com/martian56/raven
   - VS Code Marketplace: https://marketplace.visualstudio.com/items?itemName=martian56.raven-language
 
 extra:
