@@ -88,7 +88,7 @@ fun main() {
 
 ## Install
 
-Download the installer or archive for your platform from the [releases page](https://github.com/martian56/raven/releases): `.deb`/`.rpm`/`.tar.gz` for Linux, `.msi`/`.zip` for Windows, and `.pkg`/`.tar.gz` for macOS (Intel and Apple Silicon). Each one installs the `raven` compiler and the `rvpm` package manager and adds them to your `PATH`. Compiling a program also needs a C linker (the MSVC build tools on Windows, `cc` or `clang` on Linux and macOS).
+Download the installer or archive for your platform from the [releases page](https://github.com/martian56/raven/releases): `.deb`/`.rpm`/`.tar.gz` for Linux, `.msi`/`.zip` for Windows, and `.pkg`/`.tar.gz` for macOS (Apple Silicon). Each one installs the `raven` compiler and the `rvpm` package manager and adds them to your `PATH`. Compiling a program also needs a C linker (the MSVC build tools on Windows, `cc` or `clang` on Linux and macOS).
 
 If you would rather build from source, or want to track the latest commit:
 

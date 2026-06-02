@@ -12,7 +12,7 @@ to a managed project with `rvpm`.
 Download the installer or archive for your platform from the
 [releases page](https://github.com/martian56/raven/releases): `.deb`,
 `.rpm`, or `.tar.gz` for Linux, `.msi` or `.zip` for Windows, and `.pkg`
-or `.tar.gz` for macOS (Intel and Apple Silicon). Each installs the
+or `.tar.gz` for macOS (Apple Silicon). Each installs the
 `raven` compiler and the `rvpm` package manager and adds them to your
 `PATH`.
 
