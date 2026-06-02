@@ -63,24 +63,54 @@ fun main() {
 ## std/collections
 
 Generic hash-backed `Set<T: Eq + Hash>` and `Map<K: Eq + Hash, V>`, built
-with `Set.new()` and `Map.new()`. Operations are O(1) average. Import the
-whole module. Keys must implement `Eq + Hash` (`Int`, `Bool`, `String`, or
-a user type with both impls; `Char` and `Float` are not yet hashable).
+with `Set.new()` and `Map.new()`. Storage is a hash-bucket layout, so
+lookup, insert, and remove are O(1) average. Import the whole module. Keys
+must implement `Eq + Hash` (`Int`, `Bool`, `String`, or a user type with
+both impls; `Char` and `Float` are not yet hashable).
 
 - `Set`: `add`, `remove`, `contains`, `len`, `is_empty`.
 - `Map`: `set(k, v)`, `get(k) -> Option<V>`, `has(k)`, `remove(k)`,
   `keys()`, `values()`, `len`, `is_empty`.
 
+Set and map literals build these types: `{1, 2, 3}` is a set, `["a": 1]`
+is a map, and `[:]` is an empty map. See the [language reference](language-reference.md#list-set-and-map-literals)
+for the literal grammar.
+
 ```raven
 import std/collections
 
 fun main() {
-    let m = Map.new()
-    m.set("a", 10)
+    let m = ["a": 10, "b": 20]
     match m.get("a") {
-        Some(v) -> print(v),
+        Some(v) -> print(v),            // 10
         None -> print(0),
     }
+    let s = {1, 2, 3}
+    print(s.contains(2))                // true
+}
+```
+
+## std/sync
+
+Goroutine-style concurrency: channels and the scheduler helpers used with
+the `spawn` keyword (see the [language reference](language-reference.md#concurrency)).
+Channels carry `Int` values in this release.
+
+- `channel() -> Channel`: an unbuffered (rendezvous) channel.
+- `channel_buffered(cap) -> Channel`: a buffered channel of capacity `cap`.
+- `Channel`: `send(v)` and `recv() -> Int`, each blocking by yielding to
+  the scheduler when the channel is full or empty.
+- `yield_now()`: yield control to the scheduler.
+
+```raven
+import std/sync { channel }
+
+fun main() {
+    let ch = channel()
+    spawn(fun() -> Unit {
+        ch.send(42)
+    })
+    print(ch.recv())                    // 42
 }
 ```
 
@@ -363,9 +393,15 @@ fun main() {
 
 ## std/ffi
 
-Bridge runtime `String` values to C strings for FFI calls.
+Bridge runtime values to C and access raw memory for FFI calls. See the
+[FFI section](language-reference.md#ffi-and-c-types) of the language
+reference for the full picture.
 
-- `to_cstr(s) -> CStr`, `from_cstr(p) -> String`.
+- Strings: `to_cstr(s) -> CStr`, `from_cstr(p) -> String`.
+- Raw pointers over `CPtr<T>`: `alloc<T>(count)`, `free<T>(p)`,
+  `load<T>(p)`, `store<T>(p, v)`, `offset<T>(p, i)`, `is_null<T>(p)`,
+  `null_ptr<T>()`. This memory lives outside the GC, so you must `free`
+  it.
 
 ```raven
 import std/ffi { to_cstr, from_cstr }
