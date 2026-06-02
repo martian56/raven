@@ -4,6 +4,12 @@ All notable changes to Raven are documented in this file.
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-06-02
+
+### Fixed
+
+- A GitHub package consumed as a dependency can now use free functions it imports from the standard library. Previously `import std/time { now_millis }` (and similar) inside a dependency left the function unresolved in the consumer, even though types and methods from the same package resolved. The resolver now rewrites those call sites to the `std` namespace when the package is merged.
+
 ## [2.0.1] - 2026-06-02
 
 ### Fixed
