@@ -1,6 +1,27 @@
 // Sample Raven v2 program for exercising the VS Code extension grammar.
 
 import std/io { println }
+import std/sync { channel, channel_buffered, yield_now }
+import std/ffi { alloc, free, load, store, offset }
+
+@derive(Eq, Hash, ToString, Debug)
+struct User {
+    id: Int,
+    name: String,
+}
+
+@repr(C)
+struct Header {
+    tag: CInt,
+    len: CInt,
+}
+
+// Declarative macro plus a call site below.
+macro twice { ($x:expr) => { ($x) + ($x) } }
+
+extern "C" {
+    fun raven_ffi_qsort_i32(p: CPtr<CInt>, n: CSize, cmp: CFnPtr)
+}
 
 struct Point<T> {
     x: T,
@@ -53,4 +74,22 @@ fun main() {
 
     let n = strlen(c"hello")
     print(n)
+
+    print(twice!(n + 1))
+
+    let u = User { id: 7, name: "ada" }
+    let a = to_any<User>(u)
+    print(type_name_of(a))
+
+    let ch = channel()
+    spawn(fun() -> Unit {
+        ch.send(1)
+        yield_now()
+    })
+    print(ch.recv())
+
+    let buf = alloc<CInt>(4)
+    store<CInt>(buf, 10)
+    print(load<CInt>(offset<CInt>(buf, 0)))
+    free<CInt>(buf)
 }
