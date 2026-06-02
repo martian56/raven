@@ -638,27 +638,47 @@ fn external_import_rename_map(file: &File, ctx: &PackageContext) -> HashMap<Stri
         if import.selectors.is_empty() {
             continue;
         }
-        let ImportSource::Quoted(path) = &import.source else {
-            continue;
-        };
-        let Some(gh) = GithubPath::parse(path) else {
-            continue;
-        };
-        let source = format!("github.com/{}/{}", gh.user, gh.repo);
-        let Some(src_path) = ctx.external_source_path(&source, &gh.subpath) else {
-            continue;
-        };
-        let Ok(text) = std::fs::read_to_string(&src_path) else {
-            continue;
-        };
-        let Some(target) = parse_loaded(&text, &src_path) else {
-            continue;
-        };
-        let key = external_module_key(&gh.host, &gh.user, &gh.repo, &src_path);
-        let fns = top_level_fn_names(&target);
-        for name in &import.selectors {
-            if fns.contains(name) {
-                map.insert(name.clone(), mangle_external_fn(&key, name));
+        match &import.source {
+            // A stdlib selector (`import std/time { now_millis }`) inside an
+            // external package binds the same way it does for bundled and
+            // local modules. The package's stdlib imports are force-merged
+            // into the bundled set (see `wanted`), so the functions exist
+            // under `std.<module>.<name>` and the call sites must rename to
+            // match. Without this, free functions a dependency imports from
+            // std stay unresolved while its types and methods resolve.
+            ImportSource::Std(segments) => {
+                if let Some(module) = segments.first() {
+                    if let Ok(target) = parse_bundled_module(module) {
+                        let fns = top_level_fn_names(&target);
+                        for name in &import.selectors {
+                            if fns.contains(name) {
+                                map.insert(name.clone(), mangle_stdlib_fn(module, name));
+                            }
+                        }
+                    }
+                }
+            }
+            ImportSource::Quoted(path) => {
+                let Some(gh) = GithubPath::parse(path) else {
+                    continue;
+                };
+                let source = format!("github.com/{}/{}", gh.user, gh.repo);
+                let Some(src_path) = ctx.external_source_path(&source, &gh.subpath) else {
+                    continue;
+                };
+                let Ok(text) = std::fs::read_to_string(&src_path) else {
+                    continue;
+                };
+                let Some(target) = parse_loaded(&text, &src_path) else {
+                    continue;
+                };
+                let key = external_module_key(&gh.host, &gh.user, &gh.repo, &src_path);
+                let fns = top_level_fn_names(&target);
+                for name in &import.selectors {
+                    if fns.contains(name) {
+                        map.insert(name.clone(), mangle_external_fn(&key, name));
+                    }
+                }
             }
         }
     }
@@ -1347,6 +1367,28 @@ mod tests {
         assert!(present, "external shout should merge under {mangled}");
 
         std::fs::remove_dir_all(&cache).ok();
+    }
+
+    #[test]
+    fn external_stdlib_free_function_import_is_renamed() {
+        // A dependency that imports a std free function must have its call
+        // sites renamed to the std namespace when merged, the same as its
+        // types and methods already resolve. Regression for the case where
+        // `import std/time { now_millis }` inside a package left `now_millis`
+        // unresolved in the consumer.
+        let lock = crate::lock::LockFile {
+            version: crate::lock::LOCK_VERSION,
+            packages: vec![],
+        };
+        let ctx = PackageContext::new(PathBuf::from("/cache"), &lock);
+        let file = parse_src(
+            "import std/time { now_millis }\nfun stamp() -> Int { return now_millis() }\n",
+        );
+        let map = external_import_rename_map(&file, &ctx);
+        assert_eq!(
+            map.get("now_millis"),
+            Some(&mangle_stdlib_fn("time", "now_millis"))
+        );
     }
 
     #[test]
