@@ -156,13 +156,17 @@ jobs:
           choco install wixtoolset --version 3.14.0 --allow-downgrade --yes
           cargo install cargo-wix --locked
           $v = "${{ steps.version.outputs.value }}"
+          # An MSI ProductVersion must be numeric (X.Y.Z), so strip any
+          # prerelease suffix (for example 2.0.0-rc1 becomes 2.0.0). The
+          # filename keeps the full version label.
+          $msiVersion = ($v -split '-')[0]
           # cargo-wix derives the installer version from Cargo.toml; pass the
           # release version explicitly so the MSI matches the tag.
           # The workspace has more than one package, so name the one to
           # package (the `raven` binary crate); cargo-wix otherwise errors
           # with "Workspace detected. Please pass a package name."
           cargo wix -p raven --no-build --nocapture --target ${{ matrix.target }} `
-            --install-version $v --output "target/wix/raven-$v-${{ matrix.target }}.msi"
+            --install-version $msiVersion --output "target/wix/raven-$v-${{ matrix.target }}.msi"
 
       - name: Sign Windows MSI (optional)
         if: ${{ runner.os == 'Windows' && env.WINDOWS_CERT_BASE64 != '' }}
