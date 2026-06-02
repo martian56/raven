@@ -26,26 +26,28 @@
 
 ## Why Raven
 
-- Fast runtime and modern tooling built in Rust.
-- Clean syntax with static typing.
-- Structs, enums, modules, and rich standard library.
-- CLI and REPL workflow for quick iteration.
-- VS Code extension for syntax and developer ergonomics.
+- Compiled to native machine code through Cranelift, into a single static binary.
+- Static typing with generics, traits, and sum types checked by an exhaustive `match`.
+- A tracing garbage collector and `Result`/`Option` instead of `null`.
+- Goroutines and channels for concurrency, and a C FFI for native libraries.
+- A package manager (`rvpm`), one canonical formatter, and a VS Code extension.
 
 ## Quick Example
 
 ```rust
 struct User {
-    name: string,
-    age: int
+    name: String,
+    age: Int,
 }
 
-fun greet(user: User) -> void {
-    print(format("Hello {}, you are {}!", user.name, user.age));
+fun greet(user: User) -> String {
+    return "Hello ${user.name}, you are ${user.age}"
 }
 
-let u: User = User { name: "Raven", age: 1 };
-greet(u);
+fun main() {
+    let u = User { name: "Raven", age: 2 }
+    print(greet(u))
+}
 ```
 
 ## Install
@@ -91,8 +93,9 @@ The `raven` and `rvpm` binaries land in `target/release/`.
 
 - Full docs: [https://martian56.github.io/raven/](https://martian56.github.io/raven/)
 - Project website: [https://raven.ufazien.com/](https://raven.ufazien.com/)
-- Standard library overview: [https://martian56.github.io/raven/standard-library/overview/](https://martian56.github.io/raven/standard-library/overview/)
-- Examples: [https://martian56.github.io/raven/examples/basic/](https://martian56.github.io/raven/examples/basic/)
+- Getting started: [https://martian56.github.io/raven/v2/guide/getting-started/](https://martian56.github.io/raven/v2/guide/getting-started/)
+- Language reference: [https://martian56.github.io/raven/v2/guide/language-reference/](https://martian56.github.io/raven/v2/guide/language-reference/)
+- Standard library: [https://martian56.github.io/raven/v2/guide/standard-library/](https://martian56.github.io/raven/v2/guide/standard-library/)
 
 ## Technologies Used
 
