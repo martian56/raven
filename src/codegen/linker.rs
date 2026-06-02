@@ -291,7 +291,11 @@ fn link_unix(
     if cfg!(target_os = "linux") {
         cmd.args(["-lpthread", "-ldl", "-lm", "-lrt", "-lgcc_s", "-lutil"]);
     } else if cfg!(target_os = "macos") {
-        cmd.args(["-lpthread", "-ldl", "-lm"]);
+        // Apple's new linker (ld-prime) asserts on some relocation
+        // patterns in the Cranelift object (Relocations.cpp
+        // addFixupFromRelocations). The classic linker handles them, so
+        // select it explicitly.
+        cmd.args(["-Wl,-ld_classic", "-lpthread", "-ldl", "-lm"]);
     }
     let status = cmd
         .status()

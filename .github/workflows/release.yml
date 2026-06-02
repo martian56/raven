@@ -286,6 +286,6 @@ jobs:
           $env:RAVEN_RUNTIME_LIB = "$bin\raven_runtime.lib"
           Set-Content -Path hello.rv -Value 'fun main() { print("hello") }' -Encoding ascii
           & "$bin\raven.exe" build hello.rv -o hello.exe
-          $out = (& "$bin\hello.exe")
+          $out = (& ".\hello.exe")
           Write-Host "program output: $out"
           if ($out -ne "hello") { exit 1 }
