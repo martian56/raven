@@ -97,11 +97,12 @@ pub(crate) fn lower_expr(
         ExprKind::SelfUpper => HirExprKind::Ident("Self".into()),
         ExprKind::Ident { name, .. } if name == "None" => HirExprKind::NoneCtor,
         ExprKind::Ident { name, .. } => {
-            // A reference to a module-level `const`/`let` with a literal
-            // initializer is inlined to that literal. Module-level bindings
-            // have no runtime storage in this release, so a non-inlined
-            // reference would lower to a `Unit`; inlining makes named literal
-            // constants usable. Non-literal initializers are left alone (the
+            // A reference to a module-level `const`/`let` is inlined to its
+            // constant value, folding a computed initializer (`60 * 60`) to a
+            // literal. Module-level bindings have no runtime storage in this
+            // release, so a non-inlined reference would lower to a `Unit`;
+            // inlining makes named constants usable. A non-constant
+            // initializer is rejected when its declaration is lowered (the
             // full mutable-global case is tracked separately).
             if let Some(kind) = module_const_literal(&expr.span, cx) {
                 return Ok(make_expr(kind, ty, span));
@@ -1534,9 +1535,21 @@ fn module_const_literal(span: &Span, cx: &LowerCtx<'_>) -> Option<HirExprKind> {
     literal_hir_kind(init)
 }
 
-/// The `HirExprKind` for a literal expression, or `None` when `e` is not a
-/// compile-time literal. Unwraps parentheses and a single arithmetic
-/// negation on a numeric literal.
+/// Whether `e` folds to a compile-time constant. Used to validate a
+/// module-level `const`/`let` initializer (which is inlined at each use site)
+/// before lowering, so a non-constant initializer is a clear error rather
+/// than a code-generation failure.
+pub(crate) fn const_fold_kind(e: &Expr) -> Option<HirExprKind> {
+    literal_hir_kind(e)
+}
+
+/// Fold a constant expression to its literal `HirExprKind`, or `None` when
+/// `e` is not a compile-time constant. Handles literals, parentheses, unary
+/// `-`/`!`, and binary arithmetic, comparison, bitwise, and boolean operators
+/// over folded operands, so a `const` initializer such as `2 + 3` or
+/// `60 * 60` inlines to its value at each use site. An operation that would
+/// overflow or divide by zero does not fold (returns `None`), leaving the
+/// error to surface elsewhere rather than panicking the compiler.
 fn literal_hir_kind(e: &Expr) -> Option<HirExprKind> {
     match &e.kind {
         ExprKind::Int(i) => Some(HirExprKind::Int(*i)),
@@ -1545,12 +1558,73 @@ fn literal_hir_kind(e: &Expr) -> Option<HirExprKind> {
         ExprKind::Char(c) => Some(HirExprKind::Char(*c)),
         ExprKind::Str(s) | ExprKind::BlockStr(s) => Some(HirExprKind::Str(s.clone())),
         ExprKind::Paren(inner) => literal_hir_kind(inner),
-        ExprKind::Unary {
-            op: UnaryOp::Neg,
-            operand,
-        } => match &operand.kind {
-            ExprKind::Int(i) => Some(HirExprKind::Int(-*i)),
-            ExprKind::Float(f) => Some(HirExprKind::Float(-*f)),
+        ExprKind::Unary { op, operand } => {
+            let v = literal_hir_kind(operand)?;
+            match (op, v) {
+                (UnaryOp::Neg, HirExprKind::Int(i)) => i.checked_neg().map(HirExprKind::Int),
+                (UnaryOp::Neg, HirExprKind::Float(f)) => Some(HirExprKind::Float(-f)),
+                (UnaryOp::Not, HirExprKind::Bool(b)) => Some(HirExprKind::Bool(!b)),
+                _ => None,
+            }
+        }
+        ExprKind::Binary { op, lhs, rhs } => {
+            let l = literal_hir_kind(lhs)?;
+            let r = literal_hir_kind(rhs)?;
+            fold_binary(*op, l, r)
+        }
+        _ => None,
+    }
+}
+
+/// Fold a binary operation over two already-folded literal operands. Integer
+/// arithmetic is checked (overflow and divide-by-zero yield `None`).
+fn fold_binary(op: BinaryOp, l: HirExprKind, r: HirExprKind) -> Option<HirExprKind> {
+    use BinaryOp::*;
+    use HirExprKind::{Bool, Float, Int};
+    match (l, r) {
+        (Int(a), Int(b)) => match op {
+            Add => a.checked_add(b).map(Int),
+            Sub => a.checked_sub(b).map(Int),
+            Mul => a.checked_mul(b).map(Int),
+            Div => a.checked_div(b).map(Int),
+            Mod => a.checked_rem(b).map(Int),
+            BitAnd => Some(Int(a & b)),
+            BitOr => Some(Int(a | b)),
+            BitXor => Some(Int(a ^ b)),
+            Shl => u32::try_from(b)
+                .ok()
+                .and_then(|s| a.checked_shl(s))
+                .map(Int),
+            Shr => u32::try_from(b)
+                .ok()
+                .and_then(|s| a.checked_shr(s))
+                .map(Int),
+            Eq => Some(Bool(a == b)),
+            Ne => Some(Bool(a != b)),
+            Lt => Some(Bool(a < b)),
+            Le => Some(Bool(a <= b)),
+            Gt => Some(Bool(a > b)),
+            Ge => Some(Bool(a >= b)),
+            And | Or => None,
+        },
+        (Float(a), Float(b)) => match op {
+            Add => Some(Float(a + b)),
+            Sub => Some(Float(a - b)),
+            Mul => Some(Float(a * b)),
+            Div => Some(Float(a / b)),
+            Eq => Some(Bool(a == b)),
+            Ne => Some(Bool(a != b)),
+            Lt => Some(Bool(a < b)),
+            Le => Some(Bool(a <= b)),
+            Gt => Some(Bool(a > b)),
+            Ge => Some(Bool(a >= b)),
+            _ => None,
+        },
+        (Bool(a), Bool(b)) => match op {
+            And => Some(Bool(a && b)),
+            Or => Some(Bool(a || b)),
+            Eq => Some(Bool(a == b)),
+            Ne => Some(Bool(a != b)),
             _ => None,
         },
         _ => None,
