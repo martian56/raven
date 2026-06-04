@@ -4,6 +4,10 @@ All notable changes to Raven are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- `String.len()` and `String.is_empty()` now work without an import, spelled the same as `List`/`Map`/`Set`. They previously type-checked but failed in code generation with `unresolved callee: Str$len`. A user `impl String` of either name still takes precedence (#266).
+
 ## [2.0.2] - 2026-06-02
 
 ### Fixed

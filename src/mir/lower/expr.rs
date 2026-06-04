@@ -1356,6 +1356,37 @@ fn lower_method_call(
         }
     }
 
+    // Built-in `String` methods `len`/`is_empty` have no definition symbol
+    // unless the program writes an `impl String`. Route them to the length
+    // intrinsic when unshadowed, mirroring the `List` built-ins, so `.len()`
+    // works without an import and matches `List`/`Map`/`Set`. A user or
+    // stdlib `impl String` of the same name takes precedence and is reached
+    // through static dispatch below.
+    if recv_ty == MirType::Str && !str_has_user_method(cx, name) {
+        if name == "len" {
+            let recv = lower_expr(cx, receiver);
+            let dst = cx.builder.fresh_temp("strlen", MirType::Int);
+            cx.builder.assign(cx.current, dst, str_len_call(recv));
+            return MirOperand::Copy(dst);
+        }
+        if name == "is_empty" {
+            let recv = lower_expr(cx, receiver);
+            let len = cx.builder.fresh_temp("strlen", MirType::Int);
+            cx.builder.assign(cx.current, len, str_len_call(recv));
+            let dst = cx.builder.fresh_temp("strempty", MirType::Bool);
+            cx.builder.assign(
+                cx.current,
+                dst,
+                MirRvalue::BinaryOp(
+                    MirBinOp::Eq,
+                    MirOperand::Copy(len),
+                    MirOperand::Const(MirConstant::Int(0)),
+                ),
+            );
+            return MirOperand::Copy(dst);
+        }
+    }
+
     // Static dispatch: build the per-type method symbol from the receiver
     // type so it matches the impl method's definition symbol. When the
     // method is generic (a method on `impl<T> Box<T>`, whose declared
@@ -1541,6 +1572,28 @@ fn list_method_op(name: &str) -> Option<ListMethodOp> {
         "pop" => ListMethodOp::Pop,
         "get" => ListMethodOp::Get,
         _ => return None,
+    })
+}
+
+/// A call to the `__str_len` runtime intrinsic on `recv`, returning `Int`.
+fn str_len_call(recv: MirOperand) -> MirRvalue {
+    MirRvalue::Call {
+        callee: MirFnRef {
+            mangled: super::super::intrinsics::STR_LEN.into(),
+            origin: None,
+        },
+        args: vec![recv],
+    }
+}
+
+/// True when the program defines a `String` method named `name` (a user or
+/// stdlib `impl String`). Such a method shadows the built-in `len`/`is_empty`
+/// fast path and is reached through static dispatch instead.
+fn str_has_user_method(cx: &LowerCx<'_>, name: &str) -> bool {
+    cx.decls.methods.get(name).is_some_and(|entries| {
+        entries
+            .iter()
+            .any(|e| MirType::from_ty(&e.self_ty) == MirType::Str)
     })
 }
 
