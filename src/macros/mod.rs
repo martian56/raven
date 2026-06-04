@@ -174,6 +174,15 @@ impl SpanGen {
 /// True when an item-position `macro` keyword appears. `macro` is a
 /// contextual identifier, so we only treat it as the keyword when it begins
 /// a definition shape (`macro <ident> {`).
+/// Whether `tokens` declare any macro. Because macros are file-local (a
+/// `name!(...)` call requires its `macro name { ... }` definition in the
+/// same file), this also tells whether the file uses macros at all. The
+/// formatter uses it to leave macro-using files untouched, since macro
+/// definitions and invocations have no AST representation to format.
+pub fn contains_macros(tokens: &[Token]) -> bool {
+    has_macro_keyword(tokens)
+}
+
 fn has_macro_keyword(tokens: &[Token]) -> bool {
     tokens.windows(3).any(|w| {
         is_macro_kw(&w[0].kind)

@@ -51,6 +51,14 @@ pub fn format_source(src: &str) -> Result<String, FormatError> {
     let tokens = Lexer::new(src, "<fmt>")
         .tokenize()
         .map_err(|e| FormatError::Parse(e.to_string()))?;
+    // Macro definitions and `name!(...)` invocations have no AST node (they
+    // are expanded at the token level before parsing in the compile
+    // pipeline), so the AST-based formatter cannot represent them. Rather
+    // than fail, leave a file that uses macros unchanged. Reformatting macro
+    // internals is tracked as a follow-up.
+    if crate::macros::contains_macros(&tokens) {
+        return Ok(src.to_string());
+    }
     let file = parse(&tokens).map_err(|e| FormatError::Parse(e.to_string()))?;
     let comments = comments::scan(src);
     let mut p = Printer::new(src, comments);

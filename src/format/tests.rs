@@ -102,6 +102,17 @@ fn defer_stmt() {
 }
 
 #[test]
+fn macro_file_is_left_unchanged() {
+    // Macro definitions and `name!(...)` invocations have no AST node, so the
+    // formatter passes a macro-using file through unchanged rather than
+    // failing to parse it.
+    let src =
+        "macro square { ($x:expr) => { ($x) * ($x) } }\nfun main() {\n    print(square!(5))\n}\n";
+    let out = format_source(src).expect("formatting a macro file must not error");
+    assert_eq!(out, src);
+}
+
+#[test]
 fn spawn_stmt_formats_as_call() {
     // `spawn` reads as a call: no space before the parenthesis, a single
     // paren layer, and stable under re-formatting (checked by `fmt`).
