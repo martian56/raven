@@ -1,6 +1,6 @@
 //! Inline unit tests for the type checker.
 
-use super::{check_file, Ty};
+use super::{check_file, check_file_all, Ty};
 use crate::error::{RavenError, TypeError};
 use crate::lexer::Lexer;
 use crate::parser::parse;
@@ -22,6 +22,21 @@ fn check(src: &str) -> Result<(), RavenError> {
     let mut loader = NoLoader;
     let resolved = resolve_file(&file, &mut loader)?;
     check_file(&resolved).map(|_| ())
+}
+
+/// Type-check `src` and return every recovered diagnostic, for tests that
+/// assert the checker reports more than one error per compile.
+fn check_all(src: &str) -> Vec<RavenError> {
+    let tokens = Lexer::new(src.to_string(), PathBuf::from("t.rv"))
+        .tokenize()
+        .expect("lex");
+    let file = parse(&tokens).expect("parse");
+    let mut loader = NoLoader;
+    let resolved = resolve_file(&file, &mut loader).expect("resolve");
+    match check_file_all(&resolved) {
+        Ok(_) => Vec::new(),
+        Err(es) => es,
+    }
 }
 
 /// Like `check`, but merges the bundled prelude first so `print` of a
@@ -821,4 +836,44 @@ fn ptr_builtin_rejects_a_non_pointer_pointee() {
         RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::Custom(_))),
         other => panic!("expected a type error, got {:?}", other),
     }
+}
+
+#[test]
+fn reports_an_error_in_each_sibling_function() {
+    // Two unrelated functions each have a return type mismatch; both are
+    // reported in one compile, not just the first.
+    let errs = check_all("fun f() -> Int = \"x\"\nfun g() -> Bool = 5\n");
+    assert_eq!(errs.len(), 2, "got: {:?}", errs);
+}
+
+#[test]
+fn reports_an_error_for_each_failed_statement() {
+    // Two `let` bindings with annotation mismatches both report; the later
+    // use does not cascade because each binding adopts its annotated `Int`.
+    let errs = check_all(
+        "fun h() -> Int {\n    let x: Int = \"a\"\n    let y: Int = true\n    return x + y\n}\n",
+    );
+    assert_eq!(errs.len(), 2, "got: {:?}", errs);
+}
+
+#[test]
+fn a_failed_unannotated_let_does_not_cascade() {
+    // `let x = <type error>` records one error and binds `x` to `Error`, so
+    // the later `x + z` use adds no diagnostic.
+    let errs = check_all(
+        "fun u() -> Int {\n    let x = 1 + \"oops\"\n    let z = 5\n    return x + z\n}\n",
+    );
+    assert_eq!(errs.len(), 1, "got: {:?}", errs);
+}
+
+#[test]
+fn a_clean_program_reports_no_errors() {
+    assert!(check_all("fun f() -> Int = 1 + 2\n").is_empty());
+}
+
+#[test]
+fn duplicate_diagnostics_are_deduplicated() {
+    // The same message at the same span is collapsed to one entry.
+    let errs = check_all("fun f() -> Int = \"x\"\n");
+    assert_eq!(errs.len(), 1, "got: {:?}", errs);
 }

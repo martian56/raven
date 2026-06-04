@@ -23,7 +23,7 @@ use crate::lexer::Lexer;
 use crate::mir::lower_program;
 use crate::parser::parse_with_macros;
 use crate::resolve::{expand_with_stdlib_ctx, resolve_file_ctx, FsLoader, PackageContext};
-use crate::tycheck::check_file;
+use crate::tycheck::check_file_all;
 
 /// An error from the compile pipeline or the link step.
 #[derive(Debug)]
@@ -37,10 +37,10 @@ pub enum DriverError {
     RuntimeMissing,
 }
 
-/// Render a front-end [`RavenError`] into a [`DriverError::Diagnostic`],
-/// reading the offending span's file when it differs from the entry file
-/// (for example an error inside a local module or a dependency).
-fn frontend_diag(e: crate::error::RavenError, input: &Path, source: &str) -> DriverError {
+/// Render one front-end [`RavenError`], reading the offending span's file
+/// when it differs from the entry file (for example an error inside a local
+/// module or a dependency).
+fn render_one(e: &crate::error::RavenError, input: &Path, source: &str) -> String {
     let span_file = e.span().file.clone();
     let src: std::borrow::Cow<str> = if span_file.as_path() == input {
         std::borrow::Cow::Borrowed(source)
@@ -50,7 +50,26 @@ fn frontend_diag(e: crate::error::RavenError, input: &Path, source: &str) -> Dri
             Err(_) => std::borrow::Cow::Borrowed(source),
         }
     };
-    DriverError::Diagnostic(e.display(&src))
+    e.display(&src)
+}
+
+/// Render a single front-end error into a [`DriverError::Diagnostic`].
+fn frontend_diag(e: crate::error::RavenError, input: &Path, source: &str) -> DriverError {
+    DriverError::Diagnostic(render_one(&e, input, source))
+}
+
+/// Render every collected front-end error into one [`DriverError::Diagnostic`],
+/// separated by a blank line, so a compile reports all of them at once.
+fn frontend_diags(
+    errors: Vec<crate::error::RavenError>,
+    input: &Path,
+    source: &str,
+) -> DriverError {
+    let rendered: Vec<String> = errors
+        .iter()
+        .map(|e| render_one(e, input, source))
+        .collect();
+    DriverError::Diagnostic(rendered.join("\n"))
 }
 
 impl From<CodegenError> for DriverError {
@@ -123,7 +142,7 @@ pub fn compile_to_object(
     let mut loader = FsLoader;
     let resolved =
         resolve_file_ctx(&file, &mut loader, ctx).map_err(|e| frontend_diag(e, input, source))?;
-    let typed = check_file(&resolved).map_err(|e| frontend_diag(e, input, source))?;
+    let typed = check_file_all(&resolved).map_err(|es| frontend_diags(es, input, source))?;
     let hir = lower_file(&typed).map_err(|e| frontend_diag(e, input, source))?;
     if std::env::var("RAVEN_DUMP_HIR").is_ok() {
         eprintln!("{}", crate::hir::pretty_program(&hir));

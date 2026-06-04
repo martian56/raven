@@ -35,11 +35,32 @@ pub fn check_bodies(
     resolved: &ResolvedFile<'_>,
     env: &TypeEnv,
     types: &mut TypeMap,
-) -> Result<(), RavenError> {
+) -> Result<(), Vec<RavenError>> {
+    // Each top-level item recovers at its own boundary, so an error in one
+    // function or impl method does not hide errors in the next.
+    let mut errors: Vec<RavenError> = Vec::new();
     for decl in &resolved.file.items {
-        check_decl_body(decl, resolved, env, types)?;
+        errors.extend(check_decl_body(decl, resolved, env, types));
     }
-    Ok(())
+    dedup_errors(&mut errors);
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
+/// Drop duplicate diagnostics, keeping the first occurrence. Two errors at
+/// the same span with the same message are treated as duplicates, so a root
+/// cause recorded once (and recovered to `Ty::Error`) does not spray the
+/// same follow-on message from several sibling sites.
+fn dedup_errors(errors: &mut Vec<RavenError>) {
+    let mut seen: std::collections::HashSet<(std::path::PathBuf, usize, usize, String)> =
+        std::collections::HashSet::new();
+    errors.retain(|e| {
+        let s = e.span();
+        seen.insert((s.file.to_path_buf(), s.start, s.end, format!("{}", e)))
+    });
 }
 
 fn check_decl_body(
@@ -47,16 +68,11 @@ fn check_decl_body(
     resolved: &ResolvedFile<'_>,
     env: &TypeEnv,
     types: &mut TypeMap,
-) -> Result<(), RavenError> {
+) -> Vec<RavenError> {
     match &decl.kind {
         DeclKind::Function(f) => check_function(f, None, &[], resolved, env, types),
         DeclKind::Impl(i) => {
-            let impl_id_idx = resolved
-                .file
-                .items
-                .iter()
-                .position(|d| std::ptr::eq(d, decl))
-                .unwrap_or(0);
+            let mut errors: Vec<RavenError> = Vec::new();
             let impl_sig = env.impls.iter().find(|s| s.span == i.span).cloned();
             let impl_generics = impl_sig
                 .as_ref()
@@ -67,7 +83,7 @@ fn check_decl_body(
                 None => (&i.trait_or_type, None),
             };
             let scope = scope_from_params(&impl_generics);
-            let self_ty = resolve_ty(
+            let self_ty = match resolve_ty(
                 &crate::ast::Type {
                     kind: crate::ast::TypeKind::Path(impl_path.clone()),
                     span: impl_path.span.clone(),
@@ -76,25 +92,38 @@ fn check_decl_body(
                 env,
                 None,
                 &scope,
-            )?;
+            ) {
+                Ok(t) => t,
+                Err(e) => {
+                    errors.push(e);
+                    Ty::Error
+                }
+            };
             for f in &i.items {
-                check_function(f, Some(&self_ty), &impl_generics, resolved, env, types)?;
+                errors.extend(check_function(
+                    f,
+                    Some(&self_ty),
+                    &impl_generics,
+                    resolved,
+                    env,
+                    types,
+                ));
             }
-            let _ = impl_id_idx;
-            Ok(())
+            errors
         }
         DeclKind::Trait(t) => {
             // Default bodies in trait declarations: walk them without
             // a concrete Self because we treat `Self` as an error
             // marker for now; trait default bodies that reference Self
             // remain limited in this release.
+            let mut errors: Vec<RavenError> = Vec::new();
             for m in &t.members {
                 if matches!(m.body, FunctionBody::None) {
                     continue;
                 }
-                check_function(m, None, &[], resolved, env, types)?;
+                errors.extend(check_function(m, None, &[], resolved, env, types));
             }
-            Ok(())
+            errors
         }
         DeclKind::Const(c) => {
             let expected = env
@@ -103,31 +132,40 @@ fn check_decl_body(
                 .cloned()
                 .unwrap_or(Ty::Error);
             let mut cx = Checker::new(resolved, env, types, None, expected.clone());
-            let actual = cx.check_expr(&c.value)?;
+            let actual = cx.check_expr_recover(&c.value);
             if !matches!(expected, Ty::Error) {
-                cx.unify(&expected, &actual, &c.value.span)?;
+                cx.unify_recover(&expected, &actual, &c.value.span);
             }
-            cx.finalize_types()?;
-            Ok(())
+            cx.finalize_into_errors();
+            cx.take_errors()
         }
         DeclKind::Let(l) => {
             let scope = GenericScope::new();
+            let mut errors: Vec<RavenError> = Vec::new();
             let expected = match &l.ty {
-                Some(t) => resolve_ty(t, resolved, env, None, &scope)?,
+                Some(t) => match resolve_ty(t, resolved, env, None, &scope) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        errors.push(e);
+                        Ty::Error
+                    }
+                },
                 None => Ty::Error,
             };
             if let Some(init) = &l.init {
                 let mut cx = Checker::new(resolved, env, types, None, expected.clone());
-                let actual = cx.check_expr(init)?;
+                cx.errors = std::mem::take(&mut errors);
+                let actual = cx.check_expr_recover(init);
                 if !matches!(expected, Ty::Error) {
-                    cx.unify(&expected, &actual, &init.span)?;
+                    cx.unify_recover(&expected, &actual, &init.span);
                 }
-                cx.finalize_types()?;
+                cx.finalize_into_errors();
+                return cx.take_errors();
             }
-            Ok(())
+            errors
         }
         DeclKind::Struct(_) | DeclKind::Enum(_) | DeclKind::Extern(_) | DeclKind::Import(_) => {
-            Ok(())
+            Vec::new()
         }
     }
 }
@@ -149,7 +187,7 @@ fn check_function(
     resolved: &ResolvedFile<'_>,
     env: &TypeEnv,
     types: &mut TypeMap,
-) -> Result<(), RavenError> {
+) -> Vec<RavenError> {
     // Build a generic scope: enclosing impl generics, then this
     // function's own generics.
     let fn_generics = super::collect::scope_from_params(extra_generics);
@@ -158,13 +196,23 @@ fn check_function(
     let mut full_scope = fn_generics;
     super::collect::push_into_scope(&mut full_scope, &f_params);
 
+    // The return type is resolved before the body's checker exists; a
+    // failure recovers to `Ty::Error` and is seeded into the sink below.
+    let mut setup_errors: Vec<RavenError> = Vec::new();
     let ret_ty = match &f.ret {
-        Some(t) => resolve_ty(t, resolved, env, self_ty, &full_scope)?,
+        Some(t) => match resolve_ty(t, resolved, env, self_ty, &full_scope) {
+            Ok(t) => t,
+            Err(e) => {
+                setup_errors.push(e);
+                Ty::Error
+            }
+        },
         None => Ty::Unit,
     };
 
     let mut cx =
         Checker::new(resolved, env, types, self_ty.cloned(), ret_ty.clone()).with_scope(full_scope);
+    cx.errors = setup_errors;
     // Record the trait bounds of every in-scope generic parameter (the
     // enclosing impl's plus this function's own) so a method call on a
     // `Ty::Param` value can resolve through its bound.
@@ -180,16 +228,22 @@ fn check_function(
                 .map(|t| Ty::SelfTy(Box::new(t)))
                 .unwrap_or(Ty::Error)
         } else {
-            cx.resolve_ast_ty(&p.ty)?
+            match cx.resolve_ast_ty(&p.ty) {
+                Ok(t) => t,
+                Err(e) => {
+                    cx.push_error(e);
+                    Ty::Error
+                }
+            }
         };
         cx.locals.insert(BindingKey::param(&p.span), ty);
     }
 
     match &f.body {
         FunctionBody::Block(b) => {
-            let body_ty = cx.check_block(b)?;
+            let body_ty = cx.check_block(b).unwrap_or(Ty::Error);
             if b.trailing.is_some() {
-                cx.unify(&ret_ty, &body_ty, &b.span)?;
+                cx.unify_recover(&ret_ty, &body_ty, &b.span);
             } else if !matches!(ret_ty, Ty::Unit | Ty::Error) {
                 // No trailing expression and a non unit return type.
                 // Acceptable as long as the body contains explicit
@@ -197,13 +251,13 @@ fn check_function(
             }
         }
         FunctionBody::Expr(e) => {
-            let body_ty = cx.check_expr(e)?;
-            cx.unify(&ret_ty, &body_ty, &e.span)?;
+            let body_ty = cx.check_expr_recover(e);
+            cx.unify_recover(&ret_ty, &body_ty, &e.span);
         }
         FunctionBody::None => {}
     }
-    cx.finalize_types()?;
-    Ok(())
+    cx.finalize_into_errors();
+    cx.take_errors()
 }
 
 /// A local typing scope.
@@ -232,6 +286,11 @@ struct Checker<'a, 'b> {
     /// binding's declared `List<T>` type while its initializer is checked.
     /// An empty `[]` has no element to infer from, so it adopts this hint.
     array_hint: Option<Ty>,
+    /// Accumulated diagnostics for this body. Statement and item checking
+    /// recover at their boundaries (binding a failed value to `Ty::Error`)
+    /// and push the error here instead of returning it, so one compile can
+    /// report many independent errors. See `docs/v2/specs/tycheck.md`.
+    errors: Vec<RavenError>,
 }
 
 /// Keys used by the locals map. Mirrors the resolver's `Binding`
@@ -279,12 +338,44 @@ impl<'a, 'b> Checker<'a, 'b> {
             param_bounds: HashMap::new(),
             infer: InferCtx::new(),
             array_hint: None,
+            errors: Vec::new(),
         }
     }
 
     fn with_scope(mut self, scope: GenericScope) -> Self {
         self.generic_scope = scope;
         self
+    }
+
+    /// Record a diagnostic in the sink and keep going. Used at recovery
+    /// points so an error in one statement or item does not hide errors in
+    /// the next.
+    fn push_error(&mut self, e: RavenError) {
+        self.errors.push(e);
+    }
+
+    /// Take the accumulated diagnostics, leaving the sink empty.
+    fn take_errors(&mut self) -> Vec<RavenError> {
+        std::mem::take(&mut self.errors)
+    }
+
+    /// Check an expression, recovering to `Ty::Error` (and recording the
+    /// error) when it fails, so sibling statements still type-check.
+    fn check_expr_recover(&mut self, expr: &Expr) -> Ty {
+        match self.check_expr(expr) {
+            Ok(t) => t,
+            Err(e) => {
+                self.push_error(e);
+                Ty::Error
+            }
+        }
+    }
+
+    /// Unify, recording a mismatch in the sink instead of returning it.
+    fn unify_recover(&mut self, expected: &Ty, actual: &Ty, span: &Span) {
+        if let Err(e) = self.unify(expected, actual, span) {
+            self.push_error(e);
+        }
     }
 
     /// Record the trait bounds declared on a set of generic parameters so
@@ -507,6 +598,15 @@ impl<'a, 'b> Checker<'a, 'b> {
         Ok(())
     }
 
+    /// Resolve inference variables and push any failure into the sink
+    /// instead of returning it, so a body's type errors and its
+    /// inference failures are reported together.
+    fn finalize_into_errors(&mut self) {
+        if let Err(e) = self.finalize_types() {
+            self.push_error(e);
+        }
+    }
+
     /// Instantiate a function signature: substitute fresh inference
     /// variables for each declared generic parameter and record any
     /// bounds those variables carry.
@@ -583,22 +683,35 @@ impl<'a, 'b> Checker<'a, 'b> {
     }
 
     fn check_block(&mut self, block: &Block) -> Result<Ty, RavenError> {
+        // Each statement recovers at its own boundary: a failed statement
+        // records its error and the block continues, so unrelated errors in
+        // later statements are still reported in one compile.
         for stmt in &block.stmts {
-            self.check_stmt(stmt)?;
+            self.check_stmt(stmt);
         }
         let ty = match &block.trailing {
-            Some(e) => self.check_expr(e)?,
+            Some(e) => self.check_expr_recover(e),
             None => Ty::Unit,
         };
         self.record(&block.span, ty.clone());
         Ok(ty)
     }
 
-    fn check_stmt(&mut self, stmt: &Stmt) -> Result<(), RavenError> {
+    /// Check one statement, recovering at the statement boundary. A failed
+    /// sub-check records its error and the statement still introduces any
+    /// binding it declares (bound to its annotated type, or `Ty::Error`), so
+    /// later references do not cascade into spurious "undefined" errors.
+    fn check_stmt(&mut self, stmt: &Stmt) {
         match &stmt.kind {
             StmtKind::Let { name: _, ty, init } => {
                 let declared = match ty {
-                    Some(t) => Some(self.resolve_ast_ty(t)?),
+                    Some(t) => match self.resolve_ast_ty(t) {
+                        Ok(d) => Some(d),
+                        Err(e) => {
+                            self.push_error(e);
+                            Some(Ty::Error)
+                        }
+                    },
                     None => None,
                 };
                 // While checking the initializer, expose the declared
@@ -607,14 +720,11 @@ impl<'a, 'b> Checker<'a, 'b> {
                 if let Some(Ty::List(elem)) = &declared {
                     self.array_hint = Some((**elem).clone());
                 }
-                let init_ty = match init {
-                    Some(e) => Some(self.check_expr(e)?),
-                    None => None,
-                };
+                let init_ty = init.as_ref().map(|e| self.check_expr_recover(e));
                 self.array_hint = prev_hint;
                 let final_ty = match (declared, init_ty) {
                     (Some(d), Some(i)) => {
-                        self.unify(&d, &i, &init.as_ref().unwrap().span)?;
+                        self.unify_recover(&d, &i, &init.as_ref().unwrap().span);
                         d
                     }
                     (Some(d), None) => d,
@@ -631,51 +741,54 @@ impl<'a, 'b> Checker<'a, 'b> {
             }
             StmtKind::Return(e) => {
                 let actual = match e {
-                    Some(expr) => self.check_expr(expr)?,
+                    Some(expr) => self.check_expr_recover(expr),
                     None => Ty::Unit,
                 };
                 let ret = self.return_ty.clone();
-                self.unify(&ret, &actual, &stmt.span)?;
+                self.unify_recover(&ret, &actual, &stmt.span);
             }
             StmtKind::Break(e) => {
                 if let Some(expr) = e {
-                    self.check_expr(expr)?;
+                    self.check_expr_recover(expr);
                 }
             }
             StmtKind::Continue => {}
             StmtKind::Defer(e) => {
-                self.check_expr(e)?;
+                self.check_expr_recover(e);
             }
             StmtKind::Spawn(e) => {
                 // The goroutine body must be a `fun() -> Unit` closure.
-                let ty = self.check_expr(e)?;
+                let ty = self.check_expr_recover(e);
                 let expected = Ty::Function {
                     params: Vec::new(),
                     ret: Box::new(Ty::Unit),
                 };
-                self.unify(&expected, &ty, &e.span)?;
+                self.unify_recover(&expected, &ty, &e.span);
             }
             StmtKind::Assign { target, op, value } => {
-                let target_ty = self.check_expr(target)?;
-                let value_ty = self.check_expr(value)?;
+                let target_ty = self.check_expr_recover(target);
+                let value_ty = self.check_expr_recover(value);
                 match op {
                     AssignOp::Assign => {
-                        self.unify(&target_ty, &value_ty, &value.span)?;
+                        self.unify_recover(&target_ty, &value_ty, &value.span);
                     }
                     _ => {
                         // Compound: target op= value behaves like
                         // target = target op value. Reuse the binary
                         // op checker to pin the rule down.
                         let bin = compound_binary_op(*op);
-                        let _ = super::expr::check_binary(&target_ty, &value_ty, bin, &stmt.span)?;
+                        if let Err(e) =
+                            super::expr::check_binary(&target_ty, &value_ty, bin, &stmt.span)
+                        {
+                            self.push_error(e);
+                        }
                     }
                 }
             }
             StmtKind::Expr(e) => {
-                self.check_expr(e)?;
+                self.check_expr_recover(e);
             }
         }
-        Ok(())
     }
 
     fn check_expr(&mut self, expr: &Expr) -> Result<Ty, RavenError> {

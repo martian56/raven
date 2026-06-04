@@ -145,13 +145,18 @@ pub struct TypedFile<'a> {
 }
 
 /// Run the type checker on `resolved` and return either a `TypedFile`
-/// or the first [`RavenError::Type`] encountered.
+/// or every [`RavenError::Type`] the body pass recovered from.
 ///
 /// The function runs two passes: a declared type collection pass that
-/// populates `TypeEnv` and a body check pass that fills the `TypeMap`.
-pub fn check_file<'a>(resolved: &'a ResolvedFile<'a>) -> Result<TypedFile<'a>, RavenError> {
+/// populates `TypeEnv` and a body check pass that fills the `TypeMap`. The
+/// collection pass is fail-fast (a malformed signature stops it, since later
+/// items depend on collected signatures); the body pass recovers at item and
+/// statement boundaries so one compile reports many independent errors.
+pub fn check_file_all<'a>(
+    resolved: &'a ResolvedFile<'a>,
+) -> Result<TypedFile<'a>, Vec<RavenError>> {
     let mut env = TypeEnv::new();
-    collect::collect_declarations(resolved, &mut env)?;
+    collect::collect_declarations(resolved, &mut env).map_err(|e| vec![e])?;
     let mut types = TypeMap::new();
     expr::check_bodies(resolved, &env, &mut types)?;
     Ok(TypedFile {
@@ -160,4 +165,11 @@ pub fn check_file<'a>(resolved: &'a ResolvedFile<'a>) -> Result<TypedFile<'a>, R
         env,
         types,
     })
+}
+
+/// Run the type checker and return either a `TypedFile` or the first
+/// [`RavenError::Type`] encountered. A thin wrapper over [`check_file_all`]
+/// for callers that only surface one error (tests, golden harnesses).
+pub fn check_file<'a>(resolved: &'a ResolvedFile<'a>) -> Result<TypedFile<'a>, RavenError> {
+    check_file_all(resolved).map_err(|mut es| es.remove(0))
 }
