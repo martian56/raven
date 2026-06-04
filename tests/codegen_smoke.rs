@@ -48,6 +48,17 @@ fn declarative_macros_compile_and_run() {
 }
 
 #[test]
+fn item_and_statement_position_macros_compile_and_run() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Macro calls in item position (a struct and two functions) and in
+    // statement position (a print and a two-`let` binding). emit!(p.x)/p.y
+    // print 1/2, decl_pair!(a, b) gives a + b == 30, f1() + f2() == 3.
+    compile_link_run_and_check("macro_item_statement.rv", "1\n2\n30\n3\n", &runtime);
+}
+
+#[test]
 fn macro_call_in_interpolation_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
