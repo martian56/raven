@@ -87,6 +87,42 @@ fn ident_fragment_captures_one_identifier() {
 }
 
 #[test]
+fn ty_fragment_captures_a_balanced_type() {
+    let src = "macro sizer { ($t:ty) => { size_of($t) } }\nlet n = sizer!(List<Int>)\n";
+    assert_eq!(expand_render(src), "let n = size_of ( List `<` Int > )");
+}
+
+#[test]
+fn literal_fragment_captures_one_literal() {
+    let src = "macro dbl { ($x:literal) => { ($x) + ($x) } }\nlet y = dbl!(21)\n";
+    assert_eq!(expand_render(src), "let y = ( 21 ) + ( 21 )");
+}
+
+#[test]
+fn literal_fragment_rejects_a_non_literal() {
+    let src = "macro dbl { ($x:literal) => { ($x) } }\nlet y = dbl!(n)\n";
+    let e = expand_tokens(&lex(src)).expect_err("identifier is not a literal");
+    let msg = format!("{}", e);
+    assert!(msg.contains("no rule of macro `dbl!`"), "got: {}", msg);
+}
+
+#[test]
+fn block_fragment_captures_a_brace_group() {
+    let src = "macro run { ($b:block) => { $b } }\nrun!({ let a = 1 })\n";
+    assert_eq!(expand_render(src), "{ let a = 1 }");
+}
+
+#[test]
+fn pat_fragment_captures_a_pattern() {
+    let src = "macro is { ($p:pat, $e:expr) => { match $e { $p -> true, _ -> false } } }\n\
+               let b = is!(Some(n), x)\n";
+    assert_eq!(
+        expand_render(src),
+        "let b = `match` x { Some ( n ) `->` `true` , _ `->` `false` }"
+    );
+}
+
+#[test]
 fn nested_macro_calls_expand_to_fixpoint() {
     let src = "macro twice { ($x:expr) => { ($x) + ($x) } }\nlet y = twice!(twice!(k))\n";
     assert_eq!(

@@ -79,12 +79,21 @@ This slice supports invocation in expression position only.
 ### Metavariables and fragments
 
 A matcher is a sequence of literal tokens and metavariable bindings. A
-metavariable is written `$name:fragment`. This slice supports two fragments:
+metavariable is written `$name:fragment`. The supported fragments are:
 
 * `$x:expr` captures a balanced token run up to the next literal token in
   the matcher (the delimiter), or to the end of the argument tokens when no
   delimiter follows. "Balanced" means `()`, `[]`, and `{}` nest, so a
   top-level delimiter inside parentheses does not end the capture.
+* `$x:ty` and `$x:pat` capture a balanced token run exactly like `expr`. The
+  separate names document intent at the call site (a type such as
+  `List<Int>`, or a pattern such as `Some(n)`); the matcher does not parse
+  the capture, so any balanced run is accepted.
+* `$x:literal` captures exactly one literal token: an integer, float, string,
+  block string, character, C string, or `true`/`false`. A non-literal token
+  (for example an identifier) fails the rule.
+* `$x:block` captures a brace-delimited group `{ ... }`, braces included. The
+  capture must start with `{`; the matching `}` ends it.
 * `$x:ident` captures exactly one identifier token.
 
 In a template, `$name` splices the captured token run for that
@@ -225,8 +234,9 @@ name. Definition-site resolution of free identifiers is a follow-up.
 * `macro <name> { (<matcher>) => { <template> } ... }` with one or more
   rules, first matching rule wins.
 * `name!(...)` invocation in expression position.
-* `$x:expr` (balanced capture up to the next matcher delimiter) and
-  `$x:ident` (single identifier) metavariables.
+* `$x:expr`, `$x:ty`, `$x:pat` (balanced capture up to the next matcher
+  delimiter), `$x:literal` (single literal token), `$x:block` (a `{ ... }`
+  group), and `$x:ident` (single identifier) metavariables.
 * Repetition `$( <sub> )<sep>*` and `$( <sub> )<sep>+` (one level) in both
   matchers and templates, with an optional single separator.
 * Basic hygiene: template-introduced binding-site identifiers (`let`, `const`,
@@ -240,6 +250,5 @@ name. Definition-site resolution of free identifiers is a follow-up.
 * Nested repetition (a repetition group inside another).
 * Item-position and statement-position invocations.
 * Full referential hygiene (definition-site resolution of free identifiers).
-* Additional fragment kinds (`ty`, `literal`, `pat`, `block`).
 * Procedural macros / compile-time functions (the broader procedural side).
 ```
