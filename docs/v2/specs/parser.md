@@ -6,13 +6,18 @@ Consume the lexer's `Vec<Token>` and produce an Abstract Syntax Tree (AST) for t
 
 The parser is total: it never panics on user input. Every malformed program produces a `RavenError::Parse(ParseError, Span, Option<String>)`.
 
-Two entry points exist. `parse_file` stops at the first error (used by tests and golden harnesses, which expect a single error). `parse_file_recover` (used by the compile driver via `parse_with_macros_all`) recovers at item boundaries so one compile can report several syntax errors: on a failed `parse_decl`, the error is recorded and the parser skips forward to the next item-starting keyword before continuing.
+Two entry points exist. `parse_file` stops at the first error (used by tests and golden harnesses, which expect a single error). `parse_file_recover` (used by the compile driver via `parse_with_macros_all`) recovers at item and statement boundaries so one compile can report several syntax errors.
 
 ### Error recovery
 
-`recover_to_next_item` consumes at least one token (guaranteeing progress) and then skips tokens, tracking bracket depth, until the next unambiguous top-level item keyword at depth zero or below: `fun`, `struct`, `enum`, `trait`, `impl`, `extern`, `import`, or a `@` attribute. `let` and `const` are not synchronization points because they also appear as statements inside a body, so syncing on them could stop recovery inside the broken item. The depth counter lets recovery skip a broken function body (its inner braces and its closing `}`) and resume at the next item.
+Recovery is opt-in: `parse_file_recover` sets a `recovering` flag and accumulates diagnostics in a sink, while `parse_file` leaves the flag off and aborts on the first error. The recovery code only runs after an error, so a valid program parses identically on both paths.
 
-When any item failed, `parse_file_recover` returns every collected error (de-duplicated by span and message) and discards the partial item list: a damaged AST would only produce cascade errors in resolve and type checking, so a compile with parse errors stops after parsing and reports them all. A clean parse returns the full `File` exactly as `parse_file` would. Statement-level recovery within a single body (reporting more than one error per item) is a follow-up under issue #294.
+Two synchronization points:
+
+* **Item boundary.** On a failed `parse_decl`, `recover_to_next_item` consumes at least one token (guaranteeing progress) and then skips tokens, tracking bracket depth, until the next unambiguous top-level item keyword at depth zero or below: `fun`, `struct`, `enum`, `trait`, `impl`, `extern`, `import`, or a `@` attribute. `let` and `const` are not synchronization points because they also appear as statements inside a body. The depth counter lets recovery skip a broken function body and resume at the next item.
+* **Statement boundary.** Inside a block body, a failed `parse_stmt` is recorded and `recover_to_next_stmt` skips to the next statement boundary in the same block: a top-level newline or `;`, or the block's own closing `}` (again tracking bracket depth so a separator inside a nested group does not end recovery early). The block keeps parsing its remaining statements, so more than one error per function body is reported.
+
+When any error occurred, `parse_file_recover` returns every collected error (de-duplicated by span and message) and discards the partial item list: a damaged AST would only produce cascade errors in resolve and type checking, so a compile with parse errors stops after parsing and reports them all. A clean parse returns the full `File` exactly as `parse_file` would.
 
 ## Pipeline position
 

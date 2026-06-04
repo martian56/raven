@@ -883,7 +883,25 @@ fn invalid_import_path_for_bare_path() {
     assert!(matches!(err, RavenError::Parse(_, _, _)));
 }
 
-// ----- item-level error recovery -----
+// ----- error recovery -----
+
+#[test]
+fn recovery_reports_each_broken_statement_in_one_body() {
+    // Two statements in the same function body are broken; both errors are
+    // reported and the valid statements between and after them still parse.
+    let errs = parse_all_errors(
+        "fun main() {\n    let a = @\n    let b = 2\n    let c = )\n    let d = 4\n    print(b)\n}\n",
+    );
+    assert_eq!(errs.len(), 2, "got: {:?}", errs);
+}
+
+#[test]
+fn statement_recovery_does_not_escape_the_block() {
+    // A broken statement in `a` is recovered inside its body; the following
+    // function `b` parses cleanly and adds no error.
+    let errs = parse_all_errors("fun a() {\n    let x = @\n    let y = 1\n}\nfun b() -> Int = 2\n");
+    assert_eq!(errs.len(), 1, "got: {:?}", errs);
+}
 
 #[test]
 fn recovery_reports_an_error_in_each_broken_item() {
