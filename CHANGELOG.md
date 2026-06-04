@@ -4,6 +4,8 @@ All notable changes to Raven are documented in this file.
 
 ## [Unreleased]
 
+## [2.0.10] - 2026-06-04
+
 ### Added
 
 - Module-level constants with literal initializers now work and can be used from any function: `const MAX: Int = 100`, `let GREETING = "hello"`, `let NEG = -7`. Each reference is inlined to its literal, and an unannotated `let` infers its type from the literal. References previously mis-typed as `Unit` and failed in code generation. Mutable or computed module-level bindings remain unsupported (#278).

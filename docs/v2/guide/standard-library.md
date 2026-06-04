@@ -7,8 +7,9 @@ scope.
 
 Two import gotchas to keep in mind:
 
-- To use `String` methods such as `concat` or `to_upper`, a module must
-  `import std/string`, which merges the `impl String` block.
+- `String.len()` and `String.is_empty()` are built in and need no import.
+  The other `String` methods (`concat`, `to_upper`, `substring`, ...) come
+  from `import std/string`, which merges the `impl String` block.
 - `import std/collections` whole (not `{ Map }`), so the `Map.new()` and
   `Set.new()` constructors resolve.
 
@@ -46,9 +47,13 @@ A global `print` builtin is also always available and accepts any
 
 Methods on `String`, merged by a bare import.
 
-`length`, `is_empty`, `char_at`, `substring(start, end)`, `concat`,
-`to_upper`, `to_lower`, `trim`, `is_blank`, `repeat(n)`, `index_of`,
-`contains`, `starts_with`, `ends_with`, `replace(from, to)`.
+`length` (alias `len`), `is_empty`, `char_at`, `substring(start, end)`,
+`concat`, `to_upper`, `to_lower`, `trim`, `is_blank`, `repeat(n)`,
+`index_of`, `contains`, `starts_with`, `ends_with`, `replace(from, to)`.
+
+`len` and `is_empty` are built in and work without the import. `String`
+values also compare lexicographically with `<`, `<=`, `>`, `>=`, and a
+`String` literal can be a `match` pattern (compared by content).
 
 ```raven
 import std/string
