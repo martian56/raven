@@ -55,6 +55,14 @@ pub struct Parser {
     /// here during parsing, after the main pre-pass). Empty when the file
     /// defines no macros.
     pub(crate) macros: crate::macros::MacroTable,
+    /// Error-recovery mode. When set (by `parse_file_recover`), a failed
+    /// statement inside a block is recorded and recovered to the next
+    /// statement boundary instead of aborting the parse, so several syntax
+    /// errors are reported per compile. `parse_file` leaves this off and
+    /// stops at the first error.
+    recovering: bool,
+    /// Diagnostics accumulated during recovery (statement and item level).
+    errors: Vec<RavenError>,
 }
 
 impl Parser {
@@ -68,6 +76,8 @@ impl Parser {
             pos: 0,
             no_struct_literal: false,
             macros: crate::macros::MacroTable::default(),
+            recovering: false,
+            errors: Vec::new(),
         }
     }
 
@@ -81,6 +91,8 @@ impl Parser {
             pos: 0,
             no_struct_literal: false,
             macros,
+            recovering: false,
+            errors: Vec::new(),
         }
     }
 
@@ -111,20 +123,23 @@ impl Parser {
     /// discarded, since a damaged AST would only produce cascade errors
     /// downstream).
     pub fn parse_file_recover(&mut self) -> Result<File, Vec<RavenError>> {
+        self.recovering = true;
         let start_span = self.peek().span.clone();
         let mut items = Vec::new();
-        let mut errors: Vec<RavenError> = Vec::new();
         self.skip_separators();
         while !self.is_at_end() {
             match self.parse_decl() {
                 Ok(item) => items.push(item),
                 Err(e) => {
-                    errors.push(e);
+                    self.errors.push(e);
                     self.recover_to_next_item();
                 }
             }
             self.skip_separators();
         }
+        // The sink holds both item-level errors (above) and any
+        // statement-level errors recovered inside block bodies.
+        let mut errors = std::mem::take(&mut self.errors);
         dedup_parse_errors(&mut errors);
         if errors.is_empty() {
             let end_span = self.peek().span.clone();
@@ -160,6 +175,37 @@ impl Parser {
                 _ => {}
             }
             self.advance();
+        }
+    }
+
+    /// Skip tokens after a failed statement parse until the next statement
+    /// boundary inside the current block: a top-level newline or `;` (where
+    /// the next statement begins), or the block's own closing `}` (where the
+    /// block ends). Consumes at least one token for progress, and tracks
+    /// bracket depth so a separator or `}` inside a nested group does not end
+    /// recovery early. Leaves the boundary token in place for the block loop.
+    fn recover_to_next_stmt(&mut self) {
+        if !matches!(self.peek_kind(), TokenKind::RBrace | TokenKind::Eof) {
+            self.advance();
+        }
+        let mut depth: i32 = 0;
+        loop {
+            match self.peek_kind() {
+                TokenKind::Eof => break,
+                TokenKind::RBrace if depth == 0 => break,
+                TokenKind::Newline | TokenKind::Semi if depth == 0 => break,
+                TokenKind::LBrace | TokenKind::LParen | TokenKind::LBracket => {
+                    depth += 1;
+                    self.advance();
+                }
+                TokenKind::RBrace | TokenKind::RParen | TokenKind::RBracket => {
+                    depth -= 1;
+                    self.advance();
+                }
+                _ => {
+                    self.advance();
+                }
+            }
         }
     }
 

@@ -1120,7 +1120,21 @@ impl Parser {
             if matches!(self.peek_kind(), TokenKind::RBrace | TokenKind::Eof) {
                 break;
             }
-            let stmt = self.parse_stmt()?;
+            // In recovery mode a failed statement is recorded and skipped to
+            // the next statement boundary, so later statements in the same
+            // body still parse. Outside recovery the error aborts the parse.
+            let stmt = if self.recovering {
+                match self.parse_stmt() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        self.errors.push(e);
+                        self.recover_to_next_stmt();
+                        continue;
+                    }
+                }
+            } else {
+                self.parse_stmt()?
+            };
             // Detect trailing expression: a bare expression statement
             // followed by only newlines (not semicolons) before the
             // closing `}` becomes the block's value. A `;` terminates
