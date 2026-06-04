@@ -4,6 +4,8 @@ All notable changes to Raven are documented in this file.
 
 ## [Unreleased]
 
+## [2.1.6] - 2026-06-04
+
 ### Added
 
 - Documented and locked in macro calls in statement position and item (top-level) position, not only expression position. The token-level pre-pass already splices a template wherever the call appears, so a template that parses as one or more items or statements (a `struct`/`fun` declaration, a `let` binding) is valid there. Added tests and a golden example covering both positions (#221).
