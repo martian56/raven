@@ -76,6 +76,8 @@ pub enum ReflectBuiltinOp {
     FieldNamesOf,
     /// `get_field(a, name)`: the named field of the struct in `a`, boxed.
     GetField,
+    /// `set_field(a, name, value)`: write `value` into the named field.
+    SetField,
 }
 
 /// Binary infix operators. Compound assignment is gone (it is desugared

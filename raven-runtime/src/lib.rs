@@ -38,7 +38,7 @@ pub use object::{
 };
 pub use reflect::{
     raven_any_field_names, raven_any_get_field, raven_any_new, raven_any_payload,
-    raven_any_type_id, raven_any_type_name, raven_type_register,
+    raven_any_set_field, raven_any_type_id, raven_any_type_name, raven_type_register,
 };
 pub use sched::{
     raven_channel_new, raven_channel_new_buffered, raven_channel_recv, raven_channel_send,

@@ -1359,7 +1359,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             | "__ptr_is_null" | "__ptr_null" => {
                 self.check_ptr_builtin(name, generics, callee_span, args, span)
             }
-            "to_any" | "cast" | "type_name_of" | "field_names_of" | "get_field" => {
+            "to_any" | "cast" | "type_name_of" | "field_names_of" | "get_field" | "set_field" => {
                 self.check_runtime_reflection_builtin(name, generics, callee_span, args, span)
             }
             "Some" => {
@@ -1673,6 +1673,21 @@ impl<'a, 'b> Checker<'a, 'b> {
                 let n = self.check_expr(&args[1])?;
                 self.unify(&Ty::Str, &n, &args[1].span)?;
                 Ok(Ty::Option(Box::new(Ty::Any)))
+            }
+            "set_field" => {
+                if !generics.is_empty() {
+                    return Err(wrong_generics(generics.len(), 0));
+                }
+                if args.len() != 3 {
+                    return Err(wrong_arity(args.len(), 3));
+                }
+                let a = self.check_expr(&args[0])?;
+                self.unify(&Ty::Any, &a, &args[0].span)?;
+                let n = self.check_expr(&args[1])?;
+                self.unify(&Ty::Str, &n, &args[1].span)?;
+                let v = self.check_expr(&args[2])?;
+                self.unify(&Ty::Any, &v, &args[2].span)?;
+                Ok(Ty::Unit)
             }
             _ => unreachable!("unhandled runtime reflection builtin {name}"),
         }

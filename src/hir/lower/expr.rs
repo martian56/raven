@@ -682,6 +682,7 @@ fn reflect_builtin_op(name: &str) -> Option<(ReflectBuiltinOp, bool)> {
         "type_name_of" => (ReflectBuiltinOp::TypeNameOf, false),
         "field_names_of" => (ReflectBuiltinOp::FieldNamesOf, false),
         "get_field" => (ReflectBuiltinOp::GetField, false),
+        "set_field" => (ReflectBuiltinOp::SetField, false),
         _ => return None,
     })
 }

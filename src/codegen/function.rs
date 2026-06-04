@@ -527,7 +527,30 @@ fn lower_rvalue(
             name,
             option_ty,
         } => lower_any_get_field(cx, builder, any, name, option_ty, slots),
+        MirRvalue::AnySetField { any, name, value } => {
+            lower_any_set_field(cx, builder, any, name, value, slots)
+        }
     }
+}
+
+/// Lower `set_field(a, name, value)`: a void call to the runtime writer.
+fn lower_any_set_field(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    any: &MirOperand,
+    name: &MirOperand,
+    value: &MirOperand,
+    slots: &[LocalSlot],
+) -> Result<RValue, CodegenError> {
+    let a = require_value(lower_operand(cx, builder, any, slots)?, "set_field any")?;
+    let n = require_value(lower_operand(cx, builder, name, slots)?, "set_field name")?;
+    let v = require_value(lower_operand(cx, builder, value, slots)?, "set_field value")?;
+    let func_id = cx
+        .runtime_id(intrinsics::RUNTIME_ANY_SET_FIELD)
+        .expect("any runtime symbol declared at module init");
+    let fref = cx.module().declare_func_in_func(func_id, builder.func);
+    builder.ins().call(fref, &[a, n, v]);
+    Ok(None)
 }
 
 /// Cranelift machine type for a raw-pointer pointee, and its byte size.

@@ -204,22 +204,20 @@ pub extern "C" fn raven_any_field_names(a: *const Box) -> *mut List {
     list
 }
 
-/// Read the field named by the Raven `String` `name` from the struct in
-/// `a`, box it into a fresh `Any`, and return it. Returns null when `a` is
-/// not a registered struct or has no such field.
-#[no_mangle]
-pub extern "C" fn raven_any_get_field(a: *const Box, name: *const RavenString) -> *mut Box {
-    if a.is_null() || name.is_null() {
-        return std::ptr::null_mut();
-    }
-    // SAFETY: `name` is a live Raven String; read its bytes for the lookup.
-    let wanted = unsafe {
+/// The byte slice of a Raven `String`, for a field-name lookup. The caller
+/// guarantees `name` is a live, non-null Raven `String`.
+unsafe fn string_bytes<'a>(name: *const RavenString) -> &'a [u8] {
+    unsafe {
         let len = (*name).header.len as usize;
-        let bytes = (*name).bytes;
-        std::slice::from_raw_parts(bytes, len)
-    };
-    let type_id = raven_any_type_id(a);
-    let found = with_meta(type_id, None, |m| {
+        std::slice::from_raw_parts((*name).bytes, len)
+    }
+}
+
+/// The slot index, runtime type id, and GC-pointer flag of the field named
+/// `wanted` on the struct type `type_id`, or `None` when there is no such
+/// registered struct field.
+fn field_lookup(type_id: u32, wanted: &[u8]) -> Option<(usize, u32, bool)> {
+    with_meta(type_id, None, |m| {
         if !m.is_struct {
             return None;
         }
@@ -229,16 +227,23 @@ pub extern "C" fn raven_any_get_field(a: *const Box, name: *const RavenString) -
             }
             // SAFETY: `f.name` is a NUL-terminated read-only C string.
             let fname = unsafe { std::ffi::CStr::from_ptr(f.name) }.to_bytes();
-            if fname == wanted {
-                Some((i, f.type_id, f.is_gc_ptr))
-            } else {
-                None
-            }
+            (fname == wanted).then_some((i, f.type_id, f.is_gc_ptr))
         })
-    });
-    let (index, field_type_id, is_gc_ptr) = match found {
-        Some(t) => t,
-        None => return std::ptr::null_mut(),
+    })
+}
+
+/// Read the field named by the Raven `String` `name` from the struct in
+/// `a`, box it into a fresh `Any`, and return it. Returns null when `a` is
+/// not a registered struct or has no such field.
+#[no_mangle]
+pub extern "C" fn raven_any_get_field(a: *const Box, name: *const RavenString) -> *mut Box {
+    if a.is_null() || name.is_null() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: `name` is a live Raven String; read its bytes for the lookup.
+    let wanted = unsafe { string_bytes(name) };
+    let Some((index, field_type_id, is_gc_ptr)) = field_lookup(raven_any_type_id(a), wanted) else {
+        return std::ptr::null_mut();
     };
     // The struct pointer is the `Any` payload word.
     let struct_ptr = raven_any_payload(a) as *const ObjectHeader;
@@ -252,6 +257,40 @@ pub extern "C" fn raven_any_get_field(a: *const Box, name: *const RavenString) -
     // SAFETY: field slots are eight bytes each in declaration order.
     let value = unsafe { (fields.add(index * 8) as *const u64).read() };
     raven_any_new(value, field_type_id, is_gc_ptr as u32)
+}
+
+/// Write `value` into the field named `name` of the struct in `a`. A no-op
+/// when `a` is not a registered struct, has no such field, or `value`'s
+/// dynamic type does not match the field's type (a mismatched write would
+/// corrupt the struct). `value` is consumed by reference; its payload word
+/// is stored, and because the struct keeps `a` reachable the stored pointer
+/// stays rooted.
+#[no_mangle]
+pub extern "C" fn raven_any_set_field(a: *const Box, name: *const RavenString, value: *const Box) {
+    if a.is_null() || name.is_null() || value.is_null() {
+        return;
+    }
+    // SAFETY: `name` is a live Raven String; read its bytes for the lookup.
+    let wanted = unsafe { string_bytes(name) };
+    let Some((index, field_type_id, _)) = field_lookup(raven_any_type_id(a), wanted) else {
+        return;
+    };
+    // The value's dynamic type must match the field, or the write is skipped.
+    if raven_any_type_id(value) != field_type_id {
+        return;
+    }
+    let struct_ptr = raven_any_payload(a) as *const ObjectHeader;
+    if struct_ptr.is_null() {
+        return;
+    }
+    let fields = raven_struct_fields(struct_ptr);
+    if fields.is_null() {
+        return;
+    }
+    let word = raven_any_payload(value);
+    // SAFETY: field slots are eight bytes each in declaration order, and the
+    // struct's heap storage is writable.
+    unsafe { (fields.add(index * 8) as *mut u64).write(word) };
 }
 
 #[cfg(test)]
@@ -345,6 +384,45 @@ mod tests {
             let zname = CString::new("z").unwrap();
             let zstr = raven_string_from_bytes(zname.as_bytes().as_ptr(), zname.as_bytes().len());
             assert!(raven_any_get_field(a, zstr).is_null());
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[test]
+    fn set_field_writes_matching_and_guards_mismatch() {
+        std::thread::spawn(|| {
+            let _keep = register_point();
+            use crate::gc::raven_struct_register;
+            use crate::object::raven_struct_new;
+            raven_struct_register(3, 0);
+            let s = raven_struct_new(2, 3);
+            let fields = raven_struct_fields(s) as *mut u64;
+            // SAFETY: two writable slots.
+            unsafe {
+                fields.add(0).write(11);
+                fields.add(1).write(22);
+            }
+            let a = raven_any_new(s as u64, 3, 1);
+            let xname = CString::new("x").unwrap();
+            let xstr = raven_string_from_bytes(xname.as_bytes().as_ptr(), xname.as_bytes().len());
+
+            // Matching field type (id 7): the write lands.
+            let v_ok = raven_any_new(99, 7, 0);
+            raven_any_set_field(a, xstr, v_ok);
+            // SAFETY: slot 0 holds the written word.
+            unsafe { assert_eq!(fields.add(0).read(), 99) };
+
+            // Mismatched type (id 5 != field id 7): the write is ignored.
+            let v_bad = raven_any_new(123, 5, 0);
+            raven_any_set_field(a, xstr, v_bad);
+            // SAFETY: slot 0 is unchanged.
+            unsafe { assert_eq!(fields.add(0).read(), 99) };
+
+            // Unknown field: a no-op, no panic.
+            let zname = CString::new("z").unwrap();
+            let zstr = raven_string_from_bytes(zname.as_bytes().as_ptr(), zname.as_bytes().len());
+            raven_any_set_field(a, zstr, v_ok);
         })
         .join()
         .unwrap();

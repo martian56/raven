@@ -1,0 +1,29 @@
+// Runtime reflection: write a struct field by name through `Any` with
+// set_field, the write counterpart of get_field. A type-mismatched write is
+// ignored. Regression for issue #230. Prints:
+//   42
+//   bye
+//   7
+struct Rec { n: Int, label: String }
+
+fun main() {
+    let r = Rec { n: 5, label: "hi" }
+    let a = to_any<Rec>(r)
+
+    set_field(a, "n", to_any<String>("nope")) // wrong type: ignored
+    set_field(a, "n", to_any<Int>(42)) // matching type: writes
+    print(r.n)
+
+    set_field(a, "label", to_any<String>("bye"))
+    print(r.label)
+
+    // read it back through get_field as well
+    set_field(a, "n", to_any<Int>(7))
+    match get_field(a, "n") {
+        Some(v) -> match cast<Int>(v) {
+            Some(k) -> print(k),
+            None -> print("not an Int"),
+        },
+        None -> print("no field"),
+    }
+}
