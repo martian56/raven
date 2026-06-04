@@ -1,8 +1,9 @@
 //! Recursive descent parser for the v2 grammar.
 //!
 //! The parser consumes a token slice produced by `crate::lexer` and
-//! emits an AST (`crate::ast::File`). It is hand written, single pass,
-//! and non recovering: the first error stops parsing.
+//! emits an AST (`crate::ast::File`). It is hand written and single pass.
+//! `parse_file` stops at the first error; `parse_file_recover` recovers at
+//! item boundaries to report several syntax errors per compile.
 //!
 //! Internally the implementation is split by grammar category:
 //!
@@ -100,6 +101,66 @@ impl Parser {
             items,
             span: merge_spans(&start_span, &end_span),
         })
+    }
+
+    /// Parse the entire token stream, recovering at item boundaries so a
+    /// syntax error in one top-level item does not hide errors in the next.
+    /// On a failed `parse_decl`, the error is recorded and the parser skips
+    /// to the next item-starting keyword before continuing. Returns every
+    /// collected parse error when any occurred (the partial item list is
+    /// discarded, since a damaged AST would only produce cascade errors
+    /// downstream).
+    pub fn parse_file_recover(&mut self) -> Result<File, Vec<RavenError>> {
+        let start_span = self.peek().span.clone();
+        let mut items = Vec::new();
+        let mut errors: Vec<RavenError> = Vec::new();
+        self.skip_separators();
+        while !self.is_at_end() {
+            match self.parse_decl() {
+                Ok(item) => items.push(item),
+                Err(e) => {
+                    errors.push(e);
+                    self.recover_to_next_item();
+                }
+            }
+            self.skip_separators();
+        }
+        dedup_parse_errors(&mut errors);
+        if errors.is_empty() {
+            let end_span = self.peek().span.clone();
+            Ok(File {
+                items,
+                span: merge_spans(&start_span, &end_span),
+            })
+        } else {
+            Err(errors)
+        }
+    }
+
+    /// Skip tokens after a failed item parse until the next item-starting
+    /// keyword at the top level. Always consumes at least one token so
+    /// recovery makes progress, then tracks bracket depth and stops at the
+    /// first unambiguous top-level item keyword (`fun`, `struct`, `enum`,
+    /// `trait`, `impl`, `extern`, `import`, or a `@` attribute). `let` and
+    /// `const` are not sync points because they double as statements inside a
+    /// body.
+    fn recover_to_next_item(&mut self) {
+        if !self.is_at_end() {
+            self.advance();
+        }
+        let mut depth: i32 = 0;
+        while !self.is_at_end() {
+            let k = self.peek_kind();
+            if depth <= 0 && is_item_start(k) {
+                break;
+            }
+            match k {
+                TokenKind::LBrace | TokenKind::LParen | TokenKind::LBracket => depth += 1,
+                TokenKind::RBrace | TokenKind::RParen | TokenKind::RBracket => depth -= 1,
+                _ => {}
+            }
+            self.advance();
+        }
     }
 
     // ----- token cursor primitives -----
@@ -232,6 +293,45 @@ pub fn parse(tokens: &[Token]) -> ParseResult<File> {
 pub fn parse_with_macros(tokens: &[Token], macros: crate::macros::MacroTable) -> ParseResult<File> {
     let mut p = Parser::new_with_macros(tokens, macros);
     p.parse_file()
+}
+
+/// Parse a complete source file with item-level error recovery, carrying the
+/// file's macro definitions. Returns every collected parse error when any
+/// occurred, so one compile reports several syntax errors.
+pub fn parse_with_macros_all(
+    tokens: &[Token],
+    macros: crate::macros::MacroTable,
+) -> Result<File, Vec<RavenError>> {
+    let mut p = Parser::new_with_macros(tokens, macros);
+    p.parse_file_recover()
+}
+
+/// Whether `k` begins an unambiguous top-level item, used as a parser
+/// synchronization point during error recovery. `let` and `const` are
+/// excluded because they also appear as statements inside a body.
+fn is_item_start(k: &TokenKind) -> bool {
+    matches!(
+        k,
+        TokenKind::Fun
+            | TokenKind::Struct
+            | TokenKind::Enum
+            | TokenKind::Trait
+            | TokenKind::Impl
+            | TokenKind::Extern
+            | TokenKind::Import
+            | TokenKind::At
+    )
+}
+
+/// Drop duplicate parse diagnostics, keeping the first occurrence. Two errors
+/// at the same span with the same message are duplicates.
+fn dedup_parse_errors(errors: &mut Vec<RavenError>) {
+    let mut seen: std::collections::HashSet<(std::path::PathBuf, usize, usize, String)> =
+        std::collections::HashSet::new();
+    errors.retain(|e| {
+        let s = e.span();
+        seen.insert((s.file.to_path_buf(), s.start, s.end, format!("{}", e)))
+    });
 }
 
 /// Merge two spans into one covering both. Both must come from the same

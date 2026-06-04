@@ -4,7 +4,15 @@
 
 Consume the lexer's `Vec<Token>` and produce an Abstract Syntax Tree (AST) for the full Raven v2 grammar. The parser is a hand written recursive descent implementation with operator precedence climbing for expressions. Every AST node carries a `Span` so downstream passes (name resolution, type checking, code generation) can produce errors anchored at the source.
 
-The parser is total: it never panics on user input. Every malformed program produces a `RavenError::Parse(ParseError, Span, Option<String>)` and the parser does not attempt aggressive recovery in this release (one error, stop). Recovery is tracked separately and is out of scope for this PR.
+The parser is total: it never panics on user input. Every malformed program produces a `RavenError::Parse(ParseError, Span, Option<String>)`.
+
+Two entry points exist. `parse_file` stops at the first error (used by tests and golden harnesses, which expect a single error). `parse_file_recover` (used by the compile driver via `parse_with_macros_all`) recovers at item boundaries so one compile can report several syntax errors: on a failed `parse_decl`, the error is recorded and the parser skips forward to the next item-starting keyword before continuing.
+
+### Error recovery
+
+`recover_to_next_item` consumes at least one token (guaranteeing progress) and then skips tokens, tracking bracket depth, until the next unambiguous top-level item keyword at depth zero or below: `fun`, `struct`, `enum`, `trait`, `impl`, `extern`, `import`, or a `@` attribute. `let` and `const` are not synchronization points because they also appear as statements inside a body, so syncing on them could stop recovery inside the broken item. The depth counter lets recovery skip a broken function body (its inner braces and its closing `}`) and resume at the next item.
+
+When any item failed, `parse_file_recover` returns every collected error (de-duplicated by span and message) and discards the partial item list: a damaged AST would only produce cascade errors in resolve and type checking, so a compile with parse errors stops after parsing and reports them all. A clean parse returns the full `File` exactly as `parse_file` would. Statement-level recovery within a single body (reporting more than one error per item) is a follow-up under issue #294.
 
 ## Pipeline position
 
