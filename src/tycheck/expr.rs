@@ -2891,7 +2891,10 @@ pub fn check_binary(l: &Ty, r: &Ty, op: BinaryOp, span: &Span) -> Result<Ty, Rav
             }
         }
         Lt | Le | Gt | Ge => match (ls, rs) {
-            (Ty::Int, Ty::Int) | (Ty::Float, Ty::Float) | (Ty::Char, Ty::Char) => Ok(Ty::Bool),
+            (Ty::Int, Ty::Int)
+            | (Ty::Float, Ty::Float)
+            | (Ty::Char, Ty::Char)
+            | (Ty::Str, Ty::Str) => Ok(Ty::Bool),
             _ => Err(RavenError::ty(
                 TypeError::TypeMismatch {
                     expected: "orderable types".into(),

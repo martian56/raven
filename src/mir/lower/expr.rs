@@ -89,6 +89,16 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             {
                 return lower_string_eq(cx, *op, lhs, rhs, ty);
             }
+            // Ordering on `String` compares contents lexicographically:
+            // `raven_string_cmp` returns -1/0/1 and the operator compares
+            // that against 0.
+            if matches!(
+                op,
+                HirBinaryOp::Lt | HirBinaryOp::Le | HirBinaryOp::Gt | HirBinaryOp::Ge
+            ) && mir_ty(&lhs.ty, cx.subst) == MirType::Str
+            {
+                return lower_string_cmp(cx, *op, lhs, rhs, ty);
+            }
             let l = lower_expr(cx, lhs);
             let r = lower_expr(cx, rhs);
             let dst = cx.builder.fresh_temp("bin", ty);
@@ -775,6 +785,43 @@ fn lower_string_eq(
             MirOperand::Copy(dst)
         }
     }
+}
+
+/// Lower an ordering comparison (`< <= > >=`) on two `String` operands.
+/// Calls the `raven_string_cmp` intrinsic, which returns a negative, zero,
+/// or positive `Int`, then applies the operator against `0`.
+fn lower_string_cmp(
+    cx: &mut LowerCx<'_>,
+    op: HirBinaryOp,
+    lhs: &HirExpr,
+    rhs: &HirExpr,
+    ty: MirType,
+) -> MirOperand {
+    let l = lower_expr(cx, lhs);
+    let r = lower_expr(cx, rhs);
+    let cmp = cx.builder.fresh_temp("strcmp", MirType::Int);
+    cx.builder.assign(
+        cx.current,
+        cmp,
+        MirRvalue::Call {
+            callee: MirFnRef {
+                mangled: super::super::intrinsics::STR_CMP.into(),
+                origin: None,
+            },
+            args: vec![l, r],
+        },
+    );
+    let dst = cx.builder.fresh_temp("strord", ty);
+    cx.builder.assign(
+        cx.current,
+        dst,
+        MirRvalue::BinaryOp(
+            map_binary(op),
+            MirOperand::Copy(cmp),
+            MirOperand::Const(MirConstant::Int(0)),
+        ),
+    );
+    MirOperand::Copy(dst)
 }
 
 /// Desugar an interpolated string into a left-folded chain of runtime

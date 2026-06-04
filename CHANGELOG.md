@@ -4,6 +4,10 @@ All notable changes to Raven are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Lexicographic ordering on `String` with the `<`, `<=`, `>`, `>=` operators, backed by a new `raven_string_cmp` runtime function. Previously these were a type error (#267).
+
 ### Fixed
 
 - `String.len()` and `String.is_empty()` now work without an import, spelled the same as `List`/`Map`/`Set`. They previously type-checked but failed in code generation with `unresolved callee: Str$len`. A user `impl String` of either name still takes precedence (#266).
