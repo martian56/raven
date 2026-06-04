@@ -715,8 +715,28 @@ fn type_name_resolves_a_generic_parameter() {
 }
 
 #[test]
+fn field_types_yields_list_of_string() {
+    check(
+        r#"
+        struct Point { x: Int, y: Int }
+        fun a() -> List<String> = field_types<Point>()
+    "#,
+    )
+    .unwrap();
+}
+
+#[test]
 fn field_names_on_scalar_is_rejected() {
     let err = check("fun a() -> List<String> = field_names<Int>()\n").unwrap_err();
+    match err {
+        RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::Custom(_))),
+        other => panic!("expected a type error, got {:?}", other),
+    }
+}
+
+#[test]
+fn field_types_on_scalar_is_rejected() {
+    let err = check("fun a() -> List<String> = field_types<Int>()\n").unwrap_err();
     match err {
         RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::Custom(_))),
         other => panic!("expected a type error, got {:?}", other),

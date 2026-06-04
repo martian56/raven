@@ -1,0 +1,52 @@
+// Compile-time field reflection: field_types<T>() pairs with field_names<T>().
+//
+// field_types yields a struct's field type names in declaration order, the
+// counterpart to field_names. Both resolve at compile time per
+// monomorphization, so a generic struct renders its concrete field types and a
+// generic describe<T> resolves to a different struct from one body. See
+// docs/v2/specs/reflection.md.
+//
+// Compiling and running this prints:
+//   id: Int
+//   name: String
+//   active: Bool
+//   --
+//   Int
+//   String
+//   --
+//   value: Int
+struct User {
+    id: Int,
+    name: String,
+    active: Bool
+}
+
+struct Box<T> {
+    value: T
+}
+
+fun describe<T>() {
+    let names = field_names<T>()
+    let types = field_types<T>()
+    let i = 0
+    while i < names.len() {
+        print("${names[i]}: ${types[i]}")
+        i += 1
+    }
+}
+
+fun main() {
+    describe<User>()
+
+    print("--")
+    // A generic struct renders its concrete field type per instantiation.
+    for t in field_types<Box<Int>>() {
+        print(t)
+    }
+    for t in field_types<Box<String>>() {
+        print(t)
+    }
+
+    print("--")
+    describe<Box<Int>>()
+}

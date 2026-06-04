@@ -2,11 +2,12 @@
 
 Compile-time type reflection exposes a small amount of type information to
 user code, resolved while the program is compiled. This is the first slice
-of the reflection work tracked under issue #216. It ships two builtins:
+of the reflection work tracked under issue #216. It ships three builtins:
 
 ```raven
 type_name<T>() -> String
 field_names<T>() -> List<String>
+field_types<T>() -> List<String>
 ```
 
 Both take a single type argument and no value arguments. The type argument
@@ -65,13 +66,40 @@ field_names<Point>()    // ["x", "y"]
 ```
 
 `T` must be a struct. Applying `field_names` to a non-struct type (a
-scalar, an enum, a built-in generic) is a compile error. Field types,
-not just names, are a follow-up (a typed field descriptor); this slice
-returns names only.
+scalar, an enum, a built-in generic) is a compile error.
 
 Inside a generic function, `field_names<T>()` resolves to the fields of the
 struct bound to `T` at each instantiation, the same per-monomorphization
 mechanic as `type_name`.
+
+## field_types
+
+`field_types<T>()` evaluates to the field types of the struct type `T`, in
+declaration order, as a `List<String>` of rendered type names. It is the
+positional counterpart to `field_names`: index `i` of one lines up with
+index `i` of the other, so the two together describe each field.
+
+```raven
+struct User { id: Int, name: String, active: Bool }
+
+field_names<User>()    // ["id", "name", "active"]
+field_types<User>()    // ["Int", "String", "Bool"]
+```
+
+`T` must be a struct, with the same non-struct rejection as `field_names`.
+For a generic struct, each field type is rendered at its concrete
+instantiation, so a generic field reads as the type it is bound to:
+
+```raven
+struct Box<T> { value: T }
+
+field_types<Box<Int>>()       // ["Int"]
+field_types<Box<String>>()    // ["String"]
+```
+
+A typed descriptor object (a struct the user can read, rather than parallel
+string lists) remains a possible future surface; this slice pairs
+`field_names` and `field_types` by position.
 
 ## Model: compile-time, per-monomorphization
 
@@ -92,6 +120,10 @@ becomes the concrete type for that instantiation:
 - `field_names<T>()` lowers to a `List<String>` literal built from the
   grounded struct's field names, looked up from the struct declaration the
   lowering pass already holds.
+- `field_types<T>()` lowers to a `List<String>` literal of the grounded
+  struct's field type names. A per-instantiation substitution built from the
+  concrete type arguments grounds each declared field type first, so a
+  generic field renders its concrete type.
 
 Because the lowering runs per instantiation with the concrete substitution,
 a generic `type_name<T>()` produces the right name at each call, not one
@@ -100,10 +132,11 @@ unaffected: nothing is emitted and no runtime symbol is referenced.
 
 ## Recognition
 
-`type_name` and `field_names` are builtin names, recognized the same way
-the `print` builtin and the internal stdlib intrinsics are: the resolver
-allows the bare name without a binding, the type checker assigns the result
-type at the call site (and validates that `field_names` targets a struct),
+`type_name`, `field_names`, and `field_types` are builtin names, recognized
+the same way the `print` builtin and the internal stdlib intrinsics are: the
+resolver allows the bare name without a binding, the type checker assigns the
+result type at the call site (and validates that `field_names`/`field_types`
+target a struct),
 and HIR lowering rewrites the call into a dedicated reflection node carrying
 the resolved type argument. A user can shadow either name by binding it in
 scope (an import or a local), in which case the binding wins.
@@ -113,7 +146,6 @@ scope (an import or a local), in which case the binding wins.
 This slice is deliberately bounded. The following are follow-ups, each
 filed against #216:
 
-- Field types and a typed field descriptor (not just names).
+- A typed field descriptor object (a readable struct, not parallel string
+  lists); `field_types` covers the field-type information for now.
 - Enum and variant introspection.
-- Runtime reflection over a value of unknown type, via an `Any` type.
-- Dynamic field get and set.

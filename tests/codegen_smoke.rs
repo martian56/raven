@@ -134,6 +134,22 @@ fn reflection_program_compiles_and_runs() {
 }
 
 #[test]
+fn field_types_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // `field_types<T>()` pairs with `field_names<T>()`, rendering each field's
+    // type by position. A generic struct (`Box<T>`) renders its concrete field
+    // type per instantiation, so `Box<Int>` reads `Int` and `Box<String>`
+    // reads `String`.
+    compile_link_run_and_check(
+        "use_field_types.rv",
+        "id: Int\nname: String\nactive: Bool\n--\nInt\nString\n--\nvalue: Int\n",
+        &runtime,
+    );
+}
+
+#[test]
 fn derive_json_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

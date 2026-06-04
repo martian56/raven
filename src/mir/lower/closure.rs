@@ -319,6 +319,7 @@ fn collect_free_expr(
         | HirExprKind::NoneCtor
         | HirExprKind::TypeName(_)
         | HirExprKind::FieldNames(_)
+        | HirExprKind::FieldTypes(_)
         | HirExprKind::Continue => {}
         HirExprKind::Ident(name) => record_use(name, bound, seen, out),
         HirExprKind::Array(items) => {

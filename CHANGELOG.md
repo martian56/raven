@@ -6,6 +6,7 @@ All notable changes to Raven are documented in this file.
 
 ### Added
 
+- Compile-time reflection `field_types<T>()`: the positional counterpart to `field_names<T>()`, returning each struct field's type name in declaration order as a `List<String>`. For a generic struct each field renders its concrete type per instantiation, so `field_types<Box<Int>>()` yields `["Int"]`. A non-struct type argument is rejected, matching `field_names` (#227).
 - Macro fragment specifiers beyond `expr` and `ident`: `$x:ty` and `$x:pat` capture a balanced token run (a type such as `List<Int>`, a pattern such as `Some(n)`), `$x:literal` matches exactly one literal token and rejects anything else, and `$x:block` captures a brace-delimited `{ ... }` group. The names document call-site intent and, for `literal` and `block`, constrain what a rule accepts (#223).
 - Runtime reflection `set_field(a, name, value)`: write a struct field by name through an `Any`, the counterpart to `get_field`. A write whose value type does not match the field is ignored (#230).
 - Rich, colorful compiler error messages. `raven build` now prints a friendly headline, a box-drawing source pointer with an inline label at the offending span, and `help:`/`note:` lines, instead of a single terse line. Type mismatches, unknown types, missing match arms, undefined methods, and parse errors all get hand-written wording and suggestions. Color is automatic on a terminal and disabled under `NO_COLOR` or when output is piped (#283).

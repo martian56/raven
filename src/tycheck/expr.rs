@@ -1355,6 +1355,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         match name {
             "type_name" => self.check_reflection_builtin(name, generics, callee_span, args, span),
             "field_names" => self.check_reflection_builtin(name, generics, callee_span, args, span),
+            "field_types" => self.check_reflection_builtin(name, generics, callee_span, args, span),
             "__ptr_alloc" | "__ptr_free" | "__ptr_load" | "__ptr_store" | "__ptr_offset"
             | "__ptr_is_null" | "__ptr_null" => {
                 self.check_ptr_builtin(name, generics, callee_span, args, span)
@@ -1520,8 +1521,9 @@ impl<'a, 'b> Checker<'a, 'b> {
         }
     }
 
-    /// Check a compile-time reflection builtin (`type_name<T>()` or
-    /// `field_names<T>()`). Both take exactly one type argument and no value
+    /// Check a compile-time reflection builtin (`type_name<T>()`,
+    /// `field_names<T>()`, or `field_types<T>()`). Each takes exactly one
+    /// type argument and no value
     /// arguments. The resolved type argument is recorded under the callee
     /// span so HIR lowering can carry it (a generic parameter `T` resolves
     /// to `Ty::Param`, grounded per monomorphization in MIR). See
@@ -1555,12 +1557,13 @@ impl<'a, 'b> Checker<'a, 'b> {
             ));
         }
         let arg_ty = self.resolve_ast_ty(&generics[0])?;
-        if name == "field_names" && !matches!(arg_ty.strip_self(), Ty::Struct { .. } | Ty::Param(_))
+        if (name == "field_names" || name == "field_types")
+            && !matches!(arg_ty.strip_self(), Ty::Struct { .. } | Ty::Param(_))
         {
             return Err(RavenError::ty(
                 TypeError::Custom(format!(
-                    "`field_names` requires a struct type, got `{}`",
-                    arg_ty
+                    "`{}` requires a struct type, got `{}`",
+                    name, arg_ty
                 )),
                 span.clone(),
             ));
@@ -1570,7 +1573,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         // keeps the result type (`String` or `List<String>`).
         self.record(callee_span, arg_ty);
         Ok(match name {
-            "field_names" => Ty::List(Box::new(Ty::Str)),
+            "field_names" | "field_types" => Ty::List(Box::new(Ty::Str)),
             _ => Ty::Str,
         })
     }
