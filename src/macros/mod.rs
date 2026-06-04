@@ -112,6 +112,67 @@ struct MacroDef {
     span: Span,
 }
 
+/// A file's collected macro definitions, kept so macro calls that surface
+/// after the main token pre-pass (string-interpolation fragments are
+/// re-lexed during parsing) can still be expanded. Empty when the file
+/// defines no macros.
+#[derive(Debug, Clone, Default)]
+pub struct MacroTable {
+    defs: HashMap<String, MacroDef>,
+}
+
+impl MacroTable {
+    /// True when the file defines no macros, so expansion is a no-op.
+    pub fn is_empty(&self) -> bool {
+        self.defs.is_empty()
+    }
+}
+
+/// Collect a file's macro definitions into a reusable table without
+/// expanding anything. Run on the original token stream (definitions still
+/// present); the result feeds [`expand_with_table`] for snippets re-lexed
+/// during parsing.
+pub fn collect_macro_table(tokens: &[Token]) -> Result<MacroTable, RavenError> {
+    if !has_macro_keyword(tokens) {
+        return Ok(MacroTable::default());
+    }
+    let (defs, _body) = collect_defs(tokens)?;
+    Ok(MacroTable { defs })
+}
+
+/// Expand macro calls in `tokens` using a previously collected [`MacroTable`].
+///
+/// Used for string-interpolation fragments, which are lexed during parsing,
+/// after the file's main macro pre-pass has already run and stripped the
+/// definitions from the stream. Returns the input unchanged when the table
+/// is empty or the tokens contain no macro call.
+pub fn expand_with_table(tokens: &[Token], table: &MacroTable) -> Result<Vec<Token>, RavenError> {
+    if table.is_empty() || !contains_call(tokens) {
+        return Ok(tokens.to_vec());
+    }
+    let mut stream = tokens.to_vec();
+    let mut spans = SpanGen::starting_after(tokens);
+    let mut passes = 0;
+    while contains_call(&stream) {
+        passes += 1;
+        if passes > EXPANSION_LIMIT {
+            let span = stream
+                .first()
+                .map(|t| t.span.clone())
+                .unwrap_or_else(|| tokens[0].span.clone());
+            return Err(err(
+                span,
+                format!(
+                    "macro expansion exceeded {} passes; a macro is likely recursive",
+                    EXPANSION_LIMIT
+                ),
+            ));
+        }
+        stream = expand_once(&stream, &table.defs, &mut spans)?;
+    }
+    Ok(stream)
+}
+
 /// Expand all declarative macros in `tokens`.
 ///
 /// Returns the rewritten token stream (still ending in `Eof`). When the

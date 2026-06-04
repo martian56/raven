@@ -132,6 +132,29 @@ fn nested_macro_calls_expand_to_fixpoint() {
 }
 
 #[test]
+fn macro_table_expands_a_snippet() {
+    // A file's table (collected from the definitions) expands a snippet that
+    // was lexed on its own, the path used for `"${...}"` interpolation.
+    let file = lex("macro twice { ($x:expr) => { ($x) + ($x) } }\n");
+    let table = collect_macro_table(&file).expect("table ok");
+    assert!(!table.is_empty());
+    let snippet = lex("twice!(n + 1)");
+    let out = expand_with_table(&snippet, &table).expect("expand ok");
+    assert_eq!(render(&out), "( n + 1 ) + ( n + 1 )");
+}
+
+#[test]
+fn macro_table_is_empty_without_definitions() {
+    let table = collect_macro_table(&lex("fun main() {}\n")).expect("table ok");
+    assert!(table.is_empty());
+    // An empty table leaves a snippet untouched, even one that looks like a
+    // call (no definition means nothing to expand).
+    let snippet = lex("foo!(1)");
+    let out = expand_with_table(&snippet, &table).expect("noop");
+    assert_eq!(out, snippet);
+}
+
+#[test]
 fn unknown_macro_is_an_error() {
     // A defined macro is present so the pass runs, but the call names another.
     let src = "macro twice { ($x:expr) => { ($x) } }\nlet y = nope!(1)\n";

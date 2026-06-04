@@ -21,7 +21,7 @@ use crate::codegen::{self, CodegenError};
 use crate::hir::lower_file;
 use crate::lexer::Lexer;
 use crate::mir::lower_program;
-use crate::parser::parse;
+use crate::parser::parse_with_macros;
 use crate::resolve::{expand_with_stdlib_ctx, resolve_file_ctx, FsLoader, PackageContext};
 use crate::tycheck::check_file;
 
@@ -110,9 +110,15 @@ pub fn compile_to_object(
     let tokens = Lexer::new(source.to_string(), input.to_path_buf())
         .tokenize()
         .map_err(|e| frontend_diag(e, input, source))?;
+    // Collect the file's macro table from the original token stream (before
+    // the definitions are stripped) so a macro call inside a `"${...}"`
+    // interpolation fragment can be expanded while that fragment is parsed.
+    let macro_table =
+        crate::macros::collect_macro_table(&tokens).map_err(|e| frontend_diag(e, input, source))?;
     let tokens =
         crate::macros::expand_tokens(&tokens).map_err(|e| frontend_diag(e, input, source))?;
-    let file = parse(&tokens).map_err(|e| frontend_diag(e, input, source))?;
+    let file =
+        parse_with_macros(&tokens, macro_table).map_err(|e| frontend_diag(e, input, source))?;
     let file = expand_with_stdlib_ctx(&file, ctx).map_err(|e| frontend_diag(e, input, source))?;
     let mut loader = FsLoader;
     let resolved =

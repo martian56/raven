@@ -74,7 +74,8 @@ recognized by the token shape `<ident> ! (`. In ordinary Raven `!` is only a
 prefix operator (logical not), so this three-token shape never occurs in a
 valid non-macro program, which keeps detection unambiguous.
 
-This slice supports invocation in expression position only.
+This slice supports invocation in expression position, including inside a
+`"${...}"` string-interpolation fragment.
 
 ### Metavariables and fragments
 
@@ -242,6 +243,10 @@ name. Definition-site resolution of free identifiers is a follow-up.
 * Basic hygiene: template-introduced binding-site identifiers (`let`, `const`,
   `for`) are renamed to fresh names so they cannot capture or be captured.
 * Nested and composed macro calls, expanded to a fixpoint under the limit.
+* Macro calls inside a `"${...}"` string-interpolation fragment. The fragment
+  is lexed during parsing, after the file's main token pre-pass has run, so
+  the file's collected macro table is carried into fragment parsing and the
+  call expands there the same as anywhere else in expression position.
 * Clear, spanned errors for the cases listed above.
 * A strict no-op for programs that define no macros.
 

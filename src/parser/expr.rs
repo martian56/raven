@@ -438,7 +438,7 @@ impl Parser {
     /// `ExprKind::Str` (with any escaped dollars un-escaped). One or more
     /// real interpolations produce an `ExprKind::InterpolatedString`.
     fn string_literal_expr(&self, decoded: String, span: Span) -> ParseResult<Expr> {
-        let fragments = split_interpolation(&decoded, &span)?;
+        let fragments = split_interpolation(&decoded, &span, &self.macros)?;
         // Collapse to a plain string when no embedded expression survived.
         if fragments
             .iter()
@@ -1214,7 +1214,11 @@ impl Parser {
 /// A literal with no real `${...}` yields a single
 /// [`StrFragment::Literal`] (with the sentinel stripped). The caller
 /// collapses an all-literal result back to a plain `ExprKind::Str`.
-fn split_interpolation(decoded: &str, span: &Span) -> ParseResult<Vec<StrFragment>> {
+fn split_interpolation(
+    decoded: &str,
+    span: &Span,
+    macros: &crate::macros::MacroTable,
+) -> ParseResult<Vec<StrFragment>> {
     let mut fragments: Vec<StrFragment> = Vec::new();
     let mut text = String::new();
     let mut frag_index = 0usize;
@@ -1286,7 +1290,7 @@ fn split_interpolation(decoded: &str, span: &Span) -> ParseResult<Vec<StrFragmen
                     span.clone(),
                 ));
             }
-            let expr = parse_interpolation_snippet(snippet, span, frag_index)?;
+            let expr = parse_interpolation_snippet(snippet, span, frag_index, macros)?;
             fragments.push(StrFragment::Expr(Box::new(expr)));
             frag_index += 1;
             i = j + 1;
@@ -1310,7 +1314,12 @@ fn split_interpolation(decoded: &str, span: &Span) -> ParseResult<Vec<StrFragmen
 /// that cannot collide with real source spans. Parse errors are
 /// re-anchored to the literal's span so the diagnostic points the reader
 /// at the offending string.
-fn parse_interpolation_snippet(snippet: &str, span: &Span, frag_index: usize) -> ParseResult<Expr> {
+fn parse_interpolation_snippet(
+    snippet: &str,
+    span: &Span,
+    frag_index: usize,
+    macros: &crate::macros::MacroTable,
+) -> ParseResult<Expr> {
     let synthetic = std::path::PathBuf::from(format!(
         "{}<interp:{}:{}>",
         span.file.display(),
@@ -1320,7 +1329,13 @@ fn parse_interpolation_snippet(snippet: &str, span: &Span, frag_index: usize) ->
     let tokens = Lexer::new(snippet.to_string(), synthetic)
         .tokenize()
         .map_err(|e| reanchor(e, span))?;
-    let mut parser = Parser::new(&tokens);
+    // A macro call may appear inside the fragment (`"${twice!(n)}"`). The
+    // file's main pre-pass never saw it (the call lived inside a string
+    // token), so expand it here against the file's macro table before
+    // parsing. A no-op when the file defines no macros.
+    let tokens =
+        crate::macros::expand_with_table(&tokens, macros).map_err(|e| reanchor(e, span))?;
+    let mut parser = Parser::new_with_macros(&tokens, macros.clone());
     parser.skip_newlines();
     let expr = parser.parse_expr().map_err(|e| reanchor(e, span))?;
     parser.skip_newlines();

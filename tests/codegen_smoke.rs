@@ -18,7 +18,7 @@ use raven::codegen::{self, CodegenError};
 use raven::hir::lower_file;
 use raven::lexer::Lexer;
 use raven::mir::lower_program;
-use raven::parser::parse;
+use raven::parser::parse_with_macros;
 use raven::resolve::{expand_with_stdlib, resolve_file, FsLoader};
 use raven::tycheck::check_file;
 
@@ -43,6 +43,21 @@ fn declarative_macros_compile_and_run() {
     compile_link_run_and_check(
         "use_macros.rv",
         "8\n10\n9\n13\n6\n0\n10\n15\n200\n100\n",
+        &runtime,
+    );
+}
+
+#[test]
+fn macro_call_in_interpolation_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A macro call inside a `"${...}"` fragment expands against the file's
+    // macro table: twice!(n + 1) == 8, the nested twice!(twice!(n)) == 12, and
+    // twice!(10) == 20 alongside a plain `${name}`.
+    compile_link_run_and_check(
+        "interp_macro_call.rv",
+        "twice = 8\nnested 12 done\nhi raven, 20\n",
         &runtime,
     );
 }
@@ -1478,8 +1493,10 @@ fn build_object_inner(source: &str, path: &Path) -> Result<Vec<u8>, String> {
     let tokens = Lexer::new(source.to_string(), path.to_path_buf())
         .tokenize()
         .map_err(|e| format!("lex: {}", e))?;
+    let macro_table =
+        raven::macros::collect_macro_table(&tokens).map_err(|e| format!("macro: {}", e))?;
     let tokens = raven::macros::expand_tokens(&tokens).map_err(|e| format!("macro: {}", e))?;
-    let file = parse(&tokens).map_err(|e| format!("parse: {}", e))?;
+    let file = parse_with_macros(&tokens, macro_table).map_err(|e| format!("parse: {}", e))?;
     // Mirror the driver: merge any imported bundled stdlib modules before
     // resolving. A program with no `std/` imports is unchanged.
     let file = expand_with_stdlib(&file).map_err(|e| format!("stdlib: {}", e))?;
