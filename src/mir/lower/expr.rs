@@ -489,6 +489,19 @@ fn lower_reflect_builtin(
             );
             MirOperand::Copy(dst)
         }
+        ReflectBuiltinOp::SetField => {
+            let dst = cx.builder.fresh_temp("set_field", ty);
+            cx.builder.assign(
+                cx.current,
+                dst,
+                MirRvalue::AnySetField {
+                    any: ops[0].clone(),
+                    name: ops[1].clone(),
+                    value: ops[2].clone(),
+                },
+            );
+            MirOperand::Copy(dst)
+        }
     }
 }
 

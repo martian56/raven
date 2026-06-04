@@ -297,6 +297,14 @@ pub enum MirRvalue {
         name: MirOperand,
         option_ty: MirType,
     },
+    /// `set_field(a, name, value)`: write `value` into the field named `name`
+    /// of the struct in `any`. Evaluates to `Unit`; the back end calls the
+    /// runtime writer.
+    AnySetField {
+        any: MirOperand,
+        name: MirOperand,
+        value: MirOperand,
+    },
 }
 
 /// One statement inside a basic block.

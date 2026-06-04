@@ -672,6 +672,7 @@ fn is_builtin_ctor_name(name: &str) -> bool {
             | "type_name_of"
             | "field_names_of"
             | "get_field"
+            | "set_field"
             | "__ptr_alloc"
             | "__ptr_free"
             | "__ptr_load"

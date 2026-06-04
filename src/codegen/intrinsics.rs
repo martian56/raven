@@ -223,6 +223,8 @@ pub const RUNTIME_ANY_TYPE_NAME: &str = "raven_any_type_name";
 pub const RUNTIME_ANY_FIELD_NAMES: &str = "raven_any_field_names";
 /// `raven_any_get_field(Any, name) -> Any` reads a struct field by name.
 pub const RUNTIME_ANY_GET_FIELD: &str = "raven_any_get_field";
+/// `raven_any_set_field(Any, name, Any)` writes a struct field by name.
+pub const RUNTIME_ANY_SET_FIELD: &str = "raven_any_set_field";
 
 /// True when `mangled` is one of the recognized intrinsics.
 pub fn is_intrinsic(mangled: &str) -> bool {

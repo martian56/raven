@@ -607,6 +607,10 @@ impl ModuleCx {
         sig = self.make_sig(&[ptr, ptr], &[ptr]);
         self.declare_runtime(intrinsics::RUNTIME_ANY_GET_FIELD, &sig)?;
 
+        // raven_any_set_field(Any ptr, name String ptr, value Any ptr)
+        sig = self.make_sig(&[ptr, ptr, ptr], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_ANY_SET_FIELD, &sig)?;
+
         Ok(())
     }
 

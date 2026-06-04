@@ -350,6 +350,15 @@ fn pretty_rvalue(buf: &mut String, r: &MirRvalue) {
             pretty_operand(buf, name);
             buf.push(')');
         }
+        MirRvalue::AnySetField { any, name, value } => {
+            buf.push_str("(any-set-field ");
+            pretty_operand(buf, any);
+            buf.push(' ');
+            pretty_operand(buf, name);
+            buf.push(' ');
+            pretty_operand(buf, value);
+            buf.push(')');
+        }
     }
 }
 
