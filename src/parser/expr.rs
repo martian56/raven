@@ -1241,6 +1241,23 @@ fn split_interpolation(decoded: &str, span: &Span) -> ParseResult<Vec<StrFragmen
             let mut j = start;
             while j < bytes.len() {
                 match bytes[j] {
+                    b'"' => {
+                        // Skip a nested string literal so braces or quotes
+                        // inside it do not affect the interpolation's brace
+                        // depth or close it early.
+                        j += 1;
+                        while j < bytes.len() {
+                            match bytes[j] {
+                                b'\\' => j += 2,
+                                b'"' => {
+                                    j += 1;
+                                    break;
+                                }
+                                _ => j += 1,
+                            }
+                        }
+                        continue;
+                    }
                     b'{' => depth += 1,
                     b'}' => {
                         depth -= 1;

@@ -130,6 +130,22 @@ fn string_preserves_interpolation_verbatim() {
 }
 
 #[test]
+fn interpolation_may_contain_a_nested_string_literal() {
+    // A `"` inside `${...}` opens a nested string, not the end of the outer
+    // one, so the whole literal is one token. Regression for issue #262.
+    let src = r#""hello ${shout("world")}!""#;
+    let toks = lex(src);
+    match &toks[0].kind {
+        TokenKind::StringLit(s) => assert_eq!(s, r#"hello ${shout("world")}!"#),
+        other => panic!(
+            "expected one StringLit, got {:?} ({} tokens)",
+            other,
+            toks.len()
+        ),
+    }
+}
+
+#[test]
 fn string_supports_hex_and_unicode_escapes() {
     let toks = lex(r#""\x41\u{1F600}""#);
     match &toks[0].kind {
