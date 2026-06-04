@@ -97,6 +97,15 @@ pub(crate) fn lower_expr(
         ExprKind::SelfUpper => HirExprKind::Ident("Self".into()),
         ExprKind::Ident { name, .. } if name == "None" => HirExprKind::NoneCtor,
         ExprKind::Ident { name, .. } => {
+            // A reference to a module-level `const`/`let` with a literal
+            // initializer is inlined to that literal. Module-level bindings
+            // have no runtime storage in this release, so a non-inlined
+            // reference would lower to a `Unit`; inlining makes named literal
+            // constants usable. Non-literal initializers are left alone (the
+            // full mutable-global case is tracked separately).
+            if let Some(kind) = module_const_literal(&expr.span, cx) {
+                return Ok(make_expr(kind, ty, span));
+            }
             // A use that binds to a top level function carries that
             // function's declared name, which may differ from the source
             // spelling when the function was namespaced (a bundled stdlib
@@ -1490,6 +1499,49 @@ fn enum_variant_index(receiver: &Expr, name: &str, cx: &LowerCtx<'_>) -> Option<
     };
     let sig = cx.env.enums.get(id)?;
     sig.variant(name).map(|(idx, _)| idx)
+}
+
+/// When the identifier at `span` resolves to a module-level `const`/`let`
+/// whose initializer is a literal (or a negated/parenthesized numeric
+/// literal), return the literal as an `HirExprKind` to inline at the use
+/// site. Returns `None` for any other binding or a non-literal initializer.
+fn module_const_literal(span: &Span, cx: &LowerCtx<'_>) -> Option<HirExprKind> {
+    use crate::ast::DeclKind;
+    use crate::resolve::Binding;
+    let decl_id = match cx.resolved.map.lookup(span)? {
+        Binding::Const(id) | Binding::Static(id) => *id,
+        _ => return None,
+    };
+    let decl = cx.resolved.file.items.get(decl_id.0)?;
+    let init = match &decl.kind {
+        DeclKind::Const(c) => Some(&c.value),
+        DeclKind::Let(l) => l.init.as_ref(),
+        _ => None,
+    }?;
+    literal_hir_kind(init)
+}
+
+/// The `HirExprKind` for a literal expression, or `None` when `e` is not a
+/// compile-time literal. Unwraps parentheses and a single arithmetic
+/// negation on a numeric literal.
+fn literal_hir_kind(e: &Expr) -> Option<HirExprKind> {
+    match &e.kind {
+        ExprKind::Int(i) => Some(HirExprKind::Int(*i)),
+        ExprKind::Float(f) => Some(HirExprKind::Float(*f)),
+        ExprKind::Bool(b) => Some(HirExprKind::Bool(*b)),
+        ExprKind::Char(c) => Some(HirExprKind::Char(*c)),
+        ExprKind::Str(s) | ExprKind::BlockStr(s) => Some(HirExprKind::Str(s.clone())),
+        ExprKind::Paren(inner) => literal_hir_kind(inner),
+        ExprKind::Unary {
+            op: UnaryOp::Neg,
+            operand,
+        } => match &operand.kind {
+            ExprKind::Int(i) => Some(HirExprKind::Int(-*i)),
+            ExprKind::Float(f) => Some(HirExprKind::Float(-*f)),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// When `receiver.name` is a `module.func` call through a stdlib import
