@@ -632,7 +632,15 @@ impl Printer<'_> {
                 self.emit_multiline(&text);
             }
             StmtKind::Spawn(e) => {
-                let text = format!("spawn {}", self.render_expr(e));
+                // `spawn` reads as a call: no space before the argument and a
+                // single layer of parentheses. Unwrap an explicit paren so the
+                // canonical form `spawn(<closure>)` is stable under repeated
+                // formatting.
+                let inner = match &e.kind {
+                    ExprKind::Paren(inner) => inner.as_ref(),
+                    _ => e,
+                };
+                let text = format!("spawn({})", self.render_expr(inner));
                 self.emit_multiline(&text);
             }
             StmtKind::Assign { target, op, value } => {
