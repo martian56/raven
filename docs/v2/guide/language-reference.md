@@ -90,8 +90,10 @@ pointer to a static null terminated buffer (see [FFI](#ffi-and-c-types)).
 
 Arithmetic: `+`, `-`, `*`, `/`, `%`.
 
-Comparison: `==`, `!=`, `<`, `>`, `<=`, `>=`. Comparisons do not chain:
-`a < b < c` is an error.
+Comparison: `==`, `!=`, `<`, `>`, `<=`, `>=`. Ordering (`<`, `<=`, `>`,
+`>=`) works on `Int`, `Float`, `Char`, and `String` (lexicographic, by
+bytes); `==`/`!=` work on any type. Comparisons do not chain: `a < b < c`
+is an error.
 
 Logical: `&&`, `||`, `!`.
 
@@ -542,6 +544,9 @@ Forms:
   methods resolve by receiver type.
 - `import std/collections` is a whole module import; `Map` and `Set` are
   reached as `Map.new()` and `Set.new()` rather than through a selector.
+- A whole module import also allows module-qualified calls: after
+  `import std/fs` you can call `fs.write(path, data)`, the same function a
+  selector import would bind as a bare `write`.
 - `import "./helpers"` loads a local module relative to the current file.
 - `import "github.com/<user>/<repo>"` resolves a dependency through the
   rvpm cache (see the [rvpm guide](rvpm.md)). Add `as name` for an alias.
