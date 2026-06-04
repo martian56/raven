@@ -19,6 +19,11 @@ pub const STR_EQ: &str = "__raven_str_eq";
 /// Render an `Int` as a heap `String`. Lowers to `raven_int_to_string`.
 pub const INT_TO_STRING: &str = "__raven_int_to_string";
 
+/// Byte length of a heap `String`, yielding an `Int`. The same intrinsic
+/// the stdlib `String.length()` calls; the built-in `.len()`/`.is_empty()`
+/// fast paths reuse it.
+pub const STR_LEN: &str = "__str_len";
+
 /// Render a `Bool` as a heap `String`. Lowers to
 /// `raven_bool_to_string`.
 pub const BOOL_TO_STRING: &str = "__raven_bool_to_string";

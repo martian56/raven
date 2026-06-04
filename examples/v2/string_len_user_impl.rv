@@ -1,0 +1,11 @@
+// A user `impl String` shadows the built-in len() fast path: the built-in
+// intrinsic must not override a user-defined method. Regression for issue
+// #266. Prints 42.
+impl String {
+    fun len(self) -> Int = 42
+}
+
+fun main() {
+    let s = "hi"
+    print(s.len())
+}
