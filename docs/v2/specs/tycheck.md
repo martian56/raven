@@ -12,7 +12,7 @@ The type checker is total: every malformed program produces a `RavenError::Type(
 Source -> Lexer -> Parser -> Resolver -> TypeChecker -> (HIR -> MIR -> codegen)
 ```
 
-The type checker consumes nodes from `src/ast` plus the resolver's `ResolutionMap`. It does not load files or perform any I/O. The first error halts checking of the current file; multi error recovery is out of scope for this release.
+The type checker consumes nodes from `src/ast` plus the resolver's `ResolutionMap`. It does not load files or perform any I/O. The body pass recovers at item and statement boundaries so one compile reports many independent errors (see "Error recovery" below).
 
 ## The `Ty` representation
 
@@ -214,6 +214,17 @@ Member access against these types goes through a small inherent method table. No
 
 All variants reach the user via `RavenError::Type(error, span, hint)`. The renderer in `RavenError::display` is extended to handle the new arm.
 
+## Error recovery
+
+The body pass collects multiple errors per compile instead of stopping at the first one. A `Checker` holds an `errors: Vec<RavenError>` sink, and checking recovers at two boundaries:
+
+* **Item boundary.** `check_bodies` checks each top-level item (function, impl method, trait default body, `const`, `let`) independently and accumulates their errors, so a mistake in one function does not hide errors in the next.
+* **Statement boundary.** `check_block` checks each statement through `check_stmt`, which never bubbles: a failed sub-check records its error and continues. Within a single statement or expression, errors still fail fast up to the enclosing statement, which is the recovery point.
+
+Recovery uses the `Ty::Error` placeholder (which unifies with anything) to suppress cascades. A statement that introduces a binding always introduces it: a `let` with a type annotation binds the annotated type even when its initializer fails; an unannotated `let` whose initializer fails binds `Ty::Error`. Later references therefore type-check against a known (or error) type rather than spraying "undefined" follow-on errors. Identical diagnostics (same span and message) are de-duplicated before rendering.
+
+The collection pass (Pass 1) stays fail-fast: a malformed signature stops it, because later items depend on the collected signatures. `check_file_all` returns `Result<TypedFile, Vec<RavenError>>`; the driver renders each error with the #283 renderer, separated by a blank line. `check_file` remains a thin wrapper returning only the first error, for callers (tests, golden harnesses) that surface one.
+
 ## Out of scope
 
 * User defined generic functions, structs, and traits land in
@@ -226,6 +237,7 @@ All variants reach the user via `RavenError::Type(error, span, hint)`. The rende
 * End to end `?` propagation. Tracked with HIR lowering in issue #60.
 * String interpolation expansion (handled by parser side lowering later).
 * Cross module member resolution against imported modules. The type checker recognizes the import target but defers member lookups against std modules to the HIR lowering pass.
+* Parser-level error recovery (reporting several parse errors in one compile). A syntax error still stops the parser at the first one; the multi-error recovery here is for the type checker's body pass. Parser recovery is a follow-up under issue #284.
 
 ## Tests
 
