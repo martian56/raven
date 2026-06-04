@@ -270,6 +270,11 @@ pub enum HirExprKind {
     /// resolved struct type argument, grounded per monomorphization in MIR
     /// and lowered to a `List<String>` of the struct's field names.
     FieldNames(HirTy),
+    /// `field_types<T>()` compile-time reflection builtin. Like
+    /// `FieldNames`, but lowered to a `List<String>` of each field's type
+    /// name in declaration order, grounded per monomorphization so a generic
+    /// field renders its concrete type.
+    FieldTypes(HirTy),
 
     /// A raw-pointer FFI builtin (`__ptr_load`, `__ptr_store`,
     /// `__ptr_offset`, `__ptr_is_null`, `__ptr_null`, `__ptr_alloc`,

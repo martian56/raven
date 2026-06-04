@@ -353,6 +353,7 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
         }
         HirExprKind::TypeName(arg) => lower_type_name(cx, arg, ty),
         HirExprKind::FieldNames(arg) => lower_field_names(cx, arg, ty),
+        HirExprKind::FieldTypes(arg) => lower_field_types(cx, arg, ty),
         HirExprKind::PtrBuiltin { op, pointee, args } => {
             lower_ptr_builtin(cx, *op, pointee, args, ty)
         }
@@ -544,6 +545,50 @@ fn lower_field_names(cx: &mut LowerCx<'_>, arg: &crate::tycheck::Ty, ty: MirType
         .collect();
     let list_ty = MirType::List(Box::new(MirType::Str));
     let dst = cx.builder.fresh_temp("fieldnames", ty);
+    cx.builder.assign(
+        cx.current,
+        dst,
+        MirRvalue::ArrayLit {
+            ty: list_ty,
+            elements,
+        },
+    );
+    MirOperand::Copy(dst)
+}
+
+/// Lower `field_types<T>()`. Mirrors `field_names`, but renders each field's
+/// type name in declaration order instead of its name. For a generic struct
+/// the declared field types carry the struct's own `Ty::Param`s; a
+/// per-instantiation substitution built from the concrete type arguments
+/// grounds them, so `field_types<Box<Int>>()` yields `["Int"]`. A grounded
+/// non-struct type yields an empty list, matching `field_names`.
+fn lower_field_types(cx: &mut LowerCx<'_>, arg: &crate::tycheck::Ty, ty: MirType) -> MirOperand {
+    use crate::tycheck::Ty;
+    let concrete = super::substitute(arg, cx.subst);
+    let type_names: Vec<String> = match concrete.strip_self() {
+        Ty::Struct { name, args, .. } => cx
+            .decls
+            .structs
+            .get(name.as_str())
+            .map(|s| {
+                let mut subst: super::SubstMap = super::SubstMap::new();
+                for (p, a) in struct_generic_params(s).iter().zip(args.iter()) {
+                    subst.insert(p.clone(), a.clone());
+                }
+                s.fields
+                    .iter()
+                    .map(|(_, fty, _)| format!("{}", super::substitute(fty, &subst).strip_self()))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    let elements: Vec<MirOperand> = type_names
+        .into_iter()
+        .map(|n| MirOperand::Const(MirConstant::Str(n)))
+        .collect();
+    let list_ty = MirType::List(Box::new(MirType::Str));
+    let dst = cx.builder.fresh_temp("fieldtypes", ty);
     cx.builder.assign(
         cx.current,
         dst,

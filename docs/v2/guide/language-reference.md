@@ -829,24 +829,29 @@ capture a caller's variable of the same spelling.
 ### Reflection
 
 Compile-time reflection reads type information resolved while the program
-compiles. `type_name<T>()` returns the rendered name of a type, and
-`field_names<T>()` returns a struct's field names in declaration order.
-Inside a generic function each resolves to the concrete type bound to `T`
-at that instantiation.
+compiles. `type_name<T>()` returns the rendered name of a type,
+`field_names<T>()` returns a struct's field names in declaration order, and
+`field_types<T>()` returns the matching field type names by position. Inside
+a generic function each resolves to the concrete type bound to `T` at that
+instantiation.
 
 ```raven
 struct Point { x: Int, y: Int }
 
 fun introspect<T>() {
     print("type ${type_name<T>()}")
-    for f in field_names<T>() {
-        print("field ${f}")
+    let names = field_names<T>()
+    let types = field_types<T>()
+    let i = 0
+    while i < names.len() {
+        print("field ${names[i]}: ${types[i]}")
+        i += 1
     }
 }
 
 fun main() {
     print(type_name<Int>())     // Int
-    introspect<Point>()         // type Point, field x, field y
+    introspect<Point>()         // type Point, field x: Int, field y: Int
 }
 ```
 
