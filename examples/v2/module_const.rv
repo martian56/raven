@@ -1,0 +1,23 @@
+// Module-level constants with literal initializers, usable from any
+// function and in expressions. Regression for issue #278: a reference used
+// to mis-type as Unit and fail in codegen. Each reference is inlined to its
+// literal. An unannotated `let` infers its type from the literal. Prints:
+//   100
+//   hello
+//   -7
+//   200
+//   12.56636
+const MAX: Int = 100
+const PI: Float = 3.14159
+let GREETING = "hello"
+let NEG = -7
+
+fun area(r: Float) -> Float = PI * r * r
+
+fun main() {
+    print(MAX)
+    print(GREETING)
+    print(NEG)
+    print(MAX * 2)
+    print(area(2.0))
+}

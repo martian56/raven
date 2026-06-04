@@ -8,8 +8,8 @@
 use std::collections::HashMap;
 
 use crate::ast::{
-    DeclKind, Enum, Function, GenericParam, Impl, Struct, Trait, Type, TypeKind, TypePath,
-    VariantPayload,
+    DeclKind, Enum, Expr, ExprKind, Function, GenericParam, Impl, Struct, Trait, Type, TypeKind,
+    TypePath, UnaryOp, VariantPayload,
 };
 use crate::error::{RavenError, TypeError};
 use crate::resolve::{Binding, DeclId, ResolvedFile};
@@ -166,7 +166,11 @@ pub fn collect_declarations(
                 let scope = GenericScope::new();
                 let ty = match &l.ty {
                     Some(t) => resolve_ty(t, resolved, env, None, &scope)?,
-                    None => Ty::Error,
+                    // Infer an unannotated module-level `let` from a literal
+                    // initializer so references type-check (HIR inlines the
+                    // literal at each use; module-level bindings have no
+                    // runtime storage yet).
+                    None => l.init.as_ref().and_then(literal_ty_of).unwrap_or(Ty::Error),
                 };
                 env.statics.insert(id, ty);
             }
@@ -179,6 +183,29 @@ pub fn collect_declarations(
     // trait name; the resolver has already validated that the path
     // resolves to a trait, so all we need is the head segment's name.
     Ok(())
+}
+
+/// The type of a literal initializer expression, or `None` when it is not a
+/// literal. Unwraps parentheses and a single arithmetic negation on a
+/// numeric literal. Used to infer an unannotated module-level `let`.
+fn literal_ty_of(e: &Expr) -> Option<Ty> {
+    match &e.kind {
+        ExprKind::Int(_) => Some(Ty::Int),
+        ExprKind::Float(_) => Some(Ty::Float),
+        ExprKind::Bool(_) => Some(Ty::Bool),
+        ExprKind::Char(_) => Some(Ty::Char),
+        ExprKind::Str(_) | ExprKind::BlockStr(_) => Some(Ty::Str),
+        ExprKind::Paren(inner) => literal_ty_of(inner),
+        ExprKind::Unary {
+            op: UnaryOp::Neg,
+            operand,
+        } => match &operand.kind {
+            ExprKind::Int(_) => Some(Ty::Int),
+            ExprKind::Float(_) => Some(Ty::Float),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// Build a list of [`GenericParamSig`] from a parsed generic parameter

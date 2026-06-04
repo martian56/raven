@@ -6,6 +6,7 @@ All notable changes to Raven are documented in this file.
 
 ### Added
 
+- Module-level constants with literal initializers now work and can be used from any function: `const MAX: Int = 100`, `let GREETING = "hello"`, `let NEG = -7`. Each reference is inlined to its literal, and an unannotated `let` infers its type from the literal. References previously mis-typed as `Unit` and failed in code generation. Mutable or computed module-level bindings remain unsupported (#278).
 - Module-qualified calls: after `import std/fs` you can call `fs.write(...)`, and after `import std/io` call `io.println(...)`, alongside the existing name-import form (`import std/fs { write }` then `write(...)`). The qualified call resolves to the module's namespaced function (#264).
 - Lexicographic ordering on `String` with the `<`, `<=`, `>`, `>=` operators, backed by a new `raven_string_cmp` runtime function. Previously these were a type error (#267).
 
