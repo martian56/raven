@@ -12,10 +12,20 @@ use crate::ast::{
 use crate::error::{ParseError, RavenError};
 use crate::lexer::Lexer;
 
-use super::parse;
+use super::{parse, parse_with_macros_all};
 
 fn tokens(src: &str) -> Vec<crate::lexer::Token> {
     Lexer::new(src, "test.rv").tokenize().expect("lex ok")
+}
+
+/// Parse with item-level recovery and return every collected error (empty
+/// when the source parses cleanly).
+fn parse_all_errors(src: &str) -> Vec<RavenError> {
+    let toks = tokens(src);
+    match parse_with_macros_all(&toks, crate::macros::MacroTable::default()) {
+        Ok(_) => Vec::new(),
+        Err(es) => es,
+    }
 }
 
 fn parse_ok(src: &str) -> crate::ast::File {
@@ -871,4 +881,33 @@ fn unexpected_eof_reports_eof() {
 fn invalid_import_path_for_bare_path() {
     let err = parse_err("import 42\n");
     assert!(matches!(err, RavenError::Parse(_, _, _)));
+}
+
+// ----- item-level error recovery -----
+
+#[test]
+fn recovery_reports_an_error_in_each_broken_item() {
+    // Two functions have a broken body; both errors are reported, and the
+    // valid functions between and after them do not add noise.
+    let errs = parse_all_errors(
+        "fun a() -> Int {\n    let x = @\n    return x\n}\nfun b() -> Int { return 2 }\nfun c() -> Int {\n    let y = )\n    return y\n}\nfun d() -> Int { return 4 }\n",
+    );
+    assert_eq!(errs.len(), 2, "got: {:?}", errs);
+}
+
+#[test]
+fn recovery_resyncs_at_a_struct_after_a_broken_function() {
+    // A broken function followed by a valid struct and function: one error,
+    // and recovery finds the next item.
+    let errs = parse_all_errors(
+        "fun a() -> Int {\n    return @\n}\nstruct P { x: Int }\nfun b() -> Int { return 1 }\n",
+    );
+    assert_eq!(errs.len(), 1, "got: {:?}", errs);
+}
+
+#[test]
+fn recovery_on_a_clean_file_reports_nothing() {
+    assert!(
+        parse_all_errors("fun a() -> Int { return 1 }\nfun b() -> Int { return 2 }\n").is_empty()
+    );
 }

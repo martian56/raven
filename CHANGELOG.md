@@ -6,6 +6,7 @@ All notable changes to Raven are documented in this file.
 
 ### Added
 
+- The parser now recovers at item boundaries, so one compile reports several syntax errors instead of only the first. On a failed top-level item the error is recorded and the parser skips to the next item-starting keyword (`fun`, `struct`, `enum`, `trait`, `impl`, `extern`, `import`, or `@`), tracking bracket depth so it steps over a broken function body. A compile with parse errors reports them all (de-duplicated) and stops before resolve and type checking. Statement-level recovery within one body remains a follow-up (#294).
 - The type checker now reports multiple errors per compile instead of stopping at the first. The body pass recovers at item and statement boundaries: an error in one function, impl method, `const`, or `let` no longer hides errors in the next, and each statement in a block reports independently. Recovery binds a failed `let` to its annotated type (or `Ty::Error`) so later references do not cascade into spurious follow-on errors, and identical diagnostics are de-duplicated. Each error is rendered with the rich source-pointer format from 2.1.0, separated by a blank line. Parser-level recovery (multiple syntax errors per compile) remains a follow-up (#284).
 
 ## [2.1.6] - 2026-06-04
