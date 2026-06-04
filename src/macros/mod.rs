@@ -40,11 +40,22 @@ use crate::span::Span;
 /// bound also limits recursion depth of macros that expand to other calls.
 const EXPANSION_LIMIT: usize = 128;
 
-/// A single metavariable fragment kind supported by this slice.
+/// A single metavariable fragment kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Fragment {
+    /// A balanced expression token run, up to the next matcher delimiter.
     Expr,
+    /// A single identifier token.
     Ident,
+    /// A type, captured as a balanced token run like `expr` (so `List<Int>`
+    /// with its angle brackets is one fragment).
+    Ty,
+    /// A single literal token (number, string, char, or boolean).
+    Literal,
+    /// A pattern, captured as a balanced token run like `expr`.
+    Pat,
+    /// A brace-delimited block `{ ... }`, captured with its braces.
+    Block,
 }
 
 /// One element of a matcher: a bound metavariable, a literal token that must
@@ -384,11 +395,15 @@ fn parse_matcher(slice: &[Token], name: &str) -> Result<Vec<MatchItem>, RavenErr
                 let frag = match slice.get(i + 3).map(|t| &t.kind) {
                     Some(TokenKind::Identifier(s)) if s == "expr" => Fragment::Expr,
                     Some(TokenKind::Identifier(s)) if s == "ident" => Fragment::Ident,
+                    Some(TokenKind::Identifier(s)) if s == "ty" => Fragment::Ty,
+                    Some(TokenKind::Identifier(s)) if s == "literal" => Fragment::Literal,
+                    Some(TokenKind::Identifier(s)) if s == "pat" => Fragment::Pat,
+                    Some(TokenKind::Identifier(s)) if s == "block" => Fragment::Block,
                     other => {
                         return Err(err(
                             slice[i].span.clone(),
                             format!(
-                                "macro `{}`: unsupported fragment `{}` (this slice supports `expr` and `ident`)",
+                                "macro `{}`: unsupported fragment `{}` (supported: expr, ident, ty, literal, pat, block)",
                                 name,
                                 other.map(describe).unwrap_or_else(|| "?".into())
                             ),
@@ -620,7 +635,23 @@ fn match_seq(
                     binds.insert(name.clone(), Capture::Single(vec![tok.clone()]));
                     pos += 1;
                 }
-                Fragment::Expr => {
+                Fragment::Literal => {
+                    let tok = args.get(pos)?;
+                    if !is_literal_token(&tok.kind) {
+                        return None;
+                    }
+                    binds.insert(name.clone(), Capture::Single(vec![tok.clone()]));
+                    pos += 1;
+                }
+                Fragment::Block => {
+                    let end = capture_block(args, pos)?;
+                    binds.insert(name.clone(), Capture::Single(args[pos..end].to_vec()));
+                    pos = end;
+                }
+                // A type and a pattern capture a balanced token run, the same
+                // way an expression does: the angle brackets of `List<Int>`
+                // and the parentheses of a constructor pattern stay balanced.
+                Fragment::Expr | Fragment::Ty | Fragment::Pat => {
                     let delim = next_delim(matcher, idx + 1, outer_delim);
                     let end = capture_balanced(args, pos, delim.as_ref())?;
                     if end == pos {
@@ -767,6 +798,46 @@ fn capture_balanced(args: &[Token], start: usize, delim: Option<&TokenKind>) -> 
         return None;
     }
     Some(i)
+}
+
+/// Whether `kind` is a literal token (the `literal` fragment matches one).
+fn is_literal_token(kind: &TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::IntLit(_)
+            | TokenKind::FloatLit(_)
+            | TokenKind::StringLit(_)
+            | TokenKind::BlockStringLit(_)
+            | TokenKind::CharLit(_)
+            | TokenKind::CStringLit(_)
+            | TokenKind::True
+            | TokenKind::False
+    )
+}
+
+/// Capture a brace-delimited block `{ ... }` starting at `start`, returning
+/// the index just past its closing `}`. Returns `None` when `start` is not a
+/// `{` or the braces are unbalanced.
+fn capture_block(args: &[Token], start: usize) -> Option<usize> {
+    if !matches!(args.get(start)?.kind, TokenKind::LBrace) {
+        return None;
+    }
+    let mut depth = 0usize;
+    let mut i = start;
+    while i < args.len() {
+        match args[i].kind {
+            TokenKind::LBrace => depth += 1,
+            TokenKind::RBrace => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i + 1);
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
 }
 
 /// Instantiate a template with the given bindings. Spliced and verbatim

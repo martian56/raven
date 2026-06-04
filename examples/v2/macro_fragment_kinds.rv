@@ -1,0 +1,32 @@
+// Macro fragment specifiers beyond expr and ident: ty, literal, pat, and block.
+// Each metavariable kind constrains what the matcher accepts and captures the
+// matching token run for substitution into the template.
+
+// `ty` captures a balanced type, including the angle brackets of a generic.
+macro name_of { ($t:ty) => { type_name<$t>() } }
+
+// `literal` matches exactly one literal token (here an Int), rejecting names.
+macro doubled_lit { ($x:literal) => { ($x) + ($x) } }
+
+// `pat` captures a pattern, used here in the arm of a match.
+macro matches_some { ($p:pat, $e:expr) => { match $e { $p -> true, _ -> false } } }
+
+// `block` captures a brace-delimited `{ ... }` group, braces included.
+macro run_block { ($b:block) => { $b } }
+
+fun main() {
+    print(name_of!(List<Int>))
+
+    print(doubled_lit!(21))
+
+    let v: Option<Int> = Some(5)
+    print(matches_some!(Some(n), v))
+    print(matches_some!(None, v))
+
+    let total = run_block!({
+        let a = 4
+        let b = 6
+        a + b
+    })
+    print(total)
+}
