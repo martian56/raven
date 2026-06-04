@@ -30,8 +30,27 @@ use crate::tycheck::check_file;
 pub enum DriverError {
     Io(String),
     Frontend(String),
+    /// A fully rendered, multi-line source diagnostic (headline, pointer,
+    /// help/notes). Printed verbatim, without the `raven:` prefix.
+    Diagnostic(String),
     Codegen(CodegenError),
     RuntimeMissing,
+}
+
+/// Render a front-end [`RavenError`] into a [`DriverError::Diagnostic`],
+/// reading the offending span's file when it differs from the entry file
+/// (for example an error inside a local module or a dependency).
+fn frontend_diag(e: crate::error::RavenError, input: &Path, source: &str) -> DriverError {
+    let span_file = e.span().file.clone();
+    let src: std::borrow::Cow<str> = if span_file.as_path() == input {
+        std::borrow::Cow::Borrowed(source)
+    } else {
+        match std::fs::read_to_string(span_file.as_path()) {
+            Ok(s) => std::borrow::Cow::Owned(s),
+            Err(_) => std::borrow::Cow::Borrowed(source),
+        }
+    };
+    DriverError::Diagnostic(e.display(&src))
 }
 
 impl From<CodegenError> for DriverError {
@@ -45,6 +64,7 @@ impl std::fmt::Display for DriverError {
         match self {
             DriverError::Io(s) => write!(f, "io: {}", s),
             DriverError::Frontend(s) => write!(f, "frontend: {}", s),
+            DriverError::Diagnostic(s) => f.write_str(s),
             DriverError::Codegen(e) => write!(f, "{}", e),
             DriverError::RuntimeMissing => f.write_str(
                 "could not locate raven_runtime staticlib; build it with `cargo build -p raven-runtime` or set RAVEN_RUNTIME_LIB",
@@ -89,22 +109,20 @@ pub fn compile_to_object(
 ) -> Result<Vec<u8>, DriverError> {
     let tokens = Lexer::new(source.to_string(), input.to_path_buf())
         .tokenize()
-        .map_err(|e| DriverError::Frontend(format!("lex: {}", e)))?;
-    let tokens = crate::macros::expand_tokens(&tokens)
-        .map_err(|e| DriverError::Frontend(format!("macro: {}", e)))?;
-    let file = parse(&tokens).map_err(|e| DriverError::Frontend(format!("parse: {}", e)))?;
-    let file = expand_with_stdlib_ctx(&file, ctx)
-        .map_err(|e| DriverError::Frontend(format!("stdlib: {}", e)))?;
+        .map_err(|e| frontend_diag(e, input, source))?;
+    let tokens =
+        crate::macros::expand_tokens(&tokens).map_err(|e| frontend_diag(e, input, source))?;
+    let file = parse(&tokens).map_err(|e| frontend_diag(e, input, source))?;
+    let file = expand_with_stdlib_ctx(&file, ctx).map_err(|e| frontend_diag(e, input, source))?;
     let mut loader = FsLoader;
-    let resolved = resolve_file_ctx(&file, &mut loader, ctx)
-        .map_err(|e| DriverError::Frontend(format!("resolve: {}", e)))?;
-    let typed =
-        check_file(&resolved).map_err(|e| DriverError::Frontend(format!("tycheck: {}", e)))?;
-    let hir = lower_file(&typed).map_err(|e| DriverError::Frontend(format!("hir: {}", e)))?;
+    let resolved =
+        resolve_file_ctx(&file, &mut loader, ctx).map_err(|e| frontend_diag(e, input, source))?;
+    let typed = check_file(&resolved).map_err(|e| frontend_diag(e, input, source))?;
+    let hir = lower_file(&typed).map_err(|e| frontend_diag(e, input, source))?;
     if std::env::var("RAVEN_DUMP_HIR").is_ok() {
         eprintln!("{}", crate::hir::pretty_program(&hir));
     }
-    let mir = lower_program(&hir).map_err(|e| DriverError::Frontend(format!("mir: {}", e)))?;
+    let mir = lower_program(&hir).map_err(|e| frontend_diag(e, input, source))?;
     if std::env::var("RAVEN_DUMP_MIR").is_ok() {
         eprintln!("{}", crate::mir::pretty::pretty_program(&mir));
     }

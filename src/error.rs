@@ -350,72 +350,229 @@ impl RavenError {
         }
     }
 
-    /// Render this error as a colored, multi line message anchored at the
-    /// offending span. ANSI escapes are used for color: red for the header
-    /// and carets, dim for the hint and gutter.
+    /// Render this error for the CLI: a colored, multi-line diagnostic
+    /// anchored at the offending span. Color is enabled only when stderr is
+    /// a terminal and `NO_COLOR` is unset.
     pub fn display(&self, source: &str) -> String {
-        const RED: &str = "\x1b[31;1m";
-        const DIM: &str = "\x1b[2m";
-        const RESET: &str = "\x1b[0m";
+        self.render(source, color_for_stderr())
+    }
 
-        let (kind_str, span, hint) = match self {
-            RavenError::Lex(k, s, h) => (format!("error: {}", k), s, h.as_deref()),
-            RavenError::Parse(k, s, h) => (format!("error: {}", k), s, h.as_deref()),
-            RavenError::Resolve(k, s, h) => (format!("error: {}", k), s, h.as_deref()),
-            RavenError::Type(k, s, h) => (format!("error: {}", k), s, h.as_deref()),
-        };
+    /// Render the diagnostic, choosing color explicitly. The layout is a
+    /// friendly headline, a box-drawing source pointer with an inline label,
+    /// and any `help:`/`note:` lines:
+    ///
+    /// ```text
+    /// error: this should be `Int`, but it's `String`
+    ///   ┌─ src/main.rv:3:18
+    ///   │
+    /// 3 │     let count: Int = "42"
+    ///   │                      ^^^^ this is `String`
+    ///   │
+    ///   help: write the value as an Int, like 42
+    ///   note: Raven has no implicit conversions
+    /// ```
+    pub fn render(&self, source: &str, color: bool) -> String {
+        let p = Palette::new(color);
+        let d = self.diagnostic();
+        let span = self.span();
+        let line_no = span.line.max(1);
+        let g = line_no.to_string().len();
+        let pad = " ".repeat(g);
 
         let mut out = String::new();
-        out.push_str(RED);
-        out.push_str(&kind_str);
-        out.push_str(RESET);
-        out.push('\n');
-        out.push_str(DIM);
-        out.push_str("  --> ");
-        out.push_str(RESET);
-        out.push_str(&format!("{}", span));
-        out.push('\n');
+        // Headline.
+        out.push_str(&format!("{}error{}: {}\n", p.err, p.reset, d.headline));
+        // Location, with the box arm aligned under the gutter bar.
+        out.push_str(&format!(
+            "{}{} \u{250c}\u{2500}{} {}\n",
+            pad, p.gutter, p.reset, span
+        ));
+        out.push_str(&format!("{}{} \u{2502}{}\n", pad, p.gutter, p.reset));
 
-        // Find the source line containing `span.start`.
-        let line_text = source.lines().nth((span.line.saturating_sub(1)) as usize);
-        if let Some(text) = line_text {
-            let gutter = format!("{:>4} | ", span.line);
-            out.push_str(DIM);
-            out.push_str(&gutter);
-            out.push_str(RESET);
-            out.push_str(text);
-            out.push('\n');
-
-            // Caret row. col is 1 indexed and counted in chars; we use the
-            // same char count for the underline so wide ASCII is handled
-            // correctly for the common case.
-            let pad_chars = (span.col.saturating_sub(1)) as usize;
-            let caret_count = std::cmp::max(1, span.len());
-            let mut caret_line = String::new();
-            caret_line.push_str(DIM);
-            caret_line.push_str("     | ");
-            caret_line.push_str(RESET);
-            for _ in 0..pad_chars {
-                caret_line.push(' ');
-            }
-            caret_line.push_str(RED);
-            for _ in 0..caret_count {
-                caret_line.push('^');
-            }
-            caret_line.push_str(RESET);
-            out.push_str(&caret_line);
-            out.push('\n');
+        // Source line and caret underline.
+        if let Some(text) = source.lines().nth((line_no.saturating_sub(1)) as usize) {
+            out.push_str(&format!(
+                "{}{:>w$} \u{2502}{} {}\n",
+                p.gutter,
+                line_no,
+                p.reset,
+                text,
+                w = g
+            ));
+            let start_col = span.col.saturating_sub(1) as usize;
+            let lead = " ".repeat(start_col);
+            // Cap the underline to the visible part of the line so a span that
+            // covers several lines (a whole `match`, say) does not run a long
+            // ribbon of carets past the end of the source line.
+            let avail = text.chars().count().saturating_sub(start_col).max(1);
+            let carets = "^".repeat(span.len().max(1).min(avail));
+            let label = match &d.label {
+                Some(l) => format!(" {}", l),
+                None => String::new(),
+            };
+            out.push_str(&format!(
+                "{}{} \u{2502}{} {}{}{}{}{}\n",
+                pad, p.gutter, p.reset, lead, p.err, carets, label, p.reset
+            ));
         }
 
-        if let Some(h) = hint {
-            out.push_str(DIM);
-            out.push_str("  = hint: ");
-            out.push_str(h);
-            out.push_str(RESET);
-            out.push('\n');
+        // help: and note: lines, after a closing gutter bar.
+        if !d.helps.is_empty() || !d.notes.is_empty() {
+            out.push_str(&format!("{}{} \u{2502}{}\n", pad, p.gutter, p.reset));
+            for h in &d.helps {
+                out.push_str(&format!("{} {}help{}: {}\n", pad, p.help, p.reset, h));
+            }
+            for n in &d.notes {
+                out.push_str(&format!("{} {}note{}: {}\n", pad, p.note, p.reset, n));
+            }
         }
 
         out
+    }
+
+    /// Build the friendly headline, the inline caret label, and the
+    /// `help:`/`note:` lines for this error. Any attached hint becomes the
+    /// first `help:` line.
+    fn diagnostic(&self) -> Diag {
+        let hint = match self {
+            RavenError::Lex(_, _, h)
+            | RavenError::Parse(_, _, h)
+            | RavenError::Resolve(_, _, h)
+            | RavenError::Type(_, _, h) => h.clone(),
+        };
+        let (headline, label, notes) = match self {
+            RavenError::Type(te, _, _) => type_diagnostic(te),
+            RavenError::Lex(k, _, _) => (format!("{}", k), None, Vec::new()),
+            RavenError::Parse(k, _, _) => (format!("{}", k), None, Vec::new()),
+            RavenError::Resolve(k, _, _) => (format!("{}", k), None, Vec::new()),
+        };
+        let mut helps = Vec::new();
+        if let Some(h) = hint {
+            helps.push(h);
+        }
+        Diag {
+            headline,
+            label,
+            helps,
+            notes,
+        }
+    }
+}
+
+/// The rendered parts of one error.
+struct Diag {
+    /// The `error: <headline>` sentence.
+    headline: String,
+    /// An optional short annotation printed next to the caret.
+    label: Option<String>,
+    /// `help:` lines (actionable suggestions).
+    helps: Vec<String>,
+    /// `note:` lines (explanatory context).
+    notes: Vec<String>,
+}
+
+/// ANSI color codes, or empty strings when color is disabled.
+struct Palette {
+    err: &'static str,
+    gutter: &'static str,
+    help: &'static str,
+    note: &'static str,
+    reset: &'static str,
+}
+
+impl Palette {
+    fn new(color: bool) -> Self {
+        if color {
+            Palette {
+                err: "\x1b[1;31m",
+                gutter: "\x1b[36m",
+                help: "\x1b[1;32m",
+                note: "\x1b[1;36m",
+                reset: "\x1b[0m",
+            }
+        } else {
+            Palette {
+                err: "",
+                gutter: "",
+                help: "",
+                note: "",
+                reset: "",
+            }
+        }
+    }
+}
+
+/// Whether colored output suits stderr: it is a terminal and `NO_COLOR` is
+/// unset (see https://no-color.org).
+fn color_for_stderr() -> bool {
+    use std::io::IsTerminal;
+    std::env::var_os("NO_COLOR").is_none() && std::io::stderr().is_terminal()
+}
+
+/// The friendly headline, caret label, and notes for a type error. The
+/// common cases get hand-written wording; the rest fall back to the
+/// variant's own `Display`.
+fn type_diagnostic(te: &TypeError) -> (String, Option<String>, Vec<String>) {
+    match te {
+        TypeError::TypeMismatch { expected, actual } => (
+            format!("this should be `{}`, but it's `{}`", expected, actual),
+            Some(format!("this is `{}`", actual)),
+            vec!["Raven has no implicit conversions; convert explicitly".into()],
+        ),
+        TypeError::UnknownType(name) => (
+            format!("cannot find the type `{}` in scope", name),
+            Some("not a type in scope".into()),
+            vec!["type names are PascalCase: Int, Float, Bool, String, Char".into()],
+        ),
+        TypeError::UndefinedMethod {
+            receiver_ty,
+            method,
+        } => (
+            format!("`{}` has no method `{}`", receiver_ty, method),
+            Some("no such method".into()),
+            Vec::new(),
+        ),
+        TypeError::UndefinedField { struct_name, field } => (
+            format!("`{}` has no field `{}`", struct_name, field),
+            Some("no such field".into()),
+            Vec::new(),
+        ),
+        TypeError::WrongArity {
+            func,
+            expected,
+            actual,
+        } => (
+            format!(
+                "`{}` takes {} argument{}, but got {}",
+                func,
+                expected,
+                if *expected == 1 { "" } else { "s" },
+                actual
+            ),
+            Some(format!("called with {} here", actual)),
+            Vec::new(),
+        ),
+        TypeError::NonExhaustiveMatch { missing } => (
+            "this match does not cover every case".into(),
+            Some(format!("missing: {}", missing.join(", "))),
+            vec!["add the missing arms, or a wildcard `_ -> ...` to catch the rest".into()],
+        ),
+        TypeError::BoundNotSatisfied { ty, trait_name } => (
+            format!("`{}` does not implement `{}`", ty, trait_name),
+            Some(format!("needs `{}`", trait_name)),
+            Vec::new(),
+        ),
+        TypeError::CannotInferType => (
+            "the type here cannot be inferred".into(),
+            Some("add a type annotation".into()),
+            Vec::new(),
+        ),
+        TypeError::NotCallable(ty) => (
+            format!("`{}` is not a function", ty),
+            Some("not callable".into()),
+            Vec::new(),
+        ),
+        other => (format!("{}", other), None, Vec::new()),
     }
 }
 
@@ -446,7 +603,7 @@ mod tests {
         // The `@` is at byte 8, line 1, col 9.
         let span = Span::new(file(), 8, 9, 1, 9);
         let err = RavenError::lex(LexError::UnexpectedChar('@'), span);
-        let rendered = err.display(src);
+        let rendered = err.render(src, false);
 
         // Header has the error text.
         assert!(rendered.contains("unexpected character"));
@@ -464,8 +621,8 @@ mod tests {
         let span = Span::new(file(), 8, 11, 1, 9);
         let err = RavenError::lex(LexError::InvalidNumber("0xZ".into()), span)
             .with_hint("hexadecimal literals must contain only 0-9 and a-f");
-        let rendered = err.display(src);
-        assert!(rendered.contains("hint:"));
+        let rendered = err.render(src, false);
+        assert!(rendered.contains("help:"));
         assert!(rendered.contains("hexadecimal literals"));
     }
 
@@ -490,11 +647,11 @@ mod tests {
             span,
         )
         .with_hint("parameters need a type annotation: `a: Int`");
-        let rendered = err.display(src);
+        let rendered = err.render(src, false);
         assert!(rendered.contains("expected `:`, found `Int`"));
         assert!(rendered.contains("fun add(a Int)"));
         assert!(rendered.contains('^'));
-        assert!(rendered.contains("hint:"));
+        assert!(rendered.contains("help:"));
         assert!(rendered.contains("type annotation"));
     }
 
@@ -513,11 +670,11 @@ mod tests {
         let span = Span::new(file(), 13, 20, 1, 14);
         let err = RavenError::resolve(ResolveError::UnresolvedName("println".into()), span)
             .with_hint("did you mean to `import std/io { println }`?");
-        let rendered = err.display(src);
+        let rendered = err.render(src, false);
         assert!(rendered.contains("cannot find `println` in scope"));
         assert!(rendered.contains("fun main() { println"));
         assert!(rendered.contains('^'));
-        assert!(rendered.contains("hint:"));
+        assert!(rendered.contains("help:"));
     }
 
     #[test]
@@ -544,11 +701,11 @@ mod tests {
             span,
         )
         .with_hint("did you mean to call `.to_int()`?");
-        let rendered = err.display(src);
-        assert!(rendered.contains("expected `Int`, found `Float`"));
+        let rendered = err.render(src, false);
+        assert!(rendered.contains("this should be `Int`, but it's `Float`"));
         assert!(rendered.contains("let x: Int = 1.5"));
         assert!(rendered.contains('^'));
-        assert!(rendered.contains("hint:"));
+        assert!(rendered.contains("help:"));
     }
 
     #[test]
@@ -563,5 +720,59 @@ mod tests {
         );
         let s = format!("{}", err);
         assert_eq!(s, "test.rv:7:2: struct `Point` has no field `z`");
+    }
+
+    #[test]
+    fn rich_format_has_box_pointer_label_and_note() {
+        let src = "    let count: Int = \"42\"\n";
+        // `"42"` starts at col 22.
+        let span = Span::new(file(), 21, 25, 1, 22);
+        let err = RavenError::ty(
+            TypeError::TypeMismatch {
+                expected: "Int".into(),
+                actual: "String".into(),
+            },
+            span,
+        );
+        let r = err.render(src, false);
+        assert!(r.contains("error: this should be `Int`, but it's `String`"));
+        assert!(r.contains('\u{250c}')); // box arm ┌
+        assert!(r.contains('\u{2502}')); // gutter bar │
+        assert!(r.contains("^^^^"));
+        assert!(r.contains("this is `String`")); // inline caret label
+        assert!(r.contains("note: Raven has no implicit conversions"));
+        // No ANSI escapes when color is disabled.
+        assert!(!r.contains('\u{1b}'));
+    }
+
+    #[test]
+    fn render_with_color_emits_ansi() {
+        let span = Span::new(file(), 8, 9, 1, 9);
+        let err = RavenError::lex(LexError::UnexpectedChar('@'), span);
+        let r = err.render("let x = @\n", true);
+        assert!(r.contains("\u{1b}[1;31m")); // bold red headline
+        assert!(r.contains("\u{1b}[36m")); // cyan gutter
+        assert!(r.contains("\u{1b}[0m")); // reset
+    }
+
+    #[test]
+    fn carets_do_not_overrun_the_source_line() {
+        // A span covering a multi-line construct must not print more carets
+        // than the visible part of the first line.
+        let src = "match c {\n  A -> 1,\n}\n";
+        let span = Span::new(file(), 0, 21, 1, 1);
+        let err = RavenError::ty(
+            TypeError::NonExhaustiveMatch {
+                missing: vec!["B".into()],
+            },
+            span,
+        );
+        let r = err.render(src, false);
+        let caret_line = r.lines().find(|l| l.contains('^')).expect("a caret line");
+        let carets = caret_line.chars().filter(|c| *c == '^').count();
+        assert!(
+            carets <= "match c {".len(),
+            "carets overran the line: {carets}"
+        );
     }
 }

@@ -59,6 +59,12 @@ fn run() -> ExitCode {
         }
         "build" => match run_build(&args[2..]) {
             Ok(()) => ExitCode::SUCCESS,
+            // A rendered source diagnostic prints verbatim; it carries its own
+            // `error:` header, so the `raven:` prefix would only get in the way.
+            Err(BuildError::Driver(DriverError::Diagnostic(s))) => {
+                eprint!("{}", s);
+                ExitCode::from(1)
+            }
             Err(e) => {
                 eprintln!("raven: {}", e);
                 ExitCode::from(1)
