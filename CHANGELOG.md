@@ -12,6 +12,7 @@ All notable changes to Raven are documented in this file.
 
 ### Fixed
 
+- `rvpm fmt` and `rvpm fmt --check` no longer fail on a file that declares or uses a macro. Such a file is left unchanged for now (macro definitions and `name!(...)` invocations have no AST node to format); reformatting them is a follow-up (#261).
 - String interpolation may now contain a nested string literal, including in a call argument: `"hello ${shout("world")}"`. The inner `"` previously ended the outer string early. Macro invocations inside `${...}` remain unsupported (tracked by #226) (#262).
 - The formatter now writes `spawn(...)` as a call, without the stray space it used to insert before the parenthesis (#263).
 - `match` on `String` literal patterns now compares by content. Arms like `"yes" -> ...` previously compared heap-pointer identity, so they never matched and silently fell through to the wildcard (#265).
