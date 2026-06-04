@@ -79,6 +79,7 @@ pub fn monomorphize(hir: &HirProgram) -> Result<MirProgram, RavenError> {
     let mut program = MirProgram::new();
     program.externs = collect_externs(hir);
     program.repr_c_structs = collect_repr_c_structs(hir);
+    program.globals = collect_globals(hir);
     let (index, roots, symbols, generics, fn_index, method_index, method_symbols) =
         collect_roots(hir);
     let decls = collect_decls(hir, fn_index, method_index);
@@ -170,6 +171,24 @@ fn collect_externs(hir: &HirProgram) -> Vec<super::ir::MirExternFn> {
                     ret: MirType::from_ty(&f.ret),
                 });
             }
+        }
+    }
+    out
+}
+
+/// Collect a [`MirGlobal`] for every module-level `let` (a mutable global
+/// with runtime storage). Declaration order is preserved, matching the order
+/// the synthesized `__raven_init_globals` function assigns them.
+fn collect_globals(hir: &HirProgram) -> Vec<super::ir::MirGlobal> {
+    use super::ty::MirType;
+    use crate::hir::lower::expr::global_symbol;
+    let mut out = Vec::new();
+    for item in &hir.items {
+        if let HirItemKind::Let { name, ty, .. } = &item.kind {
+            out.push(super::ir::MirGlobal {
+                name: global_symbol(name),
+                ty: MirType::from_ty(ty),
+            });
         }
     }
     out

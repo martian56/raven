@@ -275,6 +275,8 @@ fn collect_free_stmt(
         HirStmtKind::Assign { target, value } => {
             match target {
                 HirAssignTarget::Ident { name, .. } => record_use(name, bound, seen, out),
+                // A module-level global is not a captured local.
+                HirAssignTarget::Global { .. } => {}
                 HirAssignTarget::Field { recv, .. } => collect_free_expr(recv, bound, seen, out),
                 HirAssignTarget::Index { recv, index } => {
                     collect_free_expr(recv, bound, seen, out);
@@ -316,6 +318,7 @@ fn collect_free_expr(
         | HirExprKind::CStr(_)
         | HirExprKind::Unit
         | HirExprKind::SelfValue
+        | HirExprKind::GlobalGet(_)
         | HirExprKind::NoneCtor
         | HirExprKind::TypeName(_)
         | HirExprKind::FieldNames(_)

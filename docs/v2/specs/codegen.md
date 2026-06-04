@@ -132,6 +132,7 @@ section below.
 | `Use(Const(Bool b))` | `iconst.i8 (if b { 1 } else { 0 })`. |
 | `Use(Const(Unit))` | No value emitted. |
 | `Use(Const(Str s))` | Allocates or reuses a static data symbol holding the bytes plus a length companion, emits `global_value` for the address. Currently only consumed by the `print` intrinsic. |
+| `GlobalLoad { name, ty }` | `symbol_value` for the global's data slot, then `load.<ty>` from it. A `StoreGlobal` statement is the mirror image (`store`). Heap-valued global slots are rooted once by the entry shim; see `docs/v2/specs/gc.md`. |
 | `BinaryOp(op, lhs, rhs)` on `Int` | `iadd`, `isub`, `imul`, `sdiv`, `srem`, `icmp` with the matching condition code. |
 | `BinaryOp(op, lhs, rhs)` on `Float` | `fadd`, `fsub`, `fmul`, `fdiv`, `fcmp`. The modulus operator is not defined on `Float` here. |
 | `BinaryOp(And/Or)` on `Bool` | `band` / `bor` over `i8`. The frontend already short circuits to branches; what reaches MIR is value level. |

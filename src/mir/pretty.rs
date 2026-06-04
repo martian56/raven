@@ -112,6 +112,11 @@ fn pretty_stmt(buf: &mut String, s: &MirStatement, depth: usize) {
             pretty_rvalue(buf, rvalue);
             buf.push_str(")\n");
         }
+        MirStatement::StoreGlobal { name, value } => {
+            write!(buf, "(store-global {} ", name).unwrap();
+            pretty_operand(buf, value);
+            buf.push_str(")\n");
+        }
         MirStatement::StoreField { base, index, value } => {
             buf.push_str("(store-field ");
             pretty_operand(buf, base);
@@ -156,6 +161,9 @@ fn pretty_rvalue(buf: &mut String, r: &MirRvalue) {
             buf.push_str("(use ");
             pretty_operand(buf, op);
             buf.push(')');
+        }
+        MirRvalue::GlobalLoad { name, .. } => {
+            write!(buf, "(global-load {})", name).unwrap();
         }
         MirRvalue::BinaryOp(op, lhs, rhs) => {
             write!(buf, "(binop {} ", binop_name(*op)).unwrap();

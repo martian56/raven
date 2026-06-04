@@ -312,6 +312,18 @@ fn lower_stmt(
             pointee,
         } => lower_ptr_store(cx, builder, addr, value, pointee, slots),
         MirStatement::PtrFree { addr } => lower_ptr_free(cx, builder, addr, slots),
+        MirStatement::StoreGlobal { name, value } => {
+            if let Some(v) = lower_operand(cx, builder, value, slots)? {
+                let data_id = cx
+                    .global_data(name)
+                    .expect("global data slot declared at module init");
+                let gv = cx.module().declare_data_in_func(data_id, builder.func);
+                let ptr = cx.pointer_type();
+                let addr = builder.ins().symbol_value(ptr, gv);
+                builder.ins().store(MemFlags::new(), v, addr, 0);
+            }
+            Ok(())
+        }
         MirStatement::StorageLive(_) | MirStatement::StorageDead(_) | MirStatement::Nop => Ok(()),
     }
 }
@@ -435,6 +447,18 @@ fn lower_rvalue(
 ) -> Result<RValue, CodegenError> {
     match rvalue {
         MirRvalue::Use(op) => lower_operand(cx, builder, op, slots),
+        MirRvalue::GlobalLoad { name, ty } => {
+            let data_id = cx
+                .global_data(name)
+                .expect("global data slot declared at module init");
+            let gv = cx.module().declare_data_in_func(data_id, builder.func);
+            let ptr = cx.pointer_type();
+            let addr = builder.ins().symbol_value(ptr, gv);
+            match cranelift_ty(ty, ptr) {
+                Some(cty) => Ok(Some(builder.ins().load(cty, MemFlags::new(), addr, 0))),
+                None => Ok(None),
+            }
+        }
         MirRvalue::BinaryOp(op, lhs, rhs) => {
             let lhs_v = require_value(lower_operand(cx, builder, lhs, slots)?, "binop lhs")?;
             let rhs_v = require_value(lower_operand(cx, builder, rhs, slots)?, "binop rhs")?;

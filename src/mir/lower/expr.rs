@@ -66,6 +66,19 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
                 MirOperand::Const(MirConstant::Unit)
             }
         },
+        HirExprKind::GlobalGet(name) => {
+            // Read a mutable module-level global from its data slot.
+            let dst = cx.builder.fresh_temp("global", ty.clone());
+            cx.builder.assign(
+                cx.current,
+                dst,
+                MirRvalue::GlobalLoad {
+                    name: name.clone(),
+                    ty,
+                },
+            );
+            MirOperand::Copy(dst)
+        }
         HirExprKind::SelfValue => match cx.lookup("self") {
             Some(local) => MirOperand::Copy(local),
             None => MirOperand::Const(MirConstant::Unit),

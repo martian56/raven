@@ -26,6 +26,26 @@ let count: Int = 0
 let names: List<String> = []
 ```
 
+A `let` at module level (outside any function) is a mutable global: any
+function can read and reassign it. Globals are initialized before `main`
+runs, in declaration order, so a later global may read an earlier one, and
+an initializer may be any expression (including a function call), not only a
+constant. A heap-valued global (a `String`, `List`, struct, and so on) is
+kept alive for the whole program.
+
+```raven
+fun seed() -> Int = 10
+
+let counter: Int = 0        // mutable, shared across functions
+let base: Int = seed() * 3  // initialized by a call, before main
+let names: List<String> = []
+
+fun record(name: String) {
+    names.push(name)
+    counter = counter + 1
+}
+```
+
 `const` introduces an immutable binding: reassigning it (or compound
 assigning, like `+=`) is a compile error.
 

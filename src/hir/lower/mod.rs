@@ -38,9 +38,63 @@ pub fn lower_file(typed: &TypedFile<'_>) -> Result<HirProgram, RavenError> {
             items.push(item);
         }
     }
+    // Synthesize the global initializer function from the module-level
+    // `let` items, run before `main` in declaration order.
+    if let Some(init) = synth_globals_init(&items, &typed.file.span) {
+        items.push(init);
+    }
     Ok(HirProgram {
         items,
         span: typed.file.span.clone(),
+    })
+}
+
+/// Build the `__raven_init_globals` function: one assignment per
+/// module-level `let` with an initializer, in declaration order. Returns
+/// `None` when there are no initialized globals (so no function is emitted).
+fn synth_globals_init(items: &[HirItem], span: &Span) -> Option<HirItem> {
+    use super::expr::HirBlock;
+    use super::stmt::{HirAssignTarget, HirStmt, HirStmtKind};
+    let mut stmts: Vec<HirStmt> = Vec::new();
+    for item in items {
+        if let HirItemKind::Let {
+            name,
+            init: Some(init),
+            ..
+        } = &item.kind
+        {
+            let target = HirAssignTarget::Global {
+                name: expr::global_symbol(name),
+            };
+            stmts.push(HirStmt {
+                kind: HirStmtKind::Assign {
+                    target,
+                    value: init.clone(),
+                },
+                span: item.span.clone(),
+            });
+        }
+    }
+    if stmts.is_empty() {
+        return None;
+    }
+    let body = HirBlock {
+        stmts,
+        tail: None,
+        ty: Ty::Unit,
+        span: span.clone(),
+    };
+    let f = HirFn {
+        name: crate::hir::GLOBALS_INIT_FN.to_string(),
+        params: Vec::new(),
+        ret: Ty::Unit,
+        generics: Vec::new(),
+        body: Some(body),
+        span: span.clone(),
+    };
+    Some(HirItem {
+        kind: HirItemKind::Function(f),
+        span: span.clone(),
     })
 }
 
@@ -276,18 +330,9 @@ fn lower_decl(decl: &Decl, cx: &LowerCtx<'_>) -> Result<Option<HirItem>, RavenEr
             }))
         }
         DeclKind::Let(l) => {
-            // A module-level `let` is inlined like a `const` (mutable and
-            // computed globals are a separate follow-up), so a present
-            // initializer must fold to a compile-time constant.
-            if let Some(init) = &l.init {
-                if expr::const_fold_kind(init).is_none() {
-                    return Err(ty_error(
-                        "a module-level `let` initializer must be a constant expression; \
-                         move computed or mutable state into a function",
-                        &init.span,
-                    ));
-                }
-            }
+            // A module-level `let` is a mutable global with runtime storage.
+            // Its initializer may be any expression (run before `main` in
+            // declaration order), so there is no constant-folding requirement.
             let scope = GenericScope::new();
             let ty = match &l.ty {
                 Some(t) => resolve_ty_for_decl(t, cx, &scope)?,

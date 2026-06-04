@@ -110,6 +110,12 @@ pub enum MirRvalue {
     Use(MirOperand),
     BinaryOp(MirBinOp, MirOperand, MirOperand),
     UnaryOp(MirUnOp, MirOperand),
+    /// Read a mutable module-level global's data slot. `name` is the global's
+    /// mangled symbol; the back end loads a value of `ty` from the slot.
+    GlobalLoad {
+        name: String,
+        ty: MirType,
+    },
     Call {
         callee: MirFnRef,
         args: Vec<MirOperand>,
@@ -347,6 +353,14 @@ pub enum MirStatement {
     PtrFree {
         addr: MirOperand,
     },
+    /// Store `value` into a mutable module-level global's data slot. `name` is
+    /// the global's mangled symbol. The slot is registered as a permanent GC
+    /// root at startup, so storing a heap value into it keeps that value
+    /// reachable; no new root is needed.
+    StoreGlobal {
+        name: String,
+        value: MirOperand,
+    },
     StorageLive(MirLocal),
     StorageDead(MirLocal),
     Nop,
@@ -475,11 +489,26 @@ pub struct ReflectType {
     pub fields: Vec<ReflectField>,
 }
 
+/// A mutable module-level global. The back end allocates a data slot for it,
+/// roots heap-valued slots for the whole program, and runs the synthesized
+/// `__raven_init_globals` function to set its initial value before `main`.
+#[derive(Debug, Clone)]
+pub struct MirGlobal {
+    /// The global's mangled symbol name (matches `GlobalLoad`/`StoreGlobal`).
+    pub name: String,
+    /// The global's type, used to size the slot's load/store and to decide
+    /// (via the back end's `is_gc_pointer`) whether the slot must be rooted.
+    pub ty: MirType,
+}
+
 /// One full MIR program: a flat list of monomorphic functions plus the
 /// foreign functions declared in `extern` blocks.
 #[derive(Debug, Clone)]
 pub struct MirProgram {
     pub functions: Vec<MirFunction>,
+    /// Mutable module-level globals (a `let` at file scope). The back end
+    /// emits a data slot per global and roots the heap-valued ones.
+    pub globals: Vec<MirGlobal>,
     /// Foreign functions declared in `extern "C"` blocks. Declared as
     /// imported symbols by the back end and resolved at link time.
     pub externs: Vec<MirExternFn>,
@@ -498,6 +527,7 @@ impl MirProgram {
     pub fn new() -> Self {
         Self {
             functions: Vec::new(),
+            globals: Vec::new(),
             externs: Vec::new(),
             repr_c_structs: HashMap::new(),
             reflect_types: HashMap::new(),
