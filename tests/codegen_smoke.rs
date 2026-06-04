@@ -48,6 +48,16 @@ fn declarative_macros_compile_and_run() {
 }
 
 #[test]
+fn local_const_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A `const` inside a function body is an immutable local with a runtime
+    // initializer: LIMIT == 5, DOUBLED == compute() == 42, sum == 47.
+    compile_link_run_and_check("local_const.rv", "5\n42\n47\n", &runtime);
+}
+
+#[test]
 fn item_and_statement_position_macros_compile_and_run() {
     let Some(runtime) = supported_runtime() else {
         return;

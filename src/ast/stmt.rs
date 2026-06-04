@@ -20,14 +20,17 @@ pub struct Stmt {
 /// Statement node kinds.
 #[derive(Debug, Clone, PartialEq)]
 pub enum StmtKind {
-    /// `let name: T = expr` or `let name = expr`. The `init` is `None`
-    /// only at top level where `let name: T` declares an uninitialized
-    /// module global. Inside a function body the parser rejects missing
-    /// initializers.
+    /// `let name: T = expr`, `let name = expr`, or `const name: T = expr`.
+    /// `mutable` is `true` for `let` and `false` for `const`; a `const`
+    /// local is an immutable binding the type checker forbids reassigning.
+    /// The `init` is `None` only at top level where `let name: T` declares
+    /// an uninitialized module global. Inside a function body the parser
+    /// rejects missing initializers.
     Let {
         name: String,
         ty: Option<Type>,
         init: Option<Expr>,
+        mutable: bool,
     },
     /// `return expr?`.
     Return(Option<Expr>),

@@ -1,0 +1,19 @@
+// `const` inside a function body is an immutable local binding. Unlike a
+// module-level `const`, its initializer may be any runtime expression (it has
+// stack storage), but reassigning it is a compile error. A `let` stays
+// mutable. Part of issue #278.
+//
+// Prints:
+//   5
+//   42
+//   47
+
+fun compute() -> Int = 21 * 2
+
+fun main() {
+    const LIMIT: Int = 5
+    const DOUBLED = compute()
+    print(LIMIT)
+    print(DOUBLED)
+    print(LIMIT + DOUBLED)
+}

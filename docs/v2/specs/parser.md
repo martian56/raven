@@ -141,12 +141,14 @@ Statement    := Let
               | "defer" Expr
               | Assignment
               | ExprStmt
-Let          := "let" Identifier [ ":" Type ] "=" Expr
+Let          := ( "let" | "const" ) Identifier [ ":" Type ] "=" Expr
 ExprStmt     := Expr
 Assignment   := LValue AssignOp Expr
 AssignOp     := "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>="
 LValue       := Identifier { ( "." Identifier | "[" Expr "]" ) }*
 ```
+
+A `let` statement is mutable; a `const` statement parses identically but sets `mutable = false` on the same `StmtKind::Let` node, marking an immutable local (the type checker rejects reassigning it). Both require an initializer inside a function body.
 
 Statement separators inside a block are `Newline`, `Semi`, or both. The block parser keeps consuming statements until it sees `RBrace`.
 

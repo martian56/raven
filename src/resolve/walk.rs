@@ -251,7 +251,12 @@ fn walk_stmt(
     map: &mut ResolutionMap,
 ) -> Result<(), RavenError> {
     match &stmt.kind {
-        StmtKind::Let { name, ty, init } => {
+        StmtKind::Let {
+            name,
+            ty,
+            init,
+            mutable: _,
+        } => {
             if let Some(t) = ty {
                 walk_type(t, scope, map)?;
             }

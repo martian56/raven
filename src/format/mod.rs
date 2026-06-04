@@ -506,13 +506,20 @@ impl Printer<'_> {
     }
 
     fn let_decl(&mut self, l: &LetDecl) -> Option<String> {
-        let text = self.render_let(&l.name, &l.ty, &l.init);
+        // A module-level `let` declaration is always mutable in spelling.
+        let text = self.render_let(&l.name, &l.ty, &l.init, true);
         self.line(&text);
         self.take_trailing_comment(self.line_of(l.span.end))
     }
 
-    fn render_let(&mut self, name: &str, ty: &Option<Type>, init: &Option<Expr>) -> String {
-        let mut text = String::from("let ");
+    fn render_let(
+        &mut self,
+        name: &str,
+        ty: &Option<Type>,
+        init: &Option<Expr>,
+        mutable: bool,
+    ) -> String {
+        let mut text = String::from(if mutable { "let " } else { "const " });
         text.push_str(name);
         if let Some(t) = ty {
             text.push_str(": ");
@@ -616,8 +623,13 @@ impl Printer<'_> {
     fn stmt(&mut self, s: &Stmt) {
         let end_line = self.line_of(s.span.end);
         match &s.kind {
-            StmtKind::Let { name, ty, init } => {
-                let text = self.render_let(name, ty, init);
+            StmtKind::Let {
+                name,
+                ty,
+                init,
+                mutable,
+            } => {
+                let text = self.render_let(name, ty, init, *mutable);
                 self.emit_multiline(&text);
             }
             StmtKind::Return(e) => {
