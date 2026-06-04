@@ -27,9 +27,9 @@ pub use map::{raven_map_bucket_count, raven_map_buckets, raven_map_new, Map, Map
 pub use set::{raven_set_bucket_count, raven_set_buckets, raven_set_new, Set, SetEntry};
 pub use string::{
     raven_bool_to_string, raven_char_to_string, raven_float_to_string, raven_int_to_string,
-    raven_string_byte_at, raven_string_bytes, raven_string_concat, raven_string_eq,
-    raven_string_from_byte, raven_string_from_bytes, raven_string_len, raven_string_new,
-    raven_string_substring, String,
+    raven_string_byte_at, raven_string_bytes, raven_string_cmp, raven_string_concat,
+    raven_string_eq, raven_string_from_byte, raven_string_from_bytes, raven_string_len,
+    raven_string_new, raven_string_substring, String,
 };
 pub use structval::{
     raven_struct_fields, raven_struct_new, STRUCT_FIELDS_OFFSET, STRUCT_FIELD_SLOT,

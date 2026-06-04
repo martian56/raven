@@ -29,7 +29,7 @@ pub use object::{
     raven_closure_captures, raven_closure_fn_ptr, raven_closure_new, raven_float_to_string,
     raven_int_to_string, raven_list_elements, raven_list_len, raven_list_new, raven_list_push,
     raven_map_bucket_count, raven_map_buckets, raven_map_new, raven_set_bucket_count,
-    raven_set_buckets, raven_set_new, raven_string_byte_at, raven_string_bytes,
+    raven_set_buckets, raven_set_new, raven_string_byte_at, raven_string_bytes, raven_string_cmp,
     raven_string_concat, raven_string_eq, raven_string_from_byte, raven_string_from_bytes,
     raven_string_len, raven_string_new, raven_string_substring, raven_struct_fields,
     raven_struct_new, Box as RavenBox, Closure as RavenClosure, List as RavenList, Map as RavenMap,

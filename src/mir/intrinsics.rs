@@ -16,6 +16,11 @@ pub const STR_CONCAT: &str = "__raven_str_concat";
 /// directly; `!=` negates it.
 pub const STR_EQ: &str = "__raven_str_eq";
 
+/// Lexicographically compare two heap `String` values, yielding an `Int`
+/// that is negative, zero, or positive. Lowers to `raven_string_cmp`. The
+/// `< <= > >=` operators compare the result against `0`.
+pub const STR_CMP: &str = "__raven_str_cmp";
+
 /// Render an `Int` as a heap `String`. Lowers to `raven_int_to_string`.
 pub const INT_TO_STRING: &str = "__raven_int_to_string";
 

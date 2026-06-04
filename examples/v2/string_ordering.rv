@@ -1,0 +1,12 @@
+// Lexicographic ordering on String with < <= > >=. Regression for issue
+// #267 (these used to be a type error). Prints:
+//   true false true true false
+fun main() {
+    let a = "apple"
+    let b = "banana"
+    print(a < b)        // true
+    print(b < a)        // false
+    print(a <= a)       // true
+    print(b >= a)       // true
+    print(a > b)        // false
+}

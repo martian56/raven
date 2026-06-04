@@ -101,6 +101,10 @@ pub const RUNTIME_CHAR_TO_STRING: &str = "raven_char_to_string";
 /// `==`/`!=` operators on `String`.
 pub const RUNTIME_STRING_EQ: &str = "raven_string_eq";
 
+/// Runtime C symbol lexicographically comparing two `String` values,
+/// returning a negative/zero/positive `i64`. Backs `< <= > >=` on `String`.
+pub const RUNTIME_STRING_CMP: &str = "raven_string_cmp";
+
 /// Map a MIR string-runtime intrinsic mangled name to the runtime C
 /// symbol it lowers to, or `None` when `mangled` is not one of them.
 /// These intrinsics share one call shape: each operand lowers to an
@@ -110,6 +114,7 @@ pub fn string_runtime_symbol(mangled: &str) -> Option<&'static str> {
     Some(match mangled {
         mir_intr::STR_CONCAT => RUNTIME_STRING_CONCAT,
         mir_intr::STR_EQ => RUNTIME_STRING_EQ,
+        mir_intr::STR_CMP => RUNTIME_STRING_CMP,
         mir_intr::INT_TO_STRING => RUNTIME_INT_TO_STRING,
         mir_intr::BOOL_TO_STRING => RUNTIME_BOOL_TO_STRING,
         mir_intr::FLOAT_TO_STRING => RUNTIME_FLOAT_TO_STRING,

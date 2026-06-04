@@ -213,6 +213,38 @@ pub extern "C" fn raven_string_eq(a: *const String, b: *const String) -> i8 {
     (a_slice == b_slice) as i8
 }
 
+/// Lexicographic byte comparison of two `String` values: negative when
+/// `a < b`, zero when equal, positive when `a > b`. Either pointer may be
+/// null and is treated as the empty string. Backs the `< <= > >=`
+/// operators on `String`, which compare contents lexicographically.
+#[no_mangle]
+pub extern "C" fn raven_string_cmp(a: *const String, b: *const String) -> i64 {
+    if a == b {
+        return 0;
+    }
+    let a_len = raven_string_len(a) as usize;
+    let b_len = raven_string_len(b) as usize;
+    let a_bytes = raven_string_bytes(a);
+    let b_bytes = raven_string_bytes(b);
+    let a_slice = if a_bytes.is_null() || a_len == 0 {
+        &[][..]
+    } else {
+        // SAFETY: `a_bytes` points at `a_len` valid bytes.
+        unsafe { std::slice::from_raw_parts(a_bytes, a_len) }
+    };
+    let b_slice = if b_bytes.is_null() || b_len == 0 {
+        &[][..]
+    } else {
+        // SAFETY: `b_bytes` points at `b_len` valid bytes.
+        unsafe { std::slice::from_raw_parts(b_bytes, b_len) }
+    };
+    match a_slice.cmp(b_slice) {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => 1,
+    }
+}
+
 /// Allocate a fresh `String` holding the half-open byte range
 /// `[start, end)` of `s`. The bounds are clamped to `0..=len` and a
 /// `start` past `end` yields an empty string, so the function never
@@ -588,6 +620,30 @@ mod tests {
             drop_string_for_test(c);
             drop_string_for_test(bar);
             drop_string_for_test(abcd);
+            drop_string_for_test(empty);
+        }
+    }
+
+    #[test]
+    fn string_cmp_is_lexicographic() {
+        let apple = raven_string_from_bytes(b"apple".as_ptr(), 5);
+        let banana = raven_string_from_bytes(b"banana".as_ptr(), 6);
+        let app = raven_string_from_bytes(b"app".as_ptr(), 3);
+        let empty = raven_string_new(0);
+        // a < b, b > a, equal is 0.
+        assert!(raven_string_cmp(apple, banana) < 0);
+        assert!(raven_string_cmp(banana, apple) > 0);
+        assert_eq!(raven_string_cmp(apple, apple), 0);
+        // A prefix sorts before the longer string.
+        assert!(raven_string_cmp(app, apple) < 0);
+        assert!(raven_string_cmp(apple, app) > 0);
+        // Null is the empty string: less than any non-empty, equal to empty.
+        assert!(raven_string_cmp(std::ptr::null(), apple) < 0);
+        assert_eq!(raven_string_cmp(std::ptr::null(), empty), 0);
+        unsafe {
+            drop_string_for_test(apple);
+            drop_string_for_test(banana);
+            drop_string_for_test(app);
             drop_string_for_test(empty);
         }
     }
