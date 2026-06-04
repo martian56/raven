@@ -1353,9 +1353,13 @@ impl<'a, 'b> Checker<'a, 'b> {
         span: &Span,
     ) -> Result<Ty, RavenError> {
         match name {
-            "type_name" => self.check_reflection_builtin(name, generics, callee_span, args, span),
-            "field_names" => self.check_reflection_builtin(name, generics, callee_span, args, span),
-            "field_types" => self.check_reflection_builtin(name, generics, callee_span, args, span),
+            "type_name"
+            | "field_names"
+            | "field_types"
+            | "variant_names"
+            | "variant_field_types" => {
+                self.check_reflection_builtin(name, generics, callee_span, args, span)
+            }
             "__ptr_alloc" | "__ptr_free" | "__ptr_load" | "__ptr_store" | "__ptr_offset"
             | "__ptr_is_null" | "__ptr_null" => {
                 self.check_ptr_builtin(name, generics, callee_span, args, span)
@@ -1522,7 +1526,8 @@ impl<'a, 'b> Checker<'a, 'b> {
     }
 
     /// Check a compile-time reflection builtin (`type_name<T>()`,
-    /// `field_names<T>()`, or `field_types<T>()`). Each takes exactly one
+    /// `field_names<T>()`, `field_types<T>()`, `variant_names<T>()`, or
+    /// `variant_field_types<T>()`). Each takes exactly one
     /// type argument and no value
     /// arguments. The resolved type argument is recorded under the callee
     /// span so HIR lowering can carry it (a generic parameter `T` resolves
@@ -1568,12 +1573,25 @@ impl<'a, 'b> Checker<'a, 'b> {
                 span.clone(),
             ));
         }
+        if (name == "variant_names" || name == "variant_field_types")
+            && !matches!(arg_ty.strip_self(), Ty::Enum { .. } | Ty::Param(_))
+        {
+            return Err(RavenError::ty(
+                TypeError::Custom(format!(
+                    "`{}` requires an enum type, got `{}`",
+                    name, arg_ty
+                )),
+                span.clone(),
+            ));
+        }
         // Record the resolved type argument at the callee span. HIR lowering
         // reads it to build the reflection node; the call's own result span
-        // keeps the result type (`String` or `List<String>`).
+        // keeps the result type (`String`, `List<String>`, or
+        // `List<List<String>>`).
         self.record(callee_span, arg_ty);
         Ok(match name {
-            "field_names" | "field_types" => Ty::List(Box::new(Ty::Str)),
+            "field_names" | "field_types" | "variant_names" => Ty::List(Box::new(Ty::Str)),
+            "variant_field_types" => Ty::List(Box::new(Ty::List(Box::new(Ty::Str)))),
             _ => Ty::Str,
         })
     }

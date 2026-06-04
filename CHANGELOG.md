@@ -6,6 +6,7 @@ All notable changes to Raven are documented in this file.
 
 ### Added
 
+- Compile-time enum reflection `variant_names<T>()` and `variant_field_types<T>()`: `variant_names` returns an enum's variant names in declaration order as a `List<String>`; `variant_field_types` returns a `List<List<String>>` with one inner list per variant of its payload field type names (empty for a unit variant, so the inner length is the payload arity). For a generic enum each payload type renders at its concrete instantiation. A non-enum type argument is rejected (#228).
 - Compile-time reflection `field_types<T>()`: the positional counterpart to `field_names<T>()`, returning each struct field's type name in declaration order as a `List<String>`. For a generic struct each field renders its concrete type per instantiation, so `field_types<Box<Int>>()` yields `["Int"]`. A non-struct type argument is rejected, matching `field_names` (#227).
 - Macro fragment specifiers beyond `expr` and `ident`: `$x:ty` and `$x:pat` capture a balanced token run (a type such as `List<Int>`, a pattern such as `Some(n)`), `$x:literal` matches exactly one literal token and rejects anything else, and `$x:block` captures a brace-delimited `{ ... }` group. The names document call-site intent and, for `literal` and `block`, constrain what a rule accepts (#223).
 - Runtime reflection `set_field(a, name, value)`: write a struct field by name through an `Any`, the counterpart to `get_field`. A write whose value type does not match the field is ignored (#230).

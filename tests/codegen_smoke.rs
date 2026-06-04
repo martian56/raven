@@ -150,6 +150,22 @@ fn field_types_program_compiles_and_runs() {
 }
 
 #[test]
+fn variant_reflection_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // `variant_names<T>()` lists an enum's variants and
+    // `variant_field_types<T>()` gives each variant's payload types (empty for
+    // a unit variant). The generic `describe<T>` resolves per monomorphization,
+    // so `Tree<Int>` renders `Int` payloads.
+    compile_link_run_and_check(
+        "use_variant_reflection.rv",
+        "Circle\nRectangle\nDot\n--\nCircle: Float\nRectangle: Float, Float\nDot\n== generic ==\nLeaf: Int\nBranch: Int, Int\nEmpty\n",
+        &runtime,
+    );
+}
+
+#[test]
 fn derive_json_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

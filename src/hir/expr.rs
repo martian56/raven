@@ -275,6 +275,15 @@ pub enum HirExprKind {
     /// name in declaration order, grounded per monomorphization so a generic
     /// field renders its concrete type.
     FieldTypes(HirTy),
+    /// `variant_names<T>()` compile-time reflection builtin. Carries the
+    /// resolved enum type argument, lowered to a `List<String>` of the
+    /// enum's variant names in declaration order.
+    VariantNames(HirTy),
+    /// `variant_field_types<T>()` compile-time reflection builtin. Lowered
+    /// to a `List<List<String>>`: one inner list per variant (declaration
+    /// order) of that variant's payload field type names (empty for a unit
+    /// variant), grounded per monomorphization.
+    VariantFieldTypes(HirTy),
 
     /// A raw-pointer FFI builtin (`__ptr_load`, `__ptr_store`,
     /// `__ptr_offset`, `__ptr_is_null`, `__ptr_null`, `__ptr_alloc`,

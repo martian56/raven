@@ -1,0 +1,67 @@
+// Compile-time enum reflection: variant_names<T>() and
+// variant_field_types<T>().
+//
+// variant_names yields an enum's variant names in declaration order.
+// variant_field_types yields, per variant (same order), the payload field
+// type names as an inner list: empty for a unit variant, one entry per
+// payload field otherwise. Both resolve at compile time per monomorphization,
+// so a generic enum renders its concrete payload types. See
+// docs/v2/specs/reflection.md.
+//
+// Compiling and running this prints:
+//   Circle
+//   Rectangle
+//   Dot
+//   --
+//   Circle: Float
+//   Rectangle: Float, Float
+//   Dot
+//   == generic ==
+//   Leaf: Int
+//   Branch: Int, Int
+//   Empty
+enum Shape {
+    Circle(radius: Float)
+    Rectangle(width: Float, height: Float)
+    Dot
+}
+
+enum Tree<T> {
+    Leaf(value: T)
+    Branch(left: T, right: T)
+    Empty
+}
+
+fun describe<T>() {
+    let names = variant_names<T>()
+    let payloads = variant_field_types<T>()
+    let i = 0
+    while i < names.len() {
+        let types = payloads[i]
+        let joined = ""
+        let j = 0
+        while j < types.len() {
+            if j > 0 {
+                joined = "${joined}, "
+            }
+            joined = "${joined}${types[j]}"
+            j += 1
+        }
+        if types.len() > 0 {
+            print("${names[i]}: ${joined}")
+        } else {
+            print(names[i])
+        }
+        i += 1
+    }
+}
+
+fun main() {
+    for n in variant_names<Shape>() {
+        print(n)
+    }
+    print("--")
+    describe<Shape>()
+    print("== generic ==")
+    describe<Tree<Int>>()
+}

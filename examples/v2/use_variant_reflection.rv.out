@@ -1,0 +1,11 @@
+Circle
+Rectangle
+Dot
+--
+Circle: Float
+Rectangle: Float, Float
+Dot
+== generic ==
+Leaf: Int
+Branch: Int, Int
+Empty

@@ -354,6 +354,8 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
         HirExprKind::TypeName(arg) => lower_type_name(cx, arg, ty),
         HirExprKind::FieldNames(arg) => lower_field_names(cx, arg, ty),
         HirExprKind::FieldTypes(arg) => lower_field_types(cx, arg, ty),
+        HirExprKind::VariantNames(arg) => lower_variant_names(cx, arg, ty),
+        HirExprKind::VariantFieldTypes(arg) => lower_variant_field_types(cx, arg, ty),
         HirExprKind::PtrBuiltin { op, pointee, args } => {
             lower_ptr_builtin(cx, *op, pointee, args, ty)
         }
@@ -595,6 +597,111 @@ fn lower_field_types(cx: &mut LowerCx<'_>, arg: &crate::tycheck::Ty, ty: MirType
         MirRvalue::ArrayLit {
             ty: list_ty,
             elements,
+        },
+    );
+    MirOperand::Copy(dst)
+}
+
+/// Lower `variant_names<T>()`. The carried type argument is grounded under
+/// the current substitution; when it is a known enum, the variant names in
+/// declaration order become a `List<String>` literal. A grounded non-enum
+/// type yields an empty list.
+fn lower_variant_names(cx: &mut LowerCx<'_>, arg: &crate::tycheck::Ty, ty: MirType) -> MirOperand {
+    use crate::tycheck::Ty;
+    let concrete = super::substitute(arg, cx.subst);
+    let names: Vec<String> = match concrete.strip_self() {
+        Ty::Enum { name, .. } => cx
+            .decls
+            .enums
+            .get(name.as_str())
+            .map(|e| e.variants.iter().map(|v| v.name.clone()).collect())
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    let elements: Vec<MirOperand> = names
+        .into_iter()
+        .map(|n| MirOperand::Const(MirConstant::Str(n)))
+        .collect();
+    let list_ty = MirType::List(Box::new(MirType::Str));
+    let dst = cx.builder.fresh_temp("variantnames", ty);
+    cx.builder.assign(
+        cx.current,
+        dst,
+        MirRvalue::ArrayLit {
+            ty: list_ty,
+            elements,
+        },
+    );
+    MirOperand::Copy(dst)
+}
+
+/// Lower `variant_field_types<T>()` to a `List<List<String>>`: one inner list
+/// per variant (declaration order) of that variant's payload field type
+/// names, empty for a unit variant. Each declared field type is grounded
+/// under a per-instantiation substitution from the enum's generic parameters
+/// to the concrete type arguments, so a generic payload renders its concrete
+/// type. A grounded non-enum type yields an empty outer list.
+fn lower_variant_field_types(
+    cx: &mut LowerCx<'_>,
+    arg: &crate::tycheck::Ty,
+    ty: MirType,
+) -> MirOperand {
+    use crate::tycheck::Ty;
+    let str_list_ty = MirType::List(Box::new(MirType::Str));
+    let concrete = super::substitute(arg, cx.subst);
+    // Render each variant's payload types into a vector of strings, in
+    // declaration order, before touching the builder.
+    let per_variant: Vec<Vec<String>> = match concrete.strip_self() {
+        Ty::Enum { name, args, .. } => cx
+            .decls
+            .enums
+            .get(name.as_str())
+            .map(|e| {
+                let mut subst: super::SubstMap = super::SubstMap::new();
+                for (p, a) in enum_generic_params(e).iter().zip(args.iter()) {
+                    subst.insert(p.clone(), a.clone());
+                }
+                e.variants
+                    .iter()
+                    .map(|v| {
+                        v.fields
+                            .iter()
+                            .map(|(_, fty, _)| {
+                                format!("{}", super::substitute(fty, &subst).strip_self())
+                            })
+                            .collect()
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    // Build each inner `List<String>` into its own temp, then collect those
+    // temps as the outer list's elements.
+    let mut outer: Vec<MirOperand> = Vec::with_capacity(per_variant.len());
+    for variant in per_variant {
+        let inner_elements: Vec<MirOperand> = variant
+            .into_iter()
+            .map(|n| MirOperand::Const(MirConstant::Str(n)))
+            .collect();
+        let inner = cx.builder.fresh_temp("variantfields", str_list_ty.clone());
+        cx.builder.assign(
+            cx.current,
+            inner,
+            MirRvalue::ArrayLit {
+                ty: str_list_ty.clone(),
+                elements: inner_elements,
+            },
+        );
+        outer.push(MirOperand::Copy(inner));
+    }
+    let dst = cx.builder.fresh_temp("variantfieldtypes", ty);
+    cx.builder.assign(
+        cx.current,
+        dst,
+        MirRvalue::ArrayLit {
+            ty: MirType::List(Box::new(str_list_ty)),
+            elements: outer,
         },
     );
     MirOperand::Copy(dst)
@@ -1200,6 +1307,21 @@ fn struct_generic_params(s: &crate::hir::HirStruct) -> Vec<crate::tycheck::ty::P
     let mut found: Vec<crate::tycheck::ty::ParamId> = Vec::new();
     for (_, ty, _) in &s.fields {
         collect_ty_params(ty, &mut found);
+    }
+    found.sort_by_key(|p| p.index);
+    found.dedup();
+    found
+}
+
+/// The generic parameters of an enum declaration, in `ParamId` order. Like
+/// `struct_generic_params` but gathered across every variant's payload field
+/// types, so an enum's instantiation can ground its variant payloads.
+fn enum_generic_params(e: &crate::hir::HirEnum) -> Vec<crate::tycheck::ty::ParamId> {
+    let mut found: Vec<crate::tycheck::ty::ParamId> = Vec::new();
+    for v in &e.variants {
+        for (_, ty, _) in &v.fields {
+            collect_ty_params(ty, &mut found);
+        }
     }
     found.sort_by_key(|p| p.index);
     found.dedup();
