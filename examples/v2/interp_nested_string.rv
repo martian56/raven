@@ -1,0 +1,15 @@
+// String interpolation may contain a nested string literal, including in a
+// call argument. Regression for issue #262, where the inner `"` ended the
+// outer string early. Prints:
+//   hello WORLD
+//   a-b
+import std/string
+
+fun shout(s: String) -> String = s.to_upper()
+
+fun join(a: String, b: String) -> String = a.concat("-").concat(b)
+
+fun main() {
+    print("hello ${shout("world")}")
+    print("${join("a", "b")}")
+}

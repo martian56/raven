@@ -549,12 +549,17 @@ impl Lexer {
         // Single line string.
         self.bump(); // opening "
         let mut out = String::new();
+        // Brace depth inside a `${...}` interpolation. While greater than 0,
+        // the bytes are an embedded expression copied verbatim (no escape
+        // decoding) for the parser's interpolation splitter to re-lex, and a
+        // `"` opens a nested string literal rather than closing this one.
+        let mut interp_depth: u32 = 0;
         loop {
             match self.peek() {
                 None => {
                     return Err(self.err(LexError::UnterminatedString, start, line, col));
                 }
-                Some('"') => {
+                Some('"') if interp_depth == 0 => {
                     self.bump();
                     let span = self.make_span(start, line, col);
                     let kind = if is_cstring {
@@ -564,10 +569,54 @@ impl Lexer {
                     };
                     return Ok(Token::new(kind, span));
                 }
+                Some('"') => {
+                    // A nested string literal inside an interpolation. Copy it
+                    // verbatim, including escapes and its closing quote, so the
+                    // splitter re-parses it as an ordinary string expression.
+                    out.push(self.bump().unwrap()); // opening "
+                    loop {
+                        match self.peek() {
+                            None | Some('\n') => {
+                                return Err(self.err(
+                                    LexError::UnterminatedString,
+                                    start,
+                                    line,
+                                    col,
+                                ));
+                            }
+                            Some('\\') => {
+                                out.push(self.bump().unwrap()); // backslash
+                                if self.peek().is_some() {
+                                    out.push(self.bump().unwrap()); // escaped char
+                                }
+                            }
+                            Some('"') => {
+                                out.push(self.bump().unwrap()); // closing "
+                                break;
+                            }
+                            Some(_) => out.push(self.bump().unwrap()),
+                        }
+                    }
+                }
                 Some('\n') => {
                     return Err(self.err(LexError::UnterminatedString, start, line, col));
                 }
-                Some('\\') => {
+                Some('$') if self.peek_at(1) == Some('{') => {
+                    out.push(self.bump().unwrap()); // $
+                    out.push(self.bump().unwrap()); // {
+                    interp_depth += 1;
+                }
+                Some('{') if interp_depth > 0 => {
+                    interp_depth += 1;
+                    out.push(self.bump().unwrap());
+                }
+                Some('}') if interp_depth > 0 => {
+                    interp_depth -= 1;
+                    out.push(self.bump().unwrap());
+                }
+                // Inside an interpolation the bytes are raw expression source,
+                // copied verbatim; escape decoding only applies to literal text.
+                Some('\\') if interp_depth == 0 => {
                     let esc_line = self.line;
                     let esc_col = self.col;
                     let esc_start = self.pos;

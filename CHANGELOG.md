@@ -10,6 +10,7 @@ All notable changes to Raven are documented in this file.
 
 ### Fixed
 
+- String interpolation may now contain a nested string literal, including in a call argument: `"hello ${shout("world")}"`. The inner `"` previously ended the outer string early. Macro invocations inside `${...}` remain unsupported (tracked by #226) (#262).
 - The formatter now writes `spawn(...)` as a call, without the stray space it used to insert before the parenthesis (#263).
 - `match` on `String` literal patterns now compares by content. Arms like `"yes" -> ...` previously compared heap-pointer identity, so they never matched and silently fell through to the wildcard (#265).
 - `String.len()` and `String.is_empty()` now work without an import, spelled the same as `List`/`Map`/`Set`. They previously type-checked but failed in code generation with `unresolved callee: Str$len`. A user `impl String` of either name still takes precedence (#266).
