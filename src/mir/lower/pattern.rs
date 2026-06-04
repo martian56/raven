@@ -174,19 +174,33 @@ fn lower_fallback_match(
                 }
             }
             HirPatternKind::Literal(lit) => {
-                let cmp = literal_to_const(lit);
                 let cmp_local = cx
                     .builder
                     .fresh_temp("cmp", super::super::ty::MirType::Bool);
-                cx.builder.assign(
-                    next_test,
-                    cmp_local,
+                // A `String` literal pattern compares by content, not by
+                // heap-pointer identity: route it through the string-equality
+                // intrinsic. A plain `BinaryOp::Eq` would compare the literal
+                // constant's address against the scrutinee's and never match,
+                // silently falling through to the wildcard arm.
+                let test = if let HirLiteralPat::Str(s) = lit {
+                    MirRvalue::Call {
+                        callee: super::super::ir::MirFnRef {
+                            mangled: super::super::intrinsics::STR_EQ.into(),
+                            origin: None,
+                        },
+                        args: vec![
+                            scrut.clone(),
+                            MirOperand::Const(MirConstant::Str(s.clone())),
+                        ],
+                    }
+                } else {
                     MirRvalue::BinaryOp(
                         super::super::ir::MirBinOp::Eq,
                         scrut.clone(),
-                        MirOperand::Const(cmp),
-                    ),
-                );
+                        MirOperand::Const(literal_to_const(lit)),
+                    )
+                };
+                cx.builder.assign(next_test, cmp_local, test);
                 cx.builder.close_block(
                     next_test,
                     MirTerminator::SwitchInt {

@@ -1,0 +1,19 @@
+// match on String literal patterns compares by content. Regression for
+// issue #265, where string-literal arms compared heap-pointer identity and
+// always fell through to the wildcard. Prints:
+//   affirmative
+//   negative
+//   unknown
+fun classify(s: String) -> String {
+    return match s {
+        "yes" -> "affirmative",
+        "no" -> "negative",
+        _ -> "unknown",
+    }
+}
+
+fun main() {
+    print(classify("yes"))
+    print(classify("no"))
+    print(classify("maybe"))
+}
