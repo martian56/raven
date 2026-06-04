@@ -206,6 +206,14 @@ pub(crate) fn lower_expr(
                         let arg_ty = cx.ty_at(&callee.span);
                         return Ok(make_expr(HirExprKind::FieldTypes(arg_ty), ty, span));
                     }
+                    if name == "variant_names" {
+                        let arg_ty = cx.ty_at(&callee.span);
+                        return Ok(make_expr(HirExprKind::VariantNames(arg_ty), ty, span));
+                    }
+                    if name == "variant_field_types" {
+                        let arg_ty = cx.ty_at(&callee.span);
+                        return Ok(make_expr(HirExprKind::VariantFieldTypes(arg_ty), ty, span));
+                    }
                     if let Some(op) = ptr_builtin_op(name) {
                         let pointee = cx.ty_at(&callee.span);
                         let mut lowered = Vec::with_capacity(args.len());

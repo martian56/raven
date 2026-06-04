@@ -668,6 +668,8 @@ fn is_builtin_ctor_name(name: &str) -> bool {
             | "type_name"
             | "field_names"
             | "field_types"
+            | "variant_names"
+            | "variant_field_types"
             | "to_any"
             | "cast"
             | "type_name_of"

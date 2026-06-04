@@ -493,6 +493,12 @@ fn pretty_expr(buf: &mut String, expr: &HirExpr, depth: usize) {
         HirExprKind::FieldTypes(arg) => {
             writeln!(buf, "(field-types arg={} ty={})", arg, expr.ty).unwrap()
         }
+        HirExprKind::VariantNames(arg) => {
+            writeln!(buf, "(variant-names arg={} ty={})", arg, expr.ty).unwrap()
+        }
+        HirExprKind::VariantFieldTypes(arg) => {
+            writeln!(buf, "(variant-field-types arg={} ty={})", arg, expr.ty).unwrap()
+        }
         HirExprKind::PtrBuiltin { op, pointee, args } => {
             writeln!(
                 buf,

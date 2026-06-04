@@ -855,6 +855,18 @@ fun main() {
 }
 ```
 
+For enums, `variant_names<T>()` lists the variant names in declaration order
+and `variant_field_types<T>()` gives each variant's payload type names as an
+inner list (empty for a unit variant), so the inner length is the variant's
+payload arity.
+
+```raven
+enum Shape { Circle(radius: Float) Rectangle(w: Float, h: Float) Dot }
+
+variant_names<Shape>()        // ["Circle", "Rectangle", "Dot"]
+variant_field_types<Shape>()  // [["Float"], ["Float", "Float"], []]
+```
+
 Runtime reflection works over a value whose type is not known statically.
 `to_any<T>(v)` boxes a value into an `Any`. Over an `Any`,
 `type_name_of(a)` reads its runtime type name, `field_names_of(a)` lists

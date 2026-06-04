@@ -744,6 +744,39 @@ fn field_types_on_scalar_is_rejected() {
 }
 
 #[test]
+fn variant_names_yields_list_of_string() {
+    check(
+        "enum Shape {\n    Circle(r: Int)\n    Dot\n}\n\
+         fun a() -> List<String> = variant_names<Shape>()\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn variant_field_types_yields_nested_list() {
+    check(
+        "enum Shape {\n    Circle(r: Int)\n    Dot\n}\n\
+         fun a() -> List<List<String>> = variant_field_types<Shape>()\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn variant_names_on_struct_is_rejected() {
+    let err = check(
+        r#"
+        struct P { x: Int }
+        fun a() -> List<String> = variant_names<P>()
+    "#,
+    )
+    .unwrap_err();
+    match err {
+        RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::Custom(_))),
+        other => panic!("expected a type error, got {:?}", other),
+    }
+}
+
+#[test]
 fn ptr_builtins_typecheck_for_c_scalars() {
     // load returns the pointee, store/free/offset/is_null/null/alloc all
     // accept and yield the documented types for a C scalar pointee.

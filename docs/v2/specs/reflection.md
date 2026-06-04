@@ -2,12 +2,14 @@
 
 Compile-time type reflection exposes a small amount of type information to
 user code, resolved while the program is compiled. This is the first slice
-of the reflection work tracked under issue #216. It ships three builtins:
+of the reflection work tracked under issue #216. It ships these builtins:
 
 ```raven
 type_name<T>() -> String
 field_names<T>() -> List<String>
 field_types<T>() -> List<String>
+variant_names<T>() -> List<String>
+variant_field_types<T>() -> List<List<String>>
 ```
 
 Both take a single type argument and no value arguments. The type argument
@@ -101,6 +103,48 @@ A typed descriptor object (a struct the user can read, rather than parallel
 string lists) remains a possible future surface; this slice pairs
 `field_names` and `field_types` by position.
 
+## variant_names
+
+`variant_names<T>()` evaluates to the variant names of the enum type `T`, in
+declaration order, as a `List<String>`. It is the enum counterpart to
+`field_names`.
+
+```raven
+enum Shape { Circle(radius: Float) Rectangle(width: Float, height: Float) Dot }
+
+variant_names<Shape>()    // ["Circle", "Rectangle", "Dot"]
+```
+
+`T` must be an enum. Applying `variant_names` to a non-enum type (a struct, a
+scalar, a built-in generic) is a compile error. The built-in `Option` and
+`Result` are not user enums and are not accepted in this slice.
+
+## variant_field_types
+
+`variant_field_types<T>()` describes each variant's payload, as a
+`List<List<String>>`: one inner list per variant in declaration order,
+holding that variant's payload field type names. A unit variant has an empty
+inner list, so the inner list's length is the variant's payload arity.
+
+```raven
+enum Shape { Circle(radius: Float) Rectangle(width: Float, height: Float) Dot }
+
+variant_names<Shape>()        // ["Circle", "Rectangle", "Dot"]
+variant_field_types<Shape>()  // [["Float"], ["Float", "Float"], []]
+```
+
+For a generic enum each payload type is rendered at its concrete
+instantiation, the same per-monomorphization mechanic as `field_types`:
+
+```raven
+enum Tree<T> { Leaf(value: T) Branch(left: T, right: T) Empty }
+
+variant_field_types<Tree<Int>>()    // [["Int"], ["Int", "Int"], []]
+```
+
+The unit / tuple / named-field distinction beyond payload types and arity is
+not exposed in this slice.
+
 ## Model: compile-time, per-monomorphization
 
 Both builtins are resolved entirely at compile time. There is no runtime
@@ -124,6 +168,11 @@ becomes the concrete type for that instantiation:
   struct's field type names. A per-instantiation substitution built from the
   concrete type arguments grounds each declared field type first, so a
   generic field renders its concrete type.
+- `variant_names<T>()` lowers to a `List<String>` literal of the grounded
+  enum's variant names.
+- `variant_field_types<T>()` lowers to a `List<List<String>>` literal, one
+  inner list per variant, built from the grounded enum's variant payload
+  types under the same per-instantiation substitution as `field_types`.
 
 Because the lowering runs per instantiation with the concrete substitution,
 a generic `type_name<T>()` produces the right name at each call, not one
@@ -132,14 +181,15 @@ unaffected: nothing is emitted and no runtime symbol is referenced.
 
 ## Recognition
 
-`type_name`, `field_names`, and `field_types` are builtin names, recognized
-the same way the `print` builtin and the internal stdlib intrinsics are: the
-resolver allows the bare name without a binding, the type checker assigns the
-result type at the call site (and validates that `field_names`/`field_types`
-target a struct),
-and HIR lowering rewrites the call into a dedicated reflection node carrying
-the resolved type argument. A user can shadow either name by binding it in
-scope (an import or a local), in which case the binding wins.
+`type_name`, `field_names`, `field_types`, `variant_names`, and
+`variant_field_types` are builtin names, recognized the same way the `print`
+builtin and the internal stdlib intrinsics are: the resolver allows the bare
+name without a binding, the type checker assigns the result type at the call
+site (and validates that `field_names`/`field_types` target a struct and
+`variant_names`/`variant_field_types` target an enum), and HIR lowering
+rewrites the call into a dedicated reflection node carrying the resolved type
+argument. A user can shadow any of these names by binding it in scope (an
+import or a local), in which case the binding wins.
 
 ## Deferred
 
@@ -147,5 +197,8 @@ This slice is deliberately bounded. The following are follow-ups, each
 filed against #216:
 
 - A typed field descriptor object (a readable struct, not parallel string
-  lists); `field_types` covers the field-type information for now.
-- Enum and variant introspection.
+  lists); `field_types` and `variant_field_types` cover the type information
+  for now.
+- The unit / tuple / named-field distinction for enum variants, beyond
+  payload arity and types.
+- Variant introspection over the built-in `Option` and `Result` enums.
