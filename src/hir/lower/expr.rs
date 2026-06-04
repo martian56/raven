@@ -97,13 +97,13 @@ pub(crate) fn lower_expr(
         ExprKind::SelfUpper => HirExprKind::Ident("Self".into()),
         ExprKind::Ident { name, .. } if name == "None" => HirExprKind::NoneCtor,
         ExprKind::Ident { name, .. } => {
-            // A reference to a module-level `const`/`let` is inlined to its
-            // constant value, folding a computed initializer (`60 * 60`) to a
-            // literal. Module-level bindings have no runtime storage in this
-            // release, so a non-inlined reference would lower to a `Unit`;
-            // inlining makes named constants usable. A non-constant
-            // initializer is rejected when its declaration is lowered (the
-            // full mutable-global case is tracked separately).
+            // A reference to a mutable module-level `let` reads its global
+            // data slot.
+            if let Some(global) = module_global_name(&expr.span, cx) {
+                return Ok(make_expr(HirExprKind::GlobalGet(global), ty, span));
+            }
+            // A reference to a module-level `const` inlines its folded
+            // constant value (`60 * 60` becomes the literal `3600`).
             if let Some(kind) = module_const_literal(&expr.span, cx) {
                 return Ok(make_expr(kind, ty, span));
             }
@@ -1414,10 +1414,17 @@ pub(crate) fn lower_assign_target(
     cx: &LowerCtx<'_>,
 ) -> Result<HirAssignTarget, RavenError> {
     match &expr.kind {
-        ExprKind::Ident { name, .. } => Ok(HirAssignTarget::Ident {
-            name: name.clone(),
-            span: expr.span.clone(),
-        }),
+        ExprKind::Ident { name, .. } => {
+            // Assigning to a mutable module-level `let` writes its global
+            // data slot rather than a local.
+            if let Some(global) = module_global_name(&expr.span, cx) {
+                return Ok(HirAssignTarget::Global { name: global });
+            }
+            Ok(HirAssignTarget::Ident {
+                name: name.clone(),
+                span: expr.span.clone(),
+            })
+        }
         // `self` as a bare target is the method receiver local; it binds
         // by the fixed name `self`, the same key MIR lowering uses to
         // look it up. Reassigning the receiver itself is rare but valid.
@@ -1515,24 +1522,46 @@ fn enum_variant_index(receiver: &Expr, name: &str, cx: &LowerCtx<'_>) -> Option<
     sig.variant(name).map(|(idx, _)| idx)
 }
 
-/// When the identifier at `span` resolves to a module-level `const`/`let`
-/// whose initializer is a literal (or a negated/parenthesized numeric
-/// literal), return the literal as an `HirExprKind` to inline at the use
-/// site. Returns `None` for any other binding or a non-literal initializer.
+/// When the identifier at `span` resolves to a module-level `const` whose
+/// initializer folds to a constant, return that value as an `HirExprKind` to
+/// inline at the use site. Returns `None` for any other binding. A `const` is
+/// always inlined; a module-level `let` is a mutable global with storage,
+/// handled by [`module_global_name`].
 fn module_const_literal(span: &Span, cx: &LowerCtx<'_>) -> Option<HirExprKind> {
     use crate::ast::DeclKind;
     use crate::resolve::Binding;
     let decl_id = match cx.resolved.map.lookup(span)? {
-        Binding::Const(id) | Binding::Static(id) => *id,
+        Binding::Const(id) => *id,
         _ => return None,
     };
     let decl = cx.resolved.file.items.get(decl_id.0)?;
-    let init = match &decl.kind {
-        DeclKind::Const(c) => Some(&c.value),
-        DeclKind::Let(l) => l.init.as_ref(),
-        _ => None,
-    }?;
-    literal_hir_kind(init)
+    let DeclKind::Const(c) = &decl.kind else {
+        return None;
+    };
+    literal_hir_kind(&c.value)
+}
+
+/// When the identifier at `span` resolves to a mutable module-level `let`
+/// (a `Binding::Static`), return the global's mangled symbol name so the
+/// reference can read its data slot. Returns `None` for any other binding.
+fn module_global_name(span: &Span, cx: &LowerCtx<'_>) -> Option<String> {
+    use crate::ast::DeclKind;
+    use crate::resolve::Binding;
+    let decl_id = match cx.resolved.map.lookup(span)? {
+        Binding::Static(id) => *id,
+        _ => return None,
+    };
+    let decl = cx.resolved.file.items.get(decl_id.0)?;
+    let DeclKind::Let(l) = &decl.kind else {
+        return None;
+    };
+    Some(global_symbol(&l.name))
+}
+
+/// The link-time symbol name of a module-level global named `name`. Prefixed
+/// so it cannot collide with a function symbol.
+pub(crate) fn global_symbol(name: &str) -> String {
+    format!("__raven_global_{name}")
 }
 
 /// Whether `e` folds to a compile-time constant. Used to validate a

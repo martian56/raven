@@ -61,6 +61,13 @@ can be reassigned during the function body and a moving collector (a
 later optimisation) could rewrite it in place. Reading through the slot
 address always observes the live pointer.
 
+A heap-valued mutable module-level global (a `let` at file scope) lives in
+a fixed data slot rather than a stack frame. The entry shim pushes each
+such slot's address as a single permanent root (`raven_gc_push_root`)
+before running the global initializers, so a value stored into a global
+stays reachable for the whole program. The slots start zeroed, so a global
+not yet initialized reads as null, which the collector skips.
+
 ### Entry points
 
 The collector exposes a frame-based root API. Codegen builds a small

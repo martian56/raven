@@ -111,6 +111,13 @@ pub struct ModuleCx {
     /// when crossing the C ABI by value. Empty when the program declares
     /// no by-value FFI structs.
     repr_c_structs: HashMap<String, ReprCLayout>,
+    /// Data slot of each mutable module-level global, keyed by its mangled
+    /// symbol. A `GlobalLoad`/`StoreGlobal` reads or writes the slot.
+    globals: HashMap<String, DataId>,
+    /// Data slots of the heap-valued globals, in declaration order. The
+    /// `main` shim pushes each as a permanent GC root before running the
+    /// global initializers, so a heap value stored into one stays reachable.
+    global_roots: Vec<DataId>,
 }
 
 /// The exported `main` shim plus the Raven `main` it dispatches to.
@@ -147,7 +154,37 @@ impl ModuleCx {
             vtable_counter: 0,
             reflect_counter: 0,
             repr_c_structs: HashMap::new(),
+            globals: HashMap::new(),
+            global_roots: Vec::new(),
         }
+    }
+
+    /// Declare a writable data slot for every mutable module-level global and
+    /// record the heap-valued ones for rooting. Each slot is pointer-width and
+    /// zero-initialized, so a heap global starts as a null (safely scannable)
+    /// root until its initializer runs.
+    pub fn declare_globals(
+        &mut self,
+        globals: &[crate::mir::ir::MirGlobal],
+    ) -> Result<(), CodegenError> {
+        for g in globals {
+            let id = self
+                .module
+                .declare_data(&g.name, Linkage::Local, true, false)?;
+            let mut desc = DataDescription::new();
+            desc.define(vec![0u8; 8].into_boxed_slice());
+            self.module.define_data(id, &desc)?;
+            self.globals.insert(g.name.clone(), id);
+            if crate::codegen::layout::is_gc_pointer(&g.ty) {
+                self.global_roots.push(id);
+            }
+        }
+        Ok(())
+    }
+
+    /// The data slot of a mutable module-level global, by its mangled symbol.
+    pub fn global_data(&self, name: &str) -> Option<DataId> {
+        self.globals.get(name).copied()
     }
 
     /// Record the program's `@repr(C)` struct layouts for the call sites
@@ -820,6 +857,23 @@ impl ModuleCx {
                     .map(|d| self.module.declare_data_in_func(d, &mut ctx.func)),
             })
             .collect();
+        // Resolve the global-init step: the GC root-push intrinsic, each
+        // heap-valued global's data slot, and the synthesized initializer
+        // function. All are gathered here so the builder closure below only
+        // touches resolved in-function references.
+        let push_root_ref = self
+            .runtime_id(intrinsics::RUNTIME_GC_PUSH_ROOT)
+            .map(|id| self.module.declare_func_in_func(id, &mut ctx.func));
+        let global_root_ids: Vec<DataId> = self.global_roots.clone();
+        let global_root_gvs: Vec<_> = global_root_ids
+            .iter()
+            .map(|d| self.module.declare_data_in_func(*d, &mut ctx.func))
+            .collect();
+        let init_ref = self
+            .functions
+            .get(crate::hir::GLOBALS_INIT_FN)
+            .copied()
+            .map(|id| self.module.declare_func_in_func(id, &mut ctx.func));
         let mut builder_ctx = FunctionBuilderContext::new();
         {
             let mut builder = FunctionBuilder::new(&mut ctx.func, &mut builder_ctx);
@@ -862,6 +916,20 @@ impl ModuleCx {
                         .ins()
                         .call(treg, &[tid, name, is_struct, fc, names, type_ids, gc]);
                 }
+            }
+            // Root every heap-valued global's data slot for the whole
+            // program, then run the global initializers, both before `main`.
+            // Rooting first means an allocation inside an initializer sees the
+            // already-initialized globals (and the not-yet-initialized ones as
+            // null, which the collector skips).
+            if let Some(push) = push_root_ref {
+                for gv in &global_root_gvs {
+                    let addr = builder.ins().symbol_value(ptr, *gv);
+                    builder.ins().call(push, &[addr]);
+                }
+            }
+            if let Some(init) = init_ref {
+                builder.ins().call(init, &[]);
             }
             // The Raven `main` returns unit, so there is no result value
             // to forward; the call is emitted purely for its effects.

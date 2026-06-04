@@ -143,6 +143,10 @@ pub enum HirExprKind {
     /// A name reference. The resolver's binding is recorded on the
     /// original span; downstream passes can re-look-up if needed.
     Ident(String),
+    /// Read a mutable module-level global (a `let`) by its mangled symbol
+    /// name. Unlike a `const` (which inlines its folded value), a global has
+    /// runtime storage, so a reference loads from its data slot.
+    GlobalGet(String),
     /// The `self` value inside an impl method.
     SelfValue,
 

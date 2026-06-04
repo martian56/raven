@@ -32,6 +32,11 @@ pub use ty::HirTy;
 
 use crate::span::Span;
 
+/// Source name of the synthesized function that initializes all mutable
+/// module-level globals, in declaration order. Lowering appends it, MIR marks
+/// it a root, and codegen calls it from the program entry shim before `main`.
+pub const GLOBALS_INIT_FN: &str = "__raven_init_globals";
+
 /// One Raven source file after HIR lowering.
 #[derive(Debug, Clone)]
 pub struct HirProgram {

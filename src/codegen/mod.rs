@@ -121,6 +121,7 @@ pub fn compile_to_object(
     cx.declare_runtime_imports()?;
     cx.declare_externs(program)?;
     cx.declare_functions(program)?;
+    cx.declare_globals(&program.globals)?;
     cx.define_functions(program)?;
 
     let product = cx.finish();

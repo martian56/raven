@@ -48,6 +48,17 @@ fn declarative_macros_compile_and_run() {
 }
 
 #[test]
+fn mutable_module_global_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A scalar global reassigned from a function (counter 0 -> 3), a global
+    // computed from a function call at startup (base == 30), a reassigned
+    // String global, and a heap List global read back (6).
+    compile_link_run_and_check("module_global.rv", "0\n3\n30\ndone\n6\n", &runtime);
+}
+
+#[test]
 fn local_const_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

@@ -235,6 +235,9 @@ fn pretty_assign_target(buf: &mut String, target: &HirAssignTarget, depth: usize
         HirAssignTarget::Ident { name, .. } => {
             write!(buf, "(target-ident {})", quote(name)).unwrap();
         }
+        HirAssignTarget::Global { name } => {
+            write!(buf, "(target-global {})", quote(name)).unwrap();
+        }
         HirAssignTarget::Field { recv, name } => {
             buf.push_str("(target-field name=");
             buf.push_str(&quote(name));
@@ -266,6 +269,9 @@ fn pretty_expr(buf: &mut String, expr: &HirExpr, depth: usize) {
         HirExprKind::CStr(s) => writeln!(buf, "(cstr {} ty={})", quote(s), expr.ty).unwrap(),
         HirExprKind::Unit => writeln!(buf, "(unit ty={})", expr.ty).unwrap(),
         HirExprKind::Ident(n) => writeln!(buf, "(ident {} ty={})", quote(n), expr.ty).unwrap(),
+        HirExprKind::GlobalGet(n) => {
+            writeln!(buf, "(global-get {} ty={})", quote(n), expr.ty).unwrap()
+        }
         HirExprKind::SelfValue => writeln!(buf, "(self ty={})", expr.ty).unwrap(),
         HirExprKind::Array(items) => {
             writeln!(buf, "(array ty={}", expr.ty).unwrap();

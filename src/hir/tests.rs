@@ -376,6 +376,49 @@ fn computed_const_folds_and_inlines() {
 }
 
 #[test]
+fn module_let_becomes_a_global_with_an_init_function() {
+    // A module-level `let` is a mutable global: a reference reads its slot
+    // (a `GlobalGet`, not an inlined literal) and the synthesized
+    // `__raven_init_globals` function is emitted to set it before `main`.
+    let p = lower("let g: Int = 5\nfun read() -> Int = g\n");
+    assert!(
+        p.items.iter().any(|i| matches!(
+            &i.kind,
+            HirItemKind::Function(f) if f.name == crate::hir::GLOBALS_INIT_FN
+        )),
+        "the global initializer function is present"
+    );
+    let f = only_fn(&p, "read");
+    let tail = f.body.as_ref().unwrap().tail.as_ref().unwrap();
+    assert!(
+        matches!(tail.kind, HirExprKind::GlobalGet(_)),
+        "a global reference lowers to GlobalGet, got {:?}",
+        tail.kind
+    );
+}
+
+#[test]
+fn module_const_still_inlines_and_has_no_init_function() {
+    // A `const` is unchanged: its reference inlines to the folded literal and
+    // no initializer function is synthesized.
+    let p = lower("const C: Int = 5\nfun read() -> Int = C\n");
+    assert!(
+        !p.items.iter().any(|i| matches!(
+            &i.kind,
+            HirItemKind::Function(f) if f.name == crate::hir::GLOBALS_INIT_FN
+        )),
+        "a const-only program needs no initializer function"
+    );
+    let f = only_fn(&p, "read");
+    let tail = f.body.as_ref().unwrap().tail.as_ref().unwrap();
+    assert!(
+        matches!(tail.kind, HirExprKind::Int(5)),
+        "a const reference inlines, got {:?}",
+        tail.kind
+    );
+}
+
+#[test]
 fn non_constant_const_initializer_is_an_error() {
     let err = lower_result("fun side() -> Int = 1\nconst X: Int = side()\nfun get() -> Int = X\n")
         .expect_err("a non-constant const initializer must be rejected");

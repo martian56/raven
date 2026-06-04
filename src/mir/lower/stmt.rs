@@ -28,6 +28,17 @@ pub fn lower_stmt(cx: &mut LowerCx<'_>, stmt: &HirStmt) {
                     cx.builder.assign(cx.current, local, MirRvalue::Use(v));
                 }
             }
+            HirAssignTarget::Global { name } => {
+                // Write a mutable module-level global to its data slot.
+                let v = super::expr::lower_expr(cx, value);
+                cx.builder.emit(
+                    cx.current,
+                    crate::mir::ir::MirStatement::StoreGlobal {
+                        name: name.clone(),
+                        value: v,
+                    },
+                );
+            }
             HirAssignTarget::Field { recv, name } => {
                 // `recv.name = value` lowers to a real field store: the
                 // back end writes `value` into the struct's field slot at

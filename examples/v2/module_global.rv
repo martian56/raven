@@ -1,0 +1,37 @@
+// Mutable module-level globals (issue #278). A module-level `let` is a
+// mutable global with runtime storage: it can be reassigned and mutated from
+// any function, its initializer may be any expression (run before `main` in
+// declaration order, so a later global may read an earlier one), and a
+// heap-valued global (here a `List`) is rooted for the whole program so the
+// collector keeps it alive. A `const` stays an inlined compile-time constant.
+//
+// Prints:
+//   0
+//   3
+//   30
+//   done
+//   6
+
+fun seed() -> Int = 10
+
+let counter: Int = 0
+let base: Int = seed() * 3
+let label: String = "start"
+let nums: List<Int> = [1, 2, 3]
+
+fun bump() {
+    counter = counter + 1
+}
+
+fun main() {
+    print(counter)          // 0
+    bump()
+    bump()
+    bump()
+    print(counter)          // 3
+    print(base)             // 30, computed from a function call at startup
+    label = "done"
+    print(label)            // done
+    let total = nums.get(0) + nums.get(1) + nums.get(2)
+    print(total)            // 6
+}

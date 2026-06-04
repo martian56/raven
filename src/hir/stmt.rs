@@ -52,6 +52,9 @@ pub enum HirStmtKind {
 pub enum HirAssignTarget {
     /// Plain identifier `name = value`.
     Ident { name: String, span: Span },
+    /// A mutable module-level global `name = value`, written by its mangled
+    /// symbol name. The store goes to the global's data slot.
+    Global { name: String },
     /// Field `recv.name = value`.
     Field { recv: HirExpr, name: String },
     /// Indexed `recv[index] = value`.
