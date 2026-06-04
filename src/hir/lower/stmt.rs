@@ -16,7 +16,12 @@ use super::LowerCtx;
 /// Lower one statement into one or more HIR statements.
 pub(crate) fn lower_stmt(stmt: &Stmt, cx: &LowerCtx<'_>) -> Result<Vec<HirStmt>, RavenError> {
     match &stmt.kind {
-        StmtKind::Let { name, ty: _, init } => {
+        StmtKind::Let {
+            name,
+            ty: _,
+            init,
+            mutable: _,
+        } => {
             let init = init
                 .as_ref()
                 .ok_or_else(|| super::ty_error("missing initializer in let", &stmt.span))?;

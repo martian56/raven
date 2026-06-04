@@ -258,8 +258,14 @@ fn pretty_block(buf: &mut String, block: &Block, depth: usize, label: &str) {
 fn pretty_stmt(buf: &mut String, stmt: &Stmt, depth: usize) {
     indent(buf, depth);
     match &stmt.kind {
-        StmtKind::Let { name, ty, init } => {
-            write!(buf, "(let-stmt {}", quote(name)).unwrap();
+        StmtKind::Let {
+            name,
+            ty,
+            init,
+            mutable,
+        } => {
+            let kw = if *mutable { "let-stmt" } else { "const-stmt" };
+            write!(buf, "({} {}", kw, quote(name)).unwrap();
             if let Some(t) = ty {
                 write!(buf, ": {}", pretty_type(t)).unwrap();
             }

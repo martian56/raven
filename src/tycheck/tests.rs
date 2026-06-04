@@ -59,6 +59,34 @@ fn arithmetic_int_is_int() {
 }
 
 #[test]
+fn const_local_is_usable() {
+    check("fun f() -> Int {\n    const K: Int = 5\n    return K + 1\n}\n").unwrap();
+}
+
+#[test]
+fn reassigning_a_const_local_is_rejected() {
+    let err = check("fun f() {\n    const K: Int = 5\n    K = 7\n}\n").unwrap_err();
+    match err {
+        RavenError::Type(b, _, _) => match *b {
+            TypeError::Custom(msg) => assert!(msg.contains("const"), "got: {}", msg),
+            other => panic!("expected a const-assignment error, got {:?}", other),
+        },
+        other => panic!("expected a type error, got {:?}", other),
+    }
+}
+
+#[test]
+fn compound_assigning_a_const_local_is_rejected() {
+    let err = check("fun f() {\n    const K: Int = 5\n    K += 1\n}\n").unwrap_err();
+    assert!(matches!(err, RavenError::Type(_, _, _)));
+}
+
+#[test]
+fn reassigning_a_let_local_is_allowed() {
+    check("fun f() -> Int {\n    let m = 1\n    m = 2\n    return m\n}\n").unwrap();
+}
+
+#[test]
 fn mixed_int_float_arithmetic_is_rejected() {
     let err = check("fun f() -> Float = 1 + 2.0\n").unwrap_err();
     match err {

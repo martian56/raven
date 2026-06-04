@@ -291,6 +291,9 @@ struct Checker<'a, 'b> {
     /// and push the error here instead of returning it, so one compile can
     /// report many independent errors. See `docs/v2/specs/tycheck.md`.
     errors: Vec<RavenError>,
+    /// Binding keys of `const` locals in this body, used to reject a
+    /// reassignment of an immutable local.
+    const_locals: std::collections::HashSet<BindingKey>,
 }
 
 /// Keys used by the locals map. Mirrors the resolver's `Binding`
@@ -339,6 +342,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             infer: InferCtx::new(),
             array_hint: None,
             errors: Vec::new(),
+            const_locals: std::collections::HashSet::new(),
         }
     }
 
@@ -703,7 +707,17 @@ impl<'a, 'b> Checker<'a, 'b> {
     /// later references do not cascade into spurious "undefined" errors.
     fn check_stmt(&mut self, stmt: &Stmt) {
         match &stmt.kind {
-            StmtKind::Let { name: _, ty, init } => {
+            StmtKind::Let {
+                name: _,
+                ty,
+                init,
+                mutable,
+            } => {
+                // A `const` local is immutable: record its binding key so a
+                // later assignment to it is rejected.
+                if !*mutable {
+                    self.const_locals.insert(BindingKey::local(&stmt.span));
+                }
                 let declared = match ty {
                     Some(t) => match self.resolve_ast_ty(t) {
                         Ok(d) => Some(d),
@@ -766,6 +780,24 @@ impl<'a, 'b> Checker<'a, 'b> {
                 self.unify_recover(&expected, &ty, &e.span);
             }
             StmtKind::Assign { target, op, value } => {
+                // Reassigning a `const` local is rejected: the binding is
+                // immutable. Only a direct `name = ...` is guarded here.
+                if let ExprKind::Ident { name, .. } = &target.kind {
+                    let is_const = matches!(
+                        self.resolved.map.lookup(&target.span),
+                        Some(crate::resolve::Binding::Local(decl))
+                            if self.const_locals.contains(&BindingKey::local(decl))
+                    );
+                    if is_const {
+                        self.push_error(RavenError::ty(
+                            TypeError::Custom(format!(
+                                "cannot assign to `{}` because it is a `const` binding",
+                                name
+                            )),
+                            target.span.clone(),
+                        ));
+                    }
+                }
                 let target_ty = self.check_expr_recover(target);
                 let value_ty = self.check_expr_recover(value);
                 match op {

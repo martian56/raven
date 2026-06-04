@@ -26,11 +26,34 @@ let count: Int = 0
 let names: List<String> = []
 ```
 
-`const` is a compile time constant declared at module level. It requires
-both a type and a value.
+`const` introduces an immutable binding: reassigning it (or compound
+assigning, like `+=`) is a compile error.
+
+```raven
+fun main() {
+    const LIMIT = 5
+    LIMIT = 6            // error: cannot assign to `LIMIT`, it is a `const`
+}
+```
+
+At module level a `const` is a compile-time constant: it requires both a
+type and a value, and its initializer must be a constant expression (a
+literal, or an arithmetic, comparison, bitwise, or boolean combination of
+literals), which is folded and inlined at each use site.
 
 ```raven
 const MAX: Int = 100
+const SECS_PER_HOUR: Int = 60 * 60
+```
+
+Inside a function body a `const` is an immutable local. It has stack
+storage, so its initializer may be any expression (including a function
+call), not only a constant one.
+
+```raven
+fun main() {
+    const DOUBLED = compute()    // runtime value, still immutable
+}
 ```
 
 ## Primitive types

@@ -426,6 +426,25 @@ fn parses_assignment_inside_function() {
 }
 
 #[test]
+fn parses_const_and_let_stmt_mutability() {
+    let f = parse_ok("fun f() { const K = 5\n let m = 1 }\n");
+    let DeclKind::Function(fun) = &f.items[0].kind else {
+        panic!()
+    };
+    let FunctionBody::Block(b) = &fun.body else {
+        panic!()
+    };
+    let StmtKind::Let { mutable: k_mut, .. } = &b.stmts[0].kind else {
+        panic!("expected a const/let statement")
+    };
+    let StmtKind::Let { mutable: m_mut, .. } = &b.stmts[1].kind else {
+        panic!("expected a let statement")
+    };
+    assert!(!*k_mut, "const is immutable");
+    assert!(*m_mut, "let is mutable");
+}
+
+#[test]
 fn compound_assignment() {
     let f = parse_ok("fun f() { let x = 0\n x += 1 }\n");
     let DeclKind::Function(fun) = &f.items[0].kind else {

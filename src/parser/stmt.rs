@@ -11,7 +11,8 @@ impl Parser {
     pub(crate) fn parse_stmt(&mut self) -> ParseResult<Stmt> {
         let start_span = self.peek().span.clone();
         match self.peek_kind() {
-            TokenKind::Let => self.parse_let_stmt(),
+            TokenKind::Let => self.parse_let_stmt(true),
+            TokenKind::Const => self.parse_let_stmt(false),
             TokenKind::Return => {
                 self.advance();
                 if matches!(
@@ -77,7 +78,9 @@ impl Parser {
         }
     }
 
-    fn parse_let_stmt(&mut self) -> ParseResult<Stmt> {
+    /// Parse a `let` (`mutable = true`) or `const` (`mutable = false`) local
+    /// binding statement. Both require an initializer inside a function body.
+    fn parse_let_stmt(&mut self, mutable: bool) -> ParseResult<Stmt> {
         let start = self.advance().span;
         let (name, _name_span) = self.expect_ident("identifier")?;
         let ty = if self.eat(&TokenKind::Colon) {
@@ -104,6 +107,7 @@ impl Parser {
                 name,
                 ty,
                 init: Some(init),
+                mutable,
             },
             span,
         })
