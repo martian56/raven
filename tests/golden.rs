@@ -23,7 +23,7 @@ use raven::codegen::{self, CodegenError};
 use raven::hir::lower_file;
 use raven::lexer::Lexer;
 use raven::mir::lower_program;
-use raven::parser::parse;
+use raven::parser::parse_with_macros;
 use raven::resolve::{expand_with_stdlib, resolve_file, FsLoader};
 use raven::tycheck::check_file;
 
@@ -230,8 +230,10 @@ fn build_object_inner(source: &str, path: &Path) -> Result<Vec<u8>, String> {
     let tokens = Lexer::new(source.to_string(), path.to_path_buf())
         .tokenize()
         .map_err(|e| format!("lex: {}", e))?;
+    let macro_table =
+        raven::macros::collect_macro_table(&tokens).map_err(|e| format!("macro: {}", e))?;
     let tokens = raven::macros::expand_tokens(&tokens).map_err(|e| format!("macro: {}", e))?;
-    let file = parse(&tokens).map_err(|e| format!("parse: {}", e))?;
+    let file = parse_with_macros(&tokens, macro_table).map_err(|e| format!("parse: {}", e))?;
     let file = expand_with_stdlib(&file).map_err(|e| format!("stdlib: {}", e))?;
     let mut loader = FsLoader;
     let resolved = resolve_file(&file, &mut loader).map_err(|e| format!("resolve: {}", e))?;

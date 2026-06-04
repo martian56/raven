@@ -1,0 +1,20 @@
+// A macro call may appear inside a `"${...}"` interpolation fragment. The
+// file's macro table is carried into fragment parsing, so the call expands
+// the same as it would anywhere else in expression position. Previously this
+// failed with "interpolation must contain a single expression" because
+// fragments are lexed after the main macro pre-pass has run (#226).
+//
+// Prints:
+//   twice = 8
+//   nested 12 done
+//   hi raven, 20
+macro twice { ($x:expr) => { ($x) + ($x) } }
+
+fun main() {
+    let n = 3
+    print("twice = ${twice!(n + 1)}")
+    print("nested ${twice!(twice!(n))} done")
+
+    let name = "raven"
+    print("hi ${name}, ${twice!(10)}")
+}

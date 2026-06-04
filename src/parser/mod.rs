@@ -49,6 +49,11 @@ pub struct Parser {
     /// the `if` / `while` / `for` / `match` heads while parsing the
     /// condition or scrutinee expression. See the parser spec.
     pub(crate) no_struct_literal: bool,
+    /// The file's macro definitions, used to expand a macro call that
+    /// appears inside a `"${...}"` interpolation fragment (which is lexed
+    /// here during parsing, after the main pre-pass). Empty when the file
+    /// defines no macros.
+    pub(crate) macros: crate::macros::MacroTable,
 }
 
 impl Parser {
@@ -61,6 +66,20 @@ impl Parser {
             tokens: tokens.to_vec(),
             pos: 0,
             no_struct_literal: false,
+            macros: crate::macros::MacroTable::default(),
+        }
+    }
+
+    /// Build a parser that knows the file's macro definitions, so a macro
+    /// call inside a `"${...}"` interpolation fragment can be expanded while
+    /// the fragment is parsed. Equivalent to [`Parser::new`] when the table
+    /// is empty.
+    pub fn new_with_macros(tokens: &[Token], macros: crate::macros::MacroTable) -> Self {
+        Parser {
+            tokens: tokens.to_vec(),
+            pos: 0,
+            no_struct_literal: false,
+            macros,
         }
     }
 
@@ -205,6 +224,13 @@ impl Parser {
 /// Parse a complete source file from its token slice.
 pub fn parse(tokens: &[Token]) -> ParseResult<File> {
     let mut p = Parser::new(tokens);
+    p.parse_file()
+}
+
+/// Parse a complete source file, carrying the file's macro definitions so a
+/// macro call inside a `"${...}"` interpolation fragment expands.
+pub fn parse_with_macros(tokens: &[Token], macros: crate::macros::MacroTable) -> ParseResult<File> {
+    let mut p = Parser::new_with_macros(tokens, macros);
     p.parse_file()
 }
 
