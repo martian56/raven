@@ -102,6 +102,15 @@ fn defer_stmt() {
 }
 
 #[test]
+fn spawn_stmt_formats_as_call() {
+    // `spawn` reads as a call: no space before the parenthesis, a single
+    // paren layer, and stable under re-formatting (checked by `fmt`).
+    let out = fmt("fun f(){spawn (fun()->Unit{work()})}");
+    assert!(out.contains("spawn(fun() -> Unit {"), "got: {out}");
+    assert!(!out.contains("spawn ("), "got: {out}");
+}
+
+#[test]
 fn extern_block() {
     let out = fmt("extern \"C\"{fun foo(x:Int)->Int\nfun bar()}");
     assert!(out.contains("extern \"C\" {"));
