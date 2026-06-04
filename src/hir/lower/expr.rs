@@ -313,6 +313,29 @@ pub(crate) fn lower_expr(
                     span,
                 ));
             }
+            // `module.func(args)` through a stdlib import alias lowers to an
+            // ordinary call of the module's namespaced function, the same
+            // symbol a selective import binds.
+            if let Some(mangled) = module_qualified_fn(receiver, name, cx) {
+                let mut lowered = Vec::with_capacity(args.len());
+                for a in args {
+                    lowered.push(lower_expr(a, &Ty::Error, cx)?);
+                }
+                let callee = make_expr(
+                    HirExprKind::Ident(mangled),
+                    Ty::Error,
+                    receiver.span.clone(),
+                );
+                return Ok(make_expr(
+                    HirExprKind::Call {
+                        callee: Box::new(callee),
+                        args: lowered,
+                        type_args: Vec::new(),
+                    },
+                    ty,
+                    span,
+                ));
+            }
             // `Type.func(args)` lowers to a receiverless associated call.
             // The type checker recorded the implementing type at the
             // receiver span; its presence as a type reference (not a value)
@@ -1467,6 +1490,30 @@ fn enum_variant_index(receiver: &Expr, name: &str, cx: &LowerCtx<'_>) -> Option<
     };
     let sig = cx.env.enums.get(id)?;
     sig.variant(name).map(|(idx, _)| idx)
+}
+
+/// When `receiver.name` is a `module.func` call through a stdlib import
+/// alias (`import std/fs` then `fs.write(...)`), return the namespaced
+/// function symbol (`std.<module>.<func>`) the call should target. The type
+/// checker has already verified the call against this function's signature.
+fn module_qualified_fn(receiver: &Expr, name: &str, cx: &LowerCtx<'_>) -> Option<String> {
+    use crate::resolve::bindings::ImportTarget;
+    use crate::resolve::Binding;
+    let ExprKind::Ident { generics, .. } = &receiver.kind else {
+        return None;
+    };
+    if !generics.is_empty() {
+        return None;
+    }
+    let Some(Binding::ImportAlias(import_id)) = cx.resolved.map.lookup(&receiver.span) else {
+        return None;
+    };
+    let import = cx.resolved.map.imports.get(import_id.0)?;
+    let ImportTarget::StdlibModule { segments } = &import.target else {
+        return None;
+    };
+    let module = segments.first()?;
+    Some(crate::resolve::stdlib::mangle_stdlib_fn(module, name))
 }
 
 /// Wrap an interpolation part in a `to_string()` method call when its
