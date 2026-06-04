@@ -74,8 +74,27 @@ recognized by the token shape `<ident> ! (`. In ordinary Raven `!` is only a
 prefix operator (logical not), so this three-token shape never occurs in a
 valid non-macro program, which keeps detection unambiguous.
 
-This slice supports invocation in expression position, including inside a
-`"${...}"` string-interpolation fragment.
+Macro calls are valid in expression position (including inside a `"${...}"`
+string-interpolation fragment), in statement position, and in item position
+(top level). Because expansion is a token-level pre-pass that runs before
+parsing, a call's template is spliced wherever the call appears, so a
+template that parses as one or more items or statements is valid in those
+positions:
+
+```raven
+macro def_point { () => { struct Point { x: Int, y: Int } } }
+macro emit { ($x:expr) => { print($x) } }
+
+def_point!()                 // item position: declares `Point`
+
+fun main() {
+    emit!(Point { x: 1, y: 2 }.x)   // statement position
+}
+```
+
+Hygiene renames a template's own `let` / `const` / `for` binding sites, but
+not `fun`, `struct`, or `enum` names, so an item-position macro's
+declarations keep the names the template wrote and stay referenceable.
 
 ### Metavariables and fragments
 
@@ -234,7 +253,8 @@ name. Definition-site resolution of free identifiers is a follow-up.
 
 * `macro <name> { (<matcher>) => { <template> } ... }` with one or more
   rules, first matching rule wins.
-* `name!(...)` invocation in expression position.
+* `name!(...)` invocation in expression, statement, and item (top-level)
+  position.
 * `$x:expr`, `$x:ty`, `$x:pat` (balanced capture up to the next matcher
   delimiter), `$x:literal` (single literal token), `$x:block` (a `{ ... }`
   group), and `$x:ident` (single identifier) metavariables.
@@ -253,7 +273,6 @@ name. Definition-site resolution of free identifiers is a follow-up.
 ## Deferred to follow-ups
 
 * Nested repetition (a repetition group inside another).
-* Item-position and statement-position invocations.
 * Full referential hygiene (definition-site resolution of free identifiers).
 * Procedural macros / compile-time functions (the broader procedural side).
 ```

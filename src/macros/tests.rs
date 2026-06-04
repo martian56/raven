@@ -132,6 +132,26 @@ fn nested_macro_calls_expand_to_fixpoint() {
 }
 
 #[test]
+fn item_position_macro_expands_to_a_declaration() {
+    // A top-level call splices its template where an item is expected; the
+    // pre-pass is position-agnostic, so the expanded `fun` is a real item.
+    let src = "macro make { () => { fun greet() -> String = \"hi\" } }\nmake!()\n";
+    assert_eq!(
+        expand_render(src),
+        "fun greet ( ) `->` String = string literal"
+    );
+}
+
+#[test]
+fn statement_position_macro_expands_to_statements() {
+    // A call in statement position expands to two `let` bindings the caller
+    // can read afterward.
+    let src = "macro pair { ($a:ident, $b:ident) => { let $a = 10 let $b = 20 } }\n\
+               fun main() { pair!(x, y) }\n";
+    assert_eq!(expand_render(src), "fun main ( ) { let x = 10 let y = 20 }");
+}
+
+#[test]
 fn macro_table_expands_a_snippet() {
     // A file's table (collected from the definitions) expands a snippet that
     // was lexed on its own, the path used for `"${...}"` interpolation.
