@@ -1,16 +1,24 @@
-// Module-level constants with literal initializers, usable from any
-// function and in expressions. Regression for issue #278: a reference used
-// to mis-type as Unit and fail in codegen. Each reference is inlined to its
-// literal. An unannotated `let` infers its type from the literal. Prints:
+// Module-level constants, usable from any function and in expressions.
+// Initializers may be literals or constant expressions (arithmetic,
+// comparison, boolean), which are folded and inlined at each use site
+// (issue #278). An unannotated `let` infers its type from its value. Prints:
 //   100
 //   hello
 //   -7
 //   200
 //   12.56636
+//   3600
+//   true
+//   19
 const MAX: Int = 100
 const PI: Float = 3.14159
 let GREETING = "hello"
 let NEG = -7
+
+// Computed compile-time constants.
+const SECS_PER_HOUR: Int = 60 * 60
+const ENABLED: Bool = true && (1 < 2)
+const COMBO: Int = (2 + 3) * 4 - 1
 
 fun area(r: Float) -> Float = PI * r * r
 
@@ -20,4 +28,7 @@ fun main() {
     print(NEG)
     print(MAX * 2)
     print(area(2.0))
+    print(SECS_PER_HOUR)
+    print(ENABLED)
+    print(COMBO)
 }

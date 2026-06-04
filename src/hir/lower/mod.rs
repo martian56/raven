@@ -252,6 +252,17 @@ fn lower_decl(decl: &Decl, cx: &LowerCtx<'_>) -> Result<Option<HirItem>, RavenEr
             }))
         }
         DeclKind::Const(c) => {
+            // A module-level `const` is inlined at each use site, so its
+            // initializer must fold to a compile-time constant. Reject a
+            // non-constant initializer here with a clear error instead of
+            // letting code generation fail on the dangling reference.
+            if expr::const_fold_kind(&c.value).is_none() {
+                return Err(ty_error(
+                    "`const` initializer must be a constant expression (a literal or an \
+                     arithmetic, comparison, or boolean combination of literals)",
+                    &c.value.span,
+                ));
+            }
             let scope = GenericScope::new();
             let ty = resolve_ty_for_decl(&c.ty, cx, &scope)?;
             let value = expr::lower_expr(&c.value, &ty, cx)?;
@@ -265,6 +276,18 @@ fn lower_decl(decl: &Decl, cx: &LowerCtx<'_>) -> Result<Option<HirItem>, RavenEr
             }))
         }
         DeclKind::Let(l) => {
+            // A module-level `let` is inlined like a `const` (mutable and
+            // computed globals are a separate follow-up), so a present
+            // initializer must fold to a compile-time constant.
+            if let Some(init) = &l.init {
+                if expr::const_fold_kind(init).is_none() {
+                    return Err(ty_error(
+                        "a module-level `let` initializer must be a constant expression; \
+                         move computed or mutable state into a function",
+                        &init.span,
+                    ));
+                }
+            }
             let scope = GenericScope::new();
             let ty = match &l.ty {
                 Some(t) => resolve_ty_for_decl(t, cx, &scope)?,

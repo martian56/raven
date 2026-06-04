@@ -26,6 +26,12 @@ impl SourceLoader for NoLoader {
 }
 
 fn lower(src: &str) -> HirProgram {
+    lower_result(src).expect("lower")
+}
+
+/// Run the pipeline through HIR lowering, returning the lowering result so a
+/// test can assert on a lowering error.
+fn lower_result(src: &str) -> Result<HirProgram, crate::error::RavenError> {
     let tokens = Lexer::new(src.to_string(), PathBuf::from("t.rv"))
         .tokenize()
         .expect("lex");
@@ -33,7 +39,7 @@ fn lower(src: &str) -> HirProgram {
     let mut loader = NoLoader;
     let resolved = resolve_file(&file, &mut loader).expect("resolve");
     let typed = check_file(&resolved).expect("tycheck");
-    lower_file(&typed).expect("lower")
+    lower_file(&typed)
 }
 
 fn only_fn<'a>(p: &'a HirProgram, name: &str) -> &'a crate::hir::decl::HirFn {
@@ -352,4 +358,27 @@ fn unused_for_silences_dead_code() {
     };
     // Reference the binding pattern so the test treats it as live.
     let _ = HirPatternKind::Wildcard;
+}
+
+#[test]
+fn computed_const_folds_and_inlines() {
+    // A const with a computed initializer folds to a literal and inlines at
+    // the use site: `get` returns the folded value `14`, not a reference.
+    let p = lower("const N: Int = 2 + 3 * 4\nfun get() -> Int = N\n");
+    let f = only_fn(&p, "get");
+    let body = f.body.as_ref().expect("body");
+    let tail = body.tail.as_ref().expect("trailing expr");
+    assert!(
+        matches!(tail.kind, HirExprKind::Int(14)),
+        "expected inlined Int(14), got {:?}",
+        tail.kind
+    );
+}
+
+#[test]
+fn non_constant_const_initializer_is_an_error() {
+    let err = lower_result("fun side() -> Int = 1\nconst X: Int = side()\nfun get() -> Int = X\n")
+        .expect_err("a non-constant const initializer must be rejected");
+    let msg = format!("{}", err);
+    assert!(msg.contains("constant expression"), "got: {}", msg);
 }
