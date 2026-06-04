@@ -1,0 +1,14 @@
+// Module-qualified calls: `import std/<m>` then `m.func(...)`, working
+// alongside the existing name-import form. Feature for issue #264. Prints:
+//   4
+//   256
+//   HI
+import std/string
+import std/math
+import std/math { sqrt }
+
+fun main() {
+    print(sqrt(16.0))           // name import: bare call
+    print(math.pow_int(2, 8))   // qualified call through the module alias
+    print("hi".to_upper())      // method merge from std/string still works
+}

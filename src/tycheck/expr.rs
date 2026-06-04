@@ -1836,6 +1836,13 @@ impl<'a, 'b> Checker<'a, 'b> {
             return Ok(ret);
         }
 
+        // `module.func(args)`: when the receiver is a stdlib import alias
+        // (`import std/fs` then `fs.write(...)`), this is a call to the
+        // module's namespaced free function, not an instance method.
+        if let Some(ret) = self.check_module_qualified_call(receiver, name, args, span)? {
+            return Ok(ret);
+        }
+
         // `Type.func(args)`: when the receiver is a type name (a struct or
         // enum, or a built-in type), this is an associated function call,
         // not an instance method call. The named function on that type has
@@ -1994,6 +2001,78 @@ impl<'a, 'b> Checker<'a, 'b> {
     /// This marks the call as an associated function call. A value
     /// receiver (a local, parameter, field, or any non-type expression)
     /// returns `None` so it stays an instance method call.
+    /// Check a `module.func(args)` call where `module` is a stdlib import
+    /// alias. Resolves the call to the module's namespaced free function
+    /// (`std.<module>.<func>`, the same symbol a selective import binds) and
+    /// checks the arguments against its signature. Returns `None` when the
+    /// receiver is not a stdlib module alias, so ordinary method-call
+    /// checking continues.
+    fn check_module_qualified_call(
+        &mut self,
+        receiver: &Expr,
+        name: &str,
+        args: &[Expr],
+        span: &Span,
+    ) -> Result<Option<Ty>, RavenError> {
+        use crate::resolve::bindings::ImportTarget;
+        let ExprKind::Ident {
+            name: alias,
+            generics,
+        } = &receiver.kind
+        else {
+            return Ok(None);
+        };
+        if !generics.is_empty() {
+            return Ok(None);
+        }
+        let Some(Binding::ImportAlias(import_id)) =
+            self.resolved.map.lookup(&receiver.span).cloned()
+        else {
+            return Ok(None);
+        };
+        let Some(import) = self.resolved.map.imports.get(import_id.0) else {
+            return Ok(None);
+        };
+        let ImportTarget::StdlibModule { segments } = &import.target else {
+            return Ok(None);
+        };
+        let Some(module) = segments.first() else {
+            return Ok(None);
+        };
+        let mangled = crate::resolve::stdlib::mangle_stdlib_fn(module, name);
+        let decl = self
+            .env
+            .functions
+            .iter()
+            .find(|(_, s)| s.name == mangled)
+            .map(|(d, _)| *d);
+        let Some(decl) = decl else {
+            return Err(ty_custom(
+                &format!("module `{}` has no function `{}`", alias, name),
+                span,
+            ));
+        };
+        let fn_ty = self.type_of_binding(&Binding::Function(decl), span, &[])?;
+        let Ty::Function { params, ret } = fn_ty else {
+            return Ok(None);
+        };
+        if params.len() != args.len() {
+            return Err(RavenError::ty(
+                TypeError::WrongArity {
+                    func: mangled,
+                    expected: params.len(),
+                    actual: args.len(),
+                },
+                span.clone(),
+            ));
+        }
+        for (param_ty, arg) in params.iter().zip(args.iter()) {
+            let a = self.check_expr(arg)?;
+            self.unify(param_ty, &a, &arg.span)?;
+        }
+        Ok(Some(*ret))
+    }
+
     fn type_ref_receiver(&mut self, receiver: &Expr) -> Result<Option<Ty>, RavenError> {
         let ExprKind::Ident { name, generics } = &receiver.kind else {
             return Ok(None);
