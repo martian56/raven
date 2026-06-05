@@ -12,7 +12,7 @@ called as `Type.new()`. A plain `import std/collections` is enough, since
 the call resolves the function on the named type rather than an imported
 name:
 
-```raven
+```rust
 import std/collections
 
 fun main() {
@@ -41,7 +41,7 @@ Set and map values have literal syntax (issue #156). Both lower to the
 constructors above, so they need the same `import std/collections` in
 scope.
 
-```raven
+```rust
 import std/collections
 
 fun main() {

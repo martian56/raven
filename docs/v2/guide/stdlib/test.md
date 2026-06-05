@@ -5,7 +5,7 @@ program whose `main` calls these assertions: if every assertion holds, the
 program runs to completion and exits zero; if one fails, it panics with a
 message and aborts with a nonzero exit code.
 
-```raven
+```rust
 import std/test { assert, assert_eq_int }
 import std/io { println }
 
@@ -21,7 +21,7 @@ fun main() {
 The assertions are free functions, so import the ones you use with a
 selective list:
 
-```raven
+```rust
 import std/test { assert, assert_msg, assert_true, assert_false, assert_eq_int, assert_eq_str }
 ```
 
@@ -46,7 +46,7 @@ fixed message and exits nonzero.
 
 Fails when `cond` is false. Panic message: `assertion failed`.
 
-```raven
+```rust
 import std/test { assert }
 
 fun main() {
@@ -60,7 +60,7 @@ fun main() {
 Fails when `cond` is false, panicking with the caller-supplied `msg`. Use
 this when you want the failure to explain itself.
 
-```raven
+```rust
 import std/test { assert_msg }
 
 fun main() {
@@ -77,7 +77,7 @@ Fails when `cond` is false. Panic message: `assertion failed: expected true`.
 
 Fails when `cond` is true. Panic message: `assertion failed: expected false`.
 
-```raven
+```rust
 import std/test { assert_true, assert_false }
 import std/string
 
@@ -93,7 +93,7 @@ Fails when `a != b`. The panic message interpolates both operands
 (`assertion failed: ${a} != ${b}`), so a failure shows the mismatched
 values.
 
-```raven
+```rust
 import std/test { assert_eq_int }
 
 fun double(x: Int) -> Int {
@@ -110,7 +110,7 @@ fun main() {
 Fails when `a != b`, compared by content. The panic message interpolates
 both operands (`assertion failed: ${a} != ${b}`).
 
-```raven
+```rust
 import std/test { assert_eq_str }
 import std/string
 
@@ -125,7 +125,7 @@ A test file is a regular `.rv` program with a `main` that asserts. The
 program below exercises a couple of helpers and exits zero only if every
 check passes:
 
-```raven
+```rust
 import std/test { assert, assert_eq_int, assert_eq_str }
 import std/string
 import std/io { println }

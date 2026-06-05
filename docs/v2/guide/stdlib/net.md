@@ -5,7 +5,7 @@ connections, read and write bytes, resolve DNS names, and probe whether an
 address is reachable. The handle types (`TcpStream`, `TcpListener`) and the
 free functions all return values through the `Result<T, Error>` model.
 
-```raven
+```rust
 import std/net { connect }
 
 fun main() {
@@ -21,7 +21,7 @@ fun main() {
 
 ## Importing
 
-```raven
+```rust
 import std/net { connect, listen, dns_lookup, reachable }
 ```
 
@@ -33,7 +33,7 @@ in a process-wide registry and hands Raven an opaque integer id. `TcpStream`
 and `TcpListener` are thin structs wrapping that id; every method looks the
 socket up by id and acts on it.
 
-```raven
+```rust
 struct TcpStream { id: Int }
 struct TcpListener { id: Int }
 ```
@@ -48,7 +48,7 @@ Every fallible operation returns `Result<T, Error>` where `Error` is the
 context prefix (the operation name) joined to the OS error text. Match on the
 `Result`, or use the [std/error](error.md) combinators to thread it.
 
-```raven
+```rust
 import std/net { connect }
 
 fun main() {
@@ -69,7 +69,7 @@ The one exception is `reachable`, which never fails and returns a plain
 Open a TCP stream to `addr` in `"host:port"` form. On success you get an open
 `TcpStream`; on failure an `Err` carrying the OS message.
 
-```raven
+```rust
 import std/net { connect }
 
 fun main() {
@@ -109,7 +109,7 @@ This method does not return a `Result`.
 Close the stream, releasing the runtime-side socket. It does not return a
 `Result`.
 
-```raven
+```rust
 import std/net { connect }
 
 fun main() {
@@ -146,7 +146,7 @@ so accept waits rather than polling.
 A server loops: bind once with `listen`, then call `accept` repeatedly,
 serving each accepted stream before accepting the next.
 
-```raven
+```rust
 import std/net { listen }
 
 fun serve() {
@@ -182,7 +182,7 @@ at once.
 Resolve `host` to its IP addresses as a `List<String>`. An empty result is an
 empty list, not a one-element list of `""`.
 
-```raven
+```rust
 import std/net { dns_lookup }
 
 fun main() {
@@ -205,7 +205,7 @@ Probe whether `addr` in `"host:port"` form accepts a TCP connection within a
 short timeout. This is a non-failing check: it returns a plain `Bool` and
 never sets an error.
 
-```raven
+```rust
 import std/net { reachable }
 
 fun main() {
@@ -222,7 +222,7 @@ fun main() {
 Connect, send a request, read the reply, and close, handling the `Result` at
 each step.
 
-```raven
+```rust
 import std/net { connect }
 
 fun fetch(addr: String, request: String) -> Result<String, Error> {

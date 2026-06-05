@@ -6,7 +6,7 @@ returns `Result<HttpResponse, Error>`, so transport failures (DNS, connect,
 timeout) come back as an [std/error](error.md) `Error` you handle with
 `match`.
 
-```raven
+```rust
 import std/http { get }
 
 fun main() {
@@ -19,7 +19,7 @@ fun main() {
 
 ## Importing
 
-```raven
+```rust
 import std/http { get, post, put, delete, request }
 ```
 
@@ -30,7 +30,7 @@ module and needs no separate selector.
 
 ### `struct HttpResponse`
 
-```raven
+```rust
 struct HttpResponse {
     status_code: Int,
     status_text: String,
@@ -57,7 +57,7 @@ server's value. Only transport failures (DNS, connect, timeout, malformed
 response) take the `Err` path. Inspect `status_code` yourself to tell a 200
 from a 404:
 
-```raven
+```rust
 import std/http { get }
 
 fun main() {
@@ -80,7 +80,7 @@ fun main() {
 
 Send a `GET` to `url`. No request body.
 
-```raven
+```rust
 import std/http { get }
 
 fun main() {
@@ -98,7 +98,7 @@ fun main() {
 
 Send `body` to `url` with a `POST`.
 
-```raven
+```rust
 import std/http { post }
 
 fun main() {
@@ -125,7 +125,7 @@ none), and `headers` is a String of `Key: Value` lines separated by `\n`
 (pass `""` for none). Use `request` when you need a custom method or
 request headers.
 
-```raven
+```rust
 import std/http { request }
 
 fun main() {
@@ -145,7 +145,7 @@ and `""` for headers.
 
 This GETs a URL, reports the status, and prints the body only on a 200.
 
-```raven
+```rust
 import std/http { get }
 
 fun fetch(url: String) {

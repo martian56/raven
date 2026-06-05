@@ -59,7 +59,7 @@ Unknown fields are rejected so typos surface early.
 A dependency is a `github.com/<user>/<repo>` path pinned to an explicit
 git ref. In source, import it by its path:
 
-```raven
+```rust
 import "github.com/martian56/raven-http" as http
 import "github.com/martian56/raven-http" { get }
 ```

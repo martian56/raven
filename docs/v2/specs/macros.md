@@ -81,7 +81,7 @@ parsing, a call's template is spliced wherever the call appears, so a
 template that parses as one or more items or statements is valid in those
 positions:
 
-```raven
+```rust
 macro def_point { () => { struct Point { x: Int, y: Int } } }
 macro emit { ($x:expr) => { print($x) } }
 

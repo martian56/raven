@@ -9,7 +9,7 @@ pure Raven.
 
 ## Import
 
-```raven
+```rust
 import std/regex { compile }
 ```
 

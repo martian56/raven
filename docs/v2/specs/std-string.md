@@ -16,7 +16,7 @@ dogfoods the language itself.
 selectively. A bare module import merges its `impl String` block into the
 program; the methods are then resolved by the receiver type:
 
-```raven
+```rust
 import std/string
 
 fun main() {

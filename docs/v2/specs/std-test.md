@@ -10,7 +10,7 @@ Raven has no attributes or reflection yet, so there is no test discovery
 or registration framework. A test is an ordinary Raven program whose
 `main` calls these assertions:
 
-```raven
+```rust
 import std/test { assert, assert_eq_int }
 import std/io { println }
 
@@ -30,7 +30,7 @@ checks its exit code (for example a shell loop or CI step).
 
 The assertions are free functions, so a selective import binds them:
 
-```raven
+```rust
 import std/test { assert, assert_msg, assert_true, assert_false, assert_eq_int, assert_eq_str }
 ```
 

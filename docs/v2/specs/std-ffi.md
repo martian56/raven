@@ -9,14 +9,14 @@ needs a conversion, which is what `to_cstr` and `from_cstr` provide.
 
 ## Import
 
-```raven
+```rust
 import std/ffi { to_cstr, from_cstr }
 import std/ffi { alloc, free, load, store, offset, is_null, null_ptr }
 ```
 
 ## Surface
 
-```raven
+```rust
 fun to_cstr(s: String) -> CStr
 fun from_cstr(p: CStr) -> String
 ```
@@ -36,7 +36,7 @@ Both wrappers are pure Raven over two raven-runtime symbols bound through
 `CPtr<T>` is a usable raw pointer. The following generic functions read and
 write C memory through it and obtain or release a buffer:
 
-```raven
+```rust
 fun alloc<T>(count: Int) -> CPtr<T>
 fun free<T>(p: CPtr<T>)
 fun load<T>(p: CPtr<T>) -> T
@@ -156,7 +156,7 @@ function that takes a callback call back into Raven. A non-capturing
 top-level Raven function can be passed where a `CFnPtr` is expected by
 naming it bare:
 
-```raven
+```rust
 extern "C" {
     fun qsort(base: CPtr<CInt>, count: CSize, size: CSize, cmp: CFnPtr)
 }
@@ -217,7 +217,7 @@ compile-time-known strings; use `to_cstr` for a `String` value. See
 
 `examples/v2/use_ffi.rv` converts runtime Strings and calls libc:
 
-```raven
+```rust
 import std/ffi { to_cstr, from_cstr }
 import std/io { println }
 
@@ -290,7 +290,7 @@ A small C struct can cross the FFI by value, both as an argument and as a
 return. The Raven side declares a struct with C memory layout by marking it
 `@repr(C)`:
 
-```raven
+```rust
 @repr(C)
 struct Point {
     x: CInt

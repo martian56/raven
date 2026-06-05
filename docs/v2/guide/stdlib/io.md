@@ -4,7 +4,7 @@ Console input and output: write lines to standard output and read lines from
 standard input. The functions here are free functions, so you import the ones
 you need by name.
 
-```raven
+```rust
 import std/io { println, input }
 
 fun main() {
@@ -15,7 +15,7 @@ fun main() {
 
 ## Importing
 
-```raven
+```rust
 import std/io { print, println, input, read_line }
 ```
 
@@ -29,7 +29,7 @@ You do not need `std/io` to print. The `print` builtin is always in scope and
 accepts any value whose type implements `ToString`, so it works on numbers,
 booleans, and your own types without conversion:
 
-```raven
+```rust
 fun main() {
     print(42)               // 42
     print(true)             // true
@@ -49,7 +49,7 @@ Write `s` to standard output with no trailing newline. The argument must be a
 `String`; build one with interpolation or [std/string](string.md) methods if
 you have other values to include.
 
-```raven
+```rust
 import std/io { print }
 
 fun main() {
@@ -62,7 +62,7 @@ fun main() {
 
 Write `s` to standard output followed by a newline.
 
-```raven
+```rust
 import std/io { println }
 
 fun main() {
@@ -79,7 +79,7 @@ Write `prompt` to standard output with no trailing newline, then read one line
 from standard input and return it without its trailing newline. At end of
 input the returned string is empty.
 
-```raven
+```rust
 import std/io { input }
 
 fun main() {
@@ -96,7 +96,7 @@ Read one line from standard input and return it without its trailing newline,
 printing no prompt. At end of input the returned string is empty, which is how
 you detect that the stream is exhausted.
 
-```raven
+```rust
 import std/io { read_line }
 import std/string
 
@@ -111,7 +111,7 @@ fun main() {
 Read lines until the input ends, skipping blank ones. The empty string from
 `read_line` at end of input ends the loop.
 
-```raven
+```rust
 import std/io { read_line, println }
 import std/string
 

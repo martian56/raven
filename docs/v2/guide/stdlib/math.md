@@ -3,7 +3,7 @@
 Numeric constants and functions. Everything in `std/math` is a free
 function, so you bring names into scope with a selective import:
 
-```raven
+```rust
 import std/math { sqrt, pow_int }
 
 fun main() {
@@ -14,7 +14,7 @@ fun main() {
 
 ## Importing
 
-```raven
+```rust
 import std/math { sqrt, pow, abs_int, pi }
 ```
 
@@ -55,7 +55,7 @@ Clamp `x` into the closed range `[lo, hi]`: return `lo` if `x < lo`, `hi` if
 result and returns `0`. The result is exact when it fits in a 64-bit signed
 integer; overflow is not detected.
 
-```raven
+```rust
 import std/math { abs_int, min_int, max_int, clamp_int, pow_int }
 
 fun main() {
@@ -108,7 +108,7 @@ value, and toward zero. Each returns a whole-valued `Float`.
 
 Sine and cosine, with the angle in radians.
 
-```raven
+```rust
 import std/math { sqrt, pow, exp, ln, abs, min, max, clamp, floor, ceil, round, trunc, sin, cos }
 
 fun main() {
@@ -141,7 +141,7 @@ zero-argument functions returning `Float`. Call them with `()`.
 
 6.283185307179586 (a full turn, `2 * pi`).
 
-```raven
+```rust
 import std/math { pi, e, tau, sin }
 
 fun main() {
@@ -155,7 +155,7 @@ fun main() {
 
 `sqrt` plus `pow` gives the Euclidean distance between two points.
 
-```raven
+```rust
 import std/math { sqrt, pow }
 
 fun distance(x1: Float, y1: Float, x2: Float, y2: Float) -> Float {

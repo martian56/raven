@@ -6,7 +6,7 @@ Lazy, single-pass iterator pipelines. `std/iter` gives a `List<T>` an
 set of consumers (`collect`, `count`, `fold`, `any`, `all`, `find`,
 `for_each`) that drive a pipeline to completion.
 
-```raven
+```rust
 import std/iter { collect }
 
 fun main() {
@@ -24,7 +24,7 @@ The adapters (`map`, `filter`, `take`, `skip`, `enumerate`) are methods on the
 iterator types, so they are available once you have an iterator. The consumers
 are free functions, so you bring in the ones you use by name:
 
-```raven
+```rust
 import std/iter { collect, fold }
 ```
 
@@ -40,7 +40,7 @@ is a small struct that remembers its source iterator (and, where applicable, a
 closure). Nothing runs until a **consumer** pulls elements through. A consumer
 walks the chain one element at a time, in a single pass.
 
-```raven
+```rust
 import std/iter { count }
 
 fun main() {
@@ -62,7 +62,7 @@ return a scalar or an `Option<T>` without allocating an intermediate list.
 Defined on `List<T>`. Returns a `ListIter<T>` that walks the list by index.
 This is the usual entry point into a pipeline.
 
-```raven
+```rust
 import std/iter { collect }
 
 fun main() {
@@ -87,14 +87,14 @@ adapter's `next` pulls from its source on demand.
 
 ### `map`
 
-```raven
+```rust
 fun map<U>(self, f: fun(T) -> U) -> MapIter<T, U, Self>
 ```
 
 Apply a closure to each element, yielding the result. The element type can
 change (`T` to `U`).
 
-```raven
+```rust
 import std/iter { collect }
 
 fun main() {
@@ -108,14 +108,14 @@ fun main() {
 
 ### `filter`
 
-```raven
+```rust
 fun filter(self, pred: fun(T) -> Bool) -> Filter<T, Self>
 ```
 
 Keep only the elements for which `pred` returns `true`. `next` pulls from the
 source until the predicate holds or the source is exhausted.
 
-```raven
+```rust
 import std/iter { collect }
 
 fun main() {
@@ -129,14 +129,14 @@ fun main() {
 
 ### `take`
 
-```raven
+```rust
 fun take(self, n: Int) -> Take<T, Self>
 ```
 
 Yield at most the first `n` elements, then stop. Because the pipeline is lazy,
 later elements are never produced.
 
-```raven
+```rust
 import std/iter { collect }
 
 fun main() {
@@ -149,13 +149,13 @@ fun main() {
 
 ### `skip`
 
-```raven
+```rust
 fun skip(self, n: Int) -> Skip<T, Self>
 ```
 
 Discard the first `n` elements, then pass the rest through.
 
-```raven
+```rust
 import std/iter { collect }
 
 fun main() {
@@ -168,7 +168,7 @@ fun main() {
 
 ### `enumerate`
 
-```raven
+```rust
 fun enumerate(self) -> Enumerate<T, Self>
 ```
 
@@ -176,7 +176,7 @@ Pair each element with its running index, starting at `0`. Raven has no tuples
 yet, so `enumerate` yields an `Indexed<T>` record instead of a `(Int, T)`
 pair:
 
-```raven
+```rust
 struct Indexed<T> {
     index: Int,
     value: T,
@@ -185,7 +185,7 @@ struct Indexed<T> {
 
 Read `.index` and `.value` off each element:
 
-```raven
+```rust
 import std/iter { for_each }
 
 fun main() {
@@ -213,7 +213,7 @@ what drives the pipeline, so every pipeline ends in exactly one consumer call.
 
 Gather every remaining element into a `List<T>`, in order.
 
-```raven
+```rust
 import std/iter { collect }
 
 fun main() {
@@ -227,7 +227,7 @@ fun main() {
 
 Count the remaining elements.
 
-```raven
+```rust
 import std/iter { count }
 
 fun main() {
@@ -242,7 +242,7 @@ fun main() {
 Left fold: start from `init` and combine the running accumulator with each
 element.
 
-```raven
+```rust
 import std/iter { fold }
 
 fun main() {
@@ -261,7 +261,7 @@ True when at least one element satisfies `pred`. Stops at the first match.
 True when every element satisfies `pred`. Vacuously true for an empty
 iterator.
 
-```raven
+```rust
 import std/iter { any, all }
 
 fun main() {
@@ -275,7 +275,7 @@ fun main() {
 
 The first element satisfying `pred`, or `None` when none does.
 
-```raven
+```rust
 import std/iter { find }
 
 fun main() {
@@ -292,7 +292,7 @@ fun main() {
 
 Apply `f` to each element for its side effect.
 
-```raven
+```rust
 import std/iter { for_each }
 
 fun main() {
@@ -310,7 +310,7 @@ A pipeline is built with the adapter methods and then handed to a consumer.
 Here `iter().filter(...).map(...).take(...)` describes the work lazily, and
 `collect` runs it in a single pass:
 
-```raven
+```rust
 import std/iter { collect }
 
 fun main() {
@@ -333,7 +333,7 @@ produce three results; it never maps `80` or `100`.
 You can swap the final consumer to ask a different question of the same
 pipeline. With `fold` instead of `collect`:
 
-```raven
+```rust
 import std/iter { fold }
 
 fun main() {
@@ -354,7 +354,7 @@ A `for x in <iterable>` loop drives any value whose type implements
 directly; an iterator pipeline works the same way, so you can loop over one
 instead of calling a consumer:
 
-```raven
+```rust
 import std/iter
 
 fun main() {

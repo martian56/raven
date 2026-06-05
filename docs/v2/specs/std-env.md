@@ -7,7 +7,7 @@ them.
 
 ## Import
 
-```raven
+```rust
 import std/env { get_env, has_env, get_env_or, args, arg_count, arg_at, exit, os_name, arch }
 ```
 
@@ -15,7 +15,7 @@ import std/env { get_env, has_env, get_env_or, args, arg_count, arg_at, exit, os
 
 ### Environment variables
 
-```raven
+```rust
 fun get_env(name: String) -> String
 fun has_env(name: String) -> Bool
 fun get_env_or(name: String, default: String) -> String
@@ -37,7 +37,7 @@ A value that is not valid UTF-8 is reported as `""`.
 
 ### Command-line arguments
 
-```raven
+```rust
 fun arg_count() -> Int
 fun arg_at(i: Int) -> String
 fun args() -> List<String>
@@ -51,7 +51,7 @@ Index 0 is the program path; the user-supplied arguments start at index 1.
 
 ### Process exit
 
-```raven
+```rust
 fun exit(code: Int)
 ```
 
@@ -62,7 +62,7 @@ runtime call (`std::process::exit`) never comes back.
 
 ### Platform info
 
-```raven
+```rust
 fun os_name() -> String
 fun arch() -> String
 ```

@@ -55,7 +55,7 @@ Help: Add ';' at the end of the statement
 ### 1.2 Operator Precedence & Associativity ⭐⭐⭐⭐⭐ (CRITICAL)
 
 **Current Problem**: Left-to-right parsing, no precedence
-```raven
+```rust
 let x = 2 + 3 * 4;  // Currently: (2 + 3) * 4 = 20
                      // Should be: 2 + (3 * 4) = 14
 ```
@@ -94,7 +94,7 @@ let x = 2 + 3 * 4;  // Currently: (2 + 3) * 4 = 20
 **Current Problem**: All variables are global
 
 **Need**: Block-level scoping
-```raven
+```rust
 let x: int = 10;
 if (true) {
     let x: int = 20;  // Different x, shadows outer
@@ -123,7 +123,7 @@ print(x);  // 10
 **Current Problem**: Functions can be declared but NOT called!
 
 **Need**: Function call expressions
-```raven
+```rust
 fun add(a: int, b: int) -> int {
     return a + b;
 }
@@ -154,7 +154,7 @@ print(result);
 **Status**: Core array support is implemented in the reference interpreter (1D and multi-dimensional types, literals, indexing, assignment, `len()`, and common array methods).
 
 **Need** (historical sketch; syntax below is illustrative):
-```raven
+```rust
 let numbers: int[] = [1, 2, 3, 4, 5];
 print(numbers[0]);  // 1
 
@@ -181,7 +181,7 @@ let length: int = len(numbers);  // 5
 ### 1.6 string Operations ⭐⭐⭐☆☆ (MEDIUM PRIORITY)
 
 **Need**: string manipulation
-```raven
+```rust
 let name: string = "Raven";
 let len: int = len(name);  // 5
 
@@ -206,7 +206,7 @@ let upper: string = uppercase(name);  // "RAVEN"
 **Need**: Infrastructure for built-in functions
 
 **Core Built-ins Needed**:
-```raven
+```rust
 // Type conversion
 int(value)
 float(value)
@@ -254,7 +254,7 @@ split(s: string, delim: string) -> [string]
 ### 2.2 Module System ⭐⭐⭐⭐☆ (HIGH PRIORITY)
 
 **Need**: Import/export mechanism
-```raven
+```rust
 // math.rv
 fun add(a: int, b: int) -> int {
     return a + b;
@@ -284,7 +284,7 @@ let result: int = math.add(5, 10);
 ### 2.3 Standard Library Modules
 
 #### 2.3.1 `io` Module
-```raven
+```rust
 import io;
 
 let content: string = io.read_file("data.txt");
@@ -302,7 +302,7 @@ let line: string = io.read_line();
 ---
 
 #### 2.3.2 `math` Module
-```raven
+```rust
 import math;
 
 let pi: float = math.pi;
@@ -322,7 +322,7 @@ let rounded: int = math.round(3.7);
 ---
 
 #### 2.3.3 `string` Module
-```raven
+```rust
 import str from "str";
 
 let upper: string = string.uppercase("hello");
@@ -339,7 +339,7 @@ let joined: string = string.join(parts, "-");
 ---
 
 #### 2.3.4 `collections` Module (Advanced)
-```raven
+```rust
 import collections;
 
 let map: Map<string, int> = collections.new_map();
@@ -355,7 +355,7 @@ set.add(5);
 ## 📋 PHASE 3: Advanced Features
 
 ### 3.1 Structs & Methods ⭐⭐⭐⭐☆
-```raven
+```rust
 struct Person {
     name: string;
     age: int;
@@ -372,7 +372,7 @@ p.greet();
 ---
 
 ### 3.2 Enums ⭐⭐⭐☆☆
-```raven
+```rust
 enum Color {
     Red,
     Green,
@@ -385,7 +385,7 @@ let c: Color = Color.Red;
 ---
 
 ### 3.3 Pattern Matching ⭐⭐⭐☆☆
-```raven
+```rust
 match value {
     0 => print("zero"),
     1 => print("one"),
@@ -396,7 +396,7 @@ match value {
 ---
 
 ### 3.4 Error Handling ⭐⭐⭐⭐☆
-```raven
+```rust
 enum Result<T, E> {
     Ok(T),
     Err(E)

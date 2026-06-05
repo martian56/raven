@@ -6,7 +6,7 @@ never checks whether a file exists, never reads a directory, never
 resolves a real path. For anything that talks to the filesystem, reach for
 [std/fs](fs.md) instead.
 
-```raven
+```rust
 import std/path { join, basename, dirname, extension, stem, is_absolute }
 
 fun main() {
@@ -22,7 +22,7 @@ fun main() {
 The functions have no natural single receiver, so they are free functions
 brought in by a selective import:
 
-```raven
+```rust
 import std/path { join, basename, dirname, extension, stem, is_absolute }
 ```
 
@@ -60,7 +60,7 @@ Join two path parts with a single `/`. The result never doubles the
 separator: it stays one `/` whether `a` ends with a slash, `b` begins with
 one, or both. If either operand is empty, the other is returned unchanged.
 
-```raven
+```rust
 import std/path { join }
 
 fun main() {
@@ -80,7 +80,7 @@ fun main() {
 The final component, everything after the last `/`. When `p` contains no
 `/`, the whole string is the basename.
 
-```raven
+```rust
 import std/path { basename }
 
 fun main() {
@@ -97,7 +97,7 @@ Everything up to the last `/`. Two edge cases are worth remembering:
 - When there is no `/`, `dirname` returns `"."` (the current directory).
 - When the only `/` is at index 0, it returns `"/"` (the root).
 
-```raven
+```rust
 import std/path { dirname }
 
 fun main() {
@@ -114,7 +114,7 @@ dot. The dot is inspected on the basename only, so a `.` in a parent
 directory name does not count. A leading dot marks a dotfile, not an
 extension: the extension of `.gitignore` is `""`.
 
-```raven
+```rust
 import std/path { extension }
 
 fun main() {
@@ -131,7 +131,7 @@ The basename with its extension removed: the part `extension` leaves
 behind. For a name without an extension, the whole basename is the stem,
 and a dotfile keeps its leading dot.
 
-```raven
+```rust
 import std/path { stem }
 
 fun main() {
@@ -146,7 +146,7 @@ fun main() {
 
 True when `p` starts with `/`. The empty string is relative.
 
-```raven
+```rust
 import std/path { is_absolute }
 
 fun main() {
@@ -161,7 +161,7 @@ fun main() {
 This walks a path apart, swaps its extension, and joins it back together
 using only documented functions.
 
-```raven
+```rust
 import std/path { join, dirname, stem, is_absolute }
 
 fun with_extension(p: String, ext: String) -> String {

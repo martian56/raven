@@ -8,7 +8,7 @@ Raven.
 
 ## Import
 
-```raven
+```rust
 import std/process { run, run_with_input }
 ```
 
@@ -17,7 +17,7 @@ separate selector.
 
 ## Surface
 
-```raven
+```rust
 struct Output { code: Int, stdout: String, stderr: String }
 
 fun run(program: String, args: List<String>) -> Result<Output, Error>

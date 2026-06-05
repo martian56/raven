@@ -5,7 +5,7 @@ is UTC, and there is no local-timezone handling. Timestamps are Unix time:
 whole seconds, except `now_millis`, which is milliseconds. The functions are
 brought into scope with a selective import.
 
-```raven
+```rust
 import std/time { now, format_timestamp }
 
 fun main() {
@@ -17,7 +17,7 @@ fun main() {
 
 Pull in the functions you use with a selective `{ ... }` list:
 
-```raven
+```rust
 import std/time { now, now_millis, from_timestamp, weekday, format_timestamp, parse_timestamp, sleep_millis }
 ```
 
@@ -34,7 +34,7 @@ value by 1000 before passing it to the seconds-based functions.
 
 `from_timestamp` returns a `DateTime`, which nests a `Date` and a `Time`:
 
-```raven
+```rust
 struct Date { year: Int, month: Int, day: Int }
 struct Time { hour: Int, minute: Int, second: Int }
 struct DateTime { date: Date, time: Time }
@@ -48,7 +48,7 @@ as `1970-01-01` (year zero-padded to four digits, month and day to two), a
 `Time` as `00:00:00`, and a `DateTime` as the two joined by a space,
 `1970-01-01 00:00:00`.
 
-```raven
+```rust
 import std/time { from_timestamp }
 
 fun main() {
@@ -69,7 +69,7 @@ The current Unix timestamp in whole seconds (UTC).
 
 The current Unix time in milliseconds (UTC).
 
-```raven
+```rust
 import std/time { now, now_millis }
 
 fun main() {
@@ -90,7 +90,7 @@ outside chrono's representable range falls back to the epoch.
 
 The weekday of `ts` (UTC) as `0` for Sunday through `6` for Saturday.
 
-```raven
+```rust
 import std/time { from_timestamp, weekday }
 
 fun main() {
@@ -118,7 +118,7 @@ fun main() {
 Render the UTC datetime of `ts` with the given chrono strftime pattern, for
 example `"%Y-%m-%d %H:%M:%S"`.
 
-```raven
+```rust
 import std/time { format_timestamp }
 
 fun main() {
@@ -134,7 +134,7 @@ timestamp in seconds. Parsing is fallible: on failure it returns an `Err`
 holding a `std/error` `Error` tagged with kind `"time"`. Handle the `Result`
 with a `match` or the `?` operator.
 
-```raven
+```rust
 import std/time { parse_timestamp }
 
 fun main() {
@@ -159,7 +159,7 @@ fun main() {
 Sleep the current thread for `ms` milliseconds. A negative value is treated
 as zero.
 
-```raven
+```rust
 import std/time { sleep_millis }
 
 fun main() {
@@ -171,7 +171,7 @@ fun main() {
 
 Format the current time, then parse the formatted text back to a timestamp:
 
-```raven
+```rust
 import std/time { now, format_timestamp, parse_timestamp, from_timestamp, weekday }
 
 fun main() {

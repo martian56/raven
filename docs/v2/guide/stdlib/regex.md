@@ -4,7 +4,7 @@ Regular expressions: compile a pattern once into a reusable handle, then test
 for a match, find the first match or every match, pull out capture groups,
 replace matches, and split on a pattern.
 
-```raven
+```rust
 import std/regex { compile }
 
 fun main() {
@@ -20,7 +20,7 @@ fun main() {
 
 ## Importing
 
-```raven
+```rust
 import std/regex { compile }
 ```
 
@@ -39,7 +39,7 @@ Compile `pattern` into a reusable `Regex`. On success the result is
 `Ok(Regex)`. An invalid pattern is `Err(Error)` from [std/error](error.md),
 tagged with kind `"regex"`, its message the underlying syntax error.
 
-```raven
+```rust
 import std/regex { compile }
 
 fun main() {
@@ -74,7 +74,7 @@ method on the handle afterward.
 
 True when the pattern matches anywhere in `text`.
 
-```raven
+```rust
 import std/regex { compile }
 
 fun main() {
@@ -94,7 +94,7 @@ fun main() {
 The first match in `text`, or `None` when there is no match. A matched empty
 string is `Some("")`, distinct from `None`.
 
-```raven
+```rust
 import std/regex { compile }
 
 fun main() {
@@ -116,7 +116,7 @@ fun main() {
 Every non-overlapping match in `text`, in order. No matches yields an empty
 list.
 
-```raven
+```rust
 import std/regex { compile }
 
 fun main() {
@@ -140,7 +140,7 @@ The capture groups of the first match: group 0 (the whole match) first, then
 groups 1, 2, and so on. An unmatched optional group is an empty string. No
 match yields an empty list.
 
-```raven
+```rust
 import std/regex { compile }
 
 fun main() {
@@ -165,7 +165,7 @@ Replace every non-overlapping match in `text` with `repl`. Group references in
 `repl` are honored: `$1` and `${1}` for numbered groups, `$name` for named
 groups.
 
-```raven
+```rust
 import std/regex { compile }
 
 fun main() {
@@ -186,7 +186,7 @@ fun main() {
 
 Split `text` on the pattern, returning the pieces in order.
 
-```raven
+```rust
 import std/regex { compile }
 
 fun main() {
@@ -219,7 +219,7 @@ unaffected.
 
 ## Worked example: parsing key=value lines
 
-```raven
+```rust
 import std/regex { compile }
 
 fun main() {

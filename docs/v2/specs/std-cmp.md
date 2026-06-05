@@ -10,7 +10,7 @@ is built into the language and needs no import.
 These functions have no natural single receiver, so they are free
 functions bound by a selective import:
 
-```raven
+```rust
 import std/cmp { sort, max, min, max_of }
 
 fun main() {

@@ -142,7 +142,7 @@ runs.
 
 A function with two GC locals (`a`, `b`) and one GC temporary (`mid`):
 
-```raven
+```rust
 fn join(a: String, b: String) -> String {
     let mid: String = ", ";
     return concat(concat(a, mid), b);

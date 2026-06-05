@@ -36,7 +36,7 @@ raven/
 ## Core Built-ins (No Import Required)
 
 ### Type Conversion
-```raven
+```rust
 // Integer conversions
 fun int(value: any) -> int;
 fun float(value: any) -> float;
@@ -51,7 +51,7 @@ let b: bool = bool(1);          // Int to bool (0=false, else=true)
 ```
 
 ### I/O Functions
-```raven
+```rust
 // Print without newline
 fun print(value: any) -> void;
 
@@ -68,7 +68,7 @@ let name: string = input("Enter name: ");
 ```
 
 ### Collection Functions
-```raven
+```rust
 // Get length of string or array
 fun len(collection: any) -> int;
 
@@ -78,7 +78,7 @@ let count: int = len([1, 2, 3]);  // 3
 ```
 
 ### Utility Functions
-```raven
+```rust
 // Type checking
 fun type_of(value: any) -> string;
 
@@ -92,7 +92,7 @@ let t: string = type_of(42);  // "int"
 
 ### File Operations
 
-```raven
+```rust
 import io;
 
 // Read entire file to string
@@ -124,7 +124,7 @@ if (io.file_exists("config.txt")) {
 
 ### Console Operations
 
-```raven
+```rust
 import io;
 
 // Read single line from console
@@ -147,7 +147,7 @@ let name: string = io.read_line();
 
 ### Constants
 
-```raven
+```rust
 import math;
 
 let pi: float = math.PI;       // 3.14159265359
@@ -157,7 +157,7 @@ let tau: float = math.TAU;      // 6.28318530718
 
 ### Basic Math
 
-```raven
+```rust
 import math;
 
 // Absolute value
@@ -190,7 +190,7 @@ let rounded: int = math.round(3.7);        // 4
 
 ### Trigonometry
 
-```raven
+```rust
 import math;
 
 fun math.sin(radians: float) -> float;
@@ -212,7 +212,7 @@ let angle: float = math.to_radians(90.0);   // 1.57...
 
 ### Random Numbers (Future)
 
-```raven
+```rust
 import math;
 
 fun math.random() -> float;  // Random float [0.0, 1.0)
@@ -225,7 +225,7 @@ fun math.random_int(min: int, max: int) -> int;
 
 ### Transformation
 
-```raven
+```rust
 import str from "str";
 
 // Case conversion
@@ -249,7 +249,7 @@ let rev: string = str.reverse("abc");        // "cba"
 
 ### Searching & Testing
 
-```raven
+```rust
 import str from "str";
 
 // Check if string contains substring
@@ -270,7 +270,7 @@ let idx: int = str.index_of("hello", "ll");                  // 2
 
 ### Splitting & Joining
 
-```raven
+```rust
 import str from "str";
 
 // Split string by delimiter
@@ -290,7 +290,7 @@ let replaced: string = str.replace("hello", "l", "r");  // "herro"
 
 ### Character Operations
 
-```raven
+```rust
 import str from "str";
 
 // Get character at index
@@ -312,7 +312,7 @@ let letter: string = str.from_char_code(65);  // "A"
 
 ## `array` Module (Extended Array Functions)
 
-```raven
+```rust
 import array;
 
 // Add element to end
@@ -350,7 +350,7 @@ array.reverse(nums);           // [3, 2, 1]
 
 ## `time` Module (Future)
 
-```raven
+```rust
 import time;
 
 // Get current timestamp
@@ -372,7 +372,7 @@ let formatted: string = time.format(now, "YYYY-MM-DD");
 
 ## `json` Module (Future)
 
-```raven
+```rust
 import json;
 
 // Parse JSON string
@@ -390,7 +390,7 @@ let json_str: string = json.stringify(data);
 
 ## `http` Module (Future)
 
-```raven
+```rust
 import http;
 
 // Make HTTP GET request
@@ -461,7 +461,7 @@ raven/
 
 ## Example Usage
 
-```raven
+```rust
 // Math operations
 import math;
 

@@ -12,7 +12,7 @@ the compiler and learn `raven build`.
 
 Start with the smallest thing that runs. Create `wordfreq.rv`:
 
-```raven
+```rust
 fun main() {
     let text = "the cat sat on the mat the cat ran"
     print(text)
@@ -33,7 +33,7 @@ expression is the cleanest way to extract just the word-like runs. The
 pattern `[a-z]+` matches one or more lowercase letters, and `find_all`
 returns every match as a `List<String>`.
 
-```raven
+```rust
 import std/regex { compile }
 import std/string
 
@@ -71,7 +71,7 @@ seen it. For each word, look it up: if it is already there, store one more;
 if not, start it at one. [std/collections](../stdlib/collections.md) provides
 the map.
 
-```raven
+```rust
 import std/regex { compile }
 import std/collections
 import std/string
@@ -119,7 +119,7 @@ and sort it. A `Map` does not order its keys, so build a list of pairs first.
 Model a pair as a small struct, then sort with a comparator from
 [std/cmp](../stdlib/cmp.md):
 
-```raven
+```rust
 import std/regex { compile }
 import std/collections
 import std/string
@@ -193,7 +193,7 @@ returns `Result<String, Error>`, so a missing file is handled the same way a
 bad regex was: with a `match`. Here is the complete program, reading from
 `input.txt`:
 
-```raven
+```rust
 import std/fs { read }
 import std/regex { compile }
 import std/collections

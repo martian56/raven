@@ -19,7 +19,7 @@ path byte.
 The functions have no natural single receiver, so they are free functions
 bound by a selective import:
 
-```raven
+```rust
 import std/path { join, basename, dirname, extension, stem, is_absolute }
 
 fun main() {

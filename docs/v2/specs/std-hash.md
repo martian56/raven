@@ -13,7 +13,7 @@ a package, per the stdlib charter.
 
 All entries are free functions, bound with a selective import:
 
-```raven
+```rust
 import std/hash { fnv1a, djb2, hash_int, combine }
 
 fun main() {
@@ -53,7 +53,7 @@ for `Int`, `Bool`, and `String`. These functions are building blocks a user's
 own `Hash` impl can call. A struct can hash its fields and fold them with
 `combine`:
 
-```raven
+```rust
 import std/hash { fnv1a, hash_int, combine }
 
 struct Point { x: Int, y: Int }

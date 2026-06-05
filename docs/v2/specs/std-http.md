@@ -7,7 +7,7 @@ pure Raven.
 
 ## Import
 
-```raven
+```rust
 import std/http { get, post, put, delete, request }
 ```
 
@@ -16,7 +16,7 @@ selector.
 
 ## Surface
 
-```raven
+```rust
 struct HttpResponse {
     status_code: Int,
     status_text: String,

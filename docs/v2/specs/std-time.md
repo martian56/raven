@@ -8,13 +8,13 @@ helpers are pure Raven on top of them.
 
 ## Import
 
-```raven
+```rust
 import std/time { now, now_millis, from_timestamp, weekday, format_timestamp, parse_timestamp, sleep_millis }
 ```
 
 ## Structs
 
-```raven
+```rust
 struct Date { year: Int, month: Int, day: Int }
 struct Time { hour: Int, minute: Int, second: Int }
 struct DateTime { date: Date, time: Time }
@@ -31,7 +31,7 @@ each have a `ToString` impl producing ISO-like text: a `Date` renders as
 
 ### Current time
 
-```raven
+```rust
 fun now() -> Int
 fun now_millis() -> Int
 ```
@@ -43,7 +43,7 @@ example `now() > 1700000000`).
 
 ### Decomposition
 
-```raven
+```rust
 fun from_timestamp(ts: Int) -> DateTime
 fun weekday(ts: Int) -> Int
 ```
@@ -59,7 +59,7 @@ Saturday (chrono's `num_days_from_sunday`).
 
 ### Formatting and parsing
 
-```raven
+```rust
 fun format_timestamp(ts: Int, pattern: String) -> String
 fun parse_timestamp(text: String, pattern: String) -> Result<Int, Error>
 ```
@@ -79,7 +79,7 @@ literal directly rather than calling `error_kind`.
 
 ### Sleep
 
-```raven
+```rust
 fun sleep_millis(ms: Int)
 ```
 

@@ -19,7 +19,7 @@ Spaces, tabs, and newlines separate tokens. Whitespace is required only where tw
 
 Comments are **tokens** in the parser: they can appear between many top-level and block statements and inside struct, enum, and `impl` bodies, so tools like **`rvpm fmt`** can preserve them when reformatting.
 
-```raven
+```rust
 // line comment
 let x: int = 1;
 
@@ -106,7 +106,7 @@ User-defined types are referred to by identifier: struct and enum names. Array d
 
 Every `let` declaration must include an explicit type:
 
-```raven
+```rust
 let name: type = expression;
 ```
 
@@ -187,26 +187,26 @@ Inside `{ }` (function bodies, `if`, `while`, `for`), allowed statements include
 
 ### Variable declaration
 
-```raven
+```rust
 let name: type = expression;
 let name: type;   // only for types with defaults (see above)
 ```
 
 ### Expression statement
 
-```raven
+```rust
 expression;
 ```
 
 ### Assignment
 
-```raven
+```rust
 assignable_expression = expression;
 ```
 
 ### `return`
 
-```raven
+```rust
 return expression;
 ```
 
@@ -214,7 +214,7 @@ Every function path should match the declared return type; `void` functions typi
 
 ### `print`
 
-```raven
+```rust
 print ( argument ( , argument )* ) ;
 ```
 
@@ -222,7 +222,7 @@ print ( argument ( , argument )* ) ;
 
 ### Conditional
 
-```raven
+```rust
 if ( expression ) {
   statements
 } elseif ( expression ) {
@@ -239,7 +239,7 @@ else {
 
 **While:**
 
-```raven
+```rust
 while ( expression ) {
   statements
 }
@@ -247,7 +247,7 @@ while ( expression ) {
 
 **For** (C-style; initialization must be a `let` declaration):
 
-```raven
+```rust
 for ( let name: type = expression; expression; name = expression ) {
   statements
 }
@@ -259,7 +259,7 @@ The increment clause must be an assignment to an identifier (for example `i = i 
 
 ## Functions
 
-```raven
+```rust
 fun name ( parameter : type ( , parameter : type )* ) -> return_type {
   statements
 }
@@ -275,7 +275,7 @@ Parameters use the same type syntax as variables. The body is a single block.
 
 ### Struct
 
-```raven
+```rust
 struct Name {
   field : type ( , field : type )*
 }
@@ -285,7 +285,7 @@ Fields are separated by commas. Trailing commas are not required.
 
 ### `impl` (methods)
 
-```raven
+```rust
 impl StructName {
   fun method(self) -> return_type { statements }
   fun method(self : StructName, param: type) -> return_type { statements }
@@ -299,7 +299,7 @@ Methods are called with `value.method(arguments)`; fields use `value.field`.
 
 ### Enum
 
-```raven
+```rust
 enum Name {
   Variant ( , Variant )*
 }
@@ -315,19 +315,19 @@ Variants are identifiers, separated by commas. Variants are referenced as `Name:
 
 **Whole module path (string):**
 
-```raven
+```rust
 import "path.rv";
 ```
 
 **Import with namespace alias:**
 
-```raven
+```rust
 import alias from "path.rv";
 ```
 
 **Selective import:**
 
-```raven
+```rust
 import { name ( , name )* } from "path.rv";
 ```
 
@@ -335,7 +335,7 @@ Each import ends with `;`. The path is a string literal.
 
 ### Export
 
-```raven
+```rust
 export let name: type = expression;
 export fun name(…) -> type { … }
 ```

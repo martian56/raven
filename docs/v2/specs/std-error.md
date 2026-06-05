@@ -8,7 +8,7 @@ small set of free functions over `Result`.
 
 ## Import
 
-```raven
+```rust
 import std/error { error, unwrap_or, is_ok }
 import std/io { println }
 

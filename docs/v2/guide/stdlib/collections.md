@@ -5,7 +5,7 @@ Hash-backed `Set<T>` and `Map<K, V>` over keys that implement the prelude
 remove are O(1) average. `List<T>` is built into the language (literals,
 indexing, `len`, `push`, `pop`, `get`) and needs no import.
 
-```raven
+```rust
 import std/collections
 
 fun main() {
@@ -21,7 +21,7 @@ fun main() {
 
 ## Importing
 
-```raven
+```rust
 import std/collections
 ```
 
@@ -36,7 +36,7 @@ Element and key/value types are inferred from the first use: `s.add(1)`
 fixes `s` as `Set<Int>`. Where no later use pins them, write the type
 arguments on the call:
 
-```raven
+```rust
 import std/collections
 
 fun main() {
@@ -66,7 +66,7 @@ keyed on them do not satisfy the bound.
 Set and map values have literal syntax. Both lower to the constructors
 above, so they need the same `import std/collections` in scope.
 
-```raven
+```rust
 import std/collections
 
 fun main() {
@@ -128,7 +128,7 @@ holds duplicates.
 Remove `x` if present, returning whether it was. Order within a bucket is not
 preserved.
 
-```raven
+```rust
 import std/collections
 
 fun main() {
@@ -170,7 +170,7 @@ True when `k` has an entry in the map.
 
 `Some(v)` when `k` is present, otherwise `None`. Handle it with `match`:
 
-```raven
+```rust
 import std/collections
 
 fun main() {
@@ -208,7 +208,7 @@ Every value in the map, aligned with `keys()`: the value at index `i` in
 Remove the entry for `k` if present, returning whether it was. Order within a
 bucket is not preserved.
 
-```raven
+```rust
 import std/collections
 
 fun main() {
@@ -235,7 +235,7 @@ across runs.
 
 ## Worked example: word frequencies
 
-```raven
+```rust
 import std/collections
 import std/string
 

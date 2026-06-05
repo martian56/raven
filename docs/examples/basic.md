@@ -6,7 +6,7 @@ These examples demonstrate the fundamental features of Raven programming languag
 
 The classic first program:
 
-```raven
+```rust
 fun main() -> void {
     print("Hello, World!");
 }
@@ -16,7 +16,7 @@ main();
 
 ## Variables and Types
 
-```raven
+```rust
 fun main() -> void {
     let name: string = "Alice";
     let age: int = 25;
@@ -32,7 +32,7 @@ main();
 
 ## Arrays
 
-```raven
+```rust
 fun main() -> void {
     let numbers: int[] = [1, 2, 3, 4, 5];
     
@@ -60,7 +60,7 @@ main();
 
 ### If Statements
 
-```raven
+```rust
 fun main() -> void {
     let age: int = 18;
     
@@ -78,7 +78,7 @@ main();
 
 ### While Loops
 
-```raven
+```rust
 fun main() -> void {
     let i: int = 0;
     
@@ -93,7 +93,7 @@ main();
 
 ### For Loops
 
-```raven
+```rust
 fun main() -> void {
     let numbers: int[] = [10, 20, 30, 40, 50];
     
@@ -109,7 +109,7 @@ main();
 
 ### Simple Functions
 
-```raven
+```rust
 fun greet(name: string) -> void {
     print(format("Hello, {}!", name));
 }
@@ -129,7 +129,7 @@ main();
 
 ### Recursive Functions
 
-```raven
+```rust
 fun factorial(n: int) -> int {
     if (n <= 1) {
         return 1;
@@ -147,7 +147,7 @@ main();
 
 ## Structs
 
-```raven
+```rust
 struct Person {
     name: string,
     age: int,
@@ -175,7 +175,7 @@ main();
 
 ### Struct Methods (OOP)
 
-```raven
+```rust
 struct Person {
     name: string,
     age: int
@@ -203,7 +203,7 @@ main();
 
 ## Enums
 
-```raven
+```rust
 enum HttpStatus {
     OK,
     NotFound,
@@ -227,7 +227,7 @@ main();
 
 ## File Operations
 
-```raven
+```rust
 fun main() -> void {
     let filename: string = "test.txt";
     let content: string = "Hello from Raven!";
@@ -253,7 +253,7 @@ main();
 
 ## User Input
 
-```raven
+```rust
 fun main() -> void {
     let name: string = input("Enter your name: ");
     let ageStr: string = input("Enter your age: ");
@@ -267,7 +267,7 @@ main();
 
 ## Error Handling
 
-```raven
+```rust
 fun divide(a: float, b: float) -> float {
     if (b == 0.0) {
         print("Error: Division by zero");
@@ -289,7 +289,7 @@ main();
 
 ## Complete Example: Calculator
 
-```raven
+```rust
 fun add(a: float, b: float) -> float {
     return a + b;
 }

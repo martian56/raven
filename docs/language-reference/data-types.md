@@ -7,7 +7,7 @@ Raven is a statically-typed language with a rich type system that provides safet
 ### Integer (`int`)
 64-bit signed integers.
 
-```raven
+```rust
 let age: int = 25;
 let count: int = -10;
 let maxValue: int = 9223372036854775807;
@@ -16,7 +16,7 @@ let maxValue: int = 9223372036854775807;
 ### Float (`float`)
 64-bit floating-point numbers.
 
-```raven
+```rust
 let pi: float = 3.14159;
 let temperature: float = 98.6;
 let precision: float = 0.001;
@@ -25,7 +25,7 @@ let precision: float = 0.001;
 ### Boolean (`bool`)
 True or false values.
 
-```raven
+```rust
 let isActive: bool = true;
 let isComplete: bool = false;
 let isValid: bool = (age > 18);
@@ -34,7 +34,7 @@ let isValid: bool = (age > 18);
 ### string (`string`)
 UTF-8 encoded strings. Inside double-quoted literals, backslash escapes are supported (for example `\"`, `\\`, `\n`, `\r`, `\t`, `\0`), so JSON-like payloads such as `"{\"hello\":1}"` parse as a single string value.
 
-```raven
+```rust
 let name: string = "Alice";
 let message: string = "Hello, World!";
 let empty: string = "";
@@ -46,20 +46,20 @@ let json: string = "{\"hello\":1}";
 Arrays are collections of elements of the same type.
 
 ### Integer Arrays
-```raven
+```rust
 let numbers: int[] = [1, 2, 3, 4, 5];
 let emptyNumbers: int[] = [];
 let singleNumber: int[] = [42];
 ```
 
 ### string Arrays
-```raven
+```rust
 let names: string[] = ["Alice", "Bob", "Charlie"];
 let words: string[] = ["Hello", "World"];
 ```
 
 ### Boolean Arrays
-```raven
+```rust
 let flags: bool[] = [true, false, true];
 let results: bool[] = [];
 ```
@@ -68,7 +68,7 @@ let results: bool[] = [];
 
 Array types nest: each `[]` adds one dimension. Element types must match at every level.
 
-```raven
+```rust
 // 2D: matrix of int
 let grid: int[][] = [[1, 2, 3], [4, 5, 6]];
 let empty2d: int[][] = [];                    // zero rows
@@ -87,7 +87,7 @@ let cube: int[][][] = [[[1, 2]], [[3, 4]]];
 ### Structs
 Custom data structures with named fields.
 
-```raven
+```rust
 struct Person {
     name: string,
     age: int,
@@ -112,7 +112,7 @@ let point: Point = Point { x: 10.5, y: 20.0 };
 ### Struct Methods
 Structs can have methods defined with `impl` blocks. Each method receives `self` as the first parameter.
 
-```raven
+```rust
 struct Person {
     name: string,
     age: int
@@ -140,7 +140,7 @@ p.have_birthday();     // Mutates p in place
 ### Enums
 Custom types with a set of named variants.
 
-```raven
+```rust
 enum HttpStatus {
     OK,
     NotFound,
@@ -164,7 +164,7 @@ let color: Color = Color::Red;
 
 Raven can infer types in some cases, but explicit typing is recommended for clarity.
 
-```raven
+```rust
 // Explicit typing (recommended)
 let name: string = "Alice";
 let age: int = 25;
@@ -178,7 +178,7 @@ let age = 25;        // Inferred as int
 
 Raven performs static type checking at compile time.
 
-```raven
+```rust
 let name: string = "Alice";
 let age: int = 25;
 
@@ -193,7 +193,7 @@ let result: string = format("{} is {} years old", name, age);
 
 Raven provides built-in functions for type conversion.
 
-```raven
+```rust
 let number: int = 42;
 let text: string = format("{}", number);  // Convert int to string
 
@@ -206,7 +206,7 @@ let input: string = "123";
 
 The `void` type represents the absence of a value, used for functions that don't return anything.
 
-```raven
+```rust
 fun greet(name: string) -> void {
     print(format("Hello, {}!", name));
     // No return statement needed

@@ -11,7 +11,7 @@ metaprogramming work (macros, reflection) builds on, tracked under issue
 The attribute sits on its own line immediately before a `struct` or `enum`
 declaration:
 
-```raven
+```rust
 @derive(Eq, Hash, ToString, Debug)
 struct Point { x: Int, y: Int }
 
@@ -62,7 +62,7 @@ when any type derives one of them.
 
 ### Eq
 
-```raven
+```rust
 fun equals(self, other: Point) -> Bool
 ```
 
@@ -79,7 +79,7 @@ not yet accept `Self` as a non-receiver parameter type.
 
 ### Hash
 
-```raven
+```rust
 fun hash(self) -> Int
 ```
 
@@ -94,7 +94,7 @@ element, since the hash-backed collections require `Eq + Hash` keys.
 
 ### ToString
 
-```raven
+```rust
 fun to_string(self) -> String
 ```
 
@@ -106,7 +106,7 @@ fun to_string(self) -> String
 
 ### Debug
 
-```raven
+```rust
 fun debug(self) -> String
 ```
 
@@ -123,7 +123,7 @@ debug     -> User { name: "ann", age: 30 }
 
 ### ToJson
 
-```raven
+```rust
 fun to_json(self) -> JsonValue
 ```
 
@@ -140,7 +140,7 @@ source order. Combine `to_json` with `stringify` to get a `String`.
 
 ### FromJson
 
-```raven
+```rust
 fun from_json(j: JsonValue) -> Result<Self, Error>
 ```
 
@@ -181,14 +181,14 @@ structs and enums; it never generates impls for the built-in types.
 For a generic type the synthesized impl is generic with the derived trait as
 a bound on every type parameter. Deriving `Eq` on
 
-```raven
+```rust
 @derive(Eq)
 struct Pair<A, B> { first: A, second: B }
 ```
 
 generates
 
-```raven
+```rust
 impl<A: Eq, B: Eq> Eq for Pair<A, B> {
     fun equals(self, other: Pair<A, B>) -> Bool {
         return self.first.equals(other.first) && self.second.equals(other.second)

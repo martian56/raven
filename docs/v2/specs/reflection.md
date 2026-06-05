@@ -4,7 +4,7 @@ Compile-time type reflection exposes a small amount of type information to
 user code, resolved while the program is compiled. This is the first slice
 of the reflection work tracked under issue #216. It ships these builtins:
 
-```raven
+```rust
 type_name<T>() -> String
 field_names<T>() -> List<String>
 field_types<T>() -> List<String>
@@ -24,7 +24,7 @@ an `Any` type and is a separate follow-up (see below).
 `type_name<T>()` evaluates to the rendered name of the concrete type `T`,
 as a `String`.
 
-```raven
+```rust
 type_name<Int>()                  // "Int"
 type_name<String>()               // "String"
 type_name<Point>()                // "Point"
@@ -43,7 +43,7 @@ the built-in generics by their spelling (`List<Int>`, `Option<Int>`,
 Inside a generic function, `type_name<T>()` resolves to the concrete type
 bound to `T` at each instantiation:
 
-```raven
+```rust
 fun describe<T>() -> String {
     return type_name<T>()
 }
@@ -61,7 +61,7 @@ instantiations of the same generic body produce two different names.
 `field_names<T>()` evaluates to the field names of the struct type `T`, in
 declaration order, as a `List<String>`.
 
-```raven
+```rust
 struct Point { x: Int, y: Int }
 
 field_names<Point>()    // ["x", "y"]
@@ -81,7 +81,7 @@ declaration order, as a `List<String>` of rendered type names. It is the
 positional counterpart to `field_names`: index `i` of one lines up with
 index `i` of the other, so the two together describe each field.
 
-```raven
+```rust
 struct User { id: Int, name: String, active: Bool }
 
 field_names<User>()    // ["id", "name", "active"]
@@ -92,7 +92,7 @@ field_types<User>()    // ["Int", "String", "Bool"]
 For a generic struct, each field type is rendered at its concrete
 instantiation, so a generic field reads as the type it is bound to:
 
-```raven
+```rust
 struct Box<T> { value: T }
 
 field_types<Box<Int>>()       // ["Int"]
@@ -109,7 +109,7 @@ string lists) remains a possible future surface; this slice pairs
 declaration order, as a `List<String>`. It is the enum counterpart to
 `field_names`.
 
-```raven
+```rust
 enum Shape { Circle(radius: Float) Rectangle(width: Float, height: Float) Dot }
 
 variant_names<Shape>()    // ["Circle", "Rectangle", "Dot"]
@@ -126,7 +126,7 @@ scalar, a built-in generic) is a compile error. The built-in `Option` and
 holding that variant's payload field type names. A unit variant has an empty
 inner list, so the inner list's length is the variant's payload arity.
 
-```raven
+```rust
 enum Shape { Circle(radius: Float) Rectangle(width: Float, height: Float) Dot }
 
 variant_names<Shape>()        // ["Circle", "Rectangle", "Dot"]
@@ -136,7 +136,7 @@ variant_field_types<Shape>()  // [["Float"], ["Float", "Float"], []]
 For a generic enum each payload type is rendered at its concrete
 instantiation, the same per-monomorphization mechanic as `field_types`:
 
-```raven
+```rust
 enum Tree<T> { Leaf(value: T) Branch(left: T, right: T) Empty }
 
 variant_field_types<Tree<Int>>()    // [["Int"], ["Int", "Int"], []]

@@ -4,7 +4,7 @@ A small, reproducible pseudo-random generator. `Rng` is a value type holding
 the generator state; its methods draw the next value and mutate that state in
 place.
 
-```raven
+```rust
 import std/random
 
 fun main() {
@@ -15,7 +15,7 @@ fun main() {
 
 ## Importing
 
-```raven
+```rust
 import std/random
 ```
 
@@ -36,7 +36,7 @@ draws. That determinism is the point of seeded construction, and it makes
 timestamp mixed with the process id), so its stream is not reproducible across
 runs. Reach for it when you want a fresh, unpredictable sequence.
 
-```raven
+```rust
 import std/random
 
 fun main() {
@@ -64,7 +64,7 @@ runs.
 
 The next raw 64-bit draw. Values span the full `Int` range and may be negative.
 
-```raven
+```rust
 import std/random
 
 fun main() {
@@ -78,7 +78,7 @@ fun main() {
 
 A value in the half-open interval `[lo, hi)`: `lo` is possible, `hi` is not.
 
-```raven
+```rust
 import std/random
 
 fun main() {
@@ -98,7 +98,7 @@ A `Float` in `[0.0, 1.0)`. It takes the top 53 bits of a draw and scales by
 2^-53 (the full f64 mantissa width), so every representable multiple of 2^-53
 in the interval is reachable.
 
-```raven
+```rust
 import std/random
 
 fun main() {
@@ -111,7 +111,7 @@ fun main() {
 
 `true` or `false` from the low bit of a draw, a fair coin flip.
 
-```raven
+```rust
 import std/random
 
 fun main() {
@@ -128,7 +128,7 @@ A random element of `xs`, or `None` when the list is empty. Because the result
 is an `Option<T>`, unwrap it with a `match` (or your preferred `Option` helper)
 before use.
 
-```raven
+```rust
 import std/random
 
 fun main() {
@@ -147,7 +147,7 @@ fun main() {
 Shuffles `xs` in place using Fisher-Yates. It returns nothing; the list passed
 in is reordered.
 
-```raven
+```rust
 import std/random
 
 fun main() {
@@ -165,7 +165,7 @@ fun main() {
 A seeded generator makes a test deterministic: pick the same seed and the
 output never drifts between runs.
 
-```raven
+```rust
 import std/random
 
 fun main() {
