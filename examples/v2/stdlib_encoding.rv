@@ -1,0 +1,22 @@
+// std/encoding, std/path, std/hash enrichment: percent-encoding, base32,
+// path normalization, and CRC-32. Prints:
+//   a%20b%2Fc
+//   a b/c
+//   MZXW6YTBOI======
+//   foobar
+//   /a/c/d
+//   report.md
+//   3421780262
+import std/encoding { url_encode, url_decode, base32_encode, base32_decode }
+import std/path { normalize, with_extension }
+import std/hash { crc32 }
+
+fun main() {
+    print(url_encode("a b/c"))              // a%20b%2Fc
+    print(url_decode("a%20b%2Fc"))          // a b/c
+    print(base32_encode("foobar"))          // MZXW6YTBOI======
+    print(base32_decode("MZXW6YTBOI======"))  // foobar
+    print(normalize("/a/b/../c/./d"))       // /a/c/d
+    print(with_extension("report.txt", "md"))  // report.md
+    print(crc32("123456789"))               // 3421780262
+}

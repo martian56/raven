@@ -76,3 +76,13 @@ fun put(url: String, body: String) -> Result<HttpResponse, Error> {
 fun delete(url: String) -> Result<HttpResponse, Error> {
     return request("DELETE", url, "", "")
 }
+
+// PATCH `body` to `url`.
+fun patch(url: String, body: String) -> Result<HttpResponse, Error> {
+    return request("PATCH", url, body, "")
+}
+
+// HEAD `url` (response carries headers and status but no body).
+fun head(url: String) -> Result<HttpResponse, Error> {
+    return request("HEAD", url, "", "")
+}

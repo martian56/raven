@@ -519,6 +519,89 @@ fun stringify(value: JsonValue) -> String {
     }
 }
 
+// `n` spaces, for pretty-printing indentation.
+fun pretty_indent(n: Int) -> String {
+    let out = ""
+    let i = 0
+    while i < n {
+        out = __str_concat(out, " ")
+        i = i + 1
+    }
+    return out
+}
+
+fun stringify_pretty_at(value: JsonValue, indent: Int, depth: Int) -> String {
+    return match value {
+        Null -> "null",
+        Bool(b) -> {
+            if b {
+                "true"
+            } else {
+                "false"
+            }
+        },
+        Number(n) -> n.to_string(),
+        Str(s) -> {
+            let q = __str_concat("\"", escape_string("", s))
+            __str_concat(q, "\"")
+        },
+        Array(items) -> {
+            let n = items.len()
+            if n == 0 {
+                "[]"
+            } else {
+                let pad = pretty_indent((depth + 1) * indent)
+                let closepad = pretty_indent(depth * indent)
+                let out = "[\n"
+                let i = 0
+                while i < n {
+                    if i > 0 {
+                        out = __str_concat(out, ",\n")
+                    }
+                    out = __str_concat(out, pad)
+                    out = __str_concat(out, stringify_pretty_at(items[i], indent, depth + 1))
+                    i = i + 1
+                }
+                out = __str_concat(out, "\n")
+                out = __str_concat(out, closepad)
+                __str_concat(out, "]")
+            }
+        },
+        Object(map) -> {
+            let keys = map.keys()
+            let values = map.values()
+            let n = keys.len()
+            if n == 0 {
+                "{}"
+            } else {
+                let pad = pretty_indent((depth + 1) * indent)
+                let closepad = pretty_indent(depth * indent)
+                let out = "{\n"
+                let i = 0
+                while i < n {
+                    if i > 0 {
+                        out = __str_concat(out, ",\n")
+                    }
+                    out = __str_concat(out, pad)
+                    let kq = __str_concat("\"", escape_string("", keys[i]))
+                    out = __str_concat(out, __str_concat(kq, "\": "))
+                    out = __str_concat(out, stringify_pretty_at(values[i], indent, depth + 1))
+                    i = i + 1
+                }
+                out = __str_concat(out, "\n")
+                out = __str_concat(out, closepad)
+                __str_concat(out, "}")
+            }
+        },
+    }
+}
+
+// Like `stringify`, but multi-line with `indent` spaces per nesting level.
+// Empty arrays and objects stay on one line as `[]` / `{}`.
+fun stringify_pretty(value: JsonValue, indent: Int) -> String {
+    return stringify_pretty_at(value, indent, 0)
+}
+
 // The accessor methods forward to free functions that take the value as a
 // plain parameter. Matching a `self` receiver and then reading the bound
 // payload hits a back-end limitation that corrupts the extracted value, so
@@ -550,6 +633,21 @@ impl JsonValue {
     fun at(self, i: Int) -> Option<JsonValue> {
         return array_at(self, i)
     }
+
+    // The number truncated to an Int, or None when not a number.
+    fun as_int(self) -> Option<Int> {
+        return value_as_int(self)
+    }
+
+    // The keys of an object (empty for any other value).
+    fun keys(self) -> List<String> {
+        return value_keys(self)
+    }
+
+    // The element count of an array or object (0 for any other value).
+    fun length(self) -> Int {
+        return value_length(self)
+    }
 }
 
 fun value_is_null(value: JsonValue) -> Bool {
@@ -571,6 +669,61 @@ fun value_as_number(value: JsonValue) -> Option<Float> {
         Number(n) -> Some(n),
         _ -> None,
     }
+}
+
+fun value_as_int(value: JsonValue) -> Option<Int> {
+    return match value {
+        Number(n) -> Some(raven_float_to_int(n)),
+        _ -> None,
+    }
+}
+
+fun value_keys(value: JsonValue) -> List<String> {
+    return match value {
+        Object(map) -> map.keys(),
+        _ -> {
+            let empty: List<String> = []
+            empty
+        }
+    }
+}
+
+fun value_length(value: JsonValue) -> Int {
+    return match value {
+        Array(items) -> items.len(),
+        Object(map) -> map.len(),
+        _ -> 0,
+    }
+}
+
+// Constructors for building a JsonValue programmatically (the inverse of the
+// accessors), so a value can be assembled and then `stringify`d.
+fun json_null() -> JsonValue {
+    return JsonValue.Null
+}
+
+fun json_bool(b: Bool) -> JsonValue {
+    return JsonValue.Bool(b)
+}
+
+fun json_number(n: Float) -> JsonValue {
+    return JsonValue.Number(n)
+}
+
+fun json_int(n: Int) -> JsonValue {
+    return JsonValue.Number(raven_int_to_float(n))
+}
+
+fun json_string(s: String) -> JsonValue {
+    return JsonValue.Str(s)
+}
+
+fun json_array(items: List<JsonValue>) -> JsonValue {
+    return JsonValue.Array(items)
+}
+
+fun json_object(map: Map<String, JsonValue>) -> JsonValue {
+    return JsonValue.Object(map)
 }
 
 fun value_as_string(value: JsonValue) -> Option<String> {

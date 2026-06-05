@@ -85,6 +85,18 @@ impl TcpStream {
         return Ok(data)
     }
 
+    // Read until EOF, accumulating every byte into one String. Reads in
+    // 4 KiB chunks; a clean EOF (an empty read) ends the loop.
+    fun read_all(self) -> Result<String, Error> {
+        let out = ""
+        let chunk = self.read(4096)?
+        while chunk.length() > 0 {
+            out = out.concat(chunk)
+            chunk = self.read(4096)?
+        }
+        return Ok(out)
+    }
+
     // Write all bytes of `data`, returning the count written.
     fun write(self, data: String) -> Result<Int, Error> {
         let n = raven_net_write(self.id, data)

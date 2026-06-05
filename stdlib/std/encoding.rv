@@ -172,3 +172,188 @@ fun base64_decode(s: String) -> String {
     }
     return out
 }
+
+// Map a 0..15 nibble to its uppercase hex digit byte (for percent-encoding).
+fun hex_upper(v: Int) -> Int {
+    if v < 10 {
+        return 48 + v
+    }
+    return 55 + v
+}
+
+// RFC 3986 unreserved bytes: A-Z a-z 0-9 and - _ . ~
+fun is_unreserved(b: Int) -> Bool {
+    if b >= 65 {
+        if b <= 90 {
+            return true
+        }
+    }
+    if b >= 97 {
+        if b <= 122 {
+            return true
+        }
+    }
+    if b >= 48 {
+        if b <= 57 {
+            return true
+        }
+    }
+    if b == 45 {
+        return true
+    }
+    if b == 95 {
+        return true
+    }
+    if b == 46 {
+        return true
+    }
+    if b == 126 {
+        return true
+    }
+    return false
+}
+
+// Percent-encode every byte that is not RFC 3986 unreserved, using uppercase
+// hex (a space becomes "%20", not "+").
+fun url_encode(s: String) -> String {
+    let n = __str_len(s)
+    let out = ""
+    let i = 0
+    while i < n {
+        let b = __str_byte_at(s, i)
+        if is_unreserved(b) {
+            out = __str_concat(out, __str_from_byte(b))
+        } else {
+            out = __str_concat(out, "%")
+            out = __str_concat(out, __str_from_byte(hex_upper(b / 16)))
+            out = __str_concat(out, __str_from_byte(hex_upper(b % 16)))
+        }
+        i = i + 1
+    }
+    return out
+}
+
+// Decode "%XX" percent escapes back to bytes. The inverse of `url_encode`. A
+// "+" is left as a literal plus.
+fun url_decode(s: String) -> String {
+    let n = __str_len(s)
+    let out = ""
+    let i = 0
+    while i < n {
+        let b = __str_byte_at(s, i)
+        if b == 37 {
+            if i + 2 < n {
+                let hi = hex_value(__str_byte_at(s, i + 1))
+                let lo = hex_value(__str_byte_at(s, i + 2))
+                out = __str_concat(out, __str_from_byte(hi * 16 + lo))
+                i = i + 3
+            } else {
+                out = __str_concat(out, __str_from_byte(b))
+                i = i + 1
+            }
+        } else {
+            out = __str_concat(out, __str_from_byte(b))
+            i = i + 1
+        }
+    }
+    return out
+}
+
+// Map a 0..31 value to its RFC 4648 base32 character (A-Z, 2-7).
+fun base32_char(v: Int) -> Int {
+    if v < 26 {
+        return 65 + v
+    }
+    return 50 + (v - 26)
+}
+
+// Map a base32 character to its 0..31 value (accepts lowercase), or -1.
+fun base32_value(b: Int) -> Int {
+    if b >= 65 {
+        if b <= 90 {
+            return b - 65
+        }
+    }
+    if b >= 97 {
+        if b <= 122 {
+            return b - 97
+        }
+    }
+    if b >= 50 {
+        if b <= 55 {
+            return b - 50 + 26
+        }
+    }
+    return -1
+}
+
+// RFC 4648 base32 encoding with "=" padding.
+fun base32_encode(s: String) -> String {
+    let n = __str_len(s)
+    let out = ""
+    let i = 0
+    while i < n {
+        let count = 0
+        let acc = 0
+        let k = 0
+        while k < 5 {
+            acc = acc << 8
+            if i + k < n {
+                acc = acc | __str_byte_at(s, i + k)
+                count = count + 1
+            }
+            k = k + 1
+        }
+        let out_chars = 8
+        if count == 1 {
+            out_chars = 2
+        }
+        if count == 2 {
+            out_chars = 4
+        }
+        if count == 3 {
+            out_chars = 5
+        }
+        if count == 4 {
+            out_chars = 7
+        }
+        let j = 0
+        while j < 8 {
+            if j < out_chars {
+                let shift = 35 - j * 5
+                let v = (acc >> shift) & 31
+                out = __str_concat(out, __str_from_byte(base32_char(v)))
+            } else {
+                out = __str_concat(out, "=")
+            }
+            j = j + 1
+        }
+        i = i + 5
+    }
+    return out
+}
+
+// Decode an RFC 4648 base32 string. Padding and non-alphabet bytes are
+// skipped. The inverse of `base32_encode`.
+fun base32_decode(s: String) -> String {
+    let n = __str_len(s)
+    let out = ""
+    let acc = 0
+    let bits = 0
+    let i = 0
+    while i < n {
+        let b = __str_byte_at(s, i)
+        let v = base32_value(b)
+        if v >= 0 {
+            acc = (acc << 5) | v
+            bits = bits + 5
+            if bits >= 8 {
+                bits = bits - 8
+                let byte = (acc >> bits) & 255
+                out = __str_concat(out, __str_from_byte(byte))
+            }
+        }
+        i = i + 1
+    }
+    return out
+}
