@@ -83,7 +83,41 @@ nav:
   - Home: index.md
   - Getting Started: v2/guide/getting-started.md
   - Language Reference: v2/guide/language-reference.md
-  - Standard Library: v2/guide/standard-library.md
+  - Tutorials:
+    - Word-frequency counter: v2/guide/tutorials/word-frequency.md
+    - Modeling data with structs and enums: v2/guide/tutorials/task-tracker.md
+  - Standard Library:
+    - Overview: v2/guide/standard-library.md
+    - Core traits: v2/guide/stdlib/core.md
+    - Text and formatting:
+      - std/string: v2/guide/stdlib/string.md
+      - std/fmt: v2/guide/stdlib/fmt.md
+      - std/regex: v2/guide/stdlib/regex.md
+      - std/encoding: v2/guide/stdlib/encoding.md
+    - Data structures and iteration:
+      - std/collections: v2/guide/stdlib/collections.md
+      - std/iter: v2/guide/stdlib/iter.md
+      - std/cmp: v2/guide/stdlib/cmp.md
+      - std/hash: v2/guide/stdlib/hash.md
+    - Numbers:
+      - std/math: v2/guide/stdlib/math.md
+      - std/random: v2/guide/stdlib/random.md
+    - Input, output, and the system:
+      - std/io: v2/guide/stdlib/io.md
+      - std/fs: v2/guide/stdlib/fs.md
+      - std/path: v2/guide/stdlib/path.md
+      - std/env: v2/guide/stdlib/env.md
+      - std/process: v2/guide/stdlib/process.md
+      - std/time: v2/guide/stdlib/time.md
+    - Networking:
+      - std/net: v2/guide/stdlib/net.md
+      - std/http: v2/guide/stdlib/http.md
+      - std/json: v2/guide/stdlib/json.md
+    - Concurrency, errors, FFI, testing:
+      - std/sync: v2/guide/stdlib/sync.md
+      - std/error: v2/guide/stdlib/error.md
+      - std/ffi: v2/guide/stdlib/ffi.md
+      - std/test: v2/guide/stdlib/test.md
   - rvpm: v2/guide/rvpm.md
   - Migrate from v1: v2/migration.md
   - v1 docs:
