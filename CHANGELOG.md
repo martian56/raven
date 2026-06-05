@@ -6,6 +6,10 @@ All notable changes to Raven are documented in this file.
 
 ### Added
 
+- FFI: a `@repr(C)` struct field may now itself be a nested `@repr(C)` struct, crossing the C ABI by value. The nested struct's bytes are inlined into the parent's C image (the back end follows the heap pointer recursively), and on a return the nested object is rebuilt with the parent's GC descriptor marking the nested-field slot as a pointer so the collector traces it. Register classification runs over the flattened field list, so a nested struct passes exactly like its fields inlined, and the 16-byte cap applies to the flattened total. A non-`@repr(C)` struct field and a struct that contains itself are rejected (#329).
+
+### Added
+
 - FFI: `@repr(C)` structs with floating-point fields (`CFloat`, `CDouble`) now cross the C ABI by value, up to 16 bytes, as arguments and return values. The back end builds a per-register plan from the struct layout and the target convention: System V classifies each eightbyte INTEGER (i64) or SSE (f64), AArch64 passes a homogeneous float aggregate in SIMD registers (one per field) and other structs in general registers, and Windows x64 uses one integer register or by-reference. A `CFloat` field is narrowed from f64 to f32 (and widened back) at the boundary, and a struct literal accepts a native `Float` for a float field. Nested structs and structs larger than 16 bytes remain follow-ups (#328).
 
 ### Added

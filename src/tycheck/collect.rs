@@ -19,6 +19,7 @@ use super::env::{
     EnumSig, FieldSig, FnSig, GenericParamSig, ImplSig, StructSig, TraitSig, TypeEnv,
     VariantPayloadSig, VariantSig,
 };
+use super::expr::ty_custom;
 use super::ty::{FfiTy, ParamId, Ty};
 
 /// A small lexical scope of generic parameters introduced by an
@@ -181,10 +182,16 @@ pub fn collect_declarations(
         }
     }
 
-    // Third sub pass: now that every signature is recorded, resolve
-    // trait bound names on generic parameters. Bounds are stored by
-    // trait name; the resolver has already validated that the path
-    // resolves to a trait, so all we need is the head segment's name.
+    // Third sub pass: validate every `@repr(C)` struct now that all field
+    // signatures are recorded, so a nested struct field can be checked and
+    // sized recursively.
+    for (idx, decl) in file.items.iter().enumerate() {
+        if let DeclKind::Struct(s) = &decl.kind {
+            if s.repr_c {
+                validate_repr_c(DeclId(idx), &s.span, env)?;
+            }
+        }
+    }
     Ok(())
 }
 
@@ -325,9 +332,6 @@ fn fill_struct(
             span: f.span.clone(),
         });
     }
-    if s.repr_c {
-        validate_repr_c(s, &fields)?;
-    }
     let entry = env.structs.get_mut(&id).expect("struct sig pre populated");
     entry.fields = fields;
     Ok(())
@@ -347,56 +351,92 @@ pub const REPR_C_MAX_BYTES: u32 = 16;
 /// C size (fields in order, naturally aligned) must be at most
 /// [`REPR_C_MAX_BYTES`]. Float fields and larger structs are rejected with
 /// a clear message; they are deferred (see `docs/v2/specs/std-ffi.md`).
-fn validate_repr_c(s: &Struct, fields: &[FieldSig]) -> Result<(), RavenError> {
-    if fields.is_empty() {
+fn validate_repr_c(id: DeclId, span: &Span, env: &TypeEnv) -> Result<(), RavenError> {
+    let (total, _) = repr_c_struct_layout(id, span, env, &mut Vec::new())?;
+    if total > REPR_C_MAX_BYTES {
+        let name = env.structs.get(&id).map(|s| s.name.as_str()).unwrap_or("?");
         return Err(RavenError::ty(
             TypeError::Custom(format!(
-                "`@repr(C)` struct `{}` must have at least one field",
-                s.name
+                "`@repr(C)` struct `{name}` is {total} bytes; passing structs larger than {REPR_C_MAX_BYTES} bytes by value is not supported yet (pass a CPtr<...> instead)"
             )),
-            s.span.clone(),
+            span.clone(),
         ));
     }
+    Ok(())
+}
+
+/// Recursively validate a `@repr(C)` struct and compute its total C size and
+/// alignment. Each field must be a C scalar or a nested `@repr(C)` struct;
+/// `in_progress` carries the recursion stack to reject a struct that contains
+/// itself by value.
+fn repr_c_struct_layout(
+    id: DeclId,
+    span: &Span,
+    env: &TypeEnv,
+    in_progress: &mut Vec<DeclId>,
+) -> Result<(u32, u32), RavenError> {
+    if in_progress.contains(&id) {
+        return Err(ty_custom(
+            "a `@repr(C)` struct cannot contain itself by value",
+            span,
+        ));
+    }
+    let sig = env
+        .structs
+        .get(&id)
+        .ok_or_else(|| ty_custom("struct signature missing", span))?;
+    if sig.fields.is_empty() {
+        return Err(ty_custom(
+            &format!(
+                "`@repr(C)` struct `{}` must have at least one field",
+                sig.name
+            ),
+            span,
+        ));
+    }
+    in_progress.push(id);
+    let name = sig.name.clone();
     let mut size: u32 = 0;
     let mut max_align: u32 = 1;
-    for f in fields {
+    for f in &sig.fields {
         let (fsize, falign) = match &f.ty {
-            Ty::Ffi(ffi) => match ffi.c_scalar_layout() {
-                Some(layout) => layout,
-                None => {
-                    return Err(RavenError::ty(
-                        TypeError::Custom(format!(
-                            "field `{}` of `@repr(C)` struct `{}` has type `{}`, which cannot cross the FFI by value; use an integer-class C scalar (CInt, CLong, CSize, CStr, CPtr<T>)",
-                            f.name, s.name, f.ty
-                        )),
-                        f.span.clone(),
+            Ty::Ffi(ffi) => ffi.c_scalar_layout().ok_or_else(|| {
+                ty_custom(
+                    &format!(
+                        "field `{}` of `@repr(C)` struct `{}` has type `{}`, which cannot cross the FFI by value; use a C scalar (CInt, CLong, CSize, CFloat, CDouble, CStr, CPtr<T>) or a `@repr(C)` struct",
+                        f.name, name, f.ty
+                    ),
+                    &f.span,
+                )
+            })?,
+            Ty::Struct { id: nested_id, name: nested_name, .. } => {
+                let is_repr_c = env.structs.get(nested_id).is_some_and(|s| s.repr_c);
+                if !is_repr_c {
+                    return Err(ty_custom(
+                        &format!(
+                            "field `{}` of `@repr(C)` struct `{}` is `{}`, which is not `@repr(C)`; a struct field must itself be `@repr(C)` to cross the FFI by value",
+                            f.name, name, nested_name
+                        ),
+                        &f.span,
                     ));
                 }
-            },
+                repr_c_struct_layout(*nested_id, &f.span, env, in_progress)?
+            }
             other => {
-                return Err(RavenError::ty(
-                    TypeError::Custom(format!(
-                        "field `{}` of `@repr(C)` struct `{}` has type `{}`; a repr(C) struct field must be a C scalar",
-                        f.name, s.name, other
-                    )),
-                    f.span.clone(),
+                return Err(ty_custom(
+                    &format!(
+                        "field `{}` of `@repr(C)` struct `{}` has type `{}`; a repr(C) struct field must be a C scalar or a `@repr(C)` struct",
+                        f.name, name, other
+                    ),
+                    &f.span,
                 ));
             }
         };
         size = align_up(size, falign) + fsize;
         max_align = max_align.max(falign);
     }
-    let total = align_up(size, max_align);
-    if total > REPR_C_MAX_BYTES {
-        return Err(RavenError::ty(
-            TypeError::Custom(format!(
-                "`@repr(C)` struct `{}` is {total} bytes; passing structs larger than {REPR_C_MAX_BYTES} bytes by value is not supported yet (pass a CPtr<...> instead)",
-                s.name
-            )),
-            s.span.clone(),
-        ));
-    }
-    Ok(())
+    in_progress.pop();
+    Ok((align_up(size, max_align), max_align))
 }
 
 /// Round `offset` up to the next multiple of `align` (a power of two).

@@ -3269,7 +3269,7 @@ fn is_ptr_pointee(ty: &Ty) -> bool {
         )
 }
 
-fn ty_custom(msg: &str, span: &Span) -> RavenError {
+pub(crate) fn ty_custom(msg: &str, span: &Span) -> RavenError {
     RavenError::ty(TypeError::Custom(msg.into()), span.clone())
 }
 
