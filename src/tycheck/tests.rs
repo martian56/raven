@@ -580,14 +580,12 @@ fn repr_c_struct_allows_two_register() {
 }
 
 #[test]
-fn repr_c_struct_rejects_oversize() {
+fn repr_c_struct_allows_oversize() {
     // A repr(C) struct larger than two registers (here three CLongs, 24
-    // bytes) cannot cross the FFI by value yet.
-    let err = check(
-        "@repr(C)\nstruct Big {\n    a: CLong\n    b: CLong\n    c: CLong\n}\nfun main() {}\n",
-    )
-    .unwrap_err();
-    assert!(matches!(err, RavenError::Type(_, _, _)));
+    // bytes) crosses the FFI by value too: in memory on System V, by
+    // reference on Windows x64 and AArch64.
+    check("@repr(C)\nstruct Big {\n    a: CLong\n    b: CLong\n    c: CLong\n}\nfun main() {}\n")
+        .unwrap();
 }
 
 #[test]

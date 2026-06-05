@@ -342,16 +342,17 @@ the call boundary marshals it by value.
   `CDouble`). A float field is classified into the platform's float
   register class (SSE on System V, a SIMD register on AArch64) at the call
   boundary.
-* The total C size must be **at most 16 bytes** (up to two machine
-  registers). A larger struct is rejected with a clear error; pass a
-  `CPtr<...>` to the struct instead.
+* There is **no size limit**. Up to 16 bytes the struct crosses in registers;
+  a larger one crosses in memory on the stack (the System V MEMORY class) or
+  by reference (Windows x64, AArch64), and is returned through a hidden
+  pointer. Passing a `CPtr<...>` is still cheaper for a large struct.
 * A native `Int` literal initializes a `CInt`/`CLong`/`CSize` field
   (`Point { x: 3, y: 4 }`), and a native `Float` literal a `CFloat`/`CDouble`
   field (`Color { r: 1.0 }`), the same coercion a C call applies. An f64
   narrows to f32 for a `CFloat` field at the boundary.
 * A field may itself be a nested `@repr(C)` struct: its bytes are inlined
-  into the parent's C image at the field offset, and the 16-byte cap applies
-  to the flattened total. A non-`@repr(C)` struct field is rejected.
+  into the parent's C image at the field offset. A non-`@repr(C)` struct field
+  is rejected.
 * Only a `@repr(C)` struct may be handed to a C function by value; a plain
   heap struct (a GC pointer) is rejected at the call.
 
@@ -374,16 +375,21 @@ stack rather than apply the C ABI register classification):
   copies the struct to a stack slot and passes its address; a struct return
   of these sizes uses a hidden first pointer argument (`sret`) the callee
   writes through.
+* **Over 16 bytes**: System V passes the struct in memory on the stack (the
+  MEMORY class, via Cranelift's `StructArgument`, with the size rounded up to
+  8 bytes); Windows x64 and AArch64 pass it by reference. Every target returns
+  such a struct through the hidden `sret` pointer.
 
-All three paths read and write the struct through its exact C memory image,
-so a Raven heap struct round-trips a C call unchanged. A nested struct field
-is followed through its heap pointer and inlined recursively; on a return the
-nested object is rebuilt and the parent's GC descriptor marks the
-nested-field slot as a pointer so the collector traces it.
+All these paths read and write the struct through its exact C memory image, so
+a Raven heap struct round-trips a C call unchanged. A nested struct field is
+followed through its heap pointer and inlined recursively; on a return the
+nested object is rebuilt and the parent's GC descriptor marks the nested-field
+slot as a pointer so the collector traces it.
 
 ### Out of scope (struct by value)
 
-* Structs larger than 16 bytes (the System V in-memory class).
+* None for struct shape: any all-C-scalar (or nested `@repr(C)`) struct
+  crosses by value. A very large struct is still cheaper to pass by `CPtr`.
 
 ## Out of scope
 

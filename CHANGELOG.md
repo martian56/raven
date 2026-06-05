@@ -6,6 +6,10 @@ All notable changes to Raven are documented in this file.
 
 ### Added
 
+- FFI: `@repr(C)` structs of any size now cross the C ABI by value, removing the previous 16-byte limit. Up to 16 bytes a struct still crosses in registers; a larger one crosses in memory on the stack on System V AMD64 (the MEMORY class, via Cranelift's `StructArgument` with the size rounded up to 8 bytes) or by reference on Windows x64 and AArch64, and is returned through a hidden `sret` pointer on every target (#327).
+
+### Added
+
 - FFI: a capturing Raven closure (a lambda or a captured local) can now be passed as a C callback, not just a non-capturing top-level function. The closure is given to the C function's callback-pointer parameter, where the compiler emits a generated trampoline whose last argument is a `userdata` pointer, and to the function's userdata parameter (a `CPtr`), which is the closure object C threads back to the trampoline. This follows the userdata-last convention (for example glibc `qsort_r`); a userdata-first or no-userdata API needs a small C shim. Because the GC shadow stack persists across a C call, a callback that allocates is traced correctly, the golden suite exercises one allocating on every call across a thousand C-driven invocations (#234).
 
 ### Added

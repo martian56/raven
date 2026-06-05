@@ -177,3 +177,23 @@ pub extern "C" fn raven_ffi_sum_cb(
     }
     total
 }
+
+/// A 24-byte struct (three i64), larger than two registers. System V passes
+/// it in memory on the stack (the MEMORY class); Windows x64 and AArch64 pass
+/// it by reference. Returned through a hidden `sret` pointer on every target.
+#[repr(C)]
+pub struct RavenFfiBig {
+    pub a: i64,
+    pub b: i64,
+    pub c: i64,
+}
+
+#[no_mangle]
+pub extern "C" fn raven_ffi_big_sum(v: RavenFfiBig) -> i64 {
+    v.a + v.b + v.c
+}
+
+#[no_mangle]
+pub extern "C" fn raven_ffi_make_big(a: i64, b: i64, c: i64) -> RavenFfiBig {
+    RavenFfiBig { a, b, c }
+}

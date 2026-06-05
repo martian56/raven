@@ -417,13 +417,21 @@ fn repr_c_register_plan_matches_platform_abi() {
     fn reg_tys(plan: RegPlan) -> Option<Vec<Type>> {
         match plan {
             RegPlan::Regs(slots) => Some(slots.iter().map(|s| s.ty).collect()),
-            RegPlan::ByRef => None,
+            RegPlan::ByRef | RegPlan::Memory(_) => None,
         }
     }
 
     let two_longs = ReprCLayout {
         size: 16,
         fields: vec![field(0, MirFfiTy::CLong), field(8, MirFfiTy::CLong)],
+    };
+    let three_longs = ReprCLayout {
+        size: 24,
+        fields: vec![
+            field(0, MirFfiTy::CLong),
+            field(8, MirFfiTy::CLong),
+            field(16, MirFfiTy::CLong),
+        ],
     };
     let two_doubles = ReprCLayout {
         size: 16,
@@ -474,4 +482,19 @@ fn repr_c_register_plan_matches_platform_abi() {
         Some(vec![types::I64])
     );
     assert!(reg_tys(repr_c_register_plan(&two_doubles, win)).is_none());
+
+    // A struct over 16 bytes: the System V MEMORY class (stack, 8-byte
+    // rounded size), by reference on Windows x64 and AArch64.
+    assert!(matches!(
+        repr_c_register_plan(&three_longs, sysv),
+        RegPlan::Memory(24)
+    ));
+    assert!(matches!(
+        repr_c_register_plan(&three_longs, win),
+        RegPlan::ByRef
+    ));
+    assert!(matches!(
+        repr_c_register_plan(&three_longs, arm),
+        RegPlan::ByRef
+    ));
 }
