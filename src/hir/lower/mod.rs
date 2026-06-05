@@ -184,6 +184,13 @@ impl<'a> LowerCtx<'a> {
             _ => None,
         }
     }
+
+    /// True when the function name at `span` was recorded by the type
+    /// checker as a C-FFI callback (passed where a `CFnPtr` is expected),
+    /// so it lowers to the function's raw C address rather than a closure.
+    pub(crate) fn is_callback_fn(&self, span: &Span) -> bool {
+        self.typed.types.is_callback_fn(span)
+    }
 }
 
 fn lower_decl(decl: &Decl, cx: &LowerCtx<'_>) -> Result<Option<HirItem>, RavenError> {

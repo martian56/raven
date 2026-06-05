@@ -1493,6 +1493,11 @@ impl<'a, 'b> Checker<'a, 'b> {
                 &arg.span,
             ));
         }
+        // This name is a C-FFI callback: it lowers to the function's raw C
+        // address, not a Raven closure object. Record the site so the back
+        // end keeps the address form here while every other function-typed
+        // name used as a value becomes a closure.
+        self.types.record_callback_fn(&arg.span);
         Ok(())
     }
 

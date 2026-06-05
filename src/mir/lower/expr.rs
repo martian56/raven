@@ -355,6 +355,21 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             );
             MirOperand::Copy(dst)
         }
+        HirExprKind::FnClosure { name } => {
+            // A named top-level function used as a value: wrap it in a
+            // zero-capture closure so it has the uniform closure
+            // representation a higher-order callee expects. A generic or
+            // unknown name has no concrete shim; fall back to the synthetic
+            // unit a bare free name produced before.
+            match super::closure::lower_fn_closure(cx, name, &expr.span) {
+                Some(rvalue) => {
+                    let dst = cx.builder.fresh_temp("fnclosure", ty);
+                    cx.builder.assign(cx.current, dst, rvalue);
+                    MirOperand::Copy(dst)
+                }
+                None => MirOperand::Const(MirConstant::Unit),
+            }
+        }
         HirExprKind::Lambda { params, ret, body } => {
             // Run capture analysis, lift the body into a standalone
             // function, and emit a ClosureCreate that allocates the
