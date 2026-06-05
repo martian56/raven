@@ -4,6 +4,12 @@ All notable changes to Raven are documented in this file.
 
 ## [Unreleased]
 
+## [2.4.4] - 2026-06-05
+
+### Fixed
+
+- The Linux release binary is now built on Ubuntu 22.04 instead of the latest runner image (24.04), so it links against an older glibc and runs on both Ubuntu 22.04 and 24.04. A binary built on 24.04 could fail to start on 22.04 with a `GLIBC_2.x not found` error, because glibc is backward compatible but not forward compatible. No source changes.
+
 ## [2.4.3] - 2026-06-05
 
 ### Added
