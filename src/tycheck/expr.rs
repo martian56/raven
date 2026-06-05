@@ -1417,6 +1417,15 @@ impl<'a, 'b> Checker<'a, 'b> {
                 self.check_callback_arg(arg, resolved_arg.strip_self())?;
                 continue;
             }
+            // A closure value passed where a `CPtr` is expected is the
+            // `userdata` pointer for a trampoline callback: the closure object
+            // pointer is handed to C, which threads it back to the trampoline.
+            if matches!(resolved_param.strip_self(), Ty::Ffi(FfiTy::CPtr(_)))
+                && matches!(resolved_arg.strip_self(), Ty::Function { .. })
+            {
+                self.types.record_closure_userdata(&arg.span);
+                continue;
+            }
             // A struct argument may cross a C call only when it is a
             // `@repr(C)` struct: the back end marshals its fields by value
             // per the platform ABI. A plain heap struct (a GC pointer) is
@@ -1457,20 +1466,8 @@ impl<'a, 'b> Checker<'a, 'b> {
                 ));
             }
         };
-        // Only a bare ident naming a top-level function is a callback. A
-        // local of function type is a closure value, which carries a
-        // capture environment C cannot supply; reject it here.
-        let is_top_level_fn = matches!(&arg.kind, ExprKind::Ident { .. })
-            && matches!(
-                self.resolved.map.lookup(&arg.span),
-                Some(Binding::Function(_))
-            );
-        if !is_top_level_fn {
-            return Err(ty_custom(
-                "a `CFnPtr` argument must be a non-capturing top-level function, not a closure value",
-                &arg.span,
-            ));
-        }
+        // Every callback parameter and the return must be a C-FFI type, so
+        // the resulting function pointer has a well-defined C ABI.
         for p in params {
             let rp = self.infer.resolve(p);
             if !is_ffi_abi_ty(rp.strip_self()) {
@@ -1493,11 +1490,22 @@ impl<'a, 'b> Checker<'a, 'b> {
                 &arg.span,
             ));
         }
-        // This name is a C-FFI callback: it lowers to the function's raw C
-        // address, not a Raven closure object. Record the site so the back
-        // end keeps the address form here while every other function-typed
-        // name used as a value becomes a closure.
-        self.types.record_callback_fn(&arg.span);
+        // A bare name of a top-level function lowers to its raw C address,
+        // callable by C directly. Any other function-typed value (a lambda or
+        // a captured closure) lowers to a generated trampoline whose last
+        // argument is a `userdata` pointer C threads back to it; the closure
+        // itself must be passed to the C function's `userdata` slot (a
+        // `CPtr<Unit>` parameter). See `docs/v2/specs/std-ffi.md`.
+        let is_top_level_fn = matches!(&arg.kind, ExprKind::Ident { .. })
+            && matches!(
+                self.resolved.map.lookup(&arg.span),
+                Some(Binding::Function(_))
+            );
+        if is_top_level_fn {
+            self.types.record_callback_fn(&arg.span);
+        } else {
+            self.types.record_closure_callback(&arg.span);
+        }
         Ok(())
     }
 

@@ -6,6 +6,10 @@ All notable changes to Raven are documented in this file.
 
 ### Added
 
+- FFI: a capturing Raven closure (a lambda or a captured local) can now be passed as a C callback, not just a non-capturing top-level function. The closure is given to the C function's callback-pointer parameter, where the compiler emits a generated trampoline whose last argument is a `userdata` pointer, and to the function's userdata parameter (a `CPtr`), which is the closure object C threads back to the trampoline. This follows the userdata-last convention (for example glibc `qsort_r`); a userdata-first or no-userdata API needs a small C shim. Because the GC shadow stack persists across a C call, a callback that allocates is traced correctly, the golden suite exercises one allocating on every call across a thousand C-driven invocations (#234).
+
+### Added
+
 - FFI: a `@repr(C)` struct field may now itself be a nested `@repr(C)` struct, crossing the C ABI by value. The nested struct's bytes are inlined into the parent's C image (the back end follows the heap pointer recursively), and on a return the nested object is rebuilt with the parent's GC descriptor marking the nested-field slot as a pointer so the collector traces it. Register classification runs over the flattened field list, so a nested struct passes exactly like its fields inlined, and the 16-byte cap applies to the flattened total. A non-`@repr(C)` struct field and a struct that contains itself are rejected (#329).
 
 ### Added

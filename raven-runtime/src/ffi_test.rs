@@ -135,3 +135,45 @@ pub extern "C" fn raven_ffi_make_outer(a: i32, b: i32, c: i32) -> RavenFfiOuter 
         c,
     }
 }
+
+/// Invokes a callback with a userdata pointer (userdata-last, like a glibc
+/// `qsort_r` comparator): calls `cb(x, userdata)` and returns the result. Used
+/// to exercise passing a Raven closure as a C callback via a trampoline.
+#[no_mangle]
+pub extern "C" fn raven_ffi_apply_cb(
+    cb: extern "C" fn(i64, *mut core::ffi::c_void) -> i64,
+    userdata: *mut core::ffi::c_void,
+    x: i64,
+) -> i64 {
+    cb(x, userdata)
+}
+
+/// Invokes a callback twice and sums the results, to check a closure survives
+/// being called more than once through C.
+#[no_mangle]
+pub extern "C" fn raven_ffi_apply_cb_twice(
+    cb: extern "C" fn(i64, *mut core::ffi::c_void) -> i64,
+    userdata: *mut core::ffi::c_void,
+    a: i64,
+    b: i64,
+) -> i64 {
+    cb(a, userdata) + cb(b, userdata)
+}
+
+/// Calls a callback `n` times (`cb(0, ud) + cb(1, ud) + ...`) and returns the
+/// sum, so a callback that allocates triggers garbage collection while the
+/// Raven stack is suspended in this C frame.
+#[no_mangle]
+pub extern "C" fn raven_ffi_sum_cb(
+    cb: extern "C" fn(i64, *mut core::ffi::c_void) -> i64,
+    userdata: *mut core::ffi::c_void,
+    n: i64,
+) -> i64 {
+    let mut total: i64 = 0;
+    let mut i: i64 = 0;
+    while i < n {
+        total += cb(i, userdata);
+        i += 1;
+    }
+    total
+}

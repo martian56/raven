@@ -64,6 +64,12 @@ pub(crate) fn lower_expr(
 ) -> Result<HirExpr, RavenError> {
     let ty = cx.ty_at(&expr.span);
     let span = expr.span.clone();
+    // A closure passed where a `CFnPtr` is expected lowers to a trampoline
+    // address. The closure expression is not evaluated here; the closure
+    // object is passed separately to the C function's userdata parameter.
+    if cx.is_closure_callback(&span) {
+        return Ok(make_expr(HirExprKind::FnTrampoline, ty, span));
+    }
     let kind = match &expr.kind {
         // A macro call should have been expanded before HIR lowering; reaching
         // here means the token pre-pass was skipped (only the formatter parses

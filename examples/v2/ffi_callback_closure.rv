@@ -1,0 +1,43 @@
+// FFI: passing a capturing Raven closure as a C callback. The closure is
+// handed to the C function's callback-pointer parameter (the compiler emits a
+// trampoline whose last argument is a userdata pointer) and to its userdata
+// parameter (the closure object itself). C threads the closure back to the
+// trampoline, which invokes it. Because the GC traces the suspended Raven
+// stack through a callback, a closure that allocates mid-callback is safe.
+// Prints:
+//   105
+//   203
+//   599500
+import std/list
+
+extern "C" {
+    fun raven_ffi_apply_cb(cb: CFnPtr, data: CPtr<Unit>, x: CLong) -> CLong
+    fun raven_ffi_apply_cb_twice(cb: CFnPtr, data: CPtr<Unit>, a: CLong, b: CLong) -> CLong
+    fun raven_ffi_sum_cb(cb: CFnPtr, data: CPtr<Unit>, n: CLong) -> CLong
+}
+
+fun run(base: CLong) {
+    // A closure capturing `base`, passed as a C callback. It is given to both
+    // the callback-pointer slot (the trampoline) and the userdata slot.
+    let add_base = fun(x: CLong) -> CLong = x + base
+    print(raven_ffi_apply_cb(add_base, add_base, 5)) // 105
+    print(raven_ffi_apply_cb_twice(add_base, add_base, 1, 2)) // 203
+
+    // GC guard: this closure allocates on each call, so 1000 calls through C
+    // force collections while the Raven stack is suspended in the C frame. A
+    // correct callback keeps the suspended roots traced.
+    let allocating = fun(x: CLong) -> CLong = {
+        let junk: List<Int> = []
+        let i = 0
+        while i < 100 {
+            junk.push(i)
+            i = i + 1
+        }
+        x + base
+    }
+    print(raven_ffi_sum_cb(allocating, allocating, 1000)) // 599500
+}
+
+fun main() {
+    run(100)
+}

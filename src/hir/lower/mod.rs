@@ -191,6 +191,12 @@ impl<'a> LowerCtx<'a> {
     pub(crate) fn is_callback_fn(&self, span: &Span) -> bool {
         self.typed.types.is_callback_fn(span)
     }
+
+    /// True when the closure at `span` is passed where a `CFnPtr` is expected,
+    /// so it lowers to a generated trampoline address.
+    pub(crate) fn is_closure_callback(&self, span: &Span) -> bool {
+        self.typed.types.is_closure_callback(span)
+    }
 }
 
 fn lower_decl(decl: &Decl, cx: &LowerCtx<'_>) -> Result<Option<HirItem>, RavenError> {

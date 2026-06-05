@@ -165,7 +165,5 @@ non-CRT symbol surfaces as an unresolved-symbol error at link time.
   in one or two registers, or by reference on Windows x64) do cross by value;
   see `docs/v2/specs/std-ffi.md`.
 * Variadic C functions (for example `printf` with format arguments).
-* Callbacks from C back into Raven (passing a Raven function as a C
-  function pointer).
 * Non-CRT libraries and their link flags (issue #81).
 * Dereferencing or arithmetic on `CPtr<T>`.

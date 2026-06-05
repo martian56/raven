@@ -552,6 +552,9 @@ fn pretty_expr(buf: &mut String, expr: &HirExpr, depth: usize) {
         HirExprKind::FnClosure { name } => {
             writeln!(buf, "(fn-closure {} ty={})", quote(name), expr.ty).unwrap();
         }
+        HirExprKind::FnTrampoline => {
+            writeln!(buf, "(fn-trampoline ty={})", expr.ty).unwrap();
+        }
         HirExprKind::DynCoerce {
             trait_name,
             value,

@@ -370,6 +370,19 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
                 None => MirOperand::Const(MirConstant::Unit),
             }
         }
+        HirExprKind::FnTrampoline => {
+            // A closure passed where a C `CFnPtr` is expected: emit the
+            // address of a generated trampoline whose last argument is the
+            // userdata pointer (the closure object) C threads back.
+            match super::closure::lower_fn_trampoline(cx, &expr.ty, &expr.span) {
+                Some(rvalue) => {
+                    let dst = cx.builder.fresh_temp("trampoline", ty);
+                    cx.builder.assign(cx.current, dst, rvalue);
+                    MirOperand::Copy(dst)
+                }
+                None => MirOperand::Const(MirConstant::Unit),
+            }
+        }
         HirExprKind::Lambda { params, ret, body } => {
             // Run capture analysis, lift the body into a standalone
             // function, and emit a ClosureCreate that allocates the
