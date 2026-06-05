@@ -317,3 +317,91 @@ fun for_each<T, S: Iterator<T>>(it: S, f: fun(T) -> Unit) {
         f(x)
     }
 }
+
+// Sum of all elements of an `Int` iterator (0 when empty).
+fun sum<S: Iterator<Int>>(it: S) -> Int {
+    let total = 0
+    for x in it {
+        total = total + x
+    }
+    return total
+}
+
+// Product of all elements of an `Int` iterator (1 when empty).
+fun product<S: Iterator<Int>>(it: S) -> Int {
+    let p = 1
+    for x in it {
+        p = p * x
+    }
+    return p
+}
+
+// The smallest element by `Ord`, or `None` when the iterator is empty.
+fun min<T: Ord, S: Iterator<T>>(it: S) -> Option<T> {
+    let best: Option<T> = None
+    for x in it {
+        match best {
+            None -> {
+                best = Some(x)
+            }
+            Some(b) -> {
+                if x.compare(b) < 0 {
+                    best = Some(x)
+                }
+            }
+        }
+    }
+    return best
+}
+
+// The largest element by `Ord`, or `None` when the iterator is empty.
+fun max<T: Ord, S: Iterator<T>>(it: S) -> Option<T> {
+    let best: Option<T> = None
+    for x in it {
+        match best {
+            None -> {
+                best = Some(x)
+            }
+            Some(b) -> {
+                if x.compare(b) > 0 {
+                    best = Some(x)
+                }
+            }
+        }
+    }
+    return best
+}
+
+// The index of the first element satisfying `pred`, or `None`.
+fun position<T, S: Iterator<T>>(it: S, pred: fun(T) -> Bool) -> Option<Int> {
+    let i = 0
+    for x in it {
+        if pred(x) {
+            return Some(i)
+        }
+        i = i + 1
+    }
+    return None
+}
+
+// The element at index `n` (zero-based), or `None` when the iterator is
+// shorter.
+fun nth<T, S: Iterator<T>>(it: S, n: Int) -> Option<T> {
+    let i = 0
+    for x in it {
+        if i == n {
+            return Some(x)
+        }
+        i = i + 1
+    }
+    return None
+}
+
+// The last element, or `None` when the iterator is empty.
+fun last<T, S: Iterator<T>>(it: S) -> Option<T> {
+    let result: Option<T> = None
+    for x in it {
+        result = Some(x)
+    }
+    return result
+}

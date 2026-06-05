@@ -39,3 +39,62 @@ fun assert_eq_str(a: String, b: String) {
         __panic("assertion failed: ${a} != ${b}")
     }
 }
+
+// Assert two values of any `Eq + ToString` type are equal, with both values
+// shown in the failure message.
+fun assert_eq<T: Eq + ToString>(a: T, b: T) {
+    if a.equals(b) == false {
+        __panic("assertion failed: ${a} != ${b}")
+    }
+}
+
+// Assert two values of any `Eq + ToString` type are not equal.
+fun assert_ne<T: Eq + ToString>(a: T, b: T) {
+    if a.equals(b) {
+        __panic("assertion failed: ${a} == ${b}")
+    }
+}
+
+// Assert two floats are within `eps` of each other (the right way to compare
+// floats).
+fun assert_eq_float(a: Float, b: Float, eps: Float) {
+    let d = a - b
+    if d < 0.0 {
+        d = 0.0 - d
+    }
+    if d > eps {
+        __panic("assertion failed: ${a} != ${b} within ${eps}")
+    }
+}
+
+// Assert an option holds a value.
+fun assert_some<T>(o: Option<T>) {
+    match o {
+        Some(v) -> {}
+        None -> __panic("assertion failed: expected Some, got None"),
+    }
+}
+
+// Assert an option is empty.
+fun assert_none<T>(o: Option<T>) {
+    match o {
+        Some(v) -> __panic("assertion failed: expected None, got Some"),
+        None -> {}
+    }
+}
+
+// Assert a result is `Ok`.
+fun assert_ok<T, E>(r: Result<T, E>) {
+    match r {
+        Ok(v) -> {}
+        Err(e) -> __panic("assertion failed: expected Ok, got Err"),
+    }
+}
+
+// Assert a result is `Err`.
+fun assert_err<T, E>(r: Result<T, E>) {
+    match r {
+        Ok(v) -> __panic("assertion failed: expected Err, got Ok"),
+        Err(e) -> {}
+    }
+}

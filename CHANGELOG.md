@@ -6,6 +6,14 @@ All notable changes to Raven are documented in this file.
 
 ### Added
 
+- Standard library enrichment, part 2 (numbers, iteration, testing, formatting):
+  - **std/math**: `fmod`, `atan2`, `asin`, `acos`, `atan`, `log2`, `cbrt`, `hypot`, `sinh`, `cosh`, `tanh`, `gcd`, `lcm`, `sign`, `sign_int`, `is_nan`, `is_inf`, `infinity`, `nan`, `to_radians`, `to_degrees` (#309).
+  - **std/iter**: reductions `sum`, `product`, `min`, `max`, and `position`, `nth`, `last` (#310).
+  - **std/test**: generic `assert_eq` / `assert_ne` (any `Eq + ToString`), `assert_eq_float` (epsilon), and `assert_some` / `assert_none` / `assert_ok` / `assert_err` (#311).
+  - **std/fmt**: `format_float` (fixed decimals, rounded half up), `from_radix` and `from_hex` (the inverses of `to_radix` / `to_hex`) (#312).
+
+### Added
+
 - Standard library enrichment, part 1 (data essentials):
   - **std/string**: `split`, `split_whitespace`, `lines`, `parse_int`, `parse_float`, `trim_start`, `trim_end`, `reverse`, `count`, `last_index_of`, `byte_at`. Text tokenizing and number parsing were the biggest stdlib gaps (#305).
   - **std/list** (new module): generic list utilities `contains`, `index_of`, `reverse`, `slice`, `concat`, `flatten`, `first`, `last`, `insert`, `remove_at`, `repeat`, `range` (#306).
