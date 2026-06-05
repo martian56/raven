@@ -83,3 +83,28 @@ fun err<T, E>(r: Result<T, E>) -> Option<E> {
         Err(e) -> Some(e),
     }
 }
+
+// Transform the `Ok` value with `f`, passing an `Err` through unchanged.
+fun map_ok<T, U, E>(r: Result<T, E>, f: fun(T) -> U) -> Result<U, E> {
+    return match r {
+        Ok(v) -> Ok(f(v)),
+        Err(e) -> Err(e),
+    }
+}
+
+// Transform the `Err` value with `f`, passing an `Ok` through unchanged.
+fun map_err<T, E, F>(r: Result<T, E>, f: fun(E) -> F) -> Result<T, F> {
+    return match r {
+        Ok(v) -> Ok(v),
+        Err(e) -> Err(f(e)),
+    }
+}
+
+// The `Ok` value, or the result of applying `f` to the error. The lazy
+// counterpart to `unwrap_or`, useful when the fallback is expensive.
+fun unwrap_or_else<T, E>(r: Result<T, E>, f: fun(E) -> T) -> T {
+    return match r {
+        Ok(v) -> v,
+        Err(e) -> f(e),
+    }
+}

@@ -4,6 +4,14 @@ All notable changes to Raven are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Standard library enrichment, part 1 (data essentials):
+  - **std/string**: `split`, `split_whitespace`, `lines`, `parse_int`, `parse_float`, `trim_start`, `trim_end`, `reverse`, `count`, `last_index_of`, `byte_at`. Text tokenizing and number parsing were the biggest stdlib gaps (#305).
+  - **std/list** (new module): generic list utilities `contains`, `index_of`, `reverse`, `slice`, `concat`, `flatten`, `first`, `last`, `insert`, `remove_at`, `repeat`, `range` (#306).
+  - **std/collections**: `Set.to_list`, `union`, `intersection`, `difference`, `is_subset`; `Map.get_or`, `entries`, `clear` (#307).
+  - **std/option** (new module): `is_some`, `is_none`, `unwrap_or`, `map`, `and_then`, `filter`, `or_else`; **std/error** gains Result combinators `map_ok`, `map_err`, `unwrap_or_else` (#308).
+
 ## [2.3.1] - 2026-06-05
 
 ### Added

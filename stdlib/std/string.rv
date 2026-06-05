@@ -1,6 +1,19 @@
 // std/string: byte-oriented String methods. Indices, lengths, and slices
 // count UTF-8 bytes, not code points. Case mapping is ASCII only.
 
+// Convert a single decimal digit (0..9) to a Float without any FFI, so this
+// module declares no extern symbols that could collide with another stdlib
+// module's. Used by `parse_float`.
+fun digit_to_float(d: Int) -> Float {
+    let f = 0.0
+    let k = 0
+    while k < d {
+        f = f + 1.0
+        k = k + 1
+    }
+    return f
+}
+
 impl String {
     fun length(self) -> Int {
         return __str_len(self)
@@ -196,6 +209,328 @@ impl String {
             }
         }
         return out
+    }
+
+    // The byte value (0..255) at index `i`, or -1 when out of range.
+    fun byte_at(self, i: Int) -> Int {
+        if i < 0 {
+            return -1
+        }
+        if i >= __str_len(self) {
+            return -1
+        }
+        return __str_byte_at(self, i)
+    }
+
+    // Byte index of the last occurrence of `needle`, or -1 when absent.
+    fun last_index_of(self, needle: String) -> Int {
+        let m = __str_len(needle)
+        let n = __str_len(self)
+        if m == 0 {
+            return n
+        }
+        let i = n - m
+        while i >= 0 {
+            if self.matches_at(needle, i) {
+                return i
+            }
+            i = i - 1
+        }
+        return -1
+    }
+
+    // The number of non-overlapping occurrences of `needle`. An empty needle
+    // counts as 0.
+    fun count(self, needle: String) -> Int {
+        let m = __str_len(needle)
+        if m == 0 {
+            return 0
+        }
+        let n = __str_len(self)
+        let total = 0
+        let i = 0
+        while i + m <= n {
+            if self.matches_at(needle, i) {
+                total = total + 1
+                i = i + m
+            } else {
+                i = i + 1
+            }
+        }
+        return total
+    }
+
+    // The string with its bytes reversed. Safe for ASCII; a multi-byte
+    // character's encoding is reversed byte-wise.
+    fun reverse(self) -> String {
+        let n = __str_len(self)
+        let out = ""
+        let i = n - 1
+        while i >= 0 {
+            out = __str_concat(out, __str_substring(self, i, i + 1))
+            i = i - 1
+        }
+        return out
+    }
+
+    // Remove leading ASCII whitespace only.
+    fun trim_start(self) -> String {
+        let n = __str_len(self)
+        let start = 0
+        while start < n {
+            if is_space_byte(__str_byte_at(self, start)) {
+                start = start + 1
+            } else {
+                return __str_substring(self, start, n)
+            }
+        }
+        return ""
+    }
+
+    // Remove trailing ASCII whitespace only.
+    fun trim_end(self) -> String {
+        let n = __str_len(self)
+        let end = n
+        while end > 0 {
+            if is_space_byte(__str_byte_at(self, end - 1)) {
+                end = end - 1
+            } else {
+                return __str_substring(self, 0, end)
+            }
+        }
+        return ""
+    }
+
+    // Split on every non-overlapping occurrence of `sep`, left to right. An
+    // empty `sep` returns the whole string as a single element.
+    fun split(self, sep: String) -> List<String> {
+        let out: List<String> = []
+        let m = __str_len(sep)
+        let n = __str_len(self)
+        if m == 0 {
+            out.push(self)
+            return out
+        }
+        let start = 0
+        let i = 0
+        while i + m <= n {
+            if self.matches_at(sep, i) {
+                out.push(__str_substring(self, start, i))
+                i = i + m
+                start = i
+            } else {
+                i = i + 1
+            }
+        }
+        out.push(__str_substring(self, start, n))
+        return out
+    }
+
+    // Split on runs of ASCII whitespace, discarding empty pieces. Leading and
+    // trailing whitespace produce no empty elements.
+    fun split_whitespace(self) -> List<String> {
+        let out: List<String> = []
+        let n = __str_len(self)
+        let i = 0
+        let start = -1
+        while i < n {
+            if is_space_byte(__str_byte_at(self, i)) {
+                if start >= 0 {
+                    out.push(__str_substring(self, start, i))
+                    start = -1
+                }
+            } else {
+                if start < 0 {
+                    start = i
+                }
+            }
+            i = i + 1
+        }
+        if start >= 0 {
+            out.push(__str_substring(self, start, n))
+        }
+        return out
+    }
+
+    // Split into lines on `\n`, stripping a trailing `\r` from each line so
+    // both Unix and Windows line endings work. A trailing newline does not
+    // produce a final empty line.
+    fun lines(self) -> List<String> {
+        let out: List<String> = []
+        let n = __str_len(self)
+        let start = 0
+        let i = 0
+        while i < n {
+            if __str_byte_at(self, i) == 10 {
+                let end = i
+                if end > start {
+                    if __str_byte_at(self, end - 1) == 13 {
+                        end = end - 1
+                    }
+                }
+                out.push(__str_substring(self, start, end))
+                start = i + 1
+            }
+            i = i + 1
+        }
+        if start < n {
+            let end = n
+            if __str_byte_at(self, end - 1) == 13 {
+                end = end - 1
+            }
+            out.push(__str_substring(self, start, end))
+        }
+        return out
+    }
+
+    // Parse a base-10 integer with an optional leading `+`/`-`. Returns `None`
+    // when the trimmed string is empty or has any non-digit character.
+    fun parse_int(self) -> Option<Int> {
+        let s = self.trim()
+        let n = __str_len(s)
+        if n == 0 {
+            return None
+        }
+        let i = 0
+        let neg = false
+        let b0 = __str_byte_at(s, 0)
+        if b0 == 45 {
+            neg = true
+            i = 1
+        } else {
+            if b0 == 43 {
+                i = 1
+            }
+        }
+        if i >= n {
+            return None
+        }
+        let acc = 0
+        while i < n {
+            let b = __str_byte_at(s, i)
+            if b < 48 {
+                return None
+            }
+            if b > 57 {
+                return None
+            }
+            acc = acc * 10 + (b - 48)
+            i = i + 1
+        }
+        if neg {
+            return Some(0 - acc)
+        }
+        return Some(acc)
+    }
+
+    // Parse a floating point number: an optional sign, an integer part, an
+    // optional `.fraction`, and an optional `e`/`E` exponent. Returns `None`
+    // on any trailing or invalid character.
+    fun parse_float(self) -> Option<Float> {
+        let s = self.trim()
+        let n = __str_len(s)
+        if n == 0 {
+            return None
+        }
+        let i = 0
+        let neg = false
+        let b0 = __str_byte_at(s, 0)
+        if b0 == 45 {
+            neg = true
+            i = 1
+        } else {
+            if b0 == 43 {
+                i = 1
+            }
+        }
+        let ten = 10.0
+        let value = 0.0
+        let saw_digit = false
+        while i < n {
+            let b = __str_byte_at(s, i)
+            if b < 48 {
+                break
+            }
+            if b > 57 {
+                break
+            }
+            value = value * ten + digit_to_float(b - 48)
+            saw_digit = true
+            i = i + 1
+        }
+        if i < n {
+            if __str_byte_at(s, i) == 46 {
+                i = i + 1
+                let scale = 1.0
+                while i < n {
+                    let b = __str_byte_at(s, i)
+                    if b < 48 {
+                        break
+                    }
+                    if b > 57 {
+                        break
+                    }
+                    scale = scale / ten
+                    value = value + digit_to_float(b - 48) * scale
+                    saw_digit = true
+                    i = i + 1
+                }
+            }
+        }
+        if saw_digit == false {
+            return None
+        }
+        if i < n {
+            let e = __str_byte_at(s, i)
+            if e == 101 || e == 69 {
+                i = i + 1
+                let exp_neg = false
+                if i < n {
+                    let es = __str_byte_at(s, i)
+                    if es == 45 {
+                        exp_neg = true
+                        i = i + 1
+                    } else {
+                        if es == 43 {
+                            i = i + 1
+                        }
+                    }
+                }
+                let exp = 0
+                let exp_digit = false
+                while i < n {
+                    let b = __str_byte_at(s, i)
+                    if b < 48 {
+                        break
+                    }
+                    if b > 57 {
+                        break
+                    }
+                    exp = exp * 10 + (b - 48)
+                    exp_digit = true
+                    i = i + 1
+                }
+                if exp_digit == false {
+                    return None
+                }
+                let k = 0
+                while k < exp {
+                    if exp_neg {
+                        value = value / ten
+                    } else {
+                        value = value * ten
+                    }
+                    k = k + 1
+                }
+            }
+        }
+        if i < n {
+            return None
+        }
+        if neg {
+            return Some(0.0 - value)
+        }
+        return Some(value)
     }
 }
 

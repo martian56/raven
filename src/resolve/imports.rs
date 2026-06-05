@@ -74,6 +74,8 @@ impl SourceLoader for FsLoader {
 pub const STDLIB_MODULES: &[&str] = &[
     "io",
     "iter",
+    "list",
+    "option",
     "collections",
     "cmp",
     "hash",
