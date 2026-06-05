@@ -46,6 +46,82 @@ impl<T: Eq + Hash> Set<T> {
         return self.count == 0
     }
 
+    // Every element of the set as a list, in no particular order. This is the
+    // way to enumerate a set's contents.
+    fun to_list(self) -> List<T> {
+        let out: List<T> = []
+        let i = 0
+        while i < self.buckets.len() {
+            let bucket = self.buckets[i]
+            let j = 0
+            while j < bucket.len() {
+                out.push(bucket[j])
+                j = j + 1
+            }
+            i = i + 1
+        }
+        return out
+    }
+
+    // A new set with every element of either set.
+    fun union(self, other: Set<T>) -> Set<T> {
+        let out: Set<T> = Set.new()
+        let a = self.to_list()
+        let i = 0
+        while i < a.len() {
+            out.add(a[i])
+            i = i + 1
+        }
+        let b = other.to_list()
+        let j = 0
+        while j < b.len() {
+            out.add(b[j])
+            j = j + 1
+        }
+        return out
+    }
+
+    // A new set with the elements present in both sets.
+    fun intersection(self, other: Set<T>) -> Set<T> {
+        let out: Set<T> = Set.new()
+        let a = self.to_list()
+        let i = 0
+        while i < a.len() {
+            if other.contains(a[i]) {
+                out.add(a[i])
+            }
+            i = i + 1
+        }
+        return out
+    }
+
+    // A new set with the elements in this set but not in `other`.
+    fun difference(self, other: Set<T>) -> Set<T> {
+        let out: Set<T> = Set.new()
+        let a = self.to_list()
+        let i = 0
+        while i < a.len() {
+            if other.contains(a[i]) == false {
+                out.add(a[i])
+            }
+            i = i + 1
+        }
+        return out
+    }
+
+    // True when every element of this set is also in `other`.
+    fun is_subset(self, other: Set<T>) -> Bool {
+        let a = self.to_list()
+        let i = 0
+        while i < a.len() {
+            if other.contains(a[i]) == false {
+                return false
+            }
+            i = i + 1
+        }
+        return true
+    }
+
     fun bucket_index(self, x: T) -> Int {
         let n = self.buckets.len()
         let h = x.hash() % n
@@ -164,6 +240,43 @@ impl<K: Eq + Hash, V> Map<K, V> {
 
     fun is_empty(self) -> Bool {
         return self.count == 0
+    }
+
+    // The value for `k`, or `default` when the key is absent.
+    fun get_or(self, k: K, default: V) -> V {
+        return match self.get(k) {
+            Some(v) -> v,
+            None -> default,
+        }
+    }
+
+    // Every key/value pair as a list of `Entry`, in no particular order.
+    fun entries(self) -> List<Entry<K, V>> {
+        let out: List<Entry<K, V>> = []
+        let i = 0
+        while i < self.buckets.len() {
+            let bucket = self.buckets[i]
+            let j = 0
+            while j < bucket.len() {
+                out.push(bucket[j])
+                j = j + 1
+            }
+            i = i + 1
+        }
+        return out
+    }
+
+    // Remove every entry, leaving an empty map.
+    fun clear(self) {
+        let buckets: List<List<Entry<K, V>>> = []
+        let i = 0
+        while i < 8 {
+            let b: List<Entry<K, V>> = []
+            buckets.push(b)
+            i = i + 1
+        }
+        self.buckets = buckets
+        self.count = 0
     }
 
     fun bucket_index(self, k: K) -> Int {

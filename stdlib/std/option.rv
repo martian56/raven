@@ -1,0 +1,69 @@
+// std/option: helpers over the built-in `Option<T>`.
+//
+// `Option` and its variants `Some` / `None` are part of the language and need
+// no import. This module adds the common combinators as free functions, since
+// methods cannot be added to the built-in generic type.
+
+// True when the option holds a value.
+fun is_some<T>(o: Option<T>) -> Bool {
+    return match o {
+        Some(_) -> true,
+        None -> false,
+    }
+}
+
+// True when the option is empty.
+fun is_none<T>(o: Option<T>) -> Bool {
+    return match o {
+        Some(_) -> false,
+        None -> true,
+    }
+}
+
+// The contained value, or `default` when the option is `None`.
+fun unwrap_or<T>(o: Option<T>, default: T) -> T {
+    return match o {
+        Some(v) -> v,
+        None -> default,
+    }
+}
+
+// Apply `f` to the contained value, or pass `None` through.
+fun map<T, U>(o: Option<T>, f: fun(T) -> U) -> Option<U> {
+    return match o {
+        Some(v) -> Some(f(v)),
+        None -> None,
+    }
+}
+
+// Chain an option-returning function: `Some(v)` becomes `f(v)`, `None` stays
+// `None`. The flat-map / bind combinator.
+fun and_then<T, U>(o: Option<T>, f: fun(T) -> Option<U>) -> Option<U> {
+    return match o {
+        Some(v) -> f(v),
+        None -> None,
+    }
+}
+
+// Keep the value only when it satisfies `pred`, otherwise `None`.
+fun filter<T>(o: Option<T>, pred: fun(T) -> Bool) -> Option<T> {
+    return match o {
+        Some(v) -> {
+            if pred(v) {
+                Some(v)
+            } else {
+                None
+            }
+        }
+        None -> None,
+    }
+}
+
+// The option itself when it is `Some`, otherwise the result of `f()`. Use it
+// to supply a fallback option lazily.
+fun or_else<T>(o: Option<T>, f: fun() -> Option<T>) -> Option<T> {
+    return match o {
+        Some(v) -> Some(v),
+        None -> f(),
+    }
+}

@@ -41,6 +41,8 @@ pub const BUNDLED_MODULES: &[(&str, &str)] = &[
     ("io", include_str!("../../stdlib/std/io.rv")),
     ("string", include_str!("../../stdlib/std/string.rv")),
     ("iter", include_str!("../../stdlib/std/iter.rv")),
+    ("list", include_str!("../../stdlib/std/list.rv")),
+    ("option", include_str!("../../stdlib/std/option.rv")),
     (
         "collections",
         include_str!("../../stdlib/std/collections.rv"),
