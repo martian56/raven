@@ -145,6 +145,47 @@ fun main() {
 }
 ```
 
+### `from_radix(s: String, base: Int) -> Option<Int>`
+
+Parse `s` as an integer in `base`, the inverse of `to_radix`. `base` must be in
+`2..=16`. An optional leading `+` or `-` sign is accepted. Returns `None` on an
+empty string, a digit out of range for the base, or a `base` outside `2..=16`.
+
+```rust
+import std/fmt { from_radix }
+
+fun main() {
+    print(match from_radix("101", 2) {
+        Some(n) -> n,
+        None -> -1,
+    })      // 5
+    print(match from_radix("ff", 16) {
+        Some(n) -> n,
+        None -> -1,
+    })      // 255
+    print(match from_radix("zz", 16) {
+        Some(n) -> n,
+        None -> -1,
+    })      // -1 (None: bad digit)
+}
+```
+
+### `from_hex(s: String) -> Option<Int>`
+
+Parse a hexadecimal string, the inverse of `to_hex`. A thin wrapper over
+`from_radix(s, 16)`.
+
+```rust
+import std/fmt { from_hex }
+
+fun main() {
+    print(match from_hex("deadbeef") {
+        Some(n) -> n,
+        None -> -1,
+    })      // 3735928559
+}
+```
+
 ### `pad_int(n: Int, width: Int) -> String`
 
 Decimal `n` zero-padded to byte width `width`. For a negative `n` the `-`
@@ -159,6 +200,21 @@ fun main() {
     print(pad_int(7, 4))        // 0007
     print(pad_int(-7, 4))       // -007
     print(pad_int(12345, 3))    // 12345 (already wider than width)
+}
+```
+
+### `format_float(x: Float, decimals: Int) -> String`
+
+`x` rendered with exactly `decimals` digits after the decimal point, rounded
+half up. A `decimals` of `0` or less produces no fractional part and no point.
+
+```rust
+import std/fmt { format_float }
+
+fun main() {
+    print(format_float(3.14159, 2))     // 3.14
+    print(format_float(1.0, 3))         // 1.000
+    print(format_float(2.5, 0))         // 3
 }
 ```
 

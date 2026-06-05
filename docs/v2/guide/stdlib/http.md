@@ -1,7 +1,8 @@
 # std/http
 
 A small HTTP/1.1 client built on [std/net](net.md). It sends `GET`, `POST`,
-`PUT`, and `DELETE` requests and hands back a captured response. Every call
+`PUT`, `DELETE`, `PATCH`, and `HEAD` requests and hands back a captured
+response. Every call
 returns `Result<HttpResponse, Error>`, so transport failures (DNS, connect,
 timeout) come back as an [std/error](error.md) `Error` you handle with
 `match`.
@@ -20,7 +21,7 @@ fun main() {
 ## Importing
 
 ```rust
-import std/http { get, post, put, delete, request }
+import std/http { get, post, put, delete, patch, head, request }
 ```
 
 Select the functions you use. The `HttpResponse` type comes in with the
@@ -116,6 +117,41 @@ Send `body` to `url` with a `PUT`.
 ### `delete(url: String) -> Result<HttpResponse, Error>`
 
 Send a `DELETE` to `url`. No request body.
+
+### `patch(url: String, body: String) -> Result<HttpResponse, Error>`
+
+Send `body` to `url` with a `PATCH`, for a partial update.
+
+```rust
+import std/http { patch }
+
+fun main() {
+    match patch("https://example.com/items/1", "{\"name\":\"raven\"}") {
+        Ok(resp) -> print(resp.status_code),
+        Err(e) -> print("request failed"),
+    }
+}
+```
+
+### `head(url: String) -> Result<HttpResponse, Error>`
+
+Send a `HEAD` to `url`. The response carries the status and headers but no
+body, so `resp.body` is empty. Use it to check status or read headers without
+transferring the payload.
+
+```rust
+import std/http { head }
+
+fun main() {
+    match head("https://example.com") {
+        Ok(resp) -> {
+            print(resp.status_code)     // 200
+            print(resp.headers)
+        },
+        Err(e) -> print("request failed"),
+    }
+}
+```
 
 ### `request(method: String, url: String, body: String, headers: String) -> Result<HttpResponse, Error>`
 

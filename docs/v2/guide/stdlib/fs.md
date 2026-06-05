@@ -19,7 +19,7 @@ fun main() {
 ## Importing
 
 ```rust
-import std/fs { read, write, append, remove_file, create_dir, remove_dir, list_dir, size, exists, is_file, is_dir, join, dirname, basename, split }
+import std/fs { read, write, append, read_lines, copy, remove_file, create_dir, create_dir_all, remove_dir, list_dir, walk, size, exists, is_file, is_dir, join, dirname, basename, split }
 ```
 
 `std/fs` is a set of free functions, so use a selective import and list the
@@ -114,6 +114,43 @@ fun log_line(line: String) -> Result<Bool, Error> {
 }
 ```
 
+### `read_lines(path: String) -> Result<List<String>, Error>`
+
+Read the file at `path` and split it into lines, handling both `\n` and
+`\r\n` line endings. The trailing newline does not produce an empty final
+entry.
+
+```rust
+import std/fs { read_lines }
+
+fun main() {
+    match read_lines("config.txt") {
+        Ok(lines) -> {
+            for line in lines {
+                print(line)
+            }
+        }
+        Err(e) -> print(e.message()),
+    }
+}
+```
+
+### `copy(src: String, dst: String) -> Result<Bool, Error>`
+
+Copy the contents of `src` to `dst`, creating or truncating `dst`. Returns
+`Ok(true)` on success.
+
+```rust
+import std/fs { copy }
+
+fun main() {
+    match copy("notes.txt", "notes.bak") {
+        Ok(_) -> print("copied"),
+        Err(e) -> print(e.message()),
+    }
+}
+```
+
 ## Directory and file operations
 
 ### `remove_file(path: String) -> Result<Bool, Error>`
@@ -130,6 +167,23 @@ import std/fs { create_dir }
 
 fun main() {
     match create_dir("build/cache/tmp") {
+        Ok(_) -> print("created"),
+        Err(e) -> print(e.message()),
+    }
+}
+```
+
+### `create_dir_all(path: String) -> Result<Bool, Error>`
+
+Create the directory at `path` along with any missing parents, like
+`mkdir -p`. An already existing directory is not an error. Returns
+`Ok(true)` on success.
+
+```rust
+import std/fs { create_dir_all }
+
+fun main() {
+    match create_dir_all("build/cache/tmp") {
         Ok(_) -> print("created"),
         Err(e) -> print(e.message()),
     }
@@ -154,6 +208,27 @@ fun main() {
         Ok(names) -> {
             for name in names {
                 print(name)
+            }
+        }
+        Err(e) -> print(e.message()),
+    }
+}
+```
+
+### `walk(path: String) -> Result<List<String>, Error>`
+
+Recursively list every path under `path`, depth first. Each entry is a full
+path (the directory prefix joined to the name), and subdirectories appear
+before their contents.
+
+```rust
+import std/fs { walk }
+
+fun main() {
+    match walk("src") {
+        Ok(entries) -> {
+            for entry in entries {
+                print(entry)
             }
         }
         Err(e) -> print(e.message()),

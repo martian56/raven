@@ -256,6 +256,73 @@ fun main() {
 }
 ```
 
+### `map_ok<T, U, E>(r: Result<T, E>, f: fun(T) -> U) -> Result<U, E>`
+
+Transform the `Ok` value with `f`, passing an `Err` through unchanged. `f` is
+a lambda.
+
+```rust
+import std/error { error, map_ok }
+
+fun parse(s: String) -> Result<Int, Error> {
+    if s == "1" {
+        return Ok(1)
+    }
+    return Err(error("bad"))
+}
+
+fun main() {
+    match map_ok(parse("1"), fun(x: Int) -> Int = x + 10) {
+        Ok(n) -> print(n),              // 11
+        Err(e) -> print(e.message()),
+    }
+}
+```
+
+### `map_err<T, E, F>(r: Result<T, E>, f: fun(E) -> F) -> Result<T, F>`
+
+Transform the `Err` value with `f`, passing an `Ok` through unchanged.
+
+```rust
+import std/error { error, map_err }
+
+fun parse(s: String) -> Result<Int, Error> {
+    if s == "1" {
+        return Ok(1)
+    }
+    return Err(error("bad"))
+}
+
+fun main() {
+    match map_err(parse("z"), fun(e: Error) -> String = e.message()) {
+        Ok(n) -> print(n),
+        Err(msg) -> print(msg),         // bad
+    }
+}
+```
+
+### `unwrap_or_else<T, E>(r: Result<T, E>, f: fun(E) -> T) -> T`
+
+The `Ok` value, or the result of applying `f` to the error. The lazy
+counterpart to `unwrap_or`, for when the fallback depends on the error or is
+expensive to build.
+
+```rust
+import std/error { error, unwrap_or_else }
+
+fun parse(s: String) -> Result<Int, Error> {
+    if s == "1" {
+        return Ok(1)
+    }
+    return Err(error("bad"))
+}
+
+fun main() {
+    print(unwrap_or_else(parse("1"), fun(e: Error) -> Int = 0))      // 1
+    print(unwrap_or_else(parse("z"), fun(e: Error) -> Int = 0 - 1))  // -1
+}
+```
+
 ## Worked example: a small config loader
 
 This ties the pieces together: failing steps return `Result<T, Error>`, `?`

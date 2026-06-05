@@ -51,6 +51,10 @@ own single-byte ASCII forms.
 | `extension(p: String) -> String` | `String` | text after the last `.` in the basename |
 | `stem(p: String) -> String` | `String` | basename without its extension |
 | `is_absolute(p: String) -> Bool` | `Bool` | whether `p` starts with `/` |
+| `is_relative(p: String) -> Bool` | `Bool` | whether `p` does not start with `/` |
+| `components(p: String) -> List<String>` | `List<String>` | the non-empty `/`-separated segments |
+| `normalize(p: String) -> String` | `String` | collapse `.`, `..`, and redundant slashes |
+| `with_extension(p: String, ext: String) -> String` | `String` | replace the extension |
 
 ## Building a path
 
@@ -156,6 +160,70 @@ fun main() {
 }
 ```
 
+### `is_relative(p: String) -> Bool`
+
+True when `p` does not start with `/`. The exact complement of
+`is_absolute`, so the empty string is relative.
+
+```rust
+import std/path { is_relative }
+
+fun main() {
+    print(is_relative("usr/bin"))       // true
+    print(is_relative("/usr/bin"))      // false
+    print(is_relative(""))              // true
+}
+```
+
+### `components(p: String) -> List<String>`
+
+The non-empty segments of `p`, splitting on `/`. Leading, trailing, and
+repeated separators produce no empty entries, so a root path and a bare name
+both reduce to their real parts.
+
+```rust
+import std/path { components }
+
+fun main() {
+    let parts = components("/a/b/c")    // ["a", "b", "c"]
+    for part in parts {
+        print(part)
+    }
+}
+```
+
+## Resolving a path
+
+### `normalize(p: String) -> String`
+
+Collapse `.` segments, resolve `..` against the preceding segment, and remove
+redundant slashes. A leading `/` is preserved. The result is pure string work:
+no `..` is resolved against the real filesystem.
+
+```rust
+import std/path { normalize }
+
+fun main() {
+    print(normalize("/a/b/../c/./d"))   // /a/c/d
+    print(normalize("a//b/"))           // a/b
+}
+```
+
+### `with_extension(p: String, ext: String) -> String`
+
+Replace the extension of `p` with `ext` (no leading dot). When `p` has no
+extension, `ext` is appended. An empty `ext` removes the extension.
+
+```rust
+import std/path { with_extension }
+
+fun main() {
+    print(with_extension("report.txt", "md"))  // report.md
+    print(with_extension("report", "md"))       // report.md
+    print(with_extension("report.txt", ""))      // report
+}
+```
+
 ## Worked example: rename a path's extension
 
 This walks a path apart, swaps its extension, and joins it back together
@@ -195,13 +263,6 @@ strings, `std/fs` is the disk.
 
 A common pattern is to compute a target path with `std/path`, then hand
 that string to `std/fs` to actually read or write it.
-
-## Not yet covered
-
-A `normalize` function (resolving `.` and `..` segments and collapsing
-repeated separators) is deferred and not part of this module today. The
-functions above do no such resolution: they operate on the literal bytes
-of the path you pass in.
 
 ## See also
 

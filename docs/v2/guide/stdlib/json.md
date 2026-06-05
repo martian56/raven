@@ -131,6 +131,53 @@ True only for the `Null` variant.
 
 `Some(s)` for a `Str`, else `None`.
 
+### `as_int(self) -> Option<Int>`
+
+`Some(i)` for a `Number`, truncated toward zero, else `None`. Use this when
+you want a whole-number field as an `Int` rather than the raw `Float`.
+
+```rust
+import std/json { parse }
+
+fun main() {
+    match parse("{\"port\": 8080}") {
+        Ok(v) -> {
+            match v.get("port") {
+                Some(field) -> {
+                    match field.as_int() {
+                        Some(i) -> print(i),     // 8080
+                        None -> print("not a number"),
+                    }
+                }
+                None -> print("no port"),
+            }
+        }
+        Err(e) -> print("bad json"),
+    }
+}
+```
+
+### `keys(self) -> List<String>`
+
+The object's member keys as a `List<String>`, in the Map's key order. An
+empty list for any non-object value.
+
+### `length(self) -> Int`
+
+The element count: the number of array elements or object members. `0` for
+any scalar value.
+
+```rust
+import std/json { parse }
+
+fun main() {
+    match parse("[10, 20, 30]") {
+        Ok(v) -> print(v.length()),      // 3
+        Err(e) -> print("bad json"),
+    }
+}
+```
+
 A typical read chains a container step and then an extractor, handling each
 `Option` with `match`:
 
@@ -180,6 +227,74 @@ fun main() {
         Ok(v) -> print(stringify(v)),     // {"a":1,"b":[true,null]}
         Err(e) -> print("bad json"),
     }
+}
+```
+
+### `stringify_pretty(value: JsonValue, indent: Int) -> String`
+
+Multi-line serialization with `indent` spaces of padding per nesting level.
+Object members and array elements each go on their own line; empty arrays and
+objects stay on one line as `[]` and `{}`. Members are emitted in the Map's
+key order, as with `stringify`.
+
+```rust
+import std/json { parse, stringify_pretty }
+
+fun main() {
+    match parse("{\"a\":1,\"b\":[true,null]}") {
+        Ok(v) -> print(stringify_pretty(v, 2)),
+        Err(e) -> print("bad json"),
+    }
+}
+```
+
+## Building a value
+
+Build a `JsonValue` tree directly with these free constructors instead of
+parsing text. Select them from the module, and import `std/collections` when
+you need a `Map` for `json_object`.
+
+```rust
+import std/json { json_null, json_bool, json_number, json_int, json_string, json_array, json_object }
+```
+
+### `json_null() -> JsonValue`
+
+The `Null` value.
+
+### `json_bool(b: Bool) -> JsonValue`
+
+A `Bool` value.
+
+### `json_number(n: Float) -> JsonValue`
+
+A `Number` from a `Float`.
+
+### `json_int(n: Int) -> JsonValue`
+
+A `Number` from an `Int`, widened to `Float` (JSON has one number type).
+
+### `json_string(s: String) -> JsonValue`
+
+A `Str` value.
+
+### `json_array(items: List<JsonValue>) -> JsonValue`
+
+An `Array` wrapping a list of values.
+
+### `json_object(map: Map<String, JsonValue>) -> JsonValue`
+
+An `Object` wrapping a `std/collections` `Map`. A map literal `["k": v]`
+serves as the argument.
+
+```rust
+import std/collections
+import std/json { json_object, json_int, json_string, stringify_pretty }
+
+fun main() {
+    let doc = json_object(["n": json_int(7), "name": json_string("ok")])
+    print(stringify_pretty(doc, 2))
+    print(doc.length())     // 2
 }
 ```
 
