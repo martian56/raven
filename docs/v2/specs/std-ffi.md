@@ -327,9 +327,9 @@ the call boundary marshals it by value.
   `CSize`, `CStr`, `CPtr<T>`, or `CFnPtr`. A float field (`CFloat`,
   `CDouble`) is rejected, because System V AMD64 classifies a floating
   field as SSE and would pass it in a different register class.
-* The total C size must be **at most 8 bytes** (one machine register). A
-  larger struct is rejected with a clear error; pass a `CPtr<...>` to the
-  struct instead.
+* The total C size must be **at most 16 bytes** (up to two machine
+  registers). A larger struct is rejected with a clear error; pass a
+  `CPtr<...>` to the struct instead.
 * A native `Int` literal initializes a `CInt`/`CLong`/`CSize` field
   (`Point { x: 3, y: 4 }`), the same coercion a C call applies.
 * Only a `@repr(C)` struct may be handed to a C function by value; a plain
@@ -337,26 +337,30 @@ the call boundary marshals it by value.
 
 ### ABI and marshaling
 
-Both System V AMD64 (Linux, macOS) and Windows x64 pass an aggregate of at
-most eight bytes whose members are all integer-class in a **single integer
-register**, and return it in `RAX`. The two ABIs agree on this case, so a
-struct of this shape marshals identically: the back end packs the fields
-into one i64 (each field reduced to its C width and placed at its C byte
-offset) and passes that i64 where the extern signature has the struct
-parameter; a returned struct arrives as one i64 and is unpacked into a
-fresh heap struct. The i64's byte image equals the struct's C memory image
-on little-endian x86-64.
+The back end classifies an integer-class `@repr(C)` struct from its size and
+the target calling convention, then marshals it without relying on
+Cranelift's aggregate handling (which would pass the whole struct on the
+stack rather than apply the C ABI register classification):
 
-Cranelift's `StructArgument` purpose was not used: in this version it
-passes the whole aggregate on the stack rather than applying the ABI
-register classification, which is wrong for the common small-struct case on
-both ABIs. The manual single-register packing above is correct for the
-supported shape on both.
+* **At most 8 bytes**: one integer register on every target (Windows x64
+  requires the size to be exactly 1, 2, 4, or 8). The fields pack into one
+  i64 at their C byte offsets; a returned struct arrives in one register and
+  is unpacked into a fresh heap struct.
+* **9 to 16 bytes, System V AMD64 and AArch64**: two integer registers (two
+  eightbytes). The back end writes the struct's C image to a stack slot,
+  loads the two eightbyte registers from it to pass, and stores the two
+  returned registers back to a slot to rebuild the heap struct.
+* **Windows x64, sizes 3, 5, 6, 7, or 9 to 16**: by reference. The caller
+  copies the struct to a stack slot and passes its address; a struct return
+  of these sizes uses a hidden first pointer argument (`sret`) the callee
+  writes through.
+
+All three paths read and write the struct through its exact C memory image,
+so a Raven heap struct round-trips a C call unchanged.
 
 ### Out of scope (struct by value)
 
-* Structs larger than 8 bytes (the System V two-register path and the
-  Windows x64 hidden-pointer path for 3, 5, 6, 7, or >8 byte structs).
+* Structs larger than 16 bytes (the System V in-memory class).
 * Floating-point fields (the System V SSE classification).
 * Nested struct fields and struct fields of struct type.
 

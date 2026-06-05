@@ -570,12 +570,23 @@ fn repr_c_struct_rejects_non_scalar_field() {
 }
 
 #[test]
+fn repr_c_struct_allows_two_register() {
+    // A repr(C) struct up to two registers (here three CInts, 12 bytes, and
+    // four, 16 bytes) crosses the FFI by value.
+    check("@repr(C)\nstruct V3 {\n    a: CInt\n    b: CInt\n    c: CInt\n}\nfun main() {}\n")
+        .unwrap();
+    check("@repr(C)\nstruct R {\n    a: CInt\n    b: CInt\n    c: CInt\n    d: CInt\n}\nfun main() {}\n")
+        .unwrap();
+}
+
+#[test]
 fn repr_c_struct_rejects_oversize() {
-    // A repr(C) struct larger than one register (here three CInts, 12
-    // bytes) cannot cross the FFI by value in this slice.
-    let err =
-        check("@repr(C)\nstruct Big {\n    a: CInt\n    b: CInt\n    c: CInt\n}\nfun main() {}\n")
-            .unwrap_err();
+    // A repr(C) struct larger than two registers (here three CLongs, 24
+    // bytes) cannot cross the FFI by value yet.
+    let err = check(
+        "@repr(C)\nstruct Big {\n    a: CLong\n    b: CLong\n    c: CLong\n}\nfun main() {}\n",
+    )
+    .unwrap_err();
     assert!(matches!(err, RavenError::Type(_, _, _)));
 }
 

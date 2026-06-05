@@ -400,3 +400,28 @@ fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
     }
     haystack.windows(needle.len()).any(|w| w == needle)
 }
+
+#[test]
+fn classify_repr_c_matches_platform_abi() {
+    use crate::codegen::function::{classify_repr_c, ReprCAbi};
+    use cranelift_codegen::isa::CallConv;
+
+    // System V and AArch64: up to 8 bytes in one register, 9..=16 in two.
+    for conv in [CallConv::SystemV, CallConv::AppleAarch64] {
+        assert_eq!(classify_repr_c(4, conv), ReprCAbi::OneReg);
+        assert_eq!(classify_repr_c(8, conv), ReprCAbi::OneReg);
+        assert_eq!(classify_repr_c(3, conv), ReprCAbi::OneReg);
+        assert_eq!(classify_repr_c(12, conv), ReprCAbi::TwoReg);
+        assert_eq!(classify_repr_c(16, conv), ReprCAbi::TwoReg);
+    }
+
+    // Windows x64: only sizes 1, 2, 4, 8 use a register; the rest go by
+    // reference.
+    let win = CallConv::WindowsFastcall;
+    assert_eq!(classify_repr_c(4, win), ReprCAbi::OneReg);
+    assert_eq!(classify_repr_c(8, win), ReprCAbi::OneReg);
+    assert_eq!(classify_repr_c(3, win), ReprCAbi::ByRef);
+    assert_eq!(classify_repr_c(6, win), ReprCAbi::ByRef);
+    assert_eq!(classify_repr_c(12, win), ReprCAbi::ByRef);
+    assert_eq!(classify_repr_c(16, win), ReprCAbi::ByRef);
+}

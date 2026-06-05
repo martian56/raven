@@ -105,6 +105,13 @@ address as the hidden argument, and read it back.
   (the existing aggregate constructor) from the returned registers or the
   sret slot.
 
+### Status
+
+Done for structs up to 16 bytes (one or two integer registers on System V
+and AArch64; one register or by reference on Windows x64), argument and
+return. Structs larger than 16 bytes (the System V in-memory class) are still
+rejected and remain a follow-up.
+
 ### Out of scope for A
 
 Floating-point fields (slice B) and nested struct fields (slice C); a struct

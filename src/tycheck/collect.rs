@@ -334,11 +334,12 @@ fn fill_struct(
 }
 
 /// The largest total byte size a `@repr(C)` struct may have to cross the
-/// FFI by value in this slice. Both System V AMD64 and Windows x64 pass an
-/// aggregate of this size in a single integer register, so the value
-/// marshals as one i64. Larger structs need the two-register or
-/// hidden-pointer paths, which are out of scope here.
-pub const REPR_C_MAX_BYTES: u32 = 8;
+/// FFI by value. Up to 8 bytes the platforms pass the aggregate in a single
+/// integer register; 9..=16 bytes use two integer registers on System V
+/// AMD64 and AArch64 and a hidden by-reference copy on Windows x64. Structs
+/// larger than 16 bytes (the System V in-memory class) are not supported
+/// yet. See `docs/v2/specs/ffi-extensions.md`.
+pub const REPR_C_MAX_BYTES: u32 = 16;
 
 /// Validate a `@repr(C)` struct used for by-value FFI: it must have at
 /// least one field, every field must be a plain integer-class C scalar

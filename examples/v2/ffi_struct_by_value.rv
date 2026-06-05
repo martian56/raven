@@ -1,0 +1,69 @@
+// FFI: passing and returning @repr(C) structs larger than one register by
+// value. The runtime ships small C-ABI fixtures (raven_ffi_*) so the test
+// is identical on every platform; the back end marshals the structs per the
+// target ABI (two integer registers on System V / AArch64, by reference on
+// Windows x64), and this example runs in CI on every target.
+// Prints:
+//   9
+//   7
+//   20
+//   3
+//   60
+//   3
+//   2
+@repr(C)
+struct Pair {
+    a: CLong,
+    b: CLong,
+}
+
+@repr(C)
+struct Rect {
+    x: CInt,
+    y: CInt,
+    w: CInt,
+    h: CInt,
+}
+
+@repr(C)
+struct Vec3 {
+    x: CInt,
+    y: CInt,
+    z: CInt,
+}
+
+@repr(C)
+struct LldivT {
+    quot: CLong,
+    rem: CLong,
+}
+
+extern "C" {
+    fun raven_ffi_swap_pair(p: Pair) -> Pair
+    fun raven_ffi_rect_area(r: Rect) -> CLong
+    fun raven_ffi_make_rect(x: CInt, y: CInt, w: CInt, h: CInt) -> Rect
+    fun raven_ffi_vec3_sum(v: Vec3) -> CLong
+    fun lldiv(numer: CLong, denom: CLong) -> LldivT
+}
+
+fun main() {
+    // 16-byte struct as both argument and return value.
+    let q = raven_ffi_swap_pair(Pair { a: 7, b: 9 })
+    print(q.a) // 9
+    print(q.b) // 7
+
+    // 16-byte four-field struct argument.
+    print(raven_ffi_rect_area(Rect { x: 0, y: 0, w: 4, h: 5 })) // 20
+
+    // 16-byte struct return value.
+    let r = raven_ffi_make_rect(1, 2, 3, 4)
+    print(r.w) // 3
+
+    // 12-byte struct argument (a partial second eightbyte).
+    print(raven_ffi_vec3_sum(Vec3 { x: 10, y: 20, z: 30 })) // 60
+
+    // A real C standard-library function returning a 16-byte struct.
+    let d = lldiv(17, 5)
+    print(d.quot) // 3
+    print(d.rem) // 2
+}
