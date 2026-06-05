@@ -1,0 +1,55 @@
+// FFI: @repr(C) structs with floating-point fields by value. The back end
+// classifies float eightbytes per target (SSE registers on System V, a
+// homogeneous-float-aggregate in SIMD registers on AArch64, integer
+// registers or by reference on Windows x64), and narrows f64 to f32 for a
+// CFloat field at the boundary. Runtime fixtures (raven_ffi_*) make the test
+// identical on every platform. Prints:
+//   4
+//   7
+//   4
+//   30
+//   7.5
+@repr(C)
+struct PointF {
+    x: CFloat,
+    y: CFloat,
+}
+
+@repr(C)
+struct Vec2D {
+    x: CDouble,
+    y: CDouble,
+}
+
+@repr(C)
+struct Mixed {
+    n: CInt,
+    f: CFloat,
+}
+
+extern "C" {
+    fun raven_ffi_pointf_sum(p: PointF) -> CDouble
+    fun raven_ffi_make_pointf(x: CFloat, y: CFloat) -> PointF
+    fun raven_ffi_vec2d_sum(v: Vec2D) -> CDouble
+    fun raven_ffi_make_vec2d(x: CDouble, y: CDouble) -> Vec2D
+    fun raven_ffi_mixed_sum(m: Mixed) -> CDouble
+}
+
+fun main() {
+    // 8-byte two-f32 struct argument (one SSE eightbyte on System V).
+    print(raven_ffi_pointf_sum(PointF { x: 1.5, y: 2.5 })) // 4
+
+    // 8-byte two-f32 struct returned by value, then passed back.
+    let p = raven_ffi_make_pointf(3.0, 4.0)
+    print(raven_ffi_pointf_sum(p)) // 7
+
+    // 16-byte two-f64 struct argument (two SSE registers / a 2-member HFA).
+    print(raven_ffi_vec2d_sum(Vec2D { x: 1.25, y: 2.75 })) // 4
+
+    // 16-byte two-f64 struct returned by value.
+    let v = raven_ffi_make_vec2d(10.0, 20.0)
+    print(raven_ffi_vec2d_sum(v)) // 30
+
+    // A struct mixing an int and a float (one integer eightbyte).
+    print(raven_ffi_mixed_sum(Mixed { n: 5, f: 2.5 })) // 7.5
+}

@@ -18,7 +18,7 @@ use cranelift_module::Module;
 
 use crate::mir::{
     ListMethodOp, MirBinOp, MirBlock, MirBlockId, MirConstant, MirFfiTy, MirFnRef, MirFunction,
-    MirLocal, MirOperand, MirRvalue, MirStatement, MirTerminator, MirType, MirUnOp,
+    MirLocal, MirOperand, MirRvalue, MirStatement, MirTerminator, MirType, MirUnOp, ReprCLayout,
 };
 
 use super::context::ModuleCx;
@@ -2027,16 +2027,16 @@ fn lower_call(
     let ptr = cx.pointer_type();
     let mut arg_vals = Vec::with_capacity(args.len() + 1);
 
-    // A by-value struct return larger than one register comes back through a
-    // hidden pointer (sret) on Windows x64: the caller allocates the result
-    // slot and passes its address as the first argument. System V and AArch64
-    // return such a struct in registers, so they need no hidden argument.
-    let ret_struct_abi = match &extern_ret {
-        Some(rt) if is_extern && is_repr_c_struct(cx, rt) => Some(repr_c_abi(cx, rt)),
+    // A by-value struct return that does not fit in registers comes back
+    // through a hidden pointer (sret) on Windows x64: the caller allocates
+    // the result slot and passes its address as the first argument. System V
+    // and AArch64 return such a struct in registers, so no hidden argument.
+    let ret_struct_plan = match &extern_ret {
+        Some(rt) if is_extern && is_repr_c_struct(cx, rt) => Some(repr_c_plan(cx, rt)),
         _ => None,
     };
     let mut sret_addr: Option<Value> = None;
-    if ret_struct_abi == Some(ReprCAbi::ByRef) {
+    if matches!(ret_struct_plan, Some(RegPlan::ByRef)) {
         let size = cx
             .repr_c_layout(&extern_ret.as_ref().unwrap().mangle())
             .unwrap()
@@ -2062,20 +2062,22 @@ fn lower_call(
             .and_then(|tys| tys.get(i))
             .cloned();
         match param {
-            Some(pt) if is_extern && is_repr_c_struct(cx, &pt) => match repr_c_abi(cx, &pt) {
-                ReprCAbi::OneReg => arg_vals.push(marshal_struct_to_reg(cx, builder, v, &pt)),
-                ReprCAbi::TwoReg => {
-                    let size = cx.repr_c_layout(&pt.mangle()).unwrap().size;
-                    let addr = struct_to_image(cx, builder, v, &pt);
-                    for eb in image_eightbytes(builder, addr, size) {
-                        arg_vals.push(eb);
+            Some(pt) if is_extern && is_repr_c_struct(cx, &pt) => {
+                let addr = struct_to_image(cx, builder, v, &pt);
+                match repr_c_plan(cx, &pt) {
+                    RegPlan::ByRef => arg_vals.push(addr),
+                    RegPlan::Regs(slots) => {
+                        for s in slots {
+                            arg_vals.push(builder.ins().load(
+                                s.ty,
+                                MemFlags::new(),
+                                addr,
+                                s.offset as i32,
+                            ));
+                        }
                     }
                 }
-                ReprCAbi::ByRef => {
-                    let addr = struct_to_image(cx, builder, v, &pt);
-                    arg_vals.push(addr);
-                }
-            },
+            }
             Some(pt) => {
                 let coerced = coerce_to_param(builder, v, &pt, ptr);
                 if operand_allocates_heap(a) {
@@ -2100,18 +2102,17 @@ fn lower_call(
 
     // Rebuild a by-value struct return into a Raven heap object from the
     // register(s) or the sret slot it arrived in.
-    if let (Some(abi), Some(ret_ty)) = (ret_struct_abi, &extern_ret) {
-        let obj = match abi {
-            ReprCAbi::OneReg => marshal_reg_to_struct(cx, builder, results[0], ret_ty),
-            ReprCAbi::TwoReg => {
+    if let (Some(plan), Some(ret_ty)) = (ret_struct_plan, &extern_ret) {
+        let obj = match plan {
+            RegPlan::ByRef => image_to_struct(cx, builder, sret_addr.unwrap(), ret_ty),
+            RegPlan::Regs(slots) => {
                 let size = cx.repr_c_layout(&ret_ty.mangle()).unwrap().size;
                 let (slot, addr) = struct_image_slot(cx, builder, size);
-                for (k, r) in results.iter().enumerate() {
-                    builder.ins().stack_store(*r, slot, (k as i32) * 8);
+                for (s, r) in slots.iter().zip(results.iter()) {
+                    builder.ins().stack_store(*r, slot, s.offset as i32);
                 }
                 image_to_struct(cx, builder, addr, ret_ty)
             }
-            ReprCAbi::ByRef => image_to_struct(cx, builder, sret_addr.unwrap(), ret_ty),
         };
         return Ok(Some(obj));
     }
@@ -2122,85 +2123,6 @@ fn lower_call(
 /// shape that crosses the FFI by value in a single register.
 fn is_repr_c_struct(cx: &ModuleCx, ty: &MirType) -> bool {
     matches!(ty, MirType::Struct { .. }) && cx.repr_c_layout(&ty.mangle()).is_some()
-}
-
-/// Pack a `@repr(C)` struct's heap fields into the single integer register
-/// the platform C ABI passes the struct in. Each field is read from its
-/// pointer-width heap slot, reduced to its C width, and OR-ed into the
-/// accumulator at its C bit offset. Both System V AMD64 and Windows x64
-/// pass an aggregate of at most eight bytes this way, so the resulting
-/// i64's byte order matches the struct's C memory image.
-fn marshal_struct_to_reg(
-    cx: &mut ModuleCx,
-    builder: &mut FunctionBuilder<'_>,
-    obj: Value,
-    ty: &MirType,
-) -> Value {
-    let ptr = cx.pointer_type();
-    let layout = cx
-        .repr_c_layout(&ty.mangle())
-        .cloned()
-        .expect("is_repr_c_struct checked the layout is present");
-    let fields = call_struct_fields(cx, builder, obj, ptr);
-    let mut acc = builder.ins().iconst(types::I64, 0);
-    for (i, f) in layout.fields.iter().enumerate() {
-        let raw = builder
-            .ins()
-            .load(types::I64, MemFlags::new(), fields, layout::slot_offset(i));
-        let (fsize, _) = f
-            .ffi
-            .c_scalar_layout()
-            .expect("repr(C) field is an integer-class scalar");
-        let masked = mask_low_bytes(builder, raw, fsize);
-        let placed = if f.offset == 0 {
-            masked
-        } else {
-            builder.ins().ishl_imm(masked, (f.offset * 8) as i64)
-        };
-        acc = builder.ins().bor(acc, placed);
-    }
-    acc
-}
-
-/// Rebuild a Raven heap struct from the single register a by-value
-/// `@repr(C)` struct return arrives in. Each field is extracted from its C
-/// bit offset, widened to a pointer-width heap slot, and stored into a
-/// fresh struct object whose descriptor matches the type.
-fn marshal_reg_to_struct(
-    cx: &mut ModuleCx,
-    builder: &mut FunctionBuilder<'_>,
-    reg: Value,
-    ty: &MirType,
-) -> Value {
-    let ptr = cx.pointer_type();
-    let layout = cx
-        .repr_c_layout(&ty.mangle())
-        .cloned()
-        .expect("is_repr_c_struct checked the layout is present");
-    // The struct descriptor marks every field non-pointer: a repr(C)
-    // struct holds only C scalars, so the collector treats its body as
-    // opaque words and never follows a field as a GC pointer.
-    let type_id = cx.intern_descriptor(&ty.mangle(), 0);
-    let field_count = layout.fields.len() as i64;
-    let obj = call_struct_new(cx, builder, field_count, type_id, ptr);
-    let base = call_struct_fields(cx, builder, obj, ptr);
-    let reg64 = to_int64(builder, reg);
-    for (i, f) in layout.fields.iter().enumerate() {
-        let shifted = if f.offset == 0 {
-            reg64
-        } else {
-            builder.ins().ushr_imm(reg64, (f.offset * 8) as i64)
-        };
-        let (fsize, _) = f
-            .ffi
-            .c_scalar_layout()
-            .expect("repr(C) field is an integer-class scalar");
-        let field_val = mask_low_bytes(builder, shifted, fsize);
-        builder
-            .ins()
-            .store(MemFlags::new(), field_val, base, layout::slot_offset(i));
-    }
-    obj
 }
 
 /// The Cranelift integer type that holds exactly `size` bytes (1, 2, 4, or
@@ -2214,46 +2136,157 @@ fn int_type_for_size(size: u32) -> CType {
     }
 }
 
-/// How a `@repr(C)` struct crosses the C ABI by value, from its size and the
-/// target calling convention. See `docs/v2/specs/ffi-extensions.md`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum ReprCAbi {
-    /// Packed into one integer register. Sizes up to 8 bytes, with the extra
-    /// Windows x64 requirement that the size be exactly 1, 2, 4, or 8.
-    OneReg,
-    /// Two integer registers (System V AMD64 and AArch64 eightbytes), for a
-    /// 9..=16 byte struct.
-    TwoReg,
-    /// By reference: the caller copies the struct to memory and passes a
-    /// pointer. Windows x64 for sizes 3, 5, 6, 7 and 9..=16, and the
-    /// hidden-pointer (`sret`) form of returning those.
+/// One register a by-value struct occupies: the Cranelift type moved through
+/// it (i64 for an integer eightbyte, f64/f32 for a float register) and the
+/// byte offset into the struct's C image it loads from and stores to.
+#[derive(Clone, Copy)]
+pub(crate) struct RegSlot {
+    pub ty: CType,
+    pub offset: u32,
+}
+
+/// How a by-value `@repr(C)` struct crosses the C ABI: spread across these
+/// registers, or by reference (a pointer to a caller-made copy).
+pub(crate) enum RegPlan {
+    Regs(Vec<RegSlot>),
     ByRef,
 }
 
-/// Classify a `@repr(C)` struct's by-value passing mode from its byte size
-/// and the target calling convention.
-pub(crate) fn classify_repr_c(size: u32, conv: CallConv) -> ReprCAbi {
-    let win64 = matches!(conv, CallConv::WindowsFastcall);
-    if size <= 8 {
-        if win64 && !matches!(size, 1 | 2 | 4 | 8) {
-            ReprCAbi::ByRef
-        } else {
-            ReprCAbi::OneReg
-        }
-    } else if win64 {
-        ReprCAbi::ByRef
-    } else {
-        ReprCAbi::TwoReg
+fn is_float_ffi_ty(f: &MirFfiTy) -> bool {
+    matches!(f, MirFfiTy::CFloat | MirFfiTy::CDouble)
+}
+
+fn ffi_byte_size(f: &MirFfiTy) -> u32 {
+    match f {
+        MirFfiTy::CInt | MirFfiTy::CFloat => 4,
+        _ => 8,
     }
 }
 
-/// The passing mode for a `@repr(C)` struct MIR type under the target ABI.
-fn repr_c_abi(cx: &ModuleCx, ty: &MirType) -> ReprCAbi {
-    let size = cx
+/// Integer eightbyte registers covering `size` bytes (one i64 per eightbyte).
+fn integer_eightbytes(size: u32) -> Vec<RegSlot> {
+    let mut out = Vec::new();
+    let mut off = 0;
+    while off < size {
+        out.push(RegSlot {
+            ty: types::I64,
+            offset: off,
+        });
+        off += 8;
+    }
+    out
+}
+
+/// System V AMD64 eightbyte classification: an eightbyte is SSE (an f64
+/// register) when every field overlapping it is a float, otherwise INTEGER
+/// (an i64 register holding the eightbyte's bytes).
+fn sysv_eightbytes(layout: &ReprCLayout) -> Vec<RegSlot> {
+    let mut out = Vec::new();
+    let mut off = 0;
+    while off < layout.size {
+        let end = off + 8;
+        let mut any = false;
+        let mut all_float = true;
+        for f in &layout.fields {
+            if f.offset < end && f.offset + ffi_byte_size(&f.ffi) > off {
+                any = true;
+                if !is_float_ffi_ty(&f.ffi) {
+                    all_float = false;
+                }
+            }
+        }
+        let ty = if any && all_float {
+            types::F64
+        } else {
+            types::I64
+        };
+        out.push(RegSlot { ty, offset: off });
+        off += 8;
+    }
+    out
+}
+
+/// AArch64 homogeneous floating aggregate: a struct of 1..=4 fields all of
+/// the same float type, each passed in its own SIMD register. `None` for any
+/// other shape (which uses general registers / eightbytes).
+fn aarch64_hfa(layout: &ReprCLayout) -> Option<Vec<RegSlot>> {
+    if layout.fields.is_empty() || layout.fields.len() > 4 {
+        return None;
+    }
+    let all_f32 = layout
+        .fields
+        .iter()
+        .all(|f| matches!(f.ffi, MirFfiTy::CFloat));
+    let all_f64 = layout
+        .fields
+        .iter()
+        .all(|f| matches!(f.ffi, MirFfiTy::CDouble));
+    let ty = if all_f32 {
+        types::F32
+    } else if all_f64 {
+        types::F64
+    } else {
+        return None;
+    };
+    Some(
+        layout
+            .fields
+            .iter()
+            .map(|f| RegSlot {
+                ty,
+                offset: f.offset,
+            })
+            .collect(),
+    )
+}
+
+/// The register plan for a by-value `@repr(C)` struct under the target ABI.
+/// See `docs/v2/specs/ffi-extensions.md`.
+pub(crate) fn repr_c_register_plan(layout: &ReprCLayout, conv: CallConv) -> RegPlan {
+    match conv {
+        // Windows x64: sizes 1/2/4/8 in one integer register (a float-field
+        // struct passes its bits in an integer register), otherwise by
+        // reference. No SSE classification.
+        CallConv::WindowsFastcall => {
+            if matches!(layout.size, 1 | 2 | 4 | 8) {
+                RegPlan::Regs(vec![RegSlot {
+                    ty: types::I64,
+                    offset: 0,
+                }])
+            } else {
+                RegPlan::ByRef
+            }
+        }
+        // AArch64: a homogeneous float aggregate goes in SIMD registers, any
+        // other <=16 byte struct in general registers, larger by reference.
+        CallConv::AppleAarch64 => {
+            if layout.size > 16 {
+                RegPlan::ByRef
+            } else if let Some(slots) = aarch64_hfa(layout) {
+                RegPlan::Regs(slots)
+            } else {
+                RegPlan::Regs(integer_eightbytes(layout.size))
+            }
+        }
+        // System V AMD64: per-eightbyte INTEGER/SSE classification up to 16
+        // bytes, larger structs in memory (by reference).
+        _ => {
+            if layout.size > 16 {
+                RegPlan::ByRef
+            } else {
+                RegPlan::Regs(sysv_eightbytes(layout))
+            }
+        }
+    }
+}
+
+/// The register plan for a `@repr(C)` struct MIR type under the target ABI.
+fn repr_c_plan(cx: &ModuleCx, ty: &MirType) -> RegPlan {
+    let layout = cx
         .repr_c_layout(&ty.mangle())
-        .expect("is_repr_c_struct checked the layout is present")
-        .size;
-    classify_repr_c(size, cx.default_call_conv())
+        .cloned()
+        .expect("is_repr_c_struct checked the layout is present");
+    repr_c_register_plan(&layout, cx.default_call_conv())
 }
 
 /// Slot size in bytes for a struct's C image: rounded up to 16 and at least
@@ -2284,16 +2317,31 @@ fn struct_to_image(
         let raw = builder
             .ins()
             .load(types::I64, MemFlags::new(), base, layout::slot_offset(i));
-        let (fsize, _) = f
-            .ffi
-            .c_scalar_layout()
-            .expect("repr(C) field is an integer-class scalar");
-        let v = if fsize >= 8 {
-            raw
-        } else {
-            builder.ins().ireduce(int_type_for_size(fsize), raw)
-        };
-        builder.ins().stack_store(v, slot, f.offset as i32);
+        match f.ffi {
+            // A float field is stored in the heap as f64 bits. The C image
+            // wants f32 for `CFloat` (narrow with fdemote) and f64 for
+            // `CDouble` (the same 8 bytes).
+            MirFfiTy::CFloat => {
+                let f64v = builder.ins().bitcast(types::F64, MemFlags::new(), raw);
+                let f32v = builder.ins().fdemote(types::F32, f64v);
+                builder.ins().stack_store(f32v, slot, f.offset as i32);
+            }
+            MirFfiTy::CDouble => {
+                builder.ins().stack_store(raw, slot, f.offset as i32);
+            }
+            _ => {
+                let (fsize, _) = f
+                    .ffi
+                    .c_scalar_layout()
+                    .expect("repr(C) field has a scalar layout");
+                let v = if fsize >= 8 {
+                    raw
+                } else {
+                    builder.ins().ireduce(int_type_for_size(fsize), raw)
+                };
+                builder.ins().stack_store(v, slot, f.offset as i32);
+            }
+        }
     }
     builder.ins().stack_addr(ptr, slot, 0)
 }
@@ -2317,42 +2365,45 @@ fn image_to_struct(
     let obj = call_struct_new(cx, builder, field_count, type_id, ptr);
     let base = call_struct_fields(cx, builder, obj, ptr);
     for (i, f) in layout.fields.iter().enumerate() {
-        let (fsize, _) = f
-            .ffi
-            .c_scalar_layout()
-            .expect("repr(C) field is an integer-class scalar");
-        let raw = builder.ins().load(
-            int_type_for_size(fsize),
-            MemFlags::new(),
-            addr,
-            f.offset as i32,
-        );
-        let widened = if fsize >= 8 {
-            raw
-        } else {
-            builder.ins().uextend(types::I64, raw)
+        // Read the field from the C image at its offset and produce the f64
+        // bits a heap slot holds: a `CFloat` is read as f32 and widened with
+        // fpromote, a `CDouble` is its 8 bytes, an integer is zero-extended.
+        let bits = match f.ffi {
+            MirFfiTy::CFloat => {
+                let f32v = builder
+                    .ins()
+                    .load(types::F32, MemFlags::new(), addr, f.offset as i32);
+                let f64v = builder.ins().fpromote(types::F64, f32v);
+                builder.ins().bitcast(types::I64, MemFlags::new(), f64v)
+            }
+            MirFfiTy::CDouble => {
+                builder
+                    .ins()
+                    .load(types::I64, MemFlags::new(), addr, f.offset as i32)
+            }
+            _ => {
+                let (fsize, _) = f
+                    .ffi
+                    .c_scalar_layout()
+                    .expect("repr(C) field has a scalar layout");
+                let raw = builder.ins().load(
+                    int_type_for_size(fsize),
+                    MemFlags::new(),
+                    addr,
+                    f.offset as i32,
+                );
+                if fsize >= 8 {
+                    raw
+                } else {
+                    builder.ins().uextend(types::I64, raw)
+                }
+            }
         };
         builder
             .ins()
-            .store(MemFlags::new(), widened, base, layout::slot_offset(i));
+            .store(MemFlags::new(), bits, base, layout::slot_offset(i));
     }
     obj
-}
-
-/// Load the one or two eightbyte integer registers a struct image at `addr`
-/// occupies, for System V / AArch64 register passing of a 9..=16 byte struct.
-fn image_eightbytes(builder: &mut FunctionBuilder<'_>, addr: Value, size: u32) -> Vec<Value> {
-    let mut out = Vec::new();
-    let mut off: u32 = 0;
-    while off < size {
-        out.push(
-            builder
-                .ins()
-                .load(types::I64, MemFlags::new(), addr, off as i32),
-        );
-        off += 8;
-    }
-    out
 }
 
 /// Allocate a fresh stack slot for a struct's C image and return
@@ -2369,17 +2420,6 @@ fn struct_image_slot(
     ));
     let addr = builder.ins().stack_addr(ptr, slot, 0);
     (slot, addr)
-}
-
-/// Zero every bit of `v` above the low `size` bytes, keeping it i64. A
-/// full eight-byte field passes through. Used to isolate one packed C
-/// field from a register that holds several.
-fn mask_low_bytes(builder: &mut FunctionBuilder<'_>, v: Value, size: u32) -> Value {
-    if size >= 8 {
-        return v;
-    }
-    let mask = (1i64 << (size * 8)) - 1;
-    builder.ins().band_imm(v, mask)
 }
 
 /// Reconcile an argument value's machine type with the type the callee's

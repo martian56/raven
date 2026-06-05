@@ -6,6 +6,10 @@ All notable changes to Raven are documented in this file.
 
 ### Added
 
+- FFI: `@repr(C)` structs with floating-point fields (`CFloat`, `CDouble`) now cross the C ABI by value, up to 16 bytes, as arguments and return values. The back end builds a per-register plan from the struct layout and the target convention: System V classifies each eightbyte INTEGER (i64) or SSE (f64), AArch64 passes a homogeneous float aggregate in SIMD registers (one per field) and other structs in general registers, and Windows x64 uses one integer register or by-reference. A `CFloat` field is narrowed from f64 to f32 (and widened back) at the boundary, and a struct literal accepts a native `Float` for a float field. Nested structs and structs larger than 16 bytes remain follow-ups (#328).
+
+### Added
+
 - FFI: `@repr(C)` structs up to 16 bytes now cross the C ABI by value, both as arguments and as return values, beyond the previous 8-byte (one-register) limit. The back end classifies each struct from its size and the target ABI: one or two integer registers on System V AMD64 and AArch64, and one register or a by-reference copy (with a hidden-pointer `sret` for those returns) on Windows x64. This unblocks binding C structs like `SDL_Rect`. Float fields, nested structs, and structs larger than 16 bytes remain follow-ups (#327).
 
 ## [2.4.4] - 2026-06-05
