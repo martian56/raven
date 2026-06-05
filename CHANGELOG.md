@@ -4,38 +4,29 @@ All notable changes to Raven are documented in this file.
 
 ## [Unreleased]
 
+## [2.4.3] - 2026-06-05
+
+### Added
+
+- Standard library enrichment across text, data structures, numbers, and I/O, including two new modules: **std/list** (generic list utilities `contains`, `index_of`, `reverse`, `slice`, `concat`, `flatten`, `first`, `last`, `insert`, `remove_at`, `repeat`, `range`) and **std/option** (`is_some`, `is_none`, `unwrap_or`, `map`, `and_then`, `filter`, `or_else`). Existing modules gained:
+  - **std/string**: `split`, `split_whitespace`, `lines`, `parse_int`, `parse_float`, `trim_start`, `trim_end`, `reverse`, `count`, `last_index_of`, `byte_at` (#305).
+  - **std/collections**: `Set.to_list`, `union`, `intersection`, `difference`, `is_subset`; `Map.get_or`, `entries`, `clear` (#307).
+  - **std/error**: Result combinators `map_ok`, `map_err`, `unwrap_or_else` (#308).
+  - **std/math**: `fmod`, `atan2`, `asin`, `acos`, `atan`, `log2`, `cbrt`, `hypot`, `sinh`, `cosh`, `tanh`, `gcd`, `lcm`, `sign`, `sign_int`, `is_nan`, `is_inf`, `infinity`, `nan`, `to_radians`, `to_degrees` (#309).
+  - **std/iter**: `sum`, `product`, `min`, `max`, `position`, `nth`, `last` (#310).
+  - **std/test**: generic `assert_eq` / `assert_ne`, `assert_eq_float`, and `assert_some` / `assert_none` / `assert_ok` / `assert_err` (#311).
+  - **std/fmt**: `format_float`, `from_radix`, `from_hex` (#312).
+  - **std/json**: `stringify_pretty`, `JsonValue.as_int` / `keys` / `length`, and value constructors `json_null` / `json_bool` / `json_number` / `json_int` / `json_string` / `json_array` / `json_object` (#313).
+  - **std/encoding**: `url_encode` / `url_decode`, `base32_encode` / `base32_decode` (#314).
+  - **std/path**: `normalize`, `components`, `with_extension`, `is_relative` (#315).
+  - **std/fs**: `create_dir_all`, `read_lines`, `copy`, recursive `walk` (#315).
+  - **std/random**: `gen_range_float`, `sample`, `weighted_choice`; **std/http**: `patch`, `head`; **std/net**: `TcpStream.read_all`; **std/hash**: `crc32` (#316).
+- Reference documentation for every new stdlib API, with a compile-verified example per function, and new pages for std/list and std/option.
+
 ### Fixed
 
 - A named top-level function used as a first-class value (passed to a higher-order function, bound to a variable, returned, or given to a stdlib combinator like `option.map`) crashed at runtime with a misaligned pointer dereference. Such a function was lowered to its raw C address, but a Raven `fun(T) -> U` value is a closure object, so the call site dereferenced the code pointer as a closure. A named function value now lowers to a zero-capture closure that forwards to the function, the same representation a lambda has. A C-FFI callback passed where a `CFnPtr` is expected still lowers to the raw address (#317).
-
-### Added
-
-- Standard library enrichment, part 3 (encoding, paths, filesystem, JSON, and more):
-  - **std/encoding**: `url_encode` / `url_decode` (percent encoding) and `base32_encode` / `base32_decode` (#314).
-  - **std/path**: `normalize`, `components`, `with_extension`, `is_relative` (#315).
-  - **std/fs**: `create_dir_all`, `read_lines`, `copy`, and recursive `walk` (#315).
-  - **std/json**: `stringify_pretty`, `JsonValue.as_int` / `keys` / `length`, and value constructors `json_null` / `json_bool` / `json_number` / `json_int` / `json_string` / `json_array` / `json_object` (#313).
-  - **std/random**: `gen_range_float`, `sample`, `weighted_choice`; **std/http**: `patch`, `head`; **std/net**: `TcpStream.read_all`; **std/hash**: `crc32` (#316).
-
-### Fixed
-
 - Importing two stdlib modules that declare the same C extern symbol (for example std/json and std/random, which both bind `raven_int_to_float`) no longer fails with a duplicate-declaration error. Redeclaring an extern name is now treated as the same linker symbol.
-
-### Added
-
-- Standard library enrichment, part 2 (numbers, iteration, testing, formatting):
-  - **std/math**: `fmod`, `atan2`, `asin`, `acos`, `atan`, `log2`, `cbrt`, `hypot`, `sinh`, `cosh`, `tanh`, `gcd`, `lcm`, `sign`, `sign_int`, `is_nan`, `is_inf`, `infinity`, `nan`, `to_radians`, `to_degrees` (#309).
-  - **std/iter**: reductions `sum`, `product`, `min`, `max`, and `position`, `nth`, `last` (#310).
-  - **std/test**: generic `assert_eq` / `assert_ne` (any `Eq + ToString`), `assert_eq_float` (epsilon), and `assert_some` / `assert_none` / `assert_ok` / `assert_err` (#311).
-  - **std/fmt**: `format_float` (fixed decimals, rounded half up), `from_radix` and `from_hex` (the inverses of `to_radix` / `to_hex`) (#312).
-
-### Added
-
-- Standard library enrichment, part 1 (data essentials):
-  - **std/string**: `split`, `split_whitespace`, `lines`, `parse_int`, `parse_float`, `trim_start`, `trim_end`, `reverse`, `count`, `last_index_of`, `byte_at`. Text tokenizing and number parsing were the biggest stdlib gaps (#305).
-  - **std/list** (new module): generic list utilities `contains`, `index_of`, `reverse`, `slice`, `concat`, `flatten`, `first`, `last`, `insert`, `remove_at`, `repeat`, `range` (#306).
-  - **std/collections**: `Set.to_list`, `union`, `intersection`, `difference`, `is_subset`; `Map.get_or`, `entries`, `clear` (#307).
-  - **std/option** (new module): `is_some`, `is_none`, `unwrap_or`, `map`, `and_then`, `filter`, `or_else`; **std/error** gains Result combinators `map_ok`, `map_err`, `unwrap_or_else` (#308).
 
 ## [2.3.1] - 2026-06-05
 
