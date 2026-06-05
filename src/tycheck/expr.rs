@@ -164,9 +164,13 @@ fn check_decl_body(
             }
             errors
         }
-        DeclKind::Struct(_) | DeclKind::Enum(_) | DeclKind::Extern(_) | DeclKind::Import(_) => {
-            Vec::new()
-        }
+        DeclKind::Struct(_)
+        | DeclKind::Enum(_)
+        | DeclKind::Extern(_)
+        | DeclKind::Import(_)
+        // Macros are expanded before the compiler parses; only the formatter
+        // produces this node, so there is no body to check.
+        | DeclKind::Macro(_) => Vec::new(),
     }
 }
 
@@ -831,6 +835,9 @@ impl<'a, 'b> Checker<'a, 'b> {
 
     fn check_expr_inner(&mut self, expr: &Expr) -> Result<Ty, RavenError> {
         match &expr.kind {
+            // A macro call only appears in formatter-parsed source; the
+            // compile pipeline expands macros before type checking.
+            ExprKind::MacroCall(_) => Ok(Ty::Error),
             ExprKind::Int(_) => Ok(Ty::Int),
             ExprKind::Float(_) => Ok(Ty::Float),
             ExprKind::Bool(_) => Ok(Ty::Bool),

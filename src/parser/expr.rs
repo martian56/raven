@@ -4,11 +4,11 @@
 //! level. The level order from lowest to highest matches the spec.
 
 use crate::ast::{
-    BinaryOp, Block, ElseBranch, Expr, ExprKind, FieldInit, LambdaBody, LambdaParam, MatchArm,
-    StrFragment, Type, UnaryOp,
+    BinaryOp, Block, ElseBranch, Expr, ExprKind, FieldInit, LambdaBody, LambdaParam, MacroCall,
+    MacroDelim, MatchArm, StrFragment, Type, UnaryOp,
 };
 use crate::error::{ParseError, RavenError};
-use crate::lexer::{Lexer, TokenKind, ESCAPED_DOLLAR_SENTINEL};
+use crate::lexer::{Lexer, Token, TokenKind, ESCAPED_DOLLAR_SENTINEL};
 use crate::span::Span;
 
 use super::{merge_spans, ParseResult, Parser};
@@ -827,8 +827,69 @@ impl Parser {
         })
     }
 
+    /// Parse a macro invocation `name!(...)` / `name![...]` / `name!{...}`
+    /// after the name has been consumed. The `!` is at the cursor. The
+    /// argument tokens are captured raw for the formatter to render.
+    fn parse_macro_call(&mut self, name: String, name_span: Span) -> ParseResult<Expr> {
+        self.expect(&TokenKind::Bang, "`!`")?;
+        let (delim, open, close) = match self.peek_kind() {
+            TokenKind::LParen => (MacroDelim::Paren, TokenKind::LParen, TokenKind::RParen),
+            TokenKind::LBracket => (
+                MacroDelim::Bracket,
+                TokenKind::LBracket,
+                TokenKind::RBracket,
+            ),
+            TokenKind::LBrace => (MacroDelim::Brace, TokenKind::LBrace, TokenKind::RBrace),
+            _ => return Err(self.unexpected("`(`, `[`, or `{` after a macro name")),
+        };
+        self.advance(); // opening delimiter
+        let (tokens, close_span) = self.capture_balanced(&open, &close)?;
+        let span = merge_spans(&name_span, &close_span);
+        Ok(Expr {
+            kind: ExprKind::MacroCall(MacroCall {
+                name,
+                delim,
+                tokens,
+            }),
+            span,
+        })
+    }
+
+    /// Collect tokens up to the delimiter that closes an already-consumed
+    /// `open`, tracking nesting of the same delimiter pair. Consumes the
+    /// closing delimiter and returns the inner tokens plus the close span.
+    pub(crate) fn capture_balanced(
+        &mut self,
+        open: &TokenKind,
+        close: &TokenKind,
+    ) -> ParseResult<(Vec<Token>, Span)> {
+        let mut depth = 1usize;
+        let mut toks: Vec<Token> = Vec::new();
+        loop {
+            if matches!(self.peek_kind(), TokenKind::Eof) {
+                return Err(self.unexpected("a matching closing delimiter"));
+            }
+            if self.peek_kind() == open {
+                depth += 1;
+            } else if self.peek_kind() == close {
+                depth -= 1;
+                if depth == 0 {
+                    let closing = self.advance();
+                    return Ok((toks, closing.span));
+                }
+            }
+            toks.push(self.advance());
+        }
+    }
+
     fn parse_ident_primary(&mut self) -> ParseResult<Expr> {
         let (name, name_span) = self.expect_ident("identifier")?;
+        // Macro invocation `name!(...)`. The compile pipeline expands macros
+        // before parsing, so this is reached only by the formatter parsing
+        // un-expanded source.
+        if matches!(self.peek_kind(), TokenKind::Bang) {
+            return self.parse_macro_call(name, name_span);
+        }
         // Optional generics, only when the trial succeeds.
         let mut generics = Vec::new();
         if matches!(self.peek_kind(), TokenKind::Lt) {

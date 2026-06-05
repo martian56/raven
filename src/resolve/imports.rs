@@ -315,7 +315,9 @@ fn resolve_local_import(
                     module_names.push(it.name.clone());
                 }
             }
-            DeclKind::Impl(_) | DeclKind::Import(_) => {}
+            // A macro exports no importable module name, and only appears in
+            // formatter-parsed source anyway.
+            DeclKind::Impl(_) | DeclKind::Import(_) | DeclKind::Macro(_) => {}
         }
     }
 

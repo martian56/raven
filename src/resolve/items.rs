@@ -74,6 +74,9 @@ fn collect_decl(decl: &Decl, id: DeclId, scope: &mut ScopeStack) -> Result<(), R
         DeclKind::Import(_) => {
             // Handled by `imports::resolve_imports`.
         }
+        // Macros are expanded before the compiler parses; this node only
+        // appears in the formatter, so it declares no resolvable name.
+        DeclKind::Macro(_) => {}
     }
     Ok(())
 }

@@ -65,6 +65,15 @@ pub(crate) fn lower_expr(
     let ty = cx.ty_at(&expr.span);
     let span = expr.span.clone();
     let kind = match &expr.kind {
+        // A macro call should have been expanded before HIR lowering; reaching
+        // here means the token pre-pass was skipped (only the formatter parses
+        // un-expanded source, and it never lowers to HIR).
+        ExprKind::MacroCall(_) => {
+            return Err(super::ty_error(
+                "internal error: macro call reached HIR lowering without expansion",
+                &span,
+            ))
+        }
         ExprKind::Int(i) => HirExprKind::Int(*i),
         ExprKind::Float(f) => HirExprKind::Float(*f),
         ExprKind::Bool(b) => HirExprKind::Bool(*b),

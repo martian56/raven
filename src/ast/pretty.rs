@@ -35,6 +35,9 @@ fn indent(buf: &mut String, depth: usize) {
 fn pretty_decl(buf: &mut String, decl: &Decl, depth: usize) {
     indent(buf, depth);
     match &decl.kind {
+        DeclKind::Macro(m) => {
+            writeln!(buf, "(macro {})", quote(&m.name)).unwrap();
+        }
         DeclKind::Function(f) => {
             write!(buf, "(fn {}", quote(&f.name)).unwrap();
             if !f.generics.is_empty() {
@@ -326,6 +329,7 @@ fn pretty_stmt(buf: &mut String, stmt: &Stmt, depth: usize) {
 fn pretty_expr(buf: &mut String, expr: &Expr, depth: usize) {
     indent(buf, depth);
     match &expr.kind {
+        ExprKind::MacroCall(m) => writeln!(buf, "(macro-call {})", quote(&m.name)).unwrap(),
         ExprKind::Int(n) => writeln!(buf, "(int {})", n).unwrap(),
         ExprKind::Float(v) => writeln!(buf, "(float {})", v).unwrap(),
         ExprKind::Bool(b) => writeln!(buf, "(bool {})", b).unwrap(),
