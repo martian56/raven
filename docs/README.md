@@ -81,7 +81,7 @@ docs/
 Use triple backticks with language specification:
 
 ````markdown
-```raven
+```rust
 fun main() -> void {
     print("Hello, Raven!");
 }

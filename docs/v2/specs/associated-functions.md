@@ -11,7 +11,7 @@ An associated function is a `fun` inside an `impl` block whose first
 parameter is not `self`. The same `impl` block may mix associated
 functions and instance methods:
 
-```raven
+```rust
 struct Counter { n: Int }
 
 impl Counter {
@@ -26,7 +26,7 @@ impl Counter {
 A generic implementing type's associated function may return the generic
 type:
 
-```raven
+```rust
 impl<T: Eq + Hash> Set<T> {
     fun new() -> Set<T> {
         let buckets: List<List<T>> = []
@@ -46,7 +46,7 @@ The leading `Type` is a type name: a user struct or enum, or a built-in
 type (`Int`, `String`, `Array`, ...). Type arguments may be written on the
 type for a generic associated function (`Set<Int>.new()`).
 
-```raven
+```rust
 let a = Counter.new()
 let b = Counter.with(41)
 let s = Set<Int>.new()
@@ -75,7 +75,7 @@ With explicit type arguments (`Set<Int>.new()`) the parameters are fixed
 directly. Without them (`Set.new()`), the element type is left as an
 inference variable and solved from later use within the same body:
 
-```raven
+```rust
 let s = Set.new()   // T is an inference variable
 s.add(7)            // unifies T = Int
 ```

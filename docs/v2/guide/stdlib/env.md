@@ -4,7 +4,7 @@ Access to the process environment: environment variables, command-line
 arguments, process exit, and platform info. The primitives bind the
 raven-runtime C ABI; the convenience functions are pure Raven on top of them.
 
-```raven
+```rust
 import std/env { get_env_or, os_name }
 
 fun main() {
@@ -16,7 +16,7 @@ fun main() {
 
 ## Importing
 
-```raven
+```rust
 import std/env { get_env, has_env, get_env_or, args, arg_count, arg_at, exit, os_name, arch }
 ```
 
@@ -31,7 +31,7 @@ A variable set to the empty string and a variable that is not set both
 yield `""`, so `get_env` alone cannot tell them apart: use `has_env` to
 distinguish unset from empty.
 
-```raven
+```rust
 import std/env { get_env }
 
 fun main() {
@@ -49,7 +49,7 @@ True when `name` is set in the environment, regardless of its value
 The value of `name`, or `default` when `name` is unset. This is the usual
 way to read configuration with a fallback.
 
-```raven
+```rust
 import std/env { get_env_or }
 
 fun main() {
@@ -75,7 +75,7 @@ is out of range.
 All process arguments as a list, with index 0 being the program path.
 This is pure Raven: it loops `arg_at` over `0..arg_count()`.
 
-```raven
+```rust
 import std/env { args }
 
 fun main() {
@@ -95,7 +95,7 @@ fun main() {
 Terminate the process with status `code`. It does not return; any code
 after a call to `exit` is unreachable.
 
-```raven
+```rust
 import std/env { arg_count, exit }
 
 fun main() {
@@ -117,7 +117,7 @@ The target operating system: `"windows"`, `"linux"`, or `"macos"`.
 
 The target CPU architecture, for example `"x86_64"` or `"aarch64"`.
 
-```raven
+```rust
 import std/env { os_name, arch }
 
 fun main() {
@@ -128,7 +128,7 @@ fun main() {
 
 ## Worked example: a small greeting tool
 
-```raven
+```rust
 import std/env { args, get_env_or, os_name, exit }
 
 fun main() {

@@ -5,7 +5,7 @@ list and size entries, query existence, and manipulate path strings. The
 fallible operations return `Result<T, Error>`; the queries return a plain
 `Bool`; the path helpers are pure string work with no runtime call.
 
-```raven
+```rust
 import std/fs { write, read }
 
 fun main() {
@@ -18,7 +18,7 @@ fun main() {
 
 ## Importing
 
-```raven
+```rust
 import std/fs { read, write, append, remove_file, create_dir, remove_dir, list_dir, size, exists, is_file, is_dir, join, dirname, basename, split }
 ```
 
@@ -26,7 +26,7 @@ import std/fs { read, write, append, remove_file, create_dir, remove_dir, list_d
 names you want. A bare `import std/fs` does not bring the functions into
 scope. Import only what a given file uses:
 
-```raven
+```rust
 import std/fs { read, exists }
 ```
 
@@ -43,7 +43,7 @@ empty string or a `-1`, it comes back as an `Err`. The two ways to consume a
 
 Handle each arm explicitly with `match`:
 
-```raven
+```rust
 import std/fs { read }
 
 fun main() {
@@ -57,7 +57,7 @@ fun main() {
 Or propagate the error to the caller with `?`, which unwraps `Ok` and
 returns early on `Err`:
 
-```raven
+```rust
 import std/fs { read, write }
 
 fun copy(src: String, dst: String) -> Result<Bool, Error> {
@@ -72,7 +72,7 @@ fun copy(src: String, dst: String) -> Result<Bool, Error> {
 
 Read the whole file at `path` and return it as a single `String`.
 
-```raven
+```rust
 import std/fs { read }
 
 fun main() {
@@ -90,7 +90,7 @@ success. The `Bool` payload is always `true`; it exists only so the success
 arm carries a value (the surface uses `Result<Bool, Error>` rather than a
 unit payload).
 
-```raven
+```rust
 import std/fs { write }
 
 fun main() {
@@ -106,7 +106,7 @@ fun main() {
 Write `contents` to the end of `path`, creating the file when it is absent.
 Returns `Ok(true)` on success.
 
-```raven
+```rust
 import std/fs { append }
 
 fun log_line(line: String) -> Result<Bool, Error> {
@@ -125,7 +125,7 @@ Remove the file at `path`. Returns `Ok(true)` on success.
 Create the directory at `path`, including any missing parent directories, so
 creating a nested path in one call succeeds. Returns `Ok(true)` on success.
 
-```raven
+```rust
 import std/fs { create_dir }
 
 fun main() {
@@ -146,7 +146,7 @@ Remove the directory at `path` and all of its contents recursively. Returns
 Return the entry names (not full paths) of the directory at `path`. An empty
 directory yields an empty list, not a one-element list containing `""`.
 
-```raven
+```rust
 import std/fs { list_dir }
 
 fun main() {
@@ -165,7 +165,7 @@ fun main() {
 
 Return the file size at `path` in bytes.
 
-```raven
+```rust
 import std/fs { size }
 
 fun main() {
@@ -179,7 +179,7 @@ fun main() {
 The `?` operator is the shorter form, but it only works inside a function that
 itself returns `Result`, not in `main`:
 
-```raven
+```rust
 import std/fs { size }
 
 fun total(a: String, b: String) -> Result<Int, Error> {
@@ -189,7 +189,7 @@ fun total(a: String, b: String) -> Result<Int, Error> {
 
 ## Boolean checks
 
-```raven
+```rust
 fun exists(path: String) -> Bool
 fun is_file(path: String) -> Bool
 fun is_dir(path: String) -> Bool
@@ -200,7 +200,7 @@ These return a plain `Bool`, never a `Result`. A missing path is a normal
 a regular file (a directory, say), and `is_dir` is `false` for anything that
 is not a directory.
 
-```raven
+```rust
 import std/fs { exists, is_dir, read }
 
 fun main() {
@@ -216,7 +216,7 @@ fun main() {
 
 ## Path helpers
 
-```raven
+```rust
 fun join(a: String, b: String) -> String
 fun basename(p: String) -> String
 fun dirname(p: String) -> String
@@ -235,7 +235,7 @@ Join two path segments with a single `/`, collapsing a trailing slash on `a`
 or a leading slash on `b` so the result never doubles the separator. An empty
 segment returns the other unchanged.
 
-```raven
+```rust
 import std/fs { join }
 
 fun main() {
@@ -249,7 +249,7 @@ fun main() {
 The final component of `p` (everything after the last `/`). A path with no
 slash returns unchanged.
 
-```raven
+```rust
 import std/fs { basename }
 
 fun main() {
@@ -263,7 +263,7 @@ fun main() {
 Everything before the last `/`. A path with no slash returns `"."`; a path
 whose only slash is at the front returns `"/"`.
 
-```raven
+```rust
 import std/fs { dirname }
 
 fun main() {
@@ -277,7 +277,7 @@ fun main() {
 Split `p` on `/` into its components, dropping empty pieces produced by
 leading, trailing, or repeated separators.
 
-```raven
+```rust
 import std/fs { split }
 
 fun main() {
@@ -293,7 +293,7 @@ fun main() {
 Write a file, confirm it exists, then read it back. Each fallible step uses
 `?` to bail out on the first error, and the caller decides what to do with it.
 
-```raven
+```rust
 import std/fs { write, read, exists }
 import std/error { error_kind }
 

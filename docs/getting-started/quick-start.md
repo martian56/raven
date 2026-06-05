@@ -6,7 +6,7 @@ Let's get you up and running with Raven in just a few minutes!
 
 Create a file called `hello.rv`:
 
-```raven
+```rust
 fun main() -> void {
     print("Hello, Raven!");
 }
@@ -43,7 +43,7 @@ raven> exit
 
 ### Variables
 
-```raven
+```rust
 let name: string = "Alice";
 let age: int = 25;
 let height: float = 5.9;
@@ -52,7 +52,7 @@ let isActive: bool = true;
 
 ### Arrays
 
-```raven
+```rust
 let numbers: int[] = [1, 2, 3, 4, 5];
 numbers.push(6);
 print(numbers);  // [1, 2, 3, 4, 5, 6]
@@ -60,7 +60,7 @@ print(numbers);  // [1, 2, 3, 4, 5, 6]
 
 ### Control Flow
 
-```raven
+```rust
 let age: int = 18;
 
 if (age < 18) {
@@ -79,7 +79,7 @@ while (i < 5) {
 
 ### Functions
 
-```raven
+```rust
 fun greet(name: string) -> void {
     print(format("Hello, {}!", name));
 }
@@ -98,7 +98,7 @@ print(result);  // 8
 
 ### Structs
 
-```raven
+```rust
 struct Person {
     name: string,
     age: int,
@@ -116,7 +116,7 @@ print(person.name);  // Alice
 
 ### Enums
 
-```raven
+```rust
 enum HttpStatus {
     OK,
     NotFound,
@@ -129,7 +129,7 @@ print(status);  // HttpStatus::OK
 
 ## File Operations
 
-```raven
+```rust
 // Write to file
 let content: string = "Hello from Raven!";
 write_file("output.txt", content);

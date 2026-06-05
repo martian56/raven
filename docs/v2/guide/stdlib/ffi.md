@@ -5,7 +5,7 @@ Bridges for the C foreign-function interface. `std/ffi` converts a Raven
 `CPtr<T>` for allocating, reading, and writing C memory. Use it alongside an
 `extern "C"` block to call C functions with runtime values.
 
-```raven
+```rust
 import std/ffi { to_cstr, from_cstr }
 
 extern "C" {
@@ -27,7 +27,7 @@ at runtime, which has no compile-time form.
 
 Bring in just the helpers you use:
 
-```raven
+```rust
 import std/ffi { to_cstr, from_cstr }
 import std/ffi { alloc, free, load, store, offset, is_null, null_ptr }
 ```
@@ -67,7 +67,7 @@ Read the null-terminated bytes at `p`, stopping at the first NUL, and build an
 ordinary GC-managed Raven `String` (the terminator is dropped). The resulting
 `String` is traced and reclaimed like any other.
 
-```raven
+```rust
 import std/ffi { to_cstr, from_cstr }
 
 fun main() {
@@ -122,7 +122,7 @@ The null `CPtr<T>`.
 
 ### Example: a buffer of `CInt`
 
-```raven
+```rust
 import std/ffi { alloc, free, load, store, offset, is_null, null_ptr }
 
 fun main() {
@@ -154,7 +154,7 @@ fun main() {
 Declare the C function in an `extern "C"` block, then pass a `to_cstr`
 conversion of a runtime `String` where the signature expects a `CStr`:
 
-```raven
+```rust
 import std/ffi { to_cstr, from_cstr }
 
 extern "C" {

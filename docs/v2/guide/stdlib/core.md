@@ -5,7 +5,7 @@ prelude: the compiler merges it into every program before name resolution, so
 its traits and impls are always in scope. You never write `import std/core`,
 and there is nothing to import selectively.
 
-```raven
+```rust
 fun main() {
     print(42.to_string())           // 42
     print(3.compare(7) < 0)         // true (3 sorts before 7)
@@ -31,7 +31,7 @@ type that implements it, including your own.
 
 ## ToString
 
-```raven
+```rust
 trait ToString {
     fun to_string(self) -> String
 }
@@ -45,7 +45,7 @@ Built in for `Int`, `Float`, `Bool`, `Char`, and `String`. The scalar impls
 render through interpolation (`"${self}"`); `ToString for String` returns the
 string unchanged.
 
-```raven
+```rust
 fun main() {
     print(42.to_string())           // 42
     print(true.to_string())         // true
@@ -58,7 +58,7 @@ fun main() {
 
 ## Eq
 
-```raven
+```rust
 trait Eq {
     fun equals(self, other: Self) -> Bool
 }
@@ -67,7 +67,7 @@ trait Eq {
 Structural equality. Built in for `Int`, `Float`, `Bool`, `Char`, and
 `String`. The scalar impls compare with `==`; `String` compares byte by byte.
 
-```raven
+```rust
 fun main() {
     print(2.equals(2))              // true
     print("ab".equals("ab"))        // true
@@ -77,7 +77,7 @@ fun main() {
 
 ## Ord
 
-```raven
+```rust
 trait Ord {
     fun compare(self, other: Self) -> Int
 }
@@ -88,7 +88,7 @@ Total ordering. `compare` returns a negative `Int` when `self` sorts before
 after. Built in for `Int`, `Float`, `Char`, `Bool` (`false` sorts before
 `true`), and `String` (lexicographic over bytes).
 
-```raven
+```rust
 fun main() {
     print(3.compare(7))             // -1
     print(7.compare(3))             //  1
@@ -100,7 +100,7 @@ fun main() {
 Use the sign of the result rather than the exact magnitude: only `< 0`,
 `== 0`, and `> 0` are guaranteed.
 
-```raven
+```rust
 fun max<T: Ord>(a: T, b: T) -> T {
     if a.compare(b) >= 0 {
         return a
@@ -116,7 +116,7 @@ fun main() {
 
 ## Hash
 
-```raven
+```rust
 trait Hash {
     fun hash(self) -> Int
 }
@@ -129,7 +129,7 @@ hashes.
 
 `Hash for Char` and `Hash for Float` are not provided yet.
 
-```raven
+```rust
 fun main() {
     print(7.hash())                 // 7
     print(true.hash())              // 1
@@ -138,7 +138,7 @@ fun main() {
 
 ## Iterator&lt;T&gt;
 
-```raven
+```rust
 trait Iterator<T> {
     fun next(self) -> Option<T>
 }
@@ -157,7 +157,7 @@ it. Inside the function you can then call the trait's methods on that
 parameter. Dispatch is resolved statically at each call site, so there is no
 runtime overhead.
 
-```raven
+```rust
 fun describe<T: ToString>(x: T) -> String {
     return "value: ${x.to_string()}"
 }
@@ -172,7 +172,7 @@ fun main() {
 A type participates in a bound by implementing the trait. Implement it for your
 own struct or enum and that type becomes usable everywhere the bound appears:
 
-```raven
+```rust
 struct Point {
     x: Int,
     y: Int,
@@ -196,7 +196,7 @@ fun main() {
 Most of the time you do not hand-write these impls. `@derive(...)` on a struct
 or enum generates them from the fields:
 
-```raven
+```rust
 @derive(Eq, Hash, ToString, Debug)
 struct User {
     id: Int,
@@ -211,7 +211,7 @@ being derived. See the `@derive` section of the
 
 ## Worked example: generic comparison and sorting key
 
-```raven
+```rust
 struct Score {
     name: String,
     points: Int,

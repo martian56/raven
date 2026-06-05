@@ -4,7 +4,7 @@ Parse and serialize JSON. `std/json` is a recursive descent parser
 (`parse`) and a compact serializer (`stringify`) written in pure Raven, with
 a `JsonValue` enum for the parsed value tree.
 
-```raven
+```rust
 import std/json { parse, stringify }
 
 fun main() {
@@ -20,7 +20,7 @@ text `{"name": "Ada"}` is written `"{\"name\": \"Ada\"}"`.
 
 ## Importing
 
-```raven
+```rust
 import std/json { parse, stringify }
 ```
 
@@ -29,7 +29,7 @@ Bring in just what you use. The accessor methods on `JsonValue` (`is_null`,
 import of `parse` and `stringify` is enough for most code. Import the type
 explicitly when you name it:
 
-```raven
+```rust
 import std/json { parse, stringify, JsonValue }
 ```
 
@@ -38,7 +38,7 @@ import std/json { parse, stringify, JsonValue }
 A parsed JSON document is a `JsonValue`, a tagged union over the six JSON
 shapes:
 
-```raven
+```rust
 enum JsonValue {
     Null,
     Bool(Bool),
@@ -77,7 +77,7 @@ Any non-whitespace content after the top-level value is rejected.
 
 `parse` returns a `Result`, so handle both arms with `match`:
 
-```raven
+```rust
 import std/json { parse }
 
 fun main() {
@@ -134,7 +134,7 @@ True only for the `Null` variant.
 A typical read chains a container step and then an extractor, handling each
 `Option` with `match`:
 
-```raven
+```rust
 import std/json { parse }
 
 fun main() {
@@ -172,7 +172,7 @@ passes through unchanged.
 A whole-number `Float` renders the way the runtime prints it, so `1.0`
 serializes as `1` and `0.15` serializes as `0.15`.
 
-```raven
+```rust
 import std/json { parse, stringify }
 
 fun main() {
@@ -188,7 +188,7 @@ fun main() {
 `std/json` also defines two traits for converting between a Raven value and
 its JSON form:
 
-```raven
+```rust
 trait ToJson {
     fun to_json(self) -> JsonValue
 }
@@ -212,7 +212,7 @@ the full encoding and the helper functions the derive emits.
 
 ## Worked example: read a config field
 
-```raven
+```rust
 import std/json { parse }
 
 // Pull the "name" string out of a JSON object, with a fallback for any

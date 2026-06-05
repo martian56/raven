@@ -4,7 +4,7 @@ Non-cryptographic hashing building blocks: free functions that hash the bytes
 of a `String` or mix an `Int`. They are fast, well-known mixing functions meant
 for hash tables, checksums, and folding several values into one composite hash.
 
-```raven
+```rust
 import std/hash { fnv1a }
 
 fun main() {
@@ -28,7 +28,7 @@ combining the hashes of a struct's fields.
 Every entry is a free function, so bring in the ones you need with a selective
 import:
 
-```raven
+```rust
 import std/hash { fnv1a, djb2, hash_int, combine, checksum }
 ```
 
@@ -66,7 +66,7 @@ FNV-1a over the bytes of `s`, the 64-bit variant. A good general-purpose string
 hash with strong avalanche behavior for short keys. Prefer this when you want
 one string hash and are unsure which to pick.
 
-```raven
+```rust
 import std/hash { fnv1a }
 
 fun main() {
@@ -80,7 +80,7 @@ fun main() {
 The classic djb2 hash: start at `5381`, then `hash = hash * 33 + byte` for each
 byte. Simple and fast; included as a well-known alternative to `fnv1a`.
 
-```raven
+```rust
 import std/hash { djb2 }
 
 fun main() {
@@ -94,7 +94,7 @@ A plain additive checksum: the sum of the byte values in `s`. Cheaper and
 weaker than the hashes above, so use it only for quick change detection (did
 this string change?), not for distributing keys across buckets.
 
-```raven
+```rust
 import std/hash { checksum }
 
 fun main() {
@@ -110,7 +110,7 @@ A splitmix64-style bit-mix. Sequential integers (`0, 1, 2, ...`) hash to
 scattered, well-spread values, which is what you want before using them as
 table indices.
 
-```raven
+```rust
 import std/hash { hash_int }
 
 fun main() {
@@ -125,7 +125,7 @@ Fold `value` into `seed` and return the mixed result (the boost `hash_combine`
 recipe, using the 32-bit golden ratio constant). Chain it to hash a sequence of
 values into a single hash:
 
-```raven
+```rust
 import std/hash { hash_int, combine }
 
 fun main() {
@@ -147,7 +147,7 @@ uses to key its hash-based containers. These functions are the building blocks
 a user's own `Hash` impl can call: hash each field, then fold the results with
 `combine`.
 
-```raven
+```rust
 import std/hash { hash_int, combine }
 
 struct Point { x: Int, y: Int }
@@ -165,7 +165,7 @@ impl Hash for Point {
 Hash a small struct by mixing a string field and an integer field into one
 value, suitable for use as a key.
 
-```raven
+```rust
 import std/hash { fnv1a, hash_int, combine }
 
 struct User { name: String, id: Int }

@@ -4,7 +4,7 @@ Raven is a statically typed, compiled language. You write high level code with t
 
 The short version: the readability of Python, the type system and sum types of Rust, the simplicity of Go, and real C interop, in one compiled language.
 
-```raven
+```rust
 fun main() {
     let names = ["Ada", "Alan", "Grace"]
     for name in names {
@@ -31,7 +31,7 @@ raven build hello.rv -o hello
 
 ## A fuller taste
 
-```raven
+```rust
 import std/io { println }
 
 trait Shape {

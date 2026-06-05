@@ -4,7 +4,7 @@ String formatting helpers and a `Debug` trait. These are the building blocks
 that compose with string interpolation: pad and align fields, repeat and join
 strings, render integers in a base, and produce quoted debug output.
 
-```raven
+```rust
 import std/fmt { pad_left, to_hex }
 import std/io { println }
 
@@ -25,7 +25,7 @@ it, not a printf replacement.
 
 The formatting helpers are free functions, bound with a selective import:
 
-```raven
+```rust
 import std/fmt { repeat, pad_left, pad_right, center, join, to_radix, to_binary, to_octal, to_hex, pad_int }
 ```
 
@@ -34,7 +34,7 @@ into scope like `std/string`'s methods). Once the module is imported, the
 `debug` method dispatches on the receiver's type and needs no explicit
 selector:
 
-```raven
+```rust
 import std/fmt
 
 fun main() {
@@ -58,7 +58,7 @@ to its length minus one. See [std/string](string.md) for the same byte model.
 
 `s` concatenated `n` times. A non-positive `n` yields the empty string.
 
-```raven
+```rust
 import std/fmt { repeat }
 
 fun main() {
@@ -76,7 +76,7 @@ that does not exceed the current length returns `s` unchanged.
 
 Right-pad `s` with `fill` until its byte length is at least `width`.
 
-```raven
+```rust
 import std/fmt { pad_left, pad_right }
 
 fun main() {
@@ -90,7 +90,7 @@ fun main() {
 Center `s` in a field of byte width `width`, padding with `fill`. An odd
 amount of padding puts the extra byte on the right.
 
-```raven
+```rust
 import std/fmt { center }
 
 fun main() {
@@ -103,7 +103,7 @@ fun main() {
 
 Join `parts` with `sep` between adjacent elements.
 
-```raven
+```rust
 import std/fmt { join }
 
 fun main() {
@@ -121,7 +121,7 @@ renders as `"0"`. Digits are `0-9` then lowercase `a-f`. The conversion works
 in the negative domain (accumulating the negative magnitude), so the most
 negative i64 has no overflowing negation.
 
-```raven
+```rust
 import std/fmt { to_radix }
 
 fun main() {
@@ -135,7 +135,7 @@ fun main() {
 
 Thin wrappers over `to_radix` for base 2, 8, and 16.
 
-```raven
+```rust
 import std/fmt { to_binary, to_octal, to_hex }
 
 fun main() {
@@ -152,7 +152,7 @@ stays leftmost and the zero fill goes between the sign and the digits, so
 `pad_int(-7, 4)` is `"-007"`. A `width` that does not exceed the rendered
 length returns the value unchanged.
 
-```raven
+```rust
 import std/fmt { pad_int }
 
 fun main() {
@@ -164,7 +164,7 @@ fun main() {
 
 ## The `Debug` trait
 
-```raven
+```rust
 trait Debug {
     fun debug(self) -> String
 }
@@ -185,7 +185,7 @@ Char and String quoting does not escape inner quotes: a String containing a
 `"` reproduces it literally inside the surrounding quotes. So `"hi".debug()` is
 the 4-character string `"hi"`.
 
-```raven
+```rust
 import std/fmt
 
 fun main() {
@@ -198,7 +198,7 @@ fun main() {
 
 ## Worked example: a fixed-width table row
 
-```raven
+```rust
 import std/fmt { pad_right, pad_int, join, to_hex }
 import std/io { println }
 

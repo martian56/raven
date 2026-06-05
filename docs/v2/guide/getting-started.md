@@ -36,7 +36,7 @@ The binaries land in `target/release/`. Add that directory to your
 
 Every program starts at `fun main()`. Create `hello.rv`:
 
-```raven
+```rust
 fun main() {
     print("Hello, Raven!")
 }

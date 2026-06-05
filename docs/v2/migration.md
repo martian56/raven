@@ -38,7 +38,7 @@ became `Unit`.
 
 v1:
 
-```raven
+```rust
 let name: string = "Raven";
 let count: int = 0;
 let ratio: float = 0.5;
@@ -47,7 +47,7 @@ let ready: bool = true;
 
 v2:
 
-```raven
+```rust
 let name: String = "Raven"
 let count: Int = 0
 let ratio: Float = 0.5
@@ -67,14 +67,14 @@ statement execution, and starts the program at `fun main()`.
 
 v1:
 
-```raven
+```rust
 let message: string = "Hello, Raven!";
 print(message);
 ```
 
 v2:
 
-```raven
+```rust
 fun main() {
     let message = "Hello, Raven!"
     print(message)
@@ -85,7 +85,7 @@ A v1 file that defined `main` and then called it loses the trailing call:
 
 v1:
 
-```raven
+```rust
 fun main() -> void {
     print("hi");
 }
@@ -94,7 +94,7 @@ main();
 
 v2:
 
-```raven
+```rust
 fun main() {
     print("hi")
 }
@@ -108,14 +108,14 @@ example an empty list).
 
 v1:
 
-```raven
+```rust
 let count: int = 0;
 let names: string[] = [];
 ```
 
 v2:
 
-```raven
+```rust
 let count = 0
 let names: List<String> = []
 ```
@@ -124,7 +124,7 @@ v2 bindings are mutable: you can reassign a `let` and mutate its fields and
 elements, the same as v1 `let`. For a module level compile time constant,
 v2 adds `const`, which requires both a type and a value:
 
-```raven
+```rust
 const MAX: Int = 100
 ```
 
@@ -136,7 +136,7 @@ body with `=` for one liners.
 
 v1:
 
-```raven
+```rust
 fun add(a: int, b: int) -> int {
     return a + b;
 }
@@ -148,7 +148,7 @@ fun greet(name: string) -> void {
 
 v2:
 
-```raven
+```rust
 fun add(a: Int, b: Int) -> Int {
     return a + b
 }
@@ -163,7 +163,7 @@ fun square(n: Int) -> Int = n * n
 The last block expression is also the return value, so `return` is
 optional at the tail of a function:
 
-```raven
+```rust
 fun classify(age: Int) -> String {
     if age < 18 {
         "Too young"
@@ -175,7 +175,7 @@ fun classify(age: Int) -> String {
 
 v2 adds first class closures and function types, which v1 did not have:
 
-```raven
+```rust
 fun apply(f: fun(Int) -> Int, x: Int) -> Int = f(x)
 
 fun main() {
@@ -192,7 +192,7 @@ The C-style `for` is gone. v2 has `for x in <range or list>`. Ranges are
 
 v1:
 
-```raven
+```rust
 let i: int = 0;
 while (i < 5) {
     print(i);
@@ -206,7 +206,7 @@ for (let j: int = 0; j < 5; j = j + 1) {
 
 v2:
 
-```raven
+```rust
 let i = 0
 while i < 5 {
     print(i)
@@ -223,7 +223,7 @@ keyword becomes two words, `else if`:
 
 v1:
 
-```raven
+```rust
 if (age < 18) {
     print("Too young");
 } elseif (age < 30) {
@@ -235,7 +235,7 @@ if (age < 18) {
 
 v2:
 
-```raven
+```rust
 if age < 18 {
     print("Too young")
 } else if age < 30 {
@@ -248,7 +248,7 @@ if age < 18 {
 v2 adds two more loop forms. `loop` is an unconditional loop whose value is
 the operand of `break`, and `break`/`continue` work in every loop:
 
-```raven
+```rust
 let first = loop {
     break 42
 }
@@ -257,7 +257,7 @@ let first = loop {
 Unlike v1, `if` is also an expression in v2, so it can produce a value
 directly:
 
-```raven
+```rust
 let label = if n > 0 { "positive" } else { "non-positive" }
 ```
 
@@ -269,14 +269,14 @@ replaces them with the generic `List<T>`, and adds `Map<K, V>` and
 
 v1:
 
-```raven
+```rust
 let numbers: int[] = [1, 2, 3];
 let words: string[] = ["a", "b"];
 ```
 
 v2:
 
-```raven
+```rust
 let numbers: List<Int> = [1, 2, 3]
 let words: List<String> = ["a", "b"]
 ```
@@ -284,7 +284,7 @@ let words: List<String> = ["a", "b"]
 `Map` and `Set` come from a module import and are created with their
 associated functions:
 
-```raven
+```rust
 import std/collections
 
 fun main() {
@@ -318,7 +318,7 @@ fallibility part of the type. `Result<T, E>` is `Ok(T)` or `Err(E)`,
 
 v1, sentinel style:
 
-```raven
+```rust
 // returns 0 to mean "cannot divide"
 fun divide(a: int, b: int) -> int {
     if (b == 0) {
@@ -330,7 +330,7 @@ fun divide(a: int, b: int) -> int {
 
 v2, typed errors:
 
-```raven
+```rust
 import std/error { error }
 
 fun divide(a: Int, b: Int) -> Result<Int, Error> {
@@ -351,7 +351,7 @@ fun main() {
 `?` keeps multi step error handling flat: each call returns early on
 `Err`, so the body reads like the happy path.
 
-```raven
+```rust
 fun pipeline(a: Int, b: Int) -> Result<Int, Error> {
     let x = divide(a, b)?
     let y = divide(x, 2)?
@@ -362,7 +362,7 @@ fun pipeline(a: Int, b: Int) -> Result<Int, Error> {
 Where v1 might return an empty string for "not found", v2 returns
 `Option<T>` and the caller matches it. `T?` is sugar for `Option<T>`.
 
-```raven
+```rust
 fun unwrap_or(x: Option<Int>, fallback: Int) -> Int {
     return match x {
         None -> fallback,
@@ -379,7 +379,7 @@ moves string operations onto methods.
 
 v1:
 
-```raven
+```rust
 let name: string = "Raven";
 print(format("Hello, {}!", name));
 print(format("sum is {}", 3 + 4));
@@ -387,7 +387,7 @@ print(format("sum is {}", 3 + 4));
 
 v2:
 
-```raven
+```rust
 fun main() {
     let name = "Raven"
     print("Hello, ${name}!")
@@ -400,7 +400,7 @@ String methods such as `to_upper`, `to_lower`, `trim`, `repeat`,
 `std/string`. A file must `import std/string` to call them, which merges
 the `impl String` block so the methods resolve by receiver type.
 
-```raven
+```rust
 import std/string
 
 fun main() {
@@ -418,7 +418,7 @@ fun main() {
 A v2 block string uses triple quotes and is raw (no escapes, newlines
 preserved):
 
-```raven
+```rust
 let text = """
 line one
 line two
@@ -433,7 +433,7 @@ imports come in a few shapes.
 
 v1:
 
-```raven
+```rust
 import math;
 import str from "str";
 import { trim, capitalize } from "str";
@@ -441,7 +441,7 @@ import { trim, capitalize } from "str";
 
 v2:
 
-```raven
+```rust
 import std/math { abs_int, min_int, max_int }
 import std/string
 import std/io { println }
@@ -476,7 +476,7 @@ v1 enums were plain tags, referenced as `Color::Red`, and converted from
 strings with `enum_from_string`. v2 uses `EnumName.Variant`, lets a
 variant carry data, and matches with the bare variant name.
 
-```raven
+```rust
 enum Shape {
     Circle(Float),
     Square(Float),
@@ -497,7 +497,7 @@ fun main() {
 `match` is exhaustive (every case must be covered) and supports literals,
 ranges, the wildcard `_`, struct fields, and guards with `if`:
 
-```raven
+```rust
 fun classify(n: Int) -> String {
     return match n {
         0 -> "zero",
@@ -513,7 +513,7 @@ A trait declares methods a type can implement; `impl Trait for Type`
 provides the implementation, and `impl Type { ... }` adds inherent methods
 and associated functions (the idiomatic constructor, called `Type.new()`).
 
-```raven
+```rust
 struct Point { x: Int, y: Int }
 
 impl ToString for Point {
@@ -536,7 +536,7 @@ Functions, structs, enums, and impl blocks can take type parameters in
 angle brackets. A bound `T: Trait` constrains the parameter; use `+` for
 several bounds. Generic code is monomorphized per concrete type.
 
-```raven
+```rust
 fun describe<T: ToString>(x: T) -> String = x.to_string()
 
 struct Box<T> {
@@ -552,7 +552,7 @@ impl<T> Box<T> {
 dispatched at runtime. Use a generic bound when the concrete type is known
 at the call site, `dyn Trait` when it is not.
 
-```raven
+```rust
 trait Speak {
     fun sound(self) -> Int
 }
@@ -566,7 +566,7 @@ fun describe(s: dyn Speak) -> Int = s.sound()
 returns, in reverse order of registration. It is the v2 way to do cleanup
 that v1 had to place by hand at each return.
 
-```raven
+```rust
 fun demo() -> Int {
     defer print(1)
     defer print(2)
@@ -581,7 +581,7 @@ fun demo() -> Int {
 (`collect`, `fold`, `count`) over any `Iterator`. `list.iter()` bridges a
 `List` into the pipeline.
 
-```raven
+```rust
 import std/iter { collect, fold, count }
 
 fun main() {
@@ -597,7 +597,7 @@ fun main() {
 ordinary functions, using C types (`CInt`, `CLong`, `CSize`, `CStr`,
 `CDouble`). A `c"..."` literal produces a `CStr`.
 
-```raven
+```rust
 extern "C" {
     fun abs(x: CInt) -> CInt
     fun strlen(s: CStr) -> CSize
@@ -684,7 +684,7 @@ translations.
 
 v1:
 
-```raven
+```rust
 let i: int = 0;
 while (i < 5) {
     print(i);
@@ -698,7 +698,7 @@ for (let j: int = 0; j < 5; j = j + 1) {
 
 v2 (`examples/v2/loops.rv`):
 
-```raven
+```rust
 fun main() {
     let i = 0
     while i < 5 {
@@ -720,7 +720,7 @@ an `else if` chain.
 
 v1 (the calculation core):
 
-```raven
+```rust
 let result: float = 0.0;
 if (operation == "+") {
     result = num1 + num2;
@@ -742,7 +742,7 @@ print(format("Result: {} {} {} = {}", num1, operation, num2, result));
 
 v2 (`examples/v2/calculator.rv`):
 
-```raven
+```rust
 fun apply(op: String, a: Float, b: Float) -> Float {
     if op == "+" {
         a + b
@@ -772,7 +772,7 @@ converted strings to variants with `enum_from_string`.
 
 v1:
 
-```raven
+```rust
 enum HttpStatus {
     OK,
     NotFound,
@@ -793,7 +793,7 @@ main();
 v2 (`examples/v2/enum_demo.rv`) reaches a variant with `.` and turns a
 variant into text with an exhaustive `match`:
 
-```raven
+```rust
 enum HttpStatus {
     Ok,
     NotFound,
@@ -825,7 +825,7 @@ namespace (`math.abs`, `str.trim`). v2 imports named items from a
 
 v1:
 
-```raven
+```rust
 import math;
 import str from "str";
 
@@ -840,7 +840,7 @@ main();
 
 v2 (`examples/v2/standard_library_demo.rv`):
 
-```raven
+```rust
 import std/math { abs_int, min_int, max_int, pow_int }
 import std/string
 

@@ -4,7 +4,7 @@ Hex and standard base64 over the bytes of a `String`. These are free
 functions that turn a `String`'s raw bytes into encoded text and decode the
 inverse.
 
-```raven
+```rust
 import std/encoding { hex_encode, base64_encode, base64_decode }
 
 fun main() {
@@ -19,7 +19,7 @@ fun main() {
 Every entry is a free function, so bind the ones you need with a selective
 import:
 
-```raven
+```rust
 import std/encoding { hex_encode, hex_decode, base64_encode, base64_decode }
 ```
 
@@ -43,7 +43,7 @@ defined value rather than failing (see [Invalid input](#invalid-input)).
 Encode each input byte as two lowercase hex digits. The result is twice as
 long as the input.
 
-```raven
+```rust
 import std/encoding { hex_encode }
 
 fun main() {
@@ -57,7 +57,7 @@ fun main() {
 The inverse of `hex_encode`. Reads the input two digits at a time, accepting
 lowercase, uppercase, or mixed hex (`0-9`, `a-f`, `A-F`).
 
-```raven
+```rust
 import std/encoding { hex_decode }
 
 fun main() {
@@ -68,7 +68,7 @@ fun main() {
 
 Round-tripping is exact for any input:
 
-```raven
+```rust
 import std/encoding { hex_encode, hex_decode }
 
 fun main() {
@@ -85,7 +85,7 @@ Encode the input bytes with the standard base64 alphabet (`A-Z`, `a-z`,
 `0-9`, `+`, `/`) and `=` padding. Every three input bytes become four output
 characters; one or two trailing bytes are padded with `=`.
 
-```raven
+```rust
 import std/encoding { base64_encode }
 
 fun main() {
@@ -101,7 +101,7 @@ fun main() {
 The inverse of `base64_encode`. Honors trailing `=` padding to recover how
 many bytes the final group yields.
 
-```raven
+```rust
 import std/encoding { base64_decode }
 
 fun main() {
@@ -113,7 +113,7 @@ fun main() {
 
 Encode then decode round-trips for any input:
 
-```raven
+```rust
 import std/encoding { base64_encode, base64_decode }
 
 fun main() {
@@ -143,7 +143,7 @@ Both can be added later without changing the existing functions.
 
 ## Worked example: a hex dump round trip
 
-```raven
+```rust
 import std/encoding { hex_encode, hex_decode }
 
 fun main() {

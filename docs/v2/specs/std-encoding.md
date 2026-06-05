@@ -14,7 +14,7 @@ likewise returns the decoded bytes as a `String`.
 
 All entries are free functions, bound with a selective import:
 
-```raven
+```rust
 import std/encoding { hex_encode, hex_decode, base64_encode, base64_decode }
 
 fun main() {

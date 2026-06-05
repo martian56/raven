@@ -9,7 +9,7 @@ There is no top level statement execution: a program runs from `fun main()`.
 `let` introduces a binding. Bindings are mutable: you can reassign them
 and mutate their fields and elements.
 
-```raven
+```rust
 fun main() {
     let n = 10
     n = n + 5
@@ -21,7 +21,7 @@ A type annotation is optional. When omitted the type is inferred from the
 initializer; annotate when the type cannot be inferred (for example an
 empty list).
 
-```raven
+```rust
 let count: Int = 0
 let names: List<String> = []
 ```
@@ -33,7 +33,7 @@ an initializer may be any expression (including a function call), not only a
 constant. A heap-valued global (a `String`, `List`, struct, and so on) is
 kept alive for the whole program.
 
-```raven
+```rust
 fun seed() -> Int = 10
 
 let counter: Int = 0        // mutable, shared across functions
@@ -49,7 +49,7 @@ fun record(name: String) {
 `const` introduces an immutable binding: reassigning it (or compound
 assigning, like `+=`) is a compile error.
 
-```raven
+```rust
 fun main() {
     const LIMIT = 5
     LIMIT = 6            // error: cannot assign to `LIMIT`, it is a `const`
@@ -61,7 +61,7 @@ type and a value, and its initializer must be a constant expression (a
 literal, or an arithmetic, comparison, bitwise, or boolean combination of
 literals), which is folded and inlined at each use site.
 
-```raven
+```rust
 const MAX: Int = 100
 const SECS_PER_HOUR: Int = 60 * 60
 ```
@@ -70,7 +70,7 @@ Inside a function body a `const` is an immutable local. It has stack
 storage, so its initializer may be any expression (including a function
 call), not only a constant one.
 
-```raven
+```rust
 fun main() {
     const DOUBLED = compute()    // runtime value, still immutable
 }
@@ -89,7 +89,7 @@ Type names are PascalCase.
 | `Char`   | a single Unicode scalar value |
 | `Unit`   | the empty value, written `()` |
 
-```raven
+```rust
 let i: Int = 42
 let f: Float = 3.14
 let b: Bool = true
@@ -106,7 +106,7 @@ A regular string uses double quotes and processes escapes (`\n`, `\t`,
 `\\`, `\"`, `\x41`, `\u{1F600}`). String interpolation embeds an
 expression with `${...}`:
 
-```raven
+```rust
 fun main() {
     let name = "Raven"
     let a = 3
@@ -119,7 +119,7 @@ fun main() {
 A block string uses triple quotes and is raw: no escapes are processed
 and newlines are preserved exactly.
 
-```raven
+```rust
 let text = """
 line one
 line two
@@ -145,7 +145,7 @@ Bitwise: `&`, `|`, `^`, `~`, `<<`, `>>`.
 Ranges produce a range value used by `for`. `a..b` is half open (excludes
 `b`); `a..=b` is inclusive.
 
-```raven
+```rust
 for x in 0..5 {        // 0, 1, 2, 3, 4
     print(x)
 }
@@ -162,7 +162,7 @@ Compound assignment operators apply an operation in place: `+=`, `-=`,
 A function declares typed parameters and an optional return type. A
 function with no return type returns `Unit`.
 
-```raven
+```rust
 fun add(a: Int, b: Int) -> Int {
     return a + b
 }
@@ -171,7 +171,7 @@ fun add(a: Int, b: Int) -> Int {
 A function may use an expression body with `=`, where the trailing
 expression is the return value:
 
-```raven
+```rust
 fun square(x: Int) -> Int = x * x
 ```
 
@@ -183,7 +183,7 @@ A lambda is written with `fun(params) -> Ret = body` or a block body.
 Closures capture surrounding locals by value. A function type is written
 `fun(ArgTypes) -> Ret`.
 
-```raven
+```rust
 fun apply(f: fun(Int) -> Int, x: Int) -> Int {
     return f(x)
 }
@@ -197,7 +197,7 @@ fun main() {
 
 A closure can be returned, carrying its captured values:
 
-```raven
+```rust
 fun make_adder(n: Int) -> fun(Int) -> Int {
     return fun(x: Int) -> Int = x + n
 }
@@ -208,13 +208,13 @@ fun make_adder(n: Int) -> fun(Int) -> Int {
 `if` / `else if` / `else` chooses a branch. It works as a statement and
 as an expression that yields a value:
 
-```raven
+```rust
 let label = if n > 0 { "positive" } else { "non-positive" }
 ```
 
 `while` loops while a condition holds:
 
-```raven
+```rust
 let i = 0
 while i < 10 {
     i = i + 1
@@ -223,7 +223,7 @@ while i < 10 {
 
 `loop` is an unconditional loop. It evaluates to the operand of `break`:
 
-```raven
+```rust
 let first = loop {
     break 42
 }
@@ -231,7 +231,7 @@ let first = loop {
 
 `for ... in` iterates a range or a list:
 
-```raven
+```rust
 let xs = [3, 5, 7]
 let total = 0
 for v in xs {
@@ -251,7 +251,7 @@ the function's return, not when the inner block exits. Deferred
 expressions run in reverse order of registration (last in, first out),
 and only those actually reached at runtime run.
 
-```raven
+```rust
 fun demo() -> Int {
     defer print(1)
     defer print(2)
@@ -263,7 +263,7 @@ fun demo() -> Int {
 Because a defer is function-scoped, the order across nested blocks is the
 same LIFO order, measured by when each `defer` statement ran:
 
-```raven
+```rust
 fun f() -> Int {
     print(1)
     if true {
@@ -286,7 +286,7 @@ side effects and cannot change the return value. Defers do not run on a
 A struct groups named, typed fields. Construct it with a struct literal,
 read fields with `.`, and assign to fields and elements.
 
-```raven
+```rust
 struct Point { x: Int, y: Int }
 
 fun main() {
@@ -300,7 +300,7 @@ Methods are declared in an `impl` block. A method takes `self` as its
 first parameter. A function in an `impl` block without `self` is an
 associated function, the idiomatic constructor, called as `Type.func()`.
 
-```raven
+```rust
 struct Counter { n: Int }
 
 impl Counter {
@@ -322,7 +322,7 @@ fun main() {
 
 Methods can also be declared on built in types:
 
-```raven
+```rust
 impl Int {
     fun doubled(self) -> Int = self * 2
 }
@@ -335,7 +335,7 @@ tuple variant with positional payloads, or a struct variant with named
 fields. Construct a variant with `EnumName.Variant` (or
 `EnumName.Variant(args)` for a payload). Match with the bare variant name.
 
-```raven
+```rust
 enum Color {
     Red,
     Green,
@@ -372,7 +372,7 @@ selected arm. Match is exhaustive: every case must be covered. Patterns
 include literals, ranges, the wildcard `_`, enum variants binding their
 payload, and struct fields. An arm may carry a guard with `if`.
 
-```raven
+```rust
 fun classify(n: Int) -> String {
     return match n {
         0 -> "zero",
@@ -393,7 +393,7 @@ literal is comma-separated `key: value` pairs in brackets, `["a": 1,
 "b": 2]`. Both come from `std/collections`, so the literals need
 `import std/collections` in scope (see the [standard library](standard-library.md#stdcollections)).
 
-```raven
+```rust
 import std/collections
 
 fun main() {
@@ -423,7 +423,7 @@ the same bound the collection types carry.
 A trait declares methods that a type can implement. Implement it with
 `impl Trait for Type`. A trait method may have a default body.
 
-```raven
+```rust
 trait Speak {
     fun sound(self) -> Int
 }
@@ -444,7 +444,7 @@ Functions, structs, enums, and impl blocks can take type parameters in
 angle brackets. A bound `T: Trait` constrains a parameter to types that
 implement the trait. Use `+` to require several bounds.
 
-```raven
+```rust
 fun show<T: ToString>(label: String, x: T) -> String {
     return "${label}=${x}"
 }
@@ -462,7 +462,7 @@ Generic code is monomorphized: a distinct machine specialization is
 emitted for each concrete type the program uses. A method can introduce
 its own type parameters separate from the type's:
 
-```raven
+```rust
 impl<T> Box<T> {
     fun mapped<U>(self, f: fun(T) -> U) -> U = f(self.value)
 }
@@ -475,7 +475,7 @@ impl<T> Box<T> {
 bare constructors `Some`, `None`, `Ok`, and `Err`. The type `T?` is sugar
 for `Option<T>`.
 
-```raven
+```rust
 fun divide(a: Int, b: Int) -> Result<Int, Error> {
     if b == 0 {
         return Err(error("divide by zero"))
@@ -501,7 +501,7 @@ which keeps error handling flat. `error` and the `Result` helpers live in
 trait, dispatched at runtime through a vtable. Passing a concrete value
 where `dyn Trait` is expected boxes it as a fat pointer.
 
-```raven
+```rust
 trait Speak {
     fun sound(self) -> Int
 }
@@ -521,7 +521,7 @@ program multiplexes many of them onto one OS thread, and exactly one runs
 at a time. A goroutine runs until it reaches a yield point, then the
 scheduler resumes another ready goroutine.
 
-```raven
+```rust
 spawn(fun() -> Unit {
     // goroutine body
 })
@@ -535,7 +535,7 @@ yielding to the scheduler until the counterpart operation runs.
 `yield_now()` yields explicitly. Channels carry `Int` values in this
 release.
 
-```raven
+```rust
 import std/sync { channel }
 
 fun main() {
@@ -573,7 +573,7 @@ parallelism, `select`, and non-blocking IO are future work.
 path. A selective import binds named items; a bare import merges the
 module (used for modules that add methods or constructors).
 
-```raven
+```rust
 import std/io { println }
 import std/collections
 import "./helpers"
@@ -602,7 +602,7 @@ in scope without an import.
 `extern "C" { ... }` declares foreign function signatures. Call them like
 ordinary functions. Arguments and returns use C types.
 
-```raven
+```rust
 extern "C" {
     fun abs(x: CInt) -> CInt
     fun strlen(s: CStr) -> CSize
@@ -634,7 +634,7 @@ narrowed to f32 at the call and a `CFloat` return is widened back to a
 `Float`. The integer and float C return types satisfy `ToString`, so a
 `CInt` or `CDouble` result prints and interpolates directly.
 
-```raven
+```rust
 extern "C" {
     fun sqrtf(x: CFloat) -> CFloat
 }
@@ -653,7 +653,7 @@ not itself a valid `const char *`. `from_cstr` reads a `CStr` back into a
 it, so it leaks one buffer per call; hoist the conversion out of a hot
 loop.
 
-```raven
+```rust
 import std/ffi { to_cstr, from_cstr }
 
 extern "C" {
@@ -674,7 +674,7 @@ through it: `alloc<T>(count)` reserves a buffer, `free<T>(p)` releases it,
 `offset<T>(p, i)` advances by `i` elements (scaled by `sizeof(T)`),
 `null_ptr<T>()` is the null pointer, and `is_null<T>(p)` tests it.
 
-```raven
+```rust
 import std/ffi { alloc, free, load, store, offset, is_null, null_ptr }
 
 fun main() {
@@ -704,7 +704,7 @@ be C-FFI types so the C ABI is well defined. A capturing closure (a local
 of function type) is rejected, since C cannot supply its capture
 environment.
 
-```raven
+```rust
 import std/ffi { alloc, free, load, store, offset }
 
 extern "C" {
@@ -739,7 +739,7 @@ struct whose fields are all integer-class C scalars (`CInt`, `CLong`,
 8 bytes (one machine register). A larger struct, or one with a float
 field, is rejected; pass a `CPtr<...>` to it instead.
 
-```raven
+```rust
 @repr(C)
 struct Point {
     x: CInt
@@ -777,7 +777,7 @@ synthesizes trait impls from the type definition, so you do not hand write
 `Hash`, `ToString`, `Debug`, `ToJson`, and `FromJson`. A field or payload
 type must itself implement the trait being derived.
 
-```raven
+```rust
 import std/collections { Map, Set }
 
 @derive(Eq, Hash, ToString, Debug)
@@ -804,7 +804,7 @@ fun main() {
 function that decodes one back, returning a `Result`. Combine `to_json`
 with `stringify`, and `parse` with `from_json`, for a round trip.
 
-```raven
+```rust
 import std/json { JsonValue, stringify, parse }
 
 @derive(ToJson, FromJson, Eq)
@@ -841,7 +841,7 @@ A matcher binds metavariables: `$x:expr` captures a balanced expression
 and `$x:ident` captures one identifier. The template splices `$x` back in.
 Wrap each splice in parentheses where precedence matters.
 
-```raven
+```rust
 macro twice { ($x:expr) => { ($x) + ($x) } }
 
 fun main() {
@@ -855,7 +855,7 @@ matches a sub-pattern several times, with an optional separator between
 the closing `)` and the marker. In the template it expands once per
 capture.
 
-```raven
+```rust
 macro sum_all { ($($x:expr),*) => { (0 $(+ ($x))*) } }
 
 fun main() {
@@ -878,7 +878,7 @@ compiles. `type_name<T>()` returns the rendered name of a type,
 a generic function each resolves to the concrete type bound to `T` at that
 instantiation.
 
-```raven
+```rust
 struct Point { x: Int, y: Int }
 
 fun introspect<T>() {
@@ -903,7 +903,7 @@ and `variant_field_types<T>()` gives each variant's payload type names as an
 inner list (empty for a unit variant), so the inner length is the variant's
 payload arity.
 
-```raven
+```rust
 enum Shape { Circle(radius: Float) Rectangle(w: Float, h: Float) Dot }
 
 variant_names<Shape>()        // ["Circle", "Rectangle", "Dot"]
@@ -917,7 +917,7 @@ its struct fields, `get_field(a, name)` reads one field back as an
 `Option<Any>`, and `cast<T>(a)` recovers a concrete value as an
 `Option<T>` (`None` for the wrong `T`).
 
-```raven
+```rust
 struct User { id: Int, name: String }
 
 fun describe(a: Any) {

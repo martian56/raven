@@ -6,7 +6,7 @@ serializer. The value tree is the `JsonValue` enum.
 
 ## Value type
 
-```raven
+```rust
 enum JsonValue {
     Null,
     Bool(Bool),
@@ -34,7 +34,7 @@ IEEE 754 double, so integers beyond the 53-bit mantissa (roughly
 
 ## Import
 
-```raven
+```rust
 import std/json { parse, stringify }
 
 fun main() {
@@ -126,7 +126,7 @@ is already a free function for the same reason.
 form, plus hand-written impls for the built-in types so field recursion
 bottoms out.
 
-```raven
+```rust
 trait ToJson {
     fun to_json(self) -> JsonValue
 }

@@ -19,7 +19,7 @@ Raven comes with a comprehensive standard library that provides essential functi
 Raven provides several built-in functions that are always available:
 
 ### Output Functions
-```raven
+```rust
 // Print to console
 print("Hello, World!");
 
@@ -28,13 +28,13 @@ print(format("User: {}, Age: {}", name, age));
 ```
 
 ### Input Functions
-```raven
+```rust
 // Get user input
 let name: string = input("Enter your name: ");
 ```
 
 ### Type Functions
-```raven
+```rust
 // Get type information
 let value: int = 42;
 print(type(value));  // "int"
@@ -44,7 +44,7 @@ let status: HttpStatus = enum_from_string("HttpStatus", "OK");
 ```
 
 ### File Functions
-```raven
+```rust
 // File operations
 write_file("data.txt", "Hello, World!");
 let content: string = read_file("data.txt");
@@ -52,7 +52,7 @@ let exists: bool = file_exists("data.txt");
 ```
 
 ### Array Functions
-```raven
+```rust
 // Array utilities
 let numbers: int[] = [1, 2, 3, 4, 5];
 print(len(numbers));  // 5
@@ -65,7 +65,7 @@ let slice: int[] = numbers.slice(1, 3);
 
 Multi-dimensional arrays use repeated `[]` in the type and chained `[index]` in expressions (see [Data types](../language-reference/data-types.md#multi-dimensional-arrays)):
 
-```raven
+```rust
 let grid: int[][] = [[1, 2], [3, 4]];
 grid[0][1] = 9;
 ```
@@ -74,7 +74,7 @@ grid[0][1] = 9;
 
 Import modules using the `import` statement:
 
-```raven
+```rust
 import "math";
 import "collections";
 import str from "str";
@@ -89,7 +89,7 @@ let parsed: string[] = json.parse("{\"name\":\"Raven\"}");
 
 ## JSON Module Quick Example
 
-```raven
+```rust
 import "json";
 
 let raw: string = "{\"name\":\"Raven\",\"stars\":27}";
@@ -110,7 +110,7 @@ let pretty: string = json.pretty(raw, 2);
 
 Each module follows a consistent structure:
 
-```raven
+```rust
 // Module: math.rv
 export fun math_add(a: float, b: float) -> float {
     return a + b;
@@ -140,7 +140,7 @@ export struct Vector {
 
 Standard library functions use consistent error handling:
 
-```raven
+```rust
 // File operations may fail
 if (file_exists("config.txt")) {
     let config: string = read_file("config.txt");

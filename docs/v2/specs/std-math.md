@@ -57,7 +57,7 @@ no overloading.
 The transcendental and rounding functions bind directly to the C runtime
 math library through `extern "C"`:
 
-```raven
+```rust
 extern "C" {
     fun sqrt(x: Float) -> Float
     fun pow(base: Float, exp: Float) -> Float

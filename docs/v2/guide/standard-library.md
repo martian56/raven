@@ -12,7 +12,7 @@ use depends on what the module provides.
 
 **Selective import** brings named free functions into scope:
 
-```raven
+```rust
 import std/math { sqrt, pow_int }
 
 fun main() {
@@ -23,7 +23,7 @@ fun main() {
 **Bare import** brings in a module that adds methods or constructors to a
 type (it merges an `impl` block or registers a type):
 
-```raven
+```rust
 import std/string                  // adds methods to String
 import std/collections             // registers Map.new() / Set.new()
 
@@ -49,7 +49,7 @@ Two rules are worth memorizing up front:
 `Hash`, `Iterator<T>`) and implements them for the primitive types. It is
 auto-imported, so you never write `import std/core`:
 
-```raven
+```rust
 fun describe<T: ToString>(x: T) -> String = x.to_string()
 ```
 
@@ -62,7 +62,7 @@ absent returns `Option<T>`. There are no exceptions and no `null`. Handle a
 `Result` with `match`, or propagate it with the `?` operator inside a
 function that itself returns `Result`:
 
-```raven
+```rust
 import std/fs { read }
 
 fun load(path: String) -> Result<String, Error> {

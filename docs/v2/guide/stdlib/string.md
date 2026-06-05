@@ -4,7 +4,7 @@ Methods for working with text. `std/string` adds an `impl String` block, so
 a bare `import std/string` brings every method below into scope as a method
 on any `String` value.
 
-```raven
+```rust
 import std/string
 
 fun main() {
@@ -15,7 +15,7 @@ fun main() {
 
 ## Importing
 
-```raven
+```rust
 import std/string
 ```
 
@@ -46,7 +46,7 @@ unchanged.
 
 The number of UTF-8 bytes in the string. `len` is a built-in alias.
 
-```raven
+```rust
 import std/string
 
 fun main() {
@@ -64,7 +64,7 @@ True when the string has no bytes. Also available built in.
 True when the string is empty or contains only ASCII whitespace (space, tab,
 newline, carriage return, vertical tab, form feed).
 
-```raven
+```rust
 import std/string
 
 fun main() {
@@ -86,7 +86,7 @@ byte of the encoding, not the whole character.)
 The half-open byte range `[start, end)`, clamped to `0..length`. A `start`
 at or past `end` yields the empty string.
 
-```raven
+```rust
 import std/string
 
 fun main() {
@@ -106,7 +106,7 @@ is left as is.
 
 Remove leading and trailing ASCII whitespace. Interior whitespace is kept.
 
-```raven
+```rust
 import std/string
 
 fun main() {
@@ -120,7 +120,7 @@ fun main() {
 The string concatenated `n` times. A non-positive `n` yields the empty
 string.
 
-```raven
+```rust
 import std/string
 
 fun main() {
@@ -149,7 +149,7 @@ True when the bytes of `needle` occur starting at byte index `at`. The
 building block the other search methods use; handy for hand-written
 scanning.
 
-```raven
+```rust
 import std/string
 
 fun main() {
@@ -172,7 +172,7 @@ building up text, but `concat` is the explicit method form.
 Replace every non-overlapping occurrence of `from` with `to`, scanning left
 to right. An empty `from` returns the input unchanged.
 
-```raven
+```rust
 import std/string
 
 fun main() {
@@ -187,7 +187,7 @@ fun main() {
 `>=`, and they support `==`. A string literal can also be a `match` pattern,
 compared by content:
 
-```raven
+```rust
 fun classify(word: String) -> Int {
     return match word {
         "yes" -> 1,
@@ -199,7 +199,7 @@ fun classify(word: String) -> Int {
 
 ## Worked example: a tiny slug builder
 
-```raven
+```rust
 import std/string
 
 fun slug(title: String) -> String {

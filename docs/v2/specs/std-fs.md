@@ -7,7 +7,7 @@ add the Result/Error model in pure Raven on top.
 
 ## Import
 
-```raven
+```rust
 import std/fs { read, write, append, remove_file, create_dir, remove_dir, list_dir, size, exists, is_file, is_dir, join, dirname, basename, split }
 ```
 
@@ -26,7 +26,7 @@ wrapper turns a non-empty last error into an `Err`.
 
 ## Fallible surface
 
-```raven
+```rust
 fun read(path: String) -> Result<String, Error>
 fun write(path: String, contents: String) -> Result<Bool, Error>
 fun append(path: String, contents: String) -> Result<Bool, Error>
@@ -59,7 +59,7 @@ yields an empty list, not a one-element list containing `""`.
 
 ## Non-fallible queries
 
-```raven
+```rust
 fun exists(path: String) -> Bool
 fun is_file(path: String) -> Bool
 fun is_dir(path: String) -> Bool
@@ -71,7 +71,7 @@ These return a plain `Bool` and never an error: a missing path is a normal
 
 ## Path manipulation
 
-```raven
+```rust
 fun join(a: String, b: String) -> String
 fun dirname(path: String) -> String
 fun basename(path: String) -> String

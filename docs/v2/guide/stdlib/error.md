@@ -7,7 +7,7 @@ message and an optional kind, context chaining as an error propagates, and a
 small set of free functions for the cases where matching a `Result` by hand
 gets verbose.
 
-```raven
+```rust
 import std/error { error, error_kind, is_ok, is_err, unwrap_or, ok, err }
 
 fun divide(a: Int, b: Int) -> Result<Int, Error> {
@@ -27,7 +27,7 @@ fun main() {
 
 Import the free functions you use by name:
 
-```raven
+```rust
 import std/error { error, error_kind, is_ok, is_err, unwrap_or, ok, err }
 ```
 
@@ -56,7 +56,7 @@ whose return type matches (a `Result` for `?` on a `Result`, an `Option` for
 
 A function that uses `?` to chain failing steps:
 
-```raven
+```rust
 import std/error { error, error_kind, is_ok, is_err, unwrap_or, ok, err }
 
 fun positive(n: Int) -> Result<Int, Error> {
@@ -78,7 +78,7 @@ Each `?` keeps the happy path flat: if `positive` returns an `Err`,
 
 A caller handles the result with `match`:
 
-```raven
+```rust
 import std/error { error, error_kind, is_ok, is_err, unwrap_or, ok, err }
 
 fun positive(n: Int) -> Result<Int, Error> {
@@ -112,7 +112,7 @@ bug has made the program unable to continue.
 Build an `Error` with the given message and an empty kind. This is the usual
 constructor for an ad hoc failure.
 
-```raven
+```rust
 import std/error { error, error_kind, is_ok, is_err, unwrap_or, ok, err }
 
 fun check_age(age: Int) -> Result<Int, Error> {
@@ -128,7 +128,7 @@ fun check_age(age: Int) -> Result<Int, Error> {
 Build an `Error` tagged with a kind, for example `"io"` or `"parse"`. The kind
 is a free-form `String`; callers can branch on it with `e.kind()`.
 
-```raven
+```rust
 import std/error { error, error_kind, is_ok, is_err, unwrap_or, ok, err }
 
 fun open_config(path: String) -> Result<String, Error> {
@@ -149,7 +149,7 @@ The message text.
 
 The kind tag, or `""` when the error was built with `error`.
 
-```raven
+```rust
 import std/error { error, error_kind, is_ok, is_err, unwrap_or, ok, err }
 
 fun main() {
@@ -165,7 +165,7 @@ A new `Error` whose message is `ctx + ": " + message`, preserving the kind. Use
 it to add a higher-level explanation to a lower-level failure as it propagates.
 It returns a new `Error` and does not mutate the receiver.
 
-```raven
+```rust
 import std/error { error, error_kind, is_ok, is_err, unwrap_or, ok, err }
 
 fun load_settings(path: String) -> Result<String, Error> {
@@ -185,7 +185,7 @@ The display form: the bare `message` when the kind is empty, otherwise
 `kind + ": " + message`. This comes from the `ToString` impl, so `print(e)`
 uses it too.
 
-```raven
+```rust
 import std/error { error, error_kind, is_ok, is_err, unwrap_or, ok, err }
 
 fun main() {
@@ -212,7 +212,7 @@ True when `r` is `Err`.
 
 The `Ok` value, or `default` when `r` is an `Err`.
 
-```raven
+```rust
 import std/error { error, unwrap_or, is_err }
 
 fun divide(a: Int, b: Int) -> Result<Int, Error> {
@@ -238,7 +238,7 @@ you care whether a value is present but not why it failed.
 
 Keep the error: map `Err(e)` to `Some(e)` and `Ok(v)` to `None`.
 
-```raven
+```rust
 import std/error { error, ok }
 
 fun divide(a: Int, b: Int) -> Result<Int, Error> {
@@ -262,7 +262,7 @@ This ties the pieces together: failing steps return `Result<T, Error>`, `?`
 propagates failures, `with_context` annotates them as they rise, and the caller
 recovers with `unwrap_or`.
 
-```raven
+```rust
 import std/error { error, error_kind, is_ok, is_err, unwrap_or, ok, err }
 
 fun check_port(port: Int) -> Result<Int, Error> {

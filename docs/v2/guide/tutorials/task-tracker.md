@@ -12,7 +12,7 @@ If you are new to the language, skim the
 
 A struct groups related fields under one type. A task has an id and a title:
 
-```raven
+```rust
 struct Task {
     id: Int,
     title: String,
@@ -33,7 +33,7 @@ wrong type is a compile error, not a surprise at runtime.
 A task has a status, and a status is exactly one of a fixed set: to do, doing,
 or done. That is a sum type, written as an `enum`. Add it and a field for it:
 
-```raven
+```rust
 enum Status {
     Todo,
     Doing,
@@ -55,7 +55,7 @@ fun main() {
 You construct a variant with the qualified form `Status.Doing`. To turn a
 status into text, use `match`, which checks that you handle every variant:
 
-```raven
+```rust
 fun label(s: Status) -> String {
     return match s {
         Todo -> "todo",
@@ -75,7 +75,7 @@ checking, and it is one of the main reasons to reach for an enum.
 Some statuses need more than a name. A blocked task should say what it is
 waiting on. A variant can carry a payload, so give `Blocked` a `String`:
 
-```raven
+```rust
 enum Status {
     Todo,
     Doing,
@@ -86,7 +86,7 @@ enum Status {
 
 Now a `match` arm for `Blocked` binds the payload to a name you can use:
 
-```raven
+```rust
 fun label(s: Status) -> String {
     return match s {
         Todo -> "todo",
@@ -106,7 +106,7 @@ which forces you to consider the blocked case wherever a status is inspected.
 Functions that belong to a type live in an `impl` block and take `self`. Move
 the formatting onto `Task` as a method:
 
-```raven
+```rust
 impl Task {
     fun line(self) -> String {
         let tag = match self.status {
@@ -129,7 +129,7 @@ Searching a list might find nothing, and Raven has no `null` to return in that
 case. The answer is `Option<T>`: `Some(value)` when there is a result, `None`
 when there is not. A lookup by id:
 
-```raven
+```rust
 fun find(tasks: List<Task>, id: Int) -> Option<Task> {
     for t in tasks {
         if t.id == id {
@@ -142,7 +142,7 @@ fun find(tasks: List<Task>, id: Int) -> Option<Task> {
 
 The caller `match`es on the result and cannot forget the missing case:
 
-```raven
+```rust
 match find(tasks, 2) {
     Some(t) -> print("found: ${t.title}"),
     None -> print("not found"),
@@ -153,7 +153,7 @@ match find(tasks, 2) {
 
 Putting it together:
 
-```raven
+```rust
 enum Status {
     Todo,
     Doing,

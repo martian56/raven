@@ -7,7 +7,7 @@ wrappers add the Result/Error model and the handle types in pure Raven.
 
 ## Import
 
-```raven
+```rust
 import std/net { connect, listen, dns_lookup, reachable }
 ```
 
@@ -41,7 +41,7 @@ wrapper turns a non-empty last error (or, for the id-returning ops, an id of
 
 ## Surface
 
-```raven
+```rust
 struct TcpStream { id: Int }
 struct TcpListener { id: Int }
 

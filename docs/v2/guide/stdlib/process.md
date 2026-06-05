@@ -5,7 +5,7 @@ waits for it to finish, and hands you the captured exit code, stdout, and
 stderr as an `Output` value. There is no streaming: a child runs to
 completion in a single call.
 
-```raven
+```rust
 import std/process { run }
 
 fun main() {
@@ -19,7 +19,7 @@ fun main() {
 
 ## Importing
 
-```raven
+```rust
 import std/process { run, run_with_input }
 ```
 
@@ -28,7 +28,7 @@ in with the type and needs no separate selector.
 
 ## The `Output` type
 
-```raven
+```rust
 struct Output { code: Int, stdout: String, stderr: String }
 ```
 
@@ -44,7 +44,7 @@ A finished child's captured result.
 
 True when `code` is `0`.
 
-```raven
+```rust
 import std/process { run }
 
 fun main() {
@@ -67,14 +67,14 @@ success returns `Ok(Output)` with the captured code, stdout, and stderr.
 When a program takes no arguments, pass an explicitly typed empty list so the
 element type is known:
 
-```raven
+```rust
 let no_args: List<String> = []
 ```
 
 A bare `[]` has no element type the checker can infer here, so the annotation
 is required.
 
-```raven
+```rust
 import std/process { run }
 
 fun main() {
@@ -91,7 +91,7 @@ fun main() {
 Like `run`, but writes `input` to the child's stdin and then closes it. Use
 this for programs that read from standard input.
 
-```raven
+```rust
 import std/process { run_with_input }
 
 fun main() {
@@ -115,7 +115,7 @@ is not found or cannot be executed. The error is
 `Err(Error { kind: "process", message })`, where `message` is the OS error
 text. The `Error` type comes from [std/error](error.md).
 
-```raven
+```rust
 import std/process { run }
 
 fun main() {
@@ -140,7 +140,7 @@ fun main() {
 Run `git` to print the current branch name, falling back to a label when the
 command is missing or reports a failure.
 
-```raven
+```rust
 import std/process { run }
 import std/string
 

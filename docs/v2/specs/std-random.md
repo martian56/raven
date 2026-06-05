@@ -35,7 +35,7 @@ across runs. Use it when you want a fresh, unpredictable sequence.
 
 ## Import
 
-```raven
+```rust
 import std/random
 
 fun main() {

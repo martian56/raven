@@ -31,7 +31,7 @@ Source -> Lexer -> Parser -> Resolver -> Tycheck -> HIR -> MIR -> Codegen -> Lin
 
 ## Syntax
 
-```raven
+```rust
 extern "C" {
     fun strlen(s: CStr) -> CSize
     fun abs(x: CInt) -> CInt
@@ -48,7 +48,7 @@ extern "C" {
 
 A call uses the foreign name directly:
 
-```raven
+```rust
 fun main() {
     let n = strlen(c"hello")
     print(n)

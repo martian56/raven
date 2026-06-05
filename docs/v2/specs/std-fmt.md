@@ -28,7 +28,7 @@ All formatting helpers are free functions, bound with a selective import. The
 `Debug` trait's `debug` method dispatches by the receiver's type and needs no
 explicit selector.
 
-```raven
+```rust
 import std/fmt { repeat, pad_left, pad_right, center, join, to_radix, to_binary, to_octal, to_hex, pad_int }
 import std/io { println }
 

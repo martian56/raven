@@ -7,7 +7,7 @@ threads: exactly one runs at a time, and a goroutine keeps running until it
 hits a yield point (a blocking channel operation or an explicit `yield_now()`),
 at which the scheduler resumes another ready goroutine.
 
-```raven
+```rust
 import std/sync { channel, channel_buffered, yield_now }
 
 fun main() {
@@ -23,7 +23,7 @@ Channels in this slice carry `Int` values.
 
 ## Importing
 
-```raven
+```rust
 import std/sync { channel, channel_buffered, yield_now }
 ```
 
@@ -42,7 +42,7 @@ Create an unbuffered (rendezvous) channel. A `send` blocks until a receiver is
 ready to take the value, and a `recv` blocks until a sender hands one over. The
 two sides meet: nothing is stored in between.
 
-```raven
+```rust
 import std/sync { channel, channel_buffered, yield_now }
 
 fun main() {
@@ -60,7 +60,7 @@ Create a buffered channel of capacity `cap`. A `send` returns immediately while
 there is room in the buffer, and only blocks once the buffer is full. A `recv`
 takes the oldest buffered value, and blocks only when the buffer is empty.
 
-```raven
+```rust
 import std/sync { channel, channel_buffered, yield_now }
 
 fun main() {
@@ -86,7 +86,7 @@ scheduler so other goroutines can run.
 Receive a value, blocking until one is available. On an empty channel the
 goroutine yields to the scheduler and resumes when a sender delivers a value.
 
-```raven
+```rust
 import std/sync { channel, channel_buffered, yield_now }
 
 fun main() {
@@ -110,7 +110,7 @@ your goroutines communicate over channels, since `send` and `recv` already
 yield when they block, but it is useful for handing off in a tight loop that
 otherwise never reaches a blocking operation.
 
-```raven
+```rust
 import std/sync { channel, channel_buffered, yield_now }
 
 fun main() {
@@ -129,7 +129,7 @@ fun main() {
 capture channels from the surrounding scope and use them to communicate with
 `main` (which is itself goroutine 0) or with other goroutines.
 
-```raven
+```rust
 import std/sync { channel, channel_buffered, yield_now }
 
 fun main() {
@@ -163,7 +163,7 @@ with none ready, the scheduler reports a deadlock and exits.
 A buffered channel decouples the producer from the consumer so the producer can
 get ahead while the consumer catches up.
 
-```raven
+```rust
 import std/sync { channel_buffered, yield_now }
 
 fun main() {

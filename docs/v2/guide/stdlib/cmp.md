@@ -4,7 +4,7 @@ Free generic functions for ordering and sorting. They build on the prelude
 `Ord` trait, so any type that implements `compare` works with them, including
 your own structs.
 
-```raven
+```rust
 import std/cmp { min, max, sort }
 
 fun main() {
@@ -21,7 +21,7 @@ fun main() {
 These functions have no natural single receiver, so they come in through a
 selective import: list the names you want inside `{ ... }`.
 
-```raven
+```rust
 import std/cmp { sort, sorted_by, min, max, clamp, max_of, min_of }
 ```
 
@@ -32,7 +32,7 @@ import std/cmp { sort, sorted_by, min, max, clamp, max_of, min_of }
 Most functions here are bound by `T: Ord`. The prelude `Ord` trait is one
 method:
 
-```raven
+```rust
 fun compare(self, other: Self) -> Int
 ```
 
@@ -55,7 +55,7 @@ The lesser of `a` and `b`. On a tie (`a` and `b` compare equal) it returns
 
 The greater of `a` and `b`. On a tie it returns `a`.
 
-```raven
+```rust
 import std/cmp { min, max }
 
 fun main() {
@@ -69,7 +69,7 @@ fun main() {
 Constrain `x` to the range `[lo, hi]`: returns `lo` when `x < lo`, `hi` when
 `x > hi`, and `x` otherwise.
 
-```raven
+```rust
 import std/cmp { clamp }
 
 fun main() {
@@ -87,7 +87,7 @@ A new list with the elements of `xs` in ascending order. The input is not
 mutated. `sort` delegates to `sorted_by` using `a.compare(b)` as the
 comparator.
 
-```raven
+```rust
 import std/cmp { sort }
 
 fun main() {
@@ -111,7 +111,7 @@ The comparator follows the same convention as `compare`: given two elements
 when their order does not matter, and a positive `Int` when `a` should come
 after `b`. To sort descending, flip the comparison.
 
-```raven
+```rust
 import std/cmp { sorted_by }
 
 fun main() {
@@ -142,7 +142,7 @@ The smallest element of `xs`, or `None` when the list is empty.
 Because both return an `Option<T>`, you match on the result to handle the
 empty list:
 
-```raven
+```rust
 import std/cmp { max_of, min_of }
 
 fun main() {
@@ -162,7 +162,7 @@ fun main() {
 
 ## Worked example: sort and pick the top
 
-```raven
+```rust
 import std/cmp { sort, max_of }
 
 fun main() {

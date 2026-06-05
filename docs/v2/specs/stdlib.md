@@ -107,7 +107,7 @@ for a `println(...)` call that bound to the bundled function.
 
 The working import form for a bundled module is the selective import:
 
-```raven
+```rust
 import std/io { println }
 ```
 
