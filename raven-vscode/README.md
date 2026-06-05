@@ -35,7 +35,9 @@ If `raven` is not installed, you still get highlighting and snippets; only run-i
    - **Command Palette** (`Ctrl+Shift+P` / `Cmd+Shift+P`) → **Raven: Run Raven File**, or  
    - **Right-click** the file in the editor or Explorer → **Run Raven File**.
 
-The extension runs: `raven "<path-to-your-file>"` in a new terminal.
+The extension compiles the file with `raven build "<path>" -o "<output>"` and,
+on a successful build, runs the produced native binary in a new terminal. A
+compile error is shown as a notification with the compiler's message.
 
 ---
 

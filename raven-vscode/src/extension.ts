@@ -28,13 +28,16 @@ export function activate(context: vscode.ExtensionContext) {
             const builtinFunctions: { [key: string]: string } = {
                 'print': 'Prints any `ToString` value followed by a newline. Usage: `print(value)`',
                 'println': 'Prints a String with a trailing newline (from `std/io`). Usage: `import std/io { println }`',
-                'panic': 'Aborts the program with a message (from `std/test`).',
                 'type_name': 'Compile-time reflection: `type_name<T>()` returns the name of `T` as a `String`.',
                 'field_names': 'Compile-time reflection: `field_names<T>()` returns a struct\'s field names in declaration order.',
+                'field_types': 'Compile-time reflection: `field_types<T>()` returns a struct\'s field type names in declaration order.',
+                'variant_names': 'Compile-time reflection: `variant_names<T>()` returns an enum\'s variant names in declaration order.',
+                'variant_field_types': 'Compile-time reflection: `variant_field_types<T>()` returns each enum variant\'s payload type names.',
                 'to_any': 'Runtime reflection: `to_any<T>(value)` boxes a value into `Any`.',
                 'type_name_of': 'Runtime reflection: `type_name_of(a: Any)` returns the runtime type name as a `String`.',
                 'field_names_of': 'Runtime reflection: `field_names_of(a: Any)` returns the boxed value\'s field names.',
                 'get_field': 'Runtime reflection: `get_field(a: Any, name)` reads a field by name, returning `Option<Any>`.',
+                'set_field': 'Runtime reflection: `set_field(a: Any, name, value)` writes a field by name through an `Any`.',
                 'cast': 'Runtime reflection: `cast<T>(a: Any)` downcasts to `T`, returning `Option<T>`.',
                 'channel': 'Concurrency (`std/sync`): `channel()` creates an unbuffered `Channel`. Import with `import std/sync { channel }`.',
                 'channel_buffered': 'Concurrency (`std/sync`): `channel_buffered(cap)` creates a buffered `Channel`.',
@@ -68,13 +71,16 @@ export function activate(context: vscode.ExtensionContext) {
             const builtinFunctions: { [name: string]: string } = {
                 'print': 'Built-in function',
                 'println': 'std/io',
-                'panic': 'std/test',
                 'type_name': 'Compile-time reflection: type_name<T>()',
                 'field_names': 'Compile-time reflection: field_names<T>()',
+                'field_types': 'Compile-time reflection: field_types<T>()',
+                'variant_names': 'Compile-time reflection: variant_names<T>()',
+                'variant_field_types': 'Compile-time reflection: variant_field_types<T>()',
                 'to_any': 'Runtime reflection: to_any<T>(value) -> Any',
                 'type_name_of': 'Runtime reflection: type_name_of(a: Any) -> String',
                 'field_names_of': 'Runtime reflection: field_names_of(a: Any)',
                 'get_field': 'Runtime reflection: get_field(a: Any, name) -> Option<Any>',
+                'set_field': 'Runtime reflection: set_field(a: Any, name, value)',
                 'cast': 'Runtime reflection: cast<T>(a: Any) -> Option<T>',
                 'channel': 'Concurrency (std/sync): channel() -> Channel',
                 'channel_buffered': 'Concurrency (std/sync): channel_buffered(cap) -> Channel',
@@ -131,9 +137,27 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 function runRavenFile(filePath: string) {
-    const terminal = vscode.window.createTerminal('Raven');
-    terminal.sendText(`raven "${filePath}"`);
-    terminal.show();
+    // The Raven CLI compiles a source file with `raven build <file> -o <out>`;
+    // there is no bare-file run mode. Build first (capturing any compiler
+    // diagnostic), then run the produced native binary in a terminal.
+    const ext = process.platform === 'win32' ? '.exe' : '';
+    const out = filePath.replace(/\.rv$/i, '') + ext;
+    const cwd = path.dirname(filePath);
+
+    vscode.window.setStatusBarMessage('Raven: building...', 3000);
+    exec(`raven build "${filePath}" -o "${out}"`, { cwd }, (err, _stdout, stderr) => {
+        if (err) {
+            const message = (stderr && stderr.trim()) || err.message;
+            vscode.window.showErrorMessage(`Raven build failed:\n${message}`);
+            return;
+        }
+        const terminal = vscode.window.createTerminal('Raven');
+        // On Windows the default integrated terminal is PowerShell, where a
+        // quoted path must be invoked with the call operator `&`.
+        const invoke = process.platform === 'win32' ? `& "${out}"` : `"${out}"`;
+        terminal.sendText(invoke);
+        terminal.show();
+    });
 }
 
 export function deactivate() {
