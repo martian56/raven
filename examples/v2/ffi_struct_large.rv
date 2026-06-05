@@ -1,0 +1,27 @@
+// FFI: a @repr(C) struct larger than two registers (24 bytes) by value.
+// System V passes it in memory on the stack (the MEMORY class); Windows x64
+// and AArch64 pass it by reference. It is returned through a hidden sret
+// pointer on every target. The runtime fixtures (raven_ffi_*) make the test
+// identical on every platform. Prints:
+//   6
+//   60
+@repr(C)
+struct Big {
+    a: CLong,
+    b: CLong,
+    c: CLong,
+}
+
+extern "C" {
+    fun raven_ffi_big_sum(v: Big) -> CLong
+    fun raven_ffi_make_big(a: CLong, b: CLong, c: CLong) -> Big
+}
+
+fun main() {
+    // A 24-byte struct passed by value (in memory on System V).
+    print(raven_ffi_big_sum(Big { a: 1, b: 2, c: 3 })) // 6
+
+    // A 24-byte struct returned by value (through the sret pointer).
+    let g = raven_ffi_make_big(10, 20, 30)
+    print(raven_ffi_big_sum(g)) // 60
+}

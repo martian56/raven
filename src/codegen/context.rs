@@ -708,16 +708,20 @@ impl ModuleCx {
             let conv = self.module.target_config().default_call_conv;
             let mut sig = self.module.make_signature();
             // A by-value struct return that does not fit in registers comes
-            // back through a hidden first pointer (sret) on Windows x64.
+            // back through a hidden first pointer (sret): Windows x64 and
+            // AArch64 for >16 bytes, System V for the MEMORY class.
             let ret_plan = self.repr_c_plan(&ext.ret, conv);
-            if matches!(ret_plan, Some(super::function::RegPlan::ByRef)) {
+            if matches!(
+                ret_plan,
+                Some(super::function::RegPlan::ByRef) | Some(super::function::RegPlan::Memory(_))
+            ) {
                 sig.params
                     .push(AbiParam::special(ptr, ArgumentPurpose::StructReturn));
             }
             for p in &ext.params {
-                Self::push_abi(&mut sig.params, self.repr_c_plan(p, conv), p, ptr);
+                Self::push_abi(&mut sig.params, self.repr_c_plan(p, conv), p, ptr, true);
             }
-            Self::push_abi(&mut sig.returns, ret_plan, &ext.ret, ptr);
+            Self::push_abi(&mut sig.returns, ret_plan, &ext.ret, ptr, false);
             let id = self
                 .module
                 .declare_function(&ext.name, Linkage::Import, &sig)?;
@@ -740,17 +744,32 @@ impl ModuleCx {
     }
 
     /// Push the C ABI parameter or return value(s) for `ty` onto `out`: a
-    /// by-value struct expands to its register slots' types or a single
-    /// pointer (by reference); a scalar uses its C machine type.
+    /// by-value struct expands to its register slots' types, a single pointer
+    /// (by reference), or a stack-passed aggregate (`StructArgument`, the
+    /// System V MEMORY class, parameters only); a scalar uses its C machine
+    /// type. `is_param` selects the parameter vs return form for the MEMORY
+    /// class, which is passed on the stack as an argument but returned through
+    /// the `sret` pointer the return list echoes.
     fn push_abi(
         out: &mut Vec<AbiParam>,
         plan: Option<super::function::RegPlan>,
         ty: &MirType,
         ptr: Type,
+        is_param: bool,
     ) {
         use super::function::RegPlan;
         match plan {
             Some(RegPlan::ByRef) => out.push(AbiParam::new(ptr)),
+            Some(RegPlan::Memory(size)) => {
+                if is_param {
+                    out.push(AbiParam::special(
+                        ptr,
+                        ArgumentPurpose::StructArgument(size),
+                    ));
+                } else {
+                    out.push(AbiParam::new(ptr));
+                }
+            }
             Some(RegPlan::Regs(slots)) => {
                 for s in slots {
                     out.push(AbiParam::new(s.ty));

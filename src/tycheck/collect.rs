@@ -337,31 +337,14 @@ fn fill_struct(
     Ok(())
 }
 
-/// The largest total byte size a `@repr(C)` struct may have to cross the
-/// FFI by value. Up to 8 bytes the platforms pass the aggregate in a single
-/// integer register; 9..=16 bytes use two integer registers on System V
-/// AMD64 and AArch64 and a hidden by-reference copy on Windows x64. Structs
-/// larger than 16 bytes (the System V in-memory class) are not supported
-/// yet. See `docs/v2/specs/ffi-extensions.md`.
-pub const REPR_C_MAX_BYTES: u32 = 16;
-
-/// Validate a `@repr(C)` struct used for by-value FFI: it must have at
-/// least one field, every field must be a plain integer-class C scalar
-/// (`CInt`, `CLong`, `CSize`, `CStr`, `CPtr<T>`, `CFnPtr`), and the total
-/// C size (fields in order, naturally aligned) must be at most
-/// [`REPR_C_MAX_BYTES`]. Float fields and larger structs are rejected with
-/// a clear message; they are deferred (see `docs/v2/specs/std-ffi.md`).
+/// Validate a `@repr(C)` struct used for by-value FFI: it must have at least
+/// one field, and every field must be a C scalar (`CInt`, `CLong`, `CSize`,
+/// `CFloat`, `CDouble`, `CStr`, `CPtr<T>`, `CFnPtr`) or a nested `@repr(C)`
+/// struct. There is no size limit: up to 16 bytes the struct crosses in
+/// registers, and a larger one in memory (the System V MEMORY class) or by
+/// reference (Windows x64, AArch64). See `docs/v2/specs/ffi-extensions.md`.
 fn validate_repr_c(id: DeclId, span: &Span, env: &TypeEnv) -> Result<(), RavenError> {
-    let (total, _) = repr_c_struct_layout(id, span, env, &mut Vec::new())?;
-    if total > REPR_C_MAX_BYTES {
-        let name = env.structs.get(&id).map(|s| s.name.as_str()).unwrap_or("?");
-        return Err(RavenError::ty(
-            TypeError::Custom(format!(
-                "`@repr(C)` struct `{name}` is {total} bytes; passing structs larger than {REPR_C_MAX_BYTES} bytes by value is not supported yet (pass a CPtr<...> instead)"
-            )),
-            span.clone(),
-        ));
-    }
+    repr_c_struct_layout(id, span, env, &mut Vec::new())?;
     Ok(())
 }
 

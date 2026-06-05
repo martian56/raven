@@ -107,10 +107,12 @@ address as the hidden argument, and read it back.
 
 ### Status
 
-Done for structs up to 16 bytes (one or two integer registers on System V
-and AArch64; one register or by reference on Windows x64), argument and
-return. Structs larger than 16 bytes (the System V in-memory class) are still
-rejected and remain a follow-up.
+Done, any size. Up to 16 bytes a struct crosses in registers (one or two
+integer/SSE registers on System V and AArch64; one register or by reference on
+Windows x64). Over 16 bytes it is the System V MEMORY class (passed on the
+stack via Cranelift's `StructArgument`, size rounded to 8 bytes) or by
+reference (Windows x64, AArch64), and is returned through the hidden `sret`
+pointer on every target.
 
 ### Out of scope for A
 

@@ -2037,7 +2037,10 @@ fn lower_call(
         _ => None,
     };
     let mut sret_addr: Option<Value> = None;
-    if matches!(ret_struct_plan, Some(RegPlan::ByRef)) {
+    if matches!(
+        ret_struct_plan,
+        Some(RegPlan::ByRef) | Some(RegPlan::Memory(_))
+    ) {
         let size = cx
             .repr_c_layout(&extern_ret.as_ref().unwrap().mangle())
             .unwrap()
@@ -2066,7 +2069,10 @@ fn lower_call(
             Some(pt) if is_extern && is_repr_c_struct(cx, &pt) => {
                 let addr = struct_to_image(cx, builder, v, &pt);
                 match repr_c_plan(cx, &pt) {
-                    RegPlan::ByRef => arg_vals.push(addr),
+                    // By reference or in memory: the C side receives the image
+                    // address. For the MEMORY class Cranelift copies the bytes
+                    // onto the stack per the StructArgument signature.
+                    RegPlan::ByRef | RegPlan::Memory(_) => arg_vals.push(addr),
                     RegPlan::Regs(slots) => {
                         for s in slots {
                             arg_vals.push(builder.ins().load(
@@ -2105,7 +2111,10 @@ fn lower_call(
     // register(s) or the sret slot it arrived in.
     if let (Some(plan), Some(ret_ty)) = (ret_struct_plan, &extern_ret) {
         let obj = match plan {
-            RegPlan::ByRef => image_to_struct(cx, builder, sret_addr.unwrap(), ret_ty),
+            // A larger struct comes back through the sret slot on every target.
+            RegPlan::ByRef | RegPlan::Memory(_) => {
+                image_to_struct(cx, builder, sret_addr.unwrap(), ret_ty)
+            }
             RegPlan::Regs(slots) => {
                 let size = cx.repr_c_layout(&ret_ty.mangle()).unwrap().size;
                 let (slot, addr) = struct_image_slot(cx, builder, size);
@@ -2147,10 +2156,13 @@ pub(crate) struct RegSlot {
 }
 
 /// How a by-value `@repr(C)` struct crosses the C ABI: spread across these
-/// registers, or by reference (a pointer to a caller-made copy).
+/// registers, by reference (a pointer to a caller-made copy), or in memory on
+/// the stack (the System V class for aggregates over 16 bytes; carries the
+/// 8-byte-rounded size the caller copies onto the stack).
 pub(crate) enum RegPlan {
     Regs(Vec<RegSlot>),
     ByRef,
+    Memory(u32),
 }
 
 fn is_float_ffi_ty(f: &MirFfiTy) -> bool {
@@ -2269,10 +2281,11 @@ pub(crate) fn repr_c_register_plan(layout: &ReprCLayout, conv: CallConv) -> RegP
             }
         }
         // System V AMD64: per-eightbyte INTEGER/SSE classification up to 16
-        // bytes, larger structs in memory (by reference).
+        // bytes; a larger aggregate is the MEMORY class, passed on the stack
+        // as an argument (rounded up to 8 bytes) and returned through `sret`.
         _ => {
             if layout.size > 16 {
-                RegPlan::ByRef
+                RegPlan::Memory((layout.size + 7) & !7)
             } else {
                 RegPlan::Regs(sysv_eightbytes(layout))
             }

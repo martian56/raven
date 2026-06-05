@@ -300,6 +300,13 @@ jobs:
           fficb_out="$(./fficb)"
           echo "ffi callback output: $fficb_out"
           test "$fficb_out" = "105"
+          # FFI: a 24-byte struct by value, over two registers (System V passes
+          # it in memory on the stack, Windows x64 and AArch64 by reference).
+          printf '@repr(C)\nstruct Big { a: CLong, b: CLong, c: CLong }\nextern "C" {\n  fun raven_ffi_make_big(a: CLong, b: CLong, c: CLong) -> Big\n  fun raven_ffi_big_sum(v: Big) -> CLong\n}\nfun main() {\n  let g = raven_ffi_make_big(10, 20, 30)\n  print(raven_ffi_big_sum(g))\n}\n' > ffibig.rv
+          raven build ffibig.rv -o ffibig
+          ffibig_out="$(./ffibig)"
+          echo "ffi large-struct output: $ffibig_out"
+          test "$ffibig_out" = "60"
 
       - name: Smoke test (Windows zip)
         if: runner.os == 'Windows'
