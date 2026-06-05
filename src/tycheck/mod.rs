@@ -88,6 +88,13 @@ pub struct TypeMap {
     /// raw C address rather than a Raven closure object. Every other
     /// function-typed name used as a value is a Raven closure value.
     pub callback_fns: HashSet<UseKey>,
+    /// Spans of closure values passed where a `CFnPtr` is expected. The site
+    /// lowers to a generated trampoline (userdata-last) the closure is
+    /// invoked through, rather than the closure object pointer.
+    pub closure_callbacks: HashSet<UseKey>,
+    /// Spans of closure values passed where a `CPtr` is expected: the closure
+    /// object pointer is handed to C as the trampoline's `userdata`.
+    pub closure_userdata: HashSet<UseKey>,
 }
 
 impl TypeMap {
@@ -137,6 +144,28 @@ impl TypeMap {
     /// callback.
     pub fn is_callback_fn(&self, span: &Span) -> bool {
         self.callback_fns.contains(&UseKey::from_span(span))
+    }
+
+    /// Record that the closure at `span` is passed where a `CFnPtr` is
+    /// expected, so it lowers to a trampoline.
+    pub fn record_closure_callback(&mut self, span: &Span) {
+        self.closure_callbacks.insert(UseKey::from_span(span));
+    }
+
+    /// True when the closure at `span` is a `CFnPtr` callback (a trampoline).
+    pub fn is_closure_callback(&self, span: &Span) -> bool {
+        self.closure_callbacks.contains(&UseKey::from_span(span))
+    }
+
+    /// Record that the closure at `span` is passed as a callback's `userdata`
+    /// pointer.
+    pub fn record_closure_userdata(&mut self, span: &Span) {
+        self.closure_userdata.insert(UseKey::from_span(span));
+    }
+
+    /// True when the closure at `span` is a callback's `userdata` pointer.
+    pub fn is_closure_userdata(&self, span: &Span) -> bool {
+        self.closure_userdata.contains(&UseKey::from_span(span))
     }
 
     /// Iterator yielding `(key, ty)` pairs sorted by file and offset

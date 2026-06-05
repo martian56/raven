@@ -675,11 +675,23 @@ fn cfnptr_arg_must_be_a_function_not_a_value() {
 }
 
 #[test]
-fn cfnptr_arg_rejects_closure_value() {
-    // A local of function type is a closure value carrying a capture
-    // environment C cannot supply, so it is not a valid `CFnPtr`.
+fn cfnptr_arg_accepts_closure_value() {
+    // A closure passed where a `CFnPtr` is expected lowers to a generated
+    // trampoline; the closure object is passed to the C function's userdata
+    // parameter (a `CPtr`). Accepted as long as the closure's signature is
+    // entirely C-FFI typed.
+    check(
+        "extern \"C\" {\n    fun takes_cb(cb: CFnPtr, data: CPtr<Unit>)\n}\nfun main() {\n    let f = fun(a: CLong) -> CLong = a\n    takes_cb(f, f)\n}\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn cfnptr_arg_rejects_non_ffi_closure_signature() {
+    // A closure callback whose parameter is not a C-FFI type has no defined
+    // C ABI, so it is rejected.
     let err = check(
-        "extern \"C\" {\n    fun takes_cb(cmp: CFnPtr)\n}\nfun main() {\n    let f = fun(a: CPtr<CInt>, b: CPtr<CInt>) -> CInt { return 0 }\n    takes_cb(f)\n}\n",
+        "extern \"C\" {\n    fun takes_cb(cb: CFnPtr, data: CPtr<Unit>)\n}\nfun main() {\n    let f = fun(a: Int) -> Int = a\n    takes_cb(f, f)\n}\n",
     )
     .unwrap_err();
     assert!(matches!(err, RavenError::Type(_, _, _)));

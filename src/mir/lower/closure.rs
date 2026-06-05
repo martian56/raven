@@ -187,6 +187,62 @@ pub fn lower_fn_closure(
     })
 }
 
+/// Lower a closure used where a C `CFnPtr` is expected. Generates a trampoline
+/// with the C ABI: its parameters are the closure's (C-FFI) parameter types
+/// followed by a `userdata` pointer, and its body invokes the closure the
+/// userdata points to. Returns the trampoline's address (`FnAddr`). The
+/// closure object is passed to the C function's userdata parameter separately,
+/// and C threads it back to the trampoline. `ty` is the closure's function
+/// type, which fixes the trampoline's signature.
+pub fn lower_fn_trampoline(
+    cx: &mut LowerCx<'_>,
+    ty: &HirTy,
+    span: &crate::span::Span,
+) -> Option<MirRvalue> {
+    use super::super::builder::FunctionBuilder;
+    use super::super::ir::MirOperand;
+
+    let HirTy::Function { params, ret } = ty else {
+        return None;
+    };
+    let param_tys: Vec<MirType> = params.iter().map(|p| mir_ty(p, cx.subst)).collect();
+    let ret_ty = mir_ty(ret, cx.subst);
+
+    let tramp_name = mint_lifted_name(cx);
+    let mut builder = FunctionBuilder::new(
+        tramp_name.clone(),
+        tramp_name.clone(),
+        ret_ty.clone(),
+        span.clone(),
+    );
+    // The closure's own parameters, then the trailing userdata pointer (the
+    // closure object the C side threads back).
+    let mut arg_ops: Vec<MirOperand> = Vec::with_capacity(param_tys.len());
+    for (i, pty) in param_tys.iter().enumerate() {
+        let local = builder.add_param(format!("__a{}", i), pty.clone());
+        arg_ops.push(MirOperand::Copy(local));
+    }
+    let userdata = builder.add_param("__userdata".to_string(), env_param_ty());
+    let entry_block = builder.new_block();
+    let result = builder.fresh_temp("cbret", ret_ty.clone());
+    builder.assign(
+        entry_block,
+        result,
+        MirRvalue::ClosureCall {
+            closure: MirOperand::Copy(userdata),
+            args: arg_ops,
+            param_tys,
+            ret_ty,
+        },
+    );
+    builder.close_block(entry_block, MirTerminator::Return(MirOperand::Copy(result)));
+    cx.lifted.push(builder.finish(entry_block));
+
+    Some(MirRvalue::FnAddr {
+        mangled: tramp_name,
+    })
+}
+
 /// The result of lifting one lambda body: the standalone `MirFunction`,
 /// any functions lifted from lambdas nested inside it, and the generic
 /// call sites discovered while lowering the body. The pending calls are
@@ -507,6 +563,9 @@ fn collect_free_expr(
         // A named function used as a value is referenced by symbol, like any
         // other top-level function, so it captures nothing.
         HirExprKind::FnClosure { .. } => {}
+        // A trampoline references only its generated function by symbol; the
+        // closure expression is not evaluated here, so it captures nothing.
+        HirExprKind::FnTrampoline => {}
     }
 }
 

@@ -173,15 +173,27 @@ fun main() {
 
 Rules:
 
-* Only a bare name of a **non-capturing top-level function** is accepted.
-  A closure value (a local of function type, which carries a capture
-  environment C cannot supply) is rejected. Capturing closures as
-  callbacks are a follow-up (they need a userdata/trampoline mechanism).
-* The function's parameters and return must all be C-FFI types (`CInt`,
-  `CLong`, `CSize`, `CFloat`, `CDouble`, `CStr`, `CPtr<T>`, `CFnPtr`, or
-  `Unit` return) so the C ABI of the resulting pointer is well defined. A
-  function with a native `Int`/`Float`/`String` parameter or return is
-  rejected.
+* A bare name of a **top-level function** passes its raw C address, callable
+  by C directly (no environment).
+* A **closure value** (a lambda or a captured local) is also accepted: it
+  lowers to a generated **trampoline** whose last argument is a `userdata`
+  pointer. The closure object must be passed to the C function's userdata
+  parameter (a `CPtr`), which C threads back to the trampoline, which then
+  invokes the closure. This follows the **userdata-last** convention (for
+  example glibc `qsort_r`); a C API whose callback takes the userdata first,
+  or none at all, needs a small C shim. Pass the same closure to both the
+  callback-pointer slot and the userdata slot:
+
+  ```rust
+  fun run(base: CLong) {
+      let add = fun(x: CLong) -> CLong = x + base
+      apply_cb(add, add, 5) // add -> trampoline; add -> userdata
+  }
+  ```
+* The function or closure's parameters and return must all be C-FFI types
+  (`CInt`, `CLong`, `CSize`, `CFloat`, `CDouble`, `CStr`, `CPtr<T>`, `CFnPtr`,
+  or `Unit` return) so the C ABI of the resulting pointer is well defined. A
+  native `Int`/`Float`/`String` parameter or return is rejected.
 * `CFnPtr` is untyped: the type checker does not verify the function's
   signature matches what the C side expects. The signature match is the
   programmer's responsibility, exactly as in C.
@@ -199,12 +211,14 @@ no wrapper or thunk: passing a `CFnPtr` emits the function's address
 ### GC and allocation rule
 
 A Raven function runs its normal prologue and epilogue when invoked,
-including entering and leaving its GC shadow-stack frame, regardless of
-who calls it. A callback that does not allocate (the comparator above only
-loads and subtracts) never triggers a collection, so its frame is always
-consistent. Callbacks should avoid allocating; a callback that allocates
-is supported by the frame machinery but is outside what this slice
-verifies.
+including entering and leaving its GC shadow-stack frame, regardless of who
+calls it. The collector finds its roots through the shadow stack, which is a
+single global list that persists across a C call: when C invokes a callback,
+the suspended Raven frames' roots are still registered, so a collection
+triggered inside the callback traces them and the callback's own roots
+together. A callback that allocates is therefore safe; the golden suite
+exercises one that allocates on every call across a thousand C-driven
+invocations.
 
 ## C string literals
 
@@ -375,8 +389,9 @@ nested-field slot as a pointer so the collector traces it.
 
 * A `free`/`drop` for buffers from `to_cstr` (copy-and-leak semantics).
   Buffers from `alloc` do have `free`.
-* Capturing closures as callbacks (a userdata/trampoline mechanism beyond
-  the non-capturing top-level functions supported here).
+* Callback APIs whose userdata is not the last callback argument (or that
+  have no userdata argument). The trampoline is userdata-last; other shapes
+  need a small C shim.
 * The rest of what `docs/v2/specs/ffi.md` lists out of scope (variadics,
   non-CRT libraries).
 ```

@@ -330,6 +330,14 @@ pub enum HirExprKind {
         name: String,
     },
 
+    /// A closure passed where a C `CFnPtr` is expected. Lowers to the address
+    /// of a generated trampoline whose last parameter is a `userdata` pointer
+    /// (the closure object) that C threads back to it. This node's type is the
+    /// closure's function type, which gives the trampoline's signature; the
+    /// closure expression itself is not evaluated here (it is passed
+    /// separately to the C function's userdata parameter).
+    FnTrampoline,
+
     /// Unsize a concrete value to a `dyn Trait` value. Synthesized by HIR
     /// lowering at each coercion site the type checker recorded. The
     /// inner expression's type is the concrete type; this node's type is
