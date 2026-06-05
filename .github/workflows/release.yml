@@ -276,6 +276,14 @@ jobs:
           out="$(./hello)"
           echo "program output: $out"
           test "$out" = "hello"
+          # FFI: a 16-byte @repr(C) struct returned by value, exercising the
+          # by-value struct ABI for this target (two registers on System V and
+          # AArch64). lldiv is in the C runtime on every platform.
+          printf '@repr(C)\nstruct D { quot: CLong, rem: CLong }\nextern "C" { fun lldiv(numer: CLong, denom: CLong) -> D }\nfun main() {\n  let r = lldiv(17, 5)\n  print(r.quot)\n  print(r.rem)\n}\n' > ffi.rv
+          raven build ffi.rv -o ffi
+          ffi_out="$(./ffi | tr '\n' ',')"
+          echo "ffi struct-by-value output: $ffi_out"
+          test "$ffi_out" = "3,2,"
 
       - name: Smoke test (Windows zip)
         if: runner.os == 'Windows'
