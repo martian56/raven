@@ -4,6 +4,10 @@ All notable changes to Raven are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- A named top-level function used as a first-class value (passed to a higher-order function, bound to a variable, returned, or given to a stdlib combinator like `option.map`) crashed at runtime with a misaligned pointer dereference. Such a function was lowered to its raw C address, but a Raven `fun(T) -> U` value is a closure object, so the call site dereferenced the code pointer as a closure. A named function value now lowers to a zero-capture closure that forwards to the function, the same representation a lambda has. A C-FFI callback passed where a `CFnPtr` is expected still lowers to the raw address (#317).
+
 ### Added
 
 - Standard library enrichment, part 3 (encoding, paths, filesystem, JSON, and more):

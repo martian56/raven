@@ -33,7 +33,7 @@ pub mod unify;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast::File;
 use crate::error::RavenError;
@@ -83,6 +83,11 @@ pub struct TypeMap {
     /// `type_name<T>()` inside a generic body, or any `f<T>()` with no
     /// argument carrying `T`).
     pub type_args: HashMap<UseKey, Vec<Ty>>,
+    /// Spans of top-level function names passed where a `CFnPtr` is
+    /// expected (a C-FFI callback). Such a name lowers to the function's
+    /// raw C address rather than a Raven closure object. Every other
+    /// function-typed name used as a value is a Raven closure value.
+    pub callback_fns: HashSet<UseKey>,
 }
 
 impl TypeMap {
@@ -120,6 +125,18 @@ impl TypeMap {
     /// Look up a `dyn Trait` coercion recorded at `span`, if any.
     pub fn lookup_coercion(&self, span: &Span) -> Option<&DynCoercion> {
         self.coercions.get(&UseKey::from_span(span))
+    }
+
+    /// Record that the function name at `span` is a C-FFI callback (passed
+    /// where a `CFnPtr` is expected), so it lowers to a raw C address.
+    pub fn record_callback_fn(&mut self, span: &Span) {
+        self.callback_fns.insert(UseKey::from_span(span));
+    }
+
+    /// True when the function name at `span` was recorded as a C-FFI
+    /// callback.
+    pub fn is_callback_fn(&self, span: &Span) -> bool {
+        self.callback_fns.contains(&UseKey::from_span(span))
     }
 
     /// Iterator yielding `(key, ty)` pairs sorted by file and offset

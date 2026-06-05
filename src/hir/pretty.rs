@@ -549,6 +549,9 @@ fn pretty_expr(buf: &mut String, expr: &HirExpr, depth: usize) {
             indent(buf, depth);
             buf.push_str(")\n");
         }
+        HirExprKind::FnClosure { name } => {
+            writeln!(buf, "(fn-closure {} ty={})", quote(name), expr.ty).unwrap();
+        }
         HirExprKind::DynCoerce {
             trait_name,
             value,

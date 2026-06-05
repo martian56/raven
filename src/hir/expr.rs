@@ -321,6 +321,15 @@ pub enum HirExprKind {
         body: HirBlock,
     },
 
+    /// A top-level function referenced as a first-class value. Lowers to a
+    /// zero-capture closure object whose body forwards to the named
+    /// function, giving a named function the same representation as a
+    /// lambda so it can be passed to higher-order functions. A C-FFI
+    /// callback keeps the raw-address `Ident` form instead.
+    FnClosure {
+        name: String,
+    },
+
     /// Unsize a concrete value to a `dyn Trait` value. Synthesized by HIR
     /// lowering at each coercion site the type checker recorded. The
     /// inner expression's type is the concrete type; this node's type is

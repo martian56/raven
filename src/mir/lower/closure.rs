@@ -126,6 +126,67 @@ fn mint_lifted_name(cx: &mut LowerCx<'_>) -> String {
     format!("{}$closure${}", cx.enclosing, n)
 }
 
+/// Lower a top-level function used as a first-class value. Builds a
+/// zero-capture shim with the closure calling convention (a leading,
+/// ignored env parameter) that forwards its arguments to the named
+/// function, then returns a `ClosureCreate` over that shim. This gives a
+/// named function the same closure representation as a lambda, so it can
+/// be passed to a higher-order function. Returns `None` when the name is
+/// not a known free function or is generic (no concrete signature to
+/// forward); the caller then falls back to the synthetic unit a bare free
+/// name produces.
+pub fn lower_fn_closure(
+    cx: &mut LowerCx<'_>,
+    name: &str,
+    span: &crate::span::Span,
+) -> Option<MirRvalue> {
+    use super::super::builder::FunctionBuilder;
+    use super::super::ir::{MirFnRef, MirOperand};
+
+    let entry = cx.decls.functions.get(name)?.clone();
+    if !entry.generic_params.is_empty() {
+        return None;
+    }
+    let ret_ty = mir_ty(&entry.ret, cx.subst);
+    let param_tys: Vec<MirType> = entry.params.iter().map(|p| mir_ty(p, cx.subst)).collect();
+
+    let shim_name = mint_lifted_name(cx);
+    let mut builder = FunctionBuilder::new(
+        shim_name.clone(),
+        shim_name.clone(),
+        ret_ty.clone(),
+        span.clone(),
+    );
+    // Leading env parameter, ignored: the shim captures nothing.
+    let _env = builder.add_param("__env".to_string(), env_param_ty());
+    let mut arg_ops: Vec<MirOperand> = Vec::with_capacity(param_tys.len());
+    for (i, pty) in param_tys.iter().enumerate() {
+        let local = builder.add_param(format!("__a{}", i), pty.clone());
+        arg_ops.push(MirOperand::Copy(local));
+    }
+    let entry_block = builder.new_block();
+    let result = builder.fresh_temp("fwd", ret_ty.clone());
+    builder.assign(
+        entry_block,
+        result,
+        MirRvalue::Call {
+            callee: MirFnRef {
+                mangled: name.to_string(),
+                origin: None,
+            },
+            args: arg_ops,
+        },
+    );
+    builder.close_block(entry_block, MirTerminator::Return(MirOperand::Copy(result)));
+    cx.lifted.push(builder.finish(entry_block));
+
+    Some(MirRvalue::ClosureCreate {
+        fn_name: shim_name,
+        captures: Vec::new(),
+        capture_tys: Vec::new(),
+    })
+}
+
 /// The result of lifting one lambda body: the standalone `MirFunction`,
 /// any functions lifted from lambdas nested inside it, and the generic
 /// call sites discovered while lowering the body. The pending calls are
@@ -443,6 +504,9 @@ fn collect_free_expr(
             *bound = snapshot.into_iter().collect();
         }
         HirExprKind::DynCoerce { value, .. } => collect_free_expr(value, bound, seen, out),
+        // A named function used as a value is referenced by symbol, like any
+        // other top-level function, so it captures nothing.
+        HirExprKind::FnClosure { .. } => {}
     }
 }
 

@@ -1,0 +1,27 @@
+// A named top-level function used as a first-class value (passed to a
+// higher-order function, bound to a variable, returned, and given to a
+// stdlib combinator) becomes a closure object, the same representation a
+// lambda has. Regression for the named-function-as-closure crash. Prints:
+//   42
+//   10
+//   100
+//   6
+import std/option
+
+fun inc(x: Int) -> Int = x + 1
+
+fun apply(f: fun(Int) -> Int, v: Int) -> Int = f(v)
+
+fun make_inc() -> fun(Int) -> Int = inc
+
+fun main() {
+    print(apply(inc, 41))               // 42: passed as an argument
+    let g = inc
+    print(g(9))                         // 10: bound to a variable, then called
+    let h = make_inc()
+    print(h(99))                        // 100: returned from a function
+    match option.map(Some(5), inc) {
+        Some(v) -> print(v),            // 6: passed to a stdlib combinator
+        None -> print(0),
+    }
+}

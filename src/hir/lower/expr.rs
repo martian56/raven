@@ -121,8 +121,20 @@ pub(crate) fn lower_expr(
             // spelling when the function was namespaced (a bundled stdlib
             // function such as `std.io.println`). Any other identifier
             // keeps its source spelling.
-            let resolved_name = cx.fn_name_at(&expr.span).unwrap_or_else(|| name.clone());
-            HirExprKind::Ident(resolved_name)
+            let fn_name = cx.fn_name_at(&expr.span);
+            // A top-level function used as a value (its type is a function
+            // type; a callee is handled by the call lowering, not here)
+            // becomes a closure object, so a named function has the same
+            // representation as a lambda and can be passed to a higher-order
+            // function. The exception is a C-FFI callback the type checker
+            // recorded, which keeps the raw function-address form.
+            match fn_name {
+                Some(n) if matches!(ty, Ty::Function { .. }) && !cx.is_callback_fn(&expr.span) => {
+                    HirExprKind::FnClosure { name: n }
+                }
+                Some(n) => HirExprKind::Ident(n),
+                None => HirExprKind::Ident(name.clone()),
+            }
         }
         ExprKind::Array(items) => {
             let elem_hint = match &ty {
@@ -280,7 +292,21 @@ pub(crate) fn lower_expr(
                     }
                 }
             }
-            let c = lower_expr(callee, &Ty::Error, cx)?;
+            // A callee that names a top-level function lowers to a
+            // direct-call `Ident`. Lowering it through `lower_expr` would
+            // turn it into a closure value (the value-position behavior),
+            // which is wrong in callee position: the call site dispatches by
+            // symbol, not through a closure object. A local, global, or
+            // const callee keeps its normal value lowering (a closure value
+            // dispatched indirectly).
+            let c = match (&callee.kind, cx.fn_name_at(&callee.span)) {
+                (ExprKind::Ident { .. }, Some(fn_name)) => make_expr(
+                    HirExprKind::Ident(fn_name),
+                    cx.ty_at(&callee.span),
+                    callee.span.clone(),
+                ),
+                _ => lower_expr(callee, &Ty::Error, cx)?,
+            };
             let mut lowered = Vec::with_capacity(args.len());
             for a in args {
                 lowered.push(lower_expr(a, &Ty::Error, cx)?);

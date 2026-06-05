@@ -762,6 +762,57 @@ fn top_level_fn_as_cfnptr_lowers_to_fn_addr() {
 }
 
 #[test]
+fn top_level_fn_as_closure_value_lowers_to_closure_create() {
+    // A non-capturing top-level function passed where a Raven closure
+    // (`fun(Int) -> Int`) is expected becomes a zero-capture closure
+    // object, not a raw function address. The higher-order callee invokes
+    // it through the closure calling convention, so a raw `FnAddr` (the
+    // C-FFI form) would be dereferenced as a closure and crash. Regression
+    // for the named-function-as-closure crash.
+    let prog = compile(
+        r#"
+        fun inc(x: Int) -> Int = x + 1
+        fun apply(f: fun(Int) -> Int, v: Int) -> Int = f(v)
+        fun main() {
+            let r = apply(inc, 41)
+        }
+    "#,
+    );
+    let main = find_fn(&prog, "main");
+    let has_closure_create = main.blocks.iter().any(|b| {
+        b.statements.iter().any(|s| {
+            matches!(
+                s,
+                MirStatement::Assign {
+                    rvalue: MirRvalue::ClosureCreate { .. },
+                    ..
+                }
+            )
+        })
+    });
+    assert!(
+        has_closure_create,
+        "passing `inc` as a closure value should lower to ClosureCreate, got {:?}",
+        main.blocks
+    );
+    let has_fn_addr = main.blocks.iter().any(|b| {
+        b.statements.iter().any(|s| {
+            matches!(
+                s,
+                MirStatement::Assign {
+                    rvalue: MirRvalue::FnAddr { .. },
+                    ..
+                }
+            )
+        })
+    });
+    assert!(
+        !has_fn_addr,
+        "a Raven closure value must not lower to a raw FnAddr"
+    );
+}
+
+#[test]
 fn repr_c_struct_layout_is_recorded() {
     // A `@repr(C)` struct of two CInt fields lays out as 8 bytes with the
     // second field at offset 4. The layout is keyed by the struct name and
