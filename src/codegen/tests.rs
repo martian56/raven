@@ -404,12 +404,15 @@ fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
 #[test]
 fn repr_c_register_plan_matches_platform_abi() {
     use crate::codegen::function::{repr_c_register_plan, RegPlan};
-    use crate::mir::{MirFfiTy, ReprCField, ReprCLayout};
+    use crate::mir::{MirFfiTy, ReprCField, ReprCFieldKind, ReprCLayout};
     use cranelift_codegen::ir::{types, Type};
     use cranelift_codegen::isa::CallConv;
 
     fn field(offset: u32, ffi: MirFfiTy) -> ReprCField {
-        ReprCField { offset, ffi }
+        ReprCField {
+            offset,
+            kind: ReprCFieldKind::Scalar(ffi),
+        }
     }
     fn reg_tys(plan: RegPlan) -> Option<Vec<Type>> {
         match plan {

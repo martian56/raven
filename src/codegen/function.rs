@@ -18,7 +18,8 @@ use cranelift_module::Module;
 
 use crate::mir::{
     ListMethodOp, MirBinOp, MirBlock, MirBlockId, MirConstant, MirFfiTy, MirFnRef, MirFunction,
-    MirLocal, MirOperand, MirRvalue, MirStatement, MirTerminator, MirType, MirUnOp, ReprCLayout,
+    MirLocal, MirOperand, MirRvalue, MirStatement, MirTerminator, MirType, MirUnOp, ReprCFieldKind,
+    ReprCLayout,
 };
 
 use super::context::ModuleCx;
@@ -2181,16 +2182,17 @@ fn integer_eightbytes(size: u32) -> Vec<RegSlot> {
 /// register) when every field overlapping it is a float, otherwise INTEGER
 /// (an i64 register holding the eightbyte's bytes).
 fn sysv_eightbytes(layout: &ReprCLayout) -> Vec<RegSlot> {
+    let leaves = layout.leaves();
     let mut out = Vec::new();
     let mut off = 0;
     while off < layout.size {
         let end = off + 8;
         let mut any = false;
         let mut all_float = true;
-        for f in &layout.fields {
-            if f.offset < end && f.offset + ffi_byte_size(&f.ffi) > off {
+        for (foff, ffi) in &leaves {
+            if *foff < end && *foff + ffi_byte_size(ffi) > off {
                 any = true;
-                if !is_float_ffi_ty(&f.ffi) {
+                if !is_float_ffi_ty(ffi) {
                     all_float = false;
                 }
             }
@@ -2210,17 +2212,16 @@ fn sysv_eightbytes(layout: &ReprCLayout) -> Vec<RegSlot> {
 /// the same float type, each passed in its own SIMD register. `None` for any
 /// other shape (which uses general registers / eightbytes).
 fn aarch64_hfa(layout: &ReprCLayout) -> Option<Vec<RegSlot>> {
-    if layout.fields.is_empty() || layout.fields.len() > 4 {
+    let leaves = layout.leaves();
+    if leaves.is_empty() || leaves.len() > 4 {
         return None;
     }
-    let all_f32 = layout
-        .fields
+    let all_f32 = leaves
         .iter()
-        .all(|f| matches!(f.ffi, MirFfiTy::CFloat));
-    let all_f64 = layout
-        .fields
+        .all(|(_, ffi)| matches!(ffi, MirFfiTy::CFloat));
+    let all_f64 = leaves
         .iter()
-        .all(|f| matches!(f.ffi, MirFfiTy::CDouble));
+        .all(|(_, ffi)| matches!(ffi, MirFfiTy::CDouble));
     let ty = if all_f32 {
         types::F32
     } else if all_f64 {
@@ -2229,12 +2230,11 @@ fn aarch64_hfa(layout: &ReprCLayout) -> Option<Vec<RegSlot>> {
         return None;
     };
     Some(
-        layout
-            .fields
+        leaves
             .iter()
-            .map(|f| RegSlot {
+            .map(|(offset, _)| RegSlot {
                 ty,
-                offset: f.offset,
+                offset: *offset,
             })
             .collect(),
     )
@@ -2309,101 +2309,159 @@ fn struct_to_image(
         .repr_c_layout(&ty.mangle())
         .cloned()
         .expect("is_repr_c_struct checked the layout is present");
-    let bytes = image_slot_bytes(layout.size);
-    let slot =
-        builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, bytes));
-    let base = call_struct_fields(cx, builder, obj, ptr);
-    for (i, f) in layout.fields.iter().enumerate() {
-        let raw = builder
-            .ins()
-            .load(types::I64, MemFlags::new(), base, layout::slot_offset(i));
-        match f.ffi {
-            // A float field is stored in the heap as f64 bits. The C image
-            // wants f32 for `CFloat` (narrow with fdemote) and f64 for
-            // `CDouble` (the same 8 bytes).
-            MirFfiTy::CFloat => {
-                let f64v = builder.ins().bitcast(types::F64, MemFlags::new(), raw);
-                let f32v = builder.ins().fdemote(types::F32, f64v);
-                builder.ins().stack_store(f32v, slot, f.offset as i32);
-            }
-            MirFfiTy::CDouble => {
-                builder.ins().stack_store(raw, slot, f.offset as i32);
-            }
-            _ => {
-                let (fsize, _) = f
-                    .ffi
-                    .c_scalar_layout()
-                    .expect("repr(C) field has a scalar layout");
-                let v = if fsize >= 8 {
-                    raw
-                } else {
-                    builder.ins().ireduce(int_type_for_size(fsize), raw)
-                };
-                builder.ins().stack_store(v, slot, f.offset as i32);
-            }
-        }
-    }
+    let slot = builder.create_sized_stack_slot(StackSlotData::new(
+        StackSlotKind::ExplicitSlot,
+        image_slot_bytes(layout.size),
+    ));
+    write_image_fields(cx, builder, obj, &layout, slot, 0);
     builder.ins().stack_addr(ptr, slot, 0)
 }
 
+/// Write each field of the `@repr(C)` heap object `obj` into `slot` at its C
+/// offset (added to `base_off`), producing the struct's C memory image. A
+/// nested struct field is followed through its heap pointer and written
+/// recursively at the nested layout's offsets.
+fn write_image_fields(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    obj: Value,
+    layout: &ReprCLayout,
+    slot: StackSlot,
+    base_off: u32,
+) {
+    let ptr = cx.pointer_type();
+    let base = call_struct_fields(cx, builder, obj, ptr);
+    for (i, f) in layout.fields.iter().enumerate() {
+        let off = (base_off + f.offset) as i32;
+        match &f.kind {
+            ReprCFieldKind::Scalar(ffi) => {
+                let raw =
+                    builder
+                        .ins()
+                        .load(types::I64, MemFlags::new(), base, layout::slot_offset(i));
+                // A float field is stored in the heap as f64 bits: the C
+                // image wants f32 for `CFloat` (narrowed with fdemote) and
+                // f64 for `CDouble` (the same 8 bytes).
+                match ffi {
+                    MirFfiTy::CFloat => {
+                        let f64v = builder.ins().bitcast(types::F64, MemFlags::new(), raw);
+                        let f32v = builder.ins().fdemote(types::F32, f64v);
+                        builder.ins().stack_store(f32v, slot, off);
+                    }
+                    MirFfiTy::CDouble => {
+                        builder.ins().stack_store(raw, slot, off);
+                    }
+                    _ => {
+                        let (fsize, _) = ffi
+                            .c_scalar_layout()
+                            .expect("repr(C) field has a scalar layout");
+                        let v = if fsize >= 8 {
+                            raw
+                        } else {
+                            builder.ins().ireduce(int_type_for_size(fsize), raw)
+                        };
+                        builder.ins().stack_store(v, slot, off);
+                    }
+                }
+            }
+            ReprCFieldKind::Nested { layout: nested, .. } => {
+                let nested_ptr =
+                    builder
+                        .ins()
+                        .load(ptr, MemFlags::new(), base, layout::slot_offset(i));
+                write_image_fields(cx, builder, nested_ptr, nested, slot, base_off + f.offset);
+            }
+        }
+    }
+}
+
 /// Rebuild a Raven heap struct from a `@repr(C)` struct's C memory image at
-/// `addr`. Each field is read at its C offset and width and widened into the
-/// pointer-width heap slot. The inverse of `struct_to_image`.
+/// `addr`. The inverse of `struct_to_image`.
 fn image_to_struct(
     cx: &mut ModuleCx,
     builder: &mut FunctionBuilder<'_>,
     addr: Value,
     ty: &MirType,
 ) -> Value {
-    let ptr = cx.pointer_type();
     let layout = cx
         .repr_c_layout(&ty.mangle())
         .cloned()
         .expect("is_repr_c_struct checked the layout is present");
-    let type_id = cx.intern_descriptor(&ty.mangle(), 0);
-    let field_count = layout.fields.len() as i64;
-    let obj = call_struct_new(cx, builder, field_count, type_id, ptr);
-    let base = call_struct_fields(cx, builder, obj, ptr);
+    read_image_into_struct(cx, builder, addr, 0, &layout, &ty.mangle())
+}
+
+/// Reconstruct a `@repr(C)` struct heap object from the C image at `addr`,
+/// reading each field at its C offset (added to `base_off`). A nested struct
+/// field is reconstructed into its own object recursively; the parent's
+/// descriptor marks those slots as GC pointers so the collector traces the
+/// nested objects the parent holds. The object is rooted across the nested
+/// reconstruction, which allocates.
+fn read_image_into_struct(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    addr: Value,
+    base_off: u32,
+    layout: &ReprCLayout,
+    mangle: &str,
+) -> Value {
+    let ptr = cx.pointer_type();
+    // A nested-struct field slot holds a GC pointer; scalar slots are opaque
+    // C words the collector does not follow.
+    let mut mask = 0u64;
     for (i, f) in layout.fields.iter().enumerate() {
-        // Read the field from the C image at its offset and produce the f64
-        // bits a heap slot holds: a `CFloat` is read as f32 and widened with
-        // fpromote, a `CDouble` is its 8 bytes, an integer is zero-extended.
-        let bits = match f.ffi {
-            MirFfiTy::CFloat => {
-                let f32v = builder
-                    .ins()
-                    .load(types::F32, MemFlags::new(), addr, f.offset as i32);
-                let f64v = builder.ins().fpromote(types::F64, f32v);
-                builder.ins().bitcast(types::I64, MemFlags::new(), f64v)
-            }
-            MirFfiTy::CDouble => {
-                builder
-                    .ins()
-                    .load(types::I64, MemFlags::new(), addr, f.offset as i32)
-            }
-            _ => {
-                let (fsize, _) = f
-                    .ffi
-                    .c_scalar_layout()
-                    .expect("repr(C) field has a scalar layout");
-                let raw = builder.ins().load(
-                    int_type_for_size(fsize),
-                    MemFlags::new(),
-                    addr,
-                    f.offset as i32,
-                );
-                if fsize >= 8 {
-                    raw
-                } else {
-                    builder.ins().uextend(types::I64, raw)
+        if i < 64 && matches!(f.kind, ReprCFieldKind::Nested { .. }) {
+            mask |= 1u64 << i;
+        }
+    }
+    let type_id = cx.merge_descriptor(mangle, mask);
+    let obj = call_struct_new(cx, builder, layout.fields.len() as i64, type_id, ptr);
+    let root = push_temp_root(cx, builder, obj, ptr);
+    for (i, f) in layout.fields.iter().enumerate() {
+        let off = (base_off + f.offset) as i32;
+        let value = match &f.kind {
+            ReprCFieldKind::Scalar(ffi) => match ffi {
+                MirFfiTy::CFloat => {
+                    let f32v = builder.ins().load(types::F32, MemFlags::new(), addr, off);
+                    let f64v = builder.ins().fpromote(types::F64, f32v);
+                    builder.ins().bitcast(types::I64, MemFlags::new(), f64v)
                 }
-            }
+                MirFfiTy::CDouble => builder.ins().load(types::I64, MemFlags::new(), addr, off),
+                _ => {
+                    let (fsize, _) = ffi
+                        .c_scalar_layout()
+                        .expect("repr(C) field has a scalar layout");
+                    let raw =
+                        builder
+                            .ins()
+                            .load(int_type_for_size(fsize), MemFlags::new(), addr, off);
+                    if fsize >= 8 {
+                        raw
+                    } else {
+                        builder.ins().uextend(types::I64, raw)
+                    }
+                }
+            },
+            ReprCFieldKind::Nested {
+                mangle: nested_mangle,
+                layout: nested,
+            } => read_image_into_struct(
+                cx,
+                builder,
+                addr,
+                base_off + f.offset,
+                nested,
+                nested_mangle,
+            ),
         };
+        // Re-load the rooted parent (the nested reconstruction allocated) and
+        // store the field.
+        let obj = builder.ins().stack_load(ptr, root, 0);
+        let base = call_struct_fields(cx, builder, obj, ptr);
         builder
             .ins()
-            .store(MemFlags::new(), bits, base, layout::slot_offset(i));
+            .store(MemFlags::new(), value, base, layout::slot_offset(i));
     }
-    obj
+    pop_temp_root(cx, builder, root, ptr)
 }
 
 /// Allocate a fresh stack slot for a struct's C image and return

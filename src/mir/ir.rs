@@ -447,22 +447,58 @@ pub struct MirExternFn {
 }
 
 /// One C-layout field of a `@repr(C)` struct that crosses the FFI by
-/// value: its C byte offset within the struct and its scalar FFI type.
+/// value: its C byte offset within the parent struct, and either a scalar
+/// FFI type or a nested `@repr(C)` struct.
 #[derive(Debug, Clone)]
 pub struct ReprCField {
     pub offset: u32,
-    pub ffi: MirFfiTy,
+    pub kind: ReprCFieldKind,
 }
 
-/// The C memory layout of a `@repr(C)` struct: its total byte size and
-/// each field's C offset and type, in declaration order. The back end
-/// uses this to pack the struct's heap fields into the register-sized
-/// value the platform C ABI passes by value, and to unpack a returned
-/// one. In this slice the total size is at most 8 bytes (one register).
+/// A `@repr(C)` field is either a C scalar or a nested `@repr(C)` struct.
+/// The parent heap slot at a nested field's index holds a GC pointer to the
+/// nested struct object; the C image inlines the nested struct's bytes.
+#[derive(Debug, Clone)]
+pub enum ReprCFieldKind {
+    Scalar(MirFfiTy),
+    Nested {
+        /// Mangled name of the nested struct type, to reconstruct its object
+        /// on a return.
+        mangle: String,
+        layout: ReprCLayout,
+    },
+}
+
+/// The C memory layout of a `@repr(C)` struct: its total byte size and each
+/// field's C offset and kind, in declaration order. The back end uses this
+/// to move the struct's heap fields through the registers the platform C ABI
+/// passes it in, and to rebuild a returned one.
 #[derive(Debug, Clone)]
 pub struct ReprCLayout {
     pub size: u32,
     pub fields: Vec<ReprCField>,
+}
+
+impl ReprCLayout {
+    /// Every leaf scalar field as `(absolute C offset, ffi type)`, flattening
+    /// nested struct fields. Used by the ABI register classifier, for which a
+    /// nested struct behaves exactly like its fields inlined at its offset.
+    pub fn leaves(&self) -> Vec<(u32, MirFfiTy)> {
+        let mut out = Vec::new();
+        self.collect_leaves(0, &mut out);
+        out
+    }
+
+    fn collect_leaves(&self, base: u32, out: &mut Vec<(u32, MirFfiTy)>) {
+        for f in &self.fields {
+            match &f.kind {
+                ReprCFieldKind::Scalar(ffi) => out.push((base + f.offset, ffi.clone())),
+                ReprCFieldKind::Nested { layout, .. } => {
+                    layout.collect_leaves(base + f.offset, out)
+                }
+            }
+        }
+    }
 }
 
 /// One field of a reflectable type: its declared name, the mangled name

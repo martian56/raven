@@ -21,7 +21,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::error::RavenError;
-use crate::hir::{HirFn, HirItemKind, HirProgram};
+use crate::hir::{HirFn, HirItemKind, HirProgram, HirStruct};
 use crate::resolve::DeclId;
 use crate::tycheck::ty::ParamId;
 use crate::tycheck::Ty;
@@ -202,8 +202,13 @@ fn collect_globals(hir: &HirProgram) -> Vec<super::ir::MirGlobal> {
 /// most one register, so the conversions here cannot fail; a non-scalar
 /// field is skipped defensively rather than panicking.
 fn collect_repr_c_structs(hir: &HirProgram) -> HashMap<String, super::ir::ReprCLayout> {
-    use super::ir::{ReprCField, ReprCLayout};
-    use super::ty::MirFfiTy;
+    // Index every struct declaration by name so a nested field can recurse.
+    let mut structs: HashMap<&str, &HirStruct> = HashMap::new();
+    for item in &hir.items {
+        if let HirItemKind::Struct(s) = &item.kind {
+            structs.insert(s.name.as_str(), s);
+        }
+    }
 
     let mut out = HashMap::new();
     for item in &hir.items {
@@ -213,27 +218,58 @@ fn collect_repr_c_structs(hir: &HirProgram) -> HashMap<String, super::ir::ReprCL
         if !s.repr_c {
             continue;
         }
-        let mut offset: u32 = 0;
-        let mut max_align: u32 = 1;
-        let mut fields = Vec::with_capacity(s.fields.len());
-        for (_, ty, _) in &s.fields {
-            let Ty::Ffi(ffi) = ty else { continue };
-            let mir_ffi = MirFfiTy::from_ffi(ffi);
-            let Some((size, align)) = ffi.c_scalar_layout() else {
-                continue;
-            };
-            offset = (offset + align - 1) & !(align - 1);
-            fields.push(ReprCField {
-                offset,
-                ffi: mir_ffi,
-            });
-            offset += size;
-            max_align = max_align.max(align);
+        if let Some((layout, _, _)) = build_repr_c_layout(s, &structs) {
+            out.insert(s.name.clone(), layout);
         }
-        let size = (offset + max_align - 1) & !(max_align - 1);
-        out.insert(s.name.clone(), ReprCLayout { size, fields });
     }
     out
+}
+
+/// Build a `@repr(C)` struct's recursive C layout, returning the layout plus
+/// its total size and alignment. Fields are laid out in declaration order,
+/// each at its naturally aligned offset; a nested `@repr(C)` struct field
+/// embeds the nested layout at its offset. Returns `None` on a field the type
+/// checker would have rejected (a non-scalar, non-repr(C)-struct field).
+fn build_repr_c_layout(
+    s: &HirStruct,
+    structs: &HashMap<&str, &HirStruct>,
+) -> Option<(super::ir::ReprCLayout, u32, u32)> {
+    use super::ir::{ReprCField, ReprCFieldKind, ReprCLayout};
+    use super::ty::MirFfiTy;
+
+    let mut offset: u32 = 0;
+    let mut max_align: u32 = 1;
+    let mut fields = Vec::with_capacity(s.fields.len());
+    for (_, ty, _) in &s.fields {
+        let (fsize, falign, kind) = match ty {
+            Ty::Ffi(ffi) => {
+                let (size, align) = ffi.c_scalar_layout()?;
+                (size, align, ReprCFieldKind::Scalar(MirFfiTy::from_ffi(ffi)))
+            }
+            Ty::Struct { name, .. } => {
+                let nested = structs.get(name.as_str())?;
+                if !nested.repr_c {
+                    return None;
+                }
+                let (nested_layout, nsize, nalign) = build_repr_c_layout(nested, structs)?;
+                (
+                    nsize,
+                    nalign,
+                    ReprCFieldKind::Nested {
+                        mangle: nested.name.clone(),
+                        layout: nested_layout,
+                    },
+                )
+            }
+            _ => return None,
+        };
+        offset = (offset + falign - 1) & !(falign - 1);
+        fields.push(ReprCField { offset, kind });
+        offset += fsize;
+        max_align = max_align.max(falign);
+    }
+    let size = (offset + max_align - 1) & !(max_align - 1);
+    Some((ReprCLayout { size, fields }, size, max_align))
 }
 
 /// Index every struct and enum declaration by its source name so the

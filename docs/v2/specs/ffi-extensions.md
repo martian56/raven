@@ -165,6 +165,19 @@ builder becomes recursive: a nested struct contributes its fields at
 recursive layout pass and the matching recursive read/reconstruct of the
 Raven heap objects.
 
+### Status
+
+Done. `ReprCLayout` carries a field as either a scalar or a nested layout,
+and `leaves()` flattens it for the ABI register classifier, so a nested
+struct is classified exactly like its fields inlined. The marshalling follows
+each nested field's heap pointer to inline its bytes in the C image, and on a
+return rebuilds the nested object first (GC-rooted) and marks the parent's
+nested-field slot in the descriptor so the collector traces it. The type
+checker validates nested fields recursively (a non-`@repr(C)` struct field is
+rejected, a self-containing struct is rejected) and applies the 16-byte cap to
+the flattened size. A GC stress test (return a nested struct, force
+collections, read it back) guards the descriptor.
+
 ---
 
 ## Slice D: capturing closures as callbacks (#234)

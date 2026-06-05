@@ -108,3 +108,30 @@ pub struct RavenFfiMixed {
 pub extern "C" fn raven_ffi_mixed_sum(m: RavenFfiMixed) -> f64 {
     m.n as f64 + m.f as f64
 }
+
+/// An 8-byte inner struct, nested inside `RavenFfiOuter`.
+#[repr(C)]
+pub struct RavenFfiInner {
+    pub a: i32,
+    pub b: i32,
+}
+
+/// A 12-byte struct with a nested `@repr(C)` struct field and a trailing int.
+#[repr(C)]
+pub struct RavenFfiOuter {
+    pub inner: RavenFfiInner,
+    pub c: i32,
+}
+
+#[no_mangle]
+pub extern "C" fn raven_ffi_outer_sum(o: RavenFfiOuter) -> i64 {
+    o.inner.a as i64 + o.inner.b as i64 + o.c as i64
+}
+
+#[no_mangle]
+pub extern "C" fn raven_ffi_make_outer(a: i32, b: i32, c: i32) -> RavenFfiOuter {
+    RavenFfiOuter {
+        inner: RavenFfiInner { a, b },
+        c,
+    }
+}

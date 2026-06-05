@@ -335,6 +335,9 @@ the call boundary marshals it by value.
   (`Point { x: 3, y: 4 }`), and a native `Float` literal a `CFloat`/`CDouble`
   field (`Color { r: 1.0 }`), the same coercion a C call applies. An f64
   narrows to f32 for a `CFloat` field at the boundary.
+* A field may itself be a nested `@repr(C)` struct: its bytes are inlined
+  into the parent's C image at the field offset, and the 16-byte cap applies
+  to the flattened total. A non-`@repr(C)` struct field is rejected.
 * Only a `@repr(C)` struct may be handed to a C function by value; a plain
   heap struct (a GC pointer) is rejected at the call.
 
@@ -359,12 +362,14 @@ stack rather than apply the C ABI register classification):
   writes through.
 
 All three paths read and write the struct through its exact C memory image,
-so a Raven heap struct round-trips a C call unchanged.
+so a Raven heap struct round-trips a C call unchanged. A nested struct field
+is followed through its heap pointer and inlined recursively; on a return the
+nested object is rebuilt and the parent's GC descriptor marks the
+nested-field slot as a pointer so the collector traces it.
 
 ### Out of scope (struct by value)
 
 * Structs larger than 16 bytes (the System V in-memory class).
-* Nested struct fields and struct fields of struct type.
 
 ## Out of scope
 
