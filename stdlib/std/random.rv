@@ -89,4 +89,60 @@ impl Rng {
             i = i - 1
         }
     }
+
+    // A float in [lo, hi).
+    fun gen_range_float(self, lo: Float, hi: Float) -> Float {
+        return lo + self.next_float() * (hi - lo)
+    }
+
+    // `n` elements drawn from `xs` without replacement, in random order. If
+    // `n` exceeds the list length, every element is returned (shuffled).
+    fun sample<T>(self, xs: List<T>, n: Int) -> List<T> {
+        let pool: List<T> = []
+        let i = 0
+        while i < xs.len() {
+            pool.push(xs.get(i))
+            i = i + 1
+        }
+        self.shuffle(pool)
+        let limit = n
+        if limit > pool.len() {
+            limit = pool.len()
+        }
+        let out: List<T> = []
+        let k = 0
+        while k < limit {
+            out.push(pool.get(k))
+            k = k + 1
+        }
+        return out
+    }
+
+    // Choose an element of `xs` with probability proportional to the matching
+    // entry of `weights`. Returns `None` when the lists are empty or the total
+    // weight is not positive.
+    fun weighted_choice<T>(self, xs: List<T>, weights: List<Int>) -> Option<T> {
+        let total = 0
+        let i = 0
+        while i < weights.len() {
+            total = total + weights.get(i)
+            i = i + 1
+        }
+        if total <= 0 {
+            return None
+        }
+        let r = self.gen_range(0, total)
+        let acc = 0
+        let j = 0
+        while j < xs.len() {
+            if j < weights.len() {
+                acc = acc + weights.get(j)
+                if r < acc {
+                    return Some(xs.get(j))
+                }
+            }
+            j = j + 1
+        }
+        return None
+    }
 }

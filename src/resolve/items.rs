@@ -50,6 +50,18 @@ fn collect_decl(decl: &Decl, id: DeclId, scope: &mut ScopeStack) -> Result<(), R
         }
         DeclKind::Extern(ext) => {
             for (item_index, item) in ext.items.iter().enumerate() {
+                // Two bundled modules may declare the same C symbol (for
+                // example several stdlib modules each declare
+                // `raven_int_to_float`). Redeclaring an extern name is benign:
+                // every declaration of a given symbol resolves to the same
+                // linker function, and codegen keys externs by name. Skip the
+                // duplicate rather than reporting a conflict, while still
+                // rejecting a clash with a non-extern declaration.
+                if let Some(existing) = scope.lookup(&item.name) {
+                    if matches!(existing.binding, Binding::Extern { .. }) {
+                        continue;
+                    }
+                }
                 scope.insert(
                     &item.name,
                     Binding::Extern {

@@ -124,6 +124,64 @@ fun is_dir(path: String) -> Bool {
     return raven_fs_is_dir(path)
 }
 
+// Create `path` and every missing parent directory, like `mkdir -p`. An
+// already-existing directory in the chain is not an error.
+fun create_dir_all(path: String) -> Result<Bool, Error> {
+    let abs = path.starts_with("/")
+    let prefix = ""
+    for seg in path.split("/") {
+        if seg.length() > 0 {
+            if prefix.length() == 0 {
+                if abs {
+                    prefix = "/".concat(seg)
+                } else {
+                    prefix = seg
+                }
+            } else {
+                prefix = prefix.concat("/").concat(seg)
+            }
+            if is_dir(prefix) == false {
+                let _made = create_dir(prefix)?
+            }
+        }
+    }
+    return Ok(true)
+}
+
+// Read a whole file and split it into lines (handling CRLF).
+fun read_lines(path: String) -> Result<List<String>, Error> {
+    let content = read(path)?
+    return Ok(content.lines())
+}
+
+// Copy the contents of `src` to `dst`, creating or truncating `dst`.
+fun copy(src: String, dst: String) -> Result<Bool, Error> {
+    let content = read(src)?
+    return write(dst, content)
+}
+
+// Recursively list every path under `path`, directories included, in
+// depth-first order. Each entry is the full path joined from `path`.
+fun walk(path: String) -> Result<List<String>, Error> {
+    let out: List<String> = []
+    let entries = list_dir(path)?
+    let i = 0
+    while i < entries.len() {
+        let full = join(path, entries.get(i))
+        out.push(full)
+        if is_dir(full) {
+            let sub = walk(full)?
+            let j = 0
+            while j < sub.len() {
+                out.push(sub.get(j))
+                j = j + 1
+            }
+        }
+        i = i + 1
+    }
+    return Ok(out)
+}
+
 // Split `s` on `\n` into a list of lines. An empty string yields an empty
 // list (not a one-element list of ""), so an empty directory listing maps
 // to an empty list.

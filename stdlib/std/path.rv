@@ -86,3 +86,84 @@ fun stem(p: String) -> String {
 fun is_absolute(p: String) -> Bool {
     return p.starts_with("/")
 }
+
+fun is_relative(p: String) -> Bool {
+    return is_absolute(p) == false
+}
+
+// The non-empty path segments, in order. Leading, trailing, and repeated
+// slashes produce no empty components.
+fun components(p: String) -> List<String> {
+    let out: List<String> = []
+    for seg in p.split("/") {
+        if seg.length() > 0 {
+            out.push(seg)
+        }
+    }
+    return out
+}
+
+// Collapse `.` and `..` segments and redundant slashes. An absolute path
+// keeps its leading `/`; an empty relative result becomes ".".
+fun normalize(p: String) -> String {
+    let abs = is_absolute(p)
+    let stack: List<String> = []
+    for seg in p.split("/") {
+        if seg.length() == 0 {
+            continue
+        }
+        if seg == "." {
+            continue
+        }
+        if seg == ".." {
+            if stack.len() > 0 {
+                let top = stack.get(stack.len() - 1)
+                if top == ".." {
+                    stack.push(seg)
+                } else {
+                    let _popped = stack.pop()
+                }
+            } else {
+                if abs == false {
+                    stack.push(seg)
+                }
+            }
+        } else {
+            stack.push(seg)
+        }
+    }
+    let result = ""
+    let i = 0
+    while i < stack.len() {
+        if i > 0 {
+            result = result.concat("/")
+        }
+        result = result.concat(stack.get(i))
+        i = i + 1
+    }
+    if abs {
+        return "/".concat(result)
+    }
+    if result.length() == 0 {
+        return "."
+    }
+    return result
+}
+
+// Replace the path's extension with `ext` (no leading dot). An empty `ext`
+// removes the extension.
+fun with_extension(p: String, ext: String) -> String {
+    let cur = extension(p)
+    if cur.length() > 0 {
+        let cut = p.length() - cur.length() - 1
+        let without = p.substring(0, cut)
+        if ext.length() == 0 {
+            return without
+        }
+        return without.concat(".").concat(ext)
+    }
+    if ext.length() == 0 {
+        return p
+    }
+    return p.concat(".").concat(ext)
+}

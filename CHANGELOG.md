@@ -6,6 +6,19 @@ All notable changes to Raven are documented in this file.
 
 ### Added
 
+- Standard library enrichment, part 3 (encoding, paths, filesystem, JSON, and more):
+  - **std/encoding**: `url_encode` / `url_decode` (percent encoding) and `base32_encode` / `base32_decode` (#314).
+  - **std/path**: `normalize`, `components`, `with_extension`, `is_relative` (#315).
+  - **std/fs**: `create_dir_all`, `read_lines`, `copy`, and recursive `walk` (#315).
+  - **std/json**: `stringify_pretty`, `JsonValue.as_int` / `keys` / `length`, and value constructors `json_null` / `json_bool` / `json_number` / `json_int` / `json_string` / `json_array` / `json_object` (#313).
+  - **std/random**: `gen_range_float`, `sample`, `weighted_choice`; **std/http**: `patch`, `head`; **std/net**: `TcpStream.read_all`; **std/hash**: `crc32` (#316).
+
+### Fixed
+
+- Importing two stdlib modules that declare the same C extern symbol (for example std/json and std/random, which both bind `raven_int_to_float`) no longer fails with a duplicate-declaration error. Redeclaring an extern name is now treated as the same linker symbol.
+
+### Added
+
 - Standard library enrichment, part 2 (numbers, iteration, testing, formatting):
   - **std/math**: `fmod`, `atan2`, `asin`, `acos`, `atan`, `log2`, `cbrt`, `hypot`, `sinh`, `cosh`, `tanh`, `gcd`, `lcm`, `sign`, `sign_int`, `is_nan`, `is_inf`, `infinity`, `nan`, `to_radians`, `to_degrees` (#309).
   - **std/iter**: reductions `sum`, `product`, `min`, `max`, and `position`, `nth`, `last` (#310).

@@ -56,3 +56,26 @@ fun checksum(s: String) -> Int {
     }
     sum
 }
+
+// CRC-32 (IEEE 802.3) over the bytes of `s`, computed bitwise with the
+// reflected polynomial 0xEDB88320. Returns a value in [0, 2^32). Suitable as
+// a checksum, not for security.
+fun crc32(s: String) -> Int {
+    let n = __str_len(s)
+    let crc = 4294967295
+    let i = 0
+    while i < n {
+        crc = crc ^ __str_byte_at(s, i)
+        let k = 0
+        while k < 8 {
+            if (crc & 1) == 1 {
+                crc = (crc >> 1) ^ 3988292384
+            } else {
+                crc = crc >> 1
+            }
+            k = k + 1
+        }
+        i = i + 1
+    }
+    return crc ^ 4294967295
+}

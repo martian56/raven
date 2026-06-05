@@ -1,0 +1,22 @@
+// Regression guard: std/json, std/random, std/fmt, and std/math each declare
+// runtime extern symbols (some the same one, like raven_int_to_float).
+// Importing them together must not raise a duplicate-declaration error.
+// Prints:
+//   2
+//   3.14
+//   3
+import std/json { parse }
+import std/random
+import std/fmt { format_float }
+import std/math { log2 }
+
+fun main() {
+    match parse("[1, 2]") {
+        Ok(v) -> print(v.length()),     // 2
+        Err(e) -> print(-1),
+    }
+    let rng = Rng.new(1)
+    let _ignored = rng.next_int()
+    print(format_float(3.14159, 2))      // 3.14
+    print(log2(8.0))                     // 3
+}
