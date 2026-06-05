@@ -323,15 +323,18 @@ the call boundary marshals it by value.
 
 ### Supported shape (this release)
 
-* Every field must be an **integer-class C scalar**: `CInt`, `CLong`,
-  `CSize`, `CStr`, `CPtr<T>`, or `CFnPtr`. A float field (`CFloat`,
-  `CDouble`) is rejected, because System V AMD64 classifies a floating
-  field as SSE and would pass it in a different register class.
+* Every field must be a **C scalar**: an integer-class type (`CInt`,
+  `CLong`, `CSize`, `CStr`, `CPtr<T>`, `CFnPtr`) or a float (`CFloat`,
+  `CDouble`). A float field is classified into the platform's float
+  register class (SSE on System V, a SIMD register on AArch64) at the call
+  boundary.
 * The total C size must be **at most 16 bytes** (up to two machine
   registers). A larger struct is rejected with a clear error; pass a
   `CPtr<...>` to the struct instead.
 * A native `Int` literal initializes a `CInt`/`CLong`/`CSize` field
-  (`Point { x: 3, y: 4 }`), the same coercion a C call applies.
+  (`Point { x: 3, y: 4 }`), and a native `Float` literal a `CFloat`/`CDouble`
+  field (`Color { r: 1.0 }`), the same coercion a C call applies. An f64
+  narrows to f32 for a `CFloat` field at the boundary.
 * Only a `@repr(C)` struct may be handed to a C function by value; a plain
   heap struct (a GC pointer) is rejected at the call.
 
@@ -361,7 +364,6 @@ so a Raven heap struct round-trips a C call unchanged.
 ### Out of scope (struct by value)
 
 * Structs larger than 16 bytes (the System V in-memory class).
-* Floating-point fields (the System V SSE classification).
 * Nested struct fields and struct fields of struct type.
 
 ## Out of scope

@@ -2977,6 +2977,15 @@ impl<'a, 'b> Checker<'a, 'b> {
                 seen.insert(fi.name.clone());
                 continue;
             }
+            // A floating C FFI field (`CFloat`, `CDouble`) accepts a native
+            // `Float` literal, the same coercion a C call applies. The back
+            // end narrows an f64 to f32 for a `CFloat` field at the boundary.
+            if is_float_ffi(resolved_field.strip_self())
+                && matches!(resolved_value.strip_self(), Ty::Float)
+            {
+                seen.insert(fi.name.clone());
+                continue;
+            }
             self.unify(&field_ty_inst, &value_ty, &fi.value.span)?;
             seen.insert(fi.name.clone());
         }

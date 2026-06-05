@@ -284,6 +284,15 @@ jobs:
           ffi_out="$(./ffi | tr '\n' ',')"
           echo "ffi struct-by-value output: $ffi_out"
           test "$ffi_out" = "3,2,"
+          # FFI: a 16-byte float struct by value, exercising the float
+          # register classification (two SSE registers on System V, a
+          # 2-member homogeneous float aggregate in SIMD registers on
+          # AArch64). The fixtures ship in libraven_runtime.
+          printf '@repr(C)\nstruct V2 { x: CDouble, y: CDouble }\nextern "C" {\n  fun raven_ffi_make_vec2d(x: CDouble, y: CDouble) -> V2\n  fun raven_ffi_vec2d_sum(v: V2) -> CDouble\n}\nfun main() {\n  let v = raven_ffi_make_vec2d(10.0, 20.0)\n  print(raven_ffi_vec2d_sum(v))\n}\n' > ffif.rv
+          raven build ffif.rv -o ffif
+          ffif_out="$(./ffif)"
+          echo "ffi float-struct output: $ffif_out"
+          test "$ffif_out" = "30"
 
       - name: Smoke test (Windows zip)
         if: runner.os == 'Windows'

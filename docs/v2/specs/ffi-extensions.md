@@ -141,6 +141,18 @@ calls: a struct with float fields follows the same size-class rule as slice A
 Windows is mostly a matter of allowing float fields through the existing
 size-class path rather than rejecting them.
 
+### Status
+
+Done. `CFloat` and `CDouble` fields are supported, argument and return, up to
+16 bytes. The back end builds a per-register plan (`RegPlan`) from the struct
+layout and the target convention: System V classifies each eightbyte
+INTEGER (i64) or SSE (f64); AArch64 detects a homogeneous float aggregate and
+gives each member its own SIMD register (f32/f64), falling back to general
+registers otherwise; Windows x64 uses one integer register or by reference.
+A `CFloat` field is narrowed from f64 to f32 (and widened back) at the
+boundary. Windows verified locally, System V in CI, AArch64 in the release
+smoke test.
+
 ---
 
 ## Slice C: nested / struct-of-struct fields

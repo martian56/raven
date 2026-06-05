@@ -402,26 +402,73 @@ fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 #[test]
-fn classify_repr_c_matches_platform_abi() {
-    use crate::codegen::function::{classify_repr_c, ReprCAbi};
+fn repr_c_register_plan_matches_platform_abi() {
+    use crate::codegen::function::{repr_c_register_plan, RegPlan};
+    use crate::mir::{MirFfiTy, ReprCField, ReprCLayout};
+    use cranelift_codegen::ir::{types, Type};
     use cranelift_codegen::isa::CallConv;
 
-    // System V and AArch64: up to 8 bytes in one register, 9..=16 in two.
-    for conv in [CallConv::SystemV, CallConv::AppleAarch64] {
-        assert_eq!(classify_repr_c(4, conv), ReprCAbi::OneReg);
-        assert_eq!(classify_repr_c(8, conv), ReprCAbi::OneReg);
-        assert_eq!(classify_repr_c(3, conv), ReprCAbi::OneReg);
-        assert_eq!(classify_repr_c(12, conv), ReprCAbi::TwoReg);
-        assert_eq!(classify_repr_c(16, conv), ReprCAbi::TwoReg);
+    fn field(offset: u32, ffi: MirFfiTy) -> ReprCField {
+        ReprCField { offset, ffi }
+    }
+    fn reg_tys(plan: RegPlan) -> Option<Vec<Type>> {
+        match plan {
+            RegPlan::Regs(slots) => Some(slots.iter().map(|s| s.ty).collect()),
+            RegPlan::ByRef => None,
+        }
     }
 
-    // Windows x64: only sizes 1, 2, 4, 8 use a register; the rest go by
-    // reference.
+    let two_longs = ReprCLayout {
+        size: 16,
+        fields: vec![field(0, MirFfiTy::CLong), field(8, MirFfiTy::CLong)],
+    };
+    let two_doubles = ReprCLayout {
+        size: 16,
+        fields: vec![field(0, MirFfiTy::CDouble), field(8, MirFfiTy::CDouble)],
+    };
+    let two_floats = ReprCLayout {
+        size: 8,
+        fields: vec![field(0, MirFfiTy::CFloat), field(4, MirFfiTy::CFloat)],
+    };
+
+    // System V: integers in two i64; an all-float eightbyte is one SSE (f64)
+    // register; two doubles are two SSE registers.
+    let sysv = CallConv::SystemV;
+    assert_eq!(
+        reg_tys(repr_c_register_plan(&two_longs, sysv)),
+        Some(vec![types::I64, types::I64])
+    );
+    assert_eq!(
+        reg_tys(repr_c_register_plan(&two_floats, sysv)),
+        Some(vec![types::F64])
+    );
+    assert_eq!(
+        reg_tys(repr_c_register_plan(&two_doubles, sysv)),
+        Some(vec![types::F64, types::F64])
+    );
+
+    // AArch64: homogeneous float aggregates use one SIMD register per field;
+    // a non-HFA struct uses general registers.
+    let arm = CallConv::AppleAarch64;
+    assert_eq!(
+        reg_tys(repr_c_register_plan(&two_floats, arm)),
+        Some(vec![types::F32, types::F32])
+    );
+    assert_eq!(
+        reg_tys(repr_c_register_plan(&two_doubles, arm)),
+        Some(vec![types::F64, types::F64])
+    );
+    assert_eq!(
+        reg_tys(repr_c_register_plan(&two_longs, arm)),
+        Some(vec![types::I64, types::I64])
+    );
+
+    // Windows x64: an 8-byte struct is one integer register; a 16-byte one
+    // is passed by reference.
     let win = CallConv::WindowsFastcall;
-    assert_eq!(classify_repr_c(4, win), ReprCAbi::OneReg);
-    assert_eq!(classify_repr_c(8, win), ReprCAbi::OneReg);
-    assert_eq!(classify_repr_c(3, win), ReprCAbi::ByRef);
-    assert_eq!(classify_repr_c(6, win), ReprCAbi::ByRef);
-    assert_eq!(classify_repr_c(12, win), ReprCAbi::ByRef);
-    assert_eq!(classify_repr_c(16, win), ReprCAbi::ByRef);
+    assert_eq!(
+        reg_tys(repr_c_register_plan(&two_floats, win)),
+        Some(vec![types::I64])
+    );
+    assert!(reg_tys(repr_c_register_plan(&two_doubles, win)).is_none());
 }

@@ -127,7 +127,8 @@ impl FfiTy {
             FfiTy::CLong | FfiTy::CSize | FfiTy::CStr | FfiTy::CPtr(_) | FfiTy::CFnPtr => {
                 Some((8, 8))
             }
-            FfiTy::CFloat | FfiTy::CDouble => None,
+            FfiTy::CFloat => Some((4, 4)),
+            FfiTy::CDouble => Some((8, 8)),
         }
     }
 }
