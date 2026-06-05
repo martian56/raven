@@ -4,6 +4,8 @@ All notable changes to Raven are documented in this file.
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-06-05
+
 ### Added
 
 - Mutable module-level globals. A `let` at file scope is now a real mutable global with runtime storage: any function can read and reassign it, its initializer may be any expression (not only a constant) and runs before `main` in declaration order so a later global can read an earlier one, and a heap-valued global (`String`, `List`, struct, and so on) is registered as a permanent GC root so the collector keeps it alive for the whole program. A `const` is unchanged (an inlined compile-time constant). This completes #278.
