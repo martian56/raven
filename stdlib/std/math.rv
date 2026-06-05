@@ -16,6 +16,17 @@ extern "C" {
     fun round(x: Float) -> Float
     fun log(x: Float) -> Float
     fun fabs(x: Float) -> Float
+    fun atan2(y: Float, x: Float) -> Float
+    fun asin(x: Float) -> Float
+    fun acos(x: Float) -> Float
+    fun atan(x: Float) -> Float
+    fun log2(x: Float) -> Float
+    fun cbrt(x: Float) -> Float
+    fun hypot(a: Float, b: Float) -> Float
+    fun sinh(x: Float) -> Float
+    fun cosh(x: Float) -> Float
+    fun tanh(x: Float) -> Float
+    fun fmod(a: Float, b: Float) -> Float
 }
 
 fun pi() -> Float {
@@ -112,4 +123,87 @@ fun pow_int(base: Int, exp: Int) -> Int {
         n = n / 2
     }
     return result
+}
+
+// Greatest common divisor of `a` and `b` (always non-negative).
+fun gcd(a: Int, b: Int) -> Int {
+    let x = abs_int(a)
+    let y = abs_int(b)
+    while y != 0 {
+        let t = y
+        y = x % y
+        x = t
+    }
+    return x
+}
+
+// Least common multiple of `a` and `b`. Zero when either is zero.
+fun lcm(a: Int, b: Int) -> Int {
+    if a == 0 {
+        return 0
+    }
+    if b == 0 {
+        return 0
+    }
+    return abs_int(a / gcd(a, b) * b)
+}
+
+// The sign of a float: 1.0 for positive, -1.0 for negative, 0.0 for zero.
+fun sign(x: Float) -> Float {
+    if x > 0.0 {
+        return 1.0
+    }
+    if x < 0.0 {
+        return 0.0 - 1.0
+    }
+    return 0.0
+}
+
+// The sign of an integer: 1, -1, or 0.
+fun sign_int(n: Int) -> Int {
+    if n > 0 {
+        return 1
+    }
+    if n < 0 {
+        return 0 - 1
+    }
+    return 0
+}
+
+// Positive infinity.
+fun infinity() -> Float {
+    return pow(10.0, 400.0)
+}
+
+// A NaN value (not a number).
+fun nan() -> Float {
+    let inf = infinity()
+    return inf - inf
+}
+
+// True when `x` is NaN (relies on NaN never being equal to itself).
+fun is_nan(x: Float) -> Bool {
+    return x != x
+}
+
+// True when `x` is positive or negative infinity.
+fun is_inf(x: Float) -> Bool {
+    let inf = infinity()
+    if x == inf {
+        return true
+    }
+    if x == 0.0 - inf {
+        return true
+    }
+    return false
+}
+
+// Convert degrees to radians.
+fun to_radians(deg: Float) -> Float {
+    return deg * pi() / 180.0
+}
+
+// Convert radians to degrees.
+fun to_degrees(rad: Float) -> Float {
+    return rad * 180.0 / pi()
 }

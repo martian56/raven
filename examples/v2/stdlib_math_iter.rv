@@ -1,0 +1,36 @@
+// std/math and std/iter enrichment: fmod, gcd, is_nan/is_inf, log2; iterator
+// reductions sum/product/min/max and position/nth/last. Prints:
+//   1
+//   6
+//   3
+//   true
+//   25
+//   24
+//   1
+//   9
+//   2
+import std/math { fmod, gcd, log2, is_inf, infinity }
+import std/iter { sum, product, min, max, position }
+
+fun main() {
+    print(fmod(10.0, 3.0))          // 1
+    print(gcd(12, 18))              // 6
+    print(log2(8.0))                // 3
+    print(is_inf(infinity()))       // true
+
+    let xs = [3, 1, 4, 1, 5, 9, 2]
+    print(sum(xs.iter()))           // 25
+    print(product([1, 2, 3, 4].iter()))  // 24
+    match min(xs.iter()) {
+        Some(v) -> print(v),        // 1
+        None -> print(-1),
+    }
+    match max(xs.iter()) {
+        Some(v) -> print(v),        // 9
+        None -> print(-1),
+    }
+    match position(xs.iter(), fun(x: Int) -> Bool = x == 4) {
+        Some(i) -> print(i),        // 2
+        None -> print(-1),
+    }
+}

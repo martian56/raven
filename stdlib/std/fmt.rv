@@ -5,6 +5,7 @@
 // docs/v2/specs/std-fmt.md.
 
 import std/string
+import std/math { floor, fabs }
 
 // `s` repeated `n` times. A non-positive `n` yields the empty string.
 fun repeat(s: String, n: Int) -> String {
@@ -114,6 +115,156 @@ fun to_octal(n: Int) -> String {
 
 fun to_hex(n: Int) -> String {
     return to_radix(n, 16)
+}
+
+// The numeric value of a base digit byte (0-9, a-f, A-F), or -1 when it is
+// not a digit.
+fun radix_value(b: Int) -> Int {
+    if b >= 48 {
+        if b <= 57 {
+            return b - 48
+        }
+    }
+    if b >= 97 {
+        if b <= 102 {
+            return b - 87
+        }
+    }
+    if b >= 65 {
+        if b <= 70 {
+            return b - 55
+        }
+    }
+    return -1
+}
+
+// Parse `s` as an integer in `base` (2..=16), with an optional leading sign.
+// Returns `None` on an empty string, a bad digit, or an out-of-range `base`.
+// The inverse of `to_radix`.
+fun from_radix(s: String, base: Int) -> Option<Int> {
+    if base < 2 {
+        return None
+    }
+    if base > 16 {
+        return None
+    }
+    let n = __str_len(s)
+    if n == 0 {
+        return None
+    }
+    let i = 0
+    let neg = false
+    let b0 = __str_byte_at(s, 0)
+    if b0 == 45 {
+        neg = true
+        i = 1
+    } else {
+        if b0 == 43 {
+            i = 1
+        }
+    }
+    if i >= n {
+        return None
+    }
+    let acc = 0
+    while i < n {
+        let v = radix_value(__str_byte_at(s, i))
+        if v < 0 {
+            return None
+        }
+        if v >= base {
+            return None
+        }
+        acc = acc * base + v
+        i = i + 1
+    }
+    if neg {
+        return Some(0 - acc)
+    }
+    return Some(acc)
+}
+
+// Parse a hexadecimal string into an integer. The inverse of `to_hex`.
+fun from_hex(s: String) -> Option<Int> {
+    return from_radix(s, 16)
+}
+
+// Map a float digit (0.0..9.0) to its character, with no Int conversion.
+fun float_digit_char(d: Float) -> String {
+    if d < 0.5 {
+        return "0"
+    }
+    if d < 1.5 {
+        return "1"
+    }
+    if d < 2.5 {
+        return "2"
+    }
+    if d < 3.5 {
+        return "3"
+    }
+    if d < 4.5 {
+        return "4"
+    }
+    if d < 5.5 {
+        return "5"
+    }
+    if d < 6.5 {
+        return "6"
+    }
+    if d < 7.5 {
+        return "7"
+    }
+    if d < 8.5 {
+        return "8"
+    }
+    return "9"
+}
+
+// Format `x` with exactly `decimals` digits after the decimal point, rounded
+// half up. `format_float(3.14159, 2)` is "3.14"; `format_float(-2.5, 0)` is
+// "-3".
+fun format_float(x: Float, decimals: Int) -> String {
+    let neg = x < 0.0
+    let v = fabs(x)
+    let scale = 1.0
+    let i = 0
+    while i < decimals {
+        scale = scale * 10.0
+        i = i + 1
+    }
+    let scaled = floor(v * scale + 0.5)
+    let digits = ""
+    let count = 0
+    if scaled < 1.0 {
+        digits = "0"
+        count = 1
+    } else {
+        let w = scaled
+        while w >= 1.0 {
+            let last = w - floor(w / 10.0) * 10.0
+            digits = __str_concat(float_digit_char(last), digits)
+            w = floor(w / 10.0)
+            count = count + 1
+        }
+    }
+    while count <= decimals {
+        digits = __str_concat("0", digits)
+        count = count + 1
+    }
+    let result = ""
+    if decimals <= 0 {
+        result = digits
+    } else {
+        let cut = count - decimals
+        let int_part = digits.substring(0, cut)
+        let frac_part = digits.substring(cut, count)
+        result = __str_concat(__str_concat(int_part, "."), frac_part)
+    }
+    if neg {
+        result = __str_concat("-", result)
+    }
+    return result
 }
 
 // Decimal `n` zero-padded to byte width `width`. For a negative `n` the
