@@ -14,6 +14,7 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 #![allow(clippy::missing_safety_doc)]
 
+pub mod ffi_test;
 pub mod gc;
 pub mod object;
 pub mod reflect;

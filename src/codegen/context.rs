@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
-use cranelift_codegen::ir::{types, AbiParam, InstBuilder, Signature};
+use cranelift_codegen::ir::{types, AbiParam, ArgumentPurpose, InstBuilder, Signature, Type};
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::Context;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
@@ -391,6 +391,12 @@ impl ModuleCx {
         self.module.target_config().pointer_type()
     }
 
+    /// The target's default calling convention (the platform C ABI). Used to
+    /// classify how a `@repr(C)` struct crosses the FFI by value.
+    pub fn default_call_conv(&self) -> CallConv {
+        self.module.target_config().default_call_conv
+    }
+
     /// Intern a byte slice as a static data symbol and return its id.
     ///
     /// Identical byte sequences share a single symbol so that repeated
@@ -699,15 +705,19 @@ impl ModuleCx {
             if self.functions.contains_key(&ext.name) {
                 continue;
             }
+            let conv = self.module.target_config().default_call_conv;
             let mut sig = self.module.make_signature();
+            // A by-value struct return that does not fit in registers comes
+            // back through a hidden first pointer (sret) on Windows x64.
+            let ret_abi = self.repr_c_struct_abi(&ext.ret, conv);
+            if ret_abi == Some(super::function::ReprCAbi::ByRef) {
+                sig.params
+                    .push(AbiParam::special(ptr, ArgumentPurpose::StructReturn));
+            }
             for p in &ext.params {
-                if let Some(t) = super::function::cranelift_ty(p, ptr) {
-                    sig.params.push(AbiParam::new(t));
-                }
+                self.push_param_abi(&mut sig.params, p, conv, ptr);
             }
-            if let Some(t) = super::function::cranelift_ty(&ext.ret, ptr) {
-                sig.returns.push(AbiParam::new(t));
-            }
+            self.push_return_abi(&mut sig.returns, &ext.ret, ret_abi, ptr);
             let id = self
                 .module
                 .declare_function(&ext.name, Linkage::Import, &sig)?;
@@ -717,6 +727,73 @@ impl ModuleCx {
             self.extern_rets.insert(ext.name.clone(), ext.ret.clone());
         }
         Ok(())
+    }
+
+    /// The by-value ABI mode for a MIR type, or `None` when it is not a
+    /// recorded `@repr(C)` struct.
+    fn repr_c_struct_abi(&self, ty: &MirType, conv: CallConv) -> Option<super::function::ReprCAbi> {
+        if !matches!(ty, MirType::Struct { .. }) {
+            return None;
+        }
+        let layout = self.repr_c_layout(&ty.mangle())?;
+        Some(super::function::classify_repr_c(layout.size, conv))
+    }
+
+    /// The number of eightbyte registers a by-value struct occupies (1 or 2).
+    fn repr_c_eightbytes(&self, ty: &MirType) -> usize {
+        let size = self
+            .repr_c_layout(&ty.mangle())
+            .expect("classified as a repr(C) struct")
+            .size;
+        ((size + 7) / 8) as usize
+    }
+
+    /// Push the C ABI parameter(s) for one declared extern parameter. A
+    /// by-value struct expands to one or two integer registers, or to a
+    /// single pointer when passed by reference; a scalar uses its C type.
+    fn push_param_abi(&self, params: &mut Vec<AbiParam>, ty: &MirType, conv: CallConv, ptr: Type) {
+        use super::function::ReprCAbi;
+        match self.repr_c_struct_abi(ty, conv) {
+            Some(ReprCAbi::OneReg) => params.push(AbiParam::new(types::I64)),
+            Some(ReprCAbi::TwoReg) => {
+                for _ in 0..self.repr_c_eightbytes(ty) {
+                    params.push(AbiParam::new(types::I64));
+                }
+            }
+            Some(ReprCAbi::ByRef) => params.push(AbiParam::new(ptr)),
+            None => {
+                if let Some(t) = super::function::cranelift_ty(ty, ptr) {
+                    params.push(AbiParam::new(t));
+                }
+            }
+        }
+    }
+
+    /// Push the C ABI return value(s) for an extern return type, given its
+    /// precomputed struct ABI mode. A by-reference return is echoed as the
+    /// returned `sret` pointer.
+    fn push_return_abi(
+        &self,
+        returns: &mut Vec<AbiParam>,
+        ty: &MirType,
+        abi: Option<super::function::ReprCAbi>,
+        ptr: Type,
+    ) {
+        use super::function::ReprCAbi;
+        match abi {
+            Some(ReprCAbi::OneReg) => returns.push(AbiParam::new(types::I64)),
+            Some(ReprCAbi::TwoReg) => {
+                for _ in 0..self.repr_c_eightbytes(ty) {
+                    returns.push(AbiParam::new(types::I64));
+                }
+            }
+            Some(ReprCAbi::ByRef) => returns.push(AbiParam::new(ptr)),
+            None => {
+                if let Some(t) = super::function::cranelift_ty(ty, ptr) {
+                    returns.push(AbiParam::new(t));
+                }
+            }
+        }
     }
 
     /// Parameter types of a declared extern C function, if `name` names

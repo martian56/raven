@@ -4,6 +4,10 @@ All notable changes to Raven are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- FFI: `@repr(C)` structs up to 16 bytes now cross the C ABI by value, both as arguments and as return values, beyond the previous 8-byte (one-register) limit. The back end classifies each struct from its size and the target ABI: one or two integer registers on System V AMD64 and AArch64, and one register or a by-reference copy (with a hidden-pointer `sret` for those returns) on Windows x64. This unblocks binding C structs like `SDL_Rect`. Float fields, nested structs, and structs larger than 16 bytes remain follow-ups (#327).
+
 ## [2.4.4] - 2026-06-05
 
 ### Fixed

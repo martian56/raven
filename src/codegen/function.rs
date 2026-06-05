@@ -12,6 +12,7 @@ use cranelift_codegen::ir::{
     Function, InstBuilder, MemFlags, Signature, StackSlot, StackSlotData, StackSlotKind,
     Type as CType, Value,
 };
+use cranelift_codegen::isa::CallConv;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::Module;
 
@@ -2024,45 +2025,97 @@ fn lower_call(
     let extern_ret: Option<MirType> = cx.extern_ret(&callee.mangled).cloned();
     let local_ref = cx.module().declare_func_in_func(func_id, builder.func);
     let ptr = cx.pointer_type();
-    let mut arg_vals = Vec::with_capacity(args.len());
+    let mut arg_vals = Vec::with_capacity(args.len() + 1);
+
+    // A by-value struct return larger than one register comes back through a
+    // hidden pointer (sret) on Windows x64: the caller allocates the result
+    // slot and passes its address as the first argument. System V and AArch64
+    // return such a struct in registers, so they need no hidden argument.
+    let ret_struct_abi = match &extern_ret {
+        Some(rt) if is_extern && is_repr_c_struct(cx, rt) => Some(repr_c_abi(cx, rt)),
+        _ => None,
+    };
+    let mut sret_addr: Option<Value> = None;
+    if ret_struct_abi == Some(ReprCAbi::ByRef) {
+        let size = cx
+            .repr_c_layout(&extern_ret.as_ref().unwrap().mangle())
+            .unwrap()
+            .size;
+        let (_, addr) = struct_image_slot(cx, builder, size);
+        sret_addr = Some(addr);
+        arg_vals.push(addr);
+    }
+
     // Root each freshly promoted String-literal argument across the
     // evaluation of the remaining arguments, so a collection a later
-    // argument triggers cannot free an earlier one before the call reads
-    // it. A repr(C) struct argument is marshalled into a register here and
-    // is not a heap value the callee retains, so only String literals need
-    // rooting. The roots are popped right after the call site.
+    // argument triggers cannot free an earlier one before the call reads it.
+    // A by-value struct argument is read into registers or a memory image
+    // here and is not a heap value the callee retains, so it needs no root.
+    // The roots are popped right after the call site.
     let mut roots = 0usize;
     for (i, a) in args.iter().enumerate() {
-        if let Some(v) = lower_operand(cx, builder, a, slots)? {
-            let allocates = operand_allocates_heap(a);
-            let v = match &extern_param_tys {
-                Some(tys) => match tys.get(i) {
-                    Some(pt) if is_extern && is_repr_c_struct(cx, pt) => {
-                        marshal_struct_to_reg(cx, builder, v, pt)
+        let Some(v) = lower_operand(cx, builder, a, slots)? else {
+            continue;
+        };
+        let param = extern_param_tys
+            .as_ref()
+            .and_then(|tys| tys.get(i))
+            .cloned();
+        match param {
+            Some(pt) if is_extern && is_repr_c_struct(cx, &pt) => match repr_c_abi(cx, &pt) {
+                ReprCAbi::OneReg => arg_vals.push(marshal_struct_to_reg(cx, builder, v, &pt)),
+                ReprCAbi::TwoReg => {
+                    let size = cx.repr_c_layout(&pt.mangle()).unwrap().size;
+                    let addr = struct_to_image(cx, builder, v, &pt);
+                    for eb in image_eightbytes(builder, addr, size) {
+                        arg_vals.push(eb);
                     }
-                    Some(pt) => coerce_to_param(builder, v, pt, cx.pointer_type()),
-                    None => v,
-                },
-                None => v,
-            };
-            if allocates {
-                root_temp(cx, builder, v, ptr);
-                roots += 1;
+                }
+                ReprCAbi::ByRef => {
+                    let addr = struct_to_image(cx, builder, v, &pt);
+                    arg_vals.push(addr);
+                }
+            },
+            Some(pt) => {
+                let coerced = coerce_to_param(builder, v, &pt, ptr);
+                if operand_allocates_heap(a) {
+                    root_temp(cx, builder, coerced, ptr);
+                    roots += 1;
+                }
+                arg_vals.push(coerced);
             }
-            arg_vals.push(v);
+            None => {
+                if operand_allocates_heap(a) {
+                    root_temp(cx, builder, v, ptr);
+                    roots += 1;
+                }
+                arg_vals.push(v);
+            }
         }
     }
     let inst = builder.ins().call(local_ref, &arg_vals);
+    // Capture results before popping roots, which emits further instructions.
+    let results: Vec<Value> = builder.inst_results(inst).to_vec();
     pop_n_roots(cx, builder, roots, ptr);
-    let result = builder.inst_results(inst).first().copied();
-    // A by-value struct return arrives as the single register the ABI
-    // returns it in; rebuild a Raven heap struct from its packed bytes.
-    if let (Some(reg), Some(ret_ty)) = (result, &extern_ret) {
-        if is_extern && is_repr_c_struct(cx, ret_ty) {
-            return Ok(Some(marshal_reg_to_struct(cx, builder, reg, ret_ty)));
-        }
+
+    // Rebuild a by-value struct return into a Raven heap object from the
+    // register(s) or the sret slot it arrived in.
+    if let (Some(abi), Some(ret_ty)) = (ret_struct_abi, &extern_ret) {
+        let obj = match abi {
+            ReprCAbi::OneReg => marshal_reg_to_struct(cx, builder, results[0], ret_ty),
+            ReprCAbi::TwoReg => {
+                let size = cx.repr_c_layout(&ret_ty.mangle()).unwrap().size;
+                let (slot, addr) = struct_image_slot(cx, builder, size);
+                for (k, r) in results.iter().enumerate() {
+                    builder.ins().stack_store(*r, slot, (k as i32) * 8);
+                }
+                image_to_struct(cx, builder, addr, ret_ty)
+            }
+            ReprCAbi::ByRef => image_to_struct(cx, builder, sret_addr.unwrap(), ret_ty),
+        };
+        return Ok(Some(obj));
     }
-    Ok(result)
+    Ok(results.first().copied())
 }
 
 /// True when `ty` is a `@repr(C)` struct with a recorded C layout, the
@@ -2148,6 +2201,174 @@ fn marshal_reg_to_struct(
             .store(MemFlags::new(), field_val, base, layout::slot_offset(i));
     }
     obj
+}
+
+/// The Cranelift integer type that holds exactly `size` bytes (1, 2, 4, or
+/// 8). Used to load and store one C field of a struct image.
+fn int_type_for_size(size: u32) -> CType {
+    match size {
+        1 => types::I8,
+        2 => types::I16,
+        4 => types::I32,
+        _ => types::I64,
+    }
+}
+
+/// How a `@repr(C)` struct crosses the C ABI by value, from its size and the
+/// target calling convention. See `docs/v2/specs/ffi-extensions.md`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum ReprCAbi {
+    /// Packed into one integer register. Sizes up to 8 bytes, with the extra
+    /// Windows x64 requirement that the size be exactly 1, 2, 4, or 8.
+    OneReg,
+    /// Two integer registers (System V AMD64 and AArch64 eightbytes), for a
+    /// 9..=16 byte struct.
+    TwoReg,
+    /// By reference: the caller copies the struct to memory and passes a
+    /// pointer. Windows x64 for sizes 3, 5, 6, 7 and 9..=16, and the
+    /// hidden-pointer (`sret`) form of returning those.
+    ByRef,
+}
+
+/// Classify a `@repr(C)` struct's by-value passing mode from its byte size
+/// and the target calling convention.
+pub(crate) fn classify_repr_c(size: u32, conv: CallConv) -> ReprCAbi {
+    let win64 = matches!(conv, CallConv::WindowsFastcall);
+    if size <= 8 {
+        if win64 && !matches!(size, 1 | 2 | 4 | 8) {
+            ReprCAbi::ByRef
+        } else {
+            ReprCAbi::OneReg
+        }
+    } else if win64 {
+        ReprCAbi::ByRef
+    } else {
+        ReprCAbi::TwoReg
+    }
+}
+
+/// The passing mode for a `@repr(C)` struct MIR type under the target ABI.
+fn repr_c_abi(cx: &ModuleCx, ty: &MirType) -> ReprCAbi {
+    let size = cx
+        .repr_c_layout(&ty.mangle())
+        .expect("is_repr_c_struct checked the layout is present")
+        .size;
+    classify_repr_c(size, cx.default_call_conv())
+}
+
+/// Slot size in bytes for a struct's C image: rounded up to 16 and at least
+/// 8, so a two-eightbyte load never reads past the slot.
+fn image_slot_bytes(size: u32) -> u32 {
+    ((size + 7) & !7).max(8)
+}
+
+/// Copy a `@repr(C)` struct's heap fields into a fresh stack slot at their C
+/// offsets, producing the struct's exact C memory image, and return the slot
+/// address. Used to pass a multi-register or by-reference struct argument.
+fn struct_to_image(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    obj: Value,
+    ty: &MirType,
+) -> Value {
+    let ptr = cx.pointer_type();
+    let layout = cx
+        .repr_c_layout(&ty.mangle())
+        .cloned()
+        .expect("is_repr_c_struct checked the layout is present");
+    let bytes = image_slot_bytes(layout.size);
+    let slot =
+        builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, bytes));
+    let base = call_struct_fields(cx, builder, obj, ptr);
+    for (i, f) in layout.fields.iter().enumerate() {
+        let raw = builder
+            .ins()
+            .load(types::I64, MemFlags::new(), base, layout::slot_offset(i));
+        let (fsize, _) = f
+            .ffi
+            .c_scalar_layout()
+            .expect("repr(C) field is an integer-class scalar");
+        let v = if fsize >= 8 {
+            raw
+        } else {
+            builder.ins().ireduce(int_type_for_size(fsize), raw)
+        };
+        builder.ins().stack_store(v, slot, f.offset as i32);
+    }
+    builder.ins().stack_addr(ptr, slot, 0)
+}
+
+/// Rebuild a Raven heap struct from a `@repr(C)` struct's C memory image at
+/// `addr`. Each field is read at its C offset and width and widened into the
+/// pointer-width heap slot. The inverse of `struct_to_image`.
+fn image_to_struct(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    addr: Value,
+    ty: &MirType,
+) -> Value {
+    let ptr = cx.pointer_type();
+    let layout = cx
+        .repr_c_layout(&ty.mangle())
+        .cloned()
+        .expect("is_repr_c_struct checked the layout is present");
+    let type_id = cx.intern_descriptor(&ty.mangle(), 0);
+    let field_count = layout.fields.len() as i64;
+    let obj = call_struct_new(cx, builder, field_count, type_id, ptr);
+    let base = call_struct_fields(cx, builder, obj, ptr);
+    for (i, f) in layout.fields.iter().enumerate() {
+        let (fsize, _) = f
+            .ffi
+            .c_scalar_layout()
+            .expect("repr(C) field is an integer-class scalar");
+        let raw = builder.ins().load(
+            int_type_for_size(fsize),
+            MemFlags::new(),
+            addr,
+            f.offset as i32,
+        );
+        let widened = if fsize >= 8 {
+            raw
+        } else {
+            builder.ins().uextend(types::I64, raw)
+        };
+        builder
+            .ins()
+            .store(MemFlags::new(), widened, base, layout::slot_offset(i));
+    }
+    obj
+}
+
+/// Load the one or two eightbyte integer registers a struct image at `addr`
+/// occupies, for System V / AArch64 register passing of a 9..=16 byte struct.
+fn image_eightbytes(builder: &mut FunctionBuilder<'_>, addr: Value, size: u32) -> Vec<Value> {
+    let mut out = Vec::new();
+    let mut off: u32 = 0;
+    while off < size {
+        out.push(
+            builder
+                .ins()
+                .load(types::I64, MemFlags::new(), addr, off as i32),
+        );
+        off += 8;
+    }
+    out
+}
+
+/// Allocate a fresh stack slot for a struct's C image and return
+/// `(slot, address)`. Used to receive an `sret` return.
+fn struct_image_slot(
+    cx: &ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    size: u32,
+) -> (StackSlot, Value) {
+    let ptr = cx.pointer_type();
+    let slot = builder.create_sized_stack_slot(StackSlotData::new(
+        StackSlotKind::ExplicitSlot,
+        image_slot_bytes(size),
+    ));
+    let addr = builder.ins().stack_addr(ptr, slot, 0);
+    (slot, addr)
 }
 
 /// Zero every bit of `v` above the low `size` bytes, keeping it i64. A
