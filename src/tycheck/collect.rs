@@ -175,6 +175,9 @@ pub fn collect_declarations(
                 env.statics.insert(id, ty);
             }
             DeclKind::Import(_) => {}
+            // Macros are expanded before the compiler parses; only the
+            // formatter produces this node, so there is no type to collect.
+            DeclKind::Macro(_) => {}
         }
     }
 

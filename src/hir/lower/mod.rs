@@ -359,6 +359,9 @@ fn lower_decl(decl: &Decl, cx: &LowerCtx<'_>) -> Result<Option<HirItem>, RavenEr
             span: decl.span.clone(),
             kind: HirItemKind::Opaque("import".into()),
         })),
+        // Macros are expanded before the compiler parses; only the formatter
+        // produces this node, so it lowers to nothing.
+        DeclKind::Macro(_) => Ok(None),
         DeclKind::Extern(ext) => {
             // Resolve each foreign signature's parameter and return types
             // so codegen can declare the symbol with its C ABI shape.

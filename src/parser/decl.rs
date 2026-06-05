@@ -2,7 +2,7 @@
 
 use crate::ast::{
     Const, Decl, DeclKind, Enum, EnumVariant, Extern, ExternFn, Function, FunctionBody,
-    GenericParam, Impl, Import, ImportSource, LetDecl, Param, Struct, StructField, Trait,
+    GenericParam, Impl, Import, ImportSource, LetDecl, MacroDef, Param, Struct, StructField, Trait,
     VariantPayload,
 };
 use crate::error::{ParseError, RavenError};
@@ -21,6 +21,14 @@ impl Parser {
         while matches!(self.peek_kind(), TokenKind::At) {
             self.parse_item_attr(&mut derives, &mut repr_c)?;
             self.skip_separators();
+        }
+        // `macro name { ... }`. `macro` is a contextual identifier (not a
+        // keyword), so match it by spelling. Only the formatter reaches this:
+        // the compile pipeline expands and strips macros before parsing.
+        if matches!(self.peek_kind(), TokenKind::Identifier(n) if n == "macro")
+            && matches!(self.peek_kind_at(1), TokenKind::Identifier(_))
+        {
+            return self.parse_macro_def();
         }
         match self.peek_kind() {
             TokenKind::Struct => self.parse_struct_decl(derives, repr_c),
@@ -84,6 +92,24 @@ impl Parser {
                 name_span,
             )),
         }
+    }
+
+    /// Parse `macro name { (matcher) => { template } ... }`, capturing the
+    /// body tokens raw. The leading `macro` identifier is at the cursor.
+    fn parse_macro_def(&mut self) -> ParseResult<Decl> {
+        let start = self.advance().span; // `macro`
+        let (name, _) = self.expect_ident("macro name")?;
+        self.expect(&TokenKind::LBrace, "`{`")?;
+        let (body, close_span) = self.capture_balanced(&TokenKind::LBrace, &TokenKind::RBrace)?;
+        let span = merge_spans(&start, &close_span);
+        Ok(Decl {
+            kind: DeclKind::Macro(MacroDef {
+                name,
+                body,
+                span: span.clone(),
+            }),
+            span,
+        })
     }
 
     fn parse_function_decl(&mut self) -> ParseResult<Decl> {

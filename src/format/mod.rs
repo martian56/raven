@@ -14,10 +14,11 @@ use std::fmt::Write as _;
 use crate::ast::{
     AssignOp, BinaryOp, Block, Const, Decl, DeclKind, ElseBranch, Enum, Expr, ExprKind, Extern,
     ExternFn, File, Function, FunctionBody, GenericParam, Impl, Import, ImportSource, LambdaBody,
-    LambdaParam, LetDecl, LiteralPattern, MatchArm, Param, Pattern, PatternKind, Stmt, StmtKind,
-    StrFragment, Struct, StructField, Trait, Type, TypeKind, TypePath, UnaryOp, VariantPayload,
+    LambdaParam, LetDecl, LiteralPattern, MacroDef, MacroDelim, MatchArm, Param, Pattern,
+    PatternKind, Stmt, StmtKind, StrFragment, Struct, StructField, Trait, Type, TypeKind, TypePath,
+    UnaryOp, VariantPayload,
 };
-use crate::lexer::Lexer;
+use crate::lexer::{Lexer, Token, TokenKind};
 use crate::parser::parse;
 
 mod comments;
@@ -51,14 +52,11 @@ pub fn format_source(src: &str) -> Result<String, FormatError> {
     let tokens = Lexer::new(src, "<fmt>")
         .tokenize()
         .map_err(|e| FormatError::Parse(e.to_string()))?;
-    // Macro definitions and `name!(...)` invocations have no AST node (they
-    // are expanded at the token level before parsing in the compile
-    // pipeline), so the AST-based formatter cannot represent them. Rather
-    // than fail, leave a file that uses macros unchanged. Reformatting macro
-    // internals is tracked as a follow-up.
-    if crate::macros::contains_macros(&tokens) {
-        return Ok(src.to_string());
-    }
+    // Macro definitions (`macro name { ... }`) and invocations (`name!(...)`)
+    // are parsed into dedicated AST nodes here (the formatter parses
+    // un-expanded source, unlike the compile pipeline, which expands macros
+    // at the token level first) and rendered by `macro_decl` / the
+    // `MacroCall` expression arm.
     let file = parse(&tokens).map_err(|e| FormatError::Parse(e.to_string()))?;
     let comments = comments::scan(src);
     let mut p = Printer::new(src, comments);
@@ -241,6 +239,7 @@ impl Printer<'_> {
     /// line, if one was found.
     fn decl(&mut self, decl: &Decl) -> Option<String> {
         match &decl.kind {
+            DeclKind::Macro(m) => self.macro_decl(m),
             DeclKind::Function(f) => self.function(f, ""),
             DeclKind::Struct(s) => self.struct_decl(s),
             DeclKind::Trait(t) => self.trait_decl(t),
@@ -251,6 +250,103 @@ impl Printer<'_> {
             DeclKind::Const(c) => self.const_decl(c),
             DeclKind::Let(l) => self.let_decl(l),
         }
+    }
+
+    /// Emit a `macro name { (matcher) => { template } ... }` definition. One
+    /// rule renders on a single line; several rules each get their own
+    /// indented line. The matcher and template token runs are rendered with
+    /// canonical spacing.
+    fn macro_decl(&mut self, m: &MacroDef) -> Option<String> {
+        let rules = split_macro_rules(&m.body);
+        if rules.is_empty() {
+            // The body did not match the expected rule shape; render its
+            // tokens inline so the output still round-trips and re-parses.
+            let body = self.render_macro_tokens(&m.body);
+            self.line(&format!("macro {} {{ {} }}", m.name, body));
+        } else if rules.len() == 1 {
+            let mt = self.render_macro_tokens(&rules[0].0);
+            let tp = self.render_macro_tokens(&rules[0].1);
+            self.line(&format!("macro {} {{ ({}) => {{ {} }} }}", m.name, mt, tp));
+        } else {
+            self.line(&format!("macro {} {{", m.name));
+            self.indent += 1;
+            for (matcher, template) in &rules {
+                let mt = self.render_macro_tokens(matcher);
+                let tp = self.render_macro_tokens(template);
+                self.line(&format!("({}) => {{ {} }}", mt, tp));
+            }
+            self.indent -= 1;
+            self.line("}");
+        }
+        self.take_trailing_comment(self.line_of(m.span.end))
+    }
+
+    /// The exact source text of a token.
+    fn tok_src(&self, t: &Token) -> &str {
+        self.src.get(t.span.start..t.span.end).unwrap_or("")
+    }
+
+    /// Render a macro matcher, template, or call-argument token run with
+    /// canonical spacing. Metavariables (`$x`, `$x:expr`) and the repetition
+    /// sigil `$(` are kept tight; other tokens use expression-like spacing.
+    /// Layout tokens (newlines) are dropped. The result re-lexes to the same
+    /// tokens, so formatting is idempotent.
+    fn render_macro_tokens(&self, raw: &[Token]) -> String {
+        let toks: Vec<&Token> = raw
+            .iter()
+            .filter(|t| !matches!(t.kind, TokenKind::Newline | TokenKind::Eof))
+            .collect();
+        let mut out = String::new();
+        let mut prev: Option<TokenKind> = None;
+        let mut i = 0;
+        while i < toks.len() {
+            let t = toks[i];
+            if matches!(t.kind, TokenKind::Dollar) {
+                if let Some(p) = &prev {
+                    if macro_space_before(p, &TokenKind::Dollar) {
+                        out.push(' ');
+                    }
+                }
+                out.push('$');
+                i += 1;
+                // `$(` repetition group: keep the bracket tight.
+                if i < toks.len() && matches!(toks[i].kind, TokenKind::LParen) {
+                    out.push('(');
+                    prev = Some(TokenKind::LParen);
+                    i += 1;
+                    continue;
+                }
+                // `$name`, optionally with a `:fragment` annotation.
+                if i < toks.len() {
+                    if let TokenKind::Identifier(_) = toks[i].kind {
+                        out.push_str(self.tok_src(toks[i]));
+                        i += 1;
+                        if i + 1 < toks.len()
+                            && matches!(toks[i].kind, TokenKind::Colon)
+                            && matches!(toks[i + 1].kind, TokenKind::Identifier(_))
+                        {
+                            out.push(':');
+                            out.push_str(self.tok_src(toks[i + 1]));
+                            i += 2;
+                        }
+                        // A metavariable behaves like an atom for spacing.
+                        prev = Some(TokenKind::Identifier(String::new()));
+                        continue;
+                    }
+                }
+                prev = Some(TokenKind::Dollar);
+                continue;
+            }
+            if let Some(p) = &prev {
+                if macro_space_before(p, &t.kind) {
+                    out.push(' ');
+                }
+            }
+            out.push_str(self.tok_src(t));
+            prev = Some(t.kind.clone());
+            i += 1;
+        }
+        out
     }
 
     fn function(&mut self, f: &Function, prefix: &str) -> Option<String> {
@@ -727,6 +823,16 @@ impl Printer<'_> {
     /// are woven in from the shared cursor as the block renders.
     fn expr_at(&mut self, e: &Expr, base: usize) -> String {
         match &e.kind {
+            ExprKind::MacroCall(m) => {
+                let (open, close) = macro_delim_chars(m.delim);
+                format!(
+                    "{}!{}{}{}",
+                    m.name,
+                    open,
+                    self.render_macro_tokens(&m.tokens),
+                    close
+                )
+            }
             ExprKind::Int(n) => n.to_string(),
             ExprKind::Float(v) => render_float(*v),
             ExprKind::Bool(b) => b.to_string(),
@@ -1144,6 +1250,112 @@ fn render_param(p: &Param) -> String {
         }
     }
     format!("{}: {}", p.name, render_type(&p.ty))
+}
+
+/// The opening and closing bracket characters for a macro call delimiter.
+fn macro_delim_chars(d: MacroDelim) -> (char, char) {
+    match d {
+        MacroDelim::Paren => ('(', ')'),
+        MacroDelim::Bracket => ('[', ']'),
+        MacroDelim::Brace => ('{', '}'),
+    }
+}
+
+/// Split a macro body (the tokens between the outer braces) into its rules,
+/// each a `(matcher, template)` pair of inner token runs. Returns an empty
+/// vector when the body does not match the `(...) => { ... } ...` shape, so
+/// the caller can fall back to rendering the body inline.
+fn split_macro_rules(body: &[Token]) -> Vec<(Vec<Token>, Vec<Token>)> {
+    let toks: Vec<&Token> = body
+        .iter()
+        .filter(|t| !matches!(t.kind, TokenKind::Newline | TokenKind::Eof))
+        .collect();
+    let mut rules = Vec::new();
+    let mut i = 0;
+    while i < toks.len() {
+        let Some((matcher, after_m)) =
+            capture_macro_group(&toks, i, &TokenKind::LParen, &TokenKind::RParen)
+        else {
+            return Vec::new();
+        };
+        i = after_m;
+        if i >= toks.len() || !matches!(toks[i].kind, TokenKind::FatArrow) {
+            return Vec::new();
+        }
+        i += 1;
+        let Some((template, after_t)) =
+            capture_macro_group(&toks, i, &TokenKind::LBrace, &TokenKind::RBrace)
+        else {
+            return Vec::new();
+        };
+        i = after_t;
+        rules.push((matcher, template));
+    }
+    rules
+}
+
+/// Capture the tokens inside a bracket group that begins at `start` (which
+/// must be `open`), tracking nesting of the same bracket pair. Returns the
+/// inner tokens (cloned, brackets excluded) and the index just past the
+/// closing bracket, or `None` when `start` is not `open` or the group never
+/// closes.
+fn capture_macro_group(
+    toks: &[&Token],
+    start: usize,
+    open: &TokenKind,
+    close: &TokenKind,
+) -> Option<(Vec<Token>, usize)> {
+    if start >= toks.len() || &toks[start].kind != open {
+        return None;
+    }
+    let mut depth = 0usize;
+    let mut inner = Vec::new();
+    let mut i = start;
+    while i < toks.len() {
+        let k = &toks[i].kind;
+        if k == open {
+            depth += 1;
+            if depth > 1 {
+                inner.push(toks[i].clone());
+            }
+        } else if k == close {
+            depth -= 1;
+            if depth == 0 {
+                return Some((inner, i + 1));
+            }
+            inner.push(toks[i].clone());
+        } else {
+            inner.push(toks[i].clone());
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Whether a space goes between two macro tokens. Default is a space, with
+/// the usual tight cases: no space inside call/index brackets, before
+/// punctuation, or after `.`/`$`/`!`.
+fn macro_space_before(prev: &TokenKind, cur: &TokenKind) -> bool {
+    use TokenKind::*;
+    if matches!(
+        cur,
+        Comma | Semi | RParen | RBracket | RBrace | Dot | ColonColon | Question | Colon | Bang
+    ) {
+        return false;
+    }
+    if matches!(prev, LParen | LBracket | Dot | ColonColon | Dollar | Bang) {
+        return false;
+    }
+    // `name(` / `name[` / `)(` stay tight (call or index).
+    if matches!(cur, LParen | LBracket)
+        && matches!(
+            prev,
+            Identifier(_) | RParen | RBracket | SelfLower | SelfUpper
+        )
+    {
+        return false;
+    }
+    true
 }
 
 fn render_type(ty: &Type) -> String {

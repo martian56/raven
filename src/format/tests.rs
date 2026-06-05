@@ -102,14 +102,39 @@ fn defer_stmt() {
 }
 
 #[test]
-fn macro_file_is_left_unchanged() {
-    // Macro definitions and `name!(...)` invocations have no AST node, so the
-    // formatter passes a macro-using file through unchanged rather than
-    // failing to parse it.
-    let src =
-        "macro square { ($x:expr) => { ($x) * ($x) } }\nfun main() {\n    print(square!(5))\n}\n";
+fn macro_definition_and_call_are_formatted() {
+    // A cramped macro definition and the function that uses it both
+    // canonicalize: the rule gets spacing, the metavariable stays tight, and
+    // the `name!(...)` call is laid out like any other expression.
+    let src = "macro square{($x:expr)=>{($x)*($x)}}\nfun main(){\nlet n=square!(5)\nprint(n)\n}\n";
     let out = format_source(src).expect("formatting a macro file must not error");
-    assert_eq!(out, src);
+    let expected = "macro square { ($x:expr) => { ($x) * ($x) } }\nfun main() {\n    let n = square!(5)\n    print(n)\n}\n";
+    assert_eq!(out, expected);
+}
+
+#[test]
+fn multi_rule_macro_splits_onto_lines() {
+    let src = "macro pick{($a:expr,$b:expr)=>{two}($a:expr)=>{one}}\n";
+    let out = format_source(src).expect("format ok");
+    let expected = "macro pick {\n    ($a:expr, $b:expr) => { two }\n    ($a:expr) => { one }\n}\n";
+    assert_eq!(out, expected);
+}
+
+#[test]
+fn macro_formatting_is_idempotent() {
+    let src = "macro twice{($x:expr)=>{($x)+($x)}}\nfun main(){print(twice!(3))}\n";
+    let once = format_source(src).expect("format ok");
+    let twice = format_source(&once).expect("format ok");
+    assert_eq!(
+        once, twice,
+        "formatting an already-formatted macro file is a no-op"
+    );
+}
+
+#[test]
+fn macro_call_with_bracket_delimiter() {
+    let out = fmt("fun f(){let a=make![1,2,3]\n a}");
+    assert!(out.contains("make![1, 2, 3]"), "got: {out}");
 }
 
 #[test]

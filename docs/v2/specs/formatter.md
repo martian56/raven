@@ -104,6 +104,19 @@ Removed from every line.
   recurses into them.
 * Float literals always show a decimal point (`3` written where a float
   is expected renders as `3.0`).
+* Macros. A `macro name { (matcher) => { template } ... }` definition and a
+  `name!(...)` / `name![...]` / `name!{...}` invocation are parsed into
+  dedicated AST nodes (the formatter parses un-expanded source, unlike the
+  compile pipeline, which expands macros at the token level before parsing).
+  A definition with one rule renders on a single line; with several rules
+  each gets its own indented line. The matcher, template, and call arguments
+  are rendered token by token with canonical spacing: metavariables
+  (`$x`, `$x:expr`) and the repetition sigil `$(` stay tight, brackets and
+  punctuation follow the same rules as expressions. The result re-lexes to
+  the same tokens, so macro formatting is idempotent. Because the rendering
+  is token-level (a macro body is not a normal expression), a few constructs
+  such as generic angle brackets inside a template may keep surrounding
+  spaces; the output stays parseable and stable.
 
 There is no line length limit and no expression wrapping: an expression
 renders on one line unless it contains a block bearing sub expression

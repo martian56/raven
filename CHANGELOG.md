@@ -12,6 +12,10 @@ All notable changes to Raven are documented in this file.
 - The parser now recovers at item and statement boundaries, so one compile reports several syntax errors instead of only the first. On a failed top-level item the parser skips to the next item-starting keyword (`fun`, `struct`, `enum`, `trait`, `impl`, `extern`, `import`, or `@`); on a failed statement inside a block it skips to the next statement boundary and keeps parsing the body, so more than one error per function is reported too. Both track bracket depth to step over nested groups, and a compile with parse errors reports them all (de-duplicated) and stops before resolve and type checking. Recovery is opt-in, so a valid program parses unchanged (#294).
 - The type checker now reports multiple errors per compile instead of stopping at the first. The body pass recovers at item and statement boundaries: an error in one function, impl method, `const`, or `let` no longer hides errors in the next, and each statement in a block reports independently. Recovery binds a failed `let` to its annotated type (or `Ty::Error`) so later references do not cascade into spurious follow-on errors, and identical diagnostics are de-duplicated. Each error is rendered with the rich source-pointer format from 2.1.0, separated by a blank line. Parser-level recovery (multiple syntax errors per compile) remains a follow-up (#284).
 
+### Fixed
+
+- `rvpm fmt` now formats files that declare or use macros instead of leaving them untouched. A `macro name { (matcher) => { template } ... }` definition and a `name!(...)` invocation are parsed into dedicated AST nodes (the formatter parses un-expanded source) and rendered canonically: one rule per line for multi-rule macros, with metavariables (`$x:expr`) and the repetition sigil kept tight. The surrounding code in a macro-using file is now formatted normally rather than passed through verbatim (#261).
+
 ## [2.1.6] - 2026-06-04
 
 ### Added

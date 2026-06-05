@@ -3,6 +3,7 @@
 //! Items appear at the module level: functions, types, traits, impls,
 //! enums, extern blocks, imports, constants, and module level lets.
 
+use crate::lexer::Token;
 use crate::span::Span;
 
 use super::expr::{Block, Expr};
@@ -37,6 +38,21 @@ pub enum DeclKind {
     Const(Const),
     /// Module level `let name [: T] [= expr]`. Mutable module global.
     Let(LetDecl),
+    /// `macro name { (matcher) => { template } ... }`. Macros are expanded by
+    /// a token-level pre-pass before the compiler parses, so this node is
+    /// produced only by the formatter (which parses un-expanded source); the
+    /// compile pipeline never sees it.
+    Macro(MacroDef),
+}
+
+/// A declarative macro definition, kept as raw tokens for the formatter to
+/// render. `body` is every token between the outer braces of
+/// `macro name { ... }`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MacroDef {
+    pub name: String,
+    pub body: Vec<Token>,
+    pub span: Span,
 }
 
 /// A function declaration.

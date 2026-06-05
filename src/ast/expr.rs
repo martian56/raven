@@ -5,6 +5,7 @@
 //! lambdas, struct literals. The variants below mirror the grammar in
 //! `docs/v2/specs/parser.md` closely.
 
+use crate::lexer::Token;
 use crate::span::Span;
 
 use super::pattern::Pattern;
@@ -52,6 +53,10 @@ pub enum ExprKind {
     /// A bare identifier, optionally with generic arguments
     /// `name<T1, T2>`.
     Ident { name: String, generics: Vec<Type> },
+    /// A macro invocation `name!(...)`, `name![...]`, or `name!{...}`, kept as
+    /// raw argument tokens for the formatter. Macros are expanded before the
+    /// compiler parses, so this node is produced only by the formatter.
+    MacroCall(MacroCall),
     /// A struct literal: `Point { x: 1, y: 2 }`. The `name` is the type
     /// path source spelling, recorded as identifier segments. Generic
     /// arguments on the path live on the leading `Ident` if any.
@@ -174,6 +179,24 @@ pub enum UnaryOp {
     Not,
     /// `&x` reference. Semantics deferred to the type checker.
     Ref,
+}
+
+/// A macro invocation, kept as raw argument tokens for the formatter.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MacroCall {
+    pub name: String,
+    /// The bracket the call uses: `(`, `[`, or `{`.
+    pub delim: MacroDelim,
+    /// The tokens between the brackets, excluding the brackets themselves.
+    pub tokens: Vec<Token>,
+}
+
+/// The bracket style of a macro invocation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MacroDelim {
+    Paren,
+    Bracket,
+    Brace,
 }
 
 /// Binary infix operators.

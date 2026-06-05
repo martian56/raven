@@ -82,6 +82,10 @@ fn walk_decl(
         DeclKind::Import(_) => {
             // Already resolved by the imports pass.
         }
+        DeclKind::Macro(_) => {
+            // Macros are expanded before the compiler parses; only the
+            // formatter produces this node, so resolution has nothing to do.
+        }
     }
     Ok(())
 }
@@ -298,6 +302,9 @@ fn walk_expr(
         | ExprKind::Str(_)
         | ExprKind::BlockStr(_)
         | ExprKind::Char(_)
+        // A macro call only appears in formatter-parsed source (the compile
+        // pipeline expands macros first), so there are no names to resolve.
+        | ExprKind::MacroCall(_)
         | ExprKind::CStr(_) => {}
         ExprKind::SelfLower => {
             if !scope.in_impl() {

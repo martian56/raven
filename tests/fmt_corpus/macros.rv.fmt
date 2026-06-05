@@ -1,0 +1,13 @@
+macro square { ($x:expr) => { ($x) * ($x) } }
+
+macro pick {
+    ($a:expr, $b:expr) => { ($a) + ($b) }
+    ($a:expr) => { ($a) }
+}
+
+fun main() {
+    let n = square!(5)
+    print(n)
+    print(pick!(1, 2))
+    print(pick!(9))
+}

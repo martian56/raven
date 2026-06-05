@@ -904,6 +904,9 @@ fn rewrite_expr(expr: &mut Expr, rename: &HashMap<String, String>) {
         | ExprKind::Char(_)
         | ExprKind::CStr(_)
         | ExprKind::SelfLower
+        // A macro call only appears in formatter-parsed source; the stdlib
+        // rename pass runs after expansion, so it never sees one.
+        | ExprKind::MacroCall(_)
         | ExprKind::SelfUpper => {}
     }
 }
