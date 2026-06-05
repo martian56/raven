@@ -33,9 +33,6 @@ jobs:
       matrix:
         include:
           - name: linux-x86_64
-            # Build on the oldest supported Ubuntu so the binary links
-            # against an older glibc and runs on 22.04 and 24.04 alike
-            # (glibc is backward compatible, not forward compatible).
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
           - name: windows-x86_64
