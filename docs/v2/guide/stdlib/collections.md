@@ -145,6 +145,52 @@ fun main() {
 }
 ```
 
+### `to_list(self) -> List<T>`
+
+Every element as a list, in hash-bucket order (not insertion order). This is
+the way to enumerate a set: iterate the returned list.
+
+```rust
+import std/collections
+
+fun main() {
+    let s = {1, 2, 3}
+    for x in s.to_list() {
+        print(x)        // 1, 2, 3 (bucket order)
+    }
+}
+```
+
+### `union(self, other: Set<T>) -> Set<T>`
+
+A new set with every element of `self` or `other`.
+
+### `intersection(self, other: Set<T>) -> Set<T>`
+
+A new set with the elements in both `self` and `other`.
+
+### `difference(self, other: Set<T>) -> Set<T>`
+
+A new set with the elements of `self` that are not in `other`.
+
+### `is_subset(self, other: Set<T>) -> Bool`
+
+True when every element of `self` is in `other`.
+
+```rust
+import std/collections
+
+fun main() {
+    let a = {1, 2, 3}
+    let b = {2, 3, 4}
+
+    print(a.union(b).len())         // 4
+    print(a.intersection(b).len())  // 2
+    print(a.difference(b).len())    // 1
+    print({2, 3}.is_subset(a))      // true
+}
+```
+
 ## Map<K: Eq + Hash, V>
 
 A map from keys to values. Construct with a map literal `["a": 1]` (or `[:]`
@@ -189,6 +235,21 @@ fun main() {
 }
 ```
 
+### `get_or(self, k: K, default: V) -> V`
+
+The value for `k`, or `default` when the key is absent. The non-`Option`
+shortcut for `get` when you have a sensible fallback.
+
+```rust
+import std/collections
+
+fun main() {
+    let m = ["a": 1]
+    print(m.get_or("a", 0))     // 1
+    print(m.get_or("z", 0))     // 0
+}
+```
+
 ### `set(self, k: K, v: V)`
 
 Insert `k` with value `v`, or overwrite the existing value when `k` is
@@ -202,6 +263,22 @@ Every key in the map, in hash-bucket order (not insertion order).
 
 Every value in the map, aligned with `keys()`: the value at index `i` in
 `values()` belongs to the key at index `i` in `keys()`.
+
+### `entries(self) -> List<Entry<K, V>>`
+
+Every key/value pair as a list of `Entry`, in hash-bucket order. Each `Entry`
+has a `.key` and a `.value` field.
+
+```rust
+import std/collections
+
+fun main() {
+    let m = ["a": 1, "b": 2]
+    for e in m.entries() {
+        print("${e.key}=${e.value}")    // a=1, then b=2 (bucket order)
+    }
+}
+```
 
 ### `remove(self, k: K) -> Bool`
 
@@ -221,6 +298,20 @@ fun main() {
     print(m.has("a"))           // true
     print(m.remove("b"))        // true
     print(m.remove("z"))        // false
+}
+```
+
+### `clear(self)`
+
+Remove every entry, leaving an empty map.
+
+```rust
+import std/collections
+
+fun main() {
+    let m = ["a": 1, "b": 2]
+    m.clear()
+    print(m.len())              // 0
 }
 ```
 

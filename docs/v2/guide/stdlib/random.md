@@ -107,6 +107,20 @@ fun main() {
 }
 ```
 
+### `gen_range_float(self, lo: Float, hi: Float) -> Float`
+
+A `Float` in the half-open interval `[lo, hi)`. Built from `next_float`
+scaled into the range.
+
+```rust
+import std/random
+
+fun main() {
+    let rng = Rng.new(42)
+    print(rng.gen_range_float(0.0, 10.0))     // e.g. 7.41...
+}
+```
+
 ### `next_bool(self) -> Bool`
 
 `true` or `false` from the low bit of a draw, a fair coin flip.
@@ -156,6 +170,45 @@ fun main() {
     rng.shuffle(deck)
     for card in deck {
         print(card)     // some permutation of 1, 2, 3, 4, 5
+    }
+}
+```
+
+### `sample<T>(self, xs: List<T>, n: Int) -> List<T>`
+
+Draw `n` elements from `xs` without replacement, in random order. If `n`
+exceeds the list length, every element is returned (shuffled). The source
+list is left unchanged.
+
+```rust
+import std/random
+
+fun main() {
+    let rng = Rng.new(42)
+    let xs = ["a", "b", "c", "d", "e"]
+    for p in rng.sample(xs, 3) {
+        print(p)     // three distinct elements, random order
+    }
+}
+```
+
+### `weighted_choice<T>(self, xs: List<T>, weights: List<Int>) -> Option<T>`
+
+Choose an element of `xs` with probability proportional to the matching entry
+of `weights`. Returns `None` when the lists are empty or the total weight is
+not positive.
+
+```rust
+import std/random
+
+fun main() {
+    let rng = Rng.new(42)
+    let items = ["red", "green", "blue"]
+    let weights = [1, 1, 8]
+
+    match rng.weighted_choice(items, weights) {
+        Some(c) -> print(c),       // "blue" most of the time
+        None -> print("empty"),
     }
 }
 ```

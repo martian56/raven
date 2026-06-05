@@ -304,6 +304,97 @@ fun main() {
 }
 ```
 
+### `sum<S: Iterator<Int>>(it: S) -> Int`
+
+Sum of every remaining element of an `Int` iterator. `0` for an empty
+iterator.
+
+### `product<S: Iterator<Int>>(it: S) -> Int`
+
+Product of every remaining element of an `Int` iterator. `1` for an empty
+iterator.
+
+```rust
+import std/iter { sum, product }
+
+fun main() {
+    print(sum([3, 1, 4, 1, 5, 9].iter()))   // 23
+    print(product([1, 2, 3, 4].iter()))     // 24
+}
+```
+
+### `min<T: Ord, S: Iterator<T>>(it: S) -> Option<T>`
+
+The smallest element by `Ord`, or `None` when the iterator is empty.
+
+### `max<T: Ord, S: Iterator<T>>(it: S) -> Option<T>`
+
+The largest element by `Ord`, or `None` when the iterator is empty.
+
+```rust
+import std/iter { min, max }
+
+fun main() {
+    let xs = [3, 1, 4, 1, 5, 9]
+    print(match min(xs.iter()) {
+        Some(v) -> v,
+        None -> -1,
+    })      // 1
+    print(match max(xs.iter()) {
+        Some(v) -> v,
+        None -> -1,
+    })      // 9
+}
+```
+
+### `position<T, S: Iterator<T>>(it: S, pred: fun(T) -> Bool) -> Option<Int>`
+
+The index of the first element satisfying `pred`, or `None` when none does.
+
+```rust
+import std/iter { position }
+
+fun main() {
+    let xs = [3, 1, 4, 1, 5]
+    print(match position(xs.iter(), fun(x: Int) -> Bool = x == 4) {
+        Some(i) -> i,
+        None -> -1,
+    })      // 2
+}
+```
+
+### `nth<T, S: Iterator<T>>(it: S, n: Int) -> Option<T>`
+
+The element at index `n` (zero-based), or `None` when the iterator is shorter.
+
+```rust
+import std/iter { nth }
+
+fun main() {
+    let xs = [10, 20, 30, 40]
+    print(match nth(xs.iter(), 2) {
+        Some(v) -> v,
+        None -> -1,
+    })      // 30
+}
+```
+
+### `last<T, S: Iterator<T>>(it: S) -> Option<T>`
+
+The final element, or `None` when the iterator is empty.
+
+```rust
+import std/iter { last }
+
+fun main() {
+    let xs = [1, 2, 3]
+    print(match last(xs.iter()) {
+        Some(v) -> v,
+        None -> -1,
+    })      // 3
+}
+```
+
 ## Worked example: combining adapters and a consumer
 
 A pipeline is built with the adapter methods and then handed to a consumer.

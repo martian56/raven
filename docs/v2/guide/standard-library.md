@@ -97,6 +97,8 @@ helpers.
 | Module | What it is for |
 |--------|----------------|
 | [std/collections](stdlib/collections.md) | hash-backed `Map` and `Set` |
+| [std/list](stdlib/list.md) | utility functions over the built-in `List` |
+| [std/option](stdlib/option.md) | combinators over the built-in `Option` |
 | [std/iter](stdlib/iter.md) | lazy iterator adapters and consumers |
 | [std/cmp](stdlib/cmp.md) | sorting and comparison helpers |
 | [std/hash](stdlib/hash.md) | non-cryptographic hashing |

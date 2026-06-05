@@ -119,6 +119,67 @@ fun main() {
 }
 ```
 
+### `assert_eq<T: Eq + ToString>(a: T, b: T)` and `assert_ne<T: Eq + ToString>(a: T, b: T)`
+
+Generic equality and inequality over any `Eq + ToString` type. `assert_eq`
+fails when `a != b`, `assert_ne` fails when `a == b`. Both interpolate the two
+values into the failure message.
+
+```rust
+import std/test { assert_eq, assert_ne }
+
+fun main() {
+    assert_eq(2 + 2, 4)
+    assert_ne("yes", "no")
+}
+```
+
+### `assert_eq_float(a: Float, b: Float, eps: Float)`
+
+Fails when `a` and `b` differ by more than `eps`. This is the right way to
+compare floats: exact `==` is unreliable for computed results.
+
+```rust
+import std/test { assert_eq_float }
+
+fun main() {
+    assert_eq_float(0.1 + 0.2, 0.3, 0.0001)
+}
+```
+
+### `assert_some<T>(o: Option<T>)` and `assert_none<T>(o: Option<T>)`
+
+`assert_some` fails on `None`, `assert_none` fails on `Some`.
+
+```rust
+import std/test { assert_some, assert_none }
+
+fun main() {
+    assert_some(Some(5))
+    let empty: Option<Int> = None
+    assert_none(empty)
+}
+```
+
+### `assert_ok<T, E>(r: Result<T, E>)` and `assert_err<T, E>(r: Result<T, E>)`
+
+`assert_ok` fails on `Err`, `assert_err` fails on `Ok`.
+
+```rust
+import std/test { assert_ok, assert_err }
+import std/error { Error, error }
+
+fun parse(s: String) -> Result<Int, Error> {
+    return Ok(7)
+}
+
+fun main() {
+    assert_ok(parse("7"))
+    let bad: Result<Int, Error> = Err(error("bad input"))
+    assert_err(bad)
+}
+```
+
 ## Worked example: a test program
 
 A test file is a regular `.rv` program with a `main` that asserts. The

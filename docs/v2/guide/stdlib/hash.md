@@ -29,7 +29,7 @@ Every entry is a free function, so bring in the ones you need with a selective
 import:
 
 ```rust
-import std/hash { fnv1a, djb2, hash_int, combine, checksum }
+import std/hash { fnv1a, djb2, crc32, hash_int, combine, checksum }
 ```
 
 ## A note on integers
@@ -56,6 +56,7 @@ that does not matter for a non-cryptographic hash.
 | `djb2(s: String)` | `Int` | classic djb2 string hash (`hash * 33 + byte`, seed 5381) |
 | `hash_int(n: Int)` | `Int` | splitmix64-style bit-mix so sequential ints scatter |
 | `combine(seed: Int, value: Int)` | `Int` | fold two hashes into one (boost `hash_combine`) |
+| `crc32(s: String)` | `Int` | CRC-32 IEEE checksum, in `[0, 2^32)` |
 | `checksum(s: String)` | `Int` | additive byte checksum; cheap and weak, change detection only |
 
 ## Hashing strings
@@ -85,6 +86,20 @@ import std/hash { djb2 }
 
 fun main() {
     print(djb2("raven"))
+}
+```
+
+### `crc32(s: String) -> Int`
+
+The CRC-32 IEEE checksum of the bytes of `s`. Unlike the i64 hashes above,
+the result is always in `[0, 2^32)` and never negative. A checksum for change
+detection, not for security.
+
+```rust
+import std/hash { crc32 }
+
+fun main() {
+    print(crc32("123456789"))   // 3421780262
 }
 ```
 

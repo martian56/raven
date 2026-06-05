@@ -96,6 +96,7 @@ nav:
       - std/encoding: v2/guide/stdlib/encoding.md
     - Data structures and iteration:
       - std/collections: v2/guide/stdlib/collections.md
+      - std/list: v2/guide/stdlib/list.md
       - std/iter: v2/guide/stdlib/iter.md
       - std/cmp: v2/guide/stdlib/cmp.md
       - std/hash: v2/guide/stdlib/hash.md
@@ -116,6 +117,7 @@ nav:
     - Concurrency, errors, FFI, testing:
       - std/sync: v2/guide/stdlib/sync.md
       - std/error: v2/guide/stdlib/error.md
+      - std/option: v2/guide/stdlib/option.md
       - std/ffi: v2/guide/stdlib/ffi.md
       - std/test: v2/guide/stdlib/test.md
   - rvpm: v2/guide/rvpm.md

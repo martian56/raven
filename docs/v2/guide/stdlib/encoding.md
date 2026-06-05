@@ -20,7 +20,7 @@ Every entry is a free function, so bind the ones you need with a selective
 import:
 
 ```rust
-import std/encoding { hex_encode, hex_decode, base64_encode, base64_decode }
+import std/encoding { hex_encode, hex_decode, base64_encode, base64_decode, url_encode, url_decode, base32_encode, base32_decode }
 ```
 
 Unlike [std/string](string.md) (which merges an `impl String` block on a bare
@@ -119,6 +119,87 @@ import std/encoding { base64_encode, base64_decode }
 fun main() {
     let s = "Hello, Raven"
     print(base64_decode(base64_encode(s)) == s)   // true
+}
+```
+
+## URL percent encoding
+
+### `url_encode(s: String) -> String`
+
+Percent-encode the input bytes per RFC 3986. Unreserved characters (`A-Z`,
+`a-z`, `0-9`, `-`, `.`, `_`, `~`) pass through; every other byte becomes
+`%XX` with uppercase hex digits. A space becomes `%20`.
+
+```rust
+import std/encoding { url_encode }
+
+fun main() {
+    print(url_encode("a b/c"))      // a%20b%2Fc
+    print(url_encode("hi~there"))   // hi~there  (unreserved pass through)
+}
+```
+
+### `url_decode(s: String) -> String`
+
+The inverse of `url_encode`. Reads each `%XX` escape back into its byte and
+leaves other characters untouched.
+
+```rust
+import std/encoding { url_decode }
+
+fun main() {
+    print(url_decode("a%20b%2Fc"))  // a b/c
+}
+```
+
+Encode then decode round-trips for any input:
+
+```rust
+import std/encoding { url_encode, url_decode }
+
+fun main() {
+    let s = "name=John Doe&id=7"
+    print(url_decode(url_encode(s)) == s)   // true
+}
+```
+
+## Base32
+
+### `base32_encode(s: String) -> String`
+
+Encode the input bytes with the RFC 4648 base32 alphabet (`A-Z`, `2-7`) and
+`=` padding. Every five input bytes become eight output characters; a partial
+final group is padded with `=`.
+
+```rust
+import std/encoding { base32_encode }
+
+fun main() {
+    print(base32_encode("foobar"))  // MZXW6YTBOI======
+}
+```
+
+### `base32_decode(s: String) -> String`
+
+The inverse of `base32_encode`. Honors trailing `=` padding to recover how
+many bytes the final group yields.
+
+```rust
+import std/encoding { base32_decode }
+
+fun main() {
+    print(base32_decode("MZXW6YTBOI======"))    // foobar
+}
+```
+
+Encode then decode round-trips for any input:
+
+```rust
+import std/encoding { base32_encode, base32_decode }
+
+fun main() {
+    let s = "Hello, Raven"
+    print(base32_decode(base32_encode(s)) == s)   // true
 }
 ```
 

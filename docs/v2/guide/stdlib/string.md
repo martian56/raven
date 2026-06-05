@@ -81,6 +81,20 @@ The single byte at index `i`, returned as a one-byte string. An out-of-range
 index yields the empty string. (For multi-byte characters this returns one
 byte of the encoding, not the whole character.)
 
+### `byte_at(self, i: Int) -> Int`
+
+The raw byte value (0..255) at index `i`, or `-1` when `i` is out of range.
+Where `char_at` gives a one-byte string, `byte_at` gives the numeric byte.
+
+```rust
+import std/string
+
+fun main() {
+    print("raven".byte_at(0))       // 114
+    print("raven".byte_at(9))       // -1
+}
+```
+
 ### `substring(self, start: Int, end: Int) -> String`
 
 The half-open byte range `[start, end)`, clamped to `0..length`. A `start`
@@ -128,12 +142,58 @@ fun main() {
 }
 ```
 
+### `trim_start(self) -> String` and `trim_end(self) -> String`
+
+Remove leading (`trim_start`) or trailing (`trim_end`) ASCII whitespace only,
+leaving the other end untouched.
+
+```rust
+import std/string
+
+fun main() {
+    print("  hi  ".trim_start())     // "hi  "
+    print("  hi  ".trim_end())       // "  hi"
+}
+```
+
+### `reverse(self) -> String`
+
+The string with its bytes reversed. For ASCII this reverses characters; a
+multi-byte character's encoding is reversed byte-wise.
+
+```rust
+import std/string
+
+fun main() {
+    print("raven".reverse())        // nevar
+}
+```
+
 ## Searching
 
 ### `index_of(self, needle: String) -> Int`
 
 The byte index of the first occurrence of `needle`, or `-1` when it is
 absent. An empty needle matches at `0`.
+
+### `last_index_of(self, needle: String) -> Int`
+
+The byte index of the last occurrence of `needle`, or `-1` when it is absent.
+An empty needle matches at `length`.
+
+### `count(self, needle: String) -> Int`
+
+The number of non-overlapping occurrences of `needle`, scanning left to right.
+An empty needle counts as `0`.
+
+```rust
+import std/string
+
+fun main() {
+    print("a-b-a".last_index_of("a"))   // 4
+    print("a-b-a".count("a"))           // 2
+}
+```
 
 ### `contains(self, needle: String) -> Bool`
 
@@ -178,6 +238,95 @@ import std/string
 fun main() {
     print("a-b-c".replace("-", "+"))        // a+b+c
     print("one".concat(" ").concat("two"))  // one two
+}
+```
+
+## Splitting
+
+### `split(self, sep: String) -> List<String>`
+
+Split on every non-overlapping occurrence of `sep`, left to right. Consecutive
+separators produce empty pieces. An empty `sep` returns the whole string as a
+single element.
+
+```rust
+import std/string
+
+fun main() {
+    for p in "a,b,c".split(",") {
+        print(p)        // a, then b, c
+    }
+}
+```
+
+### `split_whitespace(self) -> List<String>`
+
+Split on runs of ASCII whitespace, discarding empty pieces. Leading and
+trailing whitespace produce no empty elements.
+
+```rust
+import std/string
+
+fun main() {
+    for w in "  one   two  ".split_whitespace() {
+        print(w)        // one, then two
+    }
+}
+```
+
+### `lines(self) -> List<String>`
+
+Split into lines on `\n`, stripping a trailing `\r` from each line so both
+Unix and Windows endings work. A trailing newline does not produce a final
+empty line.
+
+```rust
+import std/string
+
+fun main() {
+    for l in "x\r\ny".lines() {
+        print(l)        // x, then y
+    }
+}
+```
+
+## Parsing
+
+### `parse_int(self) -> Option<Int>`
+
+Parse a base-10 integer with an optional leading `+` or `-`. The string is
+trimmed first. Returns `None` when it is empty or holds any non-digit
+character.
+
+```rust
+import std/string
+
+fun main() {
+    match "  -42 ".parse_int() {
+        Some(n) -> print(n),        // -42
+        None -> print("no int"),
+    }
+    match "12x".parse_int() {
+        Some(n) -> print(n),
+        None -> print("no int"),    // no int
+    }
+}
+```
+
+### `parse_float(self) -> Option<Float>`
+
+Parse a floating point number: an optional sign, an integer part, an optional
+`.fraction`, and an optional `e`/`E` exponent. The string is trimmed first.
+Returns `None` on any trailing or invalid character.
+
+```rust
+import std/string
+
+fun main() {
+    match "3.5e2".parse_float() {
+        Some(f) -> print(f),        // 350
+        None -> print("no float"),
+    }
 }
 ```
 

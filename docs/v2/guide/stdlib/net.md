@@ -94,6 +94,30 @@ buffer carried in a `String` (lossy UTF-8 at the FFI boundary), not
 guaranteed text. A clean end of stream returns `Ok("")`, so an empty result
 means EOF rather than an error.
 
+### `read_all(self) -> Result<String, Error>`
+
+Read until end of stream, accumulating every byte into one `String`. It reads
+in 4 KiB chunks and stops at a clean EOF. Like `read`, the payload is a byte
+buffer carried in a `String`, not guaranteed text.
+
+```rust
+import std/net { connect }
+
+fun main() {
+    match connect("example.com:80") {
+        Ok(stream) -> {
+            stream.write("GET / HTTP/1.0\r\nHost: example.com\r\n\r\n")
+            match stream.read_all() {
+                Ok(body) -> print(body),
+                Err(e) -> print(e.message),
+            }
+            stream.close()
+        }
+        Err(e) -> print(e.message),
+    }
+}
+```
+
 ### `write(self, data: String) -> Result<Int, Error>`
 
 Write all bytes of `data` and return the count written.
