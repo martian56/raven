@@ -1,0 +1,39 @@
+// @derive(Eq) makes `==` and `!=` compare by value (through the generated
+// `equals` method), not by object identity. The struct comparison recurses
+// into the enum field's derived equality. Prints:
+//   in progress
+//   not done
+//   same task
+//   different task
+@derive(Eq, ToString)
+enum Status {
+    Todo,
+    Doing,
+    Done,
+}
+
+@derive(Eq)
+struct Task {
+    id: Int,
+    status: Status,
+}
+
+fun main() {
+    let s = Status.Doing
+    if s == Status.Doing {
+        print("in progress")
+    }
+    if s != Status.Done {
+        print("not done")
+    }
+
+    let a = Task { id: 1, status: Status.Doing }
+    let b = Task { id: 1, status: Status.Doing }
+    let c = Task { id: 2, status: Status.Doing }
+    if a == b {
+        print("same task")
+    }
+    if a != c {
+        print("different task")
+    }
+}

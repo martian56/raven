@@ -80,6 +80,13 @@ fn v2_examples_match_golden_baselines() {
 
         ran += 1;
 
+        // Normalize line endings before storing or comparing: a program that
+        // prints through C `printf` emits CRLF on Windows (the CRT text mode),
+        // and git normalizes the committed `.rv.out` baseline to LF, so the
+        // raw bytes would spuriously differ across platforms.
+        let normalize = |s: &str| s.replace("\r\n", "\n");
+        let stdout = normalize(&stdout);
+
         if update {
             std::fs::write(&example.baseline, &stdout)
                 .unwrap_or_else(|e| panic!("write baseline {}: {}", example.baseline.display(), e));
@@ -87,7 +94,7 @@ fn v2_examples_match_golden_baselines() {
         }
 
         let expected = match std::fs::read_to_string(&example.baseline) {
-            Ok(s) => s,
+            Ok(s) => normalize(&s),
             Err(e) => {
                 failures.push(format!(
                     "{}: missing baseline {} ({}); run RAVEN_UPDATE_GOLDEN=1 to create it",
