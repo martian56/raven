@@ -32,6 +32,11 @@ stop of all mutator threads.
 
 ## The central problem: a shared heap and a coordinated GC
 
+> This section describes the **shared-heap** model. Implementation attempts (see
+> "What the implementation attempts proved" below) surfaced an alternative,
+> **share-nothing**, and showed the model choice must be made first. Read this
+> as the shared-heap branch, not a settled decision.
+
 With multiple OS threads, two goroutines on different OS threads can hold the
 same object (they pass it through a channel, or a captured closure env). So:
 
@@ -115,55 +120,89 @@ worker is still lost for the call's duration. Proper integration is an event
 loop / IO reactor that parks the goroutine and wakes it on completion. This is
 the last slice and is independent of the GC core.
 
-## Slice plan
+## What the implementation attempts proved
 
-Ordered so each slice is independently shippable and verifiable, and the
-risky GC core is approached incrementally rather than in one rewrite.
+Three attempts de-risked the foundation and corrected the plan. Each ruled out
+an approach that looked reasonable on paper, so they are worth recording.
 
-1. **Shared heap + cross-thread root registry + serializing GC lock (one
-   slice).** A first attempt split this into "move the heap to a global" alone,
-   but that is not a safe unit: the moment more than one OS thread touches the
-   runtime, a collection on thread B scans only B's thread-local roots and
-   frees objects thread A still holds, a use-after-free. The runtime's own test
-   harness is multi-threaded (cargo runs tests in parallel, and the GC tests
-   spawn threads), so a global heap with thread-local roots corrupts the heap
-   immediately, before any parallelism feature exists. **The heap, the root
-   enumeration, and exclusive collection access are therefore coupled and must
-   land together:**
-   - the heap and object list move from `thread_local!` to a global,
-     lock-protected structure;
-   - every OS thread registers its shadow-stack root chain in a global
-     registry, and a collection scans every registered chain (plus the parked
-     goroutines and channel buffers the scheduler already exposes), not just the
-     current thread's;
-   - allocation and collection take a global GC lock so a collection has
-     exclusive access to a quiescent heap (no concurrent mutation). For
-     single-OS-thread production this lock is uncontended; for the concurrent
-     test harness it is what makes the shared heap correct.
+1. **The heap, the cross-thread root registry, and exclusive collection access
+   are one coupled unit, not separable slices.** Moving the heap to a global
+   while roots stayed thread-local was tried and corrupted memory immediately
+   (`STATUS_HEAP_CORRUPTION`): a collection on one thread scanned only its own
+   roots and freed objects another thread held. The test harness alone is
+   multi-threaded enough to trigger it.
+2. **The hard primitives build and test cleanly in isolation.** The
+   stop-the-world coordinator (#350) and the cross-thread root registry (#351)
+   are merged, each stress-tested standalone (exclusivity, liveness under churn,
+   cross-context enumeration). They are correct building blocks.
+3. **Safepoint stop-the-world only works for cooperative mutators, so the GC
+   cross-thread wiring cannot land before the M:N scheduler.** Wiring the
+   coordinator + registry into the collector (PR #352, closed) deadlocked CI:
+   `collect()` waits for every registered thread to reach a safepoint (a poll at
+   allocation), but the Rust test harness's reused runner threads register on
+   first GC touch and then run non-allocating code that never polls, so a
+   collection waits forever. This is not a coordinator bug; a safepoint protocol
+   is only meaningful when every mutator has poll points, which only **compiled
+   Raven goroutine threads** do. The GC wiring can therefore only be validated
+   against real goroutines on an OS-thread pool, so **it must land together with
+   the scheduler, not before it.**
 
-   Execution is still single-scheduler-thread; this slice only makes the
-   collector correct under *any* threading. It is the foundation, and bigger
-   than first scoped, but it is the minimal safe unit. Verified by the existing
-   suite (including the multi-threaded GC tests) staying green.
-2. **Safepoint protocol.** Replace the coarse global GC lock with a
-   `gc_requested`/`parked` safepoint poll at allocation and scheduler
-   back-edges, so threads cooperatively reach a stop instead of blocking on the
-   lock. Still one scheduler thread, so "all threads parked" is trivially true;
-   lands and tests the mechanism with no real concurrency.
-3. **M:N scheduler (#237) + the safepoint GC engaged.** The OS thread pool, the
-   shared ready queue, per-worker current-goroutine state, and the stop
-   protocol now coordinating real threads. This is the parallelism slice and
-   the one that needs the heaviest testing (parallel allocation stress, a
-   channel ping-pong across workers, a GC-under-parallel-load stress).
-4. **Cross-thread channels + sync primitives (#241).** Lock the channel,
-   wake across workers, add mutex/waitgroup and a yielding sleep/timers.
-5. **TLAB allocation + work-stealing (perf).** Remove the allocation-lock and
-   ready-queue contention. Pure optimization; correctness unchanged.
-6. **select (#239)** and **non-blocking IO (#240).** Build on the park/wake
-   machinery; independent of the GC core.
+A useful artifact from attempt 3: the object header is a pinned 16-byte layout,
+so the one-bit mark could not widen. Reinterpreting `gc_bits` as a per-collection
+**mark epoch** (an object is marked when `gc_bits == current_epoch`) keeps a
+stale mark left by one thread's collection of a shared object from confusing
+another thread's later sweep, and removes the clear-marks pass. That commit is
+preserved on the closed branch `feat/gc-cross-thread-collection`.
 
-Slice 1 is the foundation (and, per the finding above, larger than a heap
-refactor alone); slice 3 is the high-risk core and gates everything after it.
+## Two models, and the fork to decide first
+
+Both viable parallelism models have a hard part; neither is a quick win.
+
+- **Shared heap (Go-style).** Goroutines on any worker share objects directly
+  (channels and captured closures pass pointers). Needs the cross-thread,
+  safepoint-coordinated collector above. Hard part: the memory-safety-critical
+  GC, validatable only once cooperative goroutine threads exist.
+- **Share-nothing (worker-isolated heaps).** Each worker keeps its own heap and
+  cooperative scheduler, today's runtime replicated per worker, so the GC stays
+  per-worker and unchanged. Hard part: transferring a value across workers, a
+  spawn closure with its captures and any heap value sent on a cross-worker
+  channel, must be deep-copied from one heap to another, and cross-worker
+  channels need thread-safe queues plus cross-worker wakeups. For the current
+  channel surface (which carries `Int`) the channel copy is trivial, but `spawn`
+  already hands a closure to another worker, so the closure transfer is the
+  first real cost.
+
+Neither sidesteps concurrency's intrinsic difficulty: shared-heap pays it in
+the collector, share-nothing pays it in cross-worker transfer. The choice is a
+language-semantics decision, do channels and closures share or copy across
+cores, and it shapes every later slice, so it is decided first.
+
+## Slice plan (corrected)
+
+The original plan put a GC foundation first and the scheduler third; attempt 3
+showed that order is impossible (the GC wiring is untestable without the
+scheduler). The corrected order pairs them.
+
+1. **Decide the model** (shared-heap vs share-nothing). Everything else depends
+   on it.
+2. **M:N scheduler core and GC handling, together.** An OS-thread worker pool, a
+   ready queue, per-worker current-goroutine state, and goroutines actually
+   running on multiple OS threads, *with* the GC made correct for the chosen
+   model (shared-heap: the merged coordinator + registry + epoch marking
+   engaged, now validatable by real cooperative goroutine threads; share-nothing:
+   per-worker heaps plus a cross-worker value-transfer path). The high-risk core.
+   Verified end to end by a compiled Raven program that spawns goroutines which
+   run in parallel, and a GC-under-parallel-load stress built from goroutines
+   (not the Rust test harness).
+3. **Cross-worker channels and sync primitives (#241).** Thread-safe channels,
+   cross-worker wake, mutex/waitgroup, a yielding sleep/timers.
+4. **Work-stealing / load balancing and TLAB allocation (perf).** Pure
+   optimization once correctness holds.
+5. **select (#239)** and **non-blocking IO (#240).**
+
+The merged primitives (#350, #351) and the epoch insight feed slice 2 under the
+shared-heap model; under share-nothing they are set aside and the per-worker GC
+is reused unchanged.
 
 ## Verification
 
