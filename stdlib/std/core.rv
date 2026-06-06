@@ -79,6 +79,57 @@ impl Eq for String {
     }
 }
 
+// ----- Eq for the built-in generic types -----
+//
+// `==`/`!=` on these compare by value through `equals`: an element type must
+// itself implement `Eq`, which the bound requires.
+
+impl<T: Eq> Eq for Option<T> {
+    fun equals(self, other: Option<T>) -> Bool {
+        return match self {
+            Some(a) -> match other {
+                Some(b) -> a.equals(b),
+                None -> false,
+            },
+            None -> match other {
+                Some(_) -> false,
+                None -> true,
+            },
+        }
+    }
+}
+
+impl<T: Eq, E: Eq> Eq for Result<T, E> {
+    fun equals(self, other: Result<T, E>) -> Bool {
+        return match self {
+            Ok(a) -> match other {
+                Ok(b) -> a.equals(b),
+                Err(_) -> false,
+            },
+            Err(a) -> match other {
+                Ok(_) -> false,
+                Err(b) -> a.equals(b),
+            },
+        }
+    }
+}
+
+impl<T: Eq> Eq for List<T> {
+    fun equals(self, other: List<T>) -> Bool {
+        if self.len() != other.len() {
+            return false
+        }
+        let i = 0
+        while i < self.len() {
+            if !self.get(i).equals(other.get(i)) {
+                return false
+            }
+            i = i + 1
+        }
+        return true
+    }
+}
+
 // ----- Ord for the built-in scalar types -----
 
 impl Ord for Int {
