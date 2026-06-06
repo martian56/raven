@@ -7,14 +7,25 @@
 //! a frame's root array on entry and unregisters it on exit. See
 //! `docs/v2/specs/gc.md` for the full design and the ABI contract.
 //!
-//! # Single-threaded assumption
+//! # Threading model
 //!
-//! v2.0 compiled programs are single threaded. The collector state
-//! lives in `thread_local!` cells, so each thread that ever touches the
-//! runtime gets its own independent heap and shadow stack. Sharing GC
-//! objects across threads is undefined in v2.0; the thread-local form
-//! simply keeps the global state sound under Rust's aliasing rules
-//! without a lock.
+//! Each thread keeps its own heap (the all-objects list and allocation
+//! accounting stay in `thread_local!` cells) and sweeps only that heap, so a
+//! collection never frees another thread's objects. Its shadow stack, however,
+//! lives in a [`RootContext`](crate::roots::RootContext) registered in a global
+//! [`RootRegistry`], and a collection scans every registered context, so an
+//! object one thread holds survives a collection any thread runs (the basis for
+//! sharing objects across the future OS-thread pool). The cross-thread scan is
+//! made race-free by the stop-the-world coordinator (`crate::stw`): a
+//! collection parks every other registered thread at a safepoint first. Marking
+//! is epoch-based (an object is marked when its `gc_bits` equals the current
+//! collection's epoch), so a mark left by another thread's collection of a
+//! shared object carries a different epoch and does not confuse a later
+//! per-thread sweep. A single-threaded program registers exactly one context,
+//! never waits at a safepoint, and behaves as the old thread-local collector
+//! did. Compiled v2 programs are still single threaded today; this machinery is
+//! the groundwork for multi-core parallelism (see
+//! `docs/v2/specs/concurrency-parallelism.md`).
 
 use crate::object::structval::{STRUCT_FIELDS_OFFSET, STRUCT_FIELD_SLOT};
 use crate::object::{
@@ -22,9 +33,108 @@ use crate::object::{
     TAG_CLOSURE, TAG_LIST, TAG_MAP, TAG_SET, TAG_STRUCT,
 };
 use crate::object::{MapEntry, SetEntry, BOX_PAYLOAD_OFFSET};
+use crate::roots::{RootContext, RootRegistry};
+use crate::stw::StopTheWorld;
 use crate::{raven_alloc, raven_dealloc};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+
+/// Registry of every live thread's shadow-stack [`RootContext`]. A collection
+/// scans every registered context, so an object one thread holds survives a
+/// collection that another thread triggers (the basis for sharing objects
+/// across the future OS-thread pool). For a single-threaded program this holds
+/// exactly one context and the scan is identical to the old thread-local walk.
+static ROOT_REGISTRY: RootRegistry = RootRegistry::new();
+
+/// Coordinates the stop-the-world pause. A collection parks every other
+/// registered thread at a safepoint before it reads their root contexts, so
+/// the cross-thread scan never races a mutator updating its own shadow stack.
+/// Single-threaded programs never wait (no other thread to stop).
+static COORDINATOR: StopTheWorld = StopTheWorld::new();
+
+/// Monotonic count of collections, the source of mark epochs.
+static GC_EPOCH: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// The epoch of the collection in progress. Marking writes this value into an
+/// object's `gc_bits`; an object is "marked" exactly when its `gc_bits` equals
+/// the current epoch. Because every collection uses a fresh epoch, a mark left
+/// by a previous collection, or by another thread's collection of a shared
+/// object, does not count as marked here, which is what lets a per-thread
+/// sweep coexist with cross-thread marking without a stale-mark bug. Collections
+/// are serialized by the coordinator, so this is written by one thread at a time.
+static CURRENT_EPOCH: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Allocate the next mark epoch, skipping 0 (a freshly zeroed header has
+/// `gc_bits == 0`, so epoch 0 must never mean "marked").
+fn next_epoch() -> u32 {
+    use std::sync::atomic::Ordering;
+    let mut e = GC_EPOCH.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
+    if e == 0 {
+        e = GC_EPOCH.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
+    }
+    e
+}
+
+thread_local! {
+    /// This thread's shadow-stack context, owned here and registered in
+    /// `ROOT_REGISTRY` for the lifetime of the thread. Allocated on first use
+    /// (the first GC touch) and deregistered on thread exit.
+    static LOCAL_ROOTS: LocalRoots = LocalRoots::register();
+}
+
+/// Owns a thread's [`RootContext`] and keeps it registered with the collector.
+/// Registration with the coordinator means a collection waits for this thread
+/// to reach a safepoint before scanning its roots; deregistration on drop
+/// keeps a collection from waiting on a thread that has exited.
+struct LocalRoots {
+    ctx: *mut RootContext,
+}
+
+impl LocalRoots {
+    fn register() -> Self {
+        let ctx = Box::into_raw(Box::new(RootContext::new()));
+        ROOT_REGISTRY.register(ctx);
+        COORDINATOR.register();
+        LocalRoots { ctx }
+    }
+}
+
+impl Drop for LocalRoots {
+    fn drop(&mut self) {
+        // Remove from the registry first so no later collection scans this
+        // context, then leave the coordinator so a waiting collection stops
+        // counting this thread, then free the context.
+        ROOT_REGISTRY.deregister(self.ctx);
+        COORDINATOR.deregister();
+        // SAFETY: `ctx` came from `Box::into_raw` in `register` and is freed
+        // exactly once here. The registry no longer holds it, and the
+        // deregister calls are serialized against any in-flight collection.
+        unsafe { drop(Box::from_raw(self.ctx)) };
+    }
+}
+
+/// Run `f` against this thread's root context, initializing and registering it
+/// on first use. The thread is the only writer of its own context; the
+/// collector reads it only while this thread is parked at a safepoint, so the
+/// `&mut` never aliases a concurrent read.
+fn with_roots<R>(f: impl FnOnce(&mut RootContext) -> R) -> R {
+    LOCAL_ROOTS.with(|lr| {
+        // SAFETY: `ctx` is a valid box owned by this thread's `LocalRoots`,
+        // and only this thread takes `&mut` to it (sequentially, never
+        // reentrantly), so there is no aliasing.
+        unsafe { f(&mut *lr.ctx) }
+    })
+}
+
+/// Poll the stop-the-world safepoint. Called at allocation; parks the thread
+/// when a collection is pending so the collector can scan a quiescent set of
+/// roots. A no-op (one atomic load) in the common case.
+fn gc_safepoint() {
+    // Ensure this thread is registered before it can be expected to park, so a
+    // concurrent collection accounts for it.
+    LOCAL_ROOTS.with(|_| {});
+    COORDINATOR.poll();
+}
 
 /// A registered root: the address of a stack slot that holds a GC
 /// pointer (or null). The collector reads the slot's current value at
@@ -58,17 +168,22 @@ pub(crate) fn set_extra_roots_hook(hook: ExtraRootsHook) {
 /// return it. The scheduler calls this on a context switch to stash the
 /// suspending goroutine's roots on its goroutine struct.
 pub(crate) fn take_root_chain() -> SavedRoots {
-    let roots = ROOTS.with(|r| std::mem::take(&mut *r.borrow_mut()));
-    let frames = FRAMES.with(|f| std::mem::take(&mut *f.borrow_mut()));
-    (roots, frames)
+    with_roots(|ctx| {
+        (
+            std::mem::take(&mut ctx.roots),
+            std::mem::take(&mut ctx.frames),
+        )
+    })
 }
 
 /// Install `saved` as the live thread-local root chain, replacing whatever
 /// was there. The scheduler calls this on a context switch to make the
 /// resuming goroutine's roots the live chain.
 pub(crate) fn install_root_chain(saved: SavedRoots) {
-    ROOTS.with(|r| *r.borrow_mut() = saved.0);
-    FRAMES.with(|f| *f.borrow_mut() = saved.1);
+    with_roots(|ctx| {
+        ctx.roots = saved.0;
+        ctx.frames = saved.1;
+    });
 }
 
 /// Visit every slot in a saved root chain, applying `visit` to each.
@@ -81,15 +196,6 @@ pub(crate) fn for_each_slot_in(saved: &SavedRoots, visit: &mut dyn FnMut(RootSlo
 }
 
 thread_local! {
-    /// The shadow stack of root slot addresses, shared by the frame API
-    /// and the per-slot API.
-    static ROOTS: RefCell<Vec<RootSlot>> = const { RefCell::new(Vec::new()) };
-
-    /// Frame boundaries into `ROOTS`. Each entry is the `ROOTS` length
-    /// at the moment a frame was entered; leaving a frame truncates
-    /// `ROOTS` back to that length.
-    static FRAMES: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
-
     /// The all-objects list: the base pointer of every object handed
     /// out by `raven_gc_alloc`. The sweeper walks it once per cycle.
     static HEAP: RefCell<Vec<*mut ObjectHeader>> = const { RefCell::new(Vec::new()) };
@@ -269,7 +375,7 @@ pub extern "C" fn raven_gc_push_root(slot: *mut *mut u8) {
     if slot.is_null() {
         return;
     }
-    ROOTS.with(|r| r.borrow_mut().push(slot));
+    with_roots(|ctx| ctx.roots.push(slot));
 }
 
 /// Pop the last `n` root slots off the shadow stack.
@@ -278,10 +384,9 @@ pub extern "C" fn raven_gc_push_root(slot: *mut *mut u8) {
 /// underflowing.
 #[no_mangle]
 pub extern "C" fn raven_gc_pop_roots(n: usize) {
-    ROOTS.with(|r| {
-        let mut roots = r.borrow_mut();
-        let new_len = roots.len().saturating_sub(n);
-        roots.truncate(new_len);
+    with_roots(|ctx| {
+        let new_len = ctx.roots.len().saturating_sub(n);
+        ctx.roots.truncate(new_len);
     });
 }
 
@@ -300,9 +405,8 @@ pub extern "C" fn raven_gc_pop_roots(n: usize) {
 /// `raven_gc_leave_frame`.
 #[no_mangle]
 pub extern "C" fn raven_gc_enter_frame(roots: *mut *mut u8, count: usize) {
-    ROOTS.with(|r| {
-        let mut stack = r.borrow_mut();
-        FRAMES.with(|f| f.borrow_mut().push(stack.len()));
+    with_roots(|ctx| {
+        ctx.frames.push(ctx.roots.len());
         if !roots.is_null() {
             for i in 0..count {
                 // Each array entry is itself a slot address (the address of
@@ -313,7 +417,7 @@ pub extern "C" fn raven_gc_enter_frame(roots: *mut *mut u8, count: usize) {
                 // rather than the live GC pointer.
                 // SAFETY: caller guarantees `roots` has `count` entries.
                 let slot = unsafe { *roots.add(i) } as RootSlot;
-                stack.push(slot);
+                ctx.roots.push(slot);
             }
         }
     });
@@ -326,15 +430,13 @@ pub extern "C" fn raven_gc_enter_frame(roots: *mut *mut u8, count: usize) {
 /// A call with no open frame is a no-op.
 #[no_mangle]
 pub extern "C" fn raven_gc_leave_frame() {
-    let boundary = FRAMES.with(|f| f.borrow_mut().pop());
-    if let Some(boundary) = boundary {
-        ROOTS.with(|r| {
-            let mut roots = r.borrow_mut();
+    with_roots(|ctx| {
+        if let Some(boundary) = ctx.frames.pop() {
             // Defensive: never grow past the current length.
-            let target = boundary.min(roots.len());
-            roots.truncate(target);
-        });
-    }
+            let target = boundary.min(ctx.roots.len());
+            ctx.roots.truncate(target);
+        }
+    });
 }
 
 /// Register a struct type's GC pointer descriptor.
@@ -364,7 +466,7 @@ fn struct_descriptor(type_id: u32) -> u64 {
 /// Number of root slots currently registered. Test and diagnostic aid.
 #[cfg(test)]
 pub(crate) fn root_count() -> usize {
-    ROOTS.with(|r| r.borrow().len())
+    with_roots(|ctx| ctx.roots.len())
 }
 
 /// Allocate a zeroed object body of `size` bytes aligned to `align`,
@@ -386,6 +488,9 @@ pub(crate) fn root_count() -> usize {
 #[no_mangle]
 pub extern "C" fn raven_gc_alloc(size: usize, align: usize, tag: u32) -> *mut u8 {
     let _ = tag;
+    // Safepoint: register this thread and, if another thread is collecting,
+    // park here until it finishes so we never mutate the heap mid-collection.
+    gc_safepoint();
     // Collect before serving an allocation that would cross the
     // threshold, so the heap stays a bounded multiple of the live set.
     let current = BYTES_ALLOCATED.with(|b| b.get());
@@ -440,7 +545,17 @@ pub extern "C" fn raven_gc_collect() {
 }
 
 /// Run one full mark-and-sweep cycle.
+///
+/// Stops every other registered thread at a safepoint first, so the
+/// cross-thread root scan in `mark` reads quiescent shadow stacks and only one
+/// collection writes mark epochs at a time. A single-threaded program has no
+/// other thread to stop and returns from the stop immediately. The heap swept
+/// is this thread's own; `mark` reaches objects another thread holds through
+/// the shared registry, so a shared object survives a collection on any thread.
 fn collect() {
+    COORDINATOR.stop_the_world();
+    let epoch = next_epoch();
+    CURRENT_EPOCH.store(epoch, std::sync::atomic::Ordering::Relaxed);
     mark();
     sweep();
     // Reset the threshold to twice the surviving live bytes, never
@@ -449,6 +564,7 @@ fn collect() {
     let live = BYTES_ALLOCATED.with(|b| b.get());
     let next = collection_floor().max(live.saturating_mul(2));
     THRESHOLD.with(|t| t.set(next));
+    COORDINATOR.resume_the_world();
 }
 
 /// Mark phase: starting from every root, set the mark bit on every
@@ -497,12 +613,13 @@ fn mark_object(object: *mut ObjectHeader) -> bool {
     if object.is_null() {
         return false;
     }
+    let epoch = CURRENT_EPOCH.load(std::sync::atomic::Ordering::Relaxed);
     // SAFETY: a registered object pointer is a live header.
     let header = unsafe { &mut *object };
-    if header.is_marked() {
+    if header.gc_bits == epoch {
         return false;
     }
-    header.set_mark();
+    header.gc_bits = epoch;
     true
 }
 
@@ -643,20 +760,22 @@ unsafe fn trace_object(object: *mut ObjectHeader, work: &mut Vec<*mut ObjectHead
 /// Sweep phase: free every unmarked object and clear the mark bit on
 /// survivors so the next cycle starts clean.
 fn sweep() {
+    let epoch = CURRENT_EPOCH.load(std::sync::atomic::Ordering::Relaxed);
     HEAP.with(|h| {
         let mut heap = h.borrow_mut();
         let mut write = 0usize;
         for read in 0..heap.len() {
             let object = heap[read];
-            // SAFETY: every heap entry is a live registered header.
-            let marked = unsafe { (*object).is_marked() };
+            // SAFETY: every heap entry is a live registered header. An object
+            // marked in this collection carries the current epoch; a fresh
+            // epoch next time leaves survivors implicitly unmarked, so no
+            // clear pass is needed.
+            let marked = unsafe { (*object).gc_bits } == epoch;
             if marked {
-                // SAFETY: live header; clear the mark for next cycle.
-                unsafe { (*object).clear_mark() };
                 heap[write] = object;
                 write += 1;
             } else {
-                // SAFETY: unmarked and registered; free it.
+                // SAFETY: unmarked this collection and registered; free it.
                 unsafe { free_one(object) };
             }
         }
@@ -667,18 +786,18 @@ fn sweep() {
 /// Visit the current object pointer held by every registered root slot.
 /// Null slots and slots whose stored pointer is null are skipped.
 fn for_each_root(mut visit: impl FnMut(*mut ObjectHeader)) {
-    ROOTS.with(|r| {
-        for &slot in r.borrow().iter() {
-            if slot.is_null() {
-                continue;
-            }
+    // SAFETY: `for_each_root` runs only from `mark`, inside a stop-the-world,
+    // so every registered context is parked and not being mutated; the slot
+    // pointers are valid.
+    unsafe {
+        ROOT_REGISTRY.for_each_root_slot(&mut |slot| {
             // SAFETY: a registered slot points to a live `*mut u8`.
-            let object = unsafe { *slot } as *mut ObjectHeader;
+            let object = *slot as *mut ObjectHeader;
             if !object.is_null() {
                 visit(object);
             }
-        }
-    });
+        });
+    }
 }
 
 /// Live object-body bytes currently tracked by the collector. A
@@ -1151,6 +1270,54 @@ mod collector_tests {
             raven_gc_collect();
             assert_eq!(raven_gc_live_objects(), 0);
         });
+    }
+
+    #[test]
+    fn concurrent_collections_keep_each_threads_rooted_objects() {
+        // Several threads share the global registry and coordinator. Each keeps
+        // a rooted working set of lists in its own heap and runs many
+        // collections concurrently. The coordinator serializes the collections
+        // and the registry scan plus per-thread sweep keep every thread's
+        // rooted objects intact. A naive shared heap (the earlier attempt)
+        // would let one thread's collection free another's objects and the
+        // surviving count would drop below the working set.
+        use std::sync::{Arc, Barrier};
+        const THREADS: usize = 6;
+        const WORKING_SET: usize = 5;
+        const ROUNDS: usize = 40;
+        let barrier = Arc::new(Barrier::new(THREADS));
+        let mut handles = Vec::new();
+        for _ in 0..THREADS {
+            let barrier = Arc::clone(&barrier);
+            handles.push(std::thread::spawn(move || {
+                let mut slots: [*mut u8; WORKING_SET] = [std::ptr::null_mut(); WORKING_SET];
+                for s in slots.iter_mut() {
+                    *s = raven_list_new(8, 8, 0, 1) as *mut u8;
+                }
+                let mut roots: [*mut *mut u8; WORKING_SET] = [std::ptr::null_mut(); WORKING_SET];
+                for (r, s) in roots.iter_mut().zip(slots.iter_mut()) {
+                    *r = s as *mut *mut u8;
+                }
+                raven_gc_enter_frame(roots.as_mut_ptr() as *mut *mut u8, WORKING_SET);
+                // Every thread has its rooted set live before any collects.
+                barrier.wait();
+                for _ in 0..ROUNDS {
+                    // Unrooted garbage, then a collection, concurrently with
+                    // the other threads' collections.
+                    let _garbage = raven_string_new(8);
+                    raven_gc_collect();
+                }
+                assert_eq!(
+                    raven_gc_live_objects(),
+                    WORKING_SET,
+                    "a rooted object was collected during concurrent collection"
+                );
+                raven_gc_leave_frame();
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
     }
 
     #[test]
