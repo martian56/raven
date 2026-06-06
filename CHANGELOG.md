@@ -2,27 +2,37 @@
 
 All notable changes to Raven are documented in this file.
 
-## [Unreleased]
+## [2.10.0] - 2026-06-06
 
 ### Added
 
 - FFI: variadic C functions can now be called. A signature ending in `...` (`fun printf(fmt: CStr, ...) -> CInt`) accepts extra arguments after the fixed parameters; each must be a C-FFI integer or pointer type (or a native `Int`). The back end builds a signature from the actual arguments at each call site and dispatches through `call_indirect`. Float variadic arguments are rejected at compile time, because the Cranelift backend cannot set the System V `al` register or apply the Windows x64 float-shadow rule; a `%f` format needs a fixed-arity C shim. On windows-msvc the `printf` family now links via `legacy_stdio_definitions.lib` (#330).
 
+## [2.9.0] - 2026-06-06
+
 ### Added
 
 - FFI: `@repr(C)` structs of any size now cross the C ABI by value, removing the previous 16-byte limit. Up to 16 bytes a struct still crosses in registers; a larger one crosses in memory on the stack on System V AMD64 (the MEMORY class, via Cranelift's `StructArgument` with the size rounded up to 8 bytes) or by reference on Windows x64 and AArch64, and is returned through a hidden `sret` pointer on every target (#327).
+
+## [2.8.0] - 2026-06-06
 
 ### Added
 
 - FFI: a capturing Raven closure (a lambda or a captured local) can now be passed as a C callback, not just a non-capturing top-level function. The closure is given to the C function's callback-pointer parameter, where the compiler emits a generated trampoline whose last argument is a `userdata` pointer, and to the function's userdata parameter (a `CPtr`), which is the closure object C threads back to the trampoline. This follows the userdata-last convention (for example glibc `qsort_r`); a userdata-first or no-userdata API needs a small C shim. Because the GC shadow stack persists across a C call, a callback that allocates is traced correctly, the golden suite exercises one allocating on every call across a thousand C-driven invocations (#234).
 
+## [2.7.0] - 2026-06-06
+
 ### Added
 
 - FFI: a `@repr(C)` struct field may now itself be a nested `@repr(C)` struct, crossing the C ABI by value. The nested struct's bytes are inlined into the parent's C image (the back end follows the heap pointer recursively), and on a return the nested object is rebuilt with the parent's GC descriptor marking the nested-field slot as a pointer so the collector traces it. Register classification runs over the flattened field list, so a nested struct passes exactly like its fields inlined, and the 16-byte cap applies to the flattened total. A non-`@repr(C)` struct field and a struct that contains itself are rejected (#329).
 
+## [2.6.0] - 2026-06-06
+
 ### Added
 
 - FFI: `@repr(C)` structs with floating-point fields (`CFloat`, `CDouble`) now cross the C ABI by value, up to 16 bytes, as arguments and return values. The back end builds a per-register plan from the struct layout and the target convention: System V classifies each eightbyte INTEGER (i64) or SSE (f64), AArch64 passes a homogeneous float aggregate in SIMD registers (one per field) and other structs in general registers, and Windows x64 uses one integer register or by-reference. A `CFloat` field is narrowed from f64 to f32 (and widened back) at the boundary, and a struct literal accepts a native `Float` for a float field. Nested structs and structs larger than 16 bytes remain follow-ups (#328).
+
+## [2.5.0] - 2026-06-06
 
 ### Added
 
