@@ -38,9 +38,6 @@ jobs:
           - name: windows-x86_64
             os: windows-latest
             target: x86_64-pc-windows-msvc
-          - name: macos-arm64
-            os: macos-14
-            target: aarch64-apple-darwin
     steps:
       - uses: actions/checkout@v4
         with:
@@ -134,21 +131,6 @@ jobs:
           cargo deb --no-build --no-strip
           cargo generate-rpm
 
-      - name: Build macOS package
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          v="${{ steps.version.outputs.value }}"
-          bindir="target/${{ matrix.target }}/release"
-          root="pkgroot/usr/local/bin"
-          mkdir -p "$root"
-          cp "$bindir/raven" "$root/"
-          cp "$bindir/rvpm" "$root/"
-          cp "$bindir/libraven_runtime.a" "$root/"
-          pkgbuild --root pkgroot --identifier com.martian56.raven \
-            --version "$v" --install-location / \
-            "raven-$v-${{ matrix.target }}.pkg"
-
       - name: Build Windows MSI
         if: runner.os == 'Windows'
         shell: pwsh
@@ -180,23 +162,13 @@ jobs:
           $msi = Get-ChildItem target/wix/*.msi | Select-Object -First 1
           & signtool sign /f "$env:RUNNER_TEMP\cert.pfx" /p $env:WINDOWS_CERT_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $msi.FullName
 
-      - name: Sign macOS package (optional)
-        if: ${{ runner.os == 'macOS' && env.APPLE_INSTALLER_IDENTITY != '' }}
-        shell: bash
-        env:
-          APPLE_INSTALLER_IDENTITY: ${{ secrets.APPLE_INSTALLER_IDENTITY }}
-        run: |
-          v="${{ steps.version.outputs.value }}"
-          pkg="raven-$v-${{ matrix.target }}.pkg"
-          productsign --sign "$APPLE_INSTALLER_IDENTITY" "$pkg" "signed-$pkg"
-          mv "signed-$pkg" "$pkg"
 
       - name: Collect artifacts
         shell: bash
         run: |
           mkdir -p dist
           shopt -s nullglob
-          for f in *.tar.gz *.zip *.pkg target/debian/*.deb target/generate-rpm/*.rpm target/wix/*.msi; do
+          for f in *.tar.gz *.zip target/debian/*.deb target/generate-rpm/*.rpm target/wix/*.msi; do
             cp "$f" dist/
           done
           ls -l dist
@@ -225,9 +197,8 @@ jobs:
 
             - Linux: `.deb`, `.rpm`, or `.tar.gz`
             - Windows: `.msi` or `.zip`
-            - macOS (Apple Silicon): `.pkg` or `.tar.gz`
 
-            Each one installs the `raven` compiler and the `rvpm` package manager. Compiling a program also needs a C linker (the MSVC build tools on Windows, `cc` or `clang` on Linux and macOS).
+            Each one installs the `raven` compiler and the `rvpm` package manager. Compiling a program also needs a C linker (the MSVC build tools on Windows, `cc` or `clang` on Linux).
 
             The full changelog is in [CHANGELOG.md](https://github.com/martian56/raven/blob/main/CHANGELOG.md), and the docs are at [martian56.github.io/raven](https://martian56.github.io/raven/).
           generate_release_notes: true
@@ -253,8 +224,6 @@ jobs:
             os: ubuntu-22.04
           - name: windows-x86_64
             os: windows-latest
-          - name: macos-arm64
-            os: macos-14
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v4
@@ -277,17 +246,16 @@ jobs:
           echo "program output: $out"
           test "$out" = "hello"
           # FFI: a 16-byte @repr(C) struct returned by value, exercising the
-          # by-value struct ABI for this target (two registers on System V and
-          # AArch64). lldiv is in the C runtime on every platform.
+          # by-value struct ABI for this target (two registers on System V).
+          # lldiv is in the C runtime on every platform.
           printf '@repr(C)\nstruct D { quot: CLong, rem: CLong }\nextern "C" { fun lldiv(numer: CLong, denom: CLong) -> D }\nfun main() {\n  let r = lldiv(17, 5)\n  print(r.quot)\n  print(r.rem)\n}\n' > ffi.rv
           raven build ffi.rv -o ffi
           ffi_out="$(./ffi | tr '\n' ',')"
           echo "ffi struct-by-value output: $ffi_out"
           test "$ffi_out" = "3,2,"
           # FFI: a 16-byte float struct by value, exercising the float
-          # register classification (two SSE registers on System V, a
-          # 2-member homogeneous float aggregate in SIMD registers on
-          # AArch64). The fixtures ship in libraven_runtime.
+          # register classification (two SSE registers on System V). The
+          # fixtures ship in libraven_runtime.
           printf '@repr(C)\nstruct V2 { x: CDouble, y: CDouble }\nextern "C" {\n  fun raven_ffi_make_vec2d(x: CDouble, y: CDouble) -> V2\n  fun raven_ffi_vec2d_sum(v: V2) -> CDouble\n}\nfun main() {\n  let v = raven_ffi_make_vec2d(10.0, 20.0)\n  print(raven_ffi_vec2d_sum(v))\n}\n' > ffif.rv
           raven build ffif.rv -o ffif
           ffif_out="$(./ffif)"
@@ -301,7 +269,7 @@ jobs:
           echo "ffi callback output: $fficb_out"
           test "$fficb_out" = "105"
           # FFI: a 24-byte struct by value, over two registers (System V passes
-          # it in memory on the stack, Windows x64 and AArch64 by reference).
+          # it in memory on the stack, Windows x64 by reference).
           printf '@repr(C)\nstruct Big { a: CLong, b: CLong, c: CLong }\nextern "C" {\n  fun raven_ffi_make_big(a: CLong, b: CLong, c: CLong) -> Big\n  fun raven_ffi_big_sum(v: Big) -> CLong\n}\nfun main() {\n  let g = raven_ffi_make_big(10, 20, 30)\n  print(raven_ffi_big_sum(g))\n}\n' > ffibig.rv
           raven build ffibig.rv -o ffibig
           ffibig_out="$(./ffibig)"

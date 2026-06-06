@@ -56,9 +56,8 @@ Download the installer or archive for your platform from the [releases page](htt
 
 - Linux: `.deb`, `.rpm`, or `.tar.gz`
 - Windows: `.msi` or `.zip`
-- macOS: `.pkg` or `.tar.gz` (Apple Silicon)
 
-This installs the `raven` compiler and the `rvpm` package manager and adds them to your `PATH`. Compiling a program also needs a C linker on your machine (the MSVC build tools on Windows, `cc`/`clang` on Linux and macOS).
+This installs the `raven` compiler and the `rvpm` package manager and adds them to your `PATH`. Compiling a program also needs a C linker on your machine (the MSVC build tools on Windows, `cc`/`clang` on Linux).
 
 ## Quick Start
 

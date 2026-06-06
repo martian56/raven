@@ -11,14 +11,13 @@ to a managed project with `rvpm`.
 
 Download the installer or archive for your platform from the
 [releases page](https://github.com/martian56/raven/releases): `.deb`,
-`.rpm`, or `.tar.gz` for Linux, `.msi` or `.zip` for Windows, and `.pkg`
-or `.tar.gz` for macOS (Apple Silicon). Each installs the
-`raven` compiler and the `rvpm` package manager and adds them to your
-`PATH`.
+`.rpm`, or `.tar.gz` for Linux, and `.msi` or `.zip` for Windows. Each
+installs the `raven` compiler and the `rvpm` package manager and adds them
+to your `PATH`.
 
 Compiling a program also needs a C linker on your machine: the MSVC build
-tools on Windows, or `cc`/`clang` on Linux and macOS. The compiler uses it
-to link the final binary.
+tools on Windows, or `cc`/`clang` on Linux. The compiler uses it to link
+the final binary.
 
 To build from source instead (for contributors, or to track the latest
 commit):

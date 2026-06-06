@@ -8,14 +8,13 @@ Release.
 
 ## Artifacts per platform
 
-The build matrix covers three targets. Each target produces a portable archive
+The build matrix covers two targets. Each target produces a portable archive
 and the platform native installer.
 
 | Target | Archive | Installer |
 |--------|---------|-----------|
 | Linux x86_64 (`x86_64-unknown-linux-gnu`) | `.tar.gz` | `.deb`, `.rpm` |
 | Windows x86_64 (`x86_64-pc-windows-msvc`) | `.zip` | `.msi` |
-| macOS arm64 (`aarch64-apple-darwin`) | `.tar.gz` | `.pkg` |
 
 Every artifact bundles two binaries, `raven` (the compiler and build driver)
 and `rvpm` (the package manager), plus the `raven_runtime` static library.
@@ -49,7 +48,6 @@ finds it with no configuration:
 - `.deb` and `.rpm`: binaries and the runtime library install to `/usr/bin`.
 - `.msi`: all three files install to the application `bin` directory, which is
   added to the system PATH.
-- `.pkg`: all three files install to `/usr/local/bin`.
 
 The smoke jobs additionally set `RAVEN_RUNTIME_LIB` to the packaged path as a
 belt-and-suspenders check.
@@ -82,19 +80,12 @@ Windows Authenticode (MSI):
 - `WINDOWS_CERT_BASE64`: base64 encoded PFX certificate.
 - `WINDOWS_CERT_PASSWORD`: PFX password.
 
-macOS package signing:
-
-- `APPLE_INSTALLER_IDENTITY`: a Developer ID Installer identity available in the
-  runner keychain, used by `productsign`.
-
-Add these as repository or organization secrets to enable signing. Notarization
-and stapling for macOS can be layered on later with `notarytool` and `stapler`
-once an Apple account is wired up.
+Add these as repository or organization secrets to enable signing.
 
 ## Verification status
 
 The full multi-platform installer build runs only on a tag (or
-`workflow_dispatch`) using the Linux, Windows, and macOS runners, so it is
+`workflow_dispatch`) using the Linux and Windows runners, so it is
 confirmed by an actual tagged release run. The packaging configuration and the
 runtime-library location approach were validated locally: a staged Windows
 layout of `raven.exe`, `rvpm.exe`, and `raven_runtime.lib` in one directory
