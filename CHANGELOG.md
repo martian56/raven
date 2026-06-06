@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.10.1] - 2026-06-06
+
+### Changed
+
+- Dropped macOS as a release target. Raven now ships for Linux x86_64 and Windows x86_64. The macOS arm64 build was removed because the Apple arm64 ABI passes variadic arguments on the stack, which the Cranelift backend cannot express, so a variadic C call (added in 2.10.0) crashed on that platform. On the remaining x86_64 targets variadic arguments go in registers and work correctly. The AArch64 code paths stay in the compiler but are no longer built, shipped, or supported.
+
 ## [2.10.0] - 2026-06-06
 
 ### Added
