@@ -1,0 +1,20 @@
+// std/ffi bridges a Raven String to a C string. `to_cstr` copies into a fresh
+// buffer (released with `free_cstr`); `from_cstr` reads a C string back into a
+// String. Prints:
+//   5
+//   roundtrip
+import std/ffi
+
+extern "C" {
+    fun strlen(s: CStr) -> CSize
+}
+
+fun main() {
+    let c = ffi.to_cstr("hello")
+    print(strlen(c)) // 5
+    ffi.free_cstr(c)
+
+    let r = ffi.to_cstr("roundtrip")
+    print(ffi.from_cstr(r)) // roundtrip
+    ffi.free_cstr(r)
+}

@@ -99,14 +99,16 @@ return null, and keep the element type `T` consistent with the C side.
 
 ## Lifetime and ownership
 
-`to_cstr` allocates the null-terminated buffer outside the GC heap and
-does not reclaim it: the pointer is valid for the rest of the program run.
-This copy semantics is intentional. A C callee may read the pointer after
-the call returns or retain it, and the buffer must not move or be freed by
-a later garbage collection, so it cannot be the String's own GC-managed
-bytes. The cost is that each `to_cstr` call leaks one buffer; callers that
-convert in a hot loop should hoist the conversion. There is no `free`
-helper in this release.
+`to_cstr` allocates the null-terminated buffer outside the GC heap (with
+`malloc`) and does not reclaim it automatically: the pointer stays valid until
+the caller releases it with `free_cstr`, or for the rest of the program run if
+never freed. This copy semantics is intentional. A C callee may read the
+pointer after the call returns or retain it, and the buffer must not move or be
+freed by a later garbage collection, so it cannot be the String's own
+GC-managed bytes. Pass `free_cstr` only a `to_cstr` result, not a `c"..."`
+literal (which is static) or a `CStr` from another source; a freed pointer must
+not be used again. A caller that converts in a hot loop should free each buffer
+or hoist the conversion.
 
 `from_cstr` produces an ordinary GC-managed `String`, traced and reclaimed
 like any other. Embedded NUL bytes in the source `String` are preserved by
@@ -393,8 +395,6 @@ slot as a pointer so the collector traces it.
 
 ## Out of scope
 
-* A `free`/`drop` for buffers from `to_cstr` (copy-and-leak semantics).
-  Buffers from `alloc` do have `free`.
 * Callback APIs whose userdata is not the last callback argument (or that
   have no userdata argument). The trampoline is userdata-last; other shapes
   need a small C shim.
