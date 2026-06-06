@@ -15,7 +15,7 @@
       (let "v" ty=Int
         (match ty=Int
           (call ty=Option<Int>
-            (ident "head" ty=fun(List<Int>) -> Option<Int>)
+            (fn-ref "head" ty=fun(List<Int>) -> Option<Int>)
             (ident "xs" ty=List<Int>)
           )
           (arm
