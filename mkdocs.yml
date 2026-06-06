@@ -86,6 +86,7 @@ nav:
   - Tutorials:
     - Word-frequency counter: v2/guide/tutorials/word-frequency.md
     - Modeling data with structs and enums: v2/guide/tutorials/task-tracker.md
+    - Calling C from Raven: v2/guide/tutorials/c-interop.md
   - Standard Library:
     - Overview: v2/guide/standard-library.md
     - Core traits: v2/guide/stdlib/core.md

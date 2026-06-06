@@ -538,10 +538,11 @@ pub extern "C" fn raven_float_to_int(value: f64) -> i64 {
 #[no_mangle]
 pub extern "C" fn raven_string_to_cstr(s: *const object::String) -> *const u8 {
     let len = object::raven_string_len(s) as usize;
-    // One extra byte for the terminating NUL. `raven_alloc` returns a
-    // non-null dangling pointer at size zero, which is fine for the empty
-    // string: byte index 0 is the NUL we write below.
-    let buf = raven_alloc(len + 1, 1);
+    // One extra byte for the terminating NUL. The buffer is `malloc`-ed (not
+    // GC- or `raven_alloc`-managed) so the caller can release it with
+    // `raven_cstr_free` (std/ffi's `free_cstr`), which is plain `free`.
+    // SAFETY: `malloc` is the C allocator; a null return is handled below.
+    let buf = unsafe { malloc(len + 1) } as *mut u8;
     if buf.is_null() {
         return std::ptr::null();
     }
@@ -555,6 +556,25 @@ pub extern "C" fn raven_string_to_cstr(s: *const object::String) -> *const u8 {
         *buf.add(len) = 0;
     }
     buf as *const u8
+}
+
+/// Free a buffer returned by `raven_string_to_cstr` (std/ffi's `to_cstr`).
+///
+/// A null pointer is a no-op. Only a `to_cstr` result may be passed: a
+/// `c"..."` literal is static and a `CStr` from another source has a
+/// different owner.
+///
+/// # Safety
+///
+/// `p` must be a live pointer returned by `raven_string_to_cstr` and not
+/// already freed.
+#[no_mangle]
+pub extern "C" fn raven_cstr_free(p: *const u8) {
+    if p.is_null() {
+        return;
+    }
+    // SAFETY: `to_cstr` allocates the buffer with `malloc`, so `free` matches.
+    unsafe { free(p as *mut std::ffi::c_void) }
 }
 
 /// Read the null-terminated bytes at `p` and build a Raven `String`.

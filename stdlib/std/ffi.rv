@@ -7,15 +7,25 @@
 extern "C" {
     fun raven_string_to_cstr(s: String) -> CStr
     fun raven_cstr_to_string(p: CStr) -> String
+    fun raven_cstr_free(p: CStr)
 }
 
 // Copy `s` into a fresh, null-terminated C string and return a `CStr`
-// pointing at it. The buffer is a standalone copy valid for the rest of
-// the program run, so it is safe to pass to a C function that reads (or
-// retains) the pointer. Embedded NUL bytes are kept up to the first one
-// a C reader stops at.
+// pointing at it. The buffer is a standalone heap copy, so it is safe to pass
+// to a C function that reads (or retains) the pointer. Embedded NUL bytes are
+// kept up to the first one a C reader stops at. Release the buffer with
+// `free_cstr` when done, or leave it for the program's lifetime if short
+// lived; it is not garbage collected.
 fun to_cstr(s: String) -> CStr {
     return raven_string_to_cstr(s)
+}
+
+// Free a `CStr` buffer returned by `to_cstr`. A null pointer is a no-op, and
+// the pointer must not be used afterwards. Pass only a `to_cstr` result: a
+// `c"..."` literal is static, and a `CStr` from `from_cstr`'s source or
+// another C function has a different owner.
+fun free_cstr(p: CStr) {
+    raven_cstr_free(p)
 }
 
 // Read the null-terminated bytes at `p` and build a Raven `String`. The

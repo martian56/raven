@@ -41,9 +41,10 @@ Both `to_cstr` and `alloc` hand back memory that the garbage collector does
 
 - `alloc<T>(...)` memory is yours to `free`. You **must** call `free` on it, or
   it leaks for the rest of the program run.
-- `to_cstr(...)` copies into a fresh buffer that is valid for the rest of the
-  run. There is no `free` helper for it in this release: each call leaks one
-  buffer, so hoist the conversion out of hot loops.
+- `to_cstr(...)` copies into a fresh buffer. Release it with `free_cstr` when
+  the C side is done with it, or leave it for the rest of the run. A call that
+  is not freed leaks one buffer, so free each one or hoist the conversion out
+  of hot loops.
 
 The raw pointer access is unchecked, exactly like C. There are no bounds
 checks and no use-after-free protection. An out-of-range `offset`, or a
@@ -60,6 +61,13 @@ at the first byte. The result is a standalone copy (not the String's own
 length-prefixed buffer), so it is a valid `const char *` that a C function may
 read or retain after the call returns. Embedded NUL bytes are kept up to the
 first one, at which a C reader stops.
+
+### `free_cstr(p: CStr)`
+
+Release a buffer returned by `to_cstr`. A null pointer is a no-op, and the
+pointer must not be used after the call. Pass only a `to_cstr` result, not a
+`c"..."` literal (which is static) or a `CStr` from `from_cstr`'s source or
+another C function, which have a different owner.
 
 ### `from_cstr(p: CStr) -> String`
 
