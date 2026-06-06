@@ -109,6 +109,8 @@ pub enum TokenKind {
     Eq,
     DotDot,
     DotDotEq,
+    /// `...`, the C variadic parameter marker in an `extern` signature.
+    DotDotDot,
     Question,
     Arrow,    // ->
     FatArrow, // =>
@@ -1002,6 +1004,10 @@ impl Lexer {
                     if self.peek() == Some('=') {
                         self.bump();
                         return make(self, TokenKind::DotDotEq);
+                    }
+                    if self.peek() == Some('.') {
+                        self.bump();
+                        return make(self, TokenKind::DotDotDot);
                     }
                     return make(self, TokenKind::DotDot);
                 }

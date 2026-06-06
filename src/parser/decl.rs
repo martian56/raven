@@ -497,7 +497,36 @@ impl Parser {
             self.expect(&TokenKind::Fun, "`fun`")?;
             let (name, _) = self.expect_ident("function name")?;
             self.expect(&TokenKind::LParen, "`(`")?;
-            let params = self.parse_param_list()?;
+            // Extern parameters, with an optional trailing `...` variadic
+            // marker. Parsed inline (rather than via `parse_param_list`) so the
+            // `...` is only accepted here, in an extern signature.
+            self.skip_newlines();
+            let mut params = Vec::new();
+            let mut variadic = false;
+            if !matches!(self.peek_kind(), TokenKind::RParen) {
+                loop {
+                    self.skip_newlines();
+                    if matches!(self.peek_kind(), TokenKind::DotDotDot) {
+                        self.advance();
+                        variadic = true;
+                        self.skip_newlines();
+                        break;
+                    }
+                    let (pname, name_span) = self.expect_ident("parameter name")?;
+                    self.expect(&TokenKind::Colon, "`:`")?;
+                    let ty = self.parse_type()?;
+                    let span = merge_spans(&name_span, &ty.span);
+                    params.push(Param {
+                        name: pname,
+                        ty,
+                        span,
+                    });
+                    self.skip_newlines();
+                    if !self.eat(&TokenKind::Comma) {
+                        break;
+                    }
+                }
+            }
             let rp = self.expect(&TokenKind::RParen, "`)`")?;
             let ret = if self.eat(&TokenKind::Arrow) {
                 Some(self.parse_type()?)
@@ -510,6 +539,7 @@ impl Parser {
                 name,
                 params,
                 ret,
+                variadic,
                 span: item_span,
             });
             self.skip_separators();

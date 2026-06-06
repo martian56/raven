@@ -1,0 +1,23 @@
+// FFI: calling a variadic C function. A variadic extern is declared with a
+// trailing `...`; extra C-FFI integer/pointer arguments may follow the fixed
+// ones. The back end dispatches the call through call_indirect with a
+// signature built from the actual arguments. Float varargs are rejected at
+// compile time (the back end cannot honor the variadic float ABI), so a
+// format like "%f" needs a C shim. Prints:
+//   1 2 3
+//   answer = 42
+//   no varargs
+extern "C" {
+    fun printf(fmt: CStr, ...) -> CInt
+}
+
+fun main() {
+    // Three integer varargs.
+    let _ = printf(c"%d %d %d\n", 1, 2, 3)
+
+    // A string and an integer vararg.
+    let _ = printf(c"%s = %d\n", c"answer", 42)
+
+    // A variadic function called with no extra arguments.
+    let _ = printf(c"no varargs\n")
+}

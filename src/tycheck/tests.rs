@@ -696,6 +696,37 @@ fn cfnptr_arg_rejects_non_ffi_closure_signature() {
 }
 
 #[test]
+fn variadic_extern_accepts_extra_ffi_args() {
+    // A variadic C function (`...`) accepts extra integer/pointer arguments
+    // after its fixed parameters.
+    check(
+        "extern \"C\" {\n    fun printf(fmt: CStr, ...) -> CInt\n}\nfun main() {\n    let _ = printf(c\"%d %s\", 1, c\"x\")\n}\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn variadic_extern_rejects_float_arg() {
+    // A float variadic argument cannot be honored by the back end (System V
+    // `al`, Windows x64 float shadow), so it is rejected at compile time.
+    let err = check(
+        "extern \"C\" {\n    fun printf(fmt: CStr, ...) -> CInt\n}\nfun main() {\n    let _ = printf(c\"%f\", 3.14)\n}\n",
+    )
+    .unwrap_err();
+    assert!(matches!(err, RavenError::Type(_, _, _)));
+}
+
+#[test]
+fn non_variadic_extern_rejects_extra_args() {
+    // Without `...`, the arity is fixed.
+    let err = check(
+        "extern \"C\" {\n    fun abs(x: CInt) -> CInt\n}\nfun main() {\n    let _ = abs(1, 2)\n}\n",
+    )
+    .unwrap_err();
+    assert!(matches!(err, RavenError::Type(_, _, _)));
+}
+
+#[test]
 fn set_literal_type_checks() {
     check_with_prelude(
         "import std/collections\nfun main() {\n    let s: Set<Int> = {1, 2, 2}\n    let _ = s.len()\n}\n",

@@ -398,6 +398,6 @@ slot as a pointer so the collector traces it.
 * Callback APIs whose userdata is not the last callback argument (or that
   have no userdata argument). The trampoline is userdata-last; other shapes
   need a small C shim.
-* The rest of what `docs/v2/specs/ffi.md` lists out of scope (variadics,
-  non-CRT libraries).
+* The rest of what `docs/v2/specs/ffi.md` lists out of scope (float
+  variadic arguments, non-CRT libraries).
 ```

@@ -444,6 +444,9 @@ pub struct MirExternFn {
     pub params: Vec<MirType>,
     /// Return type, or `MirType::Unit` for a `void` return.
     pub ret: MirType,
+    /// True for a variadic C function (`fun printf(fmt: CStr, ...)`): a call
+    /// may pass extra C-FFI integer/pointer arguments after the fixed ones.
+    pub variadic: bool,
 }
 
 /// One C-layout field of a `@repr(C)` struct that crosses the FFI by

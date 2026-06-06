@@ -461,6 +461,7 @@ pub(crate) fn describe_token(kind: &TokenKind) -> String {
         TokenKind::Eq => "`=`".to_string(),
         TokenKind::DotDot => "`..`".to_string(),
         TokenKind::DotDotEq => "`..=`".to_string(),
+        TokenKind::DotDotDot => "`...`".to_string(),
         TokenKind::Question => "`?`".to_string(),
         TokenKind::Arrow => "`->`".to_string(),
         TokenKind::FatArrow => "`=>`".to_string(),

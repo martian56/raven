@@ -110,6 +110,9 @@ pub struct FnSig {
     /// `self` receiver; the parser already includes `self` in the
     /// parameter list, so this flag is purely for diagnostics.
     pub has_self: bool,
+    /// True for a variadic `extern` C function (`fun printf(fmt: CStr, ...)`):
+    /// extra C-FFI integer/pointer arguments may follow the fixed parameters.
+    pub variadic: bool,
 }
 
 /// A trait declaration: a list of method signatures keyed by name.
@@ -274,6 +277,7 @@ mod tests {
                 ret: Ty::Int,
                 span: span(),
                 has_self: true,
+                variadic: false,
             },
         );
         env.impls.push(ImplSig {

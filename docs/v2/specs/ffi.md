@@ -158,8 +158,27 @@ flags (an `[ffi]` section in `rv.toml` passing `-l<lib>` or `.lib`
 entries) arrive with `rvpm build`, tracked by issue #81. Until then a
 non-CRT symbol surfaces as an unresolved-symbol error at link time.
 
+## Variadic C functions
+
+A signature ending in `...` is variadic (`fun printf(fmt: CStr, ...) -> CInt`).
+A call may pass extra arguments after the fixed parameters; each must be a
+C-FFI integer or pointer type (`CInt`, `CLong`, `CSize`, `CStr`, `CPtr<T>`) or
+a native `Int`. The back end builds a signature from the actual arguments at
+each call site and dispatches through `call_indirect`.
+
+**Float variadic arguments are rejected at compile time.** The Cranelift
+backend cannot set the System V `al` register (the count of vector registers a
+variadic callee reads) or apply the Windows x64 rule that passes a floating
+vararg in both an integer and an SSE register, so a float vararg would
+miscompile. A format that needs `%f` must go through a fixed-arity C shim. The
+integer/pointer path is unaffected: `al` is only consulted for float formats.
+
+On `*-windows-msvc`, the `printf` family is provided by
+`legacy_stdio_definitions.lib` (the UCRT inlines it in headers), which the
+linker pulls in automatically.
+
 ## Out of scope
 
-* Variadic C functions (for example `printf` with format arguments).
 * Non-CRT libraries and their link flags (issue #81).
 * Dereferencing or arithmetic on `CPtr<T>`.
+* Float variadic arguments (see above).

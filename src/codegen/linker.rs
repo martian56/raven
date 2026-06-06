@@ -44,6 +44,10 @@ const MSVC_NATIVE_STATIC_LIBS: &[&str] = &[
     "ws2_32.lib",
     "dbghelp.lib",
     "/defaultlib:msvcrt",
+    // The UCRT inlines the `printf` family in its headers, so the bare
+    // symbols are not in `msvcrt.lib`. This compatibility lib provides them
+    // as real functions, so an FFI call to `printf`/`sprintf`/... resolves.
+    "/defaultlib:legacy_stdio_definitions",
 ];
 
 /// Where to find the runtime staticlib produced by Cargo.

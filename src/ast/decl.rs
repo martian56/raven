@@ -186,6 +186,9 @@ pub struct ExternFn {
     pub name: String,
     pub params: Vec<Param>,
     pub ret: Option<Type>,
+    /// True when the signature ends with `...`: extra C-FFI integer/pointer
+    /// arguments may be passed at a call (a variadic function like `printf`).
+    pub variadic: bool,
     pub span: Span,
 }
 

@@ -1363,7 +1363,25 @@ impl<'a, 'b> Checker<'a, 'b> {
                 ));
             }
         };
-        if params.len() != args.len() {
+        // A variadic `extern` C function accepts extra C-FFI arguments after
+        // its fixed parameters; look the flag up from the callee's signature.
+        let extern_variadic = match self.resolved.map.lookup(&callee.span) {
+            Some(Binding::Extern {
+                decl_id,
+                item_index,
+            }) => self
+                .env
+                .externs
+                .get(&(*decl_id, *item_index))
+                .is_some_and(|s| s.variadic),
+            _ => false,
+        };
+        let arity_ok = if extern_variadic {
+            args.len() >= params.len()
+        } else {
+            args.len() == params.len()
+        };
+        if !arity_ok {
             return Err(RavenError::ty(
                 TypeError::WrongArity {
                     func: describe_callee(callee),
@@ -1372,6 +1390,22 @@ impl<'a, 'b> Checker<'a, 'b> {
                 },
                 span.clone(),
             ));
+        }
+        // The arguments beyond the fixed parameters of a variadic C function
+        // must each be a C-FFI integer or pointer type. Floats are rejected:
+        // the back end cannot set the System V `al` register or apply the
+        // Windows x64 float-shadow rule, so a float vararg would miscompile.
+        for arg in args.iter().skip(params.len()) {
+            let a = self.check_expr(arg)?;
+            let ra = self.infer.resolve(&a);
+            if !is_variadic_ffi_arg(ra.strip_self()) {
+                return Err(ty_custom(
+                    &format!(
+                        "a variadic C argument must be a C-FFI integer or pointer type (CInt, CLong, CSize, CStr, CPtr<T>) or a native Int; got `{ra}`. Float varargs are not supported (wrap the call in a C shim)"
+                    ),
+                    &arg.span,
+                ));
+            }
         }
         // Whether this call targets a foreign C function; only then is a
         // struct argument marshaled by value and required to be `@repr(C)`.
@@ -3249,6 +3283,22 @@ fn is_int_ffi(ty: &Ty) -> bool {
 
 fn is_float_ffi(ty: &Ty) -> bool {
     matches!(ty, Ty::Ffi(FfiTy::CFloat) | Ty::Ffi(FfiTy::CDouble))
+}
+
+/// True for a type allowed as a variadic C argument: a C-FFI integer or
+/// pointer, or a native `Int`. Floats are excluded because the back end
+/// cannot honor the variadic float ABI (the System V `al` count and the
+/// Windows x64 float-shadow rule).
+fn is_variadic_ffi_arg(ty: &Ty) -> bool {
+    matches!(
+        ty,
+        Ty::Int
+            | Ty::Ffi(FfiTy::CInt)
+            | Ty::Ffi(FfiTy::CLong)
+            | Ty::Ffi(FfiTy::CSize)
+            | Ty::Ffi(FfiTy::CStr)
+            | Ty::Ffi(FfiTy::CPtr(_))
+    )
 }
 
 /// True for a C-FFI scalar or pointer type with a well-defined C ABI:
