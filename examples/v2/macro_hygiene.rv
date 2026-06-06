@@ -1,0 +1,19 @@
+// Referential hygiene: a macro template's free identifier resolves at the
+// macro's definition site, not the call site, so a caller's local of the same
+// name cannot capture it. `use_helper!` calls the top-level `helper` even
+// though `main` shadows it with a local. Prints:
+//   100
+//   1
+fun helper() -> Int {
+    return 100
+}
+
+macro use_helper {
+    () => { helper() }
+}
+
+fun main() {
+    let helper = fun() -> Int = 1
+    print(use_helper!()) // 100 (the definition-site function)
+    print(helper()) // 1 (the local)
+}

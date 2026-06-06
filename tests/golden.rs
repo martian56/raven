@@ -24,7 +24,7 @@ use raven::hir::lower_file;
 use raven::lexer::Lexer;
 use raven::mir::lower_program;
 use raven::parser::parse_with_macros;
-use raven::resolve::{expand_with_stdlib, resolve_file, FsLoader};
+use raven::resolve::{expand_with_stdlib, FsLoader};
 use raven::tycheck::check_file;
 
 #[test]
@@ -239,11 +239,13 @@ fn build_object_inner(source: &str, path: &Path) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("lex: {}", e))?;
     let macro_table =
         raven::macros::collect_macro_table(&tokens).map_err(|e| format!("macro: {}", e))?;
-    let tokens = raven::macros::expand_tokens(&tokens).map_err(|e| format!("macro: {}", e))?;
+    let (tokens, macro_def_sites) =
+        raven::macros::expand_tokens_hygienic(&tokens).map_err(|e| format!("macro: {}", e))?;
     let file = parse_with_macros(&tokens, macro_table).map_err(|e| format!("parse: {}", e))?;
     let file = expand_with_stdlib(&file).map_err(|e| format!("stdlib: {}", e))?;
     let mut loader = FsLoader;
-    let resolved = resolve_file(&file, &mut loader).map_err(|e| format!("resolve: {}", e))?;
+    let resolved = raven::resolve::resolve_file_ctx(&file, &mut loader, None, macro_def_sites)
+        .map_err(|e| format!("resolve: {}", e))?;
     let typed = check_file(&resolved).map_err(|e| format!("tycheck: {}", e))?;
     let hir = lower_file(&typed).map_err(|e| format!("hir: {}", e))?;
     let mir = lower_program(&hir).map_err(|e| format!("mir: {}", e))?;

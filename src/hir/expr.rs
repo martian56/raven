@@ -330,6 +330,14 @@ pub enum HirExprKind {
         name: String,
     },
 
+    /// A direct reference to a top-level function in call position: the callee
+    /// of a `Call` the resolver bound to a function. Distinct from a bare
+    /// `Ident` so MIR always lowers it to a direct call by symbol and never
+    /// mistakes it for an in-scope local of the same spelling (which a
+    /// hygienic macro's definition-site function name can shadow at the call
+    /// site).
+    FnRef(String),
+
     /// A closure passed where a C `CFnPtr` is expected. Lowers to the address
     /// of a generated trampoline whose last parameter is a `userdata` pointer
     /// (the closure object) that C threads back to it. This node's type is the

@@ -134,14 +134,14 @@ pub fn compile_to_object(
     // interpolation fragment can be expanded while that fragment is parsed.
     let macro_table =
         crate::macros::collect_macro_table(&tokens).map_err(|e| frontend_diag(e, input, source))?;
-    let tokens =
-        crate::macros::expand_tokens(&tokens).map_err(|e| frontend_diag(e, input, source))?;
+    let (tokens, macro_def_sites) = crate::macros::expand_tokens_hygienic(&tokens)
+        .map_err(|e| frontend_diag(e, input, source))?;
     let file = parse_with_macros_all(&tokens, macro_table)
         .map_err(|es| frontend_diags(es, input, source))?;
     let file = expand_with_stdlib_ctx(&file, ctx).map_err(|e| frontend_diag(e, input, source))?;
     let mut loader = FsLoader;
-    let resolved =
-        resolve_file_ctx(&file, &mut loader, ctx).map_err(|e| frontend_diag(e, input, source))?;
+    let resolved = resolve_file_ctx(&file, &mut loader, ctx, macro_def_sites)
+        .map_err(|e| frontend_diag(e, input, source))?;
     let typed = check_file_all(&resolved).map_err(|es| frontend_diags(es, input, source))?;
     let hir = lower_file(&typed).map_err(|e| frontend_diag(e, input, source))?;
     if std::env::var("RAVEN_DUMP_HIR").is_ok() {

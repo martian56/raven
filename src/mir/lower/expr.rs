@@ -370,6 +370,19 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
                 None => MirOperand::Const(MirConstant::Unit),
             }
         }
+        HirExprKind::FnRef(name) => {
+            // A resolved function reference is consumed directly in callee
+            // position; in value position it behaves like a named-function
+            // value (a zero-capture closure).
+            match super::closure::lower_fn_closure(cx, name, &expr.span) {
+                Some(rvalue) => {
+                    let dst = cx.builder.fresh_temp("fnref", ty);
+                    cx.builder.assign(cx.current, dst, rvalue);
+                    MirOperand::Copy(dst)
+                }
+                None => MirOperand::Const(MirConstant::Unit),
+            }
+        }
         HirExprKind::FnTrampoline => {
             // A closure passed where a C `CFnPtr` is expected: emit the
             // address of a generated trampoline whose last argument is the
@@ -1278,7 +1291,7 @@ fn call_ref_from_callee(
     type_args: &[crate::tycheck::Ty],
     result_ty: &crate::tycheck::Ty,
 ) -> MirFnRef {
-    let HirExprKind::Ident(name) = &callee.kind else {
+    let (HirExprKind::Ident(name) | HirExprKind::FnRef(name)) = &callee.kind else {
         return MirFnRef {
             mangled: "__indirect_call".into(),
             origin: None,
@@ -1461,6 +1474,10 @@ fn is_closure_value_callee(cx: &LowerCx<'_>, callee: &HirExpr) -> bool {
         // Only a local or parameter of function type is a closure value.
         // A top-level function name is not in `cx.scopes`.
         HirExprKind::Ident(name) => cx.lookup(name).is_some(),
+        // A resolved function reference (the callee the HIR bound to a
+        // top-level function) is always a direct call by symbol, even when a
+        // call-site local of the same spelling is in scope.
+        HirExprKind::FnRef(_) => false,
         // Any other expression of function type (a returned closure, a
         // field holding a closure, an element of a list, ...) is a
         // closure value.

@@ -301,3 +301,11 @@ fn missing_repetition_marker_is_an_error() {
         e
     );
 }
+
+#[test]
+fn nested_repetition_expands() {
+    // A repetition group inside another: each inner group expands per outer
+    // iteration. `$( ( $( $x ),* ) )*` rebuilds the nested structure.
+    let src = "macro pairs { ( $( ( $( $x:expr ),* ) )* ) => { f( $( g( $( $x ),* ) ),* ) } }\nlet _ = pairs!((1, 2) (3))";
+    assert_eq!(expand_render(src), "let _ = f ( g ( 1 , 2 ) , g ( 3 ) )");
+}

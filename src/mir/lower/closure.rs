@@ -563,6 +563,8 @@ fn collect_free_expr(
         // A named function used as a value is referenced by symbol, like any
         // other top-level function, so it captures nothing.
         HirExprKind::FnClosure { .. } => {}
+        // A resolved function reference is a symbol, capturing nothing.
+        HirExprKind::FnRef(_) => {}
         // A trampoline references only its generated function by symbol; the
         // closure expression is not evaluated here, so it captures nothing.
         HirExprKind::FnTrampoline => {}

@@ -1,0 +1,18 @@
+// Nested macro repetition: a `$( ... )` group inside another. `rows!` matches
+// a sequence of bracketed, comma-separated expression lists separated by `;`
+// and rebuilds a list of lists. Prints:
+//   2
+//   3
+//   2
+import std/list
+
+macro rows {
+    ( $( [ $( $x:expr ),* ] );* ) => { [ $( [ $( $x ),* ] ),* ] }
+}
+
+fun main() {
+    let xs = rows!([1, 2, 3]; [4, 5])
+    print(xs.len()) // 2 outer
+    print(xs.get(0).len()) // 3
+    print(xs.get(1).len()) // 2
+}

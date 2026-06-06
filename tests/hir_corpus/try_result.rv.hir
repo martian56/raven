@@ -15,7 +15,7 @@
       (let "v" ty=Int
         (match ty=Int
           (call ty=Result<Int, String>
-            (ident "parse" ty=fun(String) -> Result<Int, String>)
+            (fn-ref "parse" ty=fun(String) -> Result<Int, String>)
             (ident "s" ty=String)
           )
           (arm
