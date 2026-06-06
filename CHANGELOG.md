@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.10.2] - 2026-06-06
+
+### Fixed
+
+- `==` and `!=` on a struct or enum that implements `Eq` (including via `@derive(Eq)`) now compare by value instead of by object identity. Previously the operators compared the operands' heap pointers, so two equal values (for example `Status.Doing == Status.Doing`, or two structs with equal fields) compared unequal even though the derived `equals` method itself was correct. HIR lowering now rewrites the operator to a call to the type's `equals` method (the same way `print` routes a value through `to_string`); a primitive keeps the native compare, a `String` keeps its byte-equality path, and a type with no `Eq` impl is unchanged.
+
 ## [2.10.1] - 2026-06-06
 
 ### Changed

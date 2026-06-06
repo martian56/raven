@@ -178,10 +178,37 @@ pub(crate) fn lower_expr(
         ExprKind::Binary { op, lhs, rhs } => {
             let l = lower_expr(lhs, &Ty::Error, cx)?;
             let r = lower_expr(rhs, &Ty::Error, cx)?;
-            HirExprKind::Binary {
-                op: lower_binop(*op),
-                lhs: Box::new(l),
-                rhs: Box::new(r),
+            // `==`/`!=` on a struct or enum that implements `Eq` (a derived or
+            // hand-written `equals` method) dispatch to that method, so
+            // equality is by value rather than object identity. The
+            // conversion is a `MethodCall`, which MIR resolves to the type's
+            // `equals` symbol (the same way `print` routes through
+            // `to_string`). `!=` negates the result. A primitive keeps the
+            // native compare below, and `String` keeps its own contents path
+            // in MIR; a type without an `Eq` impl is unchanged.
+            if matches!(op, BinaryOp::Eq | BinaryOp::Ne)
+                && type_has_equals(cx.env, l.ty.strip_self())
+            {
+                let call = HirExprKind::MethodCall {
+                    receiver: Box::new(l),
+                    name: "equals".into(),
+                    args: vec![r],
+                };
+                if matches!(op, BinaryOp::Ne) {
+                    let eq = make_expr(call, Ty::Bool, span.clone());
+                    HirExprKind::Unary {
+                        op: HirUnaryOp::Not,
+                        operand: Box::new(eq),
+                    }
+                } else {
+                    call
+                }
+            } else {
+                HirExprKind::Binary {
+                    op: lower_binop(*op),
+                    lhs: Box::new(l),
+                    rhs: Box::new(r),
+                }
             }
         }
         ExprKind::Range {
@@ -747,6 +774,25 @@ fn lower_unop(op: UnaryOp) -> HirUnaryOp {
         UnaryOp::Not => HirUnaryOp::Not,
         UnaryOp::Ref => HirUnaryOp::Ref,
     }
+}
+
+/// Whether `ty` is a struct or enum that implements `Eq` (any impl on the type
+/// provides an `equals` method), so `==`/`!=` on it should dispatch to that
+/// method rather than compare the heap pointers. Matched by the type's head
+/// name, which covers the concrete and generic (`impl<T: Eq> Eq for Pair<T>`)
+/// cases the derive pass and hand-written impls produce.
+fn type_has_equals(env: &crate::tycheck::TypeEnv, ty: &Ty) -> bool {
+    let head = match ty {
+        Ty::Struct { name, .. } | Ty::Enum { name, .. } => name.as_str(),
+        _ => return false,
+    };
+    env.impls.iter().any(|imp| {
+        imp.methods.contains_key("equals")
+            && matches!(
+                &imp.self_ty,
+                Ty::Struct { name, .. } | Ty::Enum { name, .. } if name == head
+            )
+    })
 }
 
 fn lower_binop(op: BinaryOp) -> HirBinaryOp {
