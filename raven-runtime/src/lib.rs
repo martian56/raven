@@ -18,6 +18,7 @@ pub mod ffi_test;
 pub mod gc;
 pub mod object;
 pub mod reflect;
+pub mod roots;
 pub mod sched;
 pub mod stw;
 
