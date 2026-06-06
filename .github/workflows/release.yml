@@ -307,6 +307,13 @@ jobs:
           ffibig_out="$(./ffibig)"
           echo "ffi large-struct output: $ffibig_out"
           test "$ffibig_out" = "60"
+          # FFI: a variadic C call (printf), dispatched through call_indirect
+          # with a per-call signature. printf links via legacy_stdio on MSVC.
+          printf 'extern "C" {\n  fun printf(fmt: CStr, ...) -> CInt\n}\nfun main() {\n  let _ = printf(c"%%d-%%s\\n", 7, c"ok")\n}\n' > ffivar.rv
+          raven build ffivar.rv -o ffivar
+          ffivar_out="$(./ffivar)"
+          echo "ffi variadic output: $ffivar_out"
+          test "$ffivar_out" = "7-ok"
 
       - name: Smoke test (Windows zip)
         if: runner.os == 'Windows'

@@ -169,6 +169,7 @@ fn collect_externs(hir: &HirProgram) -> Vec<super::ir::MirExternFn> {
                     name: f.name.clone(),
                     params: f.params.iter().map(MirType::from_ty).collect(),
                     ret: MirType::from_ty(&f.ret),
+                    variadic: f.variadic,
                 });
             }
         }

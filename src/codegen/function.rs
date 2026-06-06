@@ -2102,7 +2102,27 @@ fn lower_call(
             }
         }
     }
-    let inst = builder.ins().call(local_ref, &arg_vals);
+    // A variadic C function is called through `call_indirect` with a
+    // signature built from the actual arguments, since the fixed declared
+    // signature cannot describe the extra ones. The arguments are integer or
+    // pointer types (the type checker rejects float varargs), so no System V
+    // `al` count or Windows x64 float-shadow handling is needed.
+    let is_variadic_call = is_extern && cx.extern_is_variadic(&callee.mangled);
+    let inst = if is_variadic_call {
+        let mut sig = Signature::new(cx.default_call_conv());
+        for &v in &arg_vals {
+            let vt = builder.func.dfg.value_type(v);
+            sig.params.push(cranelift_codegen::ir::AbiParam::new(vt));
+        }
+        if let Some(rt) = extern_ret.as_ref().and_then(|t| cranelift_ty(t, ptr)) {
+            sig.returns.push(cranelift_codegen::ir::AbiParam::new(rt));
+        }
+        let sigref = builder.import_signature(sig);
+        let addr = builder.ins().func_addr(ptr, local_ref);
+        builder.ins().call_indirect(sigref, addr, &arg_vals)
+    } else {
+        builder.ins().call(local_ref, &arg_vals)
+    };
     // Capture results before popping roots, which emits further instructions.
     let results: Vec<Value> = builder.inst_results(inst).to_vec();
     pop_n_roots(cx, builder, roots, ptr);

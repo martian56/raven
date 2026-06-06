@@ -395,6 +395,7 @@ fn lower_decl(decl: &Decl, cx: &LowerCtx<'_>) -> Result<Option<HirItem>, RavenEr
                     name: item.name.clone(),
                     params,
                     ret,
+                    variadic: item.variadic,
                     span: item.span.clone(),
                 });
             }

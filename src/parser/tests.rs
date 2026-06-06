@@ -822,6 +822,22 @@ fn parses_extern_block() {
 }
 
 #[test]
+fn parses_variadic_extern() {
+    let f = parse_ok("extern \"C\" { fun printf(fmt: CStr, ...) -> CInt\n }\n");
+    let DeclKind::Extern(e) = &f.items[0].kind else {
+        panic!()
+    };
+    assert!(e.items[0].variadic);
+    assert_eq!(e.items[0].params.len(), 1);
+    // A signature without `...` is not variadic.
+    let g = parse_ok("extern \"C\" { fun abs(x: CInt) -> CInt\n }\n");
+    let DeclKind::Extern(e2) = &g.items[0].kind else {
+        panic!()
+    };
+    assert!(!e2.items[0].variadic);
+}
+
+#[test]
 fn parses_const_decl() {
     let f = parse_ok("const PI: Float = 3.14\n");
     let DeclKind::Const(c) = &f.items[0].kind else {

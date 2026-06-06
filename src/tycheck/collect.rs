@@ -154,6 +154,7 @@ pub fn collect_declarations(
                             ret,
                             span: item.span.clone(),
                             has_self: false,
+                            variadic: item.variadic,
                         },
                     );
                 }
@@ -627,6 +628,7 @@ fn collect_fn_sig(
         ret,
         span: f.span.clone(),
         has_self,
+        variadic: false,
     })
 }
 

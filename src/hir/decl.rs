@@ -63,6 +63,8 @@ pub struct HirExternFn {
     pub name: String,
     pub params: Vec<HirTy>,
     pub ret: HirTy,
+    /// True for a variadic C function (`fun printf(fmt: CStr, ...)`).
+    pub variadic: bool,
     pub span: Span,
 }
 

@@ -75,6 +75,10 @@ pub struct ModuleCx {
     /// symbol name. A call site uses it to marshal a by-value struct
     /// return back into a Raven heap struct.
     extern_rets: HashMap<String, MirType>,
+    /// Raw C symbol names of the variadic extern functions. A call to one
+    /// builds a per-call signature and dispatches through `call_indirect`,
+    /// since the fixed declared signature cannot carry the extra arguments.
+    variadic_externs: std::collections::HashSet<String>,
     /// Parameter types of each declared Raven function, keyed by its
     /// mangled name. A call site uses these to coerce each argument to the
     /// callee's parameter machine width (for example a native `Int` passed
@@ -144,6 +148,7 @@ impl ModuleCx {
             runtime: HashMap::new(),
             extern_params: HashMap::new(),
             extern_rets: HashMap::new(),
+            variadic_externs: std::collections::HashSet::new(),
             fn_params: HashMap::new(),
             strings: BTreeMap::new(),
             string_counter: 0,
@@ -729,6 +734,9 @@ impl ModuleCx {
             self.extern_params
                 .insert(ext.name.clone(), ext.params.clone());
             self.extern_rets.insert(ext.name.clone(), ext.ret.clone());
+            if ext.variadic {
+                self.variadic_externs.insert(ext.name.clone());
+            }
         }
         Ok(())
     }
@@ -787,6 +795,12 @@ impl ModuleCx {
     /// one. Used by a call site to coerce arguments to the C ABI width.
     pub fn extern_params(&self, name: &str) -> Option<&[MirType]> {
         self.extern_params.get(name).map(|v| v.as_slice())
+    }
+
+    /// True when `name` is a variadic extern C function, so a call dispatches
+    /// through `call_indirect` with a per-call signature.
+    pub fn extern_is_variadic(&self, name: &str) -> bool {
+        self.variadic_externs.contains(name)
     }
 
     /// Return type of a declared extern C function, if `name` names one.

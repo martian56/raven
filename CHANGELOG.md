@@ -6,6 +6,10 @@ All notable changes to Raven are documented in this file.
 
 ### Added
 
+- FFI: variadic C functions can now be called. A signature ending in `...` (`fun printf(fmt: CStr, ...) -> CInt`) accepts extra arguments after the fixed parameters; each must be a C-FFI integer or pointer type (or a native `Int`). The back end builds a signature from the actual arguments at each call site and dispatches through `call_indirect`. Float variadic arguments are rejected at compile time, because the Cranelift backend cannot set the System V `al` register or apply the Windows x64 float-shadow rule; a `%f` format needs a fixed-arity C shim. On windows-msvc the `printf` family now links via `legacy_stdio_definitions.lib` (#330).
+
+### Added
+
 - FFI: `@repr(C)` structs of any size now cross the C ABI by value, removing the previous 16-byte limit. Up to 16 bytes a struct still crosses in registers; a larger one crosses in memory on the stack on System V AMD64 (the MEMORY class, via Cranelift's `StructArgument` with the size rounded up to 8 bytes) or by reference on Windows x64 and AArch64, and is returned through a hidden `sret` pointer on every target (#327).
 
 ### Added
