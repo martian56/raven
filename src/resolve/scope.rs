@@ -57,6 +57,11 @@ impl Scope {
 #[derive(Debug, Clone, Default)]
 pub struct ScopeStack {
     frames: Vec<Scope>,
+    /// Identifiers a macro template introduced as free (definition-site)
+    /// names, by file and start offset. These resolve against the module
+    /// scope, not the call-site locals, so a caller cannot capture them.
+    /// Populated by the macro expander and carried through to resolution.
+    def_sites: crate::macros::DefSites,
 }
 
 impl ScopeStack {
@@ -64,7 +69,26 @@ impl ScopeStack {
     pub fn new() -> Self {
         ScopeStack {
             frames: vec![Scope::new(ScopeKind::Module)],
+            def_sites: crate::macros::DefSites::new(),
         }
+    }
+
+    /// Record the macro definition-site identifiers (by file and start).
+    pub fn set_def_sites(&mut self, def_sites: crate::macros::DefSites) {
+        self.def_sites = def_sites;
+    }
+
+    /// True when the identifier at `span` was introduced free by a macro
+    /// template, so it resolves at the macro's definition (module) scope.
+    pub fn is_def_site(&self, span: &Span) -> bool {
+        self.def_sites.contains(&(span.file.clone(), span.start))
+    }
+
+    /// Look up `name` in the module scope only (the outermost frame, which
+    /// holds top-level items and imports). Used to resolve a macro template's
+    /// free identifier at its definition site, skipping call-site locals.
+    pub fn lookup_module(&self, name: &str) -> Option<&ScopeEntry> {
+        self.frames.first().and_then(|f| f.names.get(name))
     }
 
     /// Push a fresh frame of the given kind.

@@ -54,7 +54,7 @@ pub fn resolve_file<'a>(
     file: &'a File,
     loader: &mut dyn SourceLoader,
 ) -> Result<ResolvedFile<'a>, RavenError> {
-    resolve_file_ctx(file, loader, None)
+    resolve_file_ctx(file, loader, None, Default::default())
 }
 
 /// Resolve `file` like [`resolve_file`], additionally binding external
@@ -65,8 +65,10 @@ pub fn resolve_file_ctx<'a>(
     file: &'a File,
     loader: &mut dyn SourceLoader,
     ctx: Option<&PackageContext>,
+    macro_def_sites: crate::macros::DefSites,
 ) -> Result<ResolvedFile<'a>, RavenError> {
     let mut scope = ScopeStack::new();
+    scope.set_def_sites(macro_def_sites);
     let mut map = ResolutionMap::new();
     let mut imports_out = Vec::new();
     let mut in_progress: HashSet<std::path::PathBuf> = HashSet::new();

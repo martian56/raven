@@ -17,13 +17,15 @@
 //! * Repetition: `$( <sub> )<sep>*` (zero or more) and `$( <sub> )<sep>+`
 //!   (one or more) in both matchers and templates, with an optional single
 //!   separator token. Metavariables under a matcher repetition bind to a
-//!   sequence and must be used under a template repetition. One level of
-//!   repetition is supported; nesting is a follow-up.
-//! * Basic hygiene: identifiers introduced by a template that are binding
-//!   sites (`let`, `const`, `for` targets) are renamed to fresh, unique names
-//!   per expansion, so a template temporary cannot capture or be captured by a
-//!   caller name of the same spelling. Metavariable-captured tokens keep their
-//!   original identity. Full referential hygiene is a follow-up.
+//!   sequence and must be used under a template repetition. Repetition nests
+//!   to any depth: a group inside another binds a sequence of sequences.
+//! * Hygiene: identifiers introduced by a template that are binding sites
+//!   (`let`, `const`, `for` targets) are renamed to fresh, unique names per
+//!   expansion, so a template temporary cannot capture or be captured by a
+//!   caller name. A free identifier a template names (a function it calls) is
+//!   marked so the resolver resolves it at the macro's definition site (the
+//!   module scope), not the call site. Metavariable-captured tokens keep their
+//!   original identity, referring to call-site bindings.
 //!
 //! The pass is a strict no-op when the source defines no macros: in that
 //! case the input tokens are returned unchanged, so non-macro programs are
@@ -39,6 +41,13 @@ use crate::span::Span;
 /// infinite macro. Each pass rewrites every outermost call once, so the
 /// bound also limits recursion depth of macros that expand to other calls.
 const EXPANSION_LIMIT: usize = 128;
+
+/// The free (definition-site) identifiers a macro expansion introduces, keyed
+/// by file and start offset. The resolver resolves these against the module
+/// scope so a call-site local cannot capture them. The file is part of the key
+/// so a synthetic offset never collides with the same offset in another file
+/// (the bundled stdlib is resolved in the same compilation).
+pub type DefSites = std::collections::HashSet<(std::sync::Arc<std::path::PathBuf>, usize)>;
 
 /// A single metavariable fragment kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,12 +98,14 @@ enum TemplateItem {
     },
 }
 
-/// A captured metavariable: either a single token run, or a sequence of runs
-/// (one per repetition) when captured under a matcher repetition.
+/// A captured metavariable: either a single token run, or a sequence of
+/// captures (one per repetition) when captured under a matcher repetition. The
+/// sequence holds `Capture`s rather than token runs so a metavariable under
+/// two nested repetitions binds to a sequence of sequences.
 #[derive(Debug, Clone)]
 enum Capture {
     Single(Vec<Token>),
-    Seq(Vec<Vec<Token>>),
+    Seq(Vec<Capture>),
 }
 
 /// One `(matcher) => { template }` arm.
@@ -178,8 +189,17 @@ pub fn expand_with_table(tokens: &[Token], table: &MacroTable) -> Result<Vec<Tok
 /// Returns the rewritten token stream (still ending in `Eof`). When the
 /// source defines no macros the input is returned unchanged.
 pub fn expand_tokens(tokens: &[Token]) -> Result<Vec<Token>, RavenError> {
+    Ok(expand_tokens_hygienic(tokens)?.0)
+}
+
+/// Like [`expand_tokens`], but also returns the start offsets of the
+/// definition-site (free) identifiers the expansion introduced. The driver
+/// hands the set to the resolver, which resolves those identifiers against the
+/// module scope so a call-site local cannot capture them (referential
+/// hygiene). The set is empty when the file defines no macros.
+pub fn expand_tokens_hygienic(tokens: &[Token]) -> Result<(Vec<Token>, DefSites), RavenError> {
     if !has_macro_keyword(tokens) {
-        return Ok(tokens.to_vec());
+        return Ok((tokens.to_vec(), DefSites::new()));
     }
 
     let (defs, body) = collect_defs(tokens)?;
@@ -207,7 +227,7 @@ pub fn expand_tokens(tokens: &[Token]) -> Result<Vec<Token>, RavenError> {
         }
         stream = expand_once(&stream, &defs, &mut spans)?;
     }
-    Ok(stream)
+    Ok((stream, spans.def_sites))
 }
 
 /// Allocator of unique synthetic byte ranges for expanded tokens. The
@@ -215,6 +235,9 @@ pub fn expand_tokens(tokens: &[Token]) -> Result<Vec<Token>, RavenError> {
 /// only the byte range is made unique so use-site keys stay distinct.
 struct SpanGen {
     next: usize,
+    /// The free (non-metavariable, non-renamed) identifiers a template
+    /// introduces, by file and start offset (see [`DefSites`]).
+    def_sites: DefSites,
 }
 
 impl SpanGen {
@@ -222,6 +245,7 @@ impl SpanGen {
         let max_end = tokens.iter().map(|t| t.span.end).max().unwrap_or(0);
         SpanGen {
             next: max_end.saturating_add(1),
+            def_sites: DefSites::new(),
         }
     }
 
@@ -743,7 +767,7 @@ fn match_rep(
     binds: &mut HashMap<String, Capture>,
 ) -> Option<usize> {
     let names = meta_names(sub);
-    let mut seqs: HashMap<String, Vec<Vec<Token>>> = HashMap::new();
+    let mut seqs: HashMap<String, Vec<Capture>> = HashMap::new();
     for n in &names {
         seqs.insert(n.clone(), Vec::new());
     }
@@ -769,12 +793,15 @@ fn match_rep(
         let mut iter_binds: HashMap<String, Capture> = HashMap::new();
         match match_seq(sub, args, pos, sep, &mut iter_binds) {
             Some(next) if next > pos => {
+                // Each iteration contributes one capture per metavariable. A
+                // metavariable inside a nested repetition contributes a
+                // `Seq`; a direct one contributes a `Single`.
                 for n in &names {
-                    if let Some(Capture::Single(toks)) = iter_binds.get(n) {
-                        seqs.get_mut(n).unwrap().push(toks.clone());
-                    } else {
-                        seqs.get_mut(n).unwrap().push(Vec::new());
-                    }
+                    let cap = iter_binds
+                        .get(n)
+                        .cloned()
+                        .unwrap_or_else(|| Capture::Single(Vec::new()));
+                    seqs.get_mut(n).unwrap().push(cap);
                 }
                 pos = next;
                 count += 1;
@@ -798,13 +825,16 @@ fn match_rep(
     Some(pos)
 }
 
-/// The names of all metavariables declared directly in `items` (one level;
-/// nested repetition is not supported in this slice).
+/// The names of all metavariables declared in `items`, recursing into nested
+/// repetition groups so an outer repetition tracks the captures of an inner
+/// one as well.
 fn meta_names(items: &[MatchItem]) -> Vec<String> {
     let mut out = Vec::new();
     for it in items {
-        if let MatchItem::Meta { name, .. } = it {
-            out.push(name.clone());
+        match it {
+            MatchItem::Meta { name, .. } => out.push(name.clone()),
+            MatchItem::Rep { sub, .. } => out.extend(meta_names(sub)),
+            MatchItem::Literal(_) => {}
         }
     }
     out
@@ -1015,15 +1045,15 @@ fn rep_count(sub: &[TemplateItem], binds: &HashMap<String, Capture>) -> usize {
 }
 
 /// Build a per-repetition binding view at index `r`: each sequence capture is
-/// projected to its `r`th element as a single capture; single captures pass
-/// through unchanged.
+/// projected to its `r`th element (itself a capture, which may be a nested
+/// sequence); single captures pass through unchanged.
 fn rep_view(binds: &HashMap<String, Capture>, r: usize) -> HashMap<String, Capture> {
     let mut view = HashMap::new();
     for (k, v) in binds {
         match v {
             Capture::Seq(seq) => {
-                if let Some(run) = seq.get(r) {
-                    view.insert(k.clone(), Capture::Single(run.clone()));
+                if let Some(cap) = seq.get(r) {
+                    view.insert(k.clone(), cap.clone());
                 }
             }
             Capture::Single(_) => {
@@ -1056,14 +1086,22 @@ fn push_renamed(
     out: &mut Vec<Token>,
 ) {
     for t in toks {
-        let kind = match &t.kind {
+        // A template identifier that names a template-introduced binding is
+        // renamed to its gensym (a fresh local). Any other identifier is free:
+        // it refers to a name visible where the macro is defined, so mark its
+        // span as a definition-site use for the resolver.
+        let (kind, free_ident) = match &t.kind {
             TokenKind::Identifier(s) => match renames.get(s) {
-                Some(fresh) => TokenKind::Identifier(fresh.clone()),
-                None => t.kind.clone(),
+                Some(fresh) => (TokenKind::Identifier(fresh.clone()), false),
+                None => (t.kind.clone(), true),
             },
-            _ => t.kind.clone(),
+            _ => (t.kind.clone(), false),
         };
-        out.push(Token::new(kind, spans.fresh(call_span)));
+        let span = spans.fresh(call_span);
+        if free_ident {
+            spans.def_sites.insert((span.file.clone(), span.start));
+        }
+        out.push(Token::new(kind, span));
     }
 }
 

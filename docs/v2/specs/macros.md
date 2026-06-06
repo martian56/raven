@@ -167,8 +167,10 @@ macro sum_all { ($($x:expr),*) => { (0 $(+ ($x))*) } }
 `(0 + (10))` (10), and `sum_all!()` to `(0)` (0). With `+` instead of `*` the
 zero-argument call is rejected.
 
-One level of repetition is supported. Nested repetition (a repetition inside a
-repetition) is a follow-up.
+Repetition nests: a `$( ... )` group inside another binds a metavariable to a
+sequence of sequences, and the matching nested template repetition splices each
+level in turn (for example `$( [ $( $x:expr ),* ] );*` matched against
+`[1, 2]; [3]` rebuilds as a list of lists).
 
 ## Expansion model
 
@@ -241,13 +243,15 @@ reads the caller's `tmp` and the caller's `tmp` is left untouched.
 
 ### Boundary
 
-The guarantee is limited to template-introduced binding sites at `let`,
-`const`, and `for`. Metavariable-captured tokens always keep their original
-identity, so they continue to refer to call-site bindings. This slice does not
-provide full referential hygiene: a free identifier the template names (for
-example a function it calls) is still resolved at the call site, not at the
-macro's definition site, so it can be shadowed by a caller binding of the same
-name. Definition-site resolution of free identifiers is a follow-up.
+Binding-site hygiene covers template-introduced `let`, `const`, and `for`
+targets, renamed to fresh names. Referential hygiene covers the other
+direction: a free identifier the template names (for example a function it
+calls) resolves at the macro's definition site (the module scope), not the call
+site, so a caller's local of the same name cannot capture it. The expander
+marks each free template identifier's span; the resolver resolves a marked
+identifier against the module scope, skipping call-site local frames.
+Metavariable-captured tokens always keep their original identity, so they
+continue to refer to call-site bindings.
 
 ## What is supported
 
@@ -258,10 +262,12 @@ name. Definition-site resolution of free identifiers is a follow-up.
 * `$x:expr`, `$x:ty`, `$x:pat` (balanced capture up to the next matcher
   delimiter), `$x:literal` (single literal token), `$x:block` (a `{ ... }`
   group), and `$x:ident` (single identifier) metavariables.
-* Repetition `$( <sub> )<sep>*` and `$( <sub> )<sep>+` (one level) in both
-  matchers and templates, with an optional single separator.
-* Basic hygiene: template-introduced binding-site identifiers (`let`, `const`,
-  `for`) are renamed to fresh names so they cannot capture or be captured.
+* Repetition `$( <sub> )<sep>*` and `$( <sub> )<sep>+`, nested to any depth, in
+  both matchers and templates, with an optional single separator.
+* Hygiene: template-introduced binding-site identifiers (`let`, `const`, `for`)
+  are renamed to fresh names so they cannot capture or be captured, and a free
+  identifier a template names resolves at the macro's definition site (the
+  module scope), so a call-site local cannot capture it.
 * Nested and composed macro calls, expanded to a fixpoint under the limit.
 * Macro calls inside a `"${...}"` string-interpolation fragment. The fragment
   is lexed during parsing, after the file's main token pre-pass has run, so
@@ -272,7 +278,5 @@ name. Definition-site resolution of free identifiers is a follow-up.
 
 ## Deferred to follow-ups
 
-* Nested repetition (a repetition group inside another).
-* Full referential hygiene (definition-site resolution of free identifiers).
 * Procedural macros / compile-time functions (the broader procedural side).
 ```

@@ -329,7 +329,16 @@ fn walk_expr(
             // shadow a builtin name by importing it: `import std/io { print }`
             // binds `print` to the stdlib function, which then takes
             // precedence over the built in `print` free function.
-            if let Some(entry) = scope.lookup(name) {
+            //
+            // A free identifier a macro template introduced resolves at the
+            // macro's definition site (the module scope), not the call site,
+            // so a caller's local of the same name cannot capture it.
+            let resolved = if scope.is_def_site(&expr.span) {
+                scope.lookup_module(name)
+            } else {
+                scope.lookup(name)
+            };
+            if let Some(entry) = resolved {
                 let binding = entry.binding.clone();
                 map.bind_use(&expr.span, binding);
                 for g in generics {

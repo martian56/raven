@@ -334,7 +334,7 @@ pub(crate) fn lower_expr(
             // dispatched indirectly).
             let c = match (&callee.kind, cx.fn_name_at(&callee.span)) {
                 (ExprKind::Ident { .. }, Some(fn_name)) => make_expr(
-                    HirExprKind::Ident(fn_name),
+                    HirExprKind::FnRef(fn_name),
                     cx.ty_at(&callee.span),
                     callee.span.clone(),
                 ),

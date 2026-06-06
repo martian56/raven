@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.12.0] - 2026-06-06
+
+### Added
+
+- Declarative macros gained the two remaining features of their design: **nested repetition** (a `$( ... )` group inside another, binding a metavariable to a sequence of sequences and splicing each level in turn) and **full referential hygiene** (a free identifier a macro template names, such as a function it calls, resolves at the macro's definition site, the module scope, so a call-site local of the same name cannot capture it). The expander marks each free template identifier's span and the resolver resolves marked identifiers against the module scope, skipping call-site locals; a new HIR `FnRef` node keeps a resolved function callee a direct call so the binding is not re-shadowed during lowering. This completes the declarative macro system; procedural macros remain a follow-up (#215).
+
 ## [2.11.0] - 2026-06-06
 
 ### Added
