@@ -120,15 +120,36 @@ the last slice and is independent of the GC core.
 Ordered so each slice is independently shippable and verifiable, and the
 risky GC core is approached incrementally rather than in one rewrite.
 
-1. **Shared heap, still single-threaded.** Move the heap and object list from
-   `thread_local!` to a global, lock-protected structure. No parallelism yet:
-   one scheduler thread, as today. Behavior is identical; this is a pure
-   refactor that de-risks heap ownership and is verified by the entire existing
-   test suite (including the GC stress tests) passing unchanged.
-2. **Safepoint protocol.** Add the `gc_requested`/`parked` coordination and a
-   safepoint poll at allocation and scheduler back-edges. Still one OS thread,
-   so "all threads parked" is trivially true; this lands and tests the
-   mechanism with no concurrency risk.
+1. **Shared heap + cross-thread root registry + serializing GC lock (one
+   slice).** A first attempt split this into "move the heap to a global" alone,
+   but that is not a safe unit: the moment more than one OS thread touches the
+   runtime, a collection on thread B scans only B's thread-local roots and
+   frees objects thread A still holds, a use-after-free. The runtime's own test
+   harness is multi-threaded (cargo runs tests in parallel, and the GC tests
+   spawn threads), so a global heap with thread-local roots corrupts the heap
+   immediately, before any parallelism feature exists. **The heap, the root
+   enumeration, and exclusive collection access are therefore coupled and must
+   land together:**
+   - the heap and object list move from `thread_local!` to a global,
+     lock-protected structure;
+   - every OS thread registers its shadow-stack root chain in a global
+     registry, and a collection scans every registered chain (plus the parked
+     goroutines and channel buffers the scheduler already exposes), not just the
+     current thread's;
+   - allocation and collection take a global GC lock so a collection has
+     exclusive access to a quiescent heap (no concurrent mutation). For
+     single-OS-thread production this lock is uncontended; for the concurrent
+     test harness it is what makes the shared heap correct.
+
+   Execution is still single-scheduler-thread; this slice only makes the
+   collector correct under *any* threading. It is the foundation, and bigger
+   than first scoped, but it is the minimal safe unit. Verified by the existing
+   suite (including the multi-threaded GC tests) staying green.
+2. **Safepoint protocol.** Replace the coarse global GC lock with a
+   `gc_requested`/`parked` safepoint poll at allocation and scheduler
+   back-edges, so threads cooperatively reach a stop instead of blocking on the
+   lock. Still one scheduler thread, so "all threads parked" is trivially true;
+   lands and tests the mechanism with no real concurrency.
 3. **M:N scheduler (#237) + the safepoint GC engaged.** The OS thread pool, the
    shared ready queue, per-worker current-goroutine state, and the stop
    protocol now coordinating real threads. This is the parallelism slice and
@@ -141,8 +162,8 @@ risky GC core is approached incrementally rather than in one rewrite.
 6. **select (#239)** and **non-blocking IO (#240).** Build on the park/wake
    machinery; independent of the GC core.
 
-Slices 1 and 2 are low-risk and land the infrastructure; slice 3 is the
-high-risk core and gates everything after it.
+Slice 1 is the foundation (and, per the finding above, larger than a heap
+refactor alone); slice 3 is the high-risk core and gates everything after it.
 
 ## Verification
 
