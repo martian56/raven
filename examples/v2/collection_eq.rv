@@ -1,0 +1,43 @@
+// `==`/`!=` compare the built-in generic types and the collection types by
+// value, not by object identity: Option, Result, and List (always available),
+// plus Set and Map from std/collections. Set and Map compare order
+// independently. An element type must itself implement Eq, which Int, String,
+// and a @derive(Eq) type satisfy. Prints:
+//   options equal
+//   results differ
+//   lists differ
+//   sets equal
+//   maps equal
+import std/collections
+
+fun main() {
+    let a: Int? = Some(1)
+    let b: Int? = Some(1)
+    if a == b {
+        print("options equal")
+    }
+
+    let r1: Result<Int, String> = Ok(1)
+    let r2: Result<Int, String> = Err("no")
+    if r1 != r2 {
+        print("results differ")
+    }
+
+    let xs = [1, 2, 3]
+    let ys = [1, 2, 4]
+    if xs != ys {
+        print("lists differ")
+    }
+
+    let s1: Set<Int> = {1, 2, 3}
+    let s2: Set<Int> = {3, 2, 1}
+    if s1 == s2 {
+        print("sets equal")
+    }
+
+    let m1: Map<String, Int> = ["a": 1, "b": 2]
+    let m2: Map<String, Int> = ["b": 2, "a": 1]
+    if m1 == m2 {
+        print("maps equal")
+    }
+}

@@ -77,14 +77,18 @@ The `other` parameter is annotated with the concrete self type (for example
 `Point`, or `Pair<A, B>`) rather than `Self`, because the type checker does
 not yet accept `Self` as a non-receiver parameter type.
 
-The `==` and `!=` operators on a struct or enum that implements `Eq` (whether
-derived or hand-written) dispatch to its `equals` method, so equality is by
-value, not by object identity; `!=` negates the result. HIR lowering rewrites
-the operator to the method call, the same way `print` routes a non-`String`
-through `to_string`. A primitive keeps the native machine compare, and a
-`String` keeps its byte-equality path; a type with no `Eq` impl keeps the
-identity compare (a struct or enum without `@derive(Eq)` should derive it to
-compare by value).
+The `==` and `!=` operators on any type that implements `Eq` (whether derived
+or hand-written) dispatch to its `equals` method, so equality is by value, not
+by object identity; `!=` negates the result. HIR lowering rewrites the operator
+to the method call, the same way `print` routes a non-`String` through
+`to_string`. A primitive keeps the native machine compare, and a `String` keeps
+its byte-equality path; a type with no `Eq` impl keeps the identity compare (a
+struct or enum without `@derive(Eq)` should derive it to compare by value).
+
+The built-in generic types `Option<T>`, `Result<T, E>`, and `List<T>` implement
+`Eq` in `std/core`, and `Set<T>` and `Map<K, V>` in `std/collections` (these
+two compare order-independently), so `==`/`!=` work on them by value when the
+element type implements `Eq`.
 
 ### Hash
 

@@ -412,3 +412,29 @@ impl<K: Eq + Hash, V> Map<K, V> {
         self.buckets = fresh
     }
 }
+
+// ----- Eq: `==`/`!=` compare by value -----
+
+impl<T: Eq + Hash> Eq for Set<T> {
+    fun equals(self, other: Set<T>) -> Bool {
+        return self.len() == other.len() && self.is_subset(other)
+    }
+}
+
+impl<K: Eq + Hash, V: Eq> Eq for Map<K, V> {
+    fun equals(self, other: Map<K, V>) -> Bool {
+        if self.len() != other.len() {
+            return false
+        }
+        let ks = self.keys()
+        let i = 0
+        while i < ks.len() {
+            let k = ks.get(i)
+            if !self.get(k).equals(other.get(k)) {
+                return false
+            }
+            i = i + 1
+        }
+        return true
+    }
+}

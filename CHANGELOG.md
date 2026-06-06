@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.11.0] - 2026-06-06
+
+### Added
+
+- `Eq` for the built-in generic and collection types, so `==`/`!=` compare them by value: `Option<T>`, `Result<T, E>`, and `List<T>` (in std/core, always available), and `Set<T>` and `Map<K, V>` (in std/collections; Set and Map compare order-independently). An element type must itself implement `Eq`, which the bound requires. A follow-up to the 2.10.2 operator fix (#340): previously these compared by object identity, so `Some(1) == Some(1)` and `[1, 2] == [1, 2]` were `false`; they are now `true` (#342).
+
 ## [2.10.2] - 2026-06-06
 
 ### Fixed

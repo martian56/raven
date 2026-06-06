@@ -776,22 +776,32 @@ fn lower_unop(op: UnaryOp) -> HirUnaryOp {
     }
 }
 
-/// Whether `ty` is a struct or enum that implements `Eq` (any impl on the type
-/// provides an `equals` method), so `==`/`!=` on it should dispatch to that
-/// method rather than compare the heap pointers. Matched by the type's head
-/// name, which covers the concrete and generic (`impl<T: Eq> Eq for Pair<T>`)
+/// The head identity used to match a type against an `Eq` impl's self type,
+/// or `None` for a type whose `==` uses a native compare instead of `equals`
+/// (the primitives, and `String`, which has its own byte-equality path).
+/// `Set`/`Map` are ordinary structs, so they match through the `Struct` arm.
+fn eq_head(ty: &Ty) -> Option<String> {
+    match ty {
+        Ty::Struct { name, .. } | Ty::Enum { name, .. } => Some(name.clone()),
+        Ty::Option(_) => Some("Option".to_string()),
+        Ty::Result(_, _) => Some("Result".to_string()),
+        Ty::List(_) => Some("List".to_string()),
+        _ => None,
+    }
+}
+
+/// Whether `ty` is a type that implements `Eq` (an impl on it provides an
+/// `equals` method), so `==`/`!=` on it should dispatch to that method rather
+/// than compare the heap pointers. Matched by the type's head, which covers
+/// the concrete and generic (`impl<T: Eq> Eq for Pair<T>` / `Option<T>`)
 /// cases the derive pass and hand-written impls produce.
 fn type_has_equals(env: &crate::tycheck::TypeEnv, ty: &Ty) -> bool {
-    let head = match ty {
-        Ty::Struct { name, .. } | Ty::Enum { name, .. } => name.as_str(),
-        _ => return false,
+    let Some(head) = eq_head(ty) else {
+        return false;
     };
     env.impls.iter().any(|imp| {
         imp.methods.contains_key("equals")
-            && matches!(
-                &imp.self_ty,
-                Ty::Struct { name, .. } | Ty::Enum { name, .. } if name == head
-            )
+            && eq_head(&imp.self_ty).as_deref() == Some(head.as_str())
     })
 }
 
