@@ -334,6 +334,20 @@ impl<'a, 'b> Checker<'a, 'b> {
         self_ty: Option<Ty>,
         return_ty: Ty,
     ) -> Self {
+        // Hand the inference context the trait impls in scope so a pending
+        // bound is verified the moment its variable resolves to a concrete
+        // type (catches, for example, an inferred `Map` key with no `Hash`).
+        let mut infer = InferCtx::new();
+        infer.set_trait_impls(
+            env.impls
+                .iter()
+                .filter_map(|i| {
+                    i.trait_name
+                        .as_ref()
+                        .map(|t| (t.clone(), i.self_ty.clone()))
+                })
+                .collect(),
+        );
         Self {
             resolved,
             env,
@@ -343,7 +357,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             locals: HashMap::new(),
             generic_scope: GenericScope::new(),
             param_bounds: HashMap::new(),
-            infer: InferCtx::new(),
+            infer,
             array_hint: None,
             errors: Vec::new(),
             const_locals: std::collections::HashSet::new(),
@@ -2153,6 +2167,14 @@ impl<'a, 'b> Checker<'a, 'b> {
         let mut inherent_matches: Vec<(usize, FnSig, HashMap<ParamId, Ty>)> = Vec::new();
         let mut trait_matches: Vec<(usize, FnSig, HashMap<ParamId, Ty>, String)> = Vec::new();
         for (idx, imp) in impls_snapshot.iter().enumerate() {
+            // Skip impls without this method before allocating inference
+            // variables or unifying. A rejected impl whose self type still
+            // unifies (for example `impl Eq for Map<K, V: Eq>`, which has no
+            // `set`) would otherwise leak its bounds onto the receiver's type
+            // variables.
+            let Some(msig) = imp.methods.get(name) else {
+                continue;
+            };
             // Substitute fresh vars for impl generics.
             let mut subst: HashMap<ParamId, Ty> = HashMap::new();
             for p in &imp.generics {
@@ -2168,10 +2190,6 @@ impl<'a, 'b> Checker<'a, 'b> {
             if probe.is_err() {
                 continue;
             }
-            // Method must exist on this impl.
-            let Some(msig) = imp.methods.get(name) else {
-                continue;
-            };
             if imp.trait_name.is_some() {
                 trait_matches.push((
                     idx,
@@ -2390,6 +2408,17 @@ impl<'a, 'b> Checker<'a, 'b> {
         let impls_snapshot = self.env.impls.clone();
         let mut matches: Vec<(FnSig, HashMap<ParamId, Ty>)> = Vec::new();
         for imp in impls_snapshot.iter() {
+            // Skip impls that do not provide this associated function before
+            // allocating inference variables or unifying. A rejected impl whose
+            // self type still unifies (for example `impl Eq for Map<K, V: Eq>`,
+            // which has no `new`) would otherwise leak its bounds onto the
+            // result's type variables.
+            let Some(msig) = imp.methods.get(name) else {
+                continue;
+            };
+            if msig.has_self {
+                continue;
+            }
             let mut subst: HashMap<ParamId, Ty> = HashMap::new();
             for p in &imp.generics {
                 let v = self.infer.fresh(span.clone());
@@ -2400,12 +2429,6 @@ impl<'a, 'b> Checker<'a, 'b> {
             }
             let impl_self = substitute(&imp.self_ty, &subst);
             if self.infer.unify(&impl_self, type_ty, span).is_err() {
-                continue;
-            }
-            let Some(msig) = imp.methods.get(name) else {
-                continue;
-            };
-            if msig.has_self {
                 continue;
             }
             matches.push((msig.clone(), subst));
