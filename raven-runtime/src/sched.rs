@@ -85,6 +85,10 @@ struct Scheduler {
     next_chan: i64,
     wait_groups: HashMap<i64, WaitGroup>,
     next_wg: i64,
+    /// A `select` set: the channel ids a goroutine is selecting over, built up
+    /// by `raven_select_add` and consumed by `raven_select_recv`.
+    select_sets: HashMap<i64, Vec<i64>>,
+    next_select: i64,
     /// Set once the first goroutine is spawned. Until then the program is
     /// strictly non-concurrent and the worker pool is never started.
     started: bool,
@@ -129,6 +133,12 @@ thread_local! {
     /// goroutines). Replaces the single `Scheduler::current` now that several
     /// threads run goroutines at once.
     static CURRENT_GOROUTINE: Cell<usize> = const { Cell::new(0) };
+
+    /// The value the most recent `raven_select_recv` took from the ready
+    /// channel, fetched by the immediately following `raven_select_value`. The
+    /// goroutine does not yield between the two calls, so no other goroutine
+    /// running on this worker can overwrite it in between.
+    static SELECT_VALUE: Cell<i64> = const { Cell::new(0) };
 }
 
 /// Run `f` with exclusive access to the scheduler. The lock is never held
@@ -177,6 +187,8 @@ impl Scheduler {
             next_chan: 1,
             wait_groups: HashMap::new(),
             next_wg: 1,
+            select_sets: HashMap::new(),
+            next_select: 1,
             started: false,
             shutdown: false,
         }
@@ -726,6 +738,100 @@ pub extern "C" fn raven_sleep_millis(ms: i64) {
     let was = crate::gc::block_begin();
     std::thread::sleep(std::time::Duration::from_millis(ms as u64));
     crate::gc::block_end(was);
+}
+
+// ----- select -----
+
+/// Begin a select set (the channels to wait on), returning its id. Add channels
+/// with `raven_select_add`, then block on it with `raven_select_recv`.
+#[no_mangle]
+pub extern "C" fn raven_select_new() -> i64 {
+    with_sched(|sched| {
+        let id = sched.next_select;
+        sched.next_select += 1;
+        sched.select_sets.insert(id, Vec::new());
+        id
+    })
+}
+
+/// Add channel `chan_id` to select set `set_id` (its index in the set is the
+/// order added).
+#[no_mangle]
+pub extern "C" fn raven_select_add(set_id: i64, chan_id: i64) {
+    with_sched(|sched| {
+        if let Some(set) = sched.select_sets.get_mut(&set_id) {
+            set.push(chan_id);
+        }
+    });
+}
+
+/// Block until one of select set `set_id`'s channels has a value, then take it,
+/// stash it for `raven_select_value`, and return the index of that channel in
+/// the set. Returns -1 if the set is unknown or empty. Ties go to the
+/// lowest index.
+#[no_mangle]
+pub extern "C" fn raven_select_recv(set_id: i64) -> i64 {
+    let me = CURRENT_GOROUTINE.with(|c| c.get());
+    loop {
+        // (index, value, sender to wake) when ready; None means block.
+        let ready: Option<(i64, i64, Option<usize>)> = with_sched(|sched| {
+            let ids = sched.select_sets.get(&set_id)?.clone();
+            if ids.is_empty() {
+                return None;
+            }
+            // Clear any registration from a previous iteration so re-registering
+            // below cannot duplicate this waiter on a channel's list.
+            for &cid in &ids {
+                if let Some(ch) = sched.channels.get_mut(&cid) {
+                    ch.recv_waiters.retain(|&w| w != me);
+                }
+            }
+            // Take from the first channel that has a value, waking one of its
+            // blocked senders so it can refill the freed slot.
+            for (i, &cid) in ids.iter().enumerate() {
+                if let Some(ch) = sched.channels.get_mut(&cid) {
+                    if let Some(v) = ch.queue.pop_front() {
+                        let sender = ch.send_waiters.pop_front();
+                        return Some((i as i64, v, sender));
+                    }
+                }
+            }
+            // None ready: register on every channel's recv list and commit to
+            // blocking, then park below.
+            for &cid in &ids {
+                if let Some(ch) = sched.channels.get_mut(&cid) {
+                    ch.recv_waiters.push_back(me);
+                }
+            }
+            sched.blocked.insert(me);
+            Some((-2, 0, None)) // sentinel: registered, must block
+        });
+        match ready {
+            None => return -1,
+            Some((-2, _, _)) => park_current(me),
+            Some((index, value, sender)) => {
+                if let Some(snd) = sender {
+                    wake(snd);
+                }
+                SELECT_VALUE.with(|c| c.set(value));
+                return index;
+            }
+        }
+    }
+}
+
+/// The value taken by the most recent `raven_select_recv` on this thread.
+#[no_mangle]
+pub extern "C" fn raven_select_value() -> i64 {
+    SELECT_VALUE.with(|c| c.get())
+}
+
+/// Discard select set `set_id`.
+#[no_mangle]
+pub extern "C" fn raven_select_free(set_id: i64) {
+    with_sched(|sched| {
+        sched.select_sets.remove(&set_id);
+    });
 }
 
 #[cfg(test)]

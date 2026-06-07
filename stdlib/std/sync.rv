@@ -15,6 +15,11 @@ extern "C" {
     fun raven_waitgroup_add(id: Int, delta: Int)
     fun raven_waitgroup_wait(id: Int)
     fun raven_sleep_millis(ms: Int)
+    fun raven_select_new() -> Int
+    fun raven_select_add(set_id: Int, chan_id: Int)
+    fun raven_select_recv(set_id: Int) -> Int
+    fun raven_select_value() -> Int
+    fun raven_select_free(set_id: Int)
 }
 
 // A channel of Int values. The id keys the runtime's channel registry.
@@ -107,4 +112,25 @@ impl WaitGroup {
     fun wait(self) {
         raven_waitgroup_wait(self.id)
     }
+}
+
+// The outcome of a `select_recv`: `index` is the position in the channel list
+// of the channel that produced a value (or -1 if the list was empty), and
+// `value` is that value.
+struct SelectResult {
+    index: Int,
+    value: Int,
+}
+
+// Block until one of `channels` has a value to receive, then return its index
+// in the list and the value. When several are ready the lowest index wins.
+fun select_recv(channels: List<Channel>) -> SelectResult {
+    let set = raven_select_new()
+    for ch in channels {
+        raven_select_add(set, ch.id)
+    }
+    let index = raven_select_recv(set)
+    let value = raven_select_value()
+    raven_select_free(set)
+    return SelectResult { index: index, value: value }
 }
