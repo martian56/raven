@@ -73,10 +73,9 @@ pub const TAG_STRUCT: u32 = 0x07;
 
 /// Bit 0 of `ObjectHeader.gc_bits`: the mark bit the tracing collector
 /// sets during the mark phase and clears during sweep. The remaining
-/// `gc_bits` stay zero and are reserved for a future colour scheme. See
+/// `gc_bits` holds the mark epoch the collector stamps (see `gc.rs`). See
 /// `docs/v2/specs/gc.md`.
-pub const GC_MARK_BIT: u32 = 0x1;
-
+///
 /// Canonical 16-byte object header.
 ///
 /// Every heap allocation the GC traces starts with one of these,
@@ -88,8 +87,9 @@ pub const GC_MARK_BIT: u32 = 0x1;
 pub struct ObjectHeader {
     /// Discriminator picking one of the `TAG_*` constants.
     pub tag: u32,
-    /// Mark / colour bits reserved for the future tracing collector.
-    /// Always zero in the current scaffold.
+    /// The mark epoch: the collector stamps this with the current collection's
+    /// epoch when it marks the object reachable. Zero on a fresh object (which
+    /// never equals an epoch, so a fresh object is unmarked). See `gc.rs`.
     pub gc_bits: u32,
     /// Logical length in the unit appropriate for the tag (bytes for
     /// strings, elements for lists, entries for maps and sets).
@@ -100,7 +100,7 @@ pub struct ObjectHeader {
 }
 
 impl ObjectHeader {
-    /// Construct a header with the given tag and zeroed GC bits.
+    /// Construct a header with the given tag and a zero (unmarked) epoch.
     pub const fn new(tag: u32, len: u32, cap: u32) -> Self {
         Self {
             tag,
@@ -108,24 +108,6 @@ impl ObjectHeader {
             len,
             cap,
         }
-    }
-
-    /// Return true when the mark bit is set.
-    #[inline]
-    pub const fn is_marked(&self) -> bool {
-        self.gc_bits & GC_MARK_BIT != 0
-    }
-
-    /// Set the mark bit.
-    #[inline]
-    pub fn set_mark(&mut self) {
-        self.gc_bits |= GC_MARK_BIT;
-    }
-
-    /// Clear the mark bit.
-    #[inline]
-    pub fn clear_mark(&mut self) {
-        self.gc_bits &= !GC_MARK_BIT;
     }
 }
 

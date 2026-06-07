@@ -25,6 +25,34 @@ use crate::object::{MapEntry, SetEntry, BOX_PAYLOAD_OFFSET};
 use crate::{raven_alloc, raven_dealloc};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+/// Monotonic count of collections across all threads, the source of globally
+/// unique mark epochs. Global so two threads' collections never pick the same
+/// epoch (the basis for distinguishing a stale cross-thread mark once the
+/// collector is concurrent).
+static GC_EPOCH: AtomicU32 = AtomicU32::new(0);
+
+thread_local! {
+    /// The epoch of this thread's collection in progress. Marking writes it
+    /// into an object's `gc_bits`; an object is "marked" exactly when `gc_bits`
+    /// equals it. Each thread collects its own heap with its own epoch, so this
+    /// is thread-local: a global value would be overwritten by another thread's
+    /// concurrent collection between this thread's mark and sweep. Reusing the
+    /// `gc_bits` word as the epoch (rather than a wider field) keeps the pinned
+    /// 16-byte header layout. See `docs/v2/specs/concurrency-parallelism.md`.
+    static CURRENT_EPOCH: Cell<u32> = const { Cell::new(0) };
+}
+
+/// Allocate the next globally unique mark epoch, skipping 0 (a freshly zeroed
+/// header has `gc_bits == 0`, so epoch 0 must never mean "marked").
+fn next_epoch() -> u32 {
+    let mut e = GC_EPOCH.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
+    if e == 0 {
+        e = GC_EPOCH.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
+    }
+    e
+}
 
 /// A registered root: the address of a stack slot that holds a GC
 /// pointer (or null). The collector reads the slot's current value at
@@ -441,6 +469,10 @@ pub extern "C" fn raven_gc_collect() {
 
 /// Run one full mark-and-sweep cycle.
 fn collect() {
+    // A fresh epoch per collection: survivors from the previous cycle carry the
+    // old epoch and so count as unmarked here, which removes the separate
+    // clear-marks pass and is the basis for a future concurrent collector.
+    CURRENT_EPOCH.with(|e| e.set(next_epoch()));
     mark();
     sweep();
     // Reset the threshold to twice the surviving live bytes, never
@@ -490,19 +522,20 @@ fn mark() {
     }
 }
 
-/// Set the mark bit on `object` if it is non-null and not already
-/// marked. Returns true when this call marked it (so the caller should
-/// trace its children).
+/// Stamp `object` with the current collection epoch if it is non-null and not
+/// already stamped this cycle. Returns true when this call stamped it (so the
+/// caller should trace its children).
 fn mark_object(object: *mut ObjectHeader) -> bool {
     if object.is_null() {
         return false;
     }
+    let epoch = CURRENT_EPOCH.with(|e| e.get());
     // SAFETY: a registered object pointer is a live header.
     let header = unsafe { &mut *object };
-    if header.is_marked() {
+    if header.gc_bits == epoch {
         return false;
     }
-    header.set_mark();
+    header.gc_bits = epoch;
     true
 }
 
@@ -640,23 +673,23 @@ unsafe fn trace_object(object: *mut ObjectHeader, work: &mut Vec<*mut ObjectHead
     }
 }
 
-/// Sweep phase: free every unmarked object and clear the mark bit on
-/// survivors so the next cycle starts clean.
+/// Sweep phase: free every object not stamped with the current epoch. No
+/// clear pass is needed: the next collection takes a fresh epoch, so survivors
+/// are implicitly unmarked then.
 fn sweep() {
+    let epoch = CURRENT_EPOCH.with(|e| e.get());
     HEAP.with(|h| {
         let mut heap = h.borrow_mut();
         let mut write = 0usize;
         for read in 0..heap.len() {
             let object = heap[read];
             // SAFETY: every heap entry is a live registered header.
-            let marked = unsafe { (*object).is_marked() };
+            let marked = unsafe { (*object).gc_bits } == epoch;
             if marked {
-                // SAFETY: live header; clear the mark for next cycle.
-                unsafe { (*object).clear_mark() };
                 heap[write] = object;
                 write += 1;
             } else {
-                // SAFETY: unmarked and registered; free it.
+                // SAFETY: unmarked this cycle and registered; free it.
                 unsafe { free_one(object) };
             }
         }
@@ -816,11 +849,10 @@ mod collector_tests {
             raven_gc_push_root(&mut slot as *mut *mut u8);
             raven_gc_collect();
             assert_eq!(raven_gc_live_objects(), 1);
-            // The header is still valid and its mark bit was cleared.
+            // The header is still valid after the sweep.
             // SAFETY: the rooted object survived the sweep.
             unsafe {
                 assert_eq!((*(s)).header.tag, crate::object::TAG_STRING);
-                assert!(!(*(s)).header.is_marked());
             }
             raven_gc_pop_roots(1);
             raven_gc_collect();
