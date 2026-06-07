@@ -1,64 +1,73 @@
 //! Stop-the-world coordination for the multi-threaded collector.
 //!
-//! The garbage collector is stop-the-world: before it marks and sweeps the
-//! shared heap, every other mutator thread must reach a **safepoint** and park,
-//! so the collector sees a quiescent heap and a consistent set of roots. This
-//! module is that coordination, built and tested on its own before it guards
-//! real memory (see `docs/v2/specs/concurrency-parallelism.md`).
+//! Before the collector marks and sweeps the shared heap it must reach a state
+//! where no other thread is mutating the heap or a shadow stack, so it sees a
+//! quiescent heap and a consistent set of roots. This module is that
+//! coordination, built and tested on its own before it guards real memory (see
+//! `docs/v2/specs/concurrency-parallelism.md`).
 //!
-//! Why a cooperative safepoint protocol and not a single global lock: the
-//! shadow-stack root operations (`enter_frame`/`leave_frame`) run on every
-//! function call and must stay lock-free, or every call would pay a mutex
-//! round trip (measured at roughly an order of magnitude slowdown on
-//! call-heavy code). So mutators run lock-free and instead *poll* a single
-//! atomic at coarse points (each allocation, and later loop back-edges); when a
-//! collection is pending the poll parks the thread at a point where its roots
-//! are consistent. The collector waits for every other registered thread to
-//! park, runs, then resumes them.
+//! # The model: short unsafe regions, not a poll-and-park barrier
 //!
-//! The common case is cheap: when no collection is pending, [`poll`] is a
-//! single relaxed atomic load and returns. A single-threaded program (one
-//! registered thread, which is also the only collector) never waits at all:
-//! `stop_the_world` finds zero other threads and returns immediately.
+//! A thread is **safe by default**. It enters a short **unsafe region** only
+//! while it mutates the heap (allocation) or its shadow stack
+//! (`enter_frame`/`push_root`/...), bracketing each with
+//! [`enter_unsafe`](StopTheWorld::enter_unsafe) /
+//! [`exit_unsafe`](StopTheWorld::exit_unsafe). A collection waits only for the
+//! *in-flight* unsafe regions to drain, which is always quick because the
+//! regions are bounded (push a slot, allocate one object). A thread that is
+//! idle, blocked, or running non-mutating code is already safe and never blocks
+//! a collection.
 //!
-//! [`poll`]: StopTheWorld::poll
+//! This is why the model replaces an earlier "wait for every registered thread
+//! to poll and park" barrier: that barrier deadlocked whenever a registered
+//! thread stopped polling (a worker between goroutines, or, in the runtime's
+//! own test harness, a reused thread running a non-allocating test). Here such a
+//! thread contributes nothing to the wait.
+//!
+//! # The handshake
+//!
+//! Entering an unsafe region and a collector starting a stop race. The
+//! resolution is a sequentially-consistent store/load pair: the entering thread
+//! bumps `unsafe_count` then reads `stop_requested`; the collector sets
+//! `stop_requested` then reads `unsafe_count`. Under `SeqCst` at least one side
+//! observes the other, so a thread that proceeds into an unsafe region is
+//! always counted by the collector, and a thread that is not counted has either
+//! not entered or has parked. No thread mutates while the world is stopped.
+//!
+//! The common path is lock-free: `enter_unsafe` is one atomic add plus one
+//! atomic load, `exit_unsafe` one atomic subtract. The mutex and condvar are
+//! touched only to park (a stop is pending) or to wake (a region drained while a
+//! collector waits, or the world resumes).
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex};
 
-/// Coordinates a stop-the-world pause across the registered mutator threads.
+/// Coordinates a stop-the-world pause across mutator threads.
 ///
-/// A mutator thread calls [`register`](Self::register) once it may touch the
-/// heap and [`deregister`](Self::deregister) when it stops, and [`poll`](Self::poll)
-/// at each safepoint. A thread that needs to collect calls
-/// [`stop_the_world`](Self::stop_the_world), does the collection while it holds
-/// the world stopped, then [`resume_the_world`](Self::resume_the_world).
+/// Mutators bracket heap/shadow-stack mutations with
+/// [`enter_unsafe`](Self::enter_unsafe) / [`exit_unsafe`](Self::exit_unsafe). A
+/// thread that needs to collect calls [`stop_the_world`](Self::stop_the_world)
+/// from *outside* an unsafe region, marks and sweeps while the world is held,
+/// then [`resume_the_world`](Self::resume_the_world).
 pub struct StopTheWorld {
-    /// Fast-path flag read at every safepoint without locking. False in the
-    /// common case, so [`poll`](Self::poll) returns after one atomic load.
-    /// Written only under `inner`'s lock, with release ordering, so a thread
-    /// that observes `true` and then locks sees the matching `Inner` state.
+    /// Set while a collection is pending or in progress. A thread that observes
+    /// it on entry to an unsafe region backs out and parks instead.
     stop_requested: AtomicBool,
+    /// Threads currently inside an unsafe region. A collection waits for this to
+    /// reach zero. Lock-free so the common bracket is cheap.
+    unsafe_count: AtomicUsize,
     inner: Mutex<Inner>,
-    /// Signaled when a thread parks (so a waiting collector re-checks the
-    /// count) and when the world resumes (so parked threads wake). One condvar
-    /// is enough because every waiter re-tests its predicate in a loop.
+    /// Signaled when a region drains to zero with a stop pending (so a waiting
+    /// collector re-checks) and when the world resumes (so parked threads and
+    /// waiting collectors wake).
     cv: Condvar,
 }
 
 struct Inner {
-    /// Threads that may touch the heap and therefore must be stopped before a
-    /// collection. The collector is itself registered (a collection is
-    /// triggered by an allocation), so the count includes the collector.
-    registered: usize,
-    /// Threads currently parked at a safepoint.
-    parked: usize,
-    /// True while one collector holds the world stopped; serializes collectors
-    /// so only one stop is in flight at a time.
+    /// True while one collector holds the world stopped; serializes collectors.
     stopping: bool,
-    /// Bumped on each resume. A parked thread waits for it to change, so a
-    /// resume that happens between the thread deciding to park and actually
-    /// waiting cannot be lost.
+    /// Bumped on each resume so a parked thread cannot miss a wakeup that lands
+    /// between its decision to park and the wait.
     epoch: u64,
 }
 
@@ -66,9 +75,8 @@ impl StopTheWorld {
     pub const fn new() -> Self {
         StopTheWorld {
             stop_requested: AtomicBool::new(false),
+            unsafe_count: AtomicUsize::new(0),
             inner: Mutex::new(Inner {
-                registered: 0,
-                parked: 0,
                 stopping: false,
                 epoch: 0,
             }),
@@ -76,103 +84,73 @@ impl StopTheWorld {
         }
     }
 
-    /// Register the calling thread as a mutator that must be stopped for a
-    /// collection. If a collection is already in progress the new thread parks
-    /// immediately, so it cannot run free (and mutate the heap) during a stop.
-    pub fn register(&self) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.registered += 1;
-        self.park_while_stopping(inner);
-    }
-
-    /// Deregister the calling thread (it will no longer touch the heap). If a
-    /// collector is waiting for the world to stop, removing this thread may
-    /// complete the count, so wake the collector to re-check.
-    pub fn deregister(&self) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.registered -= 1;
-        // The leaving thread is running (not parked), so `parked` is unchanged
-        // but the target `registered - 1` dropped; a waiting collector may now
-        // be satisfied.
-        if inner.stopping {
-            self.cv.notify_all();
-        }
-    }
-
-    /// A safepoint poll. Returns immediately when no collection is pending (the
-    /// common case, one relaxed load). Otherwise the thread parks until the
-    /// collection finishes, so the collector observes it stopped with
-    /// consistent roots.
-    pub fn poll(&self) {
-        if !self.stop_requested.load(Ordering::Acquire) {
-            return;
-        }
-        let inner = self.inner.lock().unwrap();
-        self.park_while_stopping(inner);
-    }
-
-    /// Park the calling thread while a stop is in progress, counting it as
-    /// parked so a waiting collector can make progress. Consumes the held lock
-    /// guard and returns once the world is running again. Used by both
-    /// [`poll`](Self::poll) and [`register`](Self::register).
-    fn park_while_stopping(&self, mut inner: std::sync::MutexGuard<'_, Inner>) {
-        while inner.stopping {
-            inner.parked += 1;
-            // Wake a collector that may be waiting for the last thread to park.
-            self.cv.notify_all();
+    /// Enter an unsafe region (about to mutate the heap or a shadow stack).
+    /// Returns once it is safe to mutate. If a collection is pending the thread
+    /// parks here until the world resumes, then retries, so it never mutates
+    /// while the world is stopped.
+    pub fn enter_unsafe(&self) {
+        loop {
+            // Optimistically count this thread as in an unsafe region, then
+            // check for a pending stop. SeqCst pairs with the collector's
+            // store(stop)/load(count) so the two cannot miss each other.
+            self.unsafe_count.fetch_add(1, Ordering::SeqCst);
+            if !self.stop_requested.load(Ordering::SeqCst) {
+                return;
+            }
+            // A stop is pending: back out so the collector can drain to zero,
+            // then park until the world resumes and try again.
+            let dropped_to_zero = self.unsafe_count.fetch_sub(1, Ordering::SeqCst) == 1;
+            let mut inner = self.inner.lock().unwrap();
+            if dropped_to_zero {
+                // This thread was the last in-flight region; nudge the collector.
+                self.cv.notify_all();
+            }
             let epoch = inner.epoch;
-            // Wait for a resume (epoch change). The loop guards against
-            // spurious wakeups and against a new stop starting before this
-            // thread leaves the park.
-            while inner.stopping && inner.epoch == epoch {
+            while self.stop_requested.load(Ordering::SeqCst) && inner.epoch == epoch {
                 inner = self.cv.wait(inner).unwrap();
             }
-            inner.parked -= 1;
         }
     }
 
-    /// Stop every other registered thread and return with the world held
-    /// stopped. The caller must be a registered mutator (a collection is
-    /// triggered from an allocation), so it waits for the other
-    /// `registered - 1` threads to park. After this returns, no other
-    /// registered thread is running until [`resume_the_world`](Self::resume_the_world);
-    /// the caller may mark and sweep the shared heap exclusively.
+    /// Leave an unsafe region. If this was the last in-flight region and a
+    /// collector is waiting, wake it.
+    pub fn exit_unsafe(&self) {
+        let was_last = self.unsafe_count.fetch_sub(1, Ordering::SeqCst) == 1;
+        if was_last && self.stop_requested.load(Ordering::SeqCst) {
+            let _guard = self.inner.lock().unwrap();
+            self.cv.notify_all();
+        }
+    }
+
+    /// Stop the world and return with it held. Must be called from *outside* an
+    /// unsafe region (a collection is triggered from an allocation site that has
+    /// not yet entered its region). After this returns, no other thread is in an
+    /// unsafe region and none can enter one without parking, so the caller may
+    /// mark and sweep the shared heap. One collector runs at a time.
     pub fn stop_the_world(&self) {
         let mut inner = self.inner.lock().unwrap();
-        // Only one collector at a time. If another already holds the world,
-        // park here (this thread is idle, not mutating, so it counts toward
-        // the parked total) until that collection resumes, then contend again.
-        // Counting a contending collector as parked is essential: otherwise an
-        // active collector would wait forever for a thread that is itself
-        // blocked trying to collect and never reaches a `poll` safepoint.
+        // Serialize collectors: wait out any in-progress stop. The waiting
+        // collector is itself safe (not in an unsafe region), so it does not
+        // block the active collection.
         while inner.stopping {
-            inner.parked += 1;
-            self.cv.notify_all();
-            let epoch = inner.epoch;
-            while inner.stopping && inner.epoch == epoch {
-                inner = self.cv.wait(inner).unwrap();
-            }
-            inner.parked -= 1;
-        }
-        // No collection in progress and the lock is held continuously from
-        // here, so this thread alone claims the stop.
-        inner.stopping = true;
-        self.stop_requested.store(true, Ordering::Release);
-        // Wait until every other registered thread has parked. `registered`
-        // includes the caller, which is at a safepoint by definition.
-        while inner.parked < inner.registered.saturating_sub(1) {
             inner = self.cv.wait(inner).unwrap();
         }
-        // Hold the invariant by leaving `stopping` true; parked threads will
-        // not leave their park until the epoch bumps in `resume_the_world`.
+        inner.stopping = true;
+        self.stop_requested.store(true, Ordering::SeqCst);
+        // Wait for every in-flight unsafe region to drain. New entries park
+        // rather than counting, so this terminates as soon as the bounded
+        // in-flight regions finish.
+        while self.unsafe_count.load(Ordering::SeqCst) != 0 {
+            inner = self.cv.wait(inner).unwrap();
+        }
     }
 
-    /// Resume the threads parked by [`stop_the_world`](Self::stop_the_world).
+    /// Resume the threads parked by a stop and let collectors contend again.
     pub fn resume_the_world(&self) {
         let mut inner = self.inner.lock().unwrap();
         inner.stopping = false;
         inner.epoch = inner.epoch.wrapping_add(1);
-        self.stop_requested.store(false, Ordering::Release);
+        self.stop_requested.store(false, Ordering::SeqCst);
         self.cv.notify_all();
     }
 }
@@ -186,135 +164,176 @@ impl Default for StopTheWorld {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU64, AtomicUsize};
+    use std::sync::atomic::AtomicU64;
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
-    /// A single-threaded program registers one thread (itself) and collects
-    /// with no other threads to wait for: stop returns at once.
+    /// With no thread in an unsafe region, a stop returns immediately.
     #[test]
-    fn single_thread_stops_immediately() {
+    fn stops_immediately_when_no_unsafe_regions() {
         let stw = StopTheWorld::new();
-        stw.register();
-        // No other registered threads, so this must not block.
         let start = Instant::now();
         stw.stop_the_world();
         stw.resume_the_world();
         assert!(start.elapsed() < Duration::from_secs(1));
-        stw.deregister();
     }
 
-    /// `poll` is a no-op when no stop is pending.
+    /// The deadlock the old barrier had: a thread that touched the coordinator
+    /// once and then goes idle (never enters another unsafe region) must NOT
+    /// block a collection. The old "wait for all to park" model hung here; this
+    /// model treats the idle thread as already safe.
     #[test]
-    fn poll_without_stop_is_a_noop() {
-        let stw = StopTheWorld::new();
-        stw.register();
-        for _ in 0..1000 {
-            stw.poll();
-        }
-        stw.deregister();
-    }
-
-    /// The core invariant: while one thread holds the world stopped, no other
-    /// registered thread runs its critical region. Each worker increments a
-    /// plain (non-atomic) counter only when not stopped; the collector mutates
-    /// it under the stop. If the stop were not exclusive, the unsynchronized
-    /// accesses would race and the final accounting would not add up. Run many
-    /// rounds to shake out timing bugs.
-    #[test]
-    fn stop_is_exclusive_of_mutators() {
-        const WORKERS: usize = 8;
-        const ROUNDS: usize = 200;
+    fn idle_threads_do_not_block_a_collection() {
         let stw = Arc::new(StopTheWorld::new());
-        // Number of collections observed by each worker as "world running".
-        let progress = Arc::new(AtomicU64::new(0));
-        // A flag set true only while the world is stopped; a worker that ever
-        // sees it true at a safepoint has escaped the stop (a bug).
+        let go_idle = Arc::new(AtomicBool::new(false));
+        let stop = Arc::new(AtomicBool::new(false));
+
+        // A worker that does a little unsafe-region work, then spins idle
+        // (never entering an unsafe region again) until told to stop.
+        let worker = {
+            let stw = Arc::clone(&stw);
+            let go_idle = Arc::clone(&go_idle);
+            let stop = Arc::clone(&stop);
+            std::thread::spawn(move || {
+                for _ in 0..50 {
+                    stw.enter_unsafe();
+                    stw.exit_unsafe();
+                }
+                go_idle.store(true, Ordering::Release);
+                while !stop.load(Ordering::Acquire) {
+                    std::hint::spin_loop();
+                }
+            })
+        };
+
+        while !go_idle.load(Ordering::Acquire) {
+            std::hint::spin_loop();
+        }
+        // The worker is now idle and not in any unsafe region. A stop must
+        // complete promptly rather than wait for the idle worker.
+        let start = Instant::now();
+        stw.stop_the_world();
+        let elapsed = start.elapsed();
+        stw.resume_the_world();
+        stop.store(true, Ordering::Release);
+        worker.join().unwrap();
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "a stop blocked on an idle thread for {elapsed:?}"
+        );
+    }
+
+    /// While the world is stopped, no thread is inside an unsafe region.
+    /// Workers loop entering/exiting regions and assert the stop flag is never
+    /// set while they are inside one; a collector stops, marks the window, and
+    /// resumes, over many rounds.
+    #[test]
+    fn no_thread_is_unsafe_while_stopped() {
+        const WORKERS: usize = 8;
+        const ROUNDS: usize = 300;
+        let stw = Arc::new(StopTheWorld::new());
         let world_stopped = Arc::new(AtomicBool::new(false));
-        let escaped = Arc::new(AtomicUsize::new(0));
+        let escaped = Arc::new(AtomicU64::new(0));
+        let done = Arc::new(AtomicBool::new(false));
 
         let mut handles = Vec::new();
         for _ in 0..WORKERS {
             let stw = Arc::clone(&stw);
-            let progress = Arc::clone(&progress);
             let world_stopped = Arc::clone(&world_stopped);
             let escaped = Arc::clone(&escaped);
+            let done = Arc::clone(&done);
             handles.push(std::thread::spawn(move || {
-                stw.register();
-                for _ in 0..ROUNDS * WORKERS {
-                    stw.poll();
-                    // Between safepoints the world must be running for us.
+                while !done.load(Ordering::Acquire) {
+                    stw.enter_unsafe();
+                    // Inside the region the world must not be stopped.
                     if world_stopped.load(Ordering::Acquire) {
                         escaped.fetch_add(1, Ordering::Relaxed);
                     }
-                    progress.fetch_add(1, Ordering::Relaxed);
+                    stw.exit_unsafe();
                 }
-                stw.deregister();
             }));
         }
 
-        // The collector thread.
-        let coll = {
-            let stw = Arc::clone(&stw);
-            let world_stopped = Arc::clone(&world_stopped);
-            std::thread::spawn(move || {
-                stw.register();
-                for _ in 0..ROUNDS {
-                    stw.stop_the_world();
-                    // Exclusive region: set, then clear, the stopped flag. No
-                    // worker may observe it set at a safepoint.
-                    world_stopped.store(true, Ordering::Release);
-                    // A little work to widen the window.
-                    std::hint::spin_loop();
-                    world_stopped.store(false, Ordering::Release);
-                    stw.resume_the_world();
-                }
-                stw.deregister();
-            })
-        };
-
+        for _ in 0..ROUNDS {
+            stw.stop_the_world();
+            world_stopped.store(true, Ordering::Release);
+            std::hint::spin_loop();
+            world_stopped.store(false, Ordering::Release);
+            stw.resume_the_world();
+        }
+        done.store(true, Ordering::Release);
         for h in handles {
             h.join().unwrap();
         }
-        coll.join().unwrap();
         assert_eq!(
             escaped.load(Ordering::Relaxed),
             0,
-            "a worker ran its safepoint region while the world was stopped"
+            "a thread was inside an unsafe region while the world was stopped"
         );
     }
 
-    /// Liveness: a collection always completes even as workers register and
-    /// deregister (model goroutines starting and finishing). A deadlock would
-    /// hang the test; guard it with a watchdog thread.
+    /// Two collectors contending serialize: a non-atomic counter mutated only
+    /// while the world is stopped stays exact.
+    #[test]
+    fn collectors_serialize() {
+        const ROUNDS: usize = 500;
+        let stw = Arc::new(StopTheWorld::new());
+        let counter = Arc::new(std::cell::UnsafeCell::new(0u64));
+        struct Wrap(Arc<std::cell::UnsafeCell<u64>>);
+        // SAFETY: the cell is touched only between stop and resume, which the
+        // coordinator serializes; this wrapper just moves the Arc across threads.
+        unsafe impl Send for Wrap {}
+
+        let mut handles = Vec::new();
+        for _ in 0..2 {
+            let stw = Arc::clone(&stw);
+            let cell = Wrap(Arc::clone(&counter));
+            handles.push(std::thread::spawn(move || {
+                let cell = cell;
+                for _ in 0..ROUNDS {
+                    stw.stop_the_world();
+                    // SAFETY: exclusive while the world is stopped.
+                    unsafe {
+                        *cell.0.get() += 1;
+                    }
+                    stw.resume_the_world();
+                }
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        // SAFETY: all threads joined.
+        let total = unsafe { *counter.get() };
+        assert_eq!(total, (2 * ROUNDS) as u64, "a collector stop overlapped");
+    }
+
+    /// Liveness: a collection always completes while workers churn through
+    /// unsafe regions, guarded by a watchdog against deadlock.
     #[test]
     fn collections_make_progress_under_churn() {
-        const ROUNDS: usize = 100;
+        const ROUNDS: usize = 200;
         let stw = Arc::new(StopTheWorld::new());
         let done = Arc::new(AtomicBool::new(false));
 
-        // Workers that come and go, polling while alive.
         let mut handles = Vec::new();
-        for w in 0..6 {
+        for _ in 0..6 {
             let stw = Arc::clone(&stw);
             let done = Arc::clone(&done);
             handles.push(std::thread::spawn(move || {
                 while !done.load(Ordering::Acquire) {
-                    stw.register();
-                    // Short-lived: poll a handful of times, then leave.
-                    for _ in 0..(w + 1) * 3 {
-                        stw.poll();
-                    }
-                    stw.deregister();
+                    stw.enter_unsafe();
+                    std::hint::spin_loop();
+                    stw.exit_unsafe();
                 }
             }));
         }
 
-        let watchdog_tripped = Arc::new(AtomicBool::new(false));
         let collector_done = Arc::new(AtomicBool::new(false));
+        let tripped = Arc::new(AtomicBool::new(false));
         let watchdog = {
-            let tripped = Arc::clone(&watchdog_tripped);
             let collector_done = Arc::clone(&collector_done);
+            let tripped = Arc::clone(&tripped);
             std::thread::spawn(move || {
                 let start = Instant::now();
                 while !collector_done.load(Ordering::Acquire) {
@@ -327,66 +346,19 @@ mod tests {
             })
         };
 
-        // The collector keeps stopping the world while workers churn.
-        let stw_c = Arc::clone(&stw);
-        stw_c.register();
         for _ in 0..ROUNDS {
-            stw_c.stop_the_world();
-            stw_c.resume_the_world();
+            stw.stop_the_world();
+            stw.resume_the_world();
         }
-        stw_c.deregister();
         collector_done.store(true, Ordering::Release);
-
         done.store(true, Ordering::Release);
         for h in handles {
             h.join().unwrap();
         }
         watchdog.join().unwrap();
         assert!(
-            !watchdog_tripped.load(Ordering::Acquire),
-            "a collection deadlocked under register/deregister churn"
+            !tripped.load(Ordering::Acquire),
+            "a collection deadlocked under unsafe-region churn"
         );
-    }
-
-    /// Two collectors contending serialize: the world is never stopped by both
-    /// at once. Each increments a shared non-atomic counter inside its stop;
-    /// if the stops overlapped the count would be lost.
-    #[test]
-    fn collectors_serialize() {
-        const ROUNDS: usize = 500;
-        let stw = Arc::new(StopTheWorld::new());
-        // A counter guarded only by mutual exclusion of the stop region.
-        let counter = Arc::new(std::cell::UnsafeCell::new(0u64));
-        struct Send2(Arc<std::cell::UnsafeCell<u64>>);
-        // SAFETY: access to the cell happens only inside `stop_the_world`/
-        // `resume_the_world`, which the coordinator serializes; this wrapper
-        // just lets the Arc cross the thread boundary for the test.
-        unsafe impl Send for Send2 {}
-
-        let mut handles = Vec::new();
-        for _ in 0..2 {
-            let stw = Arc::clone(&stw);
-            let cell = Send2(Arc::clone(&counter));
-            handles.push(std::thread::spawn(move || {
-                let cell = cell;
-                stw.register();
-                for _ in 0..ROUNDS {
-                    stw.stop_the_world();
-                    // SAFETY: exclusive while the world is stopped.
-                    unsafe {
-                        let p = cell.0.get();
-                        *p += 1;
-                    }
-                    stw.resume_the_world();
-                }
-                stw.deregister();
-            }));
-        }
-        for h in handles {
-            h.join().unwrap();
-        }
-        // SAFETY: all threads joined.
-        let total = unsafe { *counter.get() };
-        assert_eq!(total, (2 * ROUNDS) as u64, "a collector stop overlapped");
     }
 }
