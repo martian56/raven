@@ -138,18 +138,27 @@ impl StopTheWorld {
     /// world resumes, so the collector sees it stopped with a complete shadow
     /// stack.
     pub fn safepoint(&self) {
-        if !self.stop_requested.load(Ordering::SeqCst) {
-            return;
+        // Loop so that if a fresh collection is already pending when this thread
+        // wakes from a park, it re-parks instead of returning to the caller. A
+        // thread that woke from collection N and ran even briefly before
+        // re-parking for N+1 could be miscounted as parked for N+1 (and the
+        // caller could run while the world is meant to be stopped). The thread
+        // returns only when no stop is pending.
+        while self.stop_requested.load(Ordering::SeqCst) {
+            let mut inner = self.inner.lock().unwrap();
+            // A resume may have landed between the load above and the lock.
+            if !self.stop_requested.load(Ordering::SeqCst) {
+                break;
+            }
+            self.parked.fetch_add(1, Ordering::SeqCst);
+            // The collector may now observe `parked == running`.
+            self.cv.notify_all();
+            let epoch = inner.epoch;
+            while self.stop_requested.load(Ordering::SeqCst) && inner.epoch == epoch {
+                inner = self.cv.wait(inner).unwrap();
+            }
+            self.parked.fetch_sub(1, Ordering::SeqCst);
         }
-        let mut inner = self.inner.lock().unwrap();
-        self.parked.fetch_add(1, Ordering::SeqCst);
-        // The collector may now observe `parked == running`.
-        self.cv.notify_all();
-        let epoch = inner.epoch;
-        while self.stop_requested.load(Ordering::SeqCst) && inner.epoch == epoch {
-            inner = self.cv.wait(inner).unwrap();
-        }
-        self.parked.fetch_sub(1, Ordering::SeqCst);
     }
 
     /// Enter an unsafe region (about to mutate the heap or a shadow stack).
