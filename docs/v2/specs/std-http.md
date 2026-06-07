@@ -189,10 +189,10 @@ to the first blank line, parses the request line and headers, reads the body up
 to `Content-Length`, routes, and writes the response framed with `Content-Length`
 and `Connection: close`. A malformed request is answered `400`.
 
-### Connections are served one at a time
+### A goroutine per connection
 
-`listen` accepts and serves connections sequentially. Handling each on its own
-goroutine is the natural next step, but a goroutine spawned just before the
-accept loop re-blocks is not scheduled promptly today (issue #377), so per-
-connection concurrency waits on that runtime fix. The server is otherwise a
-complete, correct HTTP/1.1 endpoint.
+`listen` accepts in a loop and hands each connection to its own goroutine, so a
+slow handler only delays its own client, not the ones behind it. The goroutines
+run in parallel across the worker pool, and a connection blocked in a read or
+write releases the shared net registry while it waits, so other connections are
+never serialized behind it.

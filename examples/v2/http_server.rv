@@ -4,8 +4,9 @@
 //   curl localhost:8080/greet/raven
 //   curl "localhost:8080/search?q=birds"
 //   curl -X POST -d '{"name":"Ada"}' localhost:8080/users
-// Connections are served one at a time. Handlers are plain functions of
-// `Request -> Response`; routes may capture `:name` path segments.
+// Each connection is handled on its own goroutine, so one slow client does not
+// block the others. Handlers are plain functions of `Request -> Response`;
+// routes may capture `:name` path segments.
 
 import std/http { Server, Request, Response }
 

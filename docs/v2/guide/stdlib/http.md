@@ -341,13 +341,11 @@ enum Method { Get, Post, Put, Delete, Patch, Head, Options, Unknown }
 model and never matches a registered route. The enum derives `Eq` and
 `ToString`, so you can compare it or print it.
 
-### Connections are served one at a time
+### A goroutine per connection
 
-`listen` accepts and serves connections sequentially: it reads a request,
-runs the handler, writes the response, and only then accepts the next
-connection. Handling each connection on its own goroutine is the natural next
-step, but is held by a scheduler issue, so a slow handler currently delays the
-clients behind it.
+`listen` hands each accepted connection to its own goroutine, so a slow handler
+only delays its own client. The goroutines run in parallel across the worker
+pool, and a connection waiting on a read or write does not hold up the others.
 
 ## See also
 
