@@ -156,9 +156,85 @@ safepoints, so the parallel scheduler is validated by **compiled programs**:
 
 ## Build order
 
-1. Steps 1+2 (global scheduler + per-worker yielder), behavior-preserving, merge.
-2. Step 6 (loop-back-edge safepoints), behavior-preserving, merge.
-3. Steps 3+4+5+7 together (the pool, main-on-condvar, cross-worker channels,
-   deadlock) — the parallelism itself, validated end to end by the compiled
-   programs above. This is the irreducible concurrent core and lands as one
-   reviewed, heavily-stressed change.
+1. Steps 1+2 (global scheduler + per-worker yielder), behavior-preserving,
+   merge. **Done (PR #361).**
+2. Steps 3+4+5+7 together (the pool, main-on-condvar, cross-worker channels,
+   deadlock), with the loop-back-edge safepoints (step 6) folded in so they are
+   not pure overhead in a single-threaded program. This is the irreducible
+   concurrent core: it is all-or-nothing (a half-built pool runs nothing), so it
+   lands as one reviewed, heavily-stressed change, validated end to end by the
+   compiled programs above.
+
+## Implementation sketch for the concurrent core (stage 2)
+
+Worked out while building stage 1; capture so the core is built from a concrete
+plan. The state below is what the pieces actually need beyond stage 1.
+
+### New state
+
+- `thread_local CURRENT_GOROUTINE: Cell<usize>` replaces the single
+  `Scheduler::current`. Each worker (and the main thread) records the id it is
+  running; main's is `0`. `current` was used by the deadlock check, the channel
+  ops (who is blocking), and `extra_roots`; all become "this thread's current".
+- In the locked `Scheduler`: a `running: HashSet<usize>` of goroutines a worker
+  is currently resuming, and `main_blocked: bool`.
+- Two condvars paired with the `SCHED` mutex: `WORK_CV` (a worker waits on it
+  when the ready queue is empty) and `MAIN_CV` (main waits on it when blocked).
+- A `shutdown: bool` and the worker `JoinHandle`s (or detach and let process
+  exit reap them, matching today's leak-on-exit).
+
+### Worker loop
+
+```
+loop {
+    let id = { lock; loop { if shutdown { return }
+                            if let Some(id) = ready.pop_front() { break id }
+                            guard = WORK_CV.wait(guard) } };
+    CURRENT_GOROUTINE.set(id);
+    install_root_chain(take saved roots of id);   // into THIS worker's RootContext
+    { lock; running.insert(id) }
+    raven_gc_enter_running();
+    let coro = { lock; goroutines[id].coro.take() };
+    let result = coro.resume(());                 // lock NOT held; safepoints fire here
+    { lock; goroutines[id].coro = Some(coro) }
+    raven_gc_exit_running();
+    let saved = take_root_chain();
+    { lock; running.remove(&id); goroutines[id].roots = saved;
+            match result { Yielded => { ready.push_back(id); WORK_CV.notify_one() }
+                           Blocked => {}
+                           Finished => { goroutines.remove(&id) } } }
+    CURRENT_GOROUTINE.set(0);
+}
+```
+
+`running` plus the per-worker `RootContext` is why `extra_roots` changes: it must
+surface the saved roots of every goroutine **not** in `running` (a running
+goroutine's live roots are in its worker's registered context, already scanned),
+and it must run on the collecting thread, which holds neither the SCHED lock nor
+another worker's context (all are parked at a safepoint during the stop).
+
+### main and goroutine blocking
+
+`raven_go_yield` from main becomes a no-op (or `std::thread::yield_now`): goroutines
+already run in parallel on workers, so main need not drive them. A spawned
+goroutine's yield still re-queues + `suspend(Yielded)`.
+
+A channel op that must block, with `me = CURRENT_GOROUTINE`:
+- register `me` on the wait list **under the lock**;
+- if `me == 0` (main): `main_blocked = true`; `while still parked { guard =
+  MAIN_CV.wait(guard) }`; on wake clear it. (Blocks the main OS thread.)
+- else (goroutine): drop the lock, then `suspend_current(Blocked)`; the worker
+  picks another goroutine. Registering before dropping the lock is what prevents
+  the lost wakeup.
+
+A waker holds the lock and: re-queues a blocked goroutine (`ready.push_back` +
+`WORK_CV.notify_one`) **or**, if the waiter is main, sets it runnable and
+`MAIN_CV.notify_one`. The unbuffered rendezvous hands the value straight to the
+woken receiver.
+
+### Lazy pool start and deadlock
+
+Spawn the pool on the first `raven_go_spawn` (as `started` is set today). Deadlock
+is: ready queue empty, no goroutine in `running`, and every live goroutine
+(including main) blocked, report and exit as today, but detected by a worker (or
+main on its condvar wake) rather than the single run loop.
