@@ -64,6 +64,28 @@ fn const_local_is_usable() {
 }
 
 #[test]
+fn generic_arg_violating_a_bound_is_rejected() {
+    // A type written with a generic argument that does not satisfy the
+    // declaration's bound is rejected at type-check, not left to surface as an
+    // unresolved callee in the back end (the `Map<Uuid, V>` without `Hash`
+    // class of bug).
+    let err = check(
+        "trait Keyable {}\nstruct Holder<T: Keyable> { v: T }\nstruct Plain { x: Int }\nstruct Bad { h: Holder<Plain> }\n",
+    )
+    .unwrap_err();
+    match err {
+        RavenError::Type(b, _, _) => {
+            assert!(
+                matches!(*b, TypeError::BoundNotSatisfied { .. }),
+                "got: {:?}",
+                b
+            )
+        }
+        other => panic!("expected a bound error, got {:?}", other),
+    }
+}
+
+#[test]
 fn reassigning_a_const_local_is_rejected() {
     let err = check("fun f() {\n    const K: Int = 5\n    K = 7\n}\n").unwrap_err();
     match err {

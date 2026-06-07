@@ -776,7 +776,7 @@ fn resolve_type_path(
                 .map(|t| Ty::SelfTy(Box::new(t)))
                 .ok_or_else(|| {
                     RavenError::ty(
-                        TypeError::Custom("`Self` used outside an impl block".into()),
+                        TypeError::Custom("`Self` used outside an `impl` block".into()),
                         head.span.clone(),
                     )
                 });
@@ -857,7 +857,7 @@ fn resolve_type_path(
             .map(|t| Ty::SelfTy(Box::new(t)))
             .ok_or_else(|| {
                 RavenError::ty(
-                    TypeError::Custom("`Self` used outside an impl block".into()),
+                    TypeError::Custom("`Self` used outside an `impl` block".into()),
                     head.span.clone(),
                 )
             }),

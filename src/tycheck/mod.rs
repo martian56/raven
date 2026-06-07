@@ -29,6 +29,7 @@ pub mod pattern;
 pub mod stmt;
 pub mod ty;
 pub mod unify;
+pub mod wf;
 
 #[cfg(test)]
 mod tests;
@@ -203,6 +204,13 @@ pub fn check_file_all<'a>(
 ) -> Result<TypedFile<'a>, Vec<RavenError>> {
     let mut env = TypeEnv::new();
     collect::collect_declarations(resolved, &mut env).map_err(|e| vec![e])?;
+    // Reject declared types whose generic arguments do not satisfy the
+    // declaration's bounds (for example a `Map<K, V>` key without `Hash`), with
+    // a clear error here rather than an unresolved callee at codegen.
+    let wf_errors = wf::check_declared_types(&env);
+    if !wf_errors.is_empty() {
+        return Err(wf_errors);
+    }
     let mut types = TypeMap::new();
     expr::check_bodies(resolved, &env, &mut types)?;
     Ok(TypedFile {
