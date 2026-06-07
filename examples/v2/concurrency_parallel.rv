@@ -1,0 +1,38 @@
+// Parallel reduction under GC pressure. Eight goroutines run in parallel on the
+// worker pool; each allocates a fresh list every iteration (churning the
+// collector on its worker's heap) while accumulating a count, then sends its
+// partial to main over a channel. Main sums the eight partials. The total is
+// deterministic (8 * 2000 * 3 = 48000) even though the goroutines run and
+// collect concurrently, so a wrong total would expose a lost root, a corrupted
+// channel value, or a scheduler race. See docs/v2/specs/mn-scheduler.md.
+
+import std/sync { Channel, channel }
+
+fun worker(out: Channel, n: Int) -> Unit {
+    let acc = 0
+    let i = 0
+    while i < n {
+        let items = [i, i + 1, i + 2]
+        acc = acc + items.len()
+        i = i + 1
+    }
+    out.send(acc)
+}
+
+fun main() {
+    let out = channel()
+    let spawned = 0
+    while spawned < 8 {
+        spawn(fun() -> Unit {
+            worker(out, 2000)
+        })
+        spawned = spawned + 1
+    }
+    let total = 0
+    let received = 0
+    while received < 8 {
+        total = total + out.recv()
+        received = received + 1
+    }
+    print(total)
+}

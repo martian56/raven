@@ -72,6 +72,15 @@ pub extern "C" fn raven_gc_exit_running() {
     COORDINATOR.exit_running();
 }
 
+/// Whether the calling thread is in the collector's running set (it called
+/// `raven_gc_enter_running` without a matching exit). The scheduler uses this so
+/// a thread that parks (main blocking on a channel) leaves the running set only
+/// if it was in it: a compiled `main` is in-Raven, but the Rust test harness
+/// thread that drives the scheduler in unit tests is not.
+pub(crate) fn thread_in_running() -> bool {
+    IN_RAVEN.with(|r| r.get())
+}
+
 /// A safepoint poll. The back end emits a call at loop back-edges (and the
 /// allocator polls too), points where every live GC pointer is on the shadow
 /// stack. A single atomic load when no collection is pending; otherwise the
@@ -79,6 +88,30 @@ pub extern "C" fn raven_gc_exit_running() {
 #[no_mangle]
 pub extern "C" fn raven_gc_safepoint() {
     COORDINATOR.safepoint();
+}
+
+/// Bracket a shadow-stack mutation (`enter_frame`/`leave_frame`/`push_root`/
+/// `pop_roots`) against a concurrent collection.
+///
+/// An in-native thread, the Rust test harness, or a runtime path not running
+/// compiled Raven, is not covered by the safepoint model, so it enters a short
+/// unsafe region that the collector drains before it scans. An in-Raman thread
+/// IS covered: a collection waits for it to reach a safepoint, where its shadow
+/// stack is complete, so between safepoints it may build the shadow stack
+/// freely. It must NOT enter an unsafe region here: parking in one (a stop
+/// landing mid-mutation) is not counted as a safepoint park, so the collection's
+/// `parked == running` wait would never complete. The matching exit reads the
+/// same thread-local, which does not change within one bracketed mutation.
+fn shadow_guard_enter() {
+    if !IN_RAVEN.with(|r| r.get()) {
+        COORDINATOR.enter_unsafe();
+    }
+}
+
+fn shadow_guard_exit() {
+    if !IN_RAVEN.with(|r| r.get()) {
+        COORDINATOR.exit_unsafe();
+    }
 }
 
 /// Owns a thread's [`RootContext`] and keeps it registered with the collector.
@@ -382,9 +415,9 @@ pub extern "C" fn raven_gc_push_root(slot: *mut *mut u8) {
     if slot.is_null() {
         return;
     }
-    COORDINATOR.enter_unsafe();
+    shadow_guard_enter();
     with_roots(|ctx| ctx.roots.push(slot));
-    COORDINATOR.exit_unsafe();
+    shadow_guard_exit();
 }
 
 /// Pop the last `n` root slots off the shadow stack.
@@ -393,12 +426,12 @@ pub extern "C" fn raven_gc_push_root(slot: *mut *mut u8) {
 /// underflowing.
 #[no_mangle]
 pub extern "C" fn raven_gc_pop_roots(n: usize) {
-    COORDINATOR.enter_unsafe();
+    shadow_guard_enter();
     with_roots(|ctx| {
         let new_len = ctx.roots.len().saturating_sub(n);
         ctx.roots.truncate(new_len);
     });
-    COORDINATOR.exit_unsafe();
+    shadow_guard_exit();
 }
 
 /// Register a frame's root array on the shadow stack.
@@ -416,7 +449,7 @@ pub extern "C" fn raven_gc_pop_roots(n: usize) {
 /// `raven_gc_leave_frame`.
 #[no_mangle]
 pub extern "C" fn raven_gc_enter_frame(roots: *mut *mut u8, count: usize) {
-    COORDINATOR.enter_unsafe();
+    shadow_guard_enter();
     with_roots(|ctx| {
         ctx.frames.push(ctx.roots.len());
         if !roots.is_null() {
@@ -433,7 +466,7 @@ pub extern "C" fn raven_gc_enter_frame(roots: *mut *mut u8, count: usize) {
             }
         }
     });
-    COORDINATOR.exit_unsafe();
+    shadow_guard_exit();
 }
 
 /// Unregister the most recently registered frame, truncating the shadow
@@ -443,7 +476,7 @@ pub extern "C" fn raven_gc_enter_frame(roots: *mut *mut u8, count: usize) {
 /// A call with no open frame is a no-op.
 #[no_mangle]
 pub extern "C" fn raven_gc_leave_frame() {
-    COORDINATOR.enter_unsafe();
+    shadow_guard_enter();
     with_roots(|ctx| {
         if let Some(boundary) = ctx.frames.pop() {
             // Defensive: never grow past the current length.
@@ -451,7 +484,7 @@ pub extern "C" fn raven_gc_leave_frame() {
             ctx.roots.truncate(target);
         }
     });
-    COORDINATOR.exit_unsafe();
+    shadow_guard_exit();
 }
 
 /// Register a struct type's GC pointer descriptor.
