@@ -47,6 +47,38 @@ thread_local! {
     /// [`ROOT_REGISTRY`] for the thread's lifetime. Created on first GC touch
     /// and deregistered on thread exit.
     static LOCAL_ROOTS: LocalRoots = LocalRoots::register();
+
+    /// True while this thread is running compiled Raven (it called
+    /// `raven_gc_enter_running` and not yet the matching exit). A collection
+    /// triggered here must leave the running set before stopping the world, so
+    /// it does not wait for itself; the Rust test harness never sets this.
+    static IN_RAVEN: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Mark the calling OS thread as running compiled Raven. The back end emits a
+/// call at program entry, and the scheduler will call it around each dispatched
+/// goroutine. Pairs with [`raven_gc_exit_running`].
+#[no_mangle]
+pub extern "C" fn raven_gc_enter_running() {
+    COORDINATOR.enter_running();
+    IN_RAVEN.with(|r| r.set(true));
+}
+
+/// Mark the calling OS thread as no longer running compiled Raven (it is
+/// blocking or exiting). A collection no longer waits for it.
+#[no_mangle]
+pub extern "C" fn raven_gc_exit_running() {
+    IN_RAVEN.with(|r| r.set(false));
+    COORDINATOR.exit_running();
+}
+
+/// A safepoint poll. The back end emits a call at loop back-edges (and the
+/// allocator polls too), points where every live GC pointer is on the shadow
+/// stack. A single atomic load when no collection is pending; otherwise the
+/// thread parks here until the world resumes.
+#[no_mangle]
+pub extern "C" fn raven_gc_safepoint() {
+    COORDINATOR.safepoint();
 }
 
 /// Owns a thread's [`RootContext`] and keeps it registered with the collector.
@@ -471,6 +503,16 @@ pub(crate) fn root_count() -> usize {
 #[no_mangle]
 pub extern "C" fn raven_gc_alloc(size: usize, align: usize, tag: u32) -> *mut u8 {
     let _ = tag;
+    // Allocation is a safepoint for an in-Raven thread: the shadow stack is
+    // complete here, so if another thread is collecting, park until it finishes
+    // rather than mutate the heap underneath it. The common case (no collection
+    // pending) is a single atomic load that short-circuits the thread-local
+    // check. Only in-Raven threads poll: an in-native thread (the test harness)
+    // is not in the running set, so parking it would make the collector wait
+    // for `parked == running` forever.
+    if COORDINATOR.stop_pending() && IN_RAVEN.with(|r| r.get()) {
+        COORDINATOR.safepoint();
+    }
     // Collect before serving an allocation that would cross the
     // threshold, so the heap stays a bounded multiple of the live set.
     let current = BYTES_ALLOCATED.with(|b| b.get());
@@ -533,6 +575,13 @@ pub extern "C" fn raven_gc_collect() {
 /// never frees an object another thread allocated. A single-threaded program
 /// has no other thread, so the stop returns at once.
 fn collect() {
+    // An in-Raven thread must leave the running set before stopping the world,
+    // or `stop_the_world` would wait for it (itself) to park. A test-harness
+    // thread is not in the running set and skips this.
+    let was_running = IN_RAVEN.with(|r| r.get());
+    if was_running {
+        COORDINATOR.exit_running();
+    }
     COORDINATOR.stop_the_world();
     // A fresh epoch per collection: survivors from the previous cycle carry the
     // old epoch and so count as unmarked here, which removes the separate
@@ -548,6 +597,9 @@ fn collect() {
     let next = collection_floor().max(live.saturating_mul(2));
     THRESHOLD.with(|t| t.set(next));
     COORDINATOR.resume_the_world();
+    if was_running {
+        COORDINATOR.enter_running();
+    }
 }
 
 /// Mark phase: starting from every root, set the mark bit on every

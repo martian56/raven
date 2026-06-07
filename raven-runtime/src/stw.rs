@@ -229,6 +229,14 @@ impl StopTheWorld {
         }
     }
 
+    /// Cheap check (one relaxed-ish atomic load) for whether a collection is
+    /// pending, so a hot path can skip the thread-local and call machinery of a
+    /// full [`safepoint`](Self::safepoint) when nothing is happening.
+    #[inline]
+    pub fn stop_pending(&self) -> bool {
+        self.stop_requested.load(Ordering::SeqCst)
+    }
+
     /// Resume the threads parked by a stop and let collectors contend again.
     pub fn resume_the_world(&self) {
         let mut inner = self.inner.lock().unwrap();
