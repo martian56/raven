@@ -204,6 +204,46 @@ The merged primitives (#350, #351) and the epoch insight feed slice 2 under the
 shared-heap model; under share-nothing they are set aside and the per-worker GC
 is reused unchanged.
 
+## Finding: the safepoint model spans the compiler, and the system is one unit
+
+Building toward slice 2 surfaced that a correct shared-object collector needs
+more than a runtime coordinator, and that the parts cannot be validated apart.
+
+**A collection may only run when every thread that could hold a live GC pointer
+is at a point where that pointer is on its shadow stack.** Between such points,
+compiled code legitimately keeps a GC pointer only in a register (codegen roots
+across safepoints, not across every instruction). If a collection on one thread
+frees an object another thread holds only in a register, that is a
+use-after-free. This is exactly why real collectors stop the world at
+**safepoints**: points the back end marks where all live GC pointers are
+spilled to rooted slots.
+
+Two consequences:
+
+- **The compiler must emit safepoint polls**, at allocations (already a runtime
+  call) and at loop back-edges (so a long non-allocating loop still reaches a
+  safepoint and parks). A poll is a cheap load of a global flag plus a branch
+  that calls a park routine only when a collection is pending. This is a
+  codegen change, not just a runtime one.
+- **A thread state distinguishes "in Raven" from "in native".** A thread inside
+  a runtime call or blocked (or, in the runtime's own test harness, a Rust
+  thread that never runs compiled Raven) is already at a complete, stable
+  shadow stack and is scanned without waiting; only "in Raven" threads must
+  reach a poll and park. This is what keeps idle/native threads from
+  deadlocking a collection. The merged unsafe-region coordinator (#354) is the
+  "in native, briefly mutating the shadow stack" half of this; the "in Raven,
+  reach a safepoint" half is the codegen poll plus a park.
+
+And the parts are interdependent: the multi-threaded collector is only
+exercisable by **parallel compiled goroutines**, which need the M:N scheduler;
+the scheduler's goroutines share objects, which need the collector; the
+collector needs the codegen safepoint polls. None can be validated in isolation.
+So slice 2 is genuinely **one interdependent build**, compiler safepoint polls +
+runtime coordinator with thread state + shared heap + worker pool, brought up
+together and validated as a whole by a parallel-goroutine program. The merged
+primitives are correct sub-components, but the integration is a sustained,
+dedicated effort, not a sequence of independently shippable PRs.
+
 ## Verification
 
 The GC stress tests already in the suite (allocate under load, hold values
