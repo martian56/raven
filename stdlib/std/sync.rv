@@ -11,6 +11,10 @@ extern "C" {
     fun raven_channel_send(id: Int, value: Int)
     fun raven_channel_recv(id: Int) -> Int
     fun raven_go_yield()
+    fun raven_waitgroup_new() -> Int
+    fun raven_waitgroup_add(id: Int, delta: Int)
+    fun raven_waitgroup_wait(id: Int)
+    fun raven_sleep_millis(ms: Int)
 }
 
 // A channel of Int values. The id keys the runtime's channel registry.
@@ -43,4 +47,64 @@ impl Channel {
 // Yield control to the scheduler so other ready goroutines can run.
 fun yield_now() {
     raven_go_yield()
+}
+
+// Sleep the current goroutine for `ms` milliseconds.
+fun sleep_millis(ms: Int) {
+    raven_sleep_millis(ms)
+}
+
+// A mutual-exclusion lock built on a one-slot channel that holds a single
+// token: the token present means unlocked, taken means locked. `lock` takes
+// the token (blocking until it is returned), `unlock` returns it.
+struct Mutex {
+    ch: Channel,
+}
+
+// Create an unlocked mutex.
+fun mutex() -> Mutex {
+    let m = Mutex { ch: channel_buffered(1) }
+    m.ch.send(0)
+    return m
+}
+
+impl Mutex {
+    // Acquire the lock, blocking until it is free.
+    fun lock(self) {
+        let _ = self.ch.recv()
+    }
+
+    // Release the lock. Call only while holding it.
+    fun unlock(self) {
+        self.ch.send(0)
+    }
+}
+
+// A wait group: wait for a set of goroutines to finish. `add` raises the
+// outstanding count before spawning work, `done` lowers it as each finishes,
+// and `wait` blocks until the count returns to zero.
+struct WaitGroup {
+    id: Int,
+}
+
+// Create a wait group with a zero count.
+fun wait_group() -> WaitGroup {
+    return WaitGroup { id: raven_waitgroup_new() }
+}
+
+impl WaitGroup {
+    // Add `n` to the outstanding count (call before spawning the work).
+    fun add(self, n: Int) {
+        raven_waitgroup_add(self.id, n)
+    }
+
+    // Mark one unit of work done (lower the count by one).
+    fun done(self) {
+        raven_waitgroup_add(self.id, -1)
+    }
+
+    // Block until the count reaches zero.
+    fun wait(self) {
+        raven_waitgroup_wait(self.id)
+    }
 }
