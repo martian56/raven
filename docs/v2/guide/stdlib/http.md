@@ -1,11 +1,12 @@
 # std/http
 
-A small HTTP/1.1 client built on [std/net](net.md). It sends `GET`, `POST`,
-`PUT`, `DELETE`, `PATCH`, and `HEAD` requests and hands back a captured
-response. Every call
-returns `Result<HttpResponse, Error>`, so transport failures (DNS, connect,
-timeout) come back as an [std/error](error.md) `Error` you handle with
-`match`.
+A small HTTP/1.1 **client** and **server**, both built on [std/net](net.md).
+The client sends `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, and `HEAD` requests
+and hands back a captured response. Every call returns
+`Result<HttpResponse, Error>`, so transport failures (DNS, connect, timeout)
+come back as an [std/error](error.md) `Error` you handle with `match`. The
+server (`Server`, `Request`, `Response`, `Method`) lets you route requests to
+handler functions; jump to [Server](#server) below.
 
 ```rust
 import std/http { get }
@@ -200,6 +201,153 @@ fun main() {
     fetch("https://example.com")
 }
 ```
+
+## Server
+
+The server side of `std/http` runs an HTTP/1.1 endpoint. You build a routing
+table on a `Server`, then `listen`. A handler is a function from a `Request` to
+a `Response`.
+
+```rust
+import std/http { Server, Request, Response }
+
+fun hello(req: Request) -> Response {
+    return Response.text("Hello, ${req.param("name")}!")
+}
+
+fun main() {
+    let app = Server.new()
+    app.get("/", fun(req: Request) -> Response = Response.html("<h1>Raven</h1>"))
+    app.get("/hello/:name", hello)
+    app.post("/echo", fun(req: Request) -> Response = Response.json(req.body))
+    app.listen("127.0.0.1:8080")
+}
+```
+
+`listen` binds the address and blocks, serving connections one at a time.
+
+### Routing
+
+Register a handler per method with `get`, `post`, `put`, `delete`, or `patch`
+(or the general `route(method, pattern, handler)`). Routes are tried in the
+order you register them; the first match wins, and a request that matches none
+gets a `404`.
+
+A path segment written `:name` is a **capture**: it matches any single segment
+and binds it under that name, read in the handler with `req.param("name")`.
+
+```rust
+app.get("/users/:id", show_user)        // /users/42  -> param("id") == "42"
+app.get("/users/:id/posts/:slug", show) // two captures
+```
+
+### Handlers
+
+A handler is a value of type `fun(Request) -> Response`. Use a named function
+for anything with more than one statement, or a single-expression closure for a
+one-liner:
+
+```rust
+fun show_user(req: Request) -> Response {
+    let id = req.param("id")
+    return Response.json("{\"id\": \"${id}\"}")
+}
+
+app.get("/users/:id", show_user)
+app.get("/ping", fun(req: Request) -> Response = Response.text("pong"))
+```
+
+### `struct Request`
+
+```rust
+struct Request {
+    method: Method,
+    path: String,
+    version: String,
+    headers: Map<String, String>,   // keys lowercased
+    params: Map<String, String>,    // captured :name segments
+    query: Map<String, String>,     // decoded query string
+    body: String,
+}
+```
+
+The accessors return `""` when a key is absent, so you can use them without
+unwrapping an `Option`:
+
+| Method | Returns |
+|--------|---------|
+| `req.header(name)` | a request header (case-insensitive), `""` if absent |
+| `req.param(name)` | a captured path segment, `""` if absent |
+| `req.query_value(name)` | a query-string value, `""` if absent |
+
+```rust
+fun search(req: Request) -> Response {
+    let q = req.query_value("q")       // /search?q=birds -> "birds"
+    let auth = req.header("authorization")
+    return Response.json("{\"q\": \"${q}\"}")
+}
+```
+
+### `struct Response`
+
+Build a response with a constructor, then refine it with chaining builders.
+
+```rust
+struct Response {
+    status: Int,
+    headers: Map<String, String>,
+    body: String,
+}
+```
+
+| Constructor | Status | Content-Type |
+|-------------|--------|--------------|
+| `Response.ok(body)` / `Response.text(body)` | 200 | `text/plain` |
+| `Response.html(body)` | 200 | `text/html` |
+| `Response.json(body)` | 200 | `application/json` |
+| `Response.created(body)` | 201 | `text/plain` |
+| `Response.no_content()` | 204 | none |
+| `Response.not_found()` | 404 | `text/plain` |
+| `Response.bad_request(msg)` | 400 | `text/plain` |
+| `Response.server_error(msg)` | 500 | `text/plain` |
+| `Response.redirect(location)` | 302 | sets `Location` |
+| `Response.with_body(status, body)` | any | none |
+
+The builders return the response, so they chain:
+
+```rust
+fun create(req: Request) -> Response {
+    return Response.created(req.body)
+        .header("X-Created-By", "raven")
+}
+```
+
+| Builder | Effect |
+|---------|--------|
+| `resp.header(name, value)` | set a response header |
+| `resp.content_type(value)` | set `Content-Type` |
+| `resp.status_code(code)` | replace the status code |
+
+`listen` adds `Content-Length` and `Connection: close` for you when it writes
+the response.
+
+### `enum Method`
+
+```rust
+enum Method { Get, Post, Put, Delete, Patch, Head, Options, Unknown }
+```
+
+`req.method` is one of these. `Unknown` stands for any verb the server does not
+model and never matches a registered route. The enum derives `Eq` and
+`ToString`, so you can compare it or print it.
+
+### Connections are served one at a time
+
+`listen` accepts and serves connections sequentially: it reads a request,
+runs the handler, writes the response, and only then accepts the next
+connection. Handling each connection on its own goroutine is the natural next
+step, but is held by a scheduler issue, so a slow handler currently delays the
+clients behind it.
 
 ## See also
 

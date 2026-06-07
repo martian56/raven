@@ -2,6 +2,17 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.15.0] - 2026-06-08
+
+### Added
+
+- HTTP server in `std/http` (#378), written entirely in Raven on top of `std/net` (TCP), so it needs no new runtime code. Build a routing table on a `Server` and call `listen`. The surface is typed and ergonomic: a `Method` enum; a `Request` with the method, path, lowercased headers, captured `:name` path params, a decoded query map, and the body, plus `header`/`param`/`query_value` accessors; a `Response` with constructors (`ok`, `text`, `html`, `json`, `created`, `no_content`, `not_found`, `bad_request`, `server_error`, `redirect`) and chaining builders (`header`, `content_type`, `status_code`); and a `Server` with `get`/`post`/`put`/`delete`/`patch`/`route` registration. Handlers are `fun(Request) -> Response` values. Routes match in registration order, `:name` segments capture, and a non-match falls through to a 404. Connections are served one at a time; per-connection concurrency waits on a scheduler fix (#377).
+
+### Fixed
+
+- A method that uses `self` but does not declare it as a parameter now reports a clear resolve error pointing at the use, with a help to add `self`, instead of the opaque back-end error `field base used a Unit value` (#372).
+- Generic bounds are now enforced on types written in declarations. A `Map<K, V>` whose key type lacks `Eq`/`Hash` (or any generic instantiation that violates its declaration's bounds) is rejected at type-check with a `does not implement` error, instead of surfacing as an unresolved `K$hash` callee at codegen. Covers struct fields, enum payloads, function parameters and returns, impl methods, and explicit `let`/`const` annotations (#374).
+
 ## [2.14.0] - 2026-06-07
 
 ### Added

@@ -126,7 +126,7 @@ helpers.
 | Module | What it is for |
 |--------|----------------|
 | [std/net](stdlib/net.md) | TCP sockets |
-| [std/http](stdlib/http.md) | an HTTP client |
+| [std/http](stdlib/http.md) | an HTTP client and server |
 | [std/json](stdlib/json.md) | JSON parse and stringify |
 
 ### Concurrency, errors, FFI, testing
