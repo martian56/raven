@@ -105,6 +105,23 @@ pub(crate) fn block_end(was_running: bool) {
     }
 }
 
+/// Run a blocking call (a syscall in std/net, std/fs, std/http, std/process, or
+/// stdin) outside the collector's running set, so a stop-the-world collection
+/// another goroutine triggers does not wait for this thread, parked in the
+/// kernel, to reach a safepoint it cannot reach until the call returns.
+///
+/// `f` must NOT allocate a GC object: while out of the running set the thread is
+/// not at a safepoint, so a freshly allocated object would not be on the shadow
+/// stack and a collection could free it. The runtime IO functions read and write
+/// through Rust memory inside `f` and build the Raven result only after it
+/// returns, so this holds.
+pub(crate) fn blocking<R>(f: impl FnOnce() -> R) -> R {
+    let was = block_begin();
+    let r = f();
+    block_end(was);
+    r
+}
+
 /// A safepoint poll. The back end emits a call at loop back-edges (and the
 /// allocator polls too), points where every live GC pointer is on the shadow
 /// stack. A single atomic load when no collection is pending; otherwise the
