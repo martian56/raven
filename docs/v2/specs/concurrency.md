@@ -26,14 +26,12 @@ Raven ships:
   surfaces every thread's roots, and compiled code reaches safepoints
   (allocations and loop back-edges) where a collection can park it.
 
-Mutexes, wait groups, and `sleep` ship in `std/sync`, and a blocking IO
+Mutexes, wait groups, `sleep`, and `select_recv` (receive from whichever
+of several channels is ready first) ship in `std/sync`, and a blocking IO
 call runs outside the collector's running set so it never stalls a
-collection (see "What blocks a goroutine"). Still deferred (each a filed
-follow-up):
-
-* `select` over multiple channels,
-* true async IO (a goroutine blocked in net/fs/http should yield its
-  worker to another goroutine instead of holding it).
+collection (see "What blocks a goroutine"). The one deferred follow-up is
+true async IO: a goroutine blocked in net/fs/http should yield its worker
+to another goroutine instead of holding it.
 
 ## Execution model
 
@@ -247,7 +245,9 @@ the same failure Go reports.
 
 ## Deferred work
 
-* `select` over multiple channels.
 * True async IO: a goroutine in a blocking IO call releases its worker to
   another goroutine (today the call holds the worker but does not stall a
   collection, see above).
+* A `select` form in the language surface (the runtime supports recv-select
+  today through `std/sync.select_recv`; a `select { ... }` statement with
+  send cases and a default is a possible future addition).

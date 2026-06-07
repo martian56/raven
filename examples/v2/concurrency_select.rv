@@ -1,0 +1,42 @@
+// select over multiple channels: receive from whichever of several channels
+// has a value next. Two goroutines each send two values on their own channel;
+// main receives all four with `select_recv`, summing the values and counting
+// which channel each came from. The value sum (100) and the per-channel counts
+// (two from each) are deterministic regardless of the order the channels become
+// ready. See docs/v2/specs/concurrency.md.
+
+import std/sync { channel, select_recv }
+
+fun main() {
+    let a = channel()
+    let b = channel()
+
+    spawn(fun() -> Unit {
+        a.send(10)
+        a.send(20)
+    })
+    spawn(fun() -> Unit {
+        b.send(30)
+        b.send(40)
+    })
+
+    let total = 0
+    let from_a = 0
+    let from_b = 0
+    let received = 0
+    while received < 4 {
+        let r = select_recv([a, b])
+        total = total + r.value
+        if r.index == 0 {
+            from_a = from_a + 1
+        }
+        if r.index == 1 {
+            from_b = from_b + 1
+        }
+        received = received + 1
+    }
+
+    print(total)
+    print(from_a)
+    print(from_b)
+}
