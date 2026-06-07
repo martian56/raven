@@ -22,10 +22,67 @@ use crate::object::{
     TAG_CLOSURE, TAG_LIST, TAG_MAP, TAG_SET, TAG_STRUCT,
 };
 use crate::object::{MapEntry, SetEntry, BOX_PAYLOAD_OFFSET};
+use crate::roots::{RootContext, RootRegistry};
+use crate::stw::StopTheWorld;
 use crate::{raven_alloc, raven_dealloc};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
+
+/// Registry of every live thread's shadow-stack [`RootContext`]. A collection
+/// scans every registered context, so an object one thread holds survives a
+/// collection another thread triggers (the basis for sharing objects across the
+/// OS-thread pool). A single-threaded program registers exactly one context, so
+/// the scan is the same set of roots as the old thread-local walk.
+static ROOT_REGISTRY: RootRegistry = RootRegistry::new();
+
+/// Coordinates the stop-the-world pause. A collection parks every other
+/// in-Raven thread at a safepoint and waits for in-native shadow-stack
+/// mutations to drain before it reads the registry, so the cross-thread scan is
+/// never a race. Single-threaded programs never wait.
+static COORDINATOR: StopTheWorld = StopTheWorld::new();
+
+thread_local! {
+    /// This thread's shadow-stack context, owned here and registered in
+    /// [`ROOT_REGISTRY`] for the thread's lifetime. Created on first GC touch
+    /// and deregistered on thread exit.
+    static LOCAL_ROOTS: LocalRoots = LocalRoots::register();
+}
+
+/// Owns a thread's [`RootContext`] and keeps it registered with the collector.
+struct LocalRoots {
+    ctx: *mut RootContext,
+}
+
+impl LocalRoots {
+    fn register() -> Self {
+        let ctx = Box::into_raw(Box::new(RootContext::new()));
+        ROOT_REGISTRY.register(ctx);
+        LocalRoots { ctx }
+    }
+}
+
+impl Drop for LocalRoots {
+    fn drop(&mut self) {
+        ROOT_REGISTRY.deregister(self.ctx);
+        // SAFETY: `ctx` came from `Box::into_raw` in `register`, is freed once
+        // here, and the registry no longer holds it.
+        unsafe { drop(Box::from_raw(self.ctx)) };
+    }
+}
+
+/// Run `f` against this thread's root context (initializing and registering it
+/// on first use). The thread is the only writer of its own context; the
+/// collector reads it only while this thread is parked at a safepoint or its
+/// shadow-stack mutations have drained, so the `&mut` never aliases a read.
+/// Callers that mutate the shadow stack wrap the call in an unsafe region.
+fn with_roots<R>(f: impl FnOnce(&mut RootContext) -> R) -> R {
+    LOCAL_ROOTS.with(|lr| {
+        // SAFETY: `ctx` is a valid box owned by this thread's `LocalRoots`, and
+        // only this thread takes `&mut` to it (sequentially), so no aliasing.
+        unsafe { f(&mut *lr.ctx) }
+    })
+}
 
 /// Monotonic count of collections across all threads, the source of globally
 /// unique mark epochs. Global so two threads' collections never pick the same
@@ -86,17 +143,22 @@ pub(crate) fn set_extra_roots_hook(hook: ExtraRootsHook) {
 /// return it. The scheduler calls this on a context switch to stash the
 /// suspending goroutine's roots on its goroutine struct.
 pub(crate) fn take_root_chain() -> SavedRoots {
-    let roots = ROOTS.with(|r| std::mem::take(&mut *r.borrow_mut()));
-    let frames = FRAMES.with(|f| std::mem::take(&mut *f.borrow_mut()));
-    (roots, frames)
+    with_roots(|ctx| {
+        (
+            std::mem::take(&mut ctx.roots),
+            std::mem::take(&mut ctx.frames),
+        )
+    })
 }
 
 /// Install `saved` as the live thread-local root chain, replacing whatever
 /// was there. The scheduler calls this on a context switch to make the
 /// resuming goroutine's roots the live chain.
 pub(crate) fn install_root_chain(saved: SavedRoots) {
-    ROOTS.with(|r| *r.borrow_mut() = saved.0);
-    FRAMES.with(|f| *f.borrow_mut() = saved.1);
+    with_roots(|ctx| {
+        ctx.roots = saved.0;
+        ctx.frames = saved.1;
+    });
 }
 
 /// Visit every slot in a saved root chain, applying `visit` to each.
@@ -109,15 +171,6 @@ pub(crate) fn for_each_slot_in(saved: &SavedRoots, visit: &mut dyn FnMut(RootSlo
 }
 
 thread_local! {
-    /// The shadow stack of root slot addresses, shared by the frame API
-    /// and the per-slot API.
-    static ROOTS: RefCell<Vec<RootSlot>> = const { RefCell::new(Vec::new()) };
-
-    /// Frame boundaries into `ROOTS`. Each entry is the `ROOTS` length
-    /// at the moment a frame was entered; leaving a frame truncates
-    /// `ROOTS` back to that length.
-    static FRAMES: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
-
     /// The all-objects list: the base pointer of every object handed
     /// out by `raven_gc_alloc`. The sweeper walks it once per cycle.
     static HEAP: RefCell<Vec<*mut ObjectHeader>> = const { RefCell::new(Vec::new()) };
@@ -297,7 +350,9 @@ pub extern "C" fn raven_gc_push_root(slot: *mut *mut u8) {
     if slot.is_null() {
         return;
     }
-    ROOTS.with(|r| r.borrow_mut().push(slot));
+    COORDINATOR.enter_unsafe();
+    with_roots(|ctx| ctx.roots.push(slot));
+    COORDINATOR.exit_unsafe();
 }
 
 /// Pop the last `n` root slots off the shadow stack.
@@ -306,11 +361,12 @@ pub extern "C" fn raven_gc_push_root(slot: *mut *mut u8) {
 /// underflowing.
 #[no_mangle]
 pub extern "C" fn raven_gc_pop_roots(n: usize) {
-    ROOTS.with(|r| {
-        let mut roots = r.borrow_mut();
-        let new_len = roots.len().saturating_sub(n);
-        roots.truncate(new_len);
+    COORDINATOR.enter_unsafe();
+    with_roots(|ctx| {
+        let new_len = ctx.roots.len().saturating_sub(n);
+        ctx.roots.truncate(new_len);
     });
+    COORDINATOR.exit_unsafe();
 }
 
 /// Register a frame's root array on the shadow stack.
@@ -328,9 +384,9 @@ pub extern "C" fn raven_gc_pop_roots(n: usize) {
 /// `raven_gc_leave_frame`.
 #[no_mangle]
 pub extern "C" fn raven_gc_enter_frame(roots: *mut *mut u8, count: usize) {
-    ROOTS.with(|r| {
-        let mut stack = r.borrow_mut();
-        FRAMES.with(|f| f.borrow_mut().push(stack.len()));
+    COORDINATOR.enter_unsafe();
+    with_roots(|ctx| {
+        ctx.frames.push(ctx.roots.len());
         if !roots.is_null() {
             for i in 0..count {
                 // Each array entry is itself a slot address (the address of
@@ -341,10 +397,11 @@ pub extern "C" fn raven_gc_enter_frame(roots: *mut *mut u8, count: usize) {
                 // rather than the live GC pointer.
                 // SAFETY: caller guarantees `roots` has `count` entries.
                 let slot = unsafe { *roots.add(i) } as RootSlot;
-                stack.push(slot);
+                ctx.roots.push(slot);
             }
         }
     });
+    COORDINATOR.exit_unsafe();
 }
 
 /// Unregister the most recently registered frame, truncating the shadow
@@ -354,15 +411,15 @@ pub extern "C" fn raven_gc_enter_frame(roots: *mut *mut u8, count: usize) {
 /// A call with no open frame is a no-op.
 #[no_mangle]
 pub extern "C" fn raven_gc_leave_frame() {
-    let boundary = FRAMES.with(|f| f.borrow_mut().pop());
-    if let Some(boundary) = boundary {
-        ROOTS.with(|r| {
-            let mut roots = r.borrow_mut();
+    COORDINATOR.enter_unsafe();
+    with_roots(|ctx| {
+        if let Some(boundary) = ctx.frames.pop() {
             // Defensive: never grow past the current length.
-            let target = boundary.min(roots.len());
-            roots.truncate(target);
-        });
-    }
+            let target = boundary.min(ctx.roots.len());
+            ctx.roots.truncate(target);
+        }
+    });
+    COORDINATOR.exit_unsafe();
 }
 
 /// Register a struct type's GC pointer descriptor.
@@ -392,7 +449,7 @@ fn struct_descriptor(type_id: u32) -> u64 {
 /// Number of root slots currently registered. Test and diagnostic aid.
 #[cfg(test)]
 pub(crate) fn root_count() -> usize {
-    ROOTS.with(|r| r.borrow().len())
+    with_roots(|ctx| ctx.roots.len())
 }
 
 /// Allocate a zeroed object body of `size` bytes aligned to `align`,
@@ -468,10 +525,19 @@ pub extern "C" fn raven_gc_collect() {
 }
 
 /// Run one full mark-and-sweep cycle.
+///
+/// Stops the world first, so the cross-thread root scan in `mark` reads every
+/// thread's shadow stack while it is quiescent (parked at a safepoint, or its
+/// mutations drained). `mark` reaches objects another thread holds through the
+/// shared registry; `sweep` frees only this thread's own heap, so a collection
+/// never frees an object another thread allocated. A single-threaded program
+/// has no other thread, so the stop returns at once.
 fn collect() {
+    COORDINATOR.stop_the_world();
     // A fresh epoch per collection: survivors from the previous cycle carry the
     // old epoch and so count as unmarked here, which removes the separate
-    // clear-marks pass and is the basis for a future concurrent collector.
+    // clear-marks pass and lets a per-thread sweep coexist with cross-thread
+    // marking without a stale-mark bug.
     CURRENT_EPOCH.with(|e| e.set(next_epoch()));
     mark();
     sweep();
@@ -481,6 +547,7 @@ fn collect() {
     let live = BYTES_ALLOCATED.with(|b| b.get());
     let next = collection_floor().max(live.saturating_mul(2));
     THRESHOLD.with(|t| t.set(next));
+    COORDINATOR.resume_the_world();
 }
 
 /// Mark phase: starting from every root, set the mark bit on every
@@ -697,21 +764,22 @@ fn sweep() {
     });
 }
 
-/// Visit the current object pointer held by every registered root slot.
-/// Null slots and slots whose stored pointer is null are skipped.
+/// Visit the current object pointer held by every registered root slot, across
+/// every thread's shadow stack. Null slots and slots whose stored pointer is
+/// null are skipped.
 fn for_each_root(mut visit: impl FnMut(*mut ObjectHeader)) {
-    ROOTS.with(|r| {
-        for &slot in r.borrow().iter() {
-            if slot.is_null() {
-                continue;
-            }
+    // SAFETY: called only from `mark`, inside a stop-the-world, so every
+    // registered context is parked at a safepoint or its shadow-stack mutations
+    // have drained, and is not being mutated for the duration of this call.
+    unsafe {
+        ROOT_REGISTRY.for_each_root_slot(&mut |slot| {
             // SAFETY: a registered slot points to a live `*mut u8`.
-            let object = unsafe { *slot } as *mut ObjectHeader;
+            let object = *slot as *mut ObjectHeader;
             if !object.is_null() {
                 visit(object);
             }
-        }
-    });
+        });
+    }
 }
 
 /// Live object-body bytes currently tracked by the collector. A
