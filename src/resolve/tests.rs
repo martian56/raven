@@ -149,6 +149,22 @@ fn self_inside_impl_is_ok() {
 }
 
 #[test]
+fn self_without_self_param_is_an_error() {
+    // A method that uses `self` but does not declare it as a parameter is
+    // rejected at resolve time, rather than surfacing as a confusing codegen
+    // error (a field access on a Unit `self`).
+    let file = parse_src(
+        "struct T { items: List<Int> }\nimpl T {\n    fun add(n: Int) { self.items.push(n) }\n}\n",
+        "test.rv",
+    );
+    let err = resolve_file(&file, &mut NoLoader).unwrap_err();
+    assert!(matches!(
+        err,
+        RavenError::Resolve(ResolveError::SelfNotMethodParam, _, _)
+    ));
+}
+
+#[test]
 fn self_upper_inside_impl_resolves_to_self_type() {
     let file = parse_src(
         "struct Pair { x: Int, y: Int }\nimpl Pair {\n    fun make() -> Self { Pair { x: 1, y: 2 } }\n}\n",

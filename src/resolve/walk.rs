@@ -313,6 +313,21 @@ fn walk_expr(
                     expr.span.clone(),
                 ));
             }
+            // `self` is bound (as `SelfValue`) only when the enclosing method
+            // declares it as a parameter. Without that, the back end has no
+            // `self` value to produce, so reject the use here with a clear
+            // message rather than letting it surface as a confusing codegen
+            // error (a field access on a Unit `self`).
+            if !matches!(
+                scope.lookup("self").map(|e| &e.binding),
+                Some(Binding::SelfValue)
+            ) {
+                return Err(RavenError::resolve(
+                    ResolveError::SelfNotMethodParam,
+                    expr.span.clone(),
+                )
+                .with_hint("add `self` as the method's first parameter: `fun name(self, ...)`"));
+            }
             map.bind_use(&expr.span, Binding::SelfValue);
         }
         ExprKind::SelfUpper => {
