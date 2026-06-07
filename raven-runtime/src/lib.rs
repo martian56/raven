@@ -385,7 +385,11 @@ pub extern "C" fn raven_read_line() -> *mut object::String {
     let stdin = io::stdin();
     // A read error or clean EOF both leave `line` as the bytes gathered
     // so far (empty at a clean EOF); either way we hand back a String.
-    let _ = stdin.lock().read_line(&mut line);
+    // Reading a line blocks on input, so run it outside the collector's
+    // running set (a goroutine waiting on stdin must not freeze a collection).
+    crate::gc::blocking(|| {
+        let _ = stdin.lock().read_line(&mut line);
+    });
     // Strip the trailing newline and an optional preceding carriage
     // return so callers see the line content without the terminator.
     if line.ends_with('\n') {
@@ -777,9 +781,11 @@ pub extern "C" fn raven_fs_last_error() -> *mut object::String {
 /// `path` must be a valid `raven_string_from_bytes`-built `String`.
 #[no_mangle]
 pub extern "C" fn raven_fs_read(path: *const object::String) -> *mut object::String {
-    let contents = env_name(path)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
-        .and_then(std::fs::read_to_string);
+    let contents = crate::gc::blocking(|| {
+        env_name(path)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
+            .and_then(std::fs::read_to_string)
+    });
     let value = fs_record(contents).unwrap_or_default();
     object::raven_string_from_bytes(value.as_ptr(), value.len())
 }
@@ -794,13 +800,13 @@ pub extern "C" fn raven_fs_write(
     path: *const object::String,
     contents: *const object::String,
 ) -> bool {
-    let result = match (env_name(path), env_name(contents)) {
+    let result = crate::gc::blocking(|| match (env_name(path), env_name(contents)) {
         (Some(p), Some(c)) => std::fs::write(p, c),
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "path or contents is not valid UTF-8",
         )),
-    };
+    });
     fs_record(result).is_some()
 }
 
@@ -814,7 +820,7 @@ pub extern "C" fn raven_fs_append(
     path: *const object::String,
     contents: *const object::String,
 ) -> bool {
-    let result = match (env_name(path), env_name(contents)) {
+    let result = crate::gc::blocking(|| match (env_name(path), env_name(contents)) {
         (Some(p), Some(c)) => std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -824,7 +830,7 @@ pub extern "C" fn raven_fs_append(
             io::ErrorKind::InvalidInput,
             "path or contents is not valid UTF-8",
         )),
-    };
+    });
     fs_record(result).is_some()
 }
 
@@ -1093,9 +1099,13 @@ pub extern "C" fn raven_net_last_error() -> *mut object::String {
 /// `addr` must be a valid `raven_string_from_bytes`-built `String`.
 #[no_mangle]
 pub extern "C" fn raven_net_connect(addr: *const object::String) -> i64 {
-    let result = env_name(addr)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "addr is not valid UTF-8"))
-        .and_then(TcpStream::connect);
+    // The connect (DNS + TCP handshake) can block for seconds; run it outside
+    // the collector's running set so a concurrent collection is not frozen.
+    let result = crate::gc::blocking(|| {
+        env_name(addr)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "addr is not valid UTF-8"))
+            .and_then(TcpStream::connect)
+    });
     match result {
         Ok(stream) => net_insert(Socket::Stream(stream)),
         Err(e) => {
@@ -1131,7 +1141,8 @@ pub extern "C" fn raven_net_listen(addr: *const object::String) -> i64 {
 /// slot set.
 #[no_mangle]
 pub extern "C" fn raven_net_accept(listener_id: i64) -> i64 {
-    let accepted = {
+    // accept blocks until a connection arrives; run it outside the running set.
+    let accepted = crate::gc::blocking(|| {
         let registry = net_registry().lock().unwrap();
         match registry.get(&listener_id) {
             Some(Socket::Listener(l)) => l.accept().map(|(stream, _)| stream),
@@ -1141,7 +1152,7 @@ pub extern "C" fn raven_net_accept(listener_id: i64) -> i64 {
             )),
             None => Err(io::Error::new(io::ErrorKind::NotFound, "unknown socket id")),
         }
-    };
+    });
     match accepted {
         Ok(stream) => net_insert(Socket::Stream(stream)),
         Err(e) => {
@@ -1158,7 +1169,9 @@ pub extern "C" fn raven_net_accept(listener_id: i64) -> i64 {
 #[no_mangle]
 pub extern "C" fn raven_net_read(stream_id: i64, max: i64) -> *mut object::String {
     let cap = max.max(0) as usize;
-    let result = {
+    // Block outside the collector's running set: a slow read must not freeze a
+    // concurrent collection waiting for this worker to reach a safepoint.
+    let result = crate::gc::blocking(|| {
         let mut registry = net_registry().lock().unwrap();
         match registry.get_mut(&stream_id) {
             Some(Socket::Stream(s)) => {
@@ -1174,7 +1187,7 @@ pub extern "C" fn raven_net_read(stream_id: i64, max: i64) -> *mut object::Strin
             )),
             None => Err(io::Error::new(io::ErrorKind::NotFound, "unknown socket id")),
         }
-    };
+    });
     match result {
         Ok(bytes) => {
             net_clear_error();
@@ -1203,7 +1216,7 @@ pub extern "C" fn raven_net_write(stream_id: i64, data: *const object::String) -
         // SAFETY: a Raven String holds `len` initialized bytes.
         unsafe { slice::from_raw_parts(ptr, len) }
     };
-    let result = {
+    let result = crate::gc::blocking(|| {
         let mut registry = net_registry().lock().unwrap();
         match registry.get_mut(&stream_id) {
             Some(Socket::Stream(s)) => s.write_all(bytes).map(|()| bytes.len() as i64),
@@ -1213,7 +1226,7 @@ pub extern "C" fn raven_net_write(stream_id: i64, data: *const object::String) -
             )),
             None => Err(io::Error::new(io::ErrorKind::NotFound, "unknown socket id")),
         }
-    };
+    });
     match result {
         Ok(n) => {
             net_clear_error();
@@ -1294,7 +1307,9 @@ pub extern "C" fn raven_net_reachable(addr: *const object::String) -> bool {
     let Ok(mut targets) = text.to_socket_addrs() else {
         return false;
     };
-    targets.any(|sa| TcpStream::connect_timeout(&sa, Duration::from_millis(500)).is_ok())
+    crate::gc::blocking(|| {
+        targets.any(|sa| TcpStream::connect_timeout(&sa, Duration::from_millis(500)).is_ok())
+    })
 }
 
 /// The message of the most recent fallible http op, empty when it
@@ -1425,22 +1440,28 @@ pub extern "C" fn raven_http_request(
         }
     }
 
-    // GET and DELETE send no body; POST and PUT send `body`.
-    let result = if body.is_empty() {
-        req.call()
-    } else {
-        req.send_string(body)
-    };
+    // The request round-trip and reading the response body block, so run them
+    // outside the collector's running set. `http_capture`/`http_store` work
+    // entirely in Rust memory and the registry (no GC allocation), so it is
+    // sound inside the blocking region.
+    crate::gc::blocking(|| {
+        // GET and DELETE send no body; POST and PUT send `body`.
+        let result = if body.is_empty() {
+            req.call()
+        } else {
+            req.send_string(body)
+        };
 
-    match result {
-        Ok(resp) => http_store(http_capture(resp)),
-        // A non-2xx status is a response, not a transport failure.
-        Err(ureq::Error::Status(_, resp)) => http_store(http_capture(resp)),
-        Err(ureq::Error::Transport(t)) => {
-            http_set_error(t.to_string());
-            0
+        match result {
+            Ok(resp) => http_store(http_capture(resp)),
+            // A non-2xx status is a response, not a transport failure.
+            Err(ureq::Error::Status(_, resp)) => http_store(http_capture(resp)),
+            Err(ureq::Error::Transport(t)) => {
+                http_set_error(t.to_string());
+                0
+            }
         }
-    }
+    })
 }
 
 /// Status code of the stored response `id`, for example 200 or 404. An
@@ -1783,7 +1804,9 @@ pub extern "C" fn raven_process_run(
         let _ = stdin.write_all(stdin_data.as_bytes());
     }
 
-    let output = match child.wait_with_output() {
+    // Feeding stdin and waiting for the child to exit block for the child's
+    // whole lifetime; run them outside the collector's running set.
+    let output = match crate::gc::blocking(|| child.wait_with_output()) {
         Ok(o) => o,
         Err(e) => {
             process_set_error(e.to_string());

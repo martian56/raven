@@ -26,12 +26,14 @@ Raven ships:
   surfaces every thread's roots, and compiled code reaches safepoints
   (allocations and loop back-edges) where a collection can park it.
 
-Still deferred (each a filed follow-up):
+Mutexes, wait groups, and `sleep` ship in `std/sync`, and a blocking IO
+call runs outside the collector's running set so it never stalls a
+collection (see "What blocks a goroutine"). Still deferred (each a filed
+follow-up):
 
 * `select` over multiple channels,
-* non-blocking IO integration (a goroutine blocked in net/fs/http should
-  yield its worker instead of holding it),
-* sync primitives (mutex, waitgroup) and timers/sleep.
+* true async IO (a goroutine blocked in net/fs/http should yield its
+  worker to another goroutine instead of holding it).
 
 ## Execution model
 
@@ -226,10 +228,14 @@ let v = ch.recv()
 
 Channel `send`/`recv`, `yield_now()`, the allocator, and loop back-edges
 are the points a goroutine suspends or can be parked for a collection. A
-goroutine that blocks on a synchronous runtime IO call (a net read, an fs
-read, an http request) holds its worker OS thread for the duration of the
-call (other goroutines keep running on the other workers); making IO
-release the worker is a deferred follow-up.
+goroutine that blocks on a synchronous runtime IO call (a net read or
+connect, an fs read/write, an http request, a subprocess wait, or a
+stdin read) holds its worker OS thread for the duration of the call, but
+other goroutines keep running on the other workers, and the call runs
+outside the collector's running set (`gc::blocking`), so a concurrent
+collection is not frozen waiting for it (it is scanned through its stable
+registered roots instead). Making a blocking IO call release its worker
+to another goroutine (true async IO) is a deferred follow-up.
 
 ## Deadlock
 
@@ -242,6 +248,6 @@ the same failure Go reports.
 ## Deferred work
 
 * `select` over multiple channels.
-* Non-blocking IO integration (a goroutine in a blocking IO call should
-  release its worker).
-* Sync primitives (mutex, waitgroup) and timers/sleep.
+* True async IO: a goroutine in a blocking IO call releases its worker to
+  another goroutine (today the call holds the worker but does not stall a
+  collection, see above).
