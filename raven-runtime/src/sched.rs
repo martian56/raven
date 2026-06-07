@@ -57,6 +57,14 @@ struct Channel {
     recv_waiters: VecDeque<usize>,
 }
 
+/// A wait group: an outstanding-work counter plus the ids waiting for it to
+/// reach zero. `add` adjusts the count; the adjustment that brings it to zero
+/// wakes every waiter. Mirrors Go's `sync.WaitGroup`.
+struct WaitGroup {
+    count: i64,
+    waiters: Vec<usize>,
+}
+
 /// The scheduler state, held behind a global lock (see [`SCHED`]) so the main
 /// thread and the worker pool share one ready queue and channel set.
 struct Scheduler {
@@ -75,6 +83,8 @@ struct Scheduler {
     next_id: usize,
     channels: HashMap<i64, Channel>,
     next_chan: i64,
+    wait_groups: HashMap<i64, WaitGroup>,
+    next_wg: i64,
     /// Set once the first goroutine is spawned. Until then the program is
     /// strictly non-concurrent and the worker pool is never started.
     started: bool,
@@ -165,6 +175,8 @@ impl Scheduler {
             next_id: 1,
             channels: HashMap::new(),
             next_chan: 1,
+            wait_groups: HashMap::new(),
+            next_wg: 1,
             started: false,
             shutdown: false,
         }
@@ -633,6 +645,87 @@ pub extern "C" fn raven_channel_recv(id: i64) -> i64 {
             }
         }
     }
+}
+
+// ----- wait groups -----
+
+/// Create a wait group with a zero counter, returning its id.
+#[no_mangle]
+pub extern "C" fn raven_waitgroup_new() -> i64 {
+    with_sched(|sched| {
+        let id = sched.next_wg;
+        sched.next_wg += 1;
+        sched.wait_groups.insert(
+            id,
+            WaitGroup {
+                count: 0,
+                waiters: Vec::new(),
+            },
+        );
+        id
+    })
+}
+
+/// Adjust wait group `id`'s counter by `delta` (negative for `done`). When the
+/// counter reaches zero, every waiter is woken.
+#[no_mangle]
+pub extern "C" fn raven_waitgroup_add(id: i64, delta: i64) {
+    let woken = with_sched(|sched| match sched.wait_groups.get_mut(&id) {
+        Some(wg) => {
+            wg.count += delta;
+            if wg.count <= 0 {
+                std::mem::take(&mut wg.waiters)
+            } else {
+                Vec::new()
+            }
+        }
+        None => Vec::new(),
+    });
+    for w in woken {
+        wake(w);
+    }
+}
+
+/// Block until wait group `id`'s counter is zero, returning at once if it
+/// already is. The waiter registers under the lock before parking (no lost
+/// wakeup) and the deadlock check counts it like a channel waiter.
+#[no_mangle]
+pub extern "C" fn raven_waitgroup_wait(id: i64) {
+    let me = CURRENT_GOROUTINE.with(|c| c.get());
+    loop {
+        let blocked = with_sched(|sched| {
+            let should_block = match sched.wait_groups.get_mut(&id) {
+                Some(wg) if wg.count > 0 => {
+                    wg.waiters.push(me);
+                    true
+                }
+                _ => false,
+            };
+            if should_block {
+                sched.blocked.insert(me);
+            }
+            should_block
+        });
+        if !blocked {
+            return;
+        }
+        park_current(me);
+    }
+}
+
+/// Sleep the calling goroutine for `ms` milliseconds (a non-positive duration
+/// returns at once). Leaves the collector's running set for the duration so a
+/// collection does not wait on it. This blocks the OS thread it runs on, so a
+/// sleeping goroutine holds its worker while it sleeps (like a blocking IO
+/// call); releasing the worker via a timer is a possible refinement.
+#[no_mangle]
+pub extern "C" fn raven_sleep_millis(ms: i64) {
+    if ms <= 0 {
+        return;
+    }
+    let was = crate::gc::block_begin();
+    std::thread::sleep(std::time::Duration::from_millis(ms as u64));
+    crate::gc::block_end(was);
 }
 
 #[cfg(test)]

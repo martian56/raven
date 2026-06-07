@@ -81,6 +81,30 @@ pub(crate) fn thread_in_running() -> bool {
     IN_RAVEN.with(|r| r.get())
 }
 
+/// Begin a blocking region around a call that parks the OS thread outside
+/// compiled Raven (a sleep, a blocking syscall in std/net, std/fs, ...). Leaves
+/// the collector's running set so a stop-the-world collection does not wait for
+/// this thread to reach a safepoint it will not reach until the call returns;
+/// the thread's roots stay scannable through its registered context, which is
+/// stable while it is parked. Returns whether it actually left the set (only an
+/// in-Raven thread does), to pass to [`block_end`]. Pair the two around the
+/// blocking call only; do not allocate in between (no roots change while out).
+pub(crate) fn block_begin() -> bool {
+    let was = thread_in_running();
+    if was {
+        raven_gc_exit_running();
+    }
+    was
+}
+
+/// End a blocking region opened by [`block_begin`], rejoining the running set if
+/// it was left (which parks here if a collection is in progress).
+pub(crate) fn block_end(was_running: bool) {
+    if was_running {
+        raven_gc_enter_running();
+    }
+}
+
 /// A safepoint poll. The back end emits a call at loop back-edges (and the
 /// allocator polls too), points where every live GC pointer is on the shadow
 /// stack. A single atomic load when no collection is pending; otherwise the

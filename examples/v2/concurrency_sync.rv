@@ -1,0 +1,38 @@
+// Synchronization primitives over the parallel scheduler: a WaitGroup to wait
+// for a set of goroutines, a Mutex to guard shared mutable state, and a sleep.
+// Eight goroutines each increment a shared counter 1000 times under the mutex;
+// the total is exactly 8000 because the mutex serializes the read-modify-write
+// (without it the parallel increments race and lose updates). See
+// docs/v2/specs/concurrency.md.
+
+import std/sync { wait_group, mutex, sleep_millis }
+
+struct Counter {
+    value: Int,
+}
+
+fun main() {
+    let wg = wait_group()
+    let m = mutex()
+    let counter = Counter { value: 0 }
+
+    wg.add(8)
+    let spawned = 0
+    while spawned < 8 {
+        spawn(fun() -> Unit {
+            sleep_millis(1)
+            let i = 0
+            while i < 1000 {
+                m.lock()
+                counter.value = counter.value + 1
+                m.unlock()
+                i = i + 1
+            }
+            wg.done()
+        })
+        spawned = spawned + 1
+    }
+
+    wg.wait()
+    print(counter.value)
+}
