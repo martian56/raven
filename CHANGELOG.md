@@ -2,6 +2,13 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.16.0] - 2026-06-08
+
+### Fixed
+
+- Generic bounds are now enforced on a fully inferred type, not only on a type written in a declaration. A binding such as `let m = Map.new()` later used with a key type that lacks `Eq`/`Hash` is rejected at type-check, instead of reaching the back end as an unresolved `K$hash` callee. The inference context verifies a pending bound the moment its variable resolves to a simple concrete type. Fixing this also corrected a latent bound-attachment bug: the associated-function and method candidate loops unified each impl's self type before checking the impl provided the called method, so a rejected impl such as `impl Eq for Map<K, V: Eq>` (which has no `new`/`set`) leaked an `Eq` requirement onto a map's value type (#375).
+- The runtime no longer holds the global network registry lock across a blocking socket syscall. `accept`, `read`, and `write` now clone the socket handle under the lock and run the blocking call without it, so goroutines doing network IO on different sockets run concurrently instead of serializing behind a connection that has not yet arrived. As a result, `std/http`'s `Server` handles each connection on its own goroutine again: a slow handler no longer holds up the clients behind it, and single, spaced, and parallel requests are all served reliably (#377).
+
 ## [2.15.0] - 2026-06-08
 
 ### Added
