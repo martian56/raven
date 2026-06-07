@@ -2,6 +2,13 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.13.0] - 2026-06-07
+
+### Added
+
+- **Goroutines now run in parallel across CPU cores.** The scheduler is M:N: goroutines (stackful coroutines) are multiplexed onto a pool of worker OS threads, one per available core, so a spawned goroutine makes progress concurrently with the code that spawned it rather than only when that code yields. `main` runs on its own thread and parks when it blocks on a channel; a spawned goroutine suspends its coroutine so its worker runs another. Channel `send`/`recv` keep their blocking semantics and are coordinated without lost wakeups; the all-goroutines-blocked deadlock detector works across workers. The language surface (`spawn`, `channel`/`channel_buffered`, `yield_now`) is unchanged, so existing concurrent programs gain parallelism without edits (#212, #237).
+- A **shared-heap stop-the-world garbage collector** that runs alongside parallel goroutines. Each OS thread sweeps its own heap; a cross-thread root registry surfaces every thread's live roots so an object one thread holds survives a collection another triggers; the object header's mark field is reinterpreted as a per-collection epoch. Compiled code reaches safepoints at allocations and loop back-edges, where a stop-the-world collection parks it with a complete shadow stack; threads blocked or not running compiled Raven are scanned without being waited for. A 100-run-per-build concurrency soak test exercises the scheduler and collector under constant collection.
+
 ## [2.12.0] - 2026-06-06
 
 ### Added
