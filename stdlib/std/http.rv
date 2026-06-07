@@ -9,6 +9,9 @@
 // kind "http". See docs/v2/specs/std-http.md.
 
 import std/error { error_kind }
+import std/net { listen, TcpStream }
+import std/string
+import std/collections
 
 struct HttpResponse {
     status_code: Int,
@@ -85,4 +88,463 @@ fun patch(url: String, body: String) -> Result<HttpResponse, Error> {
 // HEAD `url` (response carries headers and status but no body).
 fun head(url: String) -> Result<HttpResponse, Error> {
     return request("HEAD", url, "", "")
+}
+
+// ===========================================================================
+// HTTP/1.1 server
+//
+// A small, dependency-free server built on std/net (TCP). Register handler
+// functions on a `Server` by method and path pattern, then `listen`. Each
+// connection is parsed into a `Request`, routed to the first matching handler,
+// and the returned `Response` is written back. A path pattern may name captures
+// with a `:name` segment, read in the handler with `req.param("name")`.
+//
+//     fun hello(req: Request) -> Response = Response.text("hi, ${req.param("who")}")
+//
+//     fun main() {
+//         let app = Server.new()
+//         app.get("/hello/:who", hello)
+//         let _ = app.listen("127.0.0.1:8080")
+//     }
+// ===========================================================================
+
+// The HTTP request method. `Unknown` stands for any method the server does not
+// model explicitly; it never matches a registered route.
+@derive(Eq, ToString)
+enum Method {
+    Get,
+    Post,
+    Put,
+    Delete,
+    Patch,
+    Head,
+    Options,
+    Unknown,
+}
+
+// Parse a method token (case-insensitive) into a `Method`.
+fun parse_method(s: String) -> Method {
+    let u = s.to_upper()
+    if u == "GET" {
+        return Method.Get
+    }
+    if u == "POST" {
+        return Method.Post
+    }
+    if u == "PUT" {
+        return Method.Put
+    }
+    if u == "DELETE" {
+        return Method.Delete
+    }
+    if u == "PATCH" {
+        return Method.Patch
+    }
+    if u == "HEAD" {
+        return Method.Head
+    }
+    if u == "OPTIONS" {
+        return Method.Options
+    }
+    return Method.Unknown
+}
+
+// One parsed HTTP request. `headers` keys are lowercased; `params` holds the
+// path captures matched from the route pattern; `query` holds the decoded
+// query-string pairs.
+struct Request {
+    method: Method,
+    path: String,
+    version: String,
+    headers: Map<String, String>,
+    params: Map<String, String>,
+    query: Map<String, String>,
+    body: String,
+}
+
+impl Request {
+    // A request header by name (case-insensitive), or "" if absent.
+    fun header(self, name: String) -> String {
+        return self.headers.get_or(name.to_lower(), "")
+    }
+
+    // A path capture (a `:name` segment) by name, or "" if absent.
+    fun param(self, name: String) -> String {
+        return self.params.get_or(name, "")
+    }
+
+    // A query-string value by name, or "" if absent.
+    fun query_value(self, name: String) -> String {
+        return self.query.get_or(name, "")
+    }
+}
+
+// One HTTP response: a status code, response headers, and a body. Build one
+// with a constructor (`Response.json`, `Response.not_found`, ...) and refine it
+// with the chaining builders (`header`, `content_type`, `status_code`).
+struct Response {
+    status: Int,
+    headers: Map<String, String>,
+    body: String,
+}
+
+impl Response {
+    // A response with an explicit status and body and no headers yet.
+    fun with_body(status: Int, body: String) -> Response {
+        let h: Map<String, String> = Map.new()
+        return Response { status: status, headers: h, body: body }
+    }
+
+    // 200 with a `text/plain` body.
+    fun text(body: String) -> Response {
+        return Response.with_body(200, body).content_type("text/plain; charset=utf-8")
+    }
+
+    // 200 with a `text/plain` body (an alias of `text`).
+    fun ok(body: String) -> Response {
+        return Response.text(body)
+    }
+
+    // 200 with a `text/html` body.
+    fun html(body: String) -> Response {
+        return Response.with_body(200, body).content_type("text/html; charset=utf-8")
+    }
+
+    // 200 with an `application/json` body. `body` must already be JSON text.
+    fun json(body: String) -> Response {
+        return Response.with_body(200, body).content_type("application/json")
+    }
+
+    // 201 Created with a `text/plain` body.
+    fun created(body: String) -> Response {
+        return Response.with_body(201, body).content_type("text/plain; charset=utf-8")
+    }
+
+    // 204 No Content.
+    fun no_content() -> Response {
+        return Response.with_body(204, "")
+    }
+
+    // 404 Not Found with a short plain-text body.
+    fun not_found() -> Response {
+        return Response.with_body(404, "Not Found").content_type("text/plain; charset=utf-8")
+    }
+
+    // 400 Bad Request with `msg` as the body.
+    fun bad_request(msg: String) -> Response {
+        return Response.with_body(400, msg).content_type("text/plain; charset=utf-8")
+    }
+
+    // 500 Internal Server Error with `msg` as the body.
+    fun server_error(msg: String) -> Response {
+        return Response.with_body(500, msg).content_type("text/plain; charset=utf-8")
+    }
+
+    // 302 Found, redirecting the client to `location`.
+    fun redirect(location: String) -> Response {
+        return Response.with_body(302, "").header("Location", location)
+    }
+
+    // Set a response header, returning self so calls chain.
+    fun header(self, name: String, value: String) -> Response {
+        self.headers.set(name, value)
+        return self
+    }
+
+    // Set the `Content-Type` header, returning self so calls chain.
+    fun content_type(self, value: String) -> Response {
+        return self.header("Content-Type", value)
+    }
+
+    // Replace the status code, returning self so calls chain.
+    fun status_code(self, code: Int) -> Response {
+        self.status = code
+        return self
+    }
+}
+
+// One registered route: a method, a path pattern (with optional `:name`
+// captures), and the handler to run on a match.
+struct Route {
+    method: Method,
+    pattern: String,
+    handler: fun(Request) -> Response,
+}
+
+// An HTTP server: a routing table built with `get`/`post`/... and served with
+// `listen`.
+struct Server {
+    routes: List<Route>,
+}
+
+impl Server {
+    // A new server with an empty routing table.
+    fun new() -> Server {
+        let r: List<Route> = []
+        return Server { routes: r }
+    }
+
+    // Register `handler` for `method` requests whose path matches `pattern`.
+    // Routes are tried in registration order; the first match wins.
+    fun route(self, method: Method, pattern: String, handler: fun(Request) -> Response) {
+        self.routes.push(Route { method: method, pattern: pattern, handler: handler })
+    }
+
+    // Register a handler for GET `pattern`.
+    fun get(self, pattern: String, handler: fun(Request) -> Response) {
+        self.route(Method.Get, pattern, handler)
+    }
+
+    // Register a handler for POST `pattern`.
+    fun post(self, pattern: String, handler: fun(Request) -> Response) {
+        self.route(Method.Post, pattern, handler)
+    }
+
+    // Register a handler for PUT `pattern`.
+    fun put(self, pattern: String, handler: fun(Request) -> Response) {
+        self.route(Method.Put, pattern, handler)
+    }
+
+    // Register a handler for DELETE `pattern`.
+    fun delete(self, pattern: String, handler: fun(Request) -> Response) {
+        self.route(Method.Delete, pattern, handler)
+    }
+
+    // Register a handler for PATCH `pattern`.
+    fun patch(self, pattern: String, handler: fun(Request) -> Response) {
+        self.route(Method.Patch, pattern, handler)
+    }
+
+    // Bind `addr` ("host:port") and serve connections forever, one at a time.
+    // Blocks until the process ends; a failed bind is reported and returns.
+    fun listen(self, addr: String) {
+        match listen(addr) {
+            Ok(socket) -> {
+                let routes = self.routes
+                while true {
+                    match socket.accept() {
+                        Ok(stream) -> serve_connection(routes, stream),
+                        Err(_) -> {}
+                    }
+                }
+            }
+            Err(e) -> print("http: cannot bind ".concat(addr).concat(": ").concat(e.message()))
+        }
+    }
+}
+
+// Read, parse, route, and answer a single connection, then close it.
+fun serve_connection(routes: List<Route>, stream: TcpStream) {
+    match read_request(stream) {
+        Ok(req) -> {
+            let resp = dispatch(routes, req)
+            write_response(stream, resp)
+        }
+        Err(_) -> write_response(stream, Response.bad_request("Bad Request")),
+    }
+    stream.close()
+}
+
+// Find the first route matching `req` and run its handler; 404 if none match.
+fun dispatch(routes: List<Route>, req: Request) -> Response {
+    let i = 0
+    while i < routes.len() {
+        let route = routes[i]
+        if route.method == req.method {
+            match match_path(route.pattern, req.path) {
+                Some(params) -> {
+                    req.params = params
+                    let handler = route.handler
+                    return handler(req)
+                }
+                None -> {}
+            }
+        }
+        i += 1
+    }
+    return Response.not_found()
+}
+
+// Match a route `pattern` against a request `path`, returning the captured
+// `:name` segments on success.
+fun match_path(pattern: String, path: String) -> Option<Map<String, String>> {
+    let pat = path_segments(pattern)
+    let got = path_segments(path)
+    if pat.len() != got.len() {
+        return None
+    }
+    let params: Map<String, String> = Map.new()
+    let i = 0
+    while i < pat.len() {
+        let p = pat[i]
+        let g = got[i]
+        if p.starts_with(":") {
+            params.set(p.substring(1, p.length()), g)
+        } else {
+            if p != g {
+                return None
+            }
+        }
+        i += 1
+    }
+    return Some(params)
+}
+
+// Split a path on "/" into its non-empty segments.
+fun path_segments(path: String) -> List<String> {
+    let raw = path.split("/")
+    let out: List<String> = []
+    let i = 0
+    while i < raw.len() {
+        if raw[i].length() > 0 {
+            out.push(raw[i])
+        }
+        i += 1
+    }
+    return out
+}
+
+// Read one HTTP request off `stream`: the header block up to the first blank
+// line, then the body up to the request's Content-Length.
+fun read_request(stream: TcpStream) -> Result<Request, Error> {
+    let buf = ""
+    let split = buf.index_of("\r\n\r\n")
+    while split < 0 {
+        let chunk = stream.read(4096)?
+        if chunk.length() == 0 {
+            return Err(error_kind("http", "connection closed before headers"))
+        }
+        buf = buf.concat(chunk)
+        split = buf.index_of("\r\n\r\n")
+        if buf.length() > 65536 {
+            return Err(error_kind("http", "request headers too large"))
+        }
+    }
+    let head_text = buf.substring(0, split)
+    let body = buf.substring(split + 4, buf.length())
+
+    let lines = head_text.split("\r\n")
+    if lines.len() == 0 {
+        return Err(error_kind("http", "empty request"))
+    }
+    let request_line = lines[0].split(" ")
+    if request_line.len() < 3 {
+        return Err(error_kind("http", "malformed request line"))
+    }
+    let method = parse_method(request_line[0])
+    let target = request_line[1]
+    let version = request_line[2]
+
+    let headers: Map<String, String> = Map.new()
+    let i = 1
+    while i < lines.len() {
+        let line = lines[i]
+        let colon = line.index_of(":")
+        if colon > 0 {
+            let key = line.substring(0, colon).trim().to_lower()
+            let value = line.substring(colon + 1, line.length()).trim()
+            headers.set(key, value)
+        }
+        i += 1
+    }
+
+    let want = 0
+    let clen = headers.get_or("content-length", "")
+    if clen.length() > 0 {
+        match clen.parse_int() {
+            Some(n) -> {
+                want = n
+            }
+            None -> {}
+        }
+    }
+    while body.length() < want {
+        let chunk = stream.read(4096)?
+        if chunk.length() == 0 {
+            return Err(error_kind("http", "connection closed before body complete"))
+        }
+        body = body.concat(chunk)
+    }
+
+    let path = target
+    let query: Map<String, String> = Map.new()
+    let q = target.index_of("?")
+    if q >= 0 {
+        path = target.substring(0, q)
+        parse_query(target.substring(q + 1, target.length()), query)
+    }
+
+    let params: Map<String, String> = Map.new()
+    return Ok(Request {
+        method: method,
+        path: path,
+        version: version,
+        headers: headers,
+        params: params,
+        query: query,
+        body: body,
+    })
+}
+
+// Decode `a=1&b=2` query-string pairs into `out`.
+fun parse_query(qs: String, out: Map<String, String>) {
+    let pairs = qs.split("&")
+    let i = 0
+    while i < pairs.len() {
+        let pair = pairs[i]
+        if pair.length() > 0 {
+            let eq = pair.index_of("=")
+            if eq >= 0 {
+                out.set(pair.substring(0, eq), pair.substring(eq + 1, pair.length()))
+            } else {
+                out.set(pair, "")
+            }
+        }
+        i += 1
+    }
+}
+
+// Write `resp` to `stream` as an HTTP/1.1 response, framing it with
+// Content-Length and closing the connection after.
+fun write_response(stream: TcpStream, resp: Response) {
+    resp.headers.set("Content-Length", resp.body.length().to_string())
+    resp.headers.set("Connection", "close")
+    let status_line = "HTTP/1.1 ".concat(resp.status.to_string()).concat(" ")
+    let line = status_line.concat(reason_phrase(resp.status)).concat("\r\n")
+    let block = ""
+    let keys = resp.headers.keys()
+    let i = 0
+    while i < keys.len() {
+        let k = keys[i]
+        block = block.concat(k).concat(": ").concat(resp.headers.get_or(k, "")).concat("\r\n")
+        i += 1
+    }
+    let out = line.concat(block).concat("\r\n").concat(resp.body)
+    let _ = stream.write(out)
+}
+
+// The reason phrase for a status code (a small common set; defaults to "OK").
+fun reason_phrase(status: Int) -> String {
+    if status == 200 {
+        return "OK"
+    }
+    if status == 201 {
+        return "Created"
+    }
+    if status == 204 {
+        return "No Content"
+    }
+    if status == 302 {
+        return "Found"
+    }
+    if status == 400 {
+        return "Bad Request"
+    }
+    if status == 404 {
+        return "Not Found"
+    }
+    if status == 500 {
+        return "Internal Server Error"
+    }
+    return "OK"
 }

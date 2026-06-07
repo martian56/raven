@@ -1,9 +1,10 @@
 # std/http Spec
 
-An HTTP/1.1 client: GET, POST, PUT, and DELETE returning a captured
-response. The primitives bind the raven-runtime C ABI (backed by ureq);
-the wrappers add the Result/Error model and the `HttpResponse` type in
-pure Raven.
+An HTTP/1.1 client and a small HTTP/1.1 server. The client (GET, POST, PUT,
+DELETE, ...) binds the raven-runtime C ABI (backed by ureq) and adds the
+Result/Error model and the `HttpResponse` type in pure Raven. The server
+(`Server`, `Request`, `Response`, `Method`) is written entirely in Raven on top
+of `std/net` (TCP), so it needs no runtime support of its own.
 
 ## Import
 
@@ -120,3 +121,78 @@ loopback URL (passed through the `RAVEN_HTTP_URL` env var) and prints the
 status code then the body, asserted to be exactly `200` then `hello`. Read
 timeouts on both ends keep a failure from hanging CI. No test hits a real
 external URL.
+
+## Server
+
+The server side is pure Raven over `std/net`, no new runtime code. You build a
+routing table on a `Server` and call `listen`:
+
+```rust
+import std/http { Server, Request, Response }
+
+fun greet(req: Request) -> Response {
+    return Response.text("Hello, ${req.param("name")}!")
+}
+
+fun main() {
+    let app = Server.new()
+    app.get("/", fun(req: Request) -> Response = Response.html("<h1>hi</h1>"))
+    app.get("/greet/:name", greet)
+    app.post("/echo", fun(req: Request) -> Response = Response.json(req.body))
+    app.listen("127.0.0.1:8080")
+}
+```
+
+### Surface
+
+```rust
+enum Method { Get, Post, Put, Delete, Patch, Head, Options, Unknown }
+
+struct Request {
+    method: Method, path: String, version: String,
+    headers: Map<String, String>,   // keys lowercased
+    params: Map<String, String>,    // captured `:name` path segments
+    query: Map<String, String>,     // decoded query string
+    body: String,
+}
+fun Request.header(name) -> String        // "" if absent
+fun Request.param(name) -> String         // path capture, "" if absent
+fun Request.query_value(name) -> String   // "" if absent
+
+struct Response { status: Int, headers: Map<String, String>, body: String }
+// constructors
+Response.text/ok/html/json/created/no_content/not_found/bad_request/server_error/redirect/with_body
+// chaining builders (return self)
+fun Response.header(name, value) -> Response
+fun Response.content_type(value) -> Response
+fun Response.status_code(code) -> Response
+
+struct Server { routes: List<Route> }
+fun Server.new() -> Server
+fun Server.route(method, pattern, handler)            // handler: fun(Request) -> Response
+fun Server.get/post/put/delete/patch(pattern, handler)
+fun Server.listen(addr)                               // binds and blocks
+```
+
+### Handlers
+
+A handler is a value of type `fun(Request) -> Response`, a named function or a
+single-expression closure (`fun(req: Request) -> Response = ...`). Multi-statement
+handlers are named functions, since a block-bodied closure cannot yet return a
+value. Routes are tried in registration order; `:name` segments capture into
+`params` and a non-match falls through to the next route, then to a 404.
+
+### Request and response framing
+
+`listen` binds with `std/net`, then for each connection reads the header block up
+to the first blank line, parses the request line and headers, reads the body up
+to `Content-Length`, routes, and writes the response framed with `Content-Length`
+and `Connection: close`. A malformed request is answered `400`.
+
+### Connections are served one at a time
+
+`listen` accepts and serves connections sequentially. Handling each on its own
+goroutine is the natural next step, but a goroutine spawned just before the
+accept loop re-blocks is not scheduled promptly today (issue #377), so per-
+connection concurrency waits on that runtime fix. The server is otherwise a
+complete, correct HTTP/1.1 endpoint.

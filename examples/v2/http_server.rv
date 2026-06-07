@@ -1,0 +1,37 @@
+// An HTTP server built on std/http. golden:skip (a server blocks forever, so
+// it has no fixed stdout to diff). Run it, then from another shell:
+//   curl localhost:8080/
+//   curl localhost:8080/greet/raven
+//   curl "localhost:8080/search?q=birds"
+//   curl -X POST -d '{"name":"Ada"}' localhost:8080/users
+// Connections are served one at a time. Handlers are plain functions of
+// `Request -> Response`; routes may capture `:name` path segments.
+
+import std/http { Server, Request, Response }
+
+fun home(req: Request) -> Response {
+    return Response.html("<h1>Raven HTTP</h1><p>It works.</p>")
+}
+
+fun greet(req: Request) -> Response {
+    return Response.text("Hello, ${req.param("name")}!")
+}
+
+fun search(req: Request) -> Response {
+    let q = req.query_value("q")
+    return Response.json("{\"query\": \"${q}\", \"results\": []}")
+}
+
+fun create_user(req: Request) -> Response {
+    return Response.created(req.body).header("X-Created-By", "raven")
+}
+
+fun main() {
+    let app = Server.new()
+    app.get("/", home)
+    app.get("/greet/:name", greet)
+    app.get("/search", search)
+    app.post("/users", create_user)
+    print("listening on http://127.0.0.1:8080")
+    app.listen("127.0.0.1:8080")
+}
