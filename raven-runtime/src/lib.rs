@@ -1141,18 +1141,26 @@ pub extern "C" fn raven_net_listen(addr: *const object::String) -> i64 {
 /// slot set.
 #[no_mangle]
 pub extern "C" fn raven_net_accept(listener_id: i64) -> i64 {
-    // accept blocks until a connection arrives; run it outside the running set.
-    let accepted = crate::gc::blocking(|| {
+    // accept blocks until a connection arrives. Clone the listener handle under
+    // the registry lock, then accept without holding it, so a parked accept does
+    // not serialize every other goroutine's net operation on the shared
+    // registry. Run outside the running set so a slow accept never freezes a
+    // collection.
+    let listener = {
         let registry = net_registry().lock().unwrap();
         match registry.get(&listener_id) {
-            Some(Socket::Listener(l)) => l.accept().map(|(stream, _)| stream),
+            Some(Socket::Listener(l)) => l.try_clone(),
             Some(Socket::Stream(_)) => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "id is not a listener",
             )),
             None => Err(io::Error::new(io::ErrorKind::NotFound, "unknown socket id")),
         }
-    });
+    };
+    let accepted = match listener {
+        Ok(l) => crate::gc::blocking(|| l.accept().map(|(stream, _)| stream)),
+        Err(e) => Err(e),
+    };
     match accepted {
         Ok(stream) => net_insert(Socket::Stream(stream)),
         Err(e) => {
@@ -1169,25 +1177,32 @@ pub extern "C" fn raven_net_accept(listener_id: i64) -> i64 {
 #[no_mangle]
 pub extern "C" fn raven_net_read(stream_id: i64, max: i64) -> *mut object::String {
     let cap = max.max(0) as usize;
-    // Block outside the collector's running set: a slow read must not freeze a
-    // concurrent collection waiting for this worker to reach a safepoint.
-    let result = crate::gc::blocking(|| {
-        let mut registry = net_registry().lock().unwrap();
-        match registry.get_mut(&stream_id) {
-            Some(Socket::Stream(s)) => {
-                let mut buf = vec![0u8; cap];
-                s.read(&mut buf).map(|n| {
-                    buf.truncate(n);
-                    buf
-                })
-            }
+    // Clone the stream handle under the registry lock, then read without holding
+    // it, so a blocked read does not serialize other goroutines' net operations
+    // on the shared registry. Block outside the collector's running set so a slow
+    // read never freezes a concurrent collection waiting for this worker to reach
+    // a safepoint.
+    let stream = {
+        let registry = net_registry().lock().unwrap();
+        match registry.get(&stream_id) {
+            Some(Socket::Stream(s)) => s.try_clone(),
             Some(Socket::Listener(_)) => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "id is not a stream",
             )),
             None => Err(io::Error::new(io::ErrorKind::NotFound, "unknown socket id")),
         }
-    });
+    };
+    let result = match stream {
+        Ok(mut s) => crate::gc::blocking(|| {
+            let mut buf = vec![0u8; cap];
+            s.read(&mut buf).map(|n| {
+                buf.truncate(n);
+                buf
+            })
+        }),
+        Err(e) => Err(e),
+    };
     match result {
         Ok(bytes) => {
             net_clear_error();
@@ -1216,17 +1231,24 @@ pub extern "C" fn raven_net_write(stream_id: i64, data: *const object::String) -
         // SAFETY: a Raven String holds `len` initialized bytes.
         unsafe { slice::from_raw_parts(ptr, len) }
     };
-    let result = crate::gc::blocking(|| {
-        let mut registry = net_registry().lock().unwrap();
-        match registry.get_mut(&stream_id) {
-            Some(Socket::Stream(s)) => s.write_all(bytes).map(|()| bytes.len() as i64),
+    // Clone the stream handle under the registry lock, then write without
+    // holding it, so a blocked write does not serialize other goroutines' net
+    // operations on the shared registry.
+    let stream = {
+        let registry = net_registry().lock().unwrap();
+        match registry.get(&stream_id) {
+            Some(Socket::Stream(s)) => s.try_clone(),
             Some(Socket::Listener(_)) => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "id is not a stream",
             )),
             None => Err(io::Error::new(io::ErrorKind::NotFound, "unknown socket id")),
         }
-    });
+    };
+    let result = match stream {
+        Ok(mut s) => crate::gc::blocking(|| s.write_all(bytes).map(|()| bytes.len() as i64)),
+        Err(e) => Err(e),
+    };
     match result {
         Ok(n) => {
             net_clear_error();
@@ -1949,5 +1971,35 @@ mod tests {
         // Empty slices must not dereference the pointer.
         raven_print_str(std::ptr::null(), 0);
         raven_println_str(std::ptr::null(), 0);
+    }
+
+    fn rv_string(s: &str) -> *mut object::String {
+        object::raven_string_from_bytes(s.as_ptr(), s.len())
+    }
+
+    #[test]
+    fn parked_accept_does_not_hold_the_registry_lock() {
+        // A connection that has not yet arrived must not serialize other
+        // goroutines' net operations: accept clones its handle under the
+        // registry lock, then blocks without it (issue #377). With the lock
+        // held across the syscall, a worker reading another stream could not
+        // even acquire the registry while accept was parked.
+        let lid = raven_net_listen(rv_string("127.0.0.1:0"));
+        assert!(lid > 0, "listen failed");
+        let port = {
+            let reg = net_registry().lock().unwrap();
+            match reg.get(&lid) {
+                Some(Socket::Listener(l)) => l.local_addr().unwrap().port(),
+                _ => panic!("listener not registered"),
+            }
+        };
+        let handle = std::thread::spawn(move || raven_net_accept(lid));
+        // Let the accept reach the blocking syscall (no client yet).
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let lock_free = net_registry().try_lock().is_ok();
+        // Unblock the accept with a client so the thread finishes, no leak.
+        let _client = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        let _ = handle.join();
+        assert!(lock_free, "registry lock held while accept was parked");
     }
 }

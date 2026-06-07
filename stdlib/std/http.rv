@@ -315,15 +315,20 @@ impl Server {
         self.route(Method.Patch, pattern, handler)
     }
 
-    // Bind `addr` ("host:port") and serve connections forever, one at a time.
-    // Blocks until the process ends; a failed bind is reported and returns.
+    // Bind `addr` ("host:port") and serve forever, handling each connection on
+    // its own goroutine so a slow client never blocks the others. Blocks until
+    // the process ends; a failed bind is reported and returns.
     fun listen(self, addr: String) {
         match listen(addr) {
             Ok(socket) -> {
                 let routes = self.routes
                 while true {
                     match socket.accept() {
-                        Ok(stream) -> serve_connection(routes, stream),
+                        Ok(stream) -> {
+                            spawn(fun() -> Unit {
+                                serve_connection(routes, stream)
+                            })
+                        }
                         Err(_) -> {}
                     }
                 }
