@@ -148,6 +148,19 @@ pub const RUNTIME_GC_PUSH_ROOT: &str = "raven_gc_push_root";
 /// Runtime C symbol popping the last `n` single root slots.
 pub const RUNTIME_GC_POP_ROOTS: &str = "raven_gc_pop_roots";
 
+/// Runtime C symbol marking the OS thread as running compiled Raven, so the
+/// parallel collector waits for it to reach a safepoint. Emitted at program
+/// entry (and by the scheduler around a dispatched goroutine).
+pub const RUNTIME_GC_ENTER_RUNNING: &str = "raven_gc_enter_running";
+
+/// Runtime C symbol marking the OS thread as no longer running compiled Raven.
+pub const RUNTIME_GC_EXIT_RUNNING: &str = "raven_gc_exit_running";
+
+/// Runtime C symbol polling a stop-the-world safepoint, emitted at loop
+/// back-edges. A single atomic load when no collection is pending; otherwise it
+/// parks the thread until the world resumes.
+pub const RUNTIME_GC_SAFEPOINT: &str = "raven_gc_safepoint";
+
 /// Runtime C symbol opening a per-call defer frame.
 pub const RUNTIME_DEFER_ENTER_FRAME: &str = "raven_defer_enter_frame";
 

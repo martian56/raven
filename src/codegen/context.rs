@@ -501,6 +501,12 @@ impl ModuleCx {
         sig = self.make_sig(&[ptr], &[]);
         self.declare_runtime(intrinsics::RUNTIME_GC_POP_ROOTS, &sig)?;
 
+        // raven_gc_enter_running() / raven_gc_exit_running() / raven_gc_safepoint()
+        sig = self.make_sig(&[], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_GC_ENTER_RUNNING, &sig)?;
+        self.declare_runtime(intrinsics::RUNTIME_GC_EXIT_RUNNING, &sig)?;
+        self.declare_runtime(intrinsics::RUNTIME_GC_SAFEPOINT, &sig)?;
+
         // raven_defer_enter_frame()
         sig = self.make_sig(&[], &[]);
         self.declare_runtime(intrinsics::RUNTIME_DEFER_ENTER_FRAME, &sig)?;
@@ -942,6 +948,14 @@ impl ModuleCx {
         let push_root_ref = self
             .runtime_id(intrinsics::RUNTIME_GC_PUSH_ROOT)
             .map(|id| self.module.declare_func_in_func(id, &mut ctx.func));
+        // The main thread runs compiled Raven for the whole program, so it is
+        // in the collector's "running" set from entry to exit.
+        let enter_running_ref = self
+            .runtime_id(intrinsics::RUNTIME_GC_ENTER_RUNNING)
+            .map(|id| self.module.declare_func_in_func(id, &mut ctx.func));
+        let exit_running_ref = self
+            .runtime_id(intrinsics::RUNTIME_GC_EXIT_RUNNING)
+            .map(|id| self.module.declare_func_in_func(id, &mut ctx.func));
         let global_root_ids: Vec<DataId> = self.global_roots.clone();
         let global_root_gvs: Vec<_> = global_root_ids
             .iter()
@@ -958,6 +972,11 @@ impl ModuleCx {
             let block = builder.create_block();
             builder.switch_to_block(block);
             builder.seal_block(block);
+            // Enter the running set first: the main thread runs compiled Raven,
+            // so a parallel collection must wait for it to reach a safepoint.
+            if let Some(enter) = enter_running_ref {
+                builder.ins().call(enter, &[]);
+            }
             // Register every struct and enum descriptor with the
             // collector before running the program, so any value the
             // program builds is traceable from its first allocation.
@@ -1012,6 +1031,10 @@ impl ModuleCx {
             // The Raven `main` returns unit, so there is no result value
             // to forward; the call is emitted purely for its effects.
             builder.ins().call(callee, &[]);
+            // Leave the running set before exiting.
+            if let Some(exit) = exit_running_ref {
+                builder.ins().call(exit, &[]);
+            }
             let zero = builder.ins().iconst(types::I32, 0);
             builder.ins().return_(&[zero]);
             builder.finalize();
