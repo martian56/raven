@@ -36,8 +36,8 @@ pub use object::{
     raven_string_concat, raven_string_eq, raven_string_from_byte, raven_string_from_bytes,
     raven_string_len, raven_string_new, raven_string_substring, raven_struct_fields,
     raven_struct_new, Box as RavenBox, Closure as RavenClosure, List as RavenList, Map as RavenMap,
-    MapEntry, ObjectHeader, Set as RavenSet, SetEntry, String as RavenString, GC_MARK_BIT,
-    OBJECT_ALIGN, TAG_BOX, TAG_CLOSURE, TAG_LIST, TAG_MAP, TAG_SET, TAG_STRING, TAG_STRUCT,
+    MapEntry, ObjectHeader, Set as RavenSet, SetEntry, String as RavenString, OBJECT_ALIGN,
+    TAG_BOX, TAG_CLOSURE, TAG_LIST, TAG_MAP, TAG_SET, TAG_STRING, TAG_STRUCT,
 };
 pub use reflect::{
     raven_any_field_names, raven_any_get_field, raven_any_new, raven_any_payload,
