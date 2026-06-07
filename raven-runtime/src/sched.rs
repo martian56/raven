@@ -15,8 +15,9 @@ use crate::gc::{
 };
 use crate::object::Closure;
 use corosensei::{Coroutine, CoroutineResult, Yielder};
-use std::cell::RefCell;
+use std::cell::Cell;
 use std::collections::{HashMap, VecDeque};
+use std::sync::{LazyLock, Mutex};
 
 /// Why a goroutine suspended back to the scheduler. Yielded by the
 /// coroutine body to the resume loop.
@@ -54,8 +55,9 @@ struct Channel {
     recv_waiters: VecDeque<usize>,
 }
 
-/// The scheduler state. Single OS thread this slice, so a thread-local
-/// with interior mutability is sound and lock-free.
+/// The scheduler state, held behind a global lock (see [`SCHED`]) so the
+/// main thread and the future worker pool share one ready queue and channel
+/// set. Execution is still single-threaded until the pool lands.
 struct Scheduler {
     goroutines: HashMap<usize, Goroutine>,
     ready: VecDeque<usize>,
@@ -72,14 +74,35 @@ struct Scheduler {
     /// Set once the first goroutine is spawned. Until then the program is
     /// strictly non-concurrent and the scheduler is never entered.
     started: bool,
-    /// The yielder of the goroutine currently running, raw because it is
-    /// borrowed from inside the coroutine body. Null when the main
-    /// goroutine (id 0) runs, which suspends differently (see `block`).
-    yielder: *const GoYielder,
 }
 
+/// The global scheduler, shared by the main thread and (once it lands) the
+/// worker pool. Holding a `Coroutine` whose closure captures a raw `env`
+/// pointer makes `Scheduler` non-`Send`, but that pointer is a GC heap object
+/// safe to touch from any thread and each coroutine is resumed by one thread at
+/// a time, so sending the scheduler across threads is sound.
+struct SchedState(Scheduler);
+// SAFETY: see the comment above; the raw pointers inside are thread-safe heap
+// objects and the scheduler serializes access to each coroutine.
+unsafe impl Send for SchedState {}
+
+static SCHED: LazyLock<Mutex<SchedState>> =
+    LazyLock::new(|| Mutex::new(SchedState(Scheduler::new())));
+
 thread_local! {
-    static SCHED: RefCell<Scheduler> = RefCell::new(Scheduler::new());
+    /// The yielder of the coroutine this OS thread is currently running, so
+    /// `suspend_current` can reach it. Per-thread because each worker runs a
+    /// different goroutine; null when the thread is between goroutines or
+    /// running the main goroutine (which suspends via a condvar, not a yielder).
+    static CURRENT_YIELDER: Cell<*const GoYielder> = const { Cell::new(std::ptr::null()) };
+}
+
+/// Run `f` with exclusive access to the scheduler. The lock is never held
+/// across a coroutine resume or suspend (that would deadlock); callers take it
+/// only for queue and channel bookkeeping.
+fn with_sched<R>(f: impl FnOnce(&mut Scheduler) -> R) -> R {
+    let mut guard = SCHED.lock().unwrap();
+    f(&mut guard.0)
 }
 
 impl Drop for Scheduler {
@@ -120,7 +143,6 @@ impl Scheduler {
             channels: HashMap::new(),
             next_chan: 1,
             started: false,
-            yielder: std::ptr::null(),
         }
     }
 }
@@ -129,8 +151,7 @@ impl Scheduler {
 /// and every buffered channel value as roots. The buffered slots live in
 /// the channel queues, so we hand the collector the address of each slot.
 fn extra_roots(visit: &mut dyn FnMut(RootSlot)) {
-    SCHED.with(|s| {
-        let sched = s.borrow();
+    with_sched(|sched| {
         for (&id, g) in sched.goroutines.iter() {
             // The running goroutine's roots live in the thread-local
             // chain, already scanned by the mark phase; skip it here to
@@ -172,7 +193,7 @@ pub extern "C" fn raven_go_spawn(closure: *mut Closure) {
     let coro = Coroutine::new(move |yielder: &GoYielder, _input: ()| {
         // Publish this goroutine's yielder so its channel ops and
         // `yield_now` can suspend back to the scheduler.
-        SCHED.with(|s| s.borrow_mut().yielder = yielder as *const GoYielder);
+        CURRENT_YIELDER.with(|y| y.set(yielder as *const GoYielder));
         // The closure body is `extern "C" fn(env)`.
         // SAFETY: spawn's contract guarantees a `fun() -> Unit` lifted
         // body taking the capture env.
@@ -181,8 +202,7 @@ pub extern "C" fn raven_go_spawn(closure: *mut Closure) {
         yielder.suspend(Suspend::Finished);
     });
 
-    SCHED.with(|s| {
-        let mut sched = s.borrow_mut();
+    with_sched(|sched| {
         if !sched.started {
             sched.started = true;
             set_extra_roots_hook(extra_roots);
@@ -218,8 +238,7 @@ pub extern "C" fn raven_go_spawn(closure: *mut Closure) {
 /// on the OS stack.
 fn run_scheduler_until_current_ready() {
     loop {
-        let next = SCHED.with(|s| {
-            let mut sched = s.borrow_mut();
+        let next = with_sched(|sched| {
             // If the current goroutine is ready at the front, resume it by
             // returning to the caller.
             if sched.ready.front() == Some(&sched.current) {
@@ -232,10 +251,8 @@ fn run_scheduler_until_current_ready() {
         let Some(id) = next else {
             // Nothing ready. If the current goroutine is the one we are
             // waiting on and it is parked, every goroutine is blocked.
-            let deadlock = SCHED.with(|s| {
-                let sched = s.borrow();
-                sched.ready.is_empty() && !is_runnable(&sched, sched.current)
-            });
+            let deadlock =
+                with_sched(|sched| sched.ready.is_empty() && !is_runnable(sched, sched.current));
             if deadlock {
                 deadlock_panic();
             }
@@ -247,7 +264,7 @@ fn run_scheduler_until_current_ready() {
         if id == 0 {
             // Main goroutine is ready again. Hand control back so it
             // resumes on the OS thread stack.
-            SCHED.with(|s| s.borrow_mut().ready.push_front(0));
+            with_sched(|sched| sched.ready.push_front(0));
             // The front is now 0; loop once more to pop and return.
             continue;
         }
@@ -256,10 +273,10 @@ fn run_scheduler_until_current_ready() {
         // handle is moved out across the resume so the coroutine body can
         // freely borrow the scheduler (a borrow held across resume would
         // alias the thread-local cell).
-        let prev = SCHED.with(|s| s.borrow().current);
+        let prev = with_sched(|sched| sched.current);
         switch_root_chain(prev, id);
-        let mut coro = SCHED.with(|s| {
-            s.borrow_mut()
+        let mut coro = with_sched(|sched| {
+            sched
                 .goroutines
                 .get_mut(&id)
                 .expect("live goroutine")
@@ -268,8 +285,8 @@ fn run_scheduler_until_current_ready() {
                 .expect("coroutine handle")
         });
         let result = coro.resume(());
-        SCHED.with(|s| {
-            if let Some(g) = s.borrow_mut().goroutines.get_mut(&id) {
+        with_sched(|sched| {
+            if let Some(g) = sched.goroutines.get_mut(&id) {
                 g.coro = Some(coro);
             }
         });
@@ -277,7 +294,7 @@ fn run_scheduler_until_current_ready() {
 
         match result {
             CoroutineResult::Yield(Suspend::Yielded) => {
-                SCHED.with(|s| s.borrow_mut().ready.push_back(id));
+                with_sched(|sched| sched.ready.push_back(id));
             }
             CoroutineResult::Yield(Suspend::Blocked) => {
                 // The goroutine parked itself on a channel; do not requeue.
@@ -302,8 +319,7 @@ fn is_runnable(sched: &Scheduler, id: usize) -> bool {
 /// hold exactly the current goroutine's roots; every other goroutine's
 /// roots sit in its `roots` slot.
 fn switch_root_chain(from: usize, to: usize) {
-    SCHED.with(|s| {
-        let mut sched = s.borrow_mut();
+    with_sched(|sched| {
         let live = take_root_chain();
         if let Some(g) = sched.goroutines.get_mut(&from) {
             g.roots = live;
@@ -320,8 +336,7 @@ fn switch_root_chain(from: usize, to: usize) {
 
 /// Retire a finished goroutine: mark it finished and drop its coroutine.
 fn retire(id: usize) {
-    SCHED.with(|s| {
-        let mut sched = s.borrow_mut();
+    with_sched(|sched| {
         if let Some(g) = sched.goroutines.get_mut(&id) {
             g.finished = true;
             g.coro = None;
@@ -338,7 +353,7 @@ fn retire(id: usize) {
 /// and returns when it is runnable again, so this is only ever called
 /// from a non-main goroutine's body.
 fn suspend_current(reason: Suspend) {
-    let yielder = SCHED.with(|s| s.borrow().yielder);
+    let yielder = CURRENT_YIELDER.with(|y| y.get());
     assert!(
         !yielder.is_null(),
         "suspend_current called with no running coroutine"
@@ -349,7 +364,7 @@ fn suspend_current(reason: Suspend) {
     yielder.suspend(reason);
     // On resume, re-publish our yielder: the scheduler may have run other
     // goroutines that overwrote the shared slot.
-    SCHED.with(|s| s.borrow_mut().yielder = yielder as *const GoYielder);
+    CURRENT_YIELDER.with(|y| y.set(yielder as *const GoYielder));
 }
 
 /// Cooperative yield point. The running goroutine yields control; the
@@ -360,17 +375,13 @@ fn suspend_current(reason: Suspend) {
 /// scheduler, which re-queues it.
 #[no_mangle]
 pub extern "C" fn raven_go_yield() {
-    let (is_main, started) = SCHED.with(|s| {
-        let sched = s.borrow();
-        (sched.current == 0, sched.started)
-    });
+    let (is_main, started) = with_sched(|sched| (sched.current == 0, sched.started));
     if !started {
         return;
     }
     if is_main {
         // Re-queue main and run others until it is ready again.
-        SCHED.with(|s| {
-            let mut sched = s.borrow_mut();
+        with_sched(|sched| {
             let cur = sched.current;
             sched.ready.push_back(cur);
         });
@@ -383,8 +394,7 @@ pub extern "C" fn raven_go_yield() {
 /// Park the current goroutine (it is already on a channel wait list) and
 /// switch to the scheduler. On return the goroutine has been woken.
 fn block_current() {
-    let (is_main, me) = SCHED.with(|s| {
-        let mut sched = s.borrow_mut();
+    let (is_main, me) = with_sched(|sched| {
         let me = sched.current;
         sched.blocked.insert(me);
         (me == 0, me)
@@ -395,16 +405,15 @@ fn block_current() {
         suspend_current(Suspend::Blocked);
     }
     // Woken: no longer blocked.
-    SCHED.with(|s| {
-        s.borrow_mut().blocked.remove(&me);
+    with_sched(|sched| {
+        sched.blocked.remove(&me);
     });
 }
 
 /// Move goroutine `id` back onto the ready queue (waking it). Clears its
 /// blocked flag so the deadlock check sees it as runnable again.
 fn wake(id: usize) {
-    SCHED.with(|s| {
-        let mut sched = s.borrow_mut();
+    with_sched(|sched| {
         sched.blocked.remove(&id);
         if !sched.ready.contains(&id) {
             sched.ready.push_back(id);
@@ -423,8 +432,7 @@ fn deadlock_panic() -> ! {
 /// Create a channel with capacity `cap` and return its id. `cap == 0` is
 /// an unbuffered rendezvous channel.
 fn make_channel(cap: usize) -> i64 {
-    SCHED.with(|s| {
-        let mut sched = s.borrow_mut();
+    with_sched(|sched| {
         let id = sched.next_chan;
         sched.next_chan += 1;
         sched.channels.insert(
@@ -481,14 +489,13 @@ fn can_send_now(sched: &Scheduler, id: i64) -> bool {
 #[no_mangle]
 pub extern "C" fn raven_channel_send(id: i64, value: i64) {
     loop {
-        let ready = SCHED.with(|s| can_send_now(&s.borrow(), id));
+        let ready = with_sched(|sched| can_send_now(sched, id));
         if ready {
             break;
         }
         // Park on the send wait list and block until a receiver frees a
         // slot and wakes us.
-        let me = SCHED.with(|s| {
-            let mut sched = s.borrow_mut();
+        let me = with_sched(|sched| {
             let me = sched.current;
             if let Some(ch) = sched.channels.get_mut(&id) {
                 ch.send_waiters.push_back(me);
@@ -496,8 +503,7 @@ pub extern "C" fn raven_channel_send(id: i64, value: i64) {
             me
         });
         block_current();
-        SCHED.with(|s| {
-            let mut sched = s.borrow_mut();
+        with_sched(|sched| {
             if let Some(ch) = sched.channels.get_mut(&id) {
                 ch.send_waiters.retain(|&w| w != me);
             }
@@ -505,8 +511,7 @@ pub extern "C" fn raven_channel_send(id: i64, value: i64) {
     }
 
     // Deposit the value and wake a waiting receiver.
-    let waiter = SCHED.with(|s| {
-        let mut sched = s.borrow_mut();
+    let waiter = with_sched(|sched| {
         if let Some(ch) = sched.channels.get_mut(&id) {
             ch.queue.push_back(value);
             ch.recv_waiters.pop_front()
@@ -525,8 +530,7 @@ pub extern "C" fn raven_channel_recv(id: i64) -> i64 {
     loop {
         // Take a buffered value if one is present and wake a blocked
         // sender, since taking a value frees a slot.
-        let taken = SCHED.with(|s| {
-            let mut sched = s.borrow_mut();
+        let taken = with_sched(|sched| {
             let ch = sched.channels.get_mut(&id)?;
             let v = ch.queue.pop_front()?;
             let sender = ch.send_waiters.pop_front();
@@ -541,8 +545,7 @@ pub extern "C" fn raven_channel_recv(id: i64) -> i64 {
 
         // Empty: wake a blocked sender so it can deposit, then park on the
         // recv wait list and block until a sender delivers.
-        let me = SCHED.with(|s| {
-            let mut sched = s.borrow_mut();
+        let me = with_sched(|sched| {
             let me = sched.current;
             let sender = sched
                 .channels
@@ -558,8 +561,7 @@ pub extern "C" fn raven_channel_recv(id: i64) -> i64 {
         }
         let me = me.0;
         block_current();
-        SCHED.with(|s| {
-            let mut sched = s.borrow_mut();
+        with_sched(|sched| {
             if let Some(ch) = sched.channels.get_mut(&id) {
                 ch.recv_waiters.retain(|&w| w != me);
             }
@@ -571,8 +573,19 @@ pub extern "C" fn raven_channel_recv(id: i64) -> i64 {
 mod tests {
     use super::*;
 
+    /// Serializes the scheduler tests and resets the now-global scheduler
+    /// between them. The scheduler is shared by all OS threads (it is global so
+    /// the future worker pool can share it), so sibling tests running in
+    /// parallel would corrupt each other's goroutines; the lock isolates them
+    /// and the reset gives each a fresh scheduler. The body still runs on its
+    /// own thread so its shadow stack and per-thread yielder start clean.
+    static SCHED_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn isolated(body: impl FnOnce() + Send + 'static) {
+        let guard = SCHED_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        with_sched(|sched| *sched = Scheduler::new());
         std::thread::spawn(body).join().unwrap();
+        drop(guard);
     }
 
     #[test]
