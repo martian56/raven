@@ -4,53 +4,47 @@
 
 Give compiled Raven v2 programs goroutine-style concurrency: lightweight
 green threads that the program spawns cheaply and that communicate over
-typed channels. This document describes the first slice, which is a
-cooperative scheduler on a single OS thread, and states precisely what is
-deferred to later work.
+typed channels, running in parallel across CPU cores. This document
+describes the channel and goroutine semantics; the scheduler and
+collector implementation that makes them parallel is specified in
+[`mn-scheduler.md`](mn-scheduler.md).
 
-## Scope of this slice
+## Scope
 
-This slice ships:
+Raven ships:
 
-* a cooperative scheduler that multiplexes many green threads
-  (goroutines) onto one OS thread,
+* an **M:N scheduler** that multiplexes many green threads (goroutines)
+  onto a pool of worker OS threads (one per core), so goroutines run in
+  parallel,
 * the `spawn` surface form that starts a goroutine from a closure,
 * unbuffered (rendezvous) and buffered channels with blocking `send` and
   `recv`,
-* a `yield_now()` builtin for explicit cooperative yielding,
+* a `yield_now()` builtin,
 * a deadlock detector that panics when every goroutine is blocked,
-* the garbage-collector change that scans the roots of every live
-  goroutine, not only the one currently running.
+* a **shared-heap stop-the-world collector** that runs alongside parallel
+  goroutines: each OS thread sweeps its own heap, a cross-thread registry
+  surfaces every thread's roots, and compiled code reaches safepoints
+  (allocations and loop back-edges) where a collection can park it.
 
-Explicitly deferred (each a filed follow-up):
+Still deferred (each a filed follow-up):
 
-* multi-core parallelism (an M:N scheduler over several OS threads),
-* a thread-safe and parallel collector (safepoints, per-thread
-  allocation),
 * `select` over multiple channels,
 * non-blocking IO integration (a goroutine blocked in net/fs/http should
-  yield instead of stalling the whole scheduler),
+  yield its worker instead of holding it),
 * sync primitives (mutex, waitgroup) and timers/sleep.
 
-## Cooperative single-thread model
+## Execution model
 
-Exactly one goroutine runs at any instant. There is no preemption: a
-goroutine runs until it reaches a cooperative yield point, at which it
-suspends and the scheduler resumes another ready goroutine. The yield
-points are:
-
-* a channel `send` on a channel whose buffer is full (or an unbuffered
-  channel with no waiting receiver),
-* a channel `recv` on a channel whose buffer is empty (or an unbuffered
-  channel with no waiting sender),
-* an explicit `yield_now()`,
-* a goroutine finishing its body (it switches away and never resumes).
-
-Because only one goroutine ever runs at a time, no two goroutines touch
-the heap or the collector concurrently. The collector therefore stays
-single-threaded and lock-free in this slice. The single change the
-collector needs is to find the roots of parked goroutines, described
-below.
+Goroutines run **in parallel**: the worker pool resumes several at once,
+each on its own OS thread, so a spawned goroutine makes progress
+concurrently with the code that spawned it rather than only when that
+code yields. A goroutine suspends at a blocking channel op, at
+`yield_now()`, or when its body finishes; the scheduler then runs another
+ready goroutine on that worker. Because goroutines touch the shared heap
+concurrently, the collector is multi-threaded and coordinates a
+stop-the-world pause at safepoints (see [`mn-scheduler.md`](mn-scheduler.md)
+and the GC integration below); it is not lock-free as an earlier
+single-thread slice was.
 
 `main` is goroutine 0. It is created implicitly around the program entry
 point; its stack is the ordinary OS thread stack, not a coroutine stack.
@@ -60,9 +54,10 @@ completion, matching Go.
 
 ## Scheduler
 
-The scheduler is a runtime global (single OS thread this slice, so a
-plain `thread_local` with interior mutability is sound and lock-free). It
-holds:
+The scheduler is a runtime global behind a lock, shared by the main
+thread and the worker pool (see [`mn-scheduler.md`](mn-scheduler.md) for
+the worker loop, the per-worker root handling, and the safepoint
+coordination this section predates). It holds:
 
 * `goroutines`: the list of all live goroutines (running, ready, and
   blocked), each owning its suspended coroutine handle and its saved GC
@@ -149,10 +144,20 @@ roots (see GC integration), so a value in flight is never collected.
 The implementation keeps the rule simple: an operation that cannot
 complete immediately parks the goroutine and switches to the scheduler;
 the counterpart operation wakes it by moving its id back onto the ready
-queue. Because the scheduler is cooperative and single-threaded, no lock
-guards the channel state.
+queue. The scheduler state, including channel state, is guarded by the
+scheduler lock; a goroutine woken while a worker is still resuming it is
+re-queued by that worker (see [`mn-scheduler.md`](mn-scheduler.md)).
 
 ## GC integration: scanning every goroutine
+
+The principle here still holds: the mark phase scans every parked
+goroutine's roots and every buffered channel value, not just the running
+goroutine's. The mechanism below (a single thread-local chain swapped on
+each switch) describes the original single-thread slice; under the worker
+pool each thread keeps its own registered root context and a running
+goroutine's roots live in its worker's context, while parked goroutines'
+saved chains are surfaced by the same extra-roots hook. See
+[`mn-scheduler.md`](mn-scheduler.md) for the current per-worker handling.
 
 The shadow-stack root mechanism
 (`raven_gc_enter_frame`/`raven_gc_leave_frame`, and the per-slot
@@ -219,11 +224,12 @@ let v = ch.recv()
 
 ## What blocks a goroutine
 
-Only channel `send`/`recv` and `yield_now()` are cooperative yield points
-in this slice. A goroutine that blocks on a runtime IO call (a net read,
-an fs read, an http request) blocks the whole scheduler, because those
-calls are synchronous in the runtime. Making IO yield is a deferred
-follow-up.
+Channel `send`/`recv`, `yield_now()`, the allocator, and loop back-edges
+are the points a goroutine suspends or can be parked for a collection. A
+goroutine that blocks on a synchronous runtime IO call (a net read, an fs
+read, an http request) holds its worker OS thread for the duration of the
+call (other goroutines keep running on the other workers); making IO
+release the worker is a deferred follow-up.
 
 ## Deadlock
 
@@ -235,8 +241,7 @@ the same failure Go reports.
 
 ## Deferred work
 
-* M:N parallelism over multiple OS threads.
-* Thread-safe and parallel collector (safepoints, per-thread allocation).
 * `select` over multiple channels.
-* Non-blocking IO integration.
+* Non-blocking IO integration (a goroutine in a blocking IO call should
+  release its worker).
 * Sync primitives (mutex, waitgroup) and timers/sleep.
