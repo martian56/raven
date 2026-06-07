@@ -29,7 +29,7 @@
 - Compiled to native machine code through Cranelift, into a single static binary.
 - Static typing with generics, traits, and sum types checked by an exhaustive `match`.
 - A tracing garbage collector and `Result`/`Option` instead of `null`.
-- Goroutines and channels that run in parallel across CPU cores (an M:N scheduler over a multi-threaded collector), and a C FFI for native libraries.
+- Goroutines and channels that run in parallel across CPU cores (an M:N scheduler over a multi-threaded collector), with mutexes, wait groups, and `select`, and a C FFI for native libraries.
 - A package manager (`rvpm`), one canonical formatter, and a VS Code extension.
 
 ## Quick Example

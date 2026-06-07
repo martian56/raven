@@ -2,6 +2,14 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.14.0] - 2026-06-07
+
+### Added
+
+- Synchronization primitives in `std/sync`, completing the concurrency toolkit over the parallel scheduler (#212). `Mutex` (`mutex()`, `lock`/`unlock`) guards shared mutable state across goroutines, built on a one-slot channel token. `WaitGroup` (`wait_group()`, `add`/`done`/`wait`) waits for a set of goroutines to finish. `sleep_millis(ms)` parks a goroutine for a duration. The wait-group and sleep leave the collector's running set while parked, so a concurrent collection is never blocked on them (#241).
+- `select_recv(channels)` in `std/sync` receives from whichever of several channels has a value first, returning a `SelectResult { index, value }` that names the channel (by position) and the value. The common recv-select for fan-in or waiting on data versus a cancellation signal; ties go to the lowest index (#239).
+- Blocking IO no longer stalls a collection. A goroutine parked in a blocking runtime call (`std/net` connect/accept/read/write, `std/http` request, `std/process` wait, `std/fs` read/write/append, or a stdin read) now runs the syscall outside the collector's running set, so a stop-the-world collection another goroutine triggers proceeds instead of freezing every goroutine for the length of the call. The M:N pool already kept other goroutines running on other workers during the call (#240).
+
 ## [2.13.0] - 2026-06-07
 
 ### Added
