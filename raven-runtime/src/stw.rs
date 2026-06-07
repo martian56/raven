@@ -56,10 +56,20 @@ pub struct StopTheWorld {
     /// Threads currently inside an unsafe region. A collection waits for this to
     /// reach zero. Lock-free so the common bracket is cheap.
     unsafe_count: AtomicUsize,
+    /// Threads currently *running compiled Raven* (the "in-Raven" state), which
+    /// may hold live GC pointers in registers between safepoints. A collection
+    /// waits for every such thread to reach a safepoint and park. A thread in a
+    /// blocking call, or the Rust test harness (never running compiled Raven),
+    /// is not counted and so never blocks a collection.
+    running: AtomicUsize,
+    /// In-Raven threads currently parked at a safepoint. When `parked` equals
+    /// `running`, every in-Raven thread is stopped at a point with a complete
+    /// shadow stack.
+    parked: AtomicUsize,
     inner: Mutex<Inner>,
-    /// Signaled when a region drains to zero with a stop pending (so a waiting
-    /// collector re-checks) and when the world resumes (so parked threads and
-    /// waiting collectors wake).
+    /// Signaled when a region drains to zero or a thread parks with a stop
+    /// pending (so a waiting collector re-checks) and when the world resumes
+    /// (so parked threads and waiting collectors wake).
     cv: Condvar,
 }
 
@@ -76,12 +86,70 @@ impl StopTheWorld {
         StopTheWorld {
             stop_requested: AtomicBool::new(false),
             unsafe_count: AtomicUsize::new(0),
+            running: AtomicUsize::new(0),
+            parked: AtomicUsize::new(0),
             inner: Mutex::new(Inner {
                 stopping: false,
                 epoch: 0,
             }),
             cv: Condvar::new(),
         }
+    }
+
+    /// Mark the calling thread as now running compiled Raven (in-Raven). The
+    /// scheduler calls this when it dispatches a goroutine, and the program
+    /// entry calls it for the main thread. While in-Raven a thread must reach a
+    /// [`safepoint`](Self::safepoint) for a collection to proceed. If a
+    /// collection is already in progress the thread parks here first, so no new
+    /// in-Raven thread starts running while the world is stopped.
+    pub fn enter_running(&self) {
+        loop {
+            self.running.fetch_add(1, Ordering::SeqCst);
+            if !self.stop_requested.load(Ordering::SeqCst) {
+                return;
+            }
+            self.running.fetch_sub(1, Ordering::SeqCst);
+            let mut inner = self.inner.lock().unwrap();
+            // Dropping out may complete the collector's wait; nudge it.
+            self.cv.notify_all();
+            let epoch = inner.epoch;
+            while self.stop_requested.load(Ordering::SeqCst) && inner.epoch == epoch {
+                inner = self.cv.wait(inner).unwrap();
+            }
+        }
+    }
+
+    /// Mark the calling thread as no longer running compiled Raven (it is
+    /// blocking, yielding, or about to collect). A collection no longer waits
+    /// for it. If a stop is pending, dropping out of the running set may satisfy
+    /// the collector's `parked == running` condition, so nudge it.
+    pub fn exit_running(&self) {
+        self.running.fetch_sub(1, Ordering::SeqCst);
+        if self.stop_requested.load(Ordering::SeqCst) {
+            let _guard = self.inner.lock().unwrap();
+            self.cv.notify_all();
+        }
+    }
+
+    /// A safepoint poll for an in-Raven thread: the back end emits a call to
+    /// this at allocations and loop back-edges, points where every live GC
+    /// pointer is on the shadow stack. Returns immediately when no collection is
+    /// pending (one atomic load); otherwise the thread parks here until the
+    /// world resumes, so the collector sees it stopped with a complete shadow
+    /// stack.
+    pub fn safepoint(&self) {
+        if !self.stop_requested.load(Ordering::SeqCst) {
+            return;
+        }
+        let mut inner = self.inner.lock().unwrap();
+        self.parked.fetch_add(1, Ordering::SeqCst);
+        // The collector may now observe `parked == running`.
+        self.cv.notify_all();
+        let epoch = inner.epoch;
+        while self.stop_requested.load(Ordering::SeqCst) && inner.epoch == epoch {
+            inner = self.cv.wait(inner).unwrap();
+        }
+        self.parked.fetch_sub(1, Ordering::SeqCst);
     }
 
     /// Enter an unsafe region (about to mutate the heap or a shadow stack).
@@ -122,25 +190,32 @@ impl StopTheWorld {
         }
     }
 
-    /// Stop the world and return with it held. Must be called from *outside* an
-    /// unsafe region (a collection is triggered from an allocation site that has
-    /// not yet entered its region). After this returns, no other thread is in an
-    /// unsafe region and none can enter one without parking, so the caller may
-    /// mark and sweep the shared heap. One collector runs at a time.
+    /// Stop the world and return with it held. The caller must first leave both
+    /// any unsafe region and the running set ([`exit_running`](Self::exit_running)),
+    /// since a collection is triggered from inside the runtime, not from
+    /// compiled Raven. After this returns: every in-flight unsafe region has
+    /// drained, and every in-Raven thread is parked at a safepoint with a
+    /// complete shadow stack, so the caller may mark and sweep. One collector
+    /// runs at a time; a contending collector has also left the running set, so
+    /// it does not block the active one.
     pub fn stop_the_world(&self) {
         let mut inner = self.inner.lock().unwrap();
         // Serialize collectors: wait out any in-progress stop. The waiting
-        // collector is itself safe (not in an unsafe region), so it does not
-        // block the active collection.
+        // collector has left the running set, so it does not block the active
+        // collection.
         while inner.stopping {
             inner = self.cv.wait(inner).unwrap();
         }
         inner.stopping = true;
         self.stop_requested.store(true, Ordering::SeqCst);
-        // Wait for every in-flight unsafe region to drain. New entries park
-        // rather than counting, so this terminates as soon as the bounded
-        // in-flight regions finish.
-        while self.unsafe_count.load(Ordering::SeqCst) != 0 {
+        // Wait until no thread is mutating a shadow stack (unsafe regions
+        // drained) and every in-Raven thread has parked at a safepoint. New
+        // unsafe entries and safepoint arrivals park rather than proceeding, so
+        // both conditions are reached as soon as the bounded in-flight work
+        // finishes.
+        while self.unsafe_count.load(Ordering::SeqCst) != 0
+            || self.parked.load(Ordering::SeqCst) != self.running.load(Ordering::SeqCst)
+        {
             inner = self.cv.wait(inner).unwrap();
         }
     }
@@ -359,6 +434,104 @@ mod tests {
         assert!(
             !tripped.load(Ordering::Acquire),
             "a collection deadlocked under unsafe-region churn"
+        );
+    }
+
+    /// In-Raven threads must be parked at a safepoint while the world is
+    /// stopped. Workers run in-Raven, polling safepoints; the collector is
+    /// itself in-Raven and drops out of the running set to collect. No worker
+    /// may observe the world stopped between its safepoints.
+    #[test]
+    fn in_raven_threads_park_at_safepoints_for_a_collection() {
+        const WORKERS: usize = 6;
+        const ROUNDS: usize = 200;
+        let stw = Arc::new(StopTheWorld::new());
+        let world_stopped = Arc::new(AtomicBool::new(false));
+        let escaped = Arc::new(AtomicU64::new(0));
+        let done = Arc::new(AtomicBool::new(false));
+
+        let mut handles = Vec::new();
+        for _ in 0..WORKERS {
+            let stw = Arc::clone(&stw);
+            let world_stopped = Arc::clone(&world_stopped);
+            let escaped = Arc::clone(&escaped);
+            let done = Arc::clone(&done);
+            handles.push(std::thread::spawn(move || {
+                stw.enter_running();
+                while !done.load(Ordering::Acquire) {
+                    stw.safepoint();
+                    if world_stopped.load(Ordering::Acquire) {
+                        escaped.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+                stw.exit_running();
+            }));
+        }
+
+        // The collector is an in-Raven thread that leaves the running set to
+        // collect, then rejoins, exactly the allocation-triggered collect path.
+        stw.enter_running();
+        for _ in 0..ROUNDS {
+            stw.exit_running();
+            stw.stop_the_world();
+            world_stopped.store(true, Ordering::Release);
+            std::hint::spin_loop();
+            world_stopped.store(false, Ordering::Release);
+            stw.resume_the_world();
+            stw.enter_running();
+        }
+        stw.exit_running();
+
+        done.store(true, Ordering::Release);
+        for h in handles {
+            h.join().unwrap();
+        }
+        assert_eq!(
+            escaped.load(Ordering::Relaxed),
+            0,
+            "an in-Raven thread ran while the world was stopped"
+        );
+    }
+
+    /// A thread that has left the running set (blocked, in a syscall, or simply
+    /// never running compiled Raven like the Rust test harness) must not block a
+    /// collection.
+    #[test]
+    fn non_running_threads_do_not_block_a_collection() {
+        let stw = Arc::new(StopTheWorld::new());
+        let ready = Arc::new(AtomicBool::new(false));
+        let release = Arc::new(AtomicBool::new(false));
+
+        let worker = {
+            let stw = Arc::clone(&stw);
+            let ready = Arc::clone(&ready);
+            let release = Arc::clone(&release);
+            std::thread::spawn(move || {
+                stw.enter_running();
+                stw.safepoint();
+                // Leave the running set and spin, never reaching a safepoint.
+                stw.exit_running();
+                ready.store(true, Ordering::Release);
+                while !release.load(Ordering::Acquire) {
+                    std::hint::spin_loop();
+                }
+            })
+        };
+
+        while !ready.load(Ordering::Acquire) {
+            std::hint::spin_loop();
+        }
+        // The caller is not in the running set; the worker has left it. The
+        // stop must complete promptly despite the spinning worker.
+        let start = Instant::now();
+        stw.stop_the_world();
+        let elapsed = start.elapsed();
+        stw.resume_the_world();
+        release.store(true, Ordering::Release);
+        worker.join().unwrap();
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "a stop blocked on a non-running thread for {elapsed:?}"
         );
     }
 }
