@@ -904,6 +904,7 @@ fn lower_expr_block(cx: &mut LowerCx<'_>, block: &HirBlock) -> MirOperand {
 
 fn lower_loop(cx: &mut LowerCx<'_>, body: &HirBlock, ty: MirType) -> MirOperand {
     let header = cx.builder.new_block();
+    cx.builder.mark_loop_header(header);
     let cont = cx.builder.new_block();
     let result = cx.builder.fresh_temp("loop", ty);
 
@@ -932,6 +933,7 @@ fn lower_loop(cx: &mut LowerCx<'_>, body: &HirBlock, ty: MirType) -> MirOperand 
 
 fn lower_while(cx: &mut LowerCx<'_>, cond: &HirExpr, body: &HirBlock, _ty: MirType) -> MirOperand {
     let header = cx.builder.new_block();
+    cx.builder.mark_loop_header(header);
     let body_bb = cx.builder.new_block();
     let cont = cx.builder.new_block();
 

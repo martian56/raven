@@ -399,6 +399,11 @@ pub struct MirBlock {
     pub id: MirBlockId,
     pub statements: Vec<MirStatement>,
     pub terminator: MirTerminator,
+    /// True if this block is a loop header (the target of a loop's back-edge).
+    /// The back end emits a GC safepoint poll at its top, so a goroutine in a
+    /// long non-allocating loop still reaches a safepoint and can be parked for a
+    /// stop-the-world collection. Allocating loops already poll at the allocator.
+    pub is_loop_header: bool,
 }
 
 /// A function in MIR.

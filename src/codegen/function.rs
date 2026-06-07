@@ -177,6 +177,16 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
                     enter_defer_frame(self.cx, &mut builder);
                 }
             }
+            // A loop header polls a GC safepoint at its top, so a thread in a
+            // long non-allocating loop still reaches a safepoint and can be
+            // parked for a stop-the-world collection (allocating loops poll at
+            // the allocator). A single atomic load when no collection is pending.
+            if mir_block.is_loop_header {
+                if let Some(sp) = self.cx.runtime_id(intrinsics::RUNTIME_GC_SAFEPOINT) {
+                    let sp_ref = self.cx.module().declare_func_in_func(sp, builder.func);
+                    builder.ins().call(sp_ref, &[]);
+                }
+            }
             lower_block(
                 self.cx,
                 &mut builder,

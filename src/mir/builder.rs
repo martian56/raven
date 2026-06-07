@@ -90,9 +90,16 @@ impl FunctionBuilder {
             id,
             statements: Vec::new(),
             terminator: pending_terminator(),
+            is_loop_header: false,
         });
         self.block_set.push(false);
         id
+    }
+
+    /// Mark `block` as a loop header, so the back end emits a safepoint poll at
+    /// its top (see [`MirBlock::is_loop_header`]).
+    pub fn mark_loop_header(&mut self, block: MirBlockId) {
+        self.blocks[block.0 as usize].is_loop_header = true;
     }
 
     /// Emit a statement at the tail of `block`.
