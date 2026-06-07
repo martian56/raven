@@ -110,6 +110,10 @@ pub enum ResolveError {
         candidates: Vec<Span>,
     },
     SelfOutsideImpl,
+    /// `self` used in a method that does not take `self` as its first
+    /// parameter. Distinct from `SelfOutsideImpl`: the use is inside an `impl`,
+    /// but the enclosing method has no `self` to refer to.
+    SelfNotMethodParam,
     /// A resolve-stage diagnostic that does not fit the structured variants,
     /// carrying its own message (for example a `@derive(...)` rejection).
     Other(String),
@@ -135,6 +139,12 @@ impl fmt::Display for ResolveError {
             }
             ResolveError::SelfOutsideImpl => {
                 write!(f, "`self` or `Self` used outside an `impl` block")
+            }
+            ResolveError::SelfNotMethodParam => {
+                write!(
+                    f,
+                    "`self` is used here, but this method has no `self` parameter"
+                )
             }
             ResolveError::Other(msg) => write!(f, "{}", msg),
         }
