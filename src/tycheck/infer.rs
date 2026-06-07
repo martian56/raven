@@ -39,6 +39,11 @@ pub struct InferCtx {
     /// even though `T` appears only in the function's `S: Iterator<T>`
     /// bound and never in a parameter position.
     iterator_links: Vec<IteratorLink>,
+    /// Trait impls visible to this body as `(trait name, implementing type)`
+    /// pairs, so a pending bound can be verified the moment its variable
+    /// resolves to a simple concrete type (for example a `Map` key inferred to
+    /// a struct that has no `Hash` impl).
+    trait_impls: Vec<(String, Ty)>,
 }
 
 /// A deferred link from an iterator-typed variable to its element
@@ -83,6 +88,12 @@ impl InferCtx {
             span: Some(span),
         });
         InferVarId(id)
+    }
+
+    /// Record the trait impls in scope so a pending bound can be checked
+    /// against a concrete type as soon as its variable resolves.
+    pub fn set_trait_impls(&mut self, impls: Vec<(String, Ty)>) {
+        self.trait_impls = impls;
     }
 
     /// Attach a trait bound to a variable.
@@ -283,7 +294,7 @@ fn unify_inner(cx: &mut InferCtx, a: &Ty, b: &Ty, span: &Span) -> Result<(), Rav
             // Eagerly verify pending bounds now that we know the type.
             if let Some(bs) = cx.bounds.get(&root).cloned() {
                 for b in bs {
-                    check_bound_eager(other, &b, span)?;
+                    check_bound_eager(&cx.trait_impls, other, &b)?;
                 }
             }
             Ok(())
@@ -462,26 +473,48 @@ fn mismatch_named(a: &str, b: &str, span: &Span) -> RavenError {
 /// caller threads the environment when richer bound checking is needed;
 /// this eager path is conservative and prefers false positives only for
 /// concrete primitive shapes that obviously cannot satisfy a bound.
-fn check_bound_eager(ty: &Ty, bound: &PendingBound, span: &Span) -> Result<(), RavenError> {
-    if ty.is_error() {
+fn check_bound_eager(
+    impls: &[(String, Ty)],
+    ty: &Ty,
+    bound: &PendingBound,
+) -> Result<(), RavenError> {
+    // Only judge a *simple* concrete type whose impl can be matched exactly: a
+    // primitive or a monomorphic struct/enum. Inference variables and type
+    // parameters stay pending (a later resolution or the call site checks
+    // them); generic instantiations are deferred because matching a generic
+    // impl by structural equality would mis-fire. The matched cases are exactly
+    // those the declared-type well-formedness pass also judges, so the two
+    // checks stay consistent.
+    let simple = match ty {
+        Ty::Var(_) | Ty::Param(_) | Ty::Error => false,
+        Ty::Struct { args, .. } | Ty::Enum { args, .. } => args.is_empty(),
+        Ty::List(_) | Ty::Option(_) | Ty::Result(_, _) | Ty::Function { .. } | Ty::SelfTy(_) => {
+            false
+        }
+        _ => true,
+    };
+    if !simple {
         return Ok(());
     }
-    // Inference variables: the bound stays pending, no eager failure.
-    if matches!(ty, Ty::Var(_)) {
+    let satisfied = impls
+        .iter()
+        .any(|(t, self_ty)| t == &bound.trait_name && super::env::tys_equal(self_ty, ty));
+    if satisfied {
         return Ok(());
     }
-    // Declared parameters: defer; the call site that introduced the
-    // parameter is responsible for verifying against its bounds.
-    if matches!(ty, Ty::Param(_)) {
-        return Ok(());
-    }
-    // For other shapes (Struct, Enum, primitive) we can not verify the
-    // bound without the env; the call site of `unify` performs a
-    // second-stage walk after finalization to surface bound errors with
-    // full context. To avoid spurious early failures, simply succeed
-    // here and let the deferred check fire.
-    let _ = (bound, span);
-    Ok(())
+    let ty_name = format!("{}", ty);
+    Err(RavenError::ty(
+        TypeError::BoundNotSatisfied {
+            ty: ty_name.clone(),
+            trait_name: bound.trait_name.clone(),
+        },
+        bound.span.clone(),
+    )
+    .with_hint(format!(
+        "`{ty}` must implement `{tr}`; add `@derive({tr})` to its definition, or write an `impl {tr} for {ty}`",
+        ty = ty_name,
+        tr = bound.trait_name
+    )))
 }
 
 /// Substitute `subst` into `ty`. Walks recursively. `subst` maps each

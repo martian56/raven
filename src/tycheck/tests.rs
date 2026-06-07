@@ -86,6 +86,27 @@ fn generic_arg_violating_a_bound_is_rejected() {
 }
 
 #[test]
+fn inferred_type_violating_a_bound_is_rejected() {
+    // A call that infers a type argument violating the bound is rejected the
+    // moment the inference variable resolves to a concrete type, not deferred
+    // to the back end (issue #375).
+    let err = check(
+        "trait Keyed {}\nstruct Box<T: Keyed> { v: T }\nfun wrap<T: Keyed>(x: T) -> Box<T> {\n    return Box { v: x }\n}\nstruct Plain { x: Int }\nfun main() {\n    let b = wrap(Plain { x: 1 })\n}\n",
+    )
+    .unwrap_err();
+    match err {
+        RavenError::Type(b, _, _) => {
+            assert!(
+                matches!(*b, TypeError::BoundNotSatisfied { .. }),
+                "got: {:?}",
+                b
+            )
+        }
+        other => panic!("expected a bound error, got {:?}", other),
+    }
+}
+
+#[test]
 fn reassigning_a_const_local_is_rejected() {
     let err = check("fun f() {\n    const K: Int = 5\n    K = 7\n}\n").unwrap_err();
     match err {
