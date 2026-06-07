@@ -724,7 +724,16 @@ impl<'a, 'b> Checker<'a, 'b> {
                 }
                 let declared = match ty {
                     Some(t) => match self.resolve_ast_ty(t) {
-                        Ok(d) => Some(d),
+                        Ok(d) => {
+                            // An explicit annotation such as `let m: Map<K, V>`
+                            // must satisfy the generic bounds it names, the same
+                            // check the declared-type pass applies to fields and
+                            // signatures.
+                            if let Err(e) = super::wf::check_type(self.env, &d, &stmt.span) {
+                                self.push_error(e);
+                            }
+                            Some(d)
+                        }
                         Err(e) => {
                             self.push_error(e);
                             Some(Ty::Error)
