@@ -923,9 +923,9 @@ impl<'a, 'b> Checker<'a, 'b> {
             ExprKind::MethodCall {
                 receiver,
                 name,
+                generics,
                 args,
-                ..
-            } => self.check_method_call(receiver, name, args, &expr.span),
+            } => self.check_method_call(receiver, name, generics, args, &expr.span),
             ExprKind::Field { receiver, name } => self.check_field(receiver, name, &expr.span),
             ExprKind::Index { receiver, index } => self.check_index(receiver, index, &expr.span),
             ExprKind::Try(inner) => {
@@ -2070,6 +2070,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         &mut self,
         receiver: &Expr,
         name: &str,
+        generics: &[crate::ast::Type],
         args: &[Expr],
         span: &Span,
     ) -> Result<Ty, RavenError> {
@@ -2239,14 +2240,26 @@ impl<'a, 'b> Checker<'a, 'b> {
                 span.clone(),
             ));
         }
+        // Resolve explicit method type arguments (`recv.method<T>(...)`) once,
+        // to bind the method's own generic parameters at the call site.
+        let mut explicit: Vec<Ty> = Vec::with_capacity(generics.len());
+        for g in generics {
+            match self.resolve_ast_ty(g) {
+                Ok(t) => explicit.push(t),
+                Err(e) => {
+                    self.push_error(e);
+                    explicit.push(Ty::Error);
+                }
+            }
+        }
         // Prefer inherent over trait if both exist.
         if !inherent_matches.is_empty() && inherent_matches.len() == 1 {
             let (_, sig, subst) = inherent_matches.into_iter().next().unwrap();
-            return self.apply_method_call(&sig, &subst, args, name, span);
+            return self.apply_method_call(&sig, &subst, args, name, span, &explicit);
         }
         if inherent_matches.is_empty() && trait_matches.len() == 1 {
             let (_, sig, subst, _) = trait_matches.into_iter().next().unwrap();
-            return self.apply_method_call(&sig, &subst, args, name, span);
+            return self.apply_method_call(&sig, &subst, args, name, span, &explicit);
         }
         // Otherwise ambiguous.
         let mut names: Vec<String> = inherent_matches
@@ -2453,7 +2466,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             ))),
             1 => {
                 let (sig, subst) = matches.into_iter().next().unwrap();
-                self.apply_method_call(&sig, &subst, args, name, span)
+                self.apply_method_call(&sig, &subst, args, name, span, &[])
             }
             _ => Err(RavenError::ty(
                 TypeError::AmbiguousMethod {
@@ -2473,14 +2486,33 @@ impl<'a, 'b> Checker<'a, 'b> {
         args: &[Expr],
         name: &str,
         span: &Span,
+        explicit: &[Ty],
     ) -> Result<Ty, RavenError> {
+        // Explicit type arguments (`recv.method<T>(...)`), when given, must
+        // match the method's own generic arity and bind its parameters.
+        if !explicit.is_empty() && explicit.len() != sig.generics.len() {
+            return Err(RavenError::ty(
+                TypeError::GenericArityMismatch {
+                    decl: name.to_string(),
+                    expected: sig.generics.len(),
+                    actual: explicit.len(),
+                },
+                span.clone(),
+            ));
+        }
         // Build a per-call substitution: impl generics already in
-        // `subst`, plus fresh variables for method generics.
+        // `subst`, plus fresh variables for method generics. A fresh
+        // variable is unified with its explicit type argument when one is
+        // given, so a method parameter that appears only in the return type
+        // is grounded at the call site.
         let mut full = subst.clone();
-        for p in &sig.generics {
+        for (i, p) in sig.generics.iter().enumerate() {
             let v = self.infer.fresh(span.clone());
             for b in &p.bounds {
                 self.infer.add_bound(v, b.clone(), span.clone());
+            }
+            if let Some(arg) = explicit.get(i) {
+                self.unify(&Ty::Var(v), arg, span)?;
             }
             full.insert(p.id.clone(), Ty::Var(v));
         }

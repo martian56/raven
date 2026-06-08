@@ -1,0 +1,38 @@
+// A generic method whose type parameter appears only in the return type is
+// grounded at the call site: by the expected type from an annotation, and by an
+// explicit type argument. The method dispatches through the bound's associated
+// function (`T.make()`).
+import std/io { println }
+
+trait Make {
+    fun make() -> Self
+}
+
+struct Alpha { tag: Int }
+struct Beta { tag: Int }
+
+impl Make for Alpha {
+    fun make() -> Alpha {
+        return Alpha { tag: 1 }
+    }
+}
+impl Make for Beta {
+    fun make() -> Beta {
+        return Beta { tag: 2 }
+    }
+}
+
+struct Factory {}
+impl Factory {
+    fun build<T: Make>(self) -> T {
+        return T.make()
+    }
+}
+
+fun main() {
+    let f = Factory {}
+    let a: Alpha = f.build()        // annotation grounds T = Alpha
+    println("a.tag=${a.tag}")
+    let b = f.build<Beta>()         // explicit type argument grounds T = Beta
+    println("b.tag=${b.tag}")
+}

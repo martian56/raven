@@ -68,6 +68,11 @@ pub struct MethodEntry {
     /// `self`. May carry `Ty::Param`. Matched against the concrete
     /// argument types to bind any method-level parameters.
     pub params: Vec<Ty>,
+    /// The method's declared return type. May carry `Ty::Param`. Matched
+    /// against the call's resolved result type to bind method-level
+    /// parameters that appear only in the return (`fun decode<T>() -> T`),
+    /// which the self and parameter types cannot ground.
+    pub ret: Ty,
     /// The method's own generic parameters, in declaration order: those
     /// the method introduces (`fun mapped<U>`) that do not appear in the
     /// implementing type. They are encoded into the mangled symbol so two
