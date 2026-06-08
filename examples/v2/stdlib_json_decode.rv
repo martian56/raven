@@ -1,0 +1,20 @@
+// Decode a JSON string into a struct with std/json's `decode`, then re-serialize
+// it with the `@derive(ToJson)` impl. The two derives synthesize the conversions.
+import std/json { decode, stringify, ToJson }
+import std/io { println }
+
+@derive(ToJson, FromJson)
+struct User {
+    name: String,
+    age: Int,
+}
+
+fun main() {
+    match decode<User>("{\"name\":\"Ada\",\"age\":36}") {
+        Ok(u) -> {
+            println("name=${u.name} age=${u.age}")
+            println(stringify(u.to_json()))
+        }
+        Err(e) -> println("decode error"),
+    }
+}

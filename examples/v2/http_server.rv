@@ -1,17 +1,30 @@
-// An HTTP server built on std/http. golden:skip (a server blocks forever, so
-// it has no fixed stdout to diff). Run it, then from another shell:
+// An HTTP server built on std/http: typed JSON with @derive(ToJson)/decode, and
+// static file serving. golden:skip (a server blocks forever, so it has no fixed
+// stdout to diff). Run it, then from another shell:
 //   curl localhost:8080/
 //   curl localhost:8080/greet/raven
-//   curl "localhost:8080/search?q=birds"
-//   curl -X POST -d '{"name":"Ada"}' localhost:8080/users
-// Each connection is handled on its own goroutine, so one slow client does not
-// block the others. Handlers are plain functions of `Request -> Response`;
-// routes may capture `:name` path segments.
+//   curl "localhost:8080/search?q=birds"            # JSON, serialized from a struct
+//   curl -X POST -d '{"name":"Ada","age":36}' localhost:8080/users
+//   curl localhost:8080/static/style.css            # any file under public/
+// Each connection is handled on its own goroutine.
 
 import std/http { Server, Request, Response }
+import std/json { decode }
+
+@derive(ToJson)
+struct SearchResult {
+    query: String,
+    results: List<String>,
+}
+
+@derive(ToJson, FromJson)
+struct User {
+    name: String,
+    age: Int,
+}
 
 fun home(req: Request) -> Response {
-    return Response.html("<h1>Raven HTTP</h1><p>It works.</p>")
+    return Response.html("<h1>Raven HTTP</h1><p>/search for JSON, /static for files.</p>")
 }
 
 fun greet(req: Request) -> Response {
@@ -19,16 +32,20 @@ fun greet(req: Request) -> Response {
 }
 
 fun search(req: Request) -> Response {
-    let q = req.query_value("q")
-    return Response.json("{\"query\": \"${q}\", \"results\": []}")
+    let results: List<String> = []
+    return Response.json(SearchResult { query: req.query_value("q"), results: results })
 }
 
 fun create_user(req: Request) -> Response {
-    return Response.created(req.body).header("X-Created-By", "raven")
+    return match decode<User>(req.body) {
+        Ok(user) -> Response.json(user).status_code(201),
+        Err(e) -> Response.bad_request(e.message()),
+    }
 }
 
 fun main() {
     let app = Server.new()
+    app.static("/static", "public")     // serve files under ./public
     app.get("/", home)
     app.get("/greet/:name", greet)
     app.get("/search", search)

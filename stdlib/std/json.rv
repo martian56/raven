@@ -782,6 +782,14 @@ fun from_json_value<T: FromJson>(j: JsonValue) -> Result<T, Error> {
     return T.from_json(j)
 }
 
+// Parse a JSON string and decode it into a `T` in one step. The element type is
+// chosen by the call, so `decode<Point>(text)` or a `Result<Point, Error>`
+// annotation selects the impl. Returns an Err for malformed JSON or a shape that
+// does not match `T`.
+fun decode<T: FromJson>(s: String) -> Result<T, Error> {
+    return from_json_value(parse(s)?)
+}
+
 // Read object member `key`, or an Err when `j` is not an object or the key
 // is absent. Useful in a hand-written `from_json` to fetch a field before
 // decoding it (`@derive(FromJson)` emits its own equivalent helper).

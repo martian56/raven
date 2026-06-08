@@ -155,22 +155,30 @@ struct Request {
     query: Map<String, String>,     // decoded query string
     body: String,
 }
-fun Request.header(name) -> String        // "" if absent
-fun Request.param(name) -> String         // path capture, "" if absent
-fun Request.query_value(name) -> String   // "" if absent
+fun Request.header(name) -> String          // "" if absent
+fun Request.param(name) -> String           // path capture, "" if absent
+fun Request.query_value(name) -> String     // "" if absent
+fun Request.json(self) -> Result<JsonValue, Error>   // parse the body
 
 struct Response { status: Int, headers: Map<String, String>, body: String }
 // constructors
-Response.text/ok/html/json/created/no_content/not_found/bad_request/server_error/redirect/with_body
+fun Response.json<T: ToJson>(value) -> Response       // serialize, application/json
+fun Response.json_raw(body) -> Response               // body is already JSON text
+fun Response.file(path) -> Response                   // serve a file, 404 if missing
+Response.text/ok/html/created/no_content/not_found/bad_request/server_error/redirect/with_body
 // chaining builders (return self)
 fun Response.header(name, value) -> Response
 fun Response.content_type(value) -> Response
 fun Response.status_code(code) -> Response
 
+// decode a request body into a struct (std/json)
+fun decode<T: FromJson>(body: String) -> Result<T, Error>
+
 struct Server { routes: List<Route> }
 fun Server.new() -> Server
 fun Server.route(method, pattern, handler)            // handler: fun(Request) -> Response
 fun Server.get/post/put/delete/patch(pattern, handler)
+fun Server.static(prefix, dir)                        // mount a directory
 fun Server.listen(addr)                               // binds and blocks
 ```
 

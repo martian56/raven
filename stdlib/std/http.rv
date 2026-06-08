@@ -12,6 +12,8 @@ import std/error { error_kind }
 import std/net { listen, TcpStream }
 import std/string
 import std/collections
+import std/json { JsonValue, ToJson, stringify, parse }
+import std/fs { read }
 
 struct HttpResponse {
     status_code: Int,
@@ -177,6 +179,13 @@ impl Request {
     fun query_value(self, name: String) -> String {
         return self.query.get_or(name, "")
     }
+
+    // Parse the request body as JSON, returning a `JsonValue` to inspect, or an
+    // Err for malformed JSON. To decode straight into a struct, prefer
+    // `std/json`'s `decode<T>(req.body)`.
+    fun json(self) -> Result<JsonValue, Error> {
+        return parse(self.body)
+    }
 }
 
 // One HTTP response: a status code, response headers, and a body. Build one
@@ -195,6 +204,22 @@ impl Response {
         return Response { status: status, headers: h, body: body }
     }
 
+    // 200 with `value` serialized to JSON via its `ToJson` impl (a `@derive(
+    // ToJson)` struct or enum, a List, an Option, or a scalar), with
+    // `Content-Type: application/json`. Chain `.status_code(201)` for Created.
+    fun json<T: ToJson>(value: T) -> Response {
+        return Response.with_body(200, stringify(value.to_json())).content_type("application/json")
+    }
+
+    // 200 serving the file at `path` from disk, with a `Content-Type` chosen
+    // from its extension. A missing or unreadable file is a 404.
+    fun file(path: String) -> Response {
+        return match read(path) {
+            Ok(body) -> Response.with_body(200, body).content_type(content_type_for(path)),
+            Err(_) -> Response.not_found(),
+        }
+    }
+
     // 200 with a `text/plain` body.
     fun text(body: String) -> Response {
         return Response.with_body(200, body).content_type("text/plain; charset=utf-8")
@@ -210,8 +235,10 @@ impl Response {
         return Response.with_body(200, body).content_type("text/html; charset=utf-8")
     }
 
-    // 200 with an `application/json` body. `body` must already be JSON text.
-    fun json(body: String) -> Response {
+    // 200 with `body` (already JSON text) and an `application/json` type. Use
+    // `Response.json(value)` instead to serialize a value; this is for a body
+    // you have already rendered.
+    fun json_raw(body: String) -> Response {
         return Response.with_body(200, body).content_type("application/json")
     }
 
@@ -313,6 +340,15 @@ impl Server {
     // Register a handler for PATCH `pattern`.
     fun patch(self, pattern: String, handler: fun(Request) -> Response) {
         self.route(Method.Patch, pattern, handler)
+    }
+
+    // Serve files under directory `dir` for GET requests whose path is `prefix`
+    // followed by a file name, for example `app.static("/static", "public")`
+    // serves `GET /static/style.css` from `public/style.css`. The file name is a
+    // single path segment, so it cannot escape `dir` with a slash. A missing
+    // file is a 404 (see `Response.file`).
+    fun static(self, prefix: String, dir: String) {
+        self.route(Method.Get, prefix.concat("/:file"), fun(req: Request) -> Response = serve_from(dir, req))
     }
 
     // Bind `addr` ("host:port") and serve forever, handling each connection on
@@ -552,4 +588,32 @@ fun reason_phrase(status: Int) -> String {
         return "Internal Server Error"
     }
     return "OK"
+}
+
+// Serve the `:file` capture of a `Server.static` route from its directory.
+fun serve_from(dir: String, req: Request) -> Response {
+    return Response.file(dir.concat("/").concat(req.param("file")))
+}
+
+// A `Content-Type` for a file path, chosen from its extension.
+fun content_type_for(path: String) -> String {
+    if path.ends_with(".html") {
+        return "text/html; charset=utf-8"
+    }
+    if path.ends_with(".css") {
+        return "text/css; charset=utf-8"
+    }
+    if path.ends_with(".js") {
+        return "application/javascript"
+    }
+    if path.ends_with(".json") {
+        return "application/json"
+    }
+    if path.ends_with(".svg") {
+        return "image/svg+xml"
+    }
+    if path.ends_with(".txt") {
+        return "text/plain; charset=utf-8"
+    }
+    return "application/octet-stream"
 }
