@@ -219,7 +219,7 @@ fun main() {
     let app = Server.new()
     app.get("/", fun(req: Request) -> Response = Response.html("<h1>Raven</h1>"))
     app.get("/hello/:name", hello)
-    app.post("/echo", fun(req: Request) -> Response = Response.json(req.body))
+    app.post("/echo", fun(req: Request) -> Response = Response.json_raw(req.body))
     app.listen("127.0.0.1:8080")
 }
 ```
@@ -250,7 +250,7 @@ one-liner:
 ```rust
 fun show_user(req: Request) -> Response {
     let id = req.param("id")
-    return Response.json("{\"id\": \"${id}\"}")
+    return Response.text("user ${id}")
 }
 
 app.get("/users/:id", show_user)
@@ -284,7 +284,7 @@ unwrapping an `Option`:
 fun search(req: Request) -> Response {
     let q = req.query_value("q")       // /search?q=birds -> "birds"
     let auth = req.header("authorization")
-    return Response.json("{\"q\": \"${q}\"}")
+    return Response.text("query: ${q}")
 }
 ```
 
@@ -304,7 +304,9 @@ struct Response {
 |-------------|--------|--------------|
 | `Response.ok(body)` / `Response.text(body)` | 200 | `text/plain` |
 | `Response.html(body)` | 200 | `text/html` |
-| `Response.json(body)` | 200 | `application/json` |
+| `Response.json(value)` | 200 | `application/json` (serializes a `ToJson` value, see below) |
+| `Response.json_raw(body)` | 200 | `application/json` (body is already JSON text) |
+| `Response.file(path)` | 200 / 404 | from the file extension (see below) |
 | `Response.created(body)` | 201 | `text/plain` |
 | `Response.no_content()` | 204 | none |
 | `Response.not_found()` | 404 | `text/plain` |
@@ -330,6 +332,62 @@ fun create(req: Request) -> Response {
 
 `listen` adds `Content-Length` and `Connection: close` for you when it writes
 the response.
+
+### Working with JSON
+
+`Response.json(value)` serializes any value whose type implements
+[`ToJson`](json.md), so a `@derive(ToJson)` struct or enum, a `List`, an
+`Option`, or a scalar, and sets `application/json`. No string-building, no manual
+escaping:
+
+```rust
+@derive(ToJson, FromJson)
+struct User { name: String, age: Int }
+
+fun show_user(req: Request) -> Response {
+    return Response.json(User { name: "Ada", age: 36 })   // {"name":"Ada","age":36}
+}
+```
+
+To read a JSON request body into a struct, use `decode<T>` from
+[std/json](json.md). Decoding failures (bad JSON, a missing or mistyped field)
+come back as an `Error`:
+
+```rust
+import std/json { decode }
+
+fun create_user(req: Request) -> Response {
+    return match decode<User>(req.body) {
+        Ok(user) -> Response.json(user).status_code(201),
+        Err(e) -> Response.bad_request(e.message()),
+    }
+}
+```
+
+`req.json()` returns the body as a `JsonValue` for ad-hoc inspection when a
+struct is overkill. (The fully-typed method `req.json<User>()` is not available
+yet; method-call generics do not infer the type parameter. Use `decode<User>`.)
+
+### Serving files
+
+`Response.file(path)` reads a file and serves it with a `Content-Type` chosen
+from its extension (`html`, `css`, `js`, `json`, `svg`, `txt`; otherwise
+`application/octet-stream`); a missing file is a 404.
+
+`Server.static(prefix, dir)` mounts a directory: it serves
+`GET <prefix>/<file>` from `<dir>/<file>`. The file name is a single path
+segment, so a request cannot escape `dir` with a slash.
+
+```rust
+fun main() {
+    let app = Server.new()
+    app.static("/static", "public")     // GET /static/style.css -> public/style.css
+    app.get("/", fun(req: Request) -> Response = Response.file("public/index.html"))
+    app.listen("127.0.0.1:8080")
+}
+```
+
+Paths are relative to the process's working directory.
 
 ### `enum Method`
 
