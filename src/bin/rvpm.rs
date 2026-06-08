@@ -16,7 +16,25 @@ use raven::ops;
 use raven::pkg;
 use raven::resolve::GithubPath;
 
+/// `rvpm build`/`run` invoke the compiler, which recurses deeply (derive
+/// expansion, type checking), enough to overflow the default main-thread stack
+/// in debug builds. Run the work on a thread with a generous stack, the same as
+/// the `raven` CLI. The reservation is virtual address space; the OS commits
+/// pages only as they are touched.
+const COMPILER_STACK_SIZE: usize = 512 * 1024 * 1024;
+
 fn main() -> ExitCode {
+    let worker = std::thread::Builder::new()
+        .stack_size(COMPILER_STACK_SIZE)
+        .spawn(dispatch)
+        .expect("spawn rvpm worker thread");
+    match worker.join() {
+        Ok(code) => code,
+        Err(_) => ExitCode::from(101),
+    }
+}
+
+fn dispatch() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         None | Some("help") | Some("--help") | Some("-h") => {
