@@ -2,6 +2,16 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.0] - 2026-06-08
+
+### Added
+
+- `Request.json<T: FromJson>()` in `std/http` decodes a request body straight into a struct: `req.json<User>()` or `let u: User = req.json()?`. It is enabled by the return-only generic method inference from 2.17.1 and is equivalent to the free `decode<User>(req.body)`.
+
+### Changed
+
+- `Request.json()` is now the typed decoder above. The ad-hoc form that parses the body into a `JsonValue` is now `Request.json_value()`. (The previous `Request.json() -> Result<JsonValue, Error>` shipped in 2.17.0.)
+
 ## [2.17.1] - 2026-06-08
 
 ### Fixed
