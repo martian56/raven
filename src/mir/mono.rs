@@ -407,6 +407,7 @@ fn collect_roots(
                                 decl: id,
                                 self_ty: imp.self_ty.clone(),
                                 params: user_params,
+                                ret: m.ret.clone(),
                                 method_params: method_params.clone(),
                                 generic: !gp.is_empty(),
                             });

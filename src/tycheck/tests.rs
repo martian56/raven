@@ -107,6 +107,18 @@ fn inferred_type_violating_a_bound_is_rejected() {
 }
 
 #[test]
+fn generic_method_return_only_param_is_grounded() {
+    // A method whose generic parameter appears only in the return type
+    // type-checks both via an annotation (the expected type) and via an
+    // explicit type argument on the call. Without grounding, the explicit-arg
+    // call would leave `T` unresolved and fail finalization. Regression for
+    // #384.
+    let src = "trait Mk { fun mk() -> Self }\nstruct A { t: Int }\nimpl Mk for A {\n    fun mk() -> A { return A { t: 1 } }\n}\nstruct F {}\nimpl F {\n    fun build<T: Mk>(self) -> T { return T.mk() }\n}\nfun main() {\n    let f = F {}\n    let a: A = f.build()\n    let b = f.build<A>()\n}\n";
+    let r = check(src);
+    assert!(r.is_ok(), "expected ok, got {:?}", r.err());
+}
+
+#[test]
 fn cross_function_unresolved_var_does_not_panic() {
     // A body that leaves an unresolved inference variable must not crash a
     // later body's finalization. Each body resolves only its own type-map

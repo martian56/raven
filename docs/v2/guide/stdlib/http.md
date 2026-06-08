@@ -365,8 +365,8 @@ fun create_user(req: Request) -> Response {
 ```
 
 `req.json()` returns the body as a `JsonValue` for ad-hoc inspection when a
-struct is overkill. (The fully-typed method `req.json<User>()` is not available
-yet; method-call generics do not infer the type parameter. Use `decode<User>`.)
+struct is overkill. For a typed struct, decode the body with
+`decode<User>(req.body)`.
 
 ### Serving files
 

@@ -155,12 +155,12 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             receiver,
             name,
             args,
-        } => lower_method_call(cx, receiver, name, args, ty),
+        } => lower_method_call(cx, receiver, name, args, ty, &expr.ty),
         HirExprKind::AssocCall {
             self_ty,
             name,
             args,
-        } => lower_assoc_call(cx, self_ty, name, args, ty),
+        } => lower_assoc_call(cx, self_ty, name, args, ty, &expr.ty),
         HirExprKind::DynCoerce {
             value,
             trait_name,
@@ -1527,6 +1527,7 @@ fn lower_method_call(
     name: &str,
     args: &[HirExpr],
     ty: MirType,
+    result_ty: &crate::tycheck::Ty,
 ) -> MirOperand {
     let recv_ty = mir_ty(&receiver.ty, cx.subst);
 
@@ -1687,7 +1688,7 @@ fn lower_method_call(
     // `<RecvType>$<method>` name, which would collide across method-level
     // instantiations. A concrete-receiver method or one with no method-level
     // parameters keeps the bare per-type symbol.
-    let symbol = queue_generic_method(cx, &receiver.ty, name, args)
+    let symbol = queue_generic_method(cx, &receiver.ty, name, args, result_ty)
         .unwrap_or_else(|| recv_ty.method_symbol(name));
     let recv = lower_expr(cx, receiver);
     let mut arg_ops = vec![recv];
@@ -1719,9 +1720,10 @@ fn lower_assoc_call(
     name: &str,
     args: &[HirExpr],
     ty: MirType,
+    result_ty: &crate::tycheck::Ty,
 ) -> MirOperand {
     let recv_ty = mir_ty(self_ty, cx.subst);
-    let symbol = queue_generic_method(cx, self_ty, name, args)
+    let symbol = queue_generic_method(cx, self_ty, name, args, result_ty)
         .unwrap_or_else(|| recv_ty.method_symbol(name));
     let arg_ops: Vec<MirOperand> = args.iter().map(|a| lower_expr(cx, a)).collect();
     let dst = cx.builder.fresh_temp("acall", ty);
@@ -1756,10 +1758,12 @@ fn queue_generic_method(
     receiver_ty: &crate::tycheck::Ty,
     name: &str,
     args: &[HirExpr],
+    result_ty: &crate::tycheck::Ty,
 ) -> Option<String> {
     let entries = cx.decls.methods.get(name).cloned()?;
     let recv = super::substitute(receiver_ty, cx.subst);
     let recv = recv.strip_self().clone();
+    let concrete_result = super::substitute(result_ty, cx.subst);
     // Pick the generic method whose implementing type matches the concrete
     // receiver. A concrete-receiver method is skipped: it is reached
     // through its own root. The structural match against the implementing
@@ -1776,6 +1780,13 @@ fn queue_generic_method(
             let got = super::substitute(&arg.ty, cx.subst);
             match_param(decl_ty, &got, &mut subst);
         }
+        // Bind any method-level parameter that appears only in the return
+        // type (`fun decode<T>() -> Result<T, E>`) by matching the declared
+        // return against the call's resolved result type. The self and
+        // parameter types cannot ground it; the type checker already
+        // inferred it, and this recovers it for monomorphization so the
+        // method body specializes correctly instead of defaulting to `Unit`.
+        match_param(&entry.ret, &concrete_result, &mut subst);
         // The match must have grounded the implementing type to the
         // receiver; if it did not (a non-matching impl of the same method
         // name on another type), skip this entry.
