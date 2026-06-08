@@ -2,6 +2,17 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.17.0] - 2026-06-08
+
+### Added
+
+- JSON and static file serving in `std/http`. `Response.json(value)` serializes any value whose type implements `ToJson` (a `@derive(ToJson)` struct or enum, a `List`, an `Option`, a scalar) with `Content-Type: application/json`, replacing hand-built JSON strings and manual escaping; `Response.json_raw(body)` keeps the pre-rendered-JSON form. `std/json.decode<T: FromJson>(body)` parses and decodes a request body into a struct in one call, and `Request.json()` returns the body as a `JsonValue`. `Response.file(path)` serves a file with a `Content-Type` chosen from its extension (404 if missing), and `Server.static(prefix, dir)` mounts a directory of files (#386).
+
+### Fixed
+
+- The type checker no longer panics when it finalizes a function body after an earlier body left an unresolved inference variable. It shared one type map across all bodies but resolved the whole map with the current body's inference context, crashing on a variable another body owned. It now resolves only each body's own entries, so a generic call whose type argument cannot be inferred reports a clear error instead.
+- `rvpm build` and `rvpm run` no longer overflow the stack on deeply recursive compilation, for example a program that uses `@derive(ToJson)`. rvpm runs the compiler on a worker thread with a generous stack, matching the `raven` CLI (#388).
+
 ## [2.16.0] - 2026-06-08
 
 ### Fixed
