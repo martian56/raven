@@ -9,7 +9,6 @@
 // Each connection is handled on its own goroutine.
 
 import std/http { Server, Request, Response }
-import std/json { decode }
 
 @derive(ToJson)
 struct SearchResult {
@@ -37,7 +36,7 @@ fun search(req: Request) -> Response {
 }
 
 fun create_user(req: Request) -> Response {
-    return match decode<User>(req.body) {
+    return match req.json<User>() {
         Ok(user) -> Response.json(user).status_code(201),
         Err(e) -> Response.bad_request(e.message()),
     }
