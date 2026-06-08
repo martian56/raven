@@ -298,6 +298,10 @@ struct Checker<'a, 'b> {
     /// Binding keys of `const` locals in this body, used to reject a
     /// reassignment of an immutable local.
     const_locals: std::collections::HashSet<BindingKey>,
+    /// Type-map keys this body recorded. Finalization resolves only these, not
+    /// the whole shared map, so a later body never tries to resolve an earlier
+    /// body's variable against its own (foreign) inference context.
+    recorded: Vec<UseKey>,
 }
 
 /// Keys used by the locals map. Mirrors the resolver's `Binding`
@@ -361,6 +365,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             array_hint: None,
             errors: Vec::new(),
             const_locals: std::collections::HashSet::new(),
+            recorded: Vec::new(),
         }
     }
 
@@ -593,10 +598,11 @@ impl<'a, 'b> Checker<'a, 'b> {
         let elem_of = move |ty: &Ty| -> Option<Ty> { iterator_elem_concrete(&impls, ty) };
         self.infer.solve_iterator_links(&elem_of)?;
 
-        // Resolve every entry in the type map. We do this in place by
-        // replacing each entry's value with its resolved form, raising
-        // CannotInferType if a variable remains.
-        let keys: Vec<crate::resolve::UseKey> = self.types.types.keys().cloned().collect();
+        // Resolve only the entries this body recorded, replacing each value
+        // with its resolved form and raising CannotInferType if a variable
+        // remains. Resolving the whole shared map would try this body's
+        // inference context against another body's variables.
+        let keys: Vec<crate::resolve::UseKey> = self.recorded.clone();
         let infer = &self.infer;
         let mut first_err: Option<RavenError> = None;
         for k in keys {
@@ -3098,7 +3104,9 @@ impl<'a, 'b> Checker<'a, 'b> {
     }
 
     fn record(&mut self, span: &Span, ty: Ty) {
-        self.types.types.insert(UseKey::from_span(span), ty);
+        let key = UseKey::from_span(span);
+        self.recorded.push(key.clone());
+        self.types.types.insert(key, ty);
     }
 
     fn record_type_args(&mut self, span: &Span, args: Vec<Ty>) {

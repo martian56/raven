@@ -146,9 +146,12 @@ impl InferCtx {
 
     /// Return the union-find root for `v`. Performs path compression.
     pub fn find(&self, v: InferVarId) -> InferVarId {
-        // Iterative path traversal.
+        // Iterative path traversal. The bounds guard tolerates a variable from a
+        // different inference context (one not allocated here): it is returned
+        // unchanged rather than panicking. Each body owns its own variables, so
+        // this only matters as defense in depth.
         let mut cur = v.0 as usize;
-        while self.slots[cur].parent != cur as u32 {
+        while cur < self.slots.len() && self.slots[cur].parent != cur as u32 {
             cur = self.slots[cur].parent as usize;
         }
         InferVarId(cur as u32)
@@ -156,7 +159,7 @@ impl InferCtx {
 
     fn find_mut(&mut self, v: InferVarId) -> InferVarId {
         let mut cur = v.0 as usize;
-        while self.slots[cur].parent != cur as u32 {
+        while cur < self.slots.len() && self.slots[cur].parent != cur as u32 {
             let next = self.slots[cur].parent as usize;
             self.slots[cur].parent = self.slots[next].parent;
             cur = next;
@@ -171,7 +174,11 @@ impl InferCtx {
         match ty {
             Ty::Var(v) => {
                 let root = self.find(*v);
-                match &self.slots[root.0 as usize].solved {
+                match self
+                    .slots
+                    .get(root.0 as usize)
+                    .and_then(|s| s.solved.as_ref())
+                {
                     Some(t) => self.resolve(t),
                     None => Ty::Var(root),
                 }

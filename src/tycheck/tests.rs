@@ -107,6 +107,17 @@ fn inferred_type_violating_a_bound_is_rejected() {
 }
 
 #[test]
+fn cross_function_unresolved_var_does_not_panic() {
+    // A body that leaves an unresolved inference variable must not crash a
+    // later body's finalization. Each body resolves only its own type-map
+    // entries, so `later` no longer tries to resolve `consumer`'s variable
+    // against its own inference context. This must return a clean type error,
+    // not panic.
+    let src = "fun ambiguous<T>() -> List<T> {\n    let xs: List<T> = []\n    return xs\n}\nfun consumer() {\n    let a = ambiguous()\n}\nfun later() {\n    let b = 1\n}\n";
+    assert!(check(src).is_err());
+}
+
+#[test]
 fn reassigning_a_const_local_is_rejected() {
     let err = check("fun f() {\n    const K: Int = 5\n    K = 7\n}\n").unwrap_err();
     match err {
