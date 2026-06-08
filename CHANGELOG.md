@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.17.1] - 2026-06-08
+
+### Fixed
+
+- A generic method whose type parameter appears only in the return type (for example `fun decode<T: FromJson>(self) -> Result<T, Error>`) can now be called. The explicit form `recv.decode<T>()` was ignoring the type argument, and the annotated form `let n: T = recv.decode()` was monomorphizing the parameter to `Unit`. The type checker now applies a method call's explicit type arguments, and MIR lowering matches the declared return type against the call's resolved result type so the parameter is recovered for monomorphization (#384).
+
 ## [2.17.0] - 2026-06-08
 
 ### Added
