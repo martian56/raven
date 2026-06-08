@@ -349,24 +349,23 @@ fun show_user(req: Request) -> Response {
 }
 ```
 
-To read a JSON request body into a struct, use `decode<T>` from
-[std/json](json.md). Decoding failures (bad JSON, a missing or mistyped field)
-come back as an `Error`:
+To read a JSON request body into a struct, use `req.json<T>()`, which decodes
+the body through the type's `FromJson` impl. Decoding failures (bad JSON, a
+missing or mistyped field) come back as an `Error`:
 
 ```rust
-import std/json { decode }
-
 fun create_user(req: Request) -> Response {
-    return match decode<User>(req.body) {
+    return match req.json<User>() {
         Ok(user) -> Response.json(user).status_code(201),
         Err(e) -> Response.bad_request(e.message()),
     }
 }
 ```
 
-`req.json()` returns the body as a `JsonValue` for ad-hoc inspection when a
-struct is overkill. For a typed struct, decode the body with
-`decode<User>(req.body)`.
+The type can also come from an annotation, `let user: User = req.json()?`, and
+`decode<User>(req.body)` from [std/json](json.md) does the same thing without a
+request. For ad-hoc access when a struct is overkill, `req.json_value()` returns
+the body as a `JsonValue`.
 
 ### Serving files
 

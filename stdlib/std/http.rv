@@ -12,7 +12,7 @@ import std/error { error_kind }
 import std/net { listen, TcpStream }
 import std/string
 import std/collections
-import std/json { JsonValue, ToJson, stringify, parse }
+import std/json { JsonValue, ToJson, FromJson, stringify, parse, decode }
 import std/fs { read }
 
 struct HttpResponse {
@@ -180,10 +180,16 @@ impl Request {
         return self.query.get_or(name, "")
     }
 
-    // Parse the request body as JSON, returning a `JsonValue` to inspect, or an
-    // Err for malformed JSON. To decode straight into a struct, prefer
-    // `std/json`'s `decode<T>(req.body)`.
-    fun json(self) -> Result<JsonValue, Error> {
+    // Decode the request body into a `T` via its `FromJson` impl, for example
+    // `req.json<User>()` or `let u: User = req.json()?`. Returns an Err for
+    // malformed JSON or a body that does not match `T`.
+    fun json<T: FromJson>(self) -> Result<T, Error> {
+        return decode(self.body)
+    }
+
+    // Parse the request body as JSON to a `JsonValue` for ad-hoc inspection,
+    // when a struct is overkill. Returns an Err for malformed JSON.
+    fun json_value(self) -> Result<JsonValue, Error> {
         return parse(self.body)
     }
 }

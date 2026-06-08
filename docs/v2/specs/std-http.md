@@ -158,7 +158,8 @@ struct Request {
 fun Request.header(name) -> String          // "" if absent
 fun Request.param(name) -> String           // path capture, "" if absent
 fun Request.query_value(name) -> String     // "" if absent
-fun Request.json(self) -> Result<JsonValue, Error>   // parse the body
+fun Request.json<T: FromJson>(self) -> Result<T, Error>  // decode the body into a struct
+fun Request.json_value(self) -> Result<JsonValue, Error> // parse the body to a JsonValue
 
 struct Response { status: Int, headers: Map<String, String>, body: String }
 // constructors
