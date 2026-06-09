@@ -20,7 +20,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::error::RavenError;
+use crate::error::{RavenError, TypeError};
 use crate::hir::{HirFn, HirItemKind, HirProgram, HirStruct};
 use crate::resolve::DeclId;
 use crate::tycheck::ty::ParamId;
@@ -74,6 +74,33 @@ struct MethodSymbolEntry {
     method_params: Vec<ParamId>,
 }
 
+/// The deepest a generic instantiation's type arguments may nest before the
+/// monomorphizer gives up. A hand written program stays far below this; going
+/// past it means a generic function is recursing into an ever larger type and
+/// will never reach a concrete one.
+const MONO_TYPE_DEPTH_LIMIT: usize = 128;
+
+/// The nesting depth of a type: how many constructors deep its deepest leaf
+/// sits. `Int` is 1, `List<Int>` is 2, `List<List<Int>>` is 3, and so on.
+fn ty_depth(ty: &Ty) -> usize {
+    match ty {
+        Ty::Struct { args, .. } | Ty::Enum { args, .. } => {
+            1 + args.iter().map(ty_depth).max().unwrap_or(0)
+        }
+        Ty::Option(t) | Ty::List(t) | Ty::SelfTy(t) => 1 + ty_depth(t),
+        Ty::Result(a, b) => 1 + ty_depth(a).max(ty_depth(b)),
+        Ty::Function { params, ret } => {
+            1 + params
+                .iter()
+                .map(ty_depth)
+                .max()
+                .unwrap_or(0)
+                .max(ty_depth(ret))
+        }
+        _ => 1,
+    }
+}
+
 /// Run the full monomorphization pass.
 pub fn monomorphize(hir: &HirProgram) -> Result<MirProgram, RavenError> {
     let mut program = MirProgram::new();
@@ -103,6 +130,21 @@ pub fn monomorphize(hir: &HirProgram) -> Result<MirProgram, RavenError> {
             Some(f) => *f,
             None => continue,
         };
+        // Guard against a non-terminating generic recursion: a function that
+        // instantiates itself at an ever larger type (`fun f<T>(x: T) { f(wrap(x)) }`)
+        // produces a new, deeper key every time, so the worklist would grow
+        // without bound and the compiler would hang. Cap how deeply an
+        // instantiation's type arguments may nest and report it instead.
+        if let Some(depth) = subst.values().map(ty_depth).max() {
+            if depth > MONO_TYPE_DEPTH_LIMIT {
+                return Err(RavenError::ty(
+                    TypeError::Custom(format!(
+                        "generic instantiation nested too deeply ({depth} levels deep). This usually means a generic function instantiates itself at an ever larger type and never settles on a concrete one"
+                    )),
+                    hir_fn.span.clone(),
+                ));
+            }
+        }
         // A method's symbol is the concrete implementing type followed by
         // `$<method>`, computed by substituting the instantiation's type
         // arguments into the declared implementing type. This matches what

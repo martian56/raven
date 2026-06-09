@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.5] - 2026-06-10
+
+### Fixed
+
+- The monomorphizer no longer hangs on a generic function that instantiates itself at an ever larger type (`fun f<T>(x: T) { f(wrap(x)) }`). It now stops at a nesting depth of 128 and reports a clear error instead of looping forever (#443).
+
 ## [2.18.4] - 2026-06-10
 
 ### Fixed

@@ -61,6 +61,25 @@ fn compile_with_prelude(src: &str) -> MirProgram {
     lower_program(&hir).expect("mir")
 }
 
+#[test]
+fn recursive_generic_instantiation_is_rejected_not_hung() {
+    // A generic function that instantiates itself at an ever larger type would
+    // give the monomorphizer a new key every round and loop forever. It must
+    // instead report a clean depth-limit error.
+    let src = "struct Box<T> { value: T }\nfun deep<T>(x: T) {\n    deep(Box { value: x })\n}\nfun main() {\n    deep(0)\n}\n";
+    let tokens = Lexer::new(src.to_string(), PathBuf::from("t.rv"))
+        .tokenize()
+        .expect("lex");
+    let file = parse(&tokens).expect("parse");
+    let mut loader = NoLoader;
+    let resolved = resolve_file(&file, &mut loader).expect("resolve");
+    let typed = check_file(&resolved).expect("tycheck");
+    let hir = lower_file(&typed).expect("hir");
+    let err = lower_program(&hir).expect_err("expected a depth-limit error, not success");
+    let msg = format!("{err:?}");
+    assert!(msg.contains("nested too deeply"), "got: {msg}");
+}
+
 fn find_fn<'a>(p: &'a MirProgram, name: &str) -> &'a MirFunction {
     p.functions
         .iter()
