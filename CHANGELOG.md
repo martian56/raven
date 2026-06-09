@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.3] - 2026-06-10
+
+### Fixed
+
+- A closure, `defer`, or `spawn` body inside a method can now refer to `self`. It was not captured, so the lifted body had no `self` and the build failed (#440).
+
 ## [2.18.2] - 2026-06-10
 
 ### Fixed
