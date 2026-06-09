@@ -1,0 +1,25 @@
+// A binding arm in a match must hand the arm the scrutinee's value at its real
+// type. For a String, Float, or struct scrutinee the bound name was coming back
+// empty because the binding slot was typed Unit.
+import std/io { println }
+
+struct Point { x: Int, y: Int }
+
+fun classify(s: String) -> String {
+    return match s {
+        "hello" -> "greeting",
+        other -> other,
+    }
+}
+
+fun first_coord(p: Point) -> Int {
+    return match p {
+        pt -> pt.x,
+    }
+}
+
+fun main() {
+    println(classify("hello"))
+    println(classify("world"))
+    println(first_coord(Point { x: 7, y: 9 }).to_string())
+}
