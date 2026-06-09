@@ -93,6 +93,14 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             MirOperand::Copy(dst)
         }
         HirExprKind::Binary { op, lhs, rhs } => {
+            // `&&` and `||` short-circuit: the right operand only runs when the
+            // left does not already decide the result. Lower them to branches
+            // rather than a plain binary op so a guard like
+            // `i < xs.len() && xs[i] == x` never evaluates the index when the
+            // bound check fails.
+            if matches!(op, HirBinaryOp::And | HirBinaryOp::Or) {
+                return lower_short_circuit(cx, matches!(op, HirBinaryOp::And), lhs, rhs, ty);
+            }
             // `==`/`!=` on `String` compare contents, not object identity,
             // so route them through the runtime byte-equality intrinsic.
             // `!=` negates the equality result. Every other operand type
@@ -849,6 +857,65 @@ pub fn lower_block(cx: &mut LowerCx<'_>, block: &HirBlock) -> MirOperand {
     };
     cx.pop_scope();
     result
+}
+
+/// Lower `lhs && rhs` (`is_and`) or `lhs || rhs` with short-circuit semantics.
+/// The left operand is evaluated first; the right operand runs only when the
+/// left does not settle the answer (left true for `&&`, left false for `||`).
+/// Otherwise the result is the short-circuit constant (`false` for `&&`,
+/// `true` for `||`) and the right operand is never touched.
+fn lower_short_circuit(
+    cx: &mut LowerCx<'_>,
+    is_and: bool,
+    lhs: &HirExpr,
+    rhs: &HirExpr,
+    ty: MirType,
+) -> MirOperand {
+    let discr = lower_expr(cx, lhs);
+    let rhs_bb = cx.builder.new_block();
+    let short_bb = cx.builder.new_block();
+    let cont_bb = cx.builder.new_block();
+    let result = cx.builder.fresh_temp(if is_and { "and" } else { "or" }, ty);
+
+    // For `&&`, a true left falls through to the right operand and a false left
+    // takes the short-circuit block. For `||` it is the other way round.
+    let (then_target, else_target) = if is_and {
+        (rhs_bb, short_bb)
+    } else {
+        (short_bb, rhs_bb)
+    };
+    cx.builder.close_block(
+        cx.current,
+        MirTerminator::SwitchInt {
+            discriminant: discr,
+            targets: vec![(1, then_target)],
+            otherwise: else_target,
+        },
+    );
+
+    cx.current = rhs_bb;
+    let rv = lower_expr(cx, rhs);
+    cx.builder.assign(cx.current, result, MirRvalue::Use(rv));
+    if !cx.builder.is_closed(cx.current) {
+        cx.builder
+            .close_block(cx.current, MirTerminator::Goto(cont_bb));
+    }
+
+    cx.current = short_bb;
+    cx.builder.assign(
+        cx.current,
+        result,
+        MirRvalue::Use(MirOperand::Const(MirConstant::Bool(!is_and))),
+    );
+    if !cx.builder.is_closed(cx.current) {
+        cx.builder
+            .close_block(cx.current, MirTerminator::Goto(cont_bb));
+    }
+
+    cx.current = cont_bb;
+    // The merge block is reachable even if the right operand diverged.
+    cx.diverged = false;
+    MirOperand::Copy(result)
 }
 
 fn lower_if(
