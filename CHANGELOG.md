@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.4] - 2026-06-10
+
+### Fixed
+
+- An inclusive range loop (`for i in a..=b`) to `i64::MAX` no longer runs forever. The counter was incremented past `end`, which wrapped to `i64::MIN`; the loop now stops once it reaches `end` (#444).
+
 ## [2.18.3] - 2026-06-10
 
 ### Fixed

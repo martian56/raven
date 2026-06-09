@@ -1,0 +1,3 @@
+sum 1..=5: 15
+count 0..3: 3
+count near max: 3

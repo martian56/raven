@@ -1219,11 +1219,55 @@ fn lower_counter_for(
         ),
         span.clone(),
     );
+    // For an inclusive range the counter must not be incremented past `end`:
+    // a loop to `i64::MAX` would wrap to `i64::MIN` and run forever. Once `__i`
+    // has reached `end`, break instead of incrementing. This sits in the
+    // advance step at the top of the loop, so it also holds when the body uses
+    // `continue`. An exclusive range stops at `end` before ever incrementing
+    // into it, so it keeps the plain increment.
+    let step_block = if inclusive {
+        let at_end = make_expr(
+            HirExprKind::Binary {
+                op: HirBinaryOp::Eq,
+                lhs: Box::new(ident_expr(&i_name, Ty::Int, span.clone())),
+                rhs: Box::new(ident_expr(&end_name, Ty::Int, span.clone())),
+            },
+            Ty::Bool,
+            span.clone(),
+        );
+        let break_at_end = HirStmt {
+            kind: HirStmtKind::Expr(make_expr(HirExprKind::Break(None), Ty::Error, span.clone())),
+            span: span.clone(),
+        };
+        let guarded = make_expr(
+            HirExprKind::If {
+                cond: Box::new(at_end),
+                then_block: HirBlock {
+                    stmts: vec![break_at_end],
+                    tail: None,
+                    ty: Ty::Unit,
+                    span: span.clone(),
+                },
+                else_block: Some(block_of_stmt(inc, span)),
+            },
+            Ty::Unit,
+            span.clone(),
+        );
+        block_of_stmt(
+            HirStmt {
+                kind: HirStmtKind::Expr(guarded),
+                span: span.clone(),
+            },
+            span,
+        )
+    } else {
+        block_of_stmt(inc, span)
+    };
     let advance = make_expr(
         HirExprKind::If {
             cond: Box::new(ident_expr(&first_name, Ty::Bool, span.clone())),
             then_block: block_of_stmt(set_first_false, span),
-            else_block: Some(block_of_stmt(inc, span)),
+            else_block: Some(step_block),
         },
         Ty::Unit,
         span.clone(),

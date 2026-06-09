@@ -1,0 +1,27 @@
+// An inclusive range loop must stop after `end` instead of incrementing past
+// it. To `i64::MAX` that overflow used to wrap the counter and loop forever.
+import std/io { println }
+
+fun main() {
+    let sum = 0
+    for i in 1..=5 {
+        sum = sum + i
+    }
+    println("sum 1..=5: ${sum.to_string()}")
+
+    let count = 0
+    for i in 0..3 {
+        count = count + 1
+    }
+    println("count 0..3: ${count.to_string()}")
+
+    let max = 9223372036854775807
+    let near = 0
+    for i in (max - 2)..=max {
+        near = near + 1
+        if near > 10 {
+            break
+        }
+    }
+    println("count near max: ${near.to_string()}")
+}
