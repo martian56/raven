@@ -51,7 +51,7 @@ pub fn lower_match(
     } else if matches!(scrut_ty, Ty::Int | Ty::Bool | Ty::Char) {
         lower_int_match(cx, scrut_op, arms, result_local, cont);
     } else {
-        lower_fallback_match(cx, scrut_op, arms, result_local, cont);
+        lower_fallback_match(cx, scrut_op, &scrut_ty, arms, result_local, cont);
     }
 
     cx.current = cont;
@@ -153,6 +153,7 @@ fn lower_int_match(
 fn lower_fallback_match(
     cx: &mut LowerCx<'_>,
     scrut: MirOperand,
+    scrut_ty: &Ty,
     arms: &[HirArm],
     result: super::super::ir::MirLocal,
     cont: MirBlockId,
@@ -222,13 +223,12 @@ fn lower_fallback_match(
         cx.current = arm_block;
         // Bind name for `Binding` patterns.
         if let HirPatternKind::Binding(name) = &arm.pattern.kind {
-            // We do not know the scrutinee type here at MIR level
-            // beyond what is in HIR; rely on the type checker having
-            // recorded it on the arm body's binding instead.
-            // Materialize the binding as a Use of the scrutinee.
+            // Bind the name to the scrutinee value at its real type. Using a
+            // Unit slot here dropped the value: a `String`, `Float`, or struct
+            // scrutinee came back empty inside the arm body.
             let local = cx
                 .builder
-                .named_local(name.clone(), super::super::ty::MirType::Unit);
+                .named_local(name.clone(), super::super::ty::MirType::from_ty(scrut_ty));
             cx.builder
                 .assign(arm_block, local, MirRvalue::Use(scrut.clone()));
             cx.bind(name.clone(), local);

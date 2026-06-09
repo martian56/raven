@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.2] - 2026-06-10
+
+### Fixed
+
+- A binding arm in a `match` over a `String`, `Float`, or struct scrutinee no longer loses the value. The bound name was stored in a Unit slot, so it came back empty inside the arm; it now keeps the scrutinee's real type (#442).
+
 ## [2.18.1] - 2026-06-10
 
 ### Fixed
