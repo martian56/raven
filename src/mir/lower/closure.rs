@@ -434,7 +434,6 @@ fn collect_free_expr(
         | HirExprKind::Char(_)
         | HirExprKind::CStr(_)
         | HirExprKind::Unit
-        | HirExprKind::SelfValue
         | HirExprKind::GlobalGet(_)
         | HirExprKind::NoneCtor
         | HirExprKind::TypeName(_)
@@ -443,6 +442,11 @@ fn collect_free_expr(
         | HirExprKind::VariantNames(_)
         | HirExprKind::VariantFieldTypes(_)
         | HirExprKind::Continue => {}
+        // `self` inside a closure/defer/spawn body is a free variable: it must
+        // be captured from the enclosing method like any other local, or the
+        // lifted body has no `self` and reads a Unit. It is bound under the name
+        // "self", which is exactly what `SelfValue` looks up when lowered.
+        HirExprKind::SelfValue => record_use("self", bound, seen, out),
         HirExprKind::Ident(name) => record_use(name, bound, seen, out),
         HirExprKind::Array(items) => {
             for it in items {
