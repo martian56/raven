@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.1] - 2026-06-10
+
+### Fixed
+
+- `&&` and `||` now short-circuit. The right operand is only evaluated when the left does not already decide the result, so a guard like `i < xs.len() && xs[i] == x` no longer runs the index when the bounds check fails (#441).
+
 ## [2.18.0] - 2026-06-08
 
 ### Added

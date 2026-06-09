@@ -1,0 +1,23 @@
+// `&&` and `||` only evaluate the right operand when the left does not already
+// decide the answer. The classic case is a bounds guard: if the length check
+// fails, the index must never run, or the program crashes.
+import std/io { println }
+import std/collections
+
+fun main() {
+    let xs: List<Int> = [10, 20, 30]
+    let out_of_range = 5
+
+    if out_of_range < xs.len() && xs[out_of_range] == 20 {
+        println("entered (wrong)")
+    } else {
+        println("guard held, index skipped")
+    }
+
+    let zero = 0
+    if zero == 0 || xs[99] == 1 {
+        println("or short-circuited")
+    } else {
+        println("entered else (wrong)")
+    }
+}
