@@ -1,0 +1,16 @@
+// `a < b >> c` is a comparison of `a` with `b >> c`, not a generic. A failed
+// attempt to read `<...>` as type arguments must not leave the `>>` token split
+// into a single `>`. Nested generics like Map<K, Map<K, V>> still close on `>>`.
+import std/io { println }
+import std/collections
+
+fun main() {
+    let a = 1
+    let b = 8
+    let c = 1
+    println((a < b >> c).to_string())
+
+    let nested: Map<String, Map<String, Int>> = Map.new()
+    nested.set("k", Map.new())
+    println("nested generics ok")
+}

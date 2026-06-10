@@ -63,6 +63,11 @@ pub struct Parser {
     recovering: bool,
     /// Diagnostics accumulated during recovery (statement and item level).
     errors: Vec<RavenError>,
+    /// Log of in-place token rewrites (currently only `consume_close_angle`
+    /// splitting a `>>` into `>`), as `(index, original token)`. `rewind`
+    /// replays it so a failed speculative parse does not leave a split `>>`
+    /// behind.
+    token_edits: Vec<(usize, Token)>,
 }
 
 impl Parser {
@@ -78,6 +83,7 @@ impl Parser {
             macros: crate::macros::MacroTable::default(),
             recovering: false,
             errors: Vec::new(),
+            token_edits: Vec::new(),
         }
     }
 
@@ -93,6 +99,7 @@ impl Parser {
             macros,
             recovering: false,
             errors: Vec::new(),
+            token_edits: Vec::new(),
         }
     }
 
@@ -253,6 +260,19 @@ impl Parser {
 
     /// Rewind to a previously saved cursor.
     pub(crate) fn rewind(&mut self, pos: usize) {
+        // Undo any in-place token rewrite at or after the rewind point so a
+        // failed speculative parse does not leave a `>>` split into a single
+        // `>`. Edits before the rewind point were part of already-committed
+        // parsing and stay.
+        let mut i = 0;
+        while i < self.token_edits.len() {
+            if self.token_edits[i].0 >= pos {
+                let (idx, original) = self.token_edits.remove(i);
+                self.tokens[idx] = original;
+            } else {
+                i += 1;
+            }
+        }
         self.pos = pos;
     }
 

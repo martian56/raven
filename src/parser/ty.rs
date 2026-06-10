@@ -183,6 +183,10 @@ impl Parser {
                 // Replace the `>>` token in place with a single `>`
                 // representing the second half. The cursor stays at
                 // the same position so the outer call sees that `>`.
+                // Record the original so `rewind` can restore it: a failed
+                // speculative parse must not leave the `>>` collapsed to `>`.
+                self.token_edits
+                    .push((self.pos, self.tokens[self.pos].clone()));
                 self.tokens[self.pos] = Token {
                     kind: TokenKind::Gt,
                     span: second_half,
