@@ -15,7 +15,10 @@ fun main() {
     print(url_encode("a b/c"))              // a%20b%2Fc
     print(url_decode("a%20b%2Fc"))          // a b/c
     print(base32_encode("foobar"))          // MZXW6YTBOI======
-    print(base32_decode("MZXW6YTBOI======"))  // foobar
+    match base32_decode("MZXW6YTBOI======") {
+        Ok(d) -> print(d),
+        Err(e) -> print("err"),
+    }
     print(normalize("/a/b/../c/./d"))       // /a/c/d
     print(with_extension("report.txt", "md"))  // report.md
     print(crc32("123456789"))               // 3421780262

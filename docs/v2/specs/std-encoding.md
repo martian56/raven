@@ -8,7 +8,8 @@ encode a `String`'s raw bytes to text and decode the inverse.
 A Raven `String` is a byte buffer. These functions treat the input as raw
 bytes (`__str_byte_at` reads byte values 0..255), so they work on arbitrary
 binary data carried in a `String`, not only valid UTF-8 text. A decoder
-likewise returns the decoded bytes as a `String`.
+returns `Result<String, Error>`: the decoded bytes on success, or an `Error`
+tagged `"encoding"` when the input is malformed.
 
 ## Import
 
@@ -20,7 +21,7 @@ import std/encoding { hex_encode, hex_decode, base64_encode, base64_decode }
 fun main() {
     let h = hex_encode("abc")          // "616263"
     let b = base64_encode("abc")       // "YWJj"
-    let back = base64_decode(b)        // "abc"
+    let back = base64_decode(b)        // Ok("abc")
 }
 ```
 
@@ -29,9 +30,10 @@ fun main() {
 | Function | Result | Notes |
 |---|---|---|
 | `hex_encode(s: String)` | `String` | each input byte to two lowercase hex digits |
-| `hex_decode(s: String)` | `String` | inverse; accepts lowercase, uppercase, or mixed |
+| `hex_decode(s: String)` | `Result<String, Error>` | inverse; accepts lower, upper, or mixed; Err on an odd length or a non-hex byte |
 | `base64_encode(s: String)` | `String` | standard alphabet (`A-Z a-z 0-9 + /`), `=` padding |
-| `base64_decode(s: String)` | `String` | inverse; honors `=` padding |
+| `base64_decode(s: String)` | `Result<String, Error>` | inverse; honors `=` padding; Err on a bad length or a non-alphabet byte |
+| `base32_decode(s: String)` | `Result<String, Error>` | inverse; honors `=` padding; Err on a non-alphabet byte |
 
 ## Known vectors
 
@@ -42,14 +44,14 @@ decode round-trips: `base64_decode(base64_encode(s)) == s`.
 
 ## Invalid input
 
-The decoders favor a simple, total mapping over rejecting input:
+The decoders reject malformed input with an `Err` rather than silently
+producing wrong bytes:
 
-- `hex_decode`: digits outside `0-9 a-f A-F` map to nibble `0`. An odd final
-  digit is read as the high nibble of a zero-padded byte.
-- `base64_decode`: bytes outside the alphabet (other than `=` padding) map to
-  sextet `0`. Trailing `=` padding sets how many bytes the final group
-  yields. Input whose length is not a multiple of four decodes the leading
-  whole groups and drops a trailing partial group.
+- `hex_decode`: an odd length, or any byte outside `0-9 a-f A-F`, is an `Err`.
+- `base64_decode`: a length that is not a multiple of four, or any byte outside
+  the alphabet other than `=` padding, is an `Err`.
+- `base32_decode`: any byte outside the alphabet other than `=` padding is an
+  `Err`.
 
 ## Out of scope
 
