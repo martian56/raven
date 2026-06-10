@@ -620,6 +620,44 @@ impl<'a, 'b> Checker<'a, 'b> {
             }
             self.types.types.insert(k, resolved);
         }
+        // Judge deferred bounds on non-simple, fully concrete resolved types.
+        // The eager check only judged simple types; a concrete instantiation
+        // like `List<Int>` or `Pair<Int>` whose constructor has no impl of the
+        // required trait at all would otherwise reach codegen as an unresolved
+        // callee. A constructor that does have a (possibly bounded) impl is left
+        // for the call site, so this never rejects otherwise valid code.
+        for (v, bounds) in self.infer.all_bounds() {
+            let resolved = self.infer.resolve(&Ty::Var(v));
+            if !is_nonsimple_concrete(&resolved) {
+                continue;
+            }
+            for b in &bounds {
+                // `Iterator` is satisfied structurally (by having a `next`
+                // method), not by an explicit impl, so the constructor-impl
+                // check does not apply to it.
+                if b.trait_name == "Iterator" {
+                    continue;
+                }
+                if first_err.is_none()
+                    && !super::wf::type_constructor_has_impl(self.env, &resolved, &b.trait_name)
+                {
+                    first_err = Some(
+                        RavenError::ty(
+                            TypeError::BoundNotSatisfied {
+                                ty: format!("{}", resolved),
+                                trait_name: b.trait_name.clone(),
+                            },
+                            b.span.clone(),
+                        )
+                        .with_hint(format!(
+                            "`{ty}` does not implement `{tr}`; add `@derive({tr})` to its definition, or write an `impl {tr} for {ty}`",
+                            ty = resolved,
+                            tr = b.trait_name
+                        )),
+                    );
+                }
+            }
+        }
         if let Some(e) = first_err {
             return Err(e);
         }
@@ -3334,6 +3372,35 @@ fn compound_binary_op(op: AssignOp) -> BinaryOp {
         AssignOp::Shl => BinaryOp::Shl,
         AssignOp::Shr => BinaryOp::Shr,
         AssignOp::Assign => BinaryOp::Add, // unreachable in callers
+    }
+}
+
+/// Whether a type mentions a generic parameter anywhere.
+fn ty_mentions_param(ty: &Ty) -> bool {
+    match ty {
+        Ty::Param(_) => true,
+        Ty::Option(t) | Ty::List(t) | Ty::SelfTy(t) => ty_mentions_param(t),
+        Ty::Result(a, b) => ty_mentions_param(a) || ty_mentions_param(b),
+        Ty::Struct { args, .. } | Ty::Enum { args, .. } => args.iter().any(ty_mentions_param),
+        Ty::Function { params, ret } => {
+            params.iter().any(ty_mentions_param) || ty_mentions_param(ret)
+        }
+        _ => false,
+    }
+}
+
+/// Whether `ty` is a non-simple, fully concrete type: a generic container or a
+/// struct/enum with type arguments, with no inference variable or generic
+/// parameter inside. These are exactly the instantiations the eager,
+/// simple-only bound check deferred.
+fn is_nonsimple_concrete(ty: &Ty) -> bool {
+    if ty.has_var() || ty_mentions_param(ty) {
+        return false;
+    }
+    match ty {
+        Ty::List(_) | Ty::Option(_) | Ty::Result(_, _) | Ty::Function { .. } => true,
+        Ty::Struct { args, .. } | Ty::Enum { args, .. } => !args.is_empty(),
+        _ => false,
     }
 }
 

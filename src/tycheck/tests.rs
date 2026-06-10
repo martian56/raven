@@ -119,6 +119,15 @@ fn generic_method_return_only_param_is_grounded() {
 }
 
 #[test]
+fn generic_instantiation_missing_bound_impl_is_rejected() {
+    // A generic instantiation (`Box<Int>`) used where a bound requires a trait
+    // its constructor never implements is a clean type error, not an unresolved
+    // callee at codegen. Regression for #411.
+    let bad = "trait Greet { fun hi(self) -> Int }\nstruct Box<T> { value: T }\nfun need<K: Greet>(k: K) -> Int = 0\nfun main() { let x = need(Box { value: 1 }) }\n";
+    assert!(check(bad).is_err());
+}
+
+#[test]
 fn dyn_over_self_returning_trait_is_rejected() {
     // A trait with a `-> Self` method is not object-safe: building a `dyn`
     // value of it must be a type error, not a downstream miscompile. Regression

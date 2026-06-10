@@ -122,14 +122,32 @@ fn check_instantiation(
 /// (the call-site machinery handles those, and matching a generic impl by
 /// structural equality would produce false positives).
 fn check_arg_bound(env: &TypeEnv, arg: &Ty, bound: &str, span: &Span) -> Result<(), RavenError> {
-    let simple = match arg {
-        Ty::Error | Ty::Var(_) | Ty::Param(_) => false,
-        Ty::Struct { args, .. } | Ty::Enum { args, .. } => args.is_empty(),
-        Ty::List(_) | Ty::Option(_) | Ty::Result(_, _) | Ty::Function { .. } => false,
-        Ty::SelfTy(_) => false,
-        _ => true, // primitives: Int, Float, Bool, Char, Str, ...
+    // Defer anything still abstract: a parameter, an inference variable, or a
+    // container of one. The call site grounds it and re-checks.
+    if mentions_var_or_param(arg) || matches!(arg, Ty::Error) {
+        return Ok(());
+    }
+    // `Iterator` is satisfied structurally (by having a `next` method) rather
+    // than by an explicit impl, so an impl search does not judge it.
+    if bound == "Iterator" {
+        return Ok(());
+    }
+    let satisfied = match arg {
+        // A monomorphic struct/enum matches an impl exactly.
+        Ty::Struct { args, .. } | Ty::Enum { args, .. } if args.is_empty() => {
+            type_satisfies(env, arg, bound)
+        }
+        // A generic instantiation cannot be matched exactly, but if no impl of
+        // the trait exists for its constructor at all, the bound is impossible.
+        // Otherwise defer to the call site / codegen.
+        Ty::List(_) | Ty::Option(_) | Ty::Result(_, _) | Ty::Function { .. } => {
+            type_constructor_has_impl(env, arg, bound)
+        }
+        Ty::Struct { .. } | Ty::Enum { .. } => type_constructor_has_impl(env, arg, bound),
+        // Primitives: Int, Float, Bool, Char, Str, ...
+        _ => type_satisfies(env, arg, bound),
     };
-    if !simple || type_satisfies(env, arg, bound) {
+    if satisfied {
         return Ok(());
     }
     let ty_name = format!("{}", arg);
@@ -151,4 +169,50 @@ fn type_satisfies(env: &TypeEnv, concrete: &Ty, trait_name: &str) -> bool {
     env.impls.iter().any(|imp| {
         imp.trait_name.as_deref() == Some(trait_name) && tys_equal(&imp.self_ty, concrete)
     })
+}
+
+/// Whether any impl of `trait_name` exists whose self type has the *same
+/// constructor* as `ty` (the same generic container or the same struct/enum),
+/// ignoring the type arguments. This is a deliberately loose check used to
+/// catch a generic instantiation that has no chance of satisfying a bound, for
+/// example `List<Int>` where no `impl Hash for List` exists at all, without
+/// risking a false positive on a type whose impl carries its own bounds. A
+/// `true` result means an impl might apply; the call site or codegen settles
+/// the details.
+pub fn type_constructor_has_impl(env: &TypeEnv, ty: &Ty, trait_name: &str) -> bool {
+    env.impls.iter().any(|imp| {
+        imp.trait_name.as_deref() == Some(trait_name) && same_constructor(&imp.self_ty, ty)
+    })
+}
+
+/// Whether a type is still abstract: a generic parameter, an inference
+/// variable, or a container holding one. Such types cannot be judged here and
+/// are deferred to the call site.
+fn mentions_var_or_param(ty: &Ty) -> bool {
+    match ty {
+        Ty::Var(_) | Ty::Param(_) => true,
+        Ty::Option(t) | Ty::List(t) | Ty::SelfTy(t) => mentions_var_or_param(t),
+        Ty::Result(a, b) => mentions_var_or_param(a) || mentions_var_or_param(b),
+        Ty::Struct { args, .. } | Ty::Enum { args, .. } => args.iter().any(mentions_var_or_param),
+        Ty::Function { params, ret } => {
+            params.iter().any(mentions_var_or_param) || mentions_var_or_param(ret)
+        }
+        _ => false,
+    }
+}
+
+/// Whether two types share a top-level constructor, ignoring arguments.
+fn same_constructor(a: &Ty, b: &Ty) -> bool {
+    match (a, b) {
+        (Ty::List(_), Ty::List(_)) => true,
+        (Ty::Option(_), Ty::Option(_)) => true,
+        (Ty::Result(_, _), Ty::Result(_, _)) => true,
+        (Ty::Function { .. }, Ty::Function { .. }) => true,
+        (Ty::Struct { id: i, .. }, Ty::Struct { id: j, .. }) => i == j,
+        (Ty::Enum { id: i, .. }, Ty::Enum { id: j, .. }) => i == j,
+        // A generic impl's self type can be a bare parameter (`impl Foo for T`),
+        // which matches any constructor.
+        (Ty::Param(_), _) => true,
+        _ => tys_equal(a, b),
+    }
 }

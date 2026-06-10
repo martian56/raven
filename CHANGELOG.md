@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.24] - 2026-06-10
+
+### Fixed
+
+- A generic instantiation (`List<Int>`, `Box<Int>`) used where a trait bound requires a trait its constructor never implements is now a clear type error, instead of slipping through to code generation as an unresolved callee. A type whose constructor does have an impl is still left to the call site, so valid generic code is unaffected (#411).
+
 ## [2.18.23] - 2026-06-10
 
 ### Fixed

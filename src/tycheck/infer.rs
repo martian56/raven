@@ -111,6 +111,13 @@ impl InferCtx {
         self.bounds.get(&root).cloned().unwrap_or_default()
     }
 
+    /// Every inference variable that carries a pending bound, with its bounds.
+    /// Used at finalization to judge bounds on non-simple resolved types that
+    /// the eager, simple-only check deferred.
+    pub fn all_bounds(&self) -> Vec<(InferVarId, Vec<PendingBound>)> {
+        self.bounds.iter().map(|(v, bs)| (*v, bs.clone())).collect()
+    }
+
     /// Record that `element` is the `T` of `source: Iterator<T>`. Resolved
     /// later by `solve_iterator_links` once `source` is concrete.
     pub fn add_iterator_link(&mut self, source: InferVarId, element: InferVarId, span: Span) {

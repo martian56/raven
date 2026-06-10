@@ -1,0 +1,17 @@
+// A generic struct used as a Map key must satisfy the key's Eq and Hash bounds.
+// Deriving them makes Box<Int> a valid key; without them it is a clear type
+// error rather than an unresolved callee at code generation.
+import std/io { println }
+import std/collections
+
+@derive(Eq, Hash)
+struct Box<T> { value: T }
+
+fun main() {
+    let m: Map<Box<Int>, Int> = Map.new()
+    m.set(Box { value: 7 }, 42)
+    match m.get(Box { value: 7 }) {
+        Some(v) -> println(v.to_string()),
+        None -> println("none"),
+    }
+}
