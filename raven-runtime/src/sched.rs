@@ -570,21 +570,21 @@ pub extern "C" fn raven_channel_new_buffered(cap: i64) -> i64 {
     make_channel(cap.max(0) as usize)
 }
 
-/// The effective queue bound: a buffered channel holds up to `cap`
-/// values; an unbuffered channel transfers one value at a time, modeled
-/// as a one-slot hand-off so a sender blocks while the slot is occupied.
-fn send_bound(ch: &Channel) -> usize {
-    if ch.cap == 0 {
-        1
-    } else {
-        ch.cap
-    }
-}
-
 /// Whether the channel `id`'s queue can accept one more value right now.
 fn can_send_now(sched: &Scheduler, id: i64) -> bool {
     match sched.channels.get(&id) {
-        Some(ch) => ch.queue.len() < send_bound(ch),
+        Some(ch) => {
+            if ch.cap == 0 {
+                // Unbuffered: a true rendezvous. A send proceeds only when a
+                // receiver is already waiting to take the value directly, so a
+                // send with no receiver blocks rather than buffering one value.
+                // The deposit below pops exactly one of these waiters, keeping
+                // each send paired with one receiver.
+                !ch.recv_waiters.is_empty()
+            } else {
+                ch.queue.len() < ch.cap
+            }
+        }
         None => false,
     }
 }
@@ -802,11 +802,18 @@ pub extern "C" fn raven_select_add(set_id: i64, chan_id: i64) {
 pub extern "C" fn raven_select_recv(set_id: i64) -> i64 {
     let me = CURRENT_GOROUTINE.with(|c| c.get());
     loop {
-        // (index, value, sender to wake) when ready; None means block.
-        let ready: Option<(i64, i64, Option<usize>)> = with_sched(|sched| {
-            let ids = sched.select_sets.get(&set_id)?.clone();
+        enum Outcome {
+            Empty,
+            Got(i64, i64, Option<usize>),
+            Block(Vec<usize>),
+        }
+        let outcome = with_sched(|sched| {
+            let ids = match sched.select_sets.get(&set_id) {
+                Some(ids) => ids.clone(),
+                None => return Outcome::Empty,
+            };
             if ids.is_empty() {
-                return None;
+                return Outcome::Empty;
             }
             // A select over a channel that does not exist would otherwise be
             // silently skipped and could block forever; report it instead.
@@ -828,24 +835,35 @@ pub extern "C" fn raven_select_recv(set_id: i64) -> i64 {
                 if let Some(ch) = sched.channels.get_mut(&cid) {
                     if let Some(v) = ch.queue.pop_front() {
                         let sender = ch.send_waiters.pop_front();
-                        return Some((i as i64, v, sender));
+                        return Outcome::Got(i as i64, v, sender);
                     }
                 }
             }
             // None ready: register on every channel's recv list and commit to
-            // blocking, then park below.
+            // blocking. Wake one blocked sender per channel so an unbuffered
+            // sender, which proceeds only once a receiver is waiting, can now
+            // rendezvous with this receiver instead of deadlocking.
+            let mut wake_senders = Vec::new();
             for &cid in &ids {
                 if let Some(ch) = sched.channels.get_mut(&cid) {
                     ch.recv_waiters.push_back(me);
+                    if let Some(snd) = ch.send_waiters.pop_front() {
+                        wake_senders.push(snd);
+                    }
                 }
             }
             sched.blocked.insert(me);
-            Some((-2, 0, None)) // sentinel: registered, must block
+            Outcome::Block(wake_senders)
         });
-        match ready {
-            None => return -1,
-            Some((-2, _, _)) => park_current(me),
-            Some((index, value, sender)) => {
+        match outcome {
+            Outcome::Empty => return -1,
+            Outcome::Block(senders) => {
+                for snd in senders {
+                    wake(snd);
+                }
+                park_current(me);
+            }
+            Outcome::Got(index, value, sender) => {
                 if let Some(snd) = sender {
                     wake(snd);
                 }
