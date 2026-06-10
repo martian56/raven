@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.48] - 2026-06-10
+
+### Fixed
+
+- `select` no longer strands a receiver by stealing its wakeup. When a select consumes one channel's value, it now re-issues the wakeup to a receiver parked on any other channel it was registered on that still holds a value. A receiver (plain `recv` or `select`) that wakes a blocked sender as it commits to block now does so under the scheduler lock, closing a window where both briefly sat in the blocked set and a concurrent deadlock check reported a false deadlock (#403).
+
 ## [2.18.47] - 2026-06-10
 
 ### Fixed
