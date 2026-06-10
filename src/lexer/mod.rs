@@ -616,7 +616,7 @@ impl Lexer {
                     out.push(self.bump().unwrap()); // opening "
                     loop {
                         match self.peek() {
-                            None | Some('\n') => {
+                            None | Some('\n') | Some('\r') => {
                                 return Err(self.err(
                                     LexError::UnterminatedString,
                                     start,
@@ -638,7 +638,11 @@ impl Lexer {
                         }
                     }
                 }
-                Some('\n') => {
+                // A raw line break (LF, or a CR that `bump` would fold a
+                // following LF into) cannot appear in a single-line string, so
+                // it terminates the literal as unterminated rather than being
+                // copied in as a stray carriage return.
+                Some('\n') | Some('\r') => {
                     return Err(self.err(LexError::UnterminatedString, start, line, col));
                 }
                 Some('$') if self.peek_at(1) == Some('{') => {
@@ -691,7 +695,15 @@ impl Lexer {
                 }
                 Some(_) => {
                     let ch = self.bump().unwrap();
-                    out.push(ch);
+                    // A block string may span lines. `bump` returns a lone CR
+                    // for a CRLF (or a bare CR); normalize it to LF so the
+                    // content has consistent newlines regardless of the file's
+                    // line endings.
+                    if ch == '\r' {
+                        out.push('\n');
+                    } else {
+                        out.push(ch);
+                    }
                 }
             }
         }
