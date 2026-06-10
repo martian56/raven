@@ -195,6 +195,7 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
                 &blocks,
                 root_frame,
                 self.func.has_defer,
+                layout::is_gc_pointer(&self.func.ret_ty),
             )?;
         }
 
@@ -284,6 +285,7 @@ fn lower_block(
     blocks: &[cranelift_codegen::ir::Block],
     root_frame: Option<RootFrame>,
     has_defer: bool,
+    ret_is_gc: bool,
 ) -> Result<(), CodegenError> {
     for stmt in &mir_block.statements {
         lower_stmt(cx, builder, stmt, slots)?;
@@ -296,6 +298,7 @@ fn lower_block(
         blocks,
         root_frame,
         has_defer,
+        ret_is_gc,
     )?;
     Ok(())
 }
@@ -2951,6 +2954,7 @@ fn lower_terminator(
     blocks: &[cranelift_codegen::ir::Block],
     root_frame: Option<RootFrame>,
     has_defer: bool,
+    ret_is_gc: bool,
 ) -> Result<(), CodegenError> {
     match term {
         MirTerminator::Goto(target) => {
@@ -2991,9 +2995,22 @@ fn lower_terminator(
             // already-computed result (they are Unit-typed and cannot
             // change it). Defers run before leaving the GC frame, so they
             // may still touch rooted GC locals.
-            let v = lower_operand(cx, builder, op, slots)?;
+            let mut v = lower_operand(cx, builder, op, slots)?;
             if has_defer {
-                run_defer_frame(cx, builder);
+                // A deferred thunk may allocate and trigger a collection. A
+                // heap return value computed just above lives in an unrooted
+                // register, so root it across the defer run or the collector
+                // could free it (a use-after-free at the return). The GC does
+                // not move objects, so the reloaded pointer is the same value.
+                match v {
+                    Some(value) if ret_is_gc => {
+                        let ptr = cx.pointer_type();
+                        let slot = push_temp_root(cx, builder, value, ptr);
+                        run_defer_frame(cx, builder);
+                        v = Some(pop_temp_root(cx, builder, slot, ptr));
+                    }
+                    _ => run_defer_frame(cx, builder),
+                }
             }
             leave_root_frame(cx, builder, root_frame);
             match v {
