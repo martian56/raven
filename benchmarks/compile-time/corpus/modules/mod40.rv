@@ -152,8 +152,8 @@ fun compute_40(seed: Int) -> Int {
     let g = grade_points_40(grade_40(seed))
     let r = ranked_40(tagged) + ranked_40(v)
     let extra = if big { 1 } else { 0 }
-    return p.left() + p.right() + w.magnitude_sq() + identity_40(doubled)
-        + m + g + r + accumulate_40(5) + sweep_40(5)
-        + fib_40(8) + classify_40(Shape_40.Hexagon) + extra
-        + q.left().length()
+    return p.left() + p.right() + w.magnitude_sq() + identity_40(doubled) +
+        m + g + r + accumulate_40(5) + sweep_40(5) +
+        fib_40(8) + classify_40(Shape_40.Hexagon) + extra +
+        q.left().length()
 }

@@ -152,8 +152,8 @@ fun compute_39(seed: Int) -> Int {
     let g = grade_points_39(grade_39(seed))
     let r = ranked_39(tagged) + ranked_39(v)
     let extra = if big { 1 } else { 0 }
-    return p.left() + p.right() + w.magnitude_sq() + identity_39(doubled)
-        + m + g + r + accumulate_39(21) + sweep_39(21)
-        + fib_39(8) + classify_39(Shape_39.Hexagon) + extra
-        + q.left().length()
+    return p.left() + p.right() + w.magnitude_sq() + identity_39(doubled) +
+        m + g + r + accumulate_39(21) + sweep_39(21) +
+        fib_39(8) + classify_39(Shape_39.Hexagon) + extra +
+        q.left().length()
 }

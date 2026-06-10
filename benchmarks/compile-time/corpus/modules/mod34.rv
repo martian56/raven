@@ -152,8 +152,8 @@ fun compute_34(seed: Int) -> Int {
     let g = grade_points_34(grade_34(seed))
     let r = ranked_34(tagged) + ranked_34(v)
     let extra = if big { 1 } else { 0 }
-    return p.left() + p.right() + w.magnitude_sq() + identity_34(doubled)
-        + m + g + r + accumulate_34(9) + sweep_34(9)
-        + fib_34(8) + classify_34(Shape_34.Hexagon) + extra
-        + q.left().length()
+    return p.left() + p.right() + w.magnitude_sq() + identity_34(doubled) +
+        m + g + r + accumulate_34(9) + sweep_34(9) +
+        fib_34(8) + classify_34(Shape_34.Hexagon) + extra +
+        q.left().length()
 }

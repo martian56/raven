@@ -152,8 +152,8 @@ fun compute_52(seed: Int) -> Int {
     let g = grade_points_52(grade_52(seed))
     let r = ranked_52(tagged) + ranked_52(v)
     let extra = if big { 1 } else { 0 }
-    return p.left() + p.right() + w.magnitude_sq() + identity_52(doubled)
-        + m + g + r + accumulate_52(20) + sweep_52(20)
-        + fib_52(8) + classify_52(Shape_52.Hexagon) + extra
-        + q.left().length()
+    return p.left() + p.right() + w.magnitude_sq() + identity_52(doubled) +
+        m + g + r + accumulate_52(20) + sweep_52(20) +
+        fib_52(8) + classify_52(Shape_52.Hexagon) + extra +
+        q.left().length()
 }

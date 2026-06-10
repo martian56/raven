@@ -180,10 +180,10 @@ fun compute_${i}(seed: Int) -> Int {
     let g = grade_points_${i}(grade_${i}(seed))
     let r = ranked_${i}(tagged) + ranked_${i}(v)
     let extra = if big { 1 } else { 0 }
-    return p.left() + p.right() + w.magnitude_sq() + identity_${i}(doubled)
-        + m + g + r + accumulate_${i}(${base}) + sweep_${i}(${base})
-        + fib_${i}(8) + classify_${i}(Shape_${i}.Hexagon) + extra
-        + q.left().length()
+    return p.left() + p.right() + w.magnitude_sq() + identity_${i}(doubled) +
+        m + g + r + accumulate_${i}(${base}) + sweep_${i}(${base}) +
+        fib_${i}(8) + classify_${i}(Shape_${i}.Hexagon) + extra +
+        q.left().length()
 }
 EOF
 }

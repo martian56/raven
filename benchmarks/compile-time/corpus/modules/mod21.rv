@@ -152,8 +152,8 @@ fun compute_21(seed: Int) -> Int {
     let g = grade_points_21(grade_21(seed))
     let r = ranked_21(tagged) + ranked_21(v)
     let extra = if big { 1 } else { 0 }
-    return p.left() + p.right() + w.magnitude_sq() + identity_21(doubled)
-        + m + g + r + accumulate_21(10) + sweep_21(10)
-        + fib_21(8) + classify_21(Shape_21.Hexagon) + extra
-        + q.left().length()
+    return p.left() + p.right() + w.magnitude_sq() + identity_21(doubled) +
+        m + g + r + accumulate_21(10) + sweep_21(10) +
+        fib_21(8) + classify_21(Shape_21.Hexagon) + extra +
+        q.left().length()
 }

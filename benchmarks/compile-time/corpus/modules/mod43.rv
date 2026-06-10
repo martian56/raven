@@ -152,8 +152,8 @@ fun compute_43(seed: Int) -> Int {
     let g = grade_points_43(grade_43(seed))
     let r = ranked_43(tagged) + ranked_43(v)
     let extra = if big { 1 } else { 0 }
-    return p.left() + p.right() + w.magnitude_sq() + identity_43(doubled)
-        + m + g + r + accumulate_43(3) + sweep_43(3)
-        + fib_43(8) + classify_43(Shape_43.Hexagon) + extra
-        + q.left().length()
+    return p.left() + p.right() + w.magnitude_sq() + identity_43(doubled) +
+        m + g + r + accumulate_43(3) + sweep_43(3) +
+        fib_43(8) + classify_43(Shape_43.Hexagon) + extra +
+        q.left().length()
 }

@@ -152,8 +152,8 @@ fun compute_44(seed: Int) -> Int {
     let g = grade_points_44(grade_44(seed))
     let r = ranked_44(tagged) + ranked_44(v)
     let extra = if big { 1 } else { 0 }
-    return p.left() + p.right() + w.magnitude_sq() + identity_44(doubled)
-        + m + g + r + accumulate_44(10) + sweep_44(10)
-        + fib_44(8) + classify_44(Shape_44.Hexagon) + extra
-        + q.left().length()
+    return p.left() + p.right() + w.magnitude_sq() + identity_44(doubled) +
+        m + g + r + accumulate_44(10) + sweep_44(10) +
+        fib_44(8) + classify_44(Shape_44.Hexagon) + extra +
+        q.left().length()
 }
