@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.33] - 2026-06-10
+
+### Fixed
+
+- `regex` `find_all`, `captures`, and `split` no longer corrupt a result that contains a newline. List results now cross the runtime boundary length-prefixed instead of newline-joined, which also distinguishes an empty list from a one-element list holding the empty string (#430).
+
 ## [2.18.32] - 2026-06-10
 
 ### Fixed

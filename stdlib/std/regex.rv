@@ -4,8 +4,9 @@
 // registry keyed by an opaque integer id and hands Raven that id; the
 // Regex struct wraps the id. compile is fallible and returns
 // Result<Regex, Error> tagged with kind "regex" via the runtime's
-// thread-local last-error slot. List results cross the FFI as `\n`-joined
-// Strings split back into a List in Raven. There is no destructor, so a
+// thread-local last-error slot. List results cross the FFI as a single
+// length-prefixed String decoded back into a List in Raven, so an element may
+// contain any byte (a newline included). There is no destructor, so a
 // caller should `free` a pattern when done; not freeing leaks the
 // registry entry for the life of the process. See
 // docs/v2/specs/std-regex.md.
@@ -57,7 +58,7 @@ impl Regex {
     // Every non-overlapping match in `text`. No matches yields an empty
     // list.
     fun find_all(self, text: String) -> List<String> {
-        return split_lines(raven_regex_find_all(self.id, text))
+        return decode_list(raven_regex_find_all(self.id, text))
     }
 
     // The capture groups of the first match: group 0 (the whole match)
@@ -65,7 +66,7 @@ impl Regex {
     // an empty string. No match yields an empty list.
     fun captures(self, text: String) -> List<String> {
         if raven_regex_has_match(self.id, text) {
-            return split_lines(raven_regex_captures(self.id, text))
+            return decode_list(raven_regex_captures(self.id, text))
         }
         let empty: List<String> = []
         return empty
@@ -79,7 +80,7 @@ impl Regex {
 
     // Split `text` on the pattern.
     fun split(self, text: String) -> List<String> {
-        return split_lines(raven_regex_split(self.id, text))
+        return decode_list(raven_regex_split(self.id, text))
     }
 
     // Release the compiled pattern. There is no destructor, so call this
@@ -89,24 +90,29 @@ impl Regex {
     }
 }
 
-// Split `s` on `\n` into a list. An empty string yields an empty list (not
-// a one-element list of ""), so an empty runtime result maps to an empty
-// list.
-fun split_lines(s: String) -> List<String> {
+// Decode a length-prefixed list emitted by the runtime: repeated
+// `<len>:<bytes>` where `len` is the element's byte length in decimal. This is
+// unambiguous even when an element contains a newline or a colon, which a
+// newline-joined encoding was not, and it distinguishes an empty list (no
+// elements) from a one-element list holding the empty string. An empty input
+// decodes to an empty list.
+fun decode_list(s: String) -> List<String> {
     let out: List<String> = []
-    if s.length() == 0 {
-        return out
-    }
-    let n = s.length()
-    let start = 0
+    let n = __str_len(s)
     let i = 0
     while i < n {
-        if s.char_at(i).starts_with("\n") {
-            out.push(s.substring(start, i))
-            start = i + 1
+        let len = 0
+        while i < n {
+            let b = __str_byte_at(s, i)
+            if b == 58 {
+                i = i + 1
+                break
+            }
+            len = len * 10 + (b - 48)
+            i = i + 1
         }
-        i = i + 1
+        out.push(s.substring(i, i + len))
+        i = i + len
     }
-    out.push(s.substring(start, n))
     return out
 }

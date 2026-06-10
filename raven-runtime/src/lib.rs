@@ -1676,16 +1676,26 @@ pub extern "C" fn raven_regex_find_all(
         .map(|text| {
             let registry = regex_registry().lock().unwrap();
             match registry.get(&id) {
-                Some(re) => re
-                    .find_iter(text)
-                    .map(|m| m.as_str())
-                    .collect::<Vec<&str>>()
-                    .join("\n"),
+                Some(re) => encode_str_list(re.find_iter(text).map(|m| m.as_str())),
                 None => std::string::String::new(),
             }
         })
         .unwrap_or_default();
     object::raven_string_from_bytes(value.as_ptr(), value.len())
+}
+
+/// Encode a list of strings for transport to Raven as one `String`: each
+/// element is its byte length in decimal, then a `:`, then its bytes. This is
+/// unambiguous even when an element contains a newline or a colon, which the
+/// previous newline join was not. `std/regex` decodes it.
+fn encode_str_list<'a>(elems: impl IntoIterator<Item = &'a str>) -> std::string::String {
+    let mut out = std::string::String::new();
+    for e in elems {
+        out.push_str(&e.len().to_string());
+        out.push(':');
+        out.push_str(e);
+    }
+    out
 }
 
 /// The capture groups of the first match of the compiled pattern `id` in
@@ -1706,10 +1716,7 @@ pub extern "C" fn raven_regex_captures(
             let registry = regex_registry().lock().unwrap();
             registry.get(&id).and_then(|re| {
                 re.captures(text).map(|caps| {
-                    caps.iter()
-                        .map(|g| g.map(|m| m.as_str()).unwrap_or(""))
-                        .collect::<Vec<&str>>()
-                        .join("\n")
+                    encode_str_list(caps.iter().map(|g| g.map(|m| m.as_str()).unwrap_or("")))
                 })
             })
         })
@@ -1757,8 +1764,9 @@ pub extern "C" fn raven_regex_split(id: i64, text: *const object::String) -> *mu
         .map(|text| {
             let registry = regex_registry().lock().unwrap();
             match registry.get(&id) {
-                Some(re) => re.split(text).collect::<Vec<&str>>().join("\n"),
-                None => text.to_string(),
+                Some(re) => encode_str_list(re.split(text)),
+                // Unknown id: the text unsplit, as a single encoded element.
+                None => encode_str_list(std::iter::once(text)),
             }
         })
         .unwrap_or_default();
