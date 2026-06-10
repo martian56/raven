@@ -1,0 +1,15 @@
+// A method chain can break across lines with the dot leading the next line.
+// Only a `.` or `?` continues the chain; any other line stands on its own.
+import std/io { println }
+import std/string
+
+fun main() {
+    let cleaned = "  Hello World  "
+        .trim()
+        .to_lower()
+    println(cleaned)
+
+    let n = "  42  "
+        .trim()
+    println(n)
+}

@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.20] - 2026-06-10
+
+### Fixed
+
+- A method chain can now break across lines with the dot leading the next line (`s\n    .trim()\n    .to_lower()`). The postfix parser continues across a newline when a `.` or `?` follows it (#416).
+
 ## [2.18.19] - 2026-06-10
 
 ### Fixed
