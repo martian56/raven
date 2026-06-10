@@ -1,0 +1,21 @@
+// A struct literal is allowed inside a call argument in an if/while/match head.
+// The condition itself still forbids a bare struct literal (which would clash
+// with the block brace), but inside the call's parentheses it is unambiguous.
+import std/io { println }
+
+struct Point { x: Int, y: Int }
+
+fun positive(p: Point) -> Bool = p.x > 0
+
+fun main() {
+    if positive(Point { x: 1, y: 2 }) {
+        println("if ok")
+    }
+    while positive(Point { x: 0, y: 0 }) {
+        println("never runs")
+    }
+    match positive(Point { x: 5, y: 5 }) {
+        true -> println("match ok"),
+        false -> println("no"),
+    }
+}
