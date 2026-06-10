@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.13] - 2026-06-10
+
+### Fixed
+
+- The `std/http` static file server rejects a requested file name that contains a path separator (including a Windows backslash), a parent reference, or a drive marker, closing a path-traversal hole that could escape the served directory (#423).
+
 ## [2.18.12] - 2026-06-10
 
 ### Fixed

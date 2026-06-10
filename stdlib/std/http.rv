@@ -613,7 +613,27 @@ fun reason_phrase(status: Int) -> String {
 
 // Serve the `:file` capture of a `Server.static` route from its directory.
 fun serve_from(dir: String, req: Request) -> Response {
-    return Response.file(dir.concat("/").concat(req.param("file")))
+    let name = req.param("file")
+    // The captured name must be a single, ordinary file name inside `dir`.
+    // Reject anything that could climb out: a path separator (note that `\` is
+    // one on Windows), a parent reference, a drive or stream marker, or an
+    // empty name. Without this a request like `..\..\secret` would escape.
+    if name.length() == 0 {
+        return Response.with_body(404, "Not Found")
+    }
+    if name.contains("/") {
+        return Response.with_body(404, "Not Found")
+    }
+    if name.contains("\\") {
+        return Response.with_body(404, "Not Found")
+    }
+    if name.contains("..") {
+        return Response.with_body(404, "Not Found")
+    }
+    if name.contains(":") {
+        return Response.with_body(404, "Not Found")
+    }
+    return Response.file(dir.concat("/").concat(name))
 }
 
 // A `Content-Type` for a file path, chosen from its extension.
