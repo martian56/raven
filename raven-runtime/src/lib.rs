@@ -1292,7 +1292,15 @@ pub extern "C" fn raven_net_write(stream_id: i64, data: *const object::String) -
 /// unknown id is a no-op.
 #[no_mangle]
 pub extern "C" fn raven_net_close(stream_id: i64) {
-    net_registry().lock().unwrap().remove(&stream_id);
+    let sock = net_registry().lock().unwrap().remove(&stream_id);
+    // Accept/read clone the handle for their blocking syscall, so dropping the
+    // registry's copy alone leaves the underlying socket open and a parked
+    // reader hung. Shut a stream down so that read returns at once. (A listener
+    // has no portable shutdown; dropping its registry copy is the best we can
+    // do here.)
+    if let Some(Socket::Stream(stream)) = sock {
+        let _ = stream.shutdown(std::net::Shutdown::Both);
+    }
 }
 
 /// Set the read timeout of the stream `stream_id` to `ms` milliseconds. A

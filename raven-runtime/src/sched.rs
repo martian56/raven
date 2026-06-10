@@ -855,6 +855,24 @@ pub extern "C" fn raven_select_free(set_id: i64) {
     });
 }
 
+/// Free a channel's registry entry. The id becomes invalid; a later operation
+/// on it panics (see `unknown_channel_panic`). Free only when no goroutine is
+/// still using the channel.
+#[no_mangle]
+pub extern "C" fn raven_channel_free(id: i64) {
+    with_sched(|sched| {
+        sched.channels.remove(&id);
+    });
+}
+
+/// Free a wait group's registry entry.
+#[no_mangle]
+pub extern "C" fn raven_waitgroup_free(id: i64) {
+    with_sched(|sched| {
+        sched.wait_groups.remove(&id);
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
