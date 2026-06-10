@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.6] - 2026-06-10
+
+### Fixed
+
+- Integer divide and modulo by zero, and the `i64::MIN / -1` overflow, now raise a Raven panic with a message instead of aborting with a raw hardware exception (#437).
+
 ## [2.18.5] - 2026-06-10
 
 ### Fixed
