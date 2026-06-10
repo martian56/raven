@@ -511,6 +511,13 @@ impl Lexer {
                     TokenKind::IntLit(v),
                     self.make_span(start, line, col),
                 )),
+                // `9223372036854775808` is the magnitude of `i64::MIN`, valid only
+                // as `-9223372036854775808`. Accept it as that bit pattern so the
+                // unary minus yields `i64::MIN`; any larger decimal is out of range.
+                Err(_) if cleaned == "9223372036854775808" => Ok(Token::new(
+                    TokenKind::IntLit(i64::MIN),
+                    self.make_span(start, line, col),
+                )),
                 Err(_) => Err(self.err(LexError::InvalidNumber(lexeme.into()), start, line, col)),
             }
         }
@@ -551,9 +558,13 @@ impl Lexer {
         }
         let raw = &self.source[digits_start..self.pos];
         let cleaned: String = raw.chars().filter(|c| *c != '_').collect();
-        match i64::from_str_radix(&cleaned, radix) {
+        // A hex or binary literal names a 64-bit pattern, so parse it as `u64`
+        // and reinterpret the bits as `i64`. This lets the full width be written
+        // (`0xFFFFFFFFFFFFFFFF` is -1, `0x8000000000000000` is i64::MIN), which a
+        // signed parse would reject for any value with bit 63 set.
+        match u64::from_str_radix(&cleaned, radix) {
             Ok(v) => Ok(Token::new(
-                TokenKind::IntLit(v),
+                TokenKind::IntLit(v as i64),
                 self.make_span(start, line, col),
             )),
             Err(_) => {
