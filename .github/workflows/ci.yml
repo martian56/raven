@@ -1,25 +1,20 @@
 name: Raven CI
 
-# CI is paused while we work through the bug backlog (issues #396-#444) to keep
-# Actions usage down. Only manual runs fire for now.
-#
-# To turn it back on, drop the workflow_dispatch line and uncomment the
-# pull_request block. We run on pull requests to main only, never on push or
-# merge to main, so a change is not built twice.
+# We run on pull requests to main only, never on push or merge to main, so a
+# change is not built twice.
 on:
-  workflow_dispatch:
-  # pull_request:
-  #   branches: [ "main" ]
-  #   paths:
-  #     - "src/**"
-  #     - "lib/**"
-  #     - "examples/**"
-  #     - "tests/**"
-  #     - "raven-runtime/**"
-  #     - "benchmarks/**"
-  #     - "Cargo.toml"
-  #     - "Cargo.lock"
-  #     - ".github/workflows/ci.yml"
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "src/**"
+      - "lib/**"
+      - "examples/**"
+      - "tests/**"
+      - "raven-runtime/**"
+      - "benchmarks/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ci.yml"
 
 env:
   CARGO_TERM_COLOR: always
