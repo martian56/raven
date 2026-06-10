@@ -152,8 +152,8 @@ fun compute_28(seed: Int) -> Int {
     let g = grade_points_28(grade_28(seed))
     let r = ranked_28(tagged) + ranked_28(v)
     let extra = if big { 1 } else { 0 }
-    return p.left() + p.right() + w.magnitude_sq() + identity_28(doubled)
-        + m + g + r + accumulate_28(13) + sweep_28(13)
-        + fib_28(8) + classify_28(Shape_28.Hexagon) + extra
-        + q.left().length()
+    return p.left() + p.right() + w.magnitude_sq() + identity_28(doubled) +
+        m + g + r + accumulate_28(13) + sweep_28(13) +
+        fib_28(8) + classify_28(Shape_28.Hexagon) + extra +
+        q.left().length()
 }

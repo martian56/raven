@@ -152,8 +152,8 @@ fun compute_32(seed: Int) -> Int {
     let g = grade_points_32(grade_32(seed))
     let r = ranked_32(tagged) + ranked_32(v)
     let extra = if big { 1 } else { 0 }
-    return p.left() + p.right() + w.magnitude_sq() + identity_32(doubled)
-        + m + g + r + accumulate_32(18) + sweep_32(18)
-        + fib_32(8) + classify_32(Shape_32.Hexagon) + extra
-        + q.left().length()
+    return p.left() + p.right() + w.magnitude_sq() + identity_32(doubled) +
+        m + g + r + accumulate_32(18) + sweep_32(18) +
+        fib_32(8) + classify_32(Shape_32.Hexagon) + extra +
+        q.left().length()
 }

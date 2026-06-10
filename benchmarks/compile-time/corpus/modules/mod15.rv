@@ -152,8 +152,8 @@ fun compute_15(seed: Int) -> Int {
     let g = grade_points_15(grade_15(seed))
     let r = ranked_15(tagged) + ranked_15(v)
     let extra = if big { 1 } else { 0 }
-    return p.left() + p.right() + w.magnitude_sq() + identity_15(doubled)
-        + m + g + r + accumulate_15(14) + sweep_15(14)
-        + fib_15(8) + classify_15(Shape_15.Hexagon) + extra
-        + q.left().length()
+    return p.left() + p.right() + w.magnitude_sq() + identity_15(doubled) +
+        m + g + r + accumulate_15(14) + sweep_15(14) +
+        fib_15(8) + classify_15(Shape_15.Hexagon) + extra +
+        q.left().length()
 }

@@ -152,8 +152,8 @@ fun compute_35(seed: Int) -> Int {
     let g = grade_points_35(grade_35(seed))
     let r = ranked_35(tagged) + ranked_35(v)
     let extra = if big { 1 } else { 0 }
-    return p.left() + p.right() + w.magnitude_sq() + identity_35(doubled)
-        + m + g + r + accumulate_35(16) + sweep_35(16)
-        + fib_35(8) + classify_35(Shape_35.Hexagon) + extra
-        + q.left().length()
+    return p.left() + p.right() + w.magnitude_sq() + identity_35(doubled) +
+        m + g + r + accumulate_35(16) + sweep_35(16) +
+        fib_35(8) + classify_35(Shape_35.Hexagon) + extra +
+        q.left().length()
 }

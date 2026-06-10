@@ -152,8 +152,8 @@ fun compute_54(seed: Int) -> Int {
     let g = grade_points_54(grade_54(seed))
     let r = ranked_54(tagged) + ranked_54(v)
     let extra = if big { 1 } else { 0 }
-    return p.left() + p.right() + w.magnitude_sq() + identity_54(doubled)
-        + m + g + r + accumulate_54(11) + sweep_54(11)
-        + fib_54(8) + classify_54(Shape_54.Hexagon) + extra
-        + q.left().length()
+    return p.left() + p.right() + w.magnitude_sq() + identity_54(doubled) +
+        m + g + r + accumulate_54(11) + sweep_54(11) +
+        fib_54(8) + classify_54(Shape_54.Hexagon) + extra +
+        q.left().length()
 }

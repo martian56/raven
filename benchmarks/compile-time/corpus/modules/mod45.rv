@@ -152,8 +152,8 @@ fun compute_45(seed: Int) -> Int {
     let g = grade_points_45(grade_45(seed))
     let r = ranked_45(tagged) + ranked_45(v)
     let extra = if big { 1 } else { 0 }
-    return p.left() + p.right() + w.magnitude_sq() + identity_45(doubled)
-        + m + g + r + accumulate_45(17) + sweep_45(17)
-        + fib_45(8) + classify_45(Shape_45.Hexagon) + extra
-        + q.left().length()
+    return p.left() + p.right() + w.magnitude_sq() + identity_45(doubled) +
+        m + g + r + accumulate_45(17) + sweep_45(17) +
+        fib_45(8) + classify_45(Shape_45.Hexagon) + extra +
+        q.left().length()
 }

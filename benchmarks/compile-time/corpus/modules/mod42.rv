@@ -152,8 +152,8 @@ fun compute_42(seed: Int) -> Int {
     let g = grade_points_42(grade_42(seed))
     let r = ranked_42(tagged) + ranked_42(v)
     let extra = if big { 1 } else { 0 }
-    return p.left() + p.right() + w.magnitude_sq() + identity_42(doubled)
-        + m + g + r + accumulate_42(19) + sweep_42(19)
-        + fib_42(8) + classify_42(Shape_42.Hexagon) + extra
-        + q.left().length()
+    return p.left() + p.right() + w.magnitude_sq() + identity_42(doubled) +
+        m + g + r + accumulate_42(19) + sweep_42(19) +
+        fib_42(8) + classify_42(Shape_42.Hexagon) + extra +
+        q.left().length()
 }

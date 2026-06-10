@@ -152,8 +152,8 @@ fun compute_24(seed: Int) -> Int {
     let g = grade_points_24(grade_24(seed))
     let r = ranked_24(tagged) + ranked_24(v)
     let extra = if big { 1 } else { 0 }
-    return p.left() + p.right() + w.magnitude_sq() + identity_24(doubled)
-        + m + g + r + accumulate_24(8) + sweep_24(8)
-        + fib_24(8) + classify_24(Shape_24.Hexagon) + extra
-        + q.left().length()
+    return p.left() + p.right() + w.magnitude_sq() + identity_24(doubled) +
+        m + g + r + accumulate_24(8) + sweep_24(8) +
+        fib_24(8) + classify_24(Shape_24.Hexagon) + extra +
+        q.left().length()
 }
