@@ -39,6 +39,7 @@ fun json_error(msg: String) -> Error {
 struct Cursor {
     text: String,
     pos: Int,
+    depth: Int,
 }
 
 impl Cursor {
@@ -302,11 +303,27 @@ fun match_keyword(c: Cursor, word: String) -> Bool {
 fun parse_value(c: Cursor) -> Result<JsonValue, Error> {
     c.skip_ws()
     let b = c.peek()
+    // Containers recurse, so bound the nesting depth to keep untrusted input
+    // from overflowing the stack. Depth is incremented on the way into a
+    // container and decremented on the way out, so siblings at the same level
+    // do not accumulate; only genuine nesting counts.
     if b == 123 {
-        return parse_object(c)
+        c.depth = c.depth + 1
+        if c.depth > 256 {
+            return Err(json_error("maximum nesting depth exceeded"))
+        }
+        let v = parse_object(c)?
+        c.depth = c.depth - 1
+        return Ok(v)
     }
     if b == 91 {
-        return parse_array(c)
+        c.depth = c.depth + 1
+        if c.depth > 256 {
+            return Err(json_error("maximum nesting depth exceeded"))
+        }
+        let v = parse_array(c)?
+        c.depth = c.depth - 1
+        return Ok(v)
     }
     if b == 34 {
         c.advance()
@@ -418,7 +435,7 @@ fun offset_str(n: Int) -> String {
 // Parse `text` as a single JSON value. Trailing content other than
 // whitespace after the top-level value is rejected.
 fun parse(text: String) -> Result<JsonValue, Error> {
-    let c = Cursor { text: text, pos: 0 }
+    let c = Cursor { text: text, pos: 0, depth: 0 }
     let v = parse_value(c)?
     c.skip_ws()
     if !c.at_end() {
