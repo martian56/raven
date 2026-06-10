@@ -23,6 +23,14 @@ fn empty_source_yields_eof_only() {
 }
 
 #[test]
+fn leading_utf8_bom_is_ignored() {
+    // A UTF-8 BOM at the start of the source is dropped rather than lexed as an
+    // unexpected character, so a BOM-prefixed file tokenizes like a clean one.
+    let toks = lex("\u{FEFF}let x = 1");
+    assert_eq!(toks[0].kind, TokenKind::Let);
+}
+
+#[test]
 fn all_keywords_are_recognized() {
     let src = "let const fun return if else while for loop in break continue match struct trait impl enum import as extern defer true false self Self";
     let toks = lex(src);

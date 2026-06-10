@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.17] - 2026-06-10
+
+### Fixed
+
+- A leading UTF-8 byte-order mark is ignored instead of failing with an "unexpected character" error, so a source file saved with a BOM compiles (#422).
+
 ## [2.18.16] - 2026-06-10
 
 ### Fixed
