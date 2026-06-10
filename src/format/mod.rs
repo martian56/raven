@@ -909,10 +909,20 @@ impl Printer<'_> {
                 s
             }
             ExprKind::Array(items) => {
+                if let Some(first) = items.first() {
+                    if self.pending_comment_within(first.span.start, e.span.end) {
+                        return self.bracketed_multiline("[", "]", items, e.span.end, base);
+                    }
+                }
                 let parts = self.expr_list(items, base);
                 format!("[{}]", parts.join(", "))
             }
             ExprKind::Tuple(items) => {
+                if let Some(first) = items.first() {
+                    if self.pending_comment_within(first.span.start, e.span.end) {
+                        return self.bracketed_multiline("(", ")", items, e.span.end, base);
+                    }
+                }
                 let parts = self.expr_list(items, base);
                 format!("({})", parts.join(", "))
             }
@@ -962,6 +972,12 @@ impl Printer<'_> {
             }
             ExprKind::Call { callee, args } => {
                 let callee = self.expr_at(callee, base);
+                if let Some(first) = args.first() {
+                    if self.pending_comment_within(first.span.start, e.span.end) {
+                        let list = self.bracketed_multiline("(", ")", args, e.span.end, base);
+                        return format!("{}{}", callee, list);
+                    }
+                }
                 let parts = self.expr_list(args, base);
                 format!("{}({})", callee, parts.join(", "))
             }
@@ -976,6 +992,13 @@ impl Printer<'_> {
                 s.push_str(name);
                 if !generics.is_empty() {
                     s.push_str(&render_type_args(generics));
+                }
+                if let Some(first) = args.first() {
+                    if self.pending_comment_within(first.span.start, e.span.end) {
+                        let list = self.bracketed_multiline("(", ")", args, e.span.end, base);
+                        s.push_str(&list);
+                        return s;
+                    }
                 }
                 let parts = self.expr_list(args, base);
                 let _ = write!(s, "({})", parts.join(", "));
@@ -1034,6 +1057,74 @@ impl Printer<'_> {
             parts.push(self.expr_at(it, base));
         }
         parts
+    }
+
+    /// Whether the next pending comment begins within `[start, end)`. Used to
+    /// decide whether a bracketed expression must be laid out multi-line to
+    /// keep an interior comment with its element instead of dropping it.
+    fn pending_comment_within(&self, start: usize, end: usize) -> bool {
+        self.comments
+            .get(self.next_comment)
+            .is_some_and(|c| c.start >= start && c.start < end)
+    }
+
+    /// Render `items` as a multi-line bracketed list (`open` .. `close`) with
+    /// interior comments emitted at their source positions: own-line comments
+    /// before an element sit on their own lines, and a same-line comment after
+    /// an element trails it. `close_byte` is the source position of the closing
+    /// bracket, so comments between the last element and it are kept too.
+    fn bracketed_multiline(
+        &mut self,
+        open: &str,
+        close: &str,
+        items: &[Expr],
+        close_byte: usize,
+        base: usize,
+    ) -> String {
+        let mut s = String::from(open);
+        s.push('\n');
+        for it in items {
+            // Own-line comments that precede this element.
+            while let Some(c) = self.comments.get(self.next_comment) {
+                if c.start >= it.span.start || !c.own_line {
+                    break;
+                }
+                let text = c.text.clone();
+                self.push_indent(&mut s, base + 1);
+                s.push_str(&text);
+                s.push('\n');
+                self.next_comment += 1;
+            }
+            self.push_indent(&mut s, base + 1);
+            let part = self.expr_at(it, base + 1);
+            s.push_str(&part);
+            s.push(',');
+            if let Some(t) = self.take_trailing_comment(self.line_of(it.span.end)) {
+                s.push(' ');
+                s.push_str(&t);
+            }
+            s.push('\n');
+        }
+        // Own-line comments between the last element and the closing bracket.
+        while let Some(c) = self.comments.get(self.next_comment) {
+            if c.start >= close_byte || !c.own_line {
+                break;
+            }
+            let text = c.text.clone();
+            self.push_indent(&mut s, base + 1);
+            s.push_str(&text);
+            s.push('\n');
+            self.next_comment += 1;
+        }
+        self.push_indent(&mut s, base);
+        s.push_str(close);
+        s
+    }
+
+    fn push_indent(&self, s: &mut String, level: usize) {
+        for _ in 0..level {
+            s.push_str(&self.indent_unit);
+        }
     }
 
     fn field_value(&mut self, f: &crate::ast::FieldInit) -> String {

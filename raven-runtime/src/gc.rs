@@ -401,7 +401,6 @@ pub extern "C" fn raven_defer_run_frame() {
     });
 }
 
-
 /// Default collection floor in bytes (1 MiB) when no override is set.
 const INITIAL_THRESHOLD: usize = 1024 * 1024;
 
@@ -703,7 +702,8 @@ fn mark() {
     if hook_addr != 0 {
         // SAFETY: the address was stored by `set_extra_roots_hook` from a valid
         // `ExtraRootsHook` function pointer, which lives for the whole program.
-        let hook: ExtraRootsHook = unsafe { std::mem::transmute::<usize, ExtraRootsHook>(hook_addr) };
+        let hook: ExtraRootsHook =
+            unsafe { std::mem::transmute::<usize, ExtraRootsHook>(hook_addr) };
         let mut visit = |slot: RootSlot| {
             if slot.is_null() {
                 return;
