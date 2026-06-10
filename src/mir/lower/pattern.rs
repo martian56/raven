@@ -46,7 +46,12 @@ pub fn lower_match(
     let result_local = cx.builder.fresh_temp("match", result_ty);
     let cont = cx.builder.new_block();
 
-    if is_enum_like(&scrut_ty) {
+    // A guard needs sequential fall-through, which the switch-based paths
+    // cannot express, so any match with a guarded arm takes the sequential
+    // lowering regardless of scrutinee type.
+    if arms.iter().any(|a| a.guard.is_some()) {
+        lower_sequential_match(cx, scrut_op, &scrut_ty, arms, result_local, cont);
+    } else if is_enum_like(&scrut_ty) {
         lower_enum_match(cx, scrut_op, &scrut_ty, arms, result_local, cont);
     } else if matches!(scrut_ty, Ty::Int | Ty::Bool | Ty::Char) {
         lower_int_match(cx, scrut_op, &scrut_ty, arms, result_local, cont);
@@ -256,6 +261,122 @@ fn lower_fallback_match(
     }
     // Trailing chain: if no arm matched, fall through to continuation
     // with whatever placeholder the result local already holds.
+    if !cx.builder.is_closed(next_test) {
+        cx.builder.close_block(next_test, MirTerminator::Goto(cont));
+    }
+}
+
+/// Lower a match where at least one arm has a guard. Guards need a sequential
+/// fall-through that a `SwitchEnum`/`SwitchInt` cannot express: an arm whose
+/// pattern matches but whose guard is false must drop through to the next arm,
+/// and two arms may share a pattern with different guards. Each arm is tested in
+/// order (a per-arm `SwitchEnum`/`SwitchInt` for a constructor or literal, an
+/// unconditional jump for a binding or wildcard); on a match the pattern is
+/// bound and the guard, if any, is evaluated, falling through to the next arm
+/// when it is false.
+fn lower_sequential_match(
+    cx: &mut LowerCx<'_>,
+    scrut: MirOperand,
+    scrut_ty: &Ty,
+    arms: &[HirArm],
+    result: super::super::ir::MirLocal,
+    cont: MirBlockId,
+) {
+    let mut next_test = cx.current;
+    for arm in arms {
+        let arm_block = cx.builder.new_block();
+        let test_next = cx.builder.new_block();
+
+        match &arm.pattern.kind {
+            HirPatternKind::Wildcard | HirPatternKind::Binding(_) => {
+                if !cx.builder.is_closed(next_test) {
+                    cx.builder
+                        .close_block(next_test, MirTerminator::Goto(arm_block));
+                }
+            }
+            HirPatternKind::Literal(lit) => {
+                let cmp_local = cx
+                    .builder
+                    .fresh_temp("cmp", super::super::ty::MirType::Bool);
+                let test = if let HirLiteralPat::Str(s) = lit {
+                    MirRvalue::Call {
+                        callee: super::super::ir::MirFnRef {
+                            mangled: super::super::intrinsics::STR_EQ.into(),
+                            origin: None,
+                        },
+                        args: vec![
+                            scrut.clone(),
+                            MirOperand::Const(MirConstant::Str(s.clone())),
+                        ],
+                    }
+                } else {
+                    MirRvalue::BinaryOp(
+                        super::super::ir::MirBinOp::Eq,
+                        scrut.clone(),
+                        MirOperand::Const(literal_to_const(lit)),
+                    )
+                };
+                cx.builder.assign(next_test, cmp_local, test);
+                cx.builder.close_block(
+                    next_test,
+                    MirTerminator::SwitchInt {
+                        discriminant: MirOperand::Copy(cmp_local),
+                        targets: vec![(1, arm_block)],
+                        otherwise: test_next,
+                    },
+                );
+            }
+            HirPatternKind::Constructor { .. } | HirPatternKind::Struct { .. } => {
+                match variant_index_of(&arm.pattern, scrut_ty, cx) {
+                    Some(idx) => cx.builder.close_block(
+                        next_test,
+                        MirTerminator::SwitchEnum {
+                            discriminant: scrut.clone(),
+                            targets: vec![(idx, arm_block)],
+                            otherwise: Some(test_next),
+                        },
+                    ),
+                    None => {
+                        if !cx.builder.is_closed(next_test) {
+                            cx.builder
+                                .close_block(next_test, MirTerminator::Goto(arm_block));
+                        }
+                    }
+                }
+            }
+            _ => {
+                if !cx.builder.is_closed(next_test) {
+                    cx.builder
+                        .close_block(next_test, MirTerminator::Goto(arm_block));
+                }
+            }
+        }
+
+        cx.current = arm_block;
+        bind_pattern(cx, &arm.pattern, scrut_ty, &scrut);
+        // A false guard drops through to the next arm's test.
+        if let Some(guard) = &arm.guard {
+            let g = super::expr::lower_expr(cx, guard);
+            let run = cx.builder.new_block();
+            cx.builder.close_block(
+                cx.current,
+                MirTerminator::SwitchInt {
+                    discriminant: g,
+                    targets: vec![(1, run)],
+                    otherwise: test_next,
+                },
+            );
+            cx.current = run;
+        }
+        let v = super::expr::lower_expr(cx, &arm.body);
+        cx.builder.assign(cx.current, result, MirRvalue::Use(v));
+        if !cx.builder.is_closed(cx.current) {
+            cx.builder
+                .close_block(cx.current, MirTerminator::Goto(cont));
+        }
+
+        next_test = test_next;
+    }
     if !cx.builder.is_closed(next_test) {
         cx.builder.close_block(next_test, MirTerminator::Goto(cont));
     }

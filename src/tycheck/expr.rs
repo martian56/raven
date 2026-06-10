@@ -2987,7 +2987,15 @@ impl<'a, 'b> Checker<'a, 'b> {
                     self.infer.resolve(&prev)
                 }
             });
-            pattern_names.push(super::match_check::pattern_head(&arm.pattern));
+            // A guarded arm only matches when its guard holds, so it neither
+            // covers its pattern for exhaustiveness nor shadows a later arm with
+            // the same pattern. Treat it as a non-covering specific head.
+            let head = if arm.guard.is_some() {
+                super::match_check::PatternHead::Other
+            } else {
+                super::match_check::pattern_head(&arm.pattern)
+            };
+            pattern_names.push(head);
         }
 
         super::match_check::check(&scrut_stripped, &pattern_names, span, self.env)?;
