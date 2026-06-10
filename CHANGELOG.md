@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.35] - 2026-06-10
+
+### Fixed
+
+- `match` arm guards now work. They were parsed and type-checked but silently dropped at MIR lowering, so a guarded arm ran unconditionally and the wrong arm could execute. A guarded match now lowers to a sequential fall-through, and exhaustiveness no longer counts a guarded arm as covering its pattern (#408).
+
 ## [2.18.34] - 2026-06-10
 
 ### Changed
