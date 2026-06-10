@@ -650,6 +650,28 @@ impl Lexer {
                     out.push(self.bump().unwrap()); // {
                     interp_depth += 1;
                 }
+                // Inside an interpolation a char literal is copied verbatim, so
+                // a `{`, `}`, `"`, or `$` inside it (`${'}'.debug()}`) is not
+                // mistaken for interpolation structure.
+                Some('\'') if interp_depth > 0 => {
+                    out.push(self.bump().unwrap()); // opening '
+                    loop {
+                        match self.peek() {
+                            None | Some('\n') | Some('\r') => break,
+                            Some('\\') => {
+                                out.push(self.bump().unwrap()); // backslash
+                                if self.peek().is_some() {
+                                    out.push(self.bump().unwrap()); // escaped char
+                                }
+                            }
+                            Some('\'') => {
+                                out.push(self.bump().unwrap()); // closing '
+                                break;
+                            }
+                            Some(_) => out.push(self.bump().unwrap()),
+                        }
+                    }
+                }
                 Some('{') if interp_depth > 0 => {
                     interp_depth += 1;
                     out.push(self.bump().unwrap());

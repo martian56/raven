@@ -1368,6 +1368,22 @@ fn split_interpolation(
                         }
                         continue;
                     }
+                    b'\'' => {
+                        // Skip a char literal for the same reason: a `{`, `}`,
+                        // or `"` inside `'...'` must not affect the brace depth.
+                        j += 1;
+                        while j < bytes.len() {
+                            match bytes[j] {
+                                b'\\' => j += 2,
+                                b'\'' => {
+                                    j += 1;
+                                    break;
+                                }
+                                _ => j += 1,
+                            }
+                        }
+                        continue;
+                    }
                     b'{' => depth += 1,
                     b'}' => {
                         depth -= 1;

@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.30] - 2026-06-10
+
+### Fixed
+
+- A char literal inside a `${...}` interpolation can now hold a brace or a quote (`"${f('}')}"`). The lexer and the interpolation splitter both skip a char literal, so its contents are no longer read as interpolation structure (#419).
+
 ## [2.18.29] - 2026-06-10
 
 ### Fixed
