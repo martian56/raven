@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.40] - 2026-06-10
+
+### Fixed
+
+- Blocking runtime calls (`time.sleep_millis`, DNS resolution, the filesystem remove/create/list/size operations, and `net.reachable`'s resolve) now leave the collector's running set while they block, so a garbage collection on another goroutine is no longer stalled until they return (#402).
+
 ## [2.18.39] - 2026-06-10
 
 ### Fixed

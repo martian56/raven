@@ -841,9 +841,11 @@ pub extern "C" fn raven_fs_append(
 /// `path` must be a valid `raven_string_from_bytes`-built `String`.
 #[no_mangle]
 pub extern "C" fn raven_fs_remove_file(path: *const object::String) -> bool {
-    let result = env_name(path)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
-        .and_then(std::fs::remove_file);
+    let result = crate::gc::blocking(|| {
+        env_name(path)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
+            .and_then(std::fs::remove_file)
+    });
     fs_record(result).is_some()
 }
 
@@ -854,9 +856,11 @@ pub extern "C" fn raven_fs_remove_file(path: *const object::String) -> bool {
 /// `path` must be a valid `raven_string_from_bytes`-built `String`.
 #[no_mangle]
 pub extern "C" fn raven_fs_create_dir(path: *const object::String) -> bool {
-    let result = env_name(path)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
-        .and_then(std::fs::create_dir_all);
+    let result = crate::gc::blocking(|| {
+        env_name(path)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
+            .and_then(std::fs::create_dir_all)
+    });
     fs_record(result).is_some()
 }
 
@@ -867,9 +871,11 @@ pub extern "C" fn raven_fs_create_dir(path: *const object::String) -> bool {
 /// `path` must be a valid `raven_string_from_bytes`-built `String`.
 #[no_mangle]
 pub extern "C" fn raven_fs_remove_dir(path: *const object::String) -> bool {
-    let result = env_name(path)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
-        .and_then(std::fs::remove_dir_all);
+    let result = crate::gc::blocking(|| {
+        env_name(path)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
+            .and_then(std::fs::remove_dir_all)
+    });
     fs_record(result).is_some()
 }
 
@@ -882,16 +888,18 @@ pub extern "C" fn raven_fs_remove_dir(path: *const object::String) -> bool {
 /// `path` must be a valid `raven_string_from_bytes`-built `String`.
 #[no_mangle]
 pub extern "C" fn raven_fs_list(path: *const object::String) -> *mut object::String {
-    let result = env_name(path)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
-        .and_then(|p| {
-            let mut names: Vec<std::string::String> = Vec::new();
-            for entry in std::fs::read_dir(p)? {
-                let entry = entry?;
-                names.push(entry.file_name().to_string_lossy().into_owned());
-            }
-            Ok(names.join("\n"))
-        });
+    let result = crate::gc::blocking(|| {
+        env_name(path)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
+            .and_then(|p| {
+                let mut names: Vec<std::string::String> = Vec::new();
+                for entry in std::fs::read_dir(p)? {
+                    let entry = entry?;
+                    names.push(entry.file_name().to_string_lossy().into_owned());
+                }
+                Ok(names.join("\n"))
+            })
+    });
     let value = fs_record(result).unwrap_or_default();
     object::raven_string_from_bytes(value.as_ptr(), value.len())
 }
@@ -904,10 +912,12 @@ pub extern "C" fn raven_fs_list(path: *const object::String) -> *mut object::Str
 /// `path` must be a valid `raven_string_from_bytes`-built `String`.
 #[no_mangle]
 pub extern "C" fn raven_fs_size(path: *const object::String) -> i64 {
-    let result = env_name(path)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
-        .and_then(std::fs::metadata)
-        .map(|m| m.len() as i64);
+    let result = crate::gc::blocking(|| {
+        env_name(path)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
+            .and_then(std::fs::metadata)
+            .map(|m| m.len() as i64)
+    });
     fs_record(result).unwrap_or(0)
 }
 
@@ -1091,7 +1101,10 @@ pub extern "C" fn raven_time_parse(
 #[no_mangle]
 pub extern "C" fn raven_time_sleep_millis(ms: i64) {
     let ms = ms.max(0) as u64;
-    std::thread::sleep(std::time::Duration::from_millis(ms));
+    // Sleeping blocks the thread for the whole duration; leave the collector's
+    // running set so a collection on another thread is not stalled until it
+    // wakes.
+    crate::gc::blocking(|| std::thread::sleep(std::time::Duration::from_millis(ms)));
 }
 
 /// The message of the most recent fallible net op, empty when it
@@ -1310,13 +1323,16 @@ pub extern "C" fn raven_net_set_read_timeout_ms(stream_id: i64, ms: i64) {
 /// `host` must be a valid `raven_string_from_bytes`-built `String`.
 #[no_mangle]
 pub extern "C" fn raven_dns_lookup(host: *const object::String) -> *mut object::String {
-    let result = env_name(host)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "host is not valid UTF-8"))
-        .and_then(|h| {
-            let addrs = (h, 0u16).to_socket_addrs()?;
-            let ips: Vec<std::string::String> = addrs.map(|sa| sa.ip().to_string()).collect();
-            Ok(ips.join("\n"))
-        });
+    // DNS resolution blocks on the network, so run it outside the running set.
+    let result = crate::gc::blocking(|| {
+        env_name(host)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "host is not valid UTF-8"))
+            .and_then(|h| {
+                let addrs = (h, 0u16).to_socket_addrs()?;
+                let ips: Vec<std::string::String> = addrs.map(|sa| sa.ip().to_string()).collect();
+                Ok(ips.join("\n"))
+            })
+    });
     match result {
         Ok(joined) => {
             net_clear_error();
@@ -1340,10 +1356,12 @@ pub extern "C" fn raven_net_reachable(addr: *const object::String) -> bool {
     let Some(text) = env_name(addr) else {
         return false;
     };
-    let Ok(mut targets) = text.to_socket_addrs() else {
-        return false;
-    };
+    // Both the DNS resolve and the connect block on the network; run them
+    // together outside the collector's running set.
     crate::gc::blocking(|| {
+        let Ok(mut targets) = text.to_socket_addrs() else {
+            return false;
+        };
         targets.any(|sa| TcpStream::connect_timeout(&sa, Duration::from_millis(500)).is_ok())
     })
 }
