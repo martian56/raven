@@ -1842,21 +1842,31 @@ pub extern "C" fn raven_process_run(
         }
     };
 
-    if let Some(mut stdin) = child.stdin.take() {
-        // Ignore a broken pipe: a child that exits without reading still
-        // produced a valid result. Dropping stdin closes it.
-        let _ = stdin.write_all(stdin_data.as_bytes());
-    }
+    // Feed stdin on a separate thread while the main thread drains stdout and
+    // stderr. Writing all of stdin before reading the output deadlocks when the
+    // child fills its output pipe buffer faster than we consume it: the child
+    // blocks writing stdout and we block writing stdin.
+    let stdin_pipe = child.stdin.take();
+    let stdin_bytes = stdin_data.as_bytes().to_vec();
+    let writer = std::thread::spawn(move || {
+        if let Some(mut pipe) = stdin_pipe {
+            // A broken pipe is fine: a child that exits without reading still
+            // produced a valid result. Dropping the pipe closes stdin (EOF).
+            let _ = pipe.write_all(&stdin_bytes);
+        }
+    });
 
-    // Feeding stdin and waiting for the child to exit block for the child's
-    // whole lifetime; run them outside the collector's running set.
+    // Waiting for the child to exit blocks for its whole lifetime; run it
+    // outside the collector's running set.
     let output = match crate::gc::blocking(|| child.wait_with_output()) {
         Ok(o) => o,
         Err(e) => {
+            let _ = writer.join();
             process_set_error(e.to_string());
             return 0;
         }
     };
+    let _ = writer.join();
 
     // A child terminated by a signal with no exit code maps to -1.
     let code = output.status.code().map(|c| c as i64).unwrap_or(-1);

@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.37] - 2026-06-10
+
+### Fixed
+
+- `process.run_with_input` no longer deadlocks when a child produces a lot of output while still reading stdin. Stdin is now fed on a separate thread while the parent drains stdout and stderr (#404).
+
 ## [2.18.36] - 2026-06-10
 
 ### Fixed
