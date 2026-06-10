@@ -43,6 +43,13 @@ fun tau() -> Float {
 
 fun abs_int(x: Int) -> Int {
     if x < 0 {
+        // i64::MIN has no positive counterpart in i64, so negating it would
+        // wrap back to a negative value. Report it rather than return a wrong,
+        // still-negative result.
+        let min_value = 0 - 9223372036854775807 - 1
+        if x == min_value {
+            __panic("abs_int overflow: i64::MIN has no positive counterpart")
+        }
         return 0 - x
     }
     return x
@@ -117,10 +124,28 @@ fun pow_int(base: Int, exp: Int) -> Int {
     let n = exp
     while n > 0 {
         if n % 2 == 1 {
-            result = result * b
+            let p = result * b
+            // Detect a wrapped product: a correct `result * b` divides back to
+            // `result`, a wrapped one does not.
+            if b != 0 {
+                if p / b != result {
+                    __panic("pow_int overflow")
+                }
+            }
+            result = p
         }
-        b = b * b
         n = n / 2
+        // Square only when another round needs it, so the final unused squaring
+        // cannot overflow on its own.
+        if n > 0 {
+            let sq = b * b
+            if b != 0 {
+                if sq / b != b {
+                    __panic("pow_int overflow")
+                }
+            }
+            b = sq
+        }
     }
     return result
 }
@@ -145,7 +170,14 @@ fun lcm(a: Int, b: Int) -> Int {
     if b == 0 {
         return 0
     }
-    return abs_int(a / gcd(a, b) * b)
+    let q = a / gcd(a, b)
+    let p = q * b
+    if q != 0 {
+        if p / q != b {
+            __panic("lcm overflow")
+        }
+    }
+    return abs_int(p)
 }
 
 // The sign of a float: 1.0 for positive, -1.0 for negative, 0.0 for zero.
