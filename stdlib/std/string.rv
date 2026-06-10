@@ -405,6 +405,14 @@ impl String {
         if i >= n {
             return None
         }
+        // i64 bounds. The minimum cannot be written as a literal (its magnitude
+        // is one past the maximum), so build it from the maximum.
+        let max = 9223372036854775807
+        let min = 0 - 9223372036854775807 - 1
+        // Accumulate in the sign's own direction so the running value never has
+        // to exceed the range: a negative number is built downward toward `min`,
+        // which also lets `i64::MIN` itself parse. Each step checks for overflow
+        // before it happens and reports `None` rather than wrapping.
         let acc = 0
         while i < n {
             let b = __str_byte_at(s, i)
@@ -414,11 +422,19 @@ impl String {
             if b > 57 {
                 return None
             }
-            acc = acc * 10 + (b - 48)
+            let d = b - 48
+            if neg {
+                if acc < (min + d) / 10 {
+                    return None
+                }
+                acc = acc * 10 - d
+            } else {
+                if acc > (max - d) / 10 {
+                    return None
+                }
+                acc = acc * 10 + d
+            }
             i = i + 1
-        }
-        if neg {
-            return Some(0 - acc)
         }
         return Some(acc)
     }

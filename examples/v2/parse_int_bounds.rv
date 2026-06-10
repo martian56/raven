@@ -1,0 +1,21 @@
+// parse_int reports None on overflow rather than wrapping to a wrong value, and
+// still parses the full i64 range including i64::MIN.
+import std/io { println }
+import std/string
+
+fun show(s: String) {
+    match s.parse_int() {
+        Some(n) -> println("${s} -> ${n.to_string()}"),
+        None -> println("${s} -> None"),
+    }
+}
+
+fun main() {
+    show("42")
+    show("-42")
+    show("9223372036854775807")
+    show("-9223372036854775808")
+    show("9223372036854775808")
+    show("99999999999999999999999")
+    show("abc")
+}

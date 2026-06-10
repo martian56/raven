@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.9] - 2026-06-10
+
+### Fixed
+
+- `String.parse_int` reports `None` on overflow instead of wrapping to a wrong value. It accumulates in the sign's own direction, so it still parses the whole i64 range including `i64::MIN` (#429).
+
 ## [2.18.8] - 2026-06-10
 
 ### Fixed
