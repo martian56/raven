@@ -510,6 +510,16 @@ fn deadlock_panic() -> ! {
     std::process::exit(101);
 }
 
+/// A send or receive named a channel id with no registered channel (a freed or
+/// invalid handle). Report and exit rather than busy-spinning on a receive or
+/// silently dropping a send.
+fn unknown_channel_panic(id: i64) -> ! {
+    eprintln!(
+        "raven panic: operation on unknown channel {id} (it may have been freed or never created)"
+    );
+    std::process::exit(101);
+}
+
 // ----- channels -----
 
 /// Create a channel with capacity `cap` and return its id. `cap == 0` is
@@ -577,6 +587,9 @@ pub extern "C" fn raven_channel_send(id: i64, value: i64) {
         // slip between the check and the register (a lost wakeup) or let two
         // senders both deposit past the bound.
         let waiter = with_sched(|sched| {
+            if !sched.channels.contains_key(&id) {
+                unknown_channel_panic(id);
+            }
             if can_send_now(sched, id) {
                 return match sched.channels.get_mut(&id) {
                     Some(ch) => {
@@ -627,7 +640,7 @@ pub extern "C" fn raven_channel_recv(id: i64) -> i64 {
         }
         let outcome = with_sched(|sched| {
             let Some(ch) = sched.channels.get_mut(&id) else {
-                return Recv::Block(None);
+                unknown_channel_panic(id);
             };
             if let Some(v) = ch.queue.pop_front() {
                 return Recv::Got(v, ch.send_waiters.pop_front());
@@ -778,6 +791,13 @@ pub extern "C" fn raven_select_recv(set_id: i64) -> i64 {
             let ids = sched.select_sets.get(&set_id)?.clone();
             if ids.is_empty() {
                 return None;
+            }
+            // A select over a channel that does not exist would otherwise be
+            // silently skipped and could block forever; report it instead.
+            for &cid in &ids {
+                if !sched.channels.contains_key(&cid) {
+                    unknown_channel_panic(cid);
+                }
             }
             // Clear any registration from a previous iteration so re-registering
             // below cannot duplicate this waiter on a channel's list.
