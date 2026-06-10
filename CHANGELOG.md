@@ -2,6 +2,16 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.41] - 2026-06-10
+
+### Fixed
+
+- `net.close` on a stream now shuts the underlying socket down, so a goroutine parked in a blocking read returns instead of hanging forever (the read had cloned the handle, so dropping the registry copy alone did not close the socket).
+
+### Added
+
+- `Channel.free()` and `WaitGroup.free()` release a channel's or wait group's runtime registry entry, which otherwise leaked for the life of the process (#407).
+
 ## [2.18.40] - 2026-06-10
 
 ### Fixed

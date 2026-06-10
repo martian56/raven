@@ -20,6 +20,8 @@ extern "C" {
     fun raven_select_recv(set_id: Int) -> Int
     fun raven_select_value() -> Int
     fun raven_select_free(set_id: Int)
+    fun raven_channel_free(id: Int)
+    fun raven_waitgroup_free(id: Int)
 }
 
 // A channel of Int values. The id keys the runtime's channel registry.
@@ -46,6 +48,13 @@ impl Channel {
     // Receive a value, blocking until one is available.
     fun recv(self) -> Int {
         return raven_channel_recv(self.id)
+    }
+
+    // Release the channel's runtime registry entry. The channel must not be
+    // used afterward. Call this when done to avoid leaking the entry; there is
+    // no destructor.
+    fun free(self) {
+        raven_channel_free(self.id)
     }
 }
 
@@ -111,6 +120,12 @@ impl WaitGroup {
     // Block until the count reaches zero.
     fun wait(self) {
         raven_waitgroup_wait(self.id)
+    }
+
+    // Release the wait group's runtime registry entry. Call when done to avoid
+    // leaking the entry; there is no destructor.
+    fun free(self) {
+        raven_waitgroup_free(self.id)
     }
 }
 
