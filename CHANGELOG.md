@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.28] - 2026-06-10
+
+### Fixed
+
+- `rvpm` rejects a dependency path or version that contains `..`, a path separator, or a `.` segment, closing a cache path-traversal gap before any directory is created (#431).
+
 ## [2.18.27] - 2026-06-10
 
 ### Fixed

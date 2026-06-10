@@ -222,7 +222,13 @@ impl GithubPath {
         let user = parts.next()?.to_string();
         let repo = parts.next()?.to_string();
         let subpath: Vec<String> = parts.map(|s| s.to_string()).collect();
-        if user.is_empty() || repo.is_empty() || subpath.iter().any(|s| s.is_empty()) {
+        // Every segment becomes a directory name under the cache, so reject an
+        // empty, `.`, `..`, or backslash-bearing segment that could escape it.
+        let unsafe_segment = |s: &str| s.is_empty() || s == "." || s == ".." || s.contains('\\');
+        if unsafe_segment(&user)
+            || unsafe_segment(&repo)
+            || subpath.iter().any(|s| unsafe_segment(s))
+        {
             return None;
         }
         Some(GithubPath {
@@ -468,6 +474,15 @@ mod tests {
     use crate::parser::parse;
 
     use super::super::scope::ScopeStack;
+
+    #[test]
+    fn github_path_rejects_traversal_segments() {
+        use super::GithubPath;
+        assert!(GithubPath::parse("github.com/user/repo").is_some());
+        assert!(GithubPath::parse("github.com/../etc/passwd").is_none());
+        assert!(GithubPath::parse("github.com/user/repo/../..").is_none());
+        assert!(GithubPath::parse("github.com/user/..").is_none());
+    }
     use super::*;
 
     /// In memory loader keyed by relative target path (already

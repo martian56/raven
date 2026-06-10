@@ -70,6 +70,9 @@ pub enum LockError {
     },
     /// A dependency constraint was not a usable git ref (empty).
     EmptyConstraint { source: String },
+    /// A dependency constraint held a path separator or `..`, which could
+    /// escape the cache directory when used as a directory name.
+    InvalidConstraint { source: String, value: String },
     /// A pinned tree hash did not match the fetched tree.
     HashMismatch {
         source: String,
@@ -101,6 +104,11 @@ impl fmt::Display for LockError {
                 f,
                 "dependency '{}' has an empty version, expected a git tag or branch",
                 source
+            ),
+            LockError::InvalidConstraint { source, value } => write!(
+                f,
+                "dependency '{}' has an invalid version '{}': a version may not contain a path separator or '..'",
+                source, value
             ),
             LockError::HashMismatch {
                 source,
@@ -388,6 +396,15 @@ fn resolved_ref(dep: &crate::manifest::Dependency) -> Result<String, LockError> 
     if r.is_empty() {
         return Err(LockError::EmptyConstraint {
             source: dep_source(&dep.path),
+        });
+    }
+    // The version becomes a directory name under the cache, so reject anything
+    // that could climb out of it. A real version never holds a separator or a
+    // parent reference.
+    if r.contains('/') || r.contains('\\') || r.contains("..") {
+        return Err(LockError::InvalidConstraint {
+            source: dep_source(&dep.path),
+            value: r.to_string(),
         });
     }
     Ok(r.to_string())
