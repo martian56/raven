@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.15] - 2026-06-10
+
+### Fixed
+
+- `std/json` no longer emits `inf` or `NaN` (which are not valid JSON); a non-finite number is written as `null`. A huge exponent like `1e999999999` is now applied in bounded time instead of looping a billion times (#427).
+
 ## [2.18.14] - 2026-06-10
 
 ### Fixed
