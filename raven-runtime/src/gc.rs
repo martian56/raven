@@ -226,7 +226,7 @@ pub(crate) type RootSlot = *mut *mut u8;
 /// A saved root chain: the `ROOTS` and `FRAMES` vectors of a goroutine
 /// that is not currently running. The scheduler swaps these in and out of
 /// the thread-local cells on a context switch.
-pub(crate) type SavedRoots = (Vec<RootSlot>, Vec<usize>);
+pub(crate) type SavedRoots = (Vec<RootSlot>, Vec<usize>, Vec<Vec<*mut u8>>);
 
 /// Hook the scheduler installs so the mark phase can reach the roots of
 /// every parked goroutine and every buffered channel value. It is called
@@ -257,6 +257,7 @@ pub(crate) fn take_root_chain() -> SavedRoots {
         (
             std::mem::take(&mut ctx.roots),
             std::mem::take(&mut ctx.frames),
+            std::mem::take(&mut ctx.defer_frames),
         )
     })
 }
@@ -268,6 +269,7 @@ pub(crate) fn install_root_chain(saved: SavedRoots) {
     with_roots(|ctx| {
         ctx.roots = saved.0;
         ctx.frames = saved.1;
+        ctx.defer_frames = saved.2;
     });
 }
 
@@ -277,6 +279,12 @@ pub(crate) fn install_root_chain(saved: SavedRoots) {
 pub(crate) fn for_each_slot_in(saved: &SavedRoots, visit: &mut dyn FnMut(RootSlot)) {
     for &slot in &saved.0 {
         visit(slot);
+    }
+    // A parked goroutine's deferred closures are roots too.
+    for frame in &saved.2 {
+        for closure_slot in frame.iter() {
+            visit(closure_slot as *const *mut u8 as RootSlot);
+        }
     }
 }
 
@@ -298,14 +306,6 @@ thread_local! {
     /// Initialised from `collection_floor()`, which honours the
     /// `RAVEN_GC_THRESHOLD` override.
     static THRESHOLD: Cell<usize> = Cell::new(collection_floor());
-
-    /// Per-call-frame stacks of deferred closures, one inner vector per
-    /// open call frame. A `defer expr` pushes its thunk closure onto the
-    /// top frame; the function epilogue runs and pops the top frame at
-    /// every return. Parked closures stay GC-reachable through `mark`,
-    /// which visits every pointer in every open defer frame.
-    static DEFER_FRAMES: RefCell<Vec<Vec<*mut crate::object::Closure>>> =
-        const { RefCell::new(Vec::new()) };
 }
 
 /// ABI of a deferred thunk: the runtime calls the closure's lifted body
@@ -318,7 +318,7 @@ type DeferThunk = extern "C" fn(env: *mut u8);
 /// must pair it with one `raven_defer_run_frame`.
 #[no_mangle]
 pub extern "C" fn raven_defer_enter_frame() {
-    DEFER_FRAMES.with(|f| f.borrow_mut().push(Vec::new()));
+    with_roots(|ctx| ctx.defer_frames.push(Vec::new()));
 }
 
 /// Register a deferred thunk on the current defer frame.
@@ -338,9 +338,9 @@ pub extern "C" fn raven_defer_push(closure: *mut crate::object::Closure) {
     if closure.is_null() {
         return;
     }
-    DEFER_FRAMES.with(|f| {
-        if let Some(top) = f.borrow_mut().last_mut() {
-            top.push(closure);
+    with_roots(|ctx| {
+        if let Some(top) = ctx.defer_frames.last_mut() {
+            top.push(closure as *mut u8);
         }
     });
 }
@@ -356,20 +356,20 @@ pub extern "C" fn raven_defer_push(closure: *mut crate::object::Closure) {
 pub extern "C" fn raven_defer_run_frame() {
     // Take ownership of the top frame so a thunk that pushes a new defer
     // grows the still-open frame; we keep draining until it is empty.
-    let mut frame = match DEFER_FRAMES.with(|f| f.borrow_mut().pop()) {
+    let mut frame = match with_roots(|ctx| ctx.defer_frames.pop()) {
         Some(frame) => frame,
         None => return,
     };
     // Re-open the frame while draining so any defer scheduled by a thunk
     // lands here and runs too. Pop the placeholder afterwards.
-    DEFER_FRAMES.with(|f| f.borrow_mut().push(Vec::new()));
+    with_roots(|ctx| ctx.defer_frames.push(Vec::new()));
     loop {
         let closure = match frame.pop() {
             Some(c) => c,
             None => {
                 // Pull in any defers a thunk scheduled while draining.
-                let scheduled = DEFER_FRAMES.with(|f| {
-                    f.borrow_mut()
+                let scheduled = with_roots(|ctx| {
+                    ctx.defer_frames
                         .last_mut()
                         .map(std::mem::take)
                         .unwrap_or_default()
@@ -384,6 +384,7 @@ pub extern "C" fn raven_defer_run_frame() {
         if closure.is_null() {
             continue;
         }
+        let closure = closure as *mut crate::object::Closure;
         // SAFETY: a parked closure is a live Closure; its lifted body is a
         // `fn(env)` and its capture buffer is the env argument.
         unsafe {
@@ -395,25 +396,11 @@ pub extern "C" fn raven_defer_run_frame() {
             }
         }
     }
-    DEFER_FRAMES.with(|f| {
-        f.borrow_mut().pop();
+    with_roots(|ctx| {
+        ctx.defer_frames.pop();
     });
 }
 
-/// Visit every parked deferred closure across all open defer frames,
-/// marking each so the collector keeps it (and the values it captures)
-/// alive while it waits to run.
-fn for_each_defer_root(work: &mut Vec<*mut ObjectHeader>) {
-    DEFER_FRAMES.with(|f| {
-        for frame in f.borrow().iter() {
-            for &closure in frame.iter() {
-                if mark_object(closure as *mut ObjectHeader) {
-                    work.push(closure as *mut ObjectHeader);
-                }
-            }
-        }
-    });
-}
 
 /// Default collection floor in bytes (1 MiB) when no override is set.
 const INITIAL_THRESHOLD: usize = 1024 * 1024;
@@ -705,9 +692,10 @@ fn mark() {
             work.push(object);
         }
     });
-    // Closures parked in open defer frames are roots too: they must
-    // survive until the function epilogue runs them.
-    for_each_defer_root(&mut work);
+    // Closures parked in open defer frames are roots too. The running
+    // goroutine's frames live in its registered root context (marked above by
+    // `for_each_root`); a parked goroutine's are surfaced by the extra-roots
+    // hook below.
     // Roots of every parked goroutine and every buffered channel value.
     // The hook is set only after a scheduler starts, so a program with no
     // goroutines visits nothing extra here.

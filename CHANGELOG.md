@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.46] - 2026-06-10
+
+### Fixed
+
+- `defer` now works correctly across goroutines. The defer-frame stacks were thread-local, so a goroutine that suspended and resumed on a different worker thread lost or mixed up its deferred closures, and a deferred closure on a non-collecting worker could be freed before it ran. Defer frames now live in each goroutine's root context, so they travel with the goroutine and are marked by the collector through the same per-thread registry as the shadow-stack roots (#400).
+
 ## [2.18.45] - 2026-06-10
 
 ### Fixed
