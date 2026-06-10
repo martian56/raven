@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.16] - 2026-06-10
+
+### Fixed
+
+- `std/fs.walk` no longer follows symlinked directories, so a link that points back up the tree can no longer send it into endless recursion. Adds `fs.is_symlink` (#436).
+
 ## [2.18.15] - 2026-06-10
 
 ### Fixed

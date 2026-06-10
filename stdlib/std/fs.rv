@@ -24,6 +24,7 @@ extern "C" {
     fun raven_fs_exists(path: String) -> Bool
     fun raven_fs_is_file(path: String) -> Bool
     fun raven_fs_is_dir(path: String) -> Bool
+    fun raven_fs_is_symlink(path: String) -> Bool
 }
 
 // An Error tagged with kind "io" (the IoError realization), its message a
@@ -124,6 +125,12 @@ fun is_dir(path: String) -> Bool {
     return raven_fs_is_dir(path)
 }
 
+// True when `path` itself is a symbolic link. This does not follow the link, so
+// unlike `is_dir` it reports on the link rather than its target.
+fun is_symlink(path: String) -> Bool {
+    return raven_fs_is_symlink(path)
+}
+
 // Create `path` and every missing parent directory, like `mkdir -p`. An
 // already-existing directory in the chain is not an error.
 fun create_dir_all(path: String) -> Result<Bool, Error> {
@@ -169,7 +176,10 @@ fun walk(path: String) -> Result<List<String>, Error> {
     while i < entries.len() {
         let full = join(path, entries.get(i))
         out.push(full)
-        if is_dir(full) {
+        // Descend into real subdirectories only. A symlinked directory is
+        // listed but not followed, so a link that points back up the tree
+        // cannot send the walk into an endless loop.
+        if is_dir(full) && !is_symlink(full) {
             let sub = walk(full)?
             let j = 0
             while j < sub.len() {
