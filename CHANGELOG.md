@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.31] - 2026-06-10
+
+### Fixed
+
+- `a < b >> c` is no longer wrongly rejected as a chained comparison. A failed attempt to read `<...>` as type arguments used to leave the `>>` token split into a single `>`; that rewrite is now undone on backtrack. Nested generics like `Map<K, Map<K, V>>` still close on `>>` (#413).
+
 ## [2.18.30] - 2026-06-10
 
 ### Fixed
