@@ -447,10 +447,13 @@ mod tests {
             };
             use crate::object::{raven_string_new, raven_struct_new};
             let _keep = register_point();
-            // Point has a scalar slot 0 and (pretend) a GC pointer slot 1.
-            raven_struct_register(3, 0b10);
+            // A scalar slot 0 and a GC pointer slot 1. This uses its own struct
+            // id, not Point's (3): the descriptor table is process-global, so
+            // reusing id 3 with this fake mask would race the other tests that
+            // register the real Point mask for id 3.
+            raven_struct_register(40, 0b10);
             let name = raven_string_new(3);
-            let s = raven_struct_new(2, 3);
+            let s = raven_struct_new(2, 40);
             // SAFETY: slot 0 scalar, slot 1 the String pointer.
             unsafe {
                 let fields = raven_struct_fields(s) as *mut u64;
@@ -460,7 +463,7 @@ mod tests {
             // Box the struct into an Any with the GC-pointer flag set, then
             // root only the Any. The struct and string are reachable solely
             // through the Any now.
-            let a = raven_any_new(s as u64, 3, 1);
+            let a = raven_any_new(s as u64, 40, 1);
             // Root the Any through the frame ABI codegen emits: the local
             // holding the Any lives in `root`, and the registered array entry
             // is the *address* of that slot.
