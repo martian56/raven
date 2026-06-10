@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.27] - 2026-06-10
+
+### Fixed
+
+- `rvpm init` no longer overwrites an existing `src/main.rv`; it adds the manifest and keeps the source. The lock file's tree hash now also covers symlinks (a regular-file tree hashes the same as before, so existing lock files stay valid) (#435).
+
 ## [2.18.26] - 2026-06-10
 
 ### Fixed

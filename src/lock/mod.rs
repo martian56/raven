@@ -322,45 +322,60 @@ pub fn validate_lock_in(lock: &LockFile, cache_root: &Path) -> Result<(), LockEr
 /// file mode or timestamp is included, so the same tree hashes identically
 /// across platforms.
 pub fn tree_hash(dir: &Path) -> std::io::Result<String> {
-    let mut files: Vec<(String, PathBuf)> = Vec::new();
+    let mut files: Vec<(String, PathBuf, bool)> = Vec::new();
     collect_files(dir, dir, &mut files)?;
     files.sort_by(|a, b| a.0.cmp(&b.0));
 
     let mut hasher = Sha256::new();
-    for (rel, abs) in &files {
-        let bytes = std::fs::read(abs)?;
+    for (rel, abs, is_symlink) in &files {
         hasher.update(rel.as_bytes());
         hasher.update([0u8]);
-        hasher.update((bytes.len() as u64).to_le_bytes());
-        hasher.update(&bytes);
+        if *is_symlink {
+            // Record the link's target so a symlink is not silently dropped
+            // from the tree. A tree of regular files hashes exactly as before,
+            // so existing lockfiles stay valid.
+            let target = std::fs::read_link(abs)?;
+            hasher.update(b"symlink:");
+            hasher.update(target.to_string_lossy().as_bytes());
+        } else {
+            let bytes = std::fs::read(abs)?;
+            hasher.update((bytes.len() as u64).to_le_bytes());
+            hasher.update(&bytes);
+        }
     }
     let digest = hasher.finalize();
     Ok(format!("sha256:{:x}", digest))
 }
 
+fn rel_path(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 fn collect_files(
     root: &Path,
     current: &Path,
-    out: &mut Vec<(String, PathBuf)>,
+    out: &mut Vec<(String, PathBuf, bool)>,
 ) -> std::io::Result<()> {
     for entry in std::fs::read_dir(current)? {
         let entry = entry?;
         let path = entry.path();
         let file_type = entry.file_type()?;
-        if file_type.is_dir() {
+        // Check symlink first: a symlink's own file type is neither directory
+        // nor file, so it would otherwise be dropped from the tree entirely.
+        if file_type.is_symlink() {
+            out.push((rel_path(root, &path), path, true));
+        } else if file_type.is_dir() {
             if entry.file_name() == ".git" {
                 continue;
             }
             collect_files(root, &path, out)?;
         } else if file_type.is_file() {
-            let rel = path
-                .strip_prefix(root)
-                .unwrap_or(&path)
-                .components()
-                .map(|c| c.as_os_str().to_string_lossy())
-                .collect::<Vec<_>>()
-                .join("/");
-            out.push((rel, path));
+            out.push((rel_path(root, &path), path, false));
         }
     }
     Ok(())

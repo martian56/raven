@@ -66,7 +66,13 @@ pub fn init_project(dir: &Path, name: &str) -> Result<(), InitError> {
     let src_dir = dir.join("src");
     std::fs::create_dir_all(&src_dir)?;
     std::fs::write(&manifest_path, manifest_template(name))?;
-    std::fs::write(src_dir.join("main.rv"), main_rv_template(name))?;
+    // Do not clobber an existing entry point. A directory can already hold
+    // `src/main.rv` (a project that lost its manifest, or one laid out by hand),
+    // and `init` should add the manifest without throwing that source away.
+    let main_path = src_dir.join("main.rv");
+    if !main_path.exists() {
+        std::fs::write(main_path, main_rv_template(name))?;
+    }
     Ok(())
 }
 
@@ -125,6 +131,22 @@ mod tests {
         .unwrap();
         let err = init_project(&dir, "x").unwrap_err();
         assert!(matches!(err, InitError::ManifestExists));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn init_keeps_an_existing_main_rv() {
+        let dir = temp_dir("keepmain");
+        let src = dir.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("main.rv"), "fun main() { print(\"mine\") }\n").unwrap();
+        init_project(&dir, "x").unwrap();
+        let main_rv = std::fs::read_to_string(src.join("main.rv")).unwrap();
+        assert!(
+            main_rv.contains("mine"),
+            "init clobbered the existing source"
+        );
+        assert!(dir.join("rv.toml").exists());
         std::fs::remove_dir_all(&dir).ok();
     }
 
