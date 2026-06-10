@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.47] - 2026-06-10
+
+### Fixed
+
+- An unbuffered channel is now a true rendezvous. A send modeled the channel as a one-slot buffer, so it completed without a receiver present; it now blocks until a receiver is waiting to take the value directly. `select_recv` also wakes a blocked sender on each channel it registers on, so a select can rendezvous with an unbuffered sender instead of deadlocking (#405).
+
 ## [2.18.46] - 2026-06-10
 
 ### Fixed
