@@ -166,8 +166,15 @@ pub struct Lexer {
 impl Lexer {
     /// Build a lexer over `source` annotated as coming from `file`.
     pub fn new(source: impl Into<String>, file: impl Into<PathBuf>) -> Self {
+        let mut source: String = source.into();
+        // A UTF-8 byte-order mark is well-formed but is not part of the
+        // program. Drop a single leading BOM so it does not lex as an
+        // unexpected character. Editors on Windows add it routinely.
+        if let Some(stripped) = source.strip_prefix('\u{FEFF}') {
+            source = stripped.to_string();
+        }
         Lexer {
-            source: source.into(),
+            source,
             pos: 0,
             line: 1,
             col: 1,
