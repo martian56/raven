@@ -1,5 +1,19 @@
-use super::format_source;
+use super::{format_source, format_source_with};
 use crate::ast::pretty_file;
+
+#[test]
+fn indent_width_is_configurable() {
+    let out = format_source_with("fun main() {\nlet x = 1\n}\n", 2).unwrap();
+    assert!(
+        out.contains("\n  let x = 1"),
+        "expected a two-space indent, got: {out:?}"
+    );
+    let four = format_source_with("fun main() {\nlet x = 1\n}\n", 4).unwrap();
+    assert!(
+        four.contains("\n    let x = 1"),
+        "expected a four-space indent"
+    );
+}
 use crate::lexer::Lexer;
 use crate::parser::parse;
 

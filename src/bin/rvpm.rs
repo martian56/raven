@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use raven::format::format_source;
+use raven::format::format_source_with;
 use raven::lock::{self, LockFile, LOCK_FILE_NAME};
 use raven::manifest::init::{init_project, name_from_dir, InitError};
 use raven::manifest::Manifest;
@@ -271,6 +271,12 @@ fn cmd_fmt(args: &[String]) -> ExitCode {
         return ExitCode::from(1);
     }
 
+    // Honor `[fmt].indent_width` from the project manifest when there is one;
+    // fall back to the default outside a project.
+    let indent_width = Manifest::load("rv.toml")
+        .map(|m| m.fmt.indent_width)
+        .unwrap_or(4);
+
     let mut changed: Vec<PathBuf> = Vec::new();
     let mut errored = false;
     for path in &files {
@@ -282,7 +288,7 @@ fn cmd_fmt(args: &[String]) -> ExitCode {
                 continue;
             }
         };
-        let formatted = match format_source(&src) {
+        let formatted = match format_source_with(&src, indent_width) {
             Ok(f) => f,
             Err(e) => {
                 eprintln!("rvpm: {}: {}", path.display(), e);

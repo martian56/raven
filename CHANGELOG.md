@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.26] - 2026-06-10
+
+### Fixed
+
+- `rvpm fmt` now honors `[fmt].indent_width` from `rv.toml` (it previously loaded no manifest and always used four spaces). `wrap_width` is still read but has no effect, because the formatter does not reflow long lines yet (#432).
+
 ## [2.18.25] - 2026-06-10
 
 ### Fixed
