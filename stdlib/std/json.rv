@@ -268,9 +268,17 @@ fun parse_number(c: Cursor) -> Result<Float, Error> {
             exp = exp * 10 + (c.peek() - 48)
             c.advance()
         }
+        // f64 saturates to infinity past about 1e308, so an exponent beyond a
+        // few hundred yields the same result (infinity, or zero for a negative
+        // exponent) as any larger one. Cap the step count so a huge exponent
+        // like 1e999999999 is not a denial-of-service loop.
+        let steps = exp
+        if steps > 400 {
+            steps = 400
+        }
         let factor = 1.0
         let i = 0
-        while i < exp {
+        while i < steps {
             factor = factor * 10.0
             i = i + 1
         }
@@ -486,6 +494,17 @@ fun hex_digit(v: Int) -> Int {
     return 87 + v
 }
 
+// Render a JSON number. A non-finite float (infinity or NaN) has no JSON form,
+// so it is written as `null`, the way mainstream JSON encoders handle it. A
+// value is finite exactly when `n - n` is zero; for an infinity or a NaN that
+// subtraction is NaN.
+fun number_to_json(n: Float) -> String {
+    if n - n == 0.0 {
+        return n.to_string()
+    }
+    return "null"
+}
+
 // Compact (non-pretty) serialization. A whole-number Float renders the way
 // the runtime's Float-to-string does (for example 1 prints as `1`).
 fun stringify(value: JsonValue) -> String {
@@ -498,7 +517,7 @@ fun stringify(value: JsonValue) -> String {
                 "false"
             }
         },
-        Number(n) -> n.to_string(),
+        Number(n) -> number_to_json(n),
         Str(s) -> {
             let q = __str_concat("\"", escape_string("", s))
             __str_concat(q, "\"")
@@ -557,7 +576,7 @@ fun stringify_pretty_at(value: JsonValue, indent: Int, depth: Int) -> String {
                 "false"
             }
         },
-        Number(n) -> n.to_string(),
+        Number(n) -> number_to_json(n),
         Str(s) -> {
             let q = __str_concat("\"", escape_string("", s))
             __str_concat(q, "\"")
