@@ -23,6 +23,24 @@ fn empty_source_yields_eof_only() {
 }
 
 #[test]
+fn full_width_integer_literals_are_writable() {
+    // i64::MIN's decimal magnitude is accepted as the bit pattern (valid with a
+    // leading minus), and a full-width hex pattern reinterprets its bits.
+    assert_eq!(
+        lex("9223372036854775808")[0].kind,
+        TokenKind::IntLit(i64::MIN)
+    );
+    assert_eq!(lex("0xFFFFFFFFFFFFFFFF")[0].kind, TokenKind::IntLit(-1));
+    assert_eq!(
+        lex("0x8000000000000000")[0].kind,
+        TokenKind::IntLit(i64::MIN)
+    );
+    // A value beyond the 64-bit range still errors.
+    lex_err("0x1FFFFFFFFFFFFFFFF");
+    lex_err("99999999999999999999999");
+}
+
+#[test]
 fn malformed_numeric_literal_is_an_error_not_a_split() {
     // A digit invalid for the base, or a letter right after a number, is a
     // single malformed literal, not a valid number followed by a second token.

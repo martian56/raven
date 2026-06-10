@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.32] - 2026-06-10
+
+### Fixed
+
+- The full 64-bit integer range is now writable. A hex or binary literal reinterprets its bits, so `0xFFFFFFFFFFFFFFFF` is `-1` and `0x8000000000000000` is `i64::MIN`, and the decimal `-9223372036854775808` is accepted as `i64::MIN`. A value beyond 64 bits still errors (#420).
+
 ## [2.18.31] - 2026-06-10
 
 ### Fixed
