@@ -326,6 +326,18 @@ impl Parser {
     /// Parse the contents of an argument list (after `(`) and consume
     /// the closing `)`. Returns the args and the span of the closer.
     fn parse_arg_list(&mut self) -> ParseResult<(Vec<Expr>, Span)> {
+        // Inside a call's parentheses a struct literal is unambiguous: the `)`
+        // closes the argument list, so there is no `if cond {` ambiguity. Lift
+        // the no-struct-literal restriction an enclosing if/while/for/match head
+        // imposes for the duration of the arguments, then restore it.
+        let saved = self.no_struct_literal;
+        self.no_struct_literal = false;
+        let result = self.parse_arg_list_body();
+        self.no_struct_literal = saved;
+        result
+    }
+
+    fn parse_arg_list_body(&mut self) -> ParseResult<(Vec<Expr>, Span)> {
         let mut args = Vec::new();
         self.skip_newlines();
         if !matches!(self.peek_kind(), TokenKind::RParen) {

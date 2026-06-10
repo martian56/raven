@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.18] - 2026-06-10
+
+### Fixed
+
+- A struct literal is now accepted inside a call argument within an `if`/`while`/`for`/`match` head (`if check(Point { x: 1 }) {`). The no-struct-literal rule that keeps the condition unambiguous is lifted inside the call's parentheses (#417).
+
 ## [2.18.17] - 2026-06-10
 
 ### Fixed
