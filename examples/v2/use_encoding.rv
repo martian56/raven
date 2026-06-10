@@ -8,7 +8,16 @@ fun main() {
     println(base64_encode("Man"))
     println(base64_encode("Ma"))
     println(base64_encode("M"))
-    print(hex_decode("616263") == "abc")
-    print(base64_decode("YWJj") == "abc")
-    print(base64_decode(base64_encode("hello, world")) == "hello, world")
+    match hex_decode("616263") {
+        Ok(d) -> println((d == "abc").to_string()),
+        Err(e) -> println("err"),
+    }
+    match base64_decode("YWJj") {
+        Ok(d) -> println((d == "abc").to_string()),
+        Err(e) -> println("err"),
+    }
+    match base64_decode(base64_encode("hello, world")) {
+        Ok(d) -> println((d == "hello, world").to_string()),
+        Err(e) -> println("err"),
+    }
 }

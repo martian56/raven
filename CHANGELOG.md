@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.34] - 2026-06-10
+
+### Changed
+
+- `std/encoding`'s `hex_decode`, `base64_decode`, and `base32_decode` now return `Result<String, Error>` and reject malformed input (an odd or wrong length, or a non-alphabet byte) instead of silently dropping or zeroing it (#434).
+
 ## [2.18.33] - 2026-06-10
 
 ### Fixed

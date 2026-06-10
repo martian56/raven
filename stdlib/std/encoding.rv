@@ -2,6 +2,14 @@
 // Raven String is a byte buffer; input is treated as raw bytes. See
 // docs/v2/specs/std-encoding.md.
 
+import std/error
+
+// An Error tagged with kind "encoding". The struct literal is built directly:
+// a bundled module cannot call another bundled module's free helpers.
+fun encoding_error(msg: String) -> Error {
+    return Error { kind: "encoding", message: msg }
+}
+
 // Map a 0..15 nibble to its lowercase hex digit byte.
 fun hex_digit(v: Int) -> Int {
     if v < 10 {
@@ -28,7 +36,7 @@ fun hex_value(b: Int) -> Int {
             return b - 55
         }
     }
-    return 0
+    return -1
 }
 
 fun hex_encode(s: String) -> String {
@@ -44,23 +52,25 @@ fun hex_encode(s: String) -> String {
     return out
 }
 
-// Inverse of hex_encode. Assumes even length; a trailing odd byte is
-// ignored. Non-hex bytes decode as 0.
-fun hex_decode(s: String) -> String {
+// Inverse of hex_encode. An odd length, or any non-hex byte, is an Err rather
+// than silently producing wrong output.
+fun hex_decode(s: String) -> Result<String, Error> {
     let n = __str_len(s)
+    if n % 2 != 0 {
+        return Err(encoding_error("hex input has an odd length"))
+    }
     let out = ""
     let i = 0
-    while i + 1 < n {
+    while i < n {
         let hi = hex_value(__str_byte_at(s, i))
         let lo = hex_value(__str_byte_at(s, i + 1))
+        if hi < 0 || lo < 0 {
+            return Err(encoding_error("hex input has a non-hex character"))
+        }
         out = __str_concat(out, __str_from_byte((hi << 4) | lo))
         i = i + 2
     }
-    if i < n {
-        // Lone final digit: treat as the high nibble of a zero-padded byte.
-        out = __str_concat(out, __str_from_byte(hex_value(__str_byte_at(s, i)) << 4))
-    }
-    return out
+    return Ok(out)
 }
 
 // Map a 0..63 sextet to its standard base64 alphabet byte (A-Z, a-z,
@@ -105,7 +115,7 @@ fun b64_value(b: Int) -> Int {
     if b == 47 {
         return 63
     }
-    return 0
+    return -1
 }
 
 fun base64_encode(s: String) -> String {
@@ -140,11 +150,14 @@ fun base64_encode(s: String) -> String {
     return out
 }
 
-// Inverse of base64_encode. Trailing `=` padding sets how many bytes the
-// final group yields. Input length not a multiple of 4 decodes what it
-// can; stray non-alphabet bytes contribute 0.
-fun base64_decode(s: String) -> String {
+// Inverse of base64_encode. The length must be a multiple of 4, trailing `=`
+// is padding, and any other non-alphabet byte is an Err rather than silently
+// contributing a wrong value.
+fun base64_decode(s: String) -> Result<String, Error> {
     let n = __str_len(s)
+    if n % 4 != 0 {
+        return Err(encoding_error("base64 input length is not a multiple of 4"))
+    }
     let out = ""
     let i = 0
     while i + 4 <= n {
@@ -156,6 +169,16 @@ fun base64_decode(s: String) -> String {
         let v1 = b64_value(c1)
         let v2 = b64_value(c2)
         let v3 = b64_value(c3)
+        // The first two bytes must be alphabet; the last two may be `=` padding.
+        if v0 < 0 || v1 < 0 {
+            return Err(encoding_error("base64 input has a non-alphabet character"))
+        }
+        if c2 != 61 && v2 < 0 {
+            return Err(encoding_error("base64 input has a non-alphabet character"))
+        }
+        if c3 != 61 && v3 < 0 {
+            return Err(encoding_error("base64 input has a non-alphabet character"))
+        }
         let o0 = ((v0 << 2) | (v1 >> 4)) & 255
         out = __str_concat(out, __str_from_byte(o0))
         if c2 != 61 {
@@ -170,7 +193,7 @@ fun base64_decode(s: String) -> String {
         }
         i = i + 4
     }
-    return out
+    return Ok(out)
 }
 
 // Map a 0..15 nibble to its uppercase hex digit byte (for percent-encoding).
@@ -245,8 +268,14 @@ fun url_decode(s: String) -> String {
             if i + 2 < n {
                 let hi = hex_value(__str_byte_at(s, i + 1))
                 let lo = hex_value(__str_byte_at(s, i + 2))
-                out = __str_concat(out, __str_from_byte(hi * 16 + lo))
-                i = i + 3
+                if hi < 0 || lo < 0 {
+                    // Not a valid `%XX` escape: keep the `%` as a literal byte.
+                    out = __str_concat(out, __str_from_byte(b))
+                    i = i + 1
+                } else {
+                    out = __str_concat(out, __str_from_byte(hi * 16 + lo))
+                    i = i + 3
+                }
             } else {
                 out = __str_concat(out, __str_from_byte(b))
                 i = i + 1
@@ -335,7 +364,9 @@ fun base32_encode(s: String) -> String {
 
 // Decode an RFC 4648 base32 string. Padding and non-alphabet bytes are
 // skipped. The inverse of `base32_encode`.
-fun base32_decode(s: String) -> String {
+// Inverse of base32_encode. Trailing `=` is padding; any other non-alphabet
+// byte is an Err rather than being silently skipped.
+fun base32_decode(s: String) -> Result<String, Error> {
     let n = __str_len(s)
     let out = ""
     let acc = 0
@@ -343,8 +374,14 @@ fun base32_decode(s: String) -> String {
     let i = 0
     while i < n {
         let b = __str_byte_at(s, i)
-        let v = base32_value(b)
-        if v >= 0 {
+        if b == 61 {
+            // `=` padding: no more data bits follow.
+            i = i + 1
+        } else {
+            let v = base32_value(b)
+            if v < 0 {
+                return Err(encoding_error("base32 input has a non-alphabet character"))
+            }
             acc = (acc << 5) | v
             bits = bits + 5
             if bits >= 8 {
@@ -352,8 +389,8 @@ fun base32_decode(s: String) -> String {
                 let byte = (acc >> bits) & 255
                 out = __str_concat(out, __str_from_byte(byte))
             }
+            i = i + 1
         }
-        i = i + 1
     }
-    return out
+    return Ok(out)
 }
