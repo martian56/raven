@@ -49,7 +49,7 @@ pub fn lower_match(
     if is_enum_like(&scrut_ty) {
         lower_enum_match(cx, scrut_op, &scrut_ty, arms, result_local, cont);
     } else if matches!(scrut_ty, Ty::Int | Ty::Bool | Ty::Char) {
-        lower_int_match(cx, scrut_op, arms, result_local, cont);
+        lower_int_match(cx, scrut_op, &scrut_ty, arms, result_local, cont);
     } else {
         lower_fallback_match(cx, scrut_op, &scrut_ty, arms, result_local, cont);
     }
@@ -113,6 +113,7 @@ fn lower_enum_match(
 fn lower_int_match(
     cx: &mut LowerCx<'_>,
     scrut: MirOperand,
+    scrut_ty: &Ty,
     arms: &[HirArm],
     result: super::super::ir::MirLocal,
     cont: MirBlockId,
@@ -133,7 +134,7 @@ fn lower_int_match(
     cx.builder.close_block(
         cx.current,
         MirTerminator::SwitchInt {
-            discriminant: scrut,
+            discriminant: scrut.clone(),
             targets,
             otherwise,
         },
@@ -141,6 +142,17 @@ fn lower_int_match(
 
     for (arm, block) in arms.iter().zip(arm_blocks.iter()) {
         cx.current = *block;
+        // A binding arm (`other -> ...`) over an int/bool/char scrutinee binds
+        // the name to the scrutinee value. Without this the name was unbound in
+        // the arm body and read a garbage slot.
+        if let HirPatternKind::Binding(name) = &arm.pattern.kind {
+            let local = cx
+                .builder
+                .named_local(name.clone(), super::super::ty::MirType::from_ty(scrut_ty));
+            cx.builder
+                .assign(*block, local, MirRvalue::Use(scrut.clone()));
+            cx.bind(name.clone(), local);
+        }
         let v = super::expr::lower_expr(cx, &arm.body);
         cx.builder.assign(cx.current, result, MirRvalue::Use(v));
         if !cx.builder.is_closed(cx.current) {
