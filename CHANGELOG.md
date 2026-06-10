@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.42] - 2026-06-10
+
+### Fixed
+
+- Struct GC descriptors are now process-global instead of thread-local. They were registered only on the main thread, so a garbage collection on a worker goroutine saw an empty table and left struct pointer fields untraced, freeing them while still live (#397).
+
 ## [2.18.41] - 2026-06-10
 
 ### Fixed

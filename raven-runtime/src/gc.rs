@@ -295,14 +295,6 @@ thread_local! {
     /// `RAVEN_GC_THRESHOLD` override.
     static THRESHOLD: Cell<usize> = Cell::new(collection_floor());
 
-    /// Per-struct-type GC pointer descriptors. The key is the type id the
-    /// back-end assigns to each monomorphic struct type; the value is a
-    /// bitmask where bit `i` is set when field slot `i` holds a GC
-    /// pointer the collector must trace. The back-end registers every
-    /// struct type once at program startup, before any struct is built.
-    static STRUCT_DESCRIPTORS: RefCell<HashMap<u32, u64>> =
-        RefCell::new(HashMap::new());
-
     /// Per-call-frame stacks of deferred closures, one inner vector per
     /// open call frame. A `defer expr` pushes its thunk closure onto the
     /// top frame; the function epilogue runs and pops the top frame at
@@ -537,11 +529,29 @@ pub extern "C" fn raven_gc_leave_frame() {
 /// back-end always registers the same mask for a given id. The back-end
 /// emits these calls in the program entry point before any struct is
 /// allocated, so every struct the collector ever sees has a descriptor.
+/// Per-struct-type GC pointer descriptors, keyed by the type id the back-end
+/// assigns each monomorphic struct. The value is a bitmask where bit `i` is set
+/// when field slot `i` holds a GC pointer the collector must trace.
+///
+/// This is process-global, not thread-local: the back-end registers every
+/// struct type once in the program entry point (on the main thread), but a
+/// goroutine collects its own heap on a worker thread and must see the same
+/// descriptors. A thread-local table left worker collections with an empty map,
+/// so struct fields went untraced and were freed while live. Registration runs
+/// before any goroutine spawns, so after startup the map is read-only and the
+/// read lock never contends.
+fn struct_descriptors() -> &'static std::sync::RwLock<HashMap<u32, u64>> {
+    static DESCRIPTORS: std::sync::OnceLock<std::sync::RwLock<HashMap<u32, u64>>> =
+        std::sync::OnceLock::new();
+    DESCRIPTORS.get_or_init(|| std::sync::RwLock::new(HashMap::new()))
+}
+
 #[no_mangle]
 pub extern "C" fn raven_struct_register(type_id: u32, ptr_mask: u64) {
-    STRUCT_DESCRIPTORS.with(|d| {
-        d.borrow_mut().insert(type_id, ptr_mask);
-    });
+    struct_descriptors()
+        .write()
+        .unwrap()
+        .insert(type_id, ptr_mask);
 }
 
 /// Look up a struct type's GC pointer descriptor. Returns zero (no
@@ -549,7 +559,12 @@ pub extern "C" fn raven_struct_register(type_id: u32, ptr_mask: u64) {
 /// struct is traced conservatively as having no pointers rather than
 /// crashing the collector.
 fn struct_descriptor(type_id: u32) -> u64 {
-    STRUCT_DESCRIPTORS.with(|d| d.borrow().get(&type_id).copied().unwrap_or(0))
+    struct_descriptors()
+        .read()
+        .unwrap()
+        .get(&type_id)
+        .copied()
+        .unwrap_or(0)
 }
 
 /// Number of root slots currently registered. Test and diagnostic aid.
