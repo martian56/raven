@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.10] - 2026-06-10
+
+### Fixed
+
+- `std/math` integer helpers no longer return a silently wrong value on overflow. `abs_int(i64::MIN)`, and an overflowing `pow_int` or `lcm`, now panic with a message instead of wrapping (#433).
+
 ## [2.18.9] - 2026-06-10
 
 ### Fixed
