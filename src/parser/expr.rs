@@ -245,6 +245,18 @@ impl Parser {
     fn parse_postfix(&mut self) -> ParseResult<Expr> {
         let mut expr = self.parse_primary()?;
         loop {
+            // A method or try chain may continue on the next line: skip a
+            // newline only when a `.` or `?` follows it, so `s\n    .trim()`
+            // keeps chaining. Anything else after the newline ends this
+            // expression and the newline stays as a statement separator.
+            if matches!(self.peek_kind(), TokenKind::Newline) {
+                let saved = self.checkpoint();
+                self.skip_newlines();
+                if !matches!(self.peek_kind(), TokenKind::Dot | TokenKind::Question) {
+                    self.rewind(saved);
+                    break;
+                }
+            }
             match self.peek_kind() {
                 TokenKind::Dot => {
                     self.advance();
