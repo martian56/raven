@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.23] - 2026-06-10
+
+### Fixed
+
+- A trait with a method that returns `Self` is now correctly rejected as not object-safe when used as a `dyn` type, with a clear error, instead of being accepted and miscompiling (#412).
+
 ## [2.18.22] - 2026-06-10
 
 ### Fixed
