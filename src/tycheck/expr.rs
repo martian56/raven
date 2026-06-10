@@ -2967,6 +2967,18 @@ impl<'a, 'b> Checker<'a, 'b> {
         let mut pattern_names: Vec<super::match_check::PatternHead> = Vec::new();
 
         for arm in arms {
+            // A constructor pattern whose element is itself a constructor,
+            // literal, or range (`Some(Ok(x))`, `Some(0)`) is not supported:
+            // the lowering binds only one level and would miscompile. Reject it
+            // rather than silently mis-binding.
+            if let Some(nested) = unsupported_nesting_span(&arm.pattern) {
+                return Err(RavenError::ty(
+                    TypeError::Custom(
+                        "a nested pattern inside a constructor is not supported yet; bind the inner value and match it separately".into(),
+                    ),
+                    nested,
+                ));
+            }
             // Each arm gets its own pattern bindings.
             let mut arm_locals = self.locals.clone();
             pattern::bind(&arm.pattern, &scrut_stripped, self.env, &mut arm_locals)?;
@@ -3380,6 +3392,28 @@ fn compound_binary_op(op: AssignOp) -> BinaryOp {
         AssignOp::Shl => BinaryOp::Shl,
         AssignOp::Shr => BinaryOp::Shr,
         AssignOp::Assign => BinaryOp::Add, // unreachable in callers
+    }
+}
+
+/// The span of the first constructor-pattern element that is itself a
+/// constructor, literal, or range (an unsupported nested pattern), or `None`
+/// when the pattern nests only wildcards and bindings. A bare identifier is
+/// allowed because it lowers to a simple binding.
+fn unsupported_nesting_span(pat: &crate::ast::Pattern) -> Option<Span> {
+    use crate::ast::PatternKind;
+    let trivial =
+        |p: &crate::ast::Pattern| matches!(p.kind, PatternKind::Wildcard | PatternKind::Ident(_));
+    match &pat.kind {
+        PatternKind::Tuple { elements, .. } => elements
+            .iter()
+            .find(|e| !trivial(e))
+            .map(|e| e.span.clone()),
+        PatternKind::Struct { fields, .. } => fields
+            .iter()
+            .filter_map(|f| f.pattern.as_ref())
+            .find(|p| !trivial(p))
+            .map(|p| p.span.clone()),
+        _ => None,
     }
 }
 
