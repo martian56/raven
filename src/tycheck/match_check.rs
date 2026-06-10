@@ -88,10 +88,22 @@ pub fn check(
         ));
     }
 
-    // Redundancy: first wildcard renders every subsequent arm
-    // unreachable. We use the existence of a wildcard or a catch all
-    // binding ident later to count for exhaustiveness.
-    if let Some(idx) = arms.iter().position(is_catch_all) {
+    // The constructor names this scrutinee actually has. A bare identifier
+    // pattern is a constructor only when it names one of these; any other
+    // identifier is a binding that matches everything. Deciding this by the
+    // real variant set, rather than by the identifier's letter case, is what
+    // lets a lowercase enum variant (`pos`) stay a constructor and an
+    // uppercase binding (`Found`) stay a binding.
+    let ctors = scrutinee_ctors(scrut, env);
+    let is_catch_all = |h: &PatternHead| match h {
+        PatternHead::Wildcard => true,
+        PatternHead::Ctor(name) => !ctors.iter().any(|c| c == name),
+        _ => false,
+    };
+
+    // Redundancy: a catch-all arm renders every arm after it unreachable. A
+    // catch-all anywhere also makes the match exhaustive.
+    if let Some(idx) = arms.iter().position(&is_catch_all) {
         if idx + 1 < arms.len() {
             return Err(RavenError::ty(TypeError::RedundantPattern, span.clone()));
         }
@@ -176,21 +188,18 @@ fn check_variant_set(
     }
 }
 
-/// True when the head matches everything: a wildcard, or a bare
-/// identifier we recognized as a binding (the body checker already
-/// resolved any constructor identifier semantics; what remains here as
-/// `Ctor` may still be a binding). To stay sound for exhaustiveness,
-/// we treat a `Ctor(name)` that contains lower case ascii as a
-/// catch all, mirroring Rust's convention. Constructor names in
-/// Raven are upper case (`Some`, `Ok`, enum variants).
-fn is_catch_all(h: &PatternHead) -> bool {
-    match h {
-        PatternHead::Wildcard => true,
-        PatternHead::Ctor(name) => name
-            .chars()
-            .next()
-            .map(|c| c.is_lowercase())
-            .unwrap_or(false),
-        _ => false,
+/// The constructor names a scrutinee type offers, used to tell a real
+/// constructor pattern from a binding. An open type (`Int`, `String`, a
+/// struct, ...) has none, so any bare identifier over it is a binding.
+fn scrutinee_ctors(scrut: &Ty, env: &TypeEnv) -> Vec<String> {
+    match scrut.strip_self() {
+        Ty::Option(_) => vec!["None".to_string(), "Some".to_string()],
+        Ty::Result(_, _) => vec!["Ok".to_string(), "Err".to_string()],
+        Ty::Enum { id, .. } => env
+            .enums
+            .get(id)
+            .map(|esig| esig.variants.iter().map(|v| v.name.clone()).collect())
+            .unwrap_or_default(),
+        _ => Vec::new(),
     }
 }

@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.7] - 2026-06-10
+
+### Fixed
+
+- A `match` arm now tells a constructor from a binding by the scrutinee's real variant names rather than by letter case. A lowercase enum variant is treated as a constructor (so omitting one is a non-exhaustive match instead of a silently accepted wrong dispatch), and an uppercase binding stays a binding. The int/bool/char match path also now binds a binding arm to the scrutinee value, which previously read a garbage slot (#410).
+
 ## [2.18.6] - 2026-06-10
 
 ### Fixed
