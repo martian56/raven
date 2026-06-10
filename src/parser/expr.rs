@@ -1256,11 +1256,14 @@ impl Parser {
     }
 
     fn is_continuation_token(&self) -> bool {
+        // `+` and `-` are deliberately absent: a line that begins with one is a
+        // new statement over a signed value (`-1`), not a continuation of the
+        // line above. Treating them as continuations silently merged two
+        // statements. The remaining operators cannot begin a statement, so a
+        // line starting with one is unambiguously a continuation.
         matches!(
             self.peek_kind(),
-            TokenKind::Plus
-                | TokenKind::Minus
-                | TokenKind::Star
+            TokenKind::Star
                 | TokenKind::Slash
                 | TokenKind::Percent
                 | TokenKind::EqEq

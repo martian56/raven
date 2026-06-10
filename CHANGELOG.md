@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.19] - 2026-06-10
+
+### Fixed
+
+- A line that begins with `+` or `-` is now a new statement rather than a silent continuation of the line above, so `foo()` followed by `-1` on the next line no longer parses as `foo() - 1`. An operator at the end of a line still continues the expression (#414).
+
 ## [2.18.18] - 2026-06-10
 
 ### Fixed

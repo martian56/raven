@@ -1,0 +1,17 @@
+// A line that begins with `+` or `-` starts a new statement over a signed
+// value; it does not silently join the line above. An operator at the END of a
+// line still continues the expression onto the next line.
+import std/io { println }
+
+fun compute() -> Int = 50
+
+fun main() {
+    let a = compute()
+    -1
+    println(a.to_string())
+
+    let wrapped = 10 +
+        20 +
+        30
+    println(wrapped.to_string())
+}
