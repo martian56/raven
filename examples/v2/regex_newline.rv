@@ -1,0 +1,17 @@
+// A regex result may contain a newline. find_all of a dot-all pattern over text
+// with a newline returns one match, not one per line, because the list crosses
+// the runtime boundary length-prefixed rather than newline-joined.
+import std/io { println }
+import std/regex
+
+fun main() {
+    match regex.compile("(?s).+") {
+        Ok(re) -> {
+            let ms = re.find_all("a\nb\nc")
+            println("matches: ${ms.len().to_string()}")
+            println("has newline: ${ms.get(0).contains("\n").to_string()}")
+            re.free()
+        },
+        Err(e) -> println("compile failed"),
+    }
+}
