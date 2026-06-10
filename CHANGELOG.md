@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.14] - 2026-06-10
+
+### Fixed
+
+- The `std/json` parser bounds nesting depth (256 levels) and returns an error instead of overflowing the stack on deeply nested untrusted input (#425).
+
 ## [2.18.13] - 2026-06-10
 
 ### Fixed
