@@ -421,6 +421,10 @@ impl Parser {
             }
             TokenKind::CStringLit(s) => {
                 self.advance();
+                // A c-string is not interpolated, so the splitter never runs on
+                // it. Strip the escaped-dollar sentinel here, leaving the plain
+                // `$`, instead of letting U+E000 leak into the C string.
+                let s = s.replace(ESCAPED_DOLLAR_SENTINEL, "");
                 Ok(Expr {
                     kind: ExprKind::CStr(s),
                     span: tok.span,

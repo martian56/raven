@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.25] - 2026-06-10
+
+### Fixed
+
+- An escaped `\$` now stays a plain `$` in a c-string and in a string match pattern. The internal escape sentinel was leaking into both because neither runs through the interpolation splitter (#418).
+
 ## [2.18.24] - 2026-06-10
 
 ### Fixed

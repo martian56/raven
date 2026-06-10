@@ -2,7 +2,7 @@
 
 use crate::ast::{FieldPattern, LiteralPattern, Pattern, PatternKind};
 use crate::error::ParseError;
-use crate::lexer::TokenKind;
+use crate::lexer::{TokenKind, ESCAPED_DOLLAR_SENTINEL};
 
 use super::{merge_spans, ParseResult, Parser};
 
@@ -69,7 +69,11 @@ impl Parser {
                 })
             }
             TokenKind::StringLit(ref s) => {
-                let s = s.clone();
+                // A pattern's string is matched against a value's bytes, so the
+                // escaped-dollar sentinel must be stripped to the plain `$`
+                // here; the interpolation splitter that normally does this never
+                // runs on a pattern.
+                let s = s.replace(ESCAPED_DOLLAR_SENTINEL, "");
                 let tok = self.advance();
                 Ok(Pattern {
                     kind: PatternKind::Literal(LiteralPattern::String(s)),
