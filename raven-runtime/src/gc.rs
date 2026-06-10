@@ -27,7 +27,7 @@ use crate::stw::StopTheWorld;
 use crate::{raven_alloc, raven_dealloc};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// Registry of every live thread's shadow-stack [`RootContext`]. A collection
 /// scans every registered context, so an object one thread holds survives a
@@ -235,14 +235,18 @@ pub(crate) type SavedRoots = (Vec<RootSlot>, Vec<usize>);
 /// program with no goroutines marks exactly the thread-local chain.
 type ExtraRootsHook = fn(&mut dyn FnMut(RootSlot));
 
-thread_local! {
-    static EXTRA_ROOTS_HOOK: Cell<Option<ExtraRootsHook>> = const { Cell::new(None) };
-}
+/// The scheduler's extra-roots hook, as the function pointer's address (0 means
+/// unset). This is process-global, not thread-local: the scheduler installs it
+/// on the thread that first spawns a goroutine, but a collection on any worker
+/// thread must run it to mark parked-goroutine roots. A thread-local cell left
+/// worker collections with no hook, so a parked goroutine's live roots were
+/// swept. A `fn` pointer is a plain address, valid for the whole program.
+static EXTRA_ROOTS_HOOK: AtomicUsize = AtomicUsize::new(0);
 
 /// Install the scheduler's extra-roots hook. Idempotent; the scheduler
 /// installs it the first time a goroutine is spawned.
 pub(crate) fn set_extra_roots_hook(hook: ExtraRootsHook) {
-    EXTRA_ROOTS_HOOK.with(|h| h.set(Some(hook)));
+    EXTRA_ROOTS_HOOK.store(hook as usize, Ordering::Release);
 }
 
 /// Move the live thread-local root chain out, leaving it empty, and
@@ -707,7 +711,11 @@ fn mark() {
     // Roots of every parked goroutine and every buffered channel value.
     // The hook is set only after a scheduler starts, so a program with no
     // goroutines visits nothing extra here.
-    if let Some(hook) = EXTRA_ROOTS_HOOK.with(|h| h.get()) {
+    let hook_addr = EXTRA_ROOTS_HOOK.load(Ordering::Acquire);
+    if hook_addr != 0 {
+        // SAFETY: the address was stored by `set_extra_roots_hook` from a valid
+        // `ExtraRootsHook` function pointer, which lives for the whole program.
+        let hook: ExtraRootsHook = unsafe { std::mem::transmute::<usize, ExtraRootsHook>(hook_addr) };
         let mut visit = |slot: RootSlot| {
             if slot.is_null() {
                 return;

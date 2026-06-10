@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.44] - 2026-06-10
+
+### Fixed
+
+- The collector's extra-roots hook, which marks the roots of every parked goroutine, is now process-global instead of thread-local. It was installed only on the thread that first spawned a goroutine, so a collection on any other worker thread skipped parked goroutines and freed their live roots (#398).
+
 ## [2.18.43] - 2026-06-10
 
 ### Fixed
