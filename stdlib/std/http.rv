@@ -510,6 +510,16 @@ fun read_request(stream: TcpStream) -> Result<Request, Error> {
             None -> {}
         }
     }
+    // Reject a negative or oversized declared body before reading it, so a
+    // client cannot make the server buffer unbounded memory. 10 MiB is a
+    // generous default for a simple server.
+    if want < 0 {
+        return Err(error_kind("http", "negative Content-Length"))
+    }
+    let max_body = 10485760
+    if want > max_body {
+        return Err(error_kind("http", "request body too large"))
+    }
     while body.length() < want {
         let chunk = stream.read(4096)?
         if chunk.length() == 0 {
