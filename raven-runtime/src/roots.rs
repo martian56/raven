@@ -31,6 +31,13 @@ pub struct RootContext {
     /// `roots` length at each open frame's entry; leaving a frame truncates
     /// `roots` back to the recorded length.
     pub frames: Vec<usize>,
+    /// Deferred-closure addresses, one inner vector per open call frame. Stored
+    /// here, alongside the shadow-stack roots, so the collector marks a
+    /// goroutine's parked defers through the same per-thread registry that
+    /// covers every worker, and so the defers travel with the goroutine when it
+    /// migrates worker threads. Held as `*mut u8` to keep this module free of
+    /// object-layout types.
+    pub defer_frames: Vec<Vec<*mut u8>>,
 }
 
 impl RootContext {
@@ -38,6 +45,7 @@ impl RootContext {
         RootContext {
             roots: Vec::new(),
             frames: Vec::new(),
+            defer_frames: Vec::new(),
         }
     }
 }
@@ -99,6 +107,13 @@ impl RootRegistry {
                     visit(slot);
                 }
             }
+            // Parked deferred closures are roots too: hand the collector the
+            // address of each slot holding a closure pointer.
+            for frame in &ctx.defer_frames {
+                for closure_slot in frame.iter() {
+                    visit(closure_slot as *const *mut u8 as RootSlot);
+                }
+            }
         }
     }
 }
@@ -124,10 +139,12 @@ mod tests {
         let mut ctx_a = RootContext {
             roots: vec![&mut obj_a as *mut *mut u8],
             frames: vec![],
+            defer_frames: vec![],
         };
         let mut ctx_b = RootContext {
             roots: vec![&mut obj_b as *mut *mut u8],
             frames: vec![],
+            defer_frames: vec![],
         };
         reg.register(&mut ctx_a);
         reg.register(&mut ctx_b);
@@ -153,6 +170,7 @@ mod tests {
         let mut ctx = RootContext {
             roots: vec![std::ptr::null_mut(), &mut obj as *mut *mut u8],
             frames: vec![],
+            defer_frames: vec![],
         };
         reg.register(&mut ctx);
 
@@ -173,6 +191,7 @@ mod tests {
         let mut ctx = RootContext {
             roots: vec![&mut obj as *mut *mut u8],
             frames: vec![],
+            defer_frames: vec![],
         };
         reg.register(&mut ctx);
         reg.deregister(&mut ctx);

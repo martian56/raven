@@ -181,7 +181,7 @@ impl Scheduler {
             0,
             Goroutine {
                 coro: None,
-                roots: (Vec::new(), Vec::new()),
+                roots: (Vec::new(), Vec::new(), Vec::new()),
                 spawn_root: std::ptr::null_mut(),
             },
         );
@@ -272,7 +272,7 @@ pub extern "C" fn raven_go_spawn(closure: *mut Closure) {
             id,
             Goroutine {
                 coro: Some(coro),
-                roots: (Vec::new(), Vec::new()),
+                roots: (Vec::new(), Vec::new(), Vec::new()),
                 // Root the closure so it and its captures survive until and
                 // while the goroutine runs.
                 spawn_root: closure as *mut u8,
