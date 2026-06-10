@@ -25,7 +25,8 @@ mod comments;
 
 use comments::Comment;
 
-const INDENT: &str = "    ";
+/// The indent width used when no manifest `[fmt].indent_width` applies.
+const DEFAULT_INDENT_WIDTH: u32 = 4;
 
 /// A formatting failure. The only way to fail is to be handed source that
 /// does not lex or parse: the formatter cannot canonicalize what it cannot
@@ -49,6 +50,12 @@ impl std::error::Error for FormatError {}
 
 /// Format Raven source text into its canonical form.
 pub fn format_source(src: &str) -> Result<String, FormatError> {
+    format_source_with(src, DEFAULT_INDENT_WIDTH)
+}
+
+/// Format `src` using `indent_width` spaces per level. `rvpm fmt` passes the
+/// width from the manifest's `[fmt].indent_width`.
+pub fn format_source_with(src: &str, indent_width: u32) -> Result<String, FormatError> {
     let tokens = Lexer::new(src, "<fmt>")
         .tokenize()
         .map_err(|e| FormatError::Parse(e.to_string()))?;
@@ -59,7 +66,8 @@ pub fn format_source(src: &str) -> Result<String, FormatError> {
     // `MacroCall` expression arm.
     let file = parse(&tokens).map_err(|e| FormatError::Parse(e.to_string()))?;
     let comments = comments::scan(src);
-    let mut p = Printer::new(src, comments);
+    let indent_unit = " ".repeat(indent_width as usize);
+    let mut p = Printer::new(src, comments, indent_unit);
     p.file(&file);
     Ok(p.finish())
 }
@@ -69,6 +77,8 @@ pub fn format_source(src: &str) -> Result<String, FormatError> {
 struct Printer<'a> {
     out: String,
     indent: usize,
+    /// The string emitted for one indent level (`indent_width` spaces).
+    indent_unit: String,
     src: &'a str,
     comments: Vec<Comment>,
     /// Index of the next comment not yet emitted.
@@ -76,10 +86,11 @@ struct Printer<'a> {
 }
 
 impl<'a> Printer<'a> {
-    fn new(src: &'a str, comments: Vec<Comment>) -> Self {
+    fn new(src: &'a str, comments: Vec<Comment>, indent_unit: String) -> Self {
         Printer {
             out: String::new(),
             indent: 0,
+            indent_unit,
             src,
             comments,
             next_comment: 0,
@@ -111,7 +122,7 @@ impl<'a> Printer<'a> {
             return;
         }
         for _ in 0..self.indent {
-            self.out.push_str(INDENT);
+            self.out.push_str(&self.indent_unit);
         }
         self.out.push_str(text);
         self.out.push('\n');
@@ -798,7 +809,7 @@ impl Printer<'_> {
                 continue;
             }
             for _ in 0..self.indent {
-                self.out.push_str(INDENT);
+                self.out.push_str(&self.indent_unit);
             }
             self.out.push_str(part);
         }
@@ -868,7 +879,7 @@ impl Printer<'_> {
                     s.push_str(" {\n");
                     for f in fields {
                         for _ in 0..base + 1 {
-                            s.push_str(INDENT);
+                            s.push_str(&self.indent_unit);
                         }
                         let value = self.field_value(f);
                         if is_field_shorthand(&f.name, &f.value) {
@@ -878,7 +889,7 @@ impl Printer<'_> {
                         }
                     }
                     for _ in 0..base {
-                        s.push_str(INDENT);
+                        s.push_str(&self.indent_unit);
                     }
                     s.push('}');
                 } else {
@@ -1071,7 +1082,7 @@ impl Printer<'_> {
         s.push_str(&inner);
         s.push('\n');
         for _ in 0..base {
-            s.push_str(INDENT);
+            s.push_str(&self.indent_unit);
         }
         s.push('}');
         s
@@ -1112,7 +1123,7 @@ impl Printer<'_> {
             let guard = arm.guard.as_ref().map(|g| self.expr_at(g, base + 1));
             let body = self.expr_at(&arm.body, base + 1);
             for _ in 0..base + 1 {
-                s.push_str(INDENT);
+                s.push_str(&self.indent_unit);
             }
             s.push_str(&pat);
             if let Some(g) = guard {
@@ -1124,7 +1135,7 @@ impl Printer<'_> {
             s.push_str(",\n");
         }
         for _ in 0..base {
-            s.push_str(INDENT);
+            s.push_str(&self.indent_unit);
         }
         s.push('}');
         s
@@ -1171,7 +1182,7 @@ impl Printer<'_> {
                 s.push_str(&inner);
                 s.push('\n');
                 for _ in 0..base {
-                    s.push_str(INDENT);
+                    s.push_str(&self.indent_unit);
                 }
                 s.push('}');
                 s
