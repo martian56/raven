@@ -474,7 +474,7 @@ fn lower_rvalue(
         MirRvalue::BinaryOp(op, lhs, rhs) => {
             let lhs_v = require_value(lower_operand(cx, builder, lhs, slots)?, "binop lhs")?;
             let rhs_v = require_value(lower_operand(cx, builder, rhs, slots)?, "binop rhs")?;
-            Ok(Some(emit_binop(builder, *op, lhs_v, rhs_v)))
+            Ok(Some(emit_binop(cx, builder, *op, lhs_v, rhs_v)))
         }
         MirRvalue::UnaryOp(op, inner) => {
             let v = require_value(lower_operand(cx, builder, inner, slots)?, "unop operand")?;
@@ -964,7 +964,13 @@ fn require_value(v: RValue, what: &'static str) -> Result<Value, CodegenError> {
     v.ok_or_else(|| CodegenError::Unsupported(format!("{} used a Unit value", what)))
 }
 
-fn emit_binop(builder: &mut FunctionBuilder<'_>, op: MirBinOp, lhs: Value, rhs: Value) -> Value {
+fn emit_binop(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    op: MirBinOp,
+    lhs: Value,
+    rhs: Value,
+) -> Value {
     let ty = builder.func.dfg.value_type(lhs);
     let is_float = ty == types::F64;
     let is_bool = ty == types::I8;
@@ -976,8 +982,14 @@ fn emit_binop(builder: &mut FunctionBuilder<'_>, op: MirBinOp, lhs: Value, rhs: 
         MirBinOp::Add => builder.ins().iadd(lhs, rhs),
         MirBinOp::Sub => builder.ins().isub(lhs, rhs),
         MirBinOp::Mul => builder.ins().imul(lhs, rhs),
-        MirBinOp::Div => builder.ins().sdiv(lhs, rhs),
-        MirBinOp::Mod => builder.ins().srem(lhs, rhs),
+        MirBinOp::Div => {
+            emit_div_guard(cx, builder, lhs, rhs, "division by zero");
+            builder.ins().sdiv(lhs, rhs)
+        }
+        MirBinOp::Mod => {
+            emit_div_guard(cx, builder, lhs, rhs, "modulo by zero");
+            builder.ins().srem(lhs, rhs)
+        }
         MirBinOp::Eq => emit_compare(builder, op, lhs, rhs, is_float),
         MirBinOp::Ne => emit_compare(builder, op, lhs, rhs, is_float),
         MirBinOp::Lt => emit_compare(builder, op, lhs, rhs, is_float),
@@ -1584,6 +1596,33 @@ fn emit_bounds_check(
 ) {
     let in_bounds = builder.ins().icmp(IntCC::UnsignedLessThan, index, len);
     emit_status_check(cx, builder, in_bounds, message);
+}
+
+/// Guard an integer divide or modulo. A zero divisor and the `i64::MIN / -1`
+/// overflow both raise a hardware exception on x86 (`#DE`), which aborts the
+/// process with no message. Check for them first and raise a Raven panic
+/// instead, so the program reports the cause rather than crashing raw.
+fn emit_div_guard(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    lhs: Value,
+    rhs: Value,
+    zero_msg: &str,
+) {
+    let ty = builder.func.dfg.value_type(lhs);
+    let zero = builder.ins().iconst(ty, 0);
+    let nonzero = builder.ins().icmp(IntCC::NotEqual, rhs, zero);
+    emit_status_check(cx, builder, nonzero, zero_msg);
+    // The signed overflow `i64::MIN / -1` has no representable result and traps
+    // the same way. Continue only when the operands are not that pair.
+    if ty == types::I64 {
+        let min = builder.ins().iconst(ty, i64::MIN);
+        let neg_one = builder.ins().iconst(ty, -1);
+        let not_min = builder.ins().icmp(IntCC::NotEqual, lhs, min);
+        let not_neg_one = builder.ins().icmp(IntCC::NotEqual, rhs, neg_one);
+        let ok = builder.ins().bor(not_min, not_neg_one);
+        emit_status_check(cx, builder, ok, "integer overflow: dividing i64::MIN by -1");
+    }
 }
 
 /// Branch on a nonzero `ok` flag, calling `raven_panic` with `message`
