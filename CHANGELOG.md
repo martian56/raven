@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.38] - 2026-06-10
+
+### Fixed
+
+- A send, receive, or select on a channel id that does not exist now reports a clear panic instead of busy-spinning forever (receive/select) or silently dropping the value (send) (#406).
+
 ## [2.18.37] - 2026-06-10
 
 ### Fixed
