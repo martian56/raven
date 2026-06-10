@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.29] - 2026-06-10
+
+### Fixed
+
+- A heap return value is now kept rooted across an allocating `defer`. A function that returned a heap value (a String, list, struct, ...) and had a `defer` that allocated could have its return value collected by the defer's allocation, a use-after-free at the return (#438).
+
 ## [2.18.28] - 2026-06-10
 
 ### Fixed
