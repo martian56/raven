@@ -278,9 +278,14 @@ impl Response {
         return Response.with_body(302, "").header("Location", location)
     }
 
-    // Set a response header, returning self so calls chain.
+    // Set a response header, returning self so calls chain. A header name or
+    // value must never contain CR or LF: those characters frame the header
+    // block, so an untrusted value carrying them could inject extra headers or
+    // split the response. Strip them before storing.
     fun header(self, name: String, value: String) -> Response {
-        self.headers.set(name, value)
+        let clean_name = name.replace("\r", "").replace("\n", "")
+        let clean_value = value.replace("\r", "").replace("\n", "")
+        self.headers.set(clean_name, clean_value)
         return self
     }
 
