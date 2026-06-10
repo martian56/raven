@@ -23,6 +23,17 @@ fn empty_source_yields_eof_only() {
 }
 
 #[test]
+fn malformed_numeric_literal_is_an_error_not_a_split() {
+    // A digit invalid for the base, or a letter right after a number, is a
+    // single malformed literal, not a valid number followed by a second token.
+    lex_err("0b12");
+    lex_err("0o78");
+    lex_err("123abc");
+    // A valid number followed by a method call still lexes fine.
+    lex("1.method()");
+}
+
+#[test]
 fn leading_utf8_bom_is_ignored() {
     // A UTF-8 BOM at the start of the source is dropped rather than lexed as an
     // unexpected character, so a BOM-prefixed file tokenizes like a clean one.

@@ -476,6 +476,23 @@ impl Lexer {
             }
         }
 
+        // A letter right after a decimal number is a malformed literal
+        // (`123abc`, `1.0f`), not a number followed by an identifier. Consume
+        // the run so the error covers the whole token.
+        if self
+            .peek()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        {
+            while self
+                .peek()
+                .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+            {
+                self.bump();
+            }
+            let lexeme = self.source[start..self.pos].to_string();
+            return Err(self.err(LexError::InvalidNumber(lexeme), start, line, col));
+        }
+
         let lexeme = &self.source[start..self.pos];
         let cleaned: String = lexeme.chars().filter(|c| *c != '_').collect();
 
@@ -515,6 +532,20 @@ impl Lexer {
             }
         }
         if self.pos == digits_start {
+            let lexeme = self.source[start..self.pos].to_string();
+            return Err(self.err(LexError::InvalidNumber(lexeme), start, line, col));
+        }
+        // A letter or further digit right after the digits is an invalid digit
+        // for this base (`0b12`, `0xZ`), not the start of a new token. Consume
+        // the rest of the run so the error covers the whole bad literal instead
+        // of silently splitting it in two.
+        if self.peek().is_some_and(|c| c.is_ascii_alphanumeric()) {
+            while self
+                .peek()
+                .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+            {
+                self.bump();
+            }
             let lexeme = self.source[start..self.pos].to_string();
             return Err(self.err(LexError::InvalidNumber(lexeme), start, line, col));
         }
