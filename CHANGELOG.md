@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.11] - 2026-06-10
+
+### Fixed
+
+- `std/http` strips CR and LF from response header names and values, closing a header-injection / response-splitting hole when a handler sets a header from untrusted input (#424).
+
 ## [2.18.10] - 2026-06-10
 
 ### Fixed
