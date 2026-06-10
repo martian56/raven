@@ -942,6 +942,20 @@ pub extern "C" fn raven_fs_is_dir(path: *const object::String) -> bool {
     env_name(path).is_some_and(|p| std::path::Path::new(p).is_dir())
 }
 
+/// Whether `path` itself is a symbolic link. Unlike `is_dir`, this does not
+/// follow the link: it reads the link's own metadata. A missing path is
+/// `false`. Used by `fs.walk` to avoid descending through a symlinked
+/// directory, which could form a cycle.
+///
+/// # Safety
+///
+/// `path` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_fs_is_symlink(path: *const object::String) -> bool {
+    env_name(path)
+        .is_some_and(|p| std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink()))
+}
+
 /// The message of the most recent fallible time op (parsing), empty when
 /// it succeeded. The std/time wrapper reads this to build an `Err` only
 /// when it is non-empty.
