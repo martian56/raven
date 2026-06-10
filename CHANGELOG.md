@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.43] - 2026-06-10
+
+### Fixed
+
+- Runtime reflection now works inside a goroutine. The type metadata table was thread-local and registered only on the main thread, so `get_field`/`set_field`/`type_name_of` on a worker thread saw an empty table; it is now process-global. The field-name list is also rooted while it is built, so a collection mid-construction no longer frees it (#401).
+
 ## [2.18.42] - 2026-06-10
 
 ### Fixed

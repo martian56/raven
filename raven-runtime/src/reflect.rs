@@ -19,7 +19,6 @@ use crate::object::{
     raven_box_new, raven_box_payload, raven_list_new, raven_list_push, raven_string_from_bytes,
     raven_struct_fields, Box, List, ObjectHeader, String as RavenString,
 };
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::os::raw::c_char;
 
@@ -39,16 +38,21 @@ struct TypeMeta {
     fields: Vec<FieldMeta>,
 }
 
-// The metadata pointers are only read, never mutated, so the table is sound
-// to hold across the single-threaded v2 runtime.
+// The metadata pointers are only read, never mutated, and point into the
+// program's read-only data, so the table is sound to share across threads: a
+// goroutine reflects on its own worker thread.
 unsafe impl Send for TypeMeta {}
+unsafe impl Sync for TypeMeta {}
 
-thread_local! {
-    /// Type id to metadata. Populated by `raven_type_register` at startup,
-    /// before any reflection call. A lookup of an unregistered id yields
-    /// empty defaults, keeping a reflection call on a type the back-end did
-    /// not register total rather than crashing.
-    static TYPE_META: RefCell<HashMap<u32, TypeMeta>> = RefCell::new(HashMap::new());
+/// Type id to metadata, process-global. The back-end registers every type once
+/// in the program entry shim on the main thread, but a goroutine reflects on a
+/// worker thread and must see the same metadata; a thread-local table left
+/// worker-thread reflection returning empty defaults. Registration runs before
+/// any goroutine spawns, so after startup the map is read-only.
+fn type_meta() -> &'static std::sync::RwLock<HashMap<u32, TypeMeta>> {
+    static META: std::sync::OnceLock<std::sync::RwLock<HashMap<u32, TypeMeta>>> =
+        std::sync::OnceLock::new();
+    META.get_or_init(|| std::sync::RwLock::new(HashMap::new()))
 }
 
 /// Register a type's reflection metadata.
@@ -99,18 +103,16 @@ pub unsafe extern "C" fn raven_type_register(
         is_struct: is_struct != 0,
         fields,
     };
-    TYPE_META.with(|m| {
-        m.borrow_mut().insert(type_id, meta);
-    });
+    type_meta().write().unwrap().insert(type_id, meta);
 }
 
 /// Run `f` with the metadata of `type_id`, or return `default` when the id
 /// was never registered.
 fn with_meta<R>(type_id: u32, default: R, f: impl FnOnce(&TypeMeta) -> R) -> R {
-    TYPE_META.with(|m| match m.borrow().get(&type_id) {
+    match type_meta().read().unwrap().get(&type_id) {
         Some(meta) => f(meta),
         None => default,
-    })
+    }
 }
 
 /// Build a fresh Raven `String` from a NUL-terminated C string, or null
@@ -195,12 +197,20 @@ pub extern "C" fn raven_any_field_names(a: *const Box) -> *mut List {
     if list.is_null() {
         return list;
     }
+    // Building each name allocates a String, which can trigger a collection.
+    // Root the in-progress list across the loop so neither it nor the names
+    // already stored in it are swept mid-construction. The list is pre-sized to
+    // `names.len()`, so `push` never grows it and the just-built String is
+    // stored without an intervening allocation.
+    let mut list_slot = list as *mut u8;
+    crate::gc::raven_gc_push_root(&mut list_slot as *mut *mut u8);
     for n in names {
         let s = raven_string_from_cstr(n);
         let slot = s as u64;
         // push copies one eight-byte slot (the String pointer).
         raven_list_push(list, &slot as *const u64 as *const u8);
     }
+    crate::gc::raven_gc_pop_roots(1);
     list
 }
 
