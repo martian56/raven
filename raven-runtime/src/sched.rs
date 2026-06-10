@@ -46,6 +46,13 @@ type GoYielder = Yielder<(), Suspend>;
 struct Goroutine {
     coro: Option<Coroutine<(), Suspend, ()>>,
     roots: SavedRoots,
+    /// The closure this goroutine runs, kept as a root for the goroutine's
+    /// whole life. The spawned closure (and its capture buffer) is otherwise
+    /// referenced only as a raw integer address inside `coro`, so a collection
+    /// between the spawn and the goroutine first running, or during its run,
+    /// would free it and the values it captured. Null for goroutine 0 (main),
+    /// which has no spawn closure.
+    spawn_root: *mut u8,
 }
 
 /// A channel: a bounded queue of pointer-width value slots plus the wait
@@ -175,6 +182,7 @@ impl Scheduler {
             Goroutine {
                 coro: None,
                 roots: (Vec::new(), Vec::new()),
+                spawn_root: std::ptr::null_mut(),
             },
         );
         Scheduler {
@@ -206,12 +214,16 @@ impl Scheduler {
 /// and the scan reinstated only for those.
 fn extra_roots(visit: &mut dyn FnMut(RootSlot)) {
     with_sched(|sched| {
-        for g in sched.goroutines.values() {
+        for g in sched.goroutines.values_mut() {
             // A running goroutine's saved chain is empty (taken into its worker's
             // registered context, scanned via the registry), so scanning it here
             // is a harmless no-op; a parked goroutine's saved chain is
             // authoritative. Either way, scan the saved chain.
             for_each_slot_in(&g.roots, visit);
+            // The goroutine's own closure, rooted from spawn until it finishes.
+            if !g.spawn_root.is_null() {
+                visit(&mut g.spawn_root as *mut *mut u8);
+            }
         }
     });
 }
@@ -261,6 +273,9 @@ pub extern "C" fn raven_go_spawn(closure: *mut Closure) {
             Goroutine {
                 coro: Some(coro),
                 roots: (Vec::new(), Vec::new()),
+                // Root the closure so it and its captures survive until and
+                // while the goroutine runs.
+                spawn_root: closure as *mut u8,
             },
         );
         sched.ready.push_back(id);

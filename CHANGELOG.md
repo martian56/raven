@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.45] - 2026-06-10
+
+### Fixed
+
+- A spawned goroutine's closure is now rooted for the goroutine's whole life. It was referenced only as a raw integer address, so a collection between the spawn and the goroutine running, or during its run, could free the closure and the values it captured (#399).
+
 ## [2.18.44] - 2026-06-10
 
 ### Fixed
