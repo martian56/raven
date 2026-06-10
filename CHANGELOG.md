@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.39] - 2026-06-10
+
+### Fixed
+
+- The garbage collector no longer treats buffered channel `Int` values as object pointers. It was handing each channel queue slot to the collector as a root, so an integer payload was dereferenced as a pointer and GC bits were written into arbitrary memory, corrupting the heap or crashing (#396).
+
 ## [2.18.38] - 2026-06-10
 
 ### Fixed

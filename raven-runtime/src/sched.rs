@@ -195,9 +195,15 @@ impl Scheduler {
     }
 }
 
-/// Visitor for the collector: surface every parked goroutine's root chain
-/// and every buffered channel value as roots. The buffered slots live in
-/// the channel queues, so we hand the collector the address of each slot.
+/// Visitor for the collector: surface every parked goroutine's root chain as
+/// roots.
+///
+/// Buffered channel values are deliberately not scanned. A channel carries
+/// plain `Int` payloads (the `std/sync` Channel API is `Int`-typed), so handing
+/// the collector the address of a queue slot made it read the integer value and
+/// dereference it as an object pointer, writing GC bits into arbitrary memory.
+/// If channels ever carry GC pointers, the queue will need a per-channel flag
+/// and the scan reinstated only for those.
 fn extra_roots(visit: &mut dyn FnMut(RootSlot)) {
     with_sched(|sched| {
         for g in sched.goroutines.values() {
@@ -206,11 +212,6 @@ fn extra_roots(visit: &mut dyn FnMut(RootSlot)) {
             // is a harmless no-op; a parked goroutine's saved chain is
             // authoritative. Either way, scan the saved chain.
             for_each_slot_in(&g.roots, visit);
-        }
-        for chan in sched.channels.values() {
-            for slot in chan.queue.iter() {
-                visit(slot as *const i64 as RootSlot);
-            }
         }
     });
 }
