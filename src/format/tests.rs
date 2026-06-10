@@ -43,6 +43,34 @@ fn function_block_body() {
 }
 
 #[test]
+fn comment_inside_call_args_stays_in_place() {
+    // A comment interior to a call must stay with its argument and a later
+    // standalone comment must keep its place, not be relocated to end of file.
+    // Regression for #426.
+    let src = "fun main() {\n    let r = foo(\n        1, // first arg comment\n        2,\n    )\n    print(r)\n    // trailing standalone comment\n    bar()\n}\n";
+    let out = fmt(src);
+    assert!(
+        out.contains("1, // first arg comment"),
+        "interior call comment was lost or moved: {out:?}"
+    );
+    let comment_pos = out.find("// trailing standalone comment").unwrap();
+    let bar_pos = out.find("bar()").unwrap();
+    assert!(
+        comment_pos < bar_pos,
+        "standalone comment was relocated past its code: {out:?}"
+    );
+}
+
+#[test]
+fn call_without_comments_stays_single_line() {
+    let out = fmt("fun main() {\n    let r = foo(\n        1,\n        2,\n    )\n}\n");
+    assert!(
+        out.contains("foo(1, 2)"),
+        "a comment-free call should collapse to one line: {out:?}"
+    );
+}
+
+#[test]
 fn function_expr_body() {
     let out = fmt("fun double(x:Int)->Int=x*2");
     assert_eq!(out, "fun double(x: Int) -> Int = x * 2\n");

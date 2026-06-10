@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.49] - 2026-06-10
+
+### Fixed
+
+- The formatter no longer relocates a comment that sits inside a bracketed expression to the end of the file. A call, array, or tuple that contains an interior comment is now laid out multi-line with each comment kept beside its element; a comment-free bracketed expression still collapses to one line (#426).
+
 ## [2.18.48] - 2026-06-10
 
 ### Fixed
