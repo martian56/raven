@@ -544,6 +544,16 @@ pub fn object_safety_violation(sig: &TraitSig) -> Option<String> {
                 ));
             }
         }
+        // A method that returns `Self` is not object-safe: the concrete type is
+        // erased behind the trait object, so the result type would be unknown.
+        // Without this the call lowered a `Self`-typed result to a Unit slot and
+        // miscompiled downstream.
+        if ty_mentions_self(&m.ret) {
+            return Some(format!(
+                "method `{}` returns `Self`, which is not object-safe",
+                name
+            ));
+        }
     }
     None
 }

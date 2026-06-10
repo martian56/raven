@@ -119,6 +119,15 @@ fn generic_method_return_only_param_is_grounded() {
 }
 
 #[test]
+fn dyn_over_self_returning_trait_is_rejected() {
+    // A trait with a `-> Self` method is not object-safe: building a `dyn`
+    // value of it must be a type error, not a downstream miscompile. Regression
+    // for #412.
+    let bad = "trait Cloner { fun dup(self) -> Self }\nstruct W { id: Int }\nimpl Cloner for W {\n    fun dup(self) -> W { return W { id: self.id } }\n}\nfun main() {\n    let w = W { id: 1 }\n    let d: dyn Cloner = w\n}\n";
+    assert!(check(bad).is_err());
+}
+
+#[test]
 fn cross_function_unresolved_var_does_not_panic() {
     // A body that leaves an unresolved inference variable must not crash a
     // later body's finalization. Each body resolves only its own type-map
