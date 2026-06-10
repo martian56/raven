@@ -34,6 +34,26 @@ fn malformed_numeric_literal_is_an_error_not_a_split() {
 }
 
 #[test]
+fn crlf_in_regular_string_is_unterminated() {
+    // A CRLF inside a single-line string used to be folded to a stray CR and
+    // copied in; it now terminates the literal as unterminated.
+    lex_err("\"abc\r\ndef\"");
+}
+
+#[test]
+fn crlf_in_block_string_normalizes_to_lf() {
+    let toks = lex("\"\"\"\r\nx\r\ny\r\n\"\"\"");
+    let body = toks
+        .iter()
+        .find_map(|t| match &t.kind {
+            TokenKind::BlockStringLit(s) => Some(s.clone()),
+            _ => None,
+        })
+        .expect("block string literal");
+    assert!(!body.contains('\r'), "block string kept a CR: {body:?}");
+}
+
+#[test]
 fn leading_utf8_bom_is_ignored() {
     // A UTF-8 BOM at the start of the source is dropped rather than lexed as an
     // unexpected character, so a BOM-prefixed file tokenizes like a clean one.

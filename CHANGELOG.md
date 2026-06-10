@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.22] - 2026-06-10
+
+### Fixed
+
+- CRLF line endings no longer corrupt string literals. A CRLF inside a single-line string is now reported as unterminated (it was folded to a stray carriage return), and a block string normalizes CRLF to LF so its content is the same on any platform (#415).
+
 ## [2.18.21] - 2026-06-10
 
 ### Fixed
