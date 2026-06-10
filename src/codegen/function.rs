@@ -1003,8 +1003,25 @@ fn emit_binop(
         MirBinOp::BitAnd => builder.ins().band(lhs, rhs),
         MirBinOp::BitOr => builder.ins().bor(lhs, rhs),
         MirBinOp::BitXor => builder.ins().bxor(lhs, rhs),
-        MirBinOp::Shl => builder.ins().ishl(lhs, rhs),
-        MirBinOp::Shr => builder.ins().sshr(lhs, rhs),
+        MirBinOp::Shl => {
+            // x86 masks a shift count to its low 6 bits, so `1 << 65` would
+            // surprisingly give 2. Saturate instead: shifting a 64-bit value
+            // left by 64 or more loses every bit, so the result is 0.
+            let shifted = builder.ins().ishl(lhs, rhs);
+            let width = builder.ins().iconst(ty, 64);
+            let in_range = builder.ins().icmp(IntCC::UnsignedLessThan, rhs, width);
+            let zero = builder.ins().iconst(ty, 0);
+            builder.ins().select(in_range, shifted, zero)
+        }
+        MirBinOp::Shr => {
+            // Arithmetic right shift saturates at the sign: shifting right by
+            // 64 or more is the same as shifting by 63 (the value collapses to
+            // all sign bits), rather than wrapping the count around.
+            let limit = builder.ins().iconst(ty, 63);
+            let in_range = builder.ins().icmp(IntCC::UnsignedLessThan, rhs, limit);
+            let amount = builder.ins().select(in_range, rhs, limit);
+            builder.ins().sshr(lhs, amount)
+        }
     }
 }
 

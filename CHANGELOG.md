@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.8] - 2026-06-10
+
+### Fixed
+
+- A shift count at or beyond the bit width is now well defined. `1 << 65` gave `2` because the hardware masked the count to its low bits; a left shift past the width now yields `0` and an arithmetic right shift collapses to the sign (#439).
+
 ## [2.18.7] - 2026-06-10
 
 ### Fixed
