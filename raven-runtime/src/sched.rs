@@ -504,7 +504,17 @@ fn park_current(me: usize) {
 /// woken, which keeps two counterparts from double-waking it.
 fn wake(id: usize) {
     let mut guard = SCHED.lock().unwrap();
-    let sched = &mut guard.0;
+    wake_locked(&mut guard.0, id);
+}
+
+/// Wake `id` with the scheduler lock already held. A goroutine that is itself
+/// about to commit to blocking must wake its counterpart this way, in the same
+/// critical section that registers and blocks it, so there is never an
+/// observable moment where both it and the counterpart sit in `blocked` at once;
+/// a concurrent deadlock check in that window would misread it as a real
+/// deadlock. Notifying a condvar while the lock is held is fine: the waiter
+/// re-tests its predicate on wake.
+fn wake_locked(sched: &mut Scheduler, id: usize) {
     if !sched.blocked.remove(&id) {
         return;
     }
@@ -652,7 +662,7 @@ pub extern "C" fn raven_channel_recv(id: i64) -> i64 {
         // sender, so wake one either way so it can deposit into the slot.
         enum Recv {
             Got(i64, Option<usize>),
-            Block(Option<usize>),
+            Block,
         }
         let outcome = with_sched(|sched| {
             let Some(ch) = sched.channels.get_mut(&id) else {
@@ -663,8 +673,14 @@ pub extern "C" fn raven_channel_recv(id: i64) -> i64 {
             }
             let sender = ch.send_waiters.pop_front();
             ch.recv_waiters.push_back(me);
+            // Wake the sender under this same lock, before committing `me` to
+            // block, so the two are never both in `blocked` for a concurrent
+            // deadlock check to misread.
+            if let Some(snd) = sender {
+                wake_locked(sched, snd);
+            }
             sched.blocked.insert(me);
-            Recv::Block(sender)
+            Recv::Block
         });
         match outcome {
             Recv::Got(v, sender) => {
@@ -673,10 +689,7 @@ pub extern "C" fn raven_channel_recv(id: i64) -> i64 {
                 }
                 return v;
             }
-            Recv::Block(sender) => {
-                if let Some(snd) = sender {
-                    wake(snd);
-                }
+            Recv::Block => {
                 park_current(me);
                 with_sched(|sched| {
                     if let Some(ch) = sched.channels.get_mut(&id) {
@@ -804,8 +817,9 @@ pub extern "C" fn raven_select_recv(set_id: i64) -> i64 {
     loop {
         enum Outcome {
             Empty,
-            Got(i64, i64, Option<usize>),
-            Block(Vec<usize>),
+            // index, value, sender to wake, other receivers to wake.
+            Got(i64, i64, Option<usize>, Vec<usize>),
+            Block,
         }
         let outcome = with_sched(|sched| {
             let ids = match sched.select_sets.get(&set_id) {
@@ -830,19 +844,37 @@ pub extern "C" fn raven_select_recv(set_id: i64) -> i64 {
                 }
             }
             // Take from the first channel that has a value, waking one of its
-            // blocked senders so it can refill the freed slot.
+            // blocked senders so it can refill the freed slot. A deposit on a
+            // channel popped and woke this selecting goroutine, so by consuming
+            // a different channel this select would otherwise discard that
+            // wakeup and strand a receiver parked behind it. So for every other
+            // channel that still holds a value, hand its next receiver the
+            // wakeup that was consumed here.
+            let mut taken: Option<(i64, i64, Option<usize>)> = None;
+            let mut wake_receivers = Vec::new();
             for (i, &cid) in ids.iter().enumerate() {
                 if let Some(ch) = sched.channels.get_mut(&cid) {
-                    if let Some(v) = ch.queue.pop_front() {
-                        let sender = ch.send_waiters.pop_front();
-                        return Outcome::Got(i as i64, v, sender);
+                    if taken.is_none() {
+                        if let Some(v) = ch.queue.pop_front() {
+                            let sender = ch.send_waiters.pop_front();
+                            taken = Some((i as i64, v, sender));
+                        }
+                    } else if !ch.queue.is_empty() {
+                        if let Some(w) = ch.recv_waiters.pop_front() {
+                            wake_receivers.push(w);
+                        }
                     }
                 }
+            }
+            if let Some((index, value, sender)) = taken {
+                return Outcome::Got(index, value, sender, wake_receivers);
             }
             // None ready: register on every channel's recv list and commit to
             // blocking. Wake one blocked sender per channel so an unbuffered
             // sender, which proceeds only once a receiver is waiting, can now
-            // rendezvous with this receiver instead of deadlocking.
+            // rendezvous with this receiver instead of deadlocking. Wake them
+            // under this same lock, before committing `me` to block, so the two
+            // are never both in `blocked` for a deadlock check to misread.
             let mut wake_senders = Vec::new();
             for &cid in &ids {
                 if let Some(ch) = sched.channels.get_mut(&cid) {
@@ -852,20 +884,25 @@ pub extern "C" fn raven_select_recv(set_id: i64) -> i64 {
                     }
                 }
             }
+            for snd in wake_senders {
+                wake_locked(sched, snd);
+            }
             sched.blocked.insert(me);
-            Outcome::Block(wake_senders)
+            Outcome::Block
         });
         match outcome {
             Outcome::Empty => return -1,
-            Outcome::Block(senders) => {
-                for snd in senders {
-                    wake(snd);
-                }
+            Outcome::Block => {
                 park_current(me);
             }
-            Outcome::Got(index, value, sender) => {
+            Outcome::Got(index, value, sender, receivers) => {
                 if let Some(snd) = sender {
                     wake(snd);
+                }
+                // Re-issue the wakeup this select consumed to the receivers
+                // parked on the other channels that still hold a value.
+                for r in receivers {
+                    wake(r);
                 }
                 SELECT_VALUE.with(|c| c.set(value));
                 return index;
