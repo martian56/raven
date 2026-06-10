@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.21] - 2026-06-10
+
+### Fixed
+
+- A numeric literal with a digit invalid for its base or a trailing letter (`0b12`, `0o78`, `123abc`) is now a single malformed-literal error rather than being silently split into two tokens (#421).
+
 ## [2.18.20] - 2026-06-10
 
 ### Fixed
