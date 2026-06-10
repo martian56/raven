@@ -107,6 +107,15 @@ fn inferred_type_violating_a_bound_is_rejected() {
 }
 
 #[test]
+fn nested_constructor_pattern_is_rejected() {
+    // A constructor pattern whose element is itself a constructor is not
+    // supported and must be a clean type error, not a silent miscompile.
+    // Regression for #409.
+    let bad = "fun f(x: Option<Result<Int, Int>>) -> Int {\n    return match x {\n        Some(Ok(n)) -> n,\n        Some(Err(e)) -> 0 - e,\n        None -> 0,\n    }\n}\nfun main() {}\n";
+    assert!(check(bad).is_err());
+}
+
+#[test]
 fn generic_method_return_only_param_is_grounded() {
     // A method whose generic parameter appears only in the return type
     // type-checks both via an annotation (the expected type) and via an

@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.36] - 2026-06-10
+
+### Fixed
+
+- A nested constructor pattern (`Some(Ok(x))`, `Some(0)`) is now rejected with a clear error instead of being accepted and mis-bound. Only one level of constructor binding is lowered today; nesting an inner constructor, literal, or range silently miscompiled (#409).
+
 ## [2.18.35] - 2026-06-10
 
 ### Fixed
