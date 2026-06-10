@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.12] - 2026-06-10
+
+### Fixed
+
+- The `std/http` server caps the request body at 10 MiB and rejects a negative or oversized `Content-Length` with a 400 before reading, so a client can no longer make it buffer unbounded memory (#428).
+
 ## [2.18.11] - 2026-06-10
 
 ### Fixed
