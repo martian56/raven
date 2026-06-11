@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.50] - 2026-06-11
+
+### Fixed
+
+- A module-level `let x: List<T> = []` now adopts its annotated element type instead of rejecting the empty array with "empty array literals require a context type". The top-level initializer check now threads the declared `List<T>` element type as the array hint, the same as a local `let` (#498).
+
 ## [2.18.49] - 2026-06-10
 
 ### Fixed

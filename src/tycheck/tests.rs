@@ -107,6 +107,14 @@ fn inferred_type_violating_a_bound_is_rejected() {
 }
 
 #[test]
+fn module_level_empty_list_adopts_annotation() {
+    // A top-level `let xs: List<Int> = []` must adopt its annotated element
+    // type, the same as a local binding does, rather than reporting that the
+    // empty array needs a context type. Regression for #498.
+    assert!(check("let xs: List<Int> = []\nfun main() {}\n").is_ok());
+}
+
+#[test]
 fn nested_constructor_pattern_is_rejected() {
     // A constructor pattern whose element is itself a constructor is not
     // supported and must be a clean type error, not a silent miscompile.
