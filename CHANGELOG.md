@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.58] - 2026-06-11
+
+### Fixed
+
+- A `match` arm that binds an enum payload (`Ok(x)`, `Err(e)`, `Some(x)`) is now typed by its variant rather than the positional index. Previously `Err(e)` was typed as the `Ok` payload, which only worked when both shared the i64 slot; once they differed (for example `Result<Bool, MyError>` or `Result<Float, MyError>` with a struct error) the payload was narrowed to the wrong machine type, producing a Cranelift verifier error or a runtime segfault. This unblocks the idiomatic `fun f() -> Result<T, MyError>` pattern with `?` (#513).
+
 ## [2.18.57] - 2026-06-11
 
 ### Fixed

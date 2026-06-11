@@ -493,9 +493,15 @@ fn bind_pattern(cx: &mut LowerCx<'_>, pat: &HirPattern, scrut_ty: &Ty, scrut: &M
 
 fn payload_type_at(scrut_ty: &Ty, variant: Option<&str>, index: usize, cx: &LowerCx<'_>) -> Ty {
     match scrut_ty {
-        Ty::Option(inner) if index == 0 => (**inner).clone(),
-        Ty::Result(t, _) if index == 0 => (**t).clone(),
-        Ty::Result(_, e) if index == 1 => (**e).clone(),
+        // `Some(x)`, `Ok(x)`, and `Err(e)` each bind their single payload at
+        // index 0 of their own pattern, so the binding type is selected by the
+        // variant, not the positional index. (Selecting by index alone typed
+        // `Err(e)` as the `Ok` payload; it only worked while both payloads
+        // shared the i64 slot, and produced a bad cast, a Cranelift verifier
+        // error, or a segfault once they differed, e.g. `Result<Bool, E>`.)
+        Ty::Option(inner) if variant == Some("Some") && index == 0 => (**inner).clone(),
+        Ty::Result(t, _) if variant == Some("Ok") && index == 0 => (**t).clone(),
+        Ty::Result(_, e) if variant == Some("Err") && index == 0 => (**e).clone(),
         Ty::Enum { name, .. } => {
             let Some(vname) = variant else {
                 return Ty::Error;
