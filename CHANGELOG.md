@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.60] - 2026-06-11
+
+### Fixed
+
+- A local module that imports a free function from a `github.com/...` dependency (`import "github.com/user/repo" { f }`, then `f(...)`) now resolves the call. The expander rewrites a merged local module's calls to its own functions, but did not rewrite calls to functions it imported from an external package (only the entry file and external-package modules did), so the call was left unresolved under `rvpm test` or when the importing file was reached through another module. A struct or method from the same import already worked (#517).
+
 ## [2.18.59] - 2026-06-11
 
 ### Fixed
