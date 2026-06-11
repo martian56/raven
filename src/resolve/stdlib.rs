@@ -321,6 +321,17 @@ pub fn expand_with_stdlib_ctx(
         let importing = (*module_file.span.file).clone();
         let key = local_module_key(&importing);
         let mut rename = import_rename_map(&module_file, &importing, &mut loader);
+        // A local module may itself import an external (github) package. Map
+        // those selectors to their `ext.<...>` symbols too, the same as an
+        // external module does, so a free function the local module imports
+        // (`import "github.com/..." { f }`, then `f(...)`) is rewritten rather
+        // than left unresolved. `import_rename_map` cannot do this on its own
+        // because it has no package context.
+        if let Some(ctx) = ctx {
+            for (selector, symbol) in external_import_rename_map(&module_file, ctx) {
+                rename.insert(selector, symbol);
+            }
+        }
         for name in top_level_fn_names(&module_file) {
             rename.insert(name.clone(), mangle_local_fn(&key, &name));
         }
@@ -1372,6 +1383,85 @@ mod tests {
         assert!(present, "external shout should merge under {mangled}");
 
         std::fs::remove_dir_all(&cache).ok();
+    }
+
+    #[test]
+    fn local_module_external_function_call_is_rewritten() {
+        // Regression for #517: a local module that imports a free function from
+        // a github dependency must have its call rewritten to the ext.<...>
+        // symbol, the same as the entry file does. Before the fix the call
+        // stayed a bare name and failed to resolve.
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        let cache =
+            std::env::temp_dir().join(format!("raven_517_cache_{}_{}", std::process::id(), n));
+        let pkg_dir = cache.join("github.com").join("acme").join("greet@v1.0.0");
+        std::fs::create_dir_all(&pkg_dir).expect("mkdir");
+        std::fs::write(
+            pkg_dir.join("rv.toml"),
+            "[package]\nname = \"greet\"\nversion = \"0.1.0\"\n",
+        )
+        .expect("toml");
+        let src_path = pkg_dir.join("lib.rv");
+        std::fs::write(
+            &src_path,
+            "fun shout(s: String) -> String { return s.concat(\"!\") }\n",
+        )
+        .expect("src");
+
+        let lock = crate::lock::LockFile {
+            version: crate::lock::LOCK_VERSION,
+            packages: vec![crate::lock::LockedPackage {
+                source: "github.com/acme/greet".to_string(),
+                version: "v1.0.0".to_string(),
+                hash: "sha256:abc".to_string(),
+            }],
+        };
+        let ctx = PackageContext::new(cache.clone(), &lock);
+
+        let (proj, entry) = write_temp_project(
+            &[
+                (
+                    "helper.rv",
+                    "import \"github.com/acme/greet/lib\" { shout }\n\
+                     fun loud(s: String) -> String { return shout(s) }\n",
+                ),
+                (
+                    "main.rv",
+                    "import \"./helper\" { loud }\nfun main() { print(loud(\"hi\")) }\n",
+                ),
+            ],
+            "main.rv",
+        );
+        let canon = proj.join("helper.rv").canonicalize().expect("canon");
+        let user = parse_at(
+            "import \"./helper\" { loud }\nfun main() { print(loud(\"hi\")) }\n",
+            &entry,
+        );
+        let combined = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
+
+        let ext_shout = mangle_external_fn(
+            &external_module_key("github.com", "acme", "greet", &src_path),
+            "shout",
+        );
+        let loc_loud = mangle_local_fn(&local_module_key(&canon), "loud");
+        let loud_fn = combined
+            .items
+            .iter()
+            .find_map(|d| match &d.kind {
+                DeclKind::Function(f) if f.name == loc_loud => Some(f),
+                _ => None,
+            })
+            .expect("loud should merge under its local name");
+        let body = format!("{:?}", loud_fn.body);
+        assert!(
+            body.contains(&ext_shout),
+            "loud's body should call {ext_shout}; got {body}"
+        );
+
+        std::fs::remove_dir_all(&cache).ok();
+        std::fs::remove_dir_all(&proj).ok();
     }
 
     #[test]
