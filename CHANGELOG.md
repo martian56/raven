@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.59] - 2026-06-11
+
+### Fixed
+
+- A `match` whose arm is itself a `match` returning `Option`/`Result` no longer fails to infer an inner `None`/`Err` when the outer match also has one. The match scrutinee type is now resolved before the arms are bound and checked, so a nested match whose scrutinee is an inference variable (the inner `v` of `match opt { Some(v) -> match v { ... } }`) binds its payloads correctly and is not wrongly flagged as having an unreachable, shadowed arm (#515).
+
 ## [2.18.58] - 2026-06-11
 
 ### Fixed
