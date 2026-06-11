@@ -31,6 +31,17 @@ fn hello_world_compiles_and_runs() {
 }
 
 #[test]
+fn result_struct_error_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Regression for #513: a struct error payload in `Result<Bool, _>` carried
+    // through `?` and matched. The `Err(e)` binding must be typed as the error
+    // struct, not the `Ok` payload, or the program crashes at runtime.
+    compile_link_run_and_check("result_struct_error.rv", "10\nnegative code=1\n", &runtime);
+}
+
+#[test]
 fn declarative_macros_compile_and_run() {
     let Some(runtime) = supported_runtime() else {
         return;

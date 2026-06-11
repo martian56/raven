@@ -1,0 +1,34 @@
+// Regression for #513: a struct error payload carried through `Result` whose
+// Ok type has a different machine representation than the error (here `Bool`).
+// The match arm binding `Err(e)` must be typed as the error struct, not the Ok
+// payload; getting that wrong corrupted the pointer and crashed at runtime.
+import std/io { println }
+import std/string
+
+struct Fail {
+    code: Int,
+    message: String,
+}
+
+fun check(n: Int) -> Result<Bool, Fail> {
+    if n < 0 {
+        return Err(Fail { code: 1, message: "negative" })
+    }
+    return Ok(true)
+}
+
+fun run(n: Int) -> Result<Int, Fail> {
+    let _ok = check(n)?
+    return Ok(n * 2)
+}
+
+fun main() {
+    match run(5) {
+        Ok(v) -> println(v.to_string()),
+        Err(e) -> println(e.message),
+    }
+    match run(0 - 3) {
+        Ok(v) -> println(v.to_string()),
+        Err(e) -> println(e.message.concat(" code=").concat(e.code.to_string())),
+    }
+}
