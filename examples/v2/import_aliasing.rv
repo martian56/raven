@@ -1,0 +1,14 @@
+// Selector renames ({ name as local }) and module-alias qualified calls
+// (alias.func()). Both let an importer dodge name collisions without wrapper
+// modules.
+import std/io { println }
+import std/string
+import "./import_aliasing_lib" { parse as decode, Wrapper as Box }
+import "./import_aliasing_lib" as lib
+
+fun main() {
+    println(decode("hi"))
+    println(lib.shout("loud"))
+    let b = Box { value: 7 }
+    println(b.value.to_string())
+}

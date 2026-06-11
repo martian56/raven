@@ -505,12 +505,16 @@ fn import_rename_map(
                 if let Some(module) = segments.first() {
                     if let Ok(target) = parse_bundled_module(module) {
                         let fns = top_level_fn_names(&target);
-                        for name in &import.selectors {
+                        for sel in &import.selectors {
                             // Only functions are namespaced; a type keeps its
                             // own name (see `merge_module_items`), so a type
-                            // selector needs no rename.
-                            if fns.contains(name) {
-                                map.insert(name.clone(), mangle_stdlib_fn(module, name));
+                            // selector needs no rename. The call site uses the
+                            // local name, mapped to the exported name's symbol.
+                            if fns.contains(&sel.name) {
+                                map.insert(
+                                    sel.local().to_string(),
+                                    mangle_stdlib_fn(module, &sel.name),
+                                );
                             }
                         }
                     }
@@ -524,9 +528,12 @@ fn import_rename_map(
                     if let Some(target) = parse_loaded(&loaded.source, &loaded.canonical_path) {
                         let key = local_module_key(&loaded.canonical_path);
                         let fns = top_level_fn_names(&target);
-                        for name in &import.selectors {
-                            if fns.contains(name) {
-                                map.insert(name.clone(), mangle_local_fn(&key, name));
+                        for sel in &import.selectors {
+                            if fns.contains(&sel.name) {
+                                map.insert(
+                                    sel.local().to_string(),
+                                    mangle_local_fn(&key, &sel.name),
+                                );
                             }
                         }
                     }
@@ -663,9 +670,12 @@ fn external_import_rename_map(file: &File, ctx: &PackageContext) -> HashMap<Stri
                 if let Some(module) = segments.first() {
                     if let Ok(target) = parse_bundled_module(module) {
                         let fns = top_level_fn_names(&target);
-                        for name in &import.selectors {
-                            if fns.contains(name) {
-                                map.insert(name.clone(), mangle_stdlib_fn(module, name));
+                        for sel in &import.selectors {
+                            if fns.contains(&sel.name) {
+                                map.insert(
+                                    sel.local().to_string(),
+                                    mangle_stdlib_fn(module, &sel.name),
+                                );
                             }
                         }
                     }
@@ -687,9 +697,9 @@ fn external_import_rename_map(file: &File, ctx: &PackageContext) -> HashMap<Stri
                 };
                 let key = external_module_key(&gh.host, &gh.user, &gh.repo, &src_path);
                 let fns = top_level_fn_names(&target);
-                for name in &import.selectors {
-                    if fns.contains(name) {
-                        map.insert(name.clone(), mangle_external_fn(&key, name));
+                for sel in &import.selectors {
+                    if fns.contains(&sel.name) {
+                        map.insert(sel.local().to_string(), mangle_external_fn(&key, &sel.name));
                     }
                 }
             }

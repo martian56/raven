@@ -599,8 +599,16 @@ impl Printer<'_> {
             text.push_str(alias);
         }
         if !im.selectors.is_empty() {
+            let sels: Vec<String> = im
+                .selectors
+                .iter()
+                .map(|s| match &s.alias {
+                    Some(a) => format!("{} as {}", s.name, a),
+                    None => s.name.clone(),
+                })
+                .collect();
             text.push_str(" { ");
-            text.push_str(&im.selectors.join(", "));
+            text.push_str(&sels.join(", "));
             text.push_str(" }");
         }
         self.line(&text);

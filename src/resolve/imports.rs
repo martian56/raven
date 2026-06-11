@@ -133,11 +133,42 @@ pub fn resolve_imports_ctx(
             continue;
         };
         let id = ImportId(out_imports.len());
-        let resolved = resolve_one_import(import, &decl.span, loader, in_progress, id)?;
+        let mut resolved = resolve_one_import(import, &decl.span, loader, in_progress, id)?;
+        resolved.mangled_prefix = import_mangle_prefix(&resolved.target, ctx);
         bind_import(import, &resolved, id, scope, ctx)?;
         out_imports.push(resolved);
     }
     Ok(())
+}
+
+/// The namespacing prefix the expander merges this import's source functions
+/// under, so a module-alias call `alias.fn()` can resolve to `<prefix>.fn`.
+/// Mirrors the keys [`bind_import`] uses for selectors.
+fn import_mangle_prefix(
+    target: &ImportTarget,
+    ctx: Option<&super::stdlib::PackageContext>,
+) -> Option<String> {
+    use super::stdlib;
+    match target {
+        ImportTarget::StdlibModule { segments } => segments.first().map(|m| {
+            stdlib::mangle_stdlib_fn(m, "")
+                .trim_end_matches(stdlib::NAMESPACE_SEP)
+                .to_string()
+        }),
+        ImportTarget::LocalModule { canonical_path, .. } => {
+            Some(stdlib::local_module_key(canonical_path))
+        }
+        ImportTarget::ExternalPackage {
+            host,
+            user,
+            repo,
+            subpath,
+        } => {
+            let source = format!("github.com/{}/{}", user, repo);
+            ctx.and_then(|c| c.external_source_path(&source, subpath))
+                .map(|src| stdlib::external_module_key(host, user, repo, &src))
+        }
+    }
 }
 
 fn resolve_one_import(
@@ -168,6 +199,7 @@ fn resolve_one_import(
                 target: ImportTarget::StdlibModule {
                     segments: segments.clone(),
                 },
+                mangled_prefix: None,
                 span: import.span.clone(),
             })
         }
@@ -177,6 +209,7 @@ fn resolve_one_import(
                     id,
                     path: path.clone(),
                     target: pkg,
+                    mangled_prefix: None,
                     span: import.span.clone(),
                 })
             } else if path.starts_with("./") || path.starts_with("../") {
@@ -336,6 +369,7 @@ fn resolve_local_import(
             canonical_path: loaded.canonical_path,
             module_names,
         },
+        mangled_prefix: None,
         span: import.span.clone(),
     })
 }
@@ -396,7 +430,11 @@ fn bind_import(
     };
 
     if !import.selectors.is_empty() {
-        for name in &import.selectors {
+        for sel in &import.selectors {
+            // `name` is the exported name; `local` is what it binds as (the
+            // rename from `name as local`, otherwise `name` itself).
+            let name = &sel.name;
+            let local = sel.local();
             // Bind the selector to the namespaced function the expander
             // merged into the module scope. Fall back to the deferred
             // `ImportedItem` binding when the function is not present (an
@@ -408,28 +446,33 @@ fn bind_import(
                 let mangled = mangle(name);
                 if let Some(entry) = scope.lookup(&mangled) {
                     let binding = entry.binding.clone();
-                    scope.insert(name, binding, import.span.clone())?;
+                    scope.insert(local, binding, import.span.clone())?;
                     continue;
                 }
                 // A type (struct, enum, trait) merged from the module keeps
                 // its own name, and a bundled module may export an
-                // `extern "C"` function under its bare C name. In both cases
-                // the merged declaration is already in module scope under
-                // the selector's name, so the selector needs no new binding.
-                if matches!(
-                    scope.lookup(name).map(|e| &e.binding),
-                    Some(
+                // `extern "C"` function under its bare C name. The merged
+                // declaration is already in scope under its exported name, so
+                // without a rename the selector needs no new binding; with a
+                // rename, bind the local name to that same declaration.
+                if let Some(entry) = scope.lookup(name) {
+                    if matches!(
+                        entry.binding,
                         Binding::Extern { .. }
                             | Binding::Struct(_)
                             | Binding::Enum(_)
                             | Binding::Trait(_)
-                    )
-                ) {
-                    continue;
+                    ) {
+                        if local != name.as_str() {
+                            let binding = entry.binding.clone();
+                            scope.insert(local, binding, import.span.clone())?;
+                        }
+                        continue;
+                    }
                 }
             }
             scope.insert(
-                name,
+                local,
                 Binding::ImportedItem {
                     import_id: id,
                     name: name.clone(),

@@ -116,6 +116,11 @@ pub struct ResolvedImport {
     /// Source spelling of the import path, for diagnostics.
     pub path: String,
     pub target: ImportTarget,
+    /// The namespacing prefix the expander merged this module's functions
+    /// under (`std.<mod>`, `loc.<hash>`, or `ext.<key>`), when known. A
+    /// module-alias call `alias.fn()` resolves to `<prefix>.fn`. `None` for
+    /// an external import resolved without a package context.
+    pub mangled_prefix: Option<String>,
     pub span: Span,
 }
 

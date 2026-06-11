@@ -192,15 +192,34 @@ pub struct ExternFn {
     pub span: Span,
 }
 
+/// One name in an import selector list. `import path { a, b as c }` yields
+/// selectors `a` (no rename) and `b as c` (bound locally as `c`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportSelector {
+    /// The name as exported by the source module.
+    pub name: String,
+    /// The local name to bind it under, from `name as local`. `None` binds
+    /// under `name` itself.
+    pub alias: Option<String>,
+}
+
+impl ImportSelector {
+    /// The name this selector binds in the importing module: the rename when
+    /// present, otherwise the exported name.
+    pub fn local(&self) -> &str {
+        self.alias.as_deref().unwrap_or(&self.name)
+    }
+}
+
 /// An import declaration.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Import {
     pub source: ImportSource,
     /// `import path as alias` renames the binding to `alias`.
     pub alias: Option<String>,
-    /// `import path { a, b }` selects specific names. Empty when no
+    /// `import path { a, b as c }` selects specific names. Empty when no
     /// selector list is present.
-    pub selectors: Vec<String>,
+    pub selectors: Vec<ImportSelector>,
     pub span: Span,
 }
 
