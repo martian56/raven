@@ -23,9 +23,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::ast::{
-    Block, Decl, DeclKind, ElseBranch, Expr, ExprKind, File, Function, FunctionBody, ImportSource,
-    LambdaBody, MatchArm, Pattern, PatternKind, Stmt, StmtKind, StrFragment, Type, TypeKind,
-    TypePath, VariantPayload,
+    Block, Decl, DeclKind, ElseBranch, Expr, ExprKind, File, Function, FunctionBody, GenericParam,
+    ImportSource, LambdaBody, MatchArm, Pattern, PatternKind, Stmt, StmtKind, StrFragment, Type,
+    TypeKind, TypePath, VariantPayload,
 };
 use crate::error::{RavenError, ResolveError};
 use crate::lexer::Lexer;
@@ -466,12 +466,14 @@ fn merge_module_items(
             }
             DeclKind::Struct(s) => {
                 rename_decl(&mut s.name, rename);
+                rewrite_generics(&mut s.generics, rename);
                 for field in &mut s.fields {
                     rewrite_type(&mut field.ty, rename);
                 }
             }
             DeclKind::Enum(e) => {
                 rename_decl(&mut e.name, rename);
+                rewrite_generics(&mut e.generics, rename);
                 for v in &mut e.variants {
                     match &mut v.payload {
                         VariantPayload::Tuple(tys) => {
@@ -490,6 +492,7 @@ fn merge_module_items(
             }
             DeclKind::Trait(t) => {
                 rename_decl(&mut t.name, rename);
+                rewrite_generics(&mut t.generics, rename);
                 for m in &mut t.members {
                     rewrite_fn(m, rename);
                 }
@@ -500,6 +503,7 @@ fn merge_module_items(
                 // as the declarations. Method names are dispatched by receiver
                 // type so they keep their names, but their signatures and
                 // bodies reference types that may have been namespaced.
+                rewrite_generics(&mut i.generics, rename);
                 rewrite_type_path(&mut i.trait_or_type, rename);
                 if let Some(for_type) = &mut i.for_type {
                     rewrite_type_path(for_type, rename);
@@ -864,9 +868,20 @@ fn rewrite_type_path(p: &mut TypePath, rename: &HashMap<String, String>) {
     }
 }
 
-/// Rewrite a function's signature (parameter and return types) and body. Used
-/// for free functions, trait members, and impl methods.
+/// Rewrite the trait names a generic parameter list bounds against, for
+/// example the `Score` in `fun f<T: Score>(...)`.
+fn rewrite_generics(generics: &mut [GenericParam], rename: &HashMap<String, String>) {
+    for g in generics {
+        for bound in &mut g.bounds {
+            rewrite_type_path(bound, rename);
+        }
+    }
+}
+
+/// Rewrite a function's signature (generic bounds, parameter and return types)
+/// and body. Used for free functions, trait members, and impl methods.
 fn rewrite_fn(f: &mut Function, rename: &HashMap<String, String>) {
+    rewrite_generics(&mut f.generics, rename);
     for p in &mut f.params {
         rewrite_type(&mut p.ty, rename);
     }
