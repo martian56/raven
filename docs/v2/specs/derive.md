@@ -31,8 +31,8 @@ and attaches the trait list to the following struct or enum as a
 than `derive`, is a parse error. A type with no attribute carries an empty
 derive list and is unaffected.
 
-The supported traits are `Eq`, `Hash`, `ToString`, `Debug`, `ToJson`, and
-`FromJson`. Naming any other trait (for example `Ord`) is a compile error.
+The supported traits are `Eq`, `Ord`, `Hash`, `ToString`, `Debug`, `ToJson`, and
+`FromJson`. Naming any other trait (for example `Clone`) is a compile error.
 `ToJson` and `FromJson` provide JSON serialization on top of `std/json`; see
 their section below and the [std/json spec](std-json.md).
 
@@ -89,6 +89,27 @@ The built-in generic types `Option<T>`, `Result<T, E>`, and `List<T>` implement
 `Eq` in `std/core`, and `Set<T>` and `Map<K, V>` in `std/collections` (these
 two compare order-independently), so `==`/`!=` work on them by value when the
 element type implements `Eq`.
+
+### Ord
+
+```rust
+fun compare(self, other: Self) -> Int
+```
+
+Returns a negative number when `self < other`, zero when equal, and a positive
+number when `self > other`, matching `std/core`'s `Ord`. Each field or payload
+type must itself implement `Ord`.
+
+* Struct: compare fields in declaration order, returning the first non-zero
+  field `compare` and `0` when every field is equal. `Point { x, y }` orders by
+  `x` first, then `y`.
+* Enum: compare the variant's declaration order first (an earlier variant sorts
+  before a later one), then, for two values of the same variant, compare the
+  payload slots in order. `Shape.Dot` sorts before `Shape.Circle(_)`, and
+  `Circle(2)` before `Circle(5)`.
+
+`Ord` pairs with `std/cmp` (`sort`, `sorted_by`, `min`, `max`) so a derived type
+can be sorted without a hand-written comparator.
 
 ### Hash
 
@@ -217,8 +238,8 @@ The bound is required because `equals` on a field of type `A` needs
 
 ## Limitations
 
-* Only `Eq`, `Hash`, `ToString`, `Debug`, `ToJson`, and `FromJson` are
-  supported. `Ord` and other traits are not derivable yet.
+* Only `Eq`, `Ord`, `Hash`, `ToString`, `Debug`, `ToJson`, and `FromJson` are
+  supported. Other traits are not derivable yet.
 * Enum variants with struct-style (named-field) payloads, for example
   `V(a: Int)`, are rejected with a clear error. Unit and tuple variants are
   fully supported.
