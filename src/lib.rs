@@ -19,6 +19,7 @@
 
 pub mod ast;
 pub mod codegen;
+pub mod doc;
 pub mod driver;
 pub mod error;
 pub mod format;

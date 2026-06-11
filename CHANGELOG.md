@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.56] - 2026-06-11
+
+### Added
+
+- `rvpm doc` generates Markdown API documentation from the package sources into `target/doc/<name>.md`. For each `.rv` file it lists the top-level `fun`, `struct`, `enum`, `trait`, and `const` items with their signatures and the `//` comment block above each (skipping any `@derive(...)` attribute line between the comment and the item). Items whose name begins with `_` are treated as internal and omitted (#509).
+
 ## [2.18.55] - 2026-06-11
 
 ### Added

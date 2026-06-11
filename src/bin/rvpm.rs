@@ -79,6 +79,7 @@ fn dispatch() -> ExitCode {
         Some("build") => run(cmd_build(&args[1..])),
         Some("run") => cmd_run(&args[1..]),
         Some("test") => cmd_test(&args[1..]),
+        Some("doc") => run(cmd_doc(&args[1..])),
         Some("fmt") => cmd_fmt(&args[1..]),
         Some("cache") => match cmd_cache(&args[1..]) {
             Ok(()) => ExitCode::SUCCESS,
@@ -430,6 +431,16 @@ fn cmd_test(args: &[String]) -> ExitCode {
     }
 }
 
+/// Generate Markdown API docs from the package sources into `target/doc`.
+fn cmd_doc(args: &[String]) -> Result<Vec<String>, String> {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        return Ok(vec![doc_usage()]);
+    }
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let report = raven::doc::generate(&cwd).map_err(|e| e.to_string())?;
+    Ok(report.outcome_lines)
+}
+
 /// Format Raven sources in place, or check formatting with `--check`.
 ///
 /// With no path arguments, formats every `.rv` file under the project
@@ -581,6 +592,10 @@ fn test_usage() -> String {
     "Usage: rvpm test".to_string()
 }
 
+fn doc_usage() -> String {
+    "Usage: rvpm doc".to_string()
+}
+
 fn add_usage() -> String {
     "Usage: rvpm add github.com/<user>/<repo>[@<version>]".to_string()
 }
@@ -608,6 +623,7 @@ fn print_usage() {
     println!("  build          Compile src/main.rv to a binary, or type-check a lib.rv library");
     println!("  run [args]     Build the application then run it, forwarding args");
     println!("  test           Run fun test_*() tests in *_test.rv files");
+    println!("  doc            Generate Markdown API docs into target/doc");
     println!("  fmt [paths]    Format .rv files in place (--check to verify only)");
     println!("  fetch <pkg>    Fetch 'github.com/<user>/<repo>@<version>' into the shared cache");
     println!("  lock           Generate or validate rv.lock for the current package");
