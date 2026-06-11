@@ -23,8 +23,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::ast::{
-    Block, Decl, DeclKind, ElseBranch, Expr, ExprKind, File, FunctionBody, ImportSource,
-    LambdaBody, MatchArm, Stmt, StmtKind, StrFragment,
+    Block, Decl, DeclKind, ElseBranch, Expr, ExprKind, File, Function, FunctionBody, ImportSource,
+    LambdaBody, MatchArm, Pattern, PatternKind, Stmt, StmtKind, StrFragment, Type, TypeKind,
+    TypePath, VariantPayload,
 };
 use crate::error::{RavenError, ResolveError};
 use crate::lexer::Lexer;
@@ -335,7 +336,13 @@ pub fn expand_with_stdlib_ctx(
         for name in top_level_fn_names(&module_file) {
             rename.insert(name.clone(), mangle_local_fn(&key, &name));
         }
-        merge_module_items(module_file.items, &rename, &mut combined_items);
+        // Types are namespaced the same way functions are, so two local
+        // modules can both declare a type of the same name.
+        for name in top_level_type_names(&module_file) {
+            rename.insert(name.clone(), mangle_local_fn(&key, &name));
+        }
+        let items = expand_module_derives(module_file.items)?;
+        merge_module_items(items, &rename, &mut combined_items);
     }
 
     // Merge the external package sources through the same merge core, with
@@ -349,7 +356,13 @@ pub fn expand_with_stdlib_ctx(
             for name in top_level_fn_names(&ext.file) {
                 rename.insert(name.clone(), mangle_external_fn(&key, &name));
             }
-            merge_module_items(ext.file.items, &rename, &mut combined_items);
+            // Types are namespaced like functions, so two packages can both
+            // export a type of the same name without colliding at merge.
+            for name in top_level_type_names(&ext.file) {
+                rename.insert(name.clone(), mangle_external_fn(&key, &name));
+            }
+            let items = expand_module_derives(ext.file.items)?;
+            merge_module_items(items, &rename, &mut combined_items);
         }
     }
 
@@ -401,6 +414,39 @@ fn collect_std_module_imports(file: &File, wanted: &mut BTreeSet<String>) {
 /// the source comes from (bundled `include_str!` versus the filesystem). A
 /// future external package backend (issue #85) plugs in here by supplying
 /// the source from the rvpm cache and reusing this same merge.
+/// Apply a declaration-name rename from the map, if present.
+fn rename_decl(name: &mut String, rename: &HashMap<String, String>) {
+    if let Some(replacement) = rename.get(name) {
+        *name = replacement.clone();
+    }
+}
+
+/// Clear `@derive(...)` requests from a module's types.
+fn strip_derives(items: &mut [Decl]) {
+    for d in items {
+        match &mut d.kind {
+            DeclKind::Struct(s) => s.derives.clear(),
+            DeclKind::Enum(e) => e.derives.clear(),
+            _ => {}
+        }
+    }
+}
+
+/// Expand a merged module's `@derive(...)` requests on its bare type names,
+/// before the module is namespaced. The synthesized impls are appended to the
+/// module's items and the derive requests are stripped, so the impls are
+/// namespaced together with the type they target (the global derive pass runs
+/// on the bare-named user and stdlib items only). Doing this after namespacing
+/// would fail, since the generated source is re-lexed and a namespaced name
+/// carries dots and a hash that do not lex as one identifier.
+fn expand_module_derives(mut items: Vec<Decl>) -> Result<Vec<Decl>, RavenError> {
+    let mut derived = Vec::new();
+    super::derive::expand_derives(&items, &mut derived)?;
+    strip_derives(&mut items);
+    items.extend(derived);
+    Ok(items)
+}
+
 fn merge_module_items(
     items: Vec<Decl>,
     rename: &HashMap<String, String>,
@@ -415,26 +461,66 @@ fn merge_module_items(
         }
         match &mut decl.kind {
             DeclKind::Function(f) => {
-                rewrite_fn_body_calls(&mut f.body, rename);
-                if let Some(replacement) = rename.get(&f.name) {
-                    f.name = replacement.clone();
+                rewrite_fn(f, rename);
+                rename_decl(&mut f.name, rename);
+            }
+            DeclKind::Struct(s) => {
+                rename_decl(&mut s.name, rename);
+                for field in &mut s.fields {
+                    rewrite_type(&mut field.ty, rename);
+                }
+            }
+            DeclKind::Enum(e) => {
+                rename_decl(&mut e.name, rename);
+                for v in &mut e.variants {
+                    match &mut v.payload {
+                        VariantPayload::Tuple(tys) => {
+                            for t in tys {
+                                rewrite_type(t, rename);
+                            }
+                        }
+                        VariantPayload::Struct(fields) => {
+                            for f in fields {
+                                rewrite_type(&mut f.ty, rename);
+                            }
+                        }
+                        VariantPayload::Unit => {}
+                    }
+                }
+            }
+            DeclKind::Trait(t) => {
+                rename_decl(&mut t.name, rename);
+                for m in &mut t.members {
+                    rewrite_fn(m, rename);
                 }
             }
             DeclKind::Impl(i) => {
-                // An `impl` on a type keeps its method names: a method is
-                // dispatched by the receiver's type, not by a free function
-                // name, so it never collides and needs no namespacing. Its
-                // body may call sibling free functions of the same module,
-                // which were renamed above; rewrite those call sites.
+                // The impl target and (for a trait impl) the trait it
+                // implements are type references that follow the same rename
+                // as the declarations. Method names are dispatched by receiver
+                // type so they keep their names, but their signatures and
+                // bodies reference types that may have been namespaced.
+                rewrite_type_path(&mut i.trait_or_type, rename);
+                if let Some(for_type) = &mut i.for_type {
+                    rewrite_type_path(for_type, rename);
+                }
                 for m in &mut i.items {
-                    rewrite_fn_body_calls(&mut m.body, rename);
+                    rewrite_fn(m, rename);
                 }
             }
-            // Struct, enum, and trait types merge under their own names,
-            // the same way bundled types like `Map` do. Two local modules
-            // that both define a type named `Foo` therefore collide; this
-            // mirrors the existing stdlib type behavior (issues #178/#184).
-            _ => {}
+            DeclKind::Const(c) => {
+                rewrite_type(&mut c.ty, rename);
+                rewrite_expr(&mut c.value, rename);
+            }
+            DeclKind::Let(l) => {
+                if let Some(t) = &mut l.ty {
+                    rewrite_type(t, rename);
+                }
+                if let Some(e) = &mut l.init {
+                    rewrite_expr(e, rename);
+                }
+            }
+            DeclKind::Extern(_) | DeclKind::Import(_) | DeclKind::Macro(_) => {}
         }
         combined.push(decl);
     }
@@ -528,8 +614,9 @@ fn import_rename_map(
                     if let Some(target) = parse_loaded(&loaded.source, &loaded.canonical_path) {
                         let key = local_module_key(&loaded.canonical_path);
                         let fns = top_level_fn_names(&target);
+                        let types = top_level_type_names(&target);
                         for sel in &import.selectors {
-                            if fns.contains(&sel.name) {
+                            if fns.contains(&sel.name) || types.contains(&sel.name) {
                                 map.insert(
                                     sel.local().to_string(),
                                     mangle_local_fn(&key, &sel.name),
@@ -697,8 +784,9 @@ fn external_import_rename_map(file: &File, ctx: &PackageContext) -> HashMap<Stri
                 };
                 let key = external_module_key(&gh.host, &gh.user, &gh.repo, &src_path);
                 let fns = top_level_fn_names(&target);
+                let types = top_level_type_names(&target);
                 for sel in &import.selectors {
-                    if fns.contains(&sel.name) {
+                    if fns.contains(&sel.name) || types.contains(&sel.name) {
                         map.insert(sel.local().to_string(), mangle_external_fn(&key, &sel.name));
                     }
                 }
@@ -728,6 +816,97 @@ fn top_level_fn_names(file: &File) -> BTreeSet<String> {
             _ => None,
         })
         .collect()
+}
+
+/// Top level type names (struct, enum, trait) a module declares. Like
+/// functions, an external or local module's types are namespaced at merge so
+/// two packages can both export a type of the same name; the caller adds these
+/// to the rename map.
+fn top_level_type_names(file: &File) -> BTreeSet<String> {
+    file.items
+        .iter()
+        .filter_map(|d| match &d.kind {
+            DeclKind::Struct(s) => Some(s.name.clone()),
+            DeclKind::Enum(e) => Some(e.name.clone()),
+            DeclKind::Trait(t) => Some(t.name.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Rewrite the type names a type expression mentions, following the rename map.
+/// Only the head segment of a path names a type; nested generic arguments are
+/// rewritten recursively. Built-in and unrenamed names are left untouched.
+fn rewrite_type(ty: &mut Type, rename: &HashMap<String, String>) {
+    match &mut ty.kind {
+        TypeKind::Path(p) | TypeKind::Dyn(p) => rewrite_type_path(p, rename),
+        TypeKind::Optional(inner) => rewrite_type(inner, rename),
+        TypeKind::Function { params, ret } => {
+            for p in params {
+                rewrite_type(p, rename);
+            }
+            rewrite_type(ret, rename);
+        }
+        TypeKind::Unit => {}
+    }
+}
+
+fn rewrite_type_path(p: &mut TypePath, rename: &HashMap<String, String>) {
+    if let Some(head) = p.segments.first_mut() {
+        if let Some(replacement) = rename.get(&head.name) {
+            head.name = replacement.clone();
+        }
+    }
+    for seg in &mut p.segments {
+        for g in &mut seg.generics {
+            rewrite_type(g, rename);
+        }
+    }
+}
+
+/// Rewrite a function's signature (parameter and return types) and body. Used
+/// for free functions, trait members, and impl methods.
+fn rewrite_fn(f: &mut Function, rename: &HashMap<String, String>) {
+    for p in &mut f.params {
+        rewrite_type(&mut p.ty, rename);
+    }
+    if let Some(ret) = &mut f.ret {
+        rewrite_type(ret, rename);
+    }
+    rewrite_fn_body_calls(&mut f.body, rename);
+}
+
+/// Rewrite the type names a pattern mentions: a struct pattern's name is a
+/// type, while a tuple pattern's name is an enum variant (resolved by the
+/// scrutinee) that is never in the type rename map, so the lookup is a no-op
+/// there. Nested patterns recurse.
+fn rewrite_pattern(pat: &mut Pattern, rename: &HashMap<String, String>) {
+    match &mut pat.kind {
+        PatternKind::Struct { name, fields } => {
+            if let Some(r) = rename.get(name) {
+                *name = r.clone();
+            }
+            for f in fields {
+                if let Some(p) = &mut f.pattern {
+                    rewrite_pattern(p, rename);
+                }
+            }
+        }
+        PatternKind::Tuple { name, elements } => {
+            if let Some(n) = name {
+                if let Some(r) = rename.get(n) {
+                    *n = r.clone();
+                }
+            }
+            for e in elements {
+                rewrite_pattern(e, rename);
+            }
+        }
+        PatternKind::Wildcard
+        | PatternKind::Literal(_)
+        | PatternKind::Ident(_)
+        | PatternKind::Range { .. } => {}
+    }
 }
 
 /// Lex and parse a loaded local source, returning `None` on any error
@@ -807,7 +986,10 @@ fn rewrite_block(block: &mut Block, rename: &HashMap<String, String>) {
 
 fn rewrite_stmt(stmt: &mut Stmt, rename: &HashMap<String, String>) {
     match &mut stmt.kind {
-        StmtKind::Let { init, .. } => {
+        StmtKind::Let { ty, init, .. } => {
+            if let Some(t) = ty {
+                rewrite_type(t, rename);
+            }
             if let Some(e) = init {
                 rewrite_expr(e, rename);
             }
@@ -828,9 +1010,12 @@ fn rewrite_stmt(stmt: &mut Stmt, rename: &HashMap<String, String>) {
 
 fn rewrite_expr(expr: &mut Expr, rename: &HashMap<String, String>) {
     match &mut expr.kind {
-        ExprKind::Ident { name, .. } => {
+        ExprKind::Ident { name, generics } => {
             if let Some(replacement) = rename.get(name) {
                 *name = replacement.clone();
+            }
+            for g in generics {
+                rewrite_type(g, rename);
             }
         }
         ExprKind::InterpolatedString(fragments) => {
@@ -851,7 +1036,17 @@ fn rewrite_expr(expr: &mut Expr, rename: &HashMap<String, String>) {
                 rewrite_expr(v, rename);
             }
         }
-        ExprKind::StructLit { fields, .. } => {
+        ExprKind::StructLit {
+            name,
+            generics,
+            fields,
+        } => {
+            if let Some(r) = rename.get(name) {
+                *name = r.clone();
+            }
+            for g in generics {
+                rewrite_type(g, rename);
+            }
             for f in fields {
                 rewrite_expr(&mut f.value, rename);
             }
@@ -935,6 +1130,7 @@ fn rewrite_expr(expr: &mut Expr, rename: &HashMap<String, String>) {
 }
 
 fn rewrite_match_arm(arm: &mut MatchArm, rename: &HashMap<String, String>) {
+    rewrite_pattern(&mut arm.pattern, rename);
     if let Some(guard) = &mut arm.guard {
         rewrite_expr(guard, rename);
     }
@@ -1558,7 +1754,9 @@ mod tests {
     }
 
     #[test]
-    fn local_module_struct_keeps_its_own_name() {
+    fn local_module_struct_is_namespaced() {
+        // A local module's type is namespaced like its functions, so two
+        // modules can both declare a `Point` without colliding at merge.
         let (dir, entry) = write_temp_project(
             &[
                 ("shapes.rv", "struct Point { x: Int }\n"),
@@ -1566,13 +1764,20 @@ mod tests {
             ],
             "main.rv",
         );
+        let canon = dir.join("shapes.rv").canonicalize().expect("canon");
         let user = parse_at("import \"./shapes\" { Point }\nfun main() {}\n", &entry);
         let combined = expand_with_stdlib(&user).expect("expand");
-        let has_point = combined
+        let mangled = mangle_local_fn(&local_module_key(&canon), "Point");
+        let present = combined
+            .items
+            .iter()
+            .any(|d| matches!(&d.kind, DeclKind::Struct(s) if s.name == mangled));
+        let bare = combined
             .items
             .iter()
             .any(|d| matches!(&d.kind, DeclKind::Struct(s) if s.name == "Point"));
-        assert!(has_point, "a local struct merges under its own name");
+        assert!(present, "a local struct should merge under {mangled}");
+        assert!(!bare, "the bare `Point` name should not remain");
         std::fs::remove_dir_all(&dir).ok();
     }
 

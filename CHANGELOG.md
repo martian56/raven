@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.62] - 2026-06-12
+
+### Added
+
+- Type namespacing at merge: a local or external module's types (struct, enum, trait) are now namespaced the same way its functions already were, so two packages can both export a type of the same name (for example a `Table`) without colliding. Combined with import renames, both can be used in one program: `import "...a" { Table as ATable }` and `import "...b" { Table }`. The merge rewrites a module's own type references and the type names it imports from other packages; `@derive` on a namespaced type is expanded before namespacing so its generated impls target the renamed type.
+
 ## [2.18.61] - 2026-06-11
 
 ### Added
