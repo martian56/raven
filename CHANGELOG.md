@@ -2,6 +2,14 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.53] - 2026-06-11
+
+### Added
+
+- `rvpm init` now writes a `.gitignore` (ignoring the generated `/target/`) alongside the manifest and entry file, leaving an existing `.gitignore` untouched.
+- `rvpm init --lib` scaffolds a library: `lib.rv` at the repo root (the entry point other projects import via `import "github.com/<user>/<repo>"`) instead of `src/main.rv`.
+- `rvpm cache` to inspect and clear the shared package cache: `cache dir` prints the cache root, `cache list` lists cached packages, and `cache clean [github.com/<user>/<repo>]` removes the whole cache or one package's cached versions (#503).
+
 ## [2.18.52] - 2026-06-11
 
 ### Added
