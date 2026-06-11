@@ -27,7 +27,9 @@ use crate::lexer::Lexer;
 use crate::parser::parse;
 
 /// The traits this pass can derive.
-const SUPPORTED: &[&str] = &["Eq", "Hash", "ToString", "Debug", "ToJson", "FromJson"];
+const SUPPORTED: &[&str] = &[
+    "Eq", "Ord", "Hash", "ToString", "Debug", "ToJson", "FromJson",
+];
 
 /// Whether a derive of `trait_name` is present on any type in `file`.
 fn any_derive(file: &File, trait_name: &str) -> bool {
@@ -110,7 +112,7 @@ fn check_supported(trait_name: &str, span: &crate::span::Span) -> Result<(), Rav
     } else {
         Err(RavenError::resolve(
             ResolveError::Other(format!(
-                "cannot derive `{trait_name}`: supported traits are Eq, Hash, ToString, Debug, ToJson, FromJson"
+                "cannot derive `{trait_name}`: supported traits are Eq, Ord, Hash, ToString, Debug, ToJson, FromJson"
             )),
             span.clone(),
         ))
@@ -139,6 +141,7 @@ fn struct_impl(s: &Struct, trait_name: &str) -> String {
     let (gen, self_ty) = impl_head(&s.name, &s.generics, trait_name);
     let body = match trait_name {
         "Eq" => struct_eq_body(s, &self_ty),
+        "Ord" => struct_ord_body(s, &self_ty),
         "Hash" => struct_hash_body(s),
         "ToString" => struct_to_string_body(s, "to_string"),
         "Debug" => struct_to_string_body(s, "debug"),
@@ -165,6 +168,25 @@ fn struct_eq_body(s: &Struct, self_ty: &str) -> String {
         "    fun equals(self, other: {self_ty}) -> Bool {{ return {} }}\n",
         parts.join(" && ")
     )
+}
+
+/// Compare a struct field by field in declaration order, returning the first
+/// non-zero field comparison and 0 when every field is equal. Each field type
+/// must implement `Ord`.
+fn struct_ord_body(s: &Struct, self_ty: &str) -> String {
+    if s.fields.is_empty() {
+        return format!("    fun compare(self, other: {self_ty}) -> Int {{ return 0 }}\n");
+    }
+    let mut body = format!("    fun compare(self, other: {self_ty}) -> Int {{\n");
+    for (i, f) in s.fields.iter().enumerate() {
+        let decl = if i == 0 { "let c" } else { "c" };
+        body.push_str(&format!(
+            "        {decl} = self.{0}.compare(other.{0})\n        if c != 0 {{ return c }}\n",
+            f.name
+        ));
+    }
+    body.push_str("        return 0\n    }\n");
+    body
 }
 
 fn struct_hash_body(s: &Struct) -> String {
@@ -221,6 +243,7 @@ fn enum_impl(e: &Enum, trait_name: &str, span: &crate::span::Span) -> Result<Str
     let (gen, self_ty) = impl_head(&e.name, &e.generics, trait_name);
     let body = match trait_name {
         "Eq" => enum_eq_body(e, &self_ty),
+        "Ord" => enum_ord_body(e, &self_ty),
         "Hash" => enum_hash_body(e),
         "ToString" => enum_to_string_body(e, "to_string"),
         "Debug" => enum_to_string_body(e, "debug"),
@@ -265,6 +288,59 @@ fn enum_eq_body(e: &Enum, self_ty: &str) -> String {
                 cmp.join(" && ")
             ));
         }
+    }
+    body.push_str("        }\n    }\n");
+    body
+}
+
+/// Compare an enum by variant order first, then by payload for the same
+/// variant: a variant declared earlier sorts before a later one, and two values
+/// of the same variant compare their payload slots in order. Each payload type
+/// must implement `Ord`. The inner `match` lists every variant explicitly so it
+/// stays exhaustive.
+fn enum_ord_body(e: &Enum, self_ty: &str) -> String {
+    let mut body = format!(
+        "    fun compare(self, other: {self_ty}) -> Int {{\n        return match self {{\n"
+    );
+    for (i, v) in e.variants.iter().enumerate() {
+        let n = variant_arity(v);
+        let self_pat = if n == 0 {
+            v.name.clone()
+        } else {
+            let binds: Vec<String> = (0..n).map(|k| format!("a{k}")).collect();
+            format!("{}({})", v.name, binds.join(", "))
+        };
+        body.push_str(&format!("            {self_pat} -> match other {{\n"));
+        for (j, w) in e.variants.iter().enumerate() {
+            let m = variant_arity(w);
+            let other_pat = if m == 0 {
+                w.name.clone()
+            } else if j == i {
+                let binds: Vec<String> = (0..m).map(|k| format!("b{k}")).collect();
+                format!("{}({})", w.name, binds.join(", "))
+            } else {
+                let wilds: Vec<String> = (0..m).map(|_| "_".to_string()).collect();
+                format!("{}({})", w.name, wilds.join(", "))
+            };
+            if j < i {
+                body.push_str(&format!("                {other_pat} -> 1,\n"));
+            } else if j > i {
+                body.push_str(&format!("                {other_pat} -> -1,\n"));
+            } else if n == 0 {
+                body.push_str(&format!("                {other_pat} -> 0,\n"));
+            } else {
+                let mut blk = String::from("{\n");
+                for k in 0..n {
+                    let decl = if k == 0 { "let c" } else { "c" };
+                    blk.push_str(&format!(
+                        "                    {decl} = a{k}.compare(b{k})\n                    if c != 0 {{ return c }}\n"
+                    ));
+                }
+                blk.push_str("                    0\n                }");
+                body.push_str(&format!("                {other_pat} -> {blk},\n"));
+            }
+        }
+        body.push_str("            },\n");
     }
     body.push_str("        }\n    }\n");
     body
@@ -619,10 +695,23 @@ mod tests {
 
     #[test]
     fn unsupported_trait_is_rejected() {
-        let file = parse_src("@derive(Ord)\nstruct Point { x: Int }\n");
+        let file = parse_src("@derive(Clone)\nstruct Point { x: Int }\n");
         let mut out = Vec::new();
-        let err = expand_derives(&file.items, &mut out).expect_err("Ord is not derivable");
-        assert!(format!("{err}").contains("Ord"), "got: {err}");
+        let err = expand_derives(&file.items, &mut out).expect_err("Clone is not derivable");
+        assert!(format!("{err}").contains("Clone"), "got: {err}");
+    }
+
+    #[test]
+    fn ord_is_derivable() {
+        let impls = derived_impls("@derive(Ord)\nstruct P { x: Int, y: Int }\n");
+        let traits: Vec<String> = impls
+            .iter()
+            .map(|i| i.trait_or_type.segments[0].name.clone())
+            .collect();
+        assert!(
+            traits.contains(&"Ord".to_string()),
+            "expected a derived Ord impl, got: {traits:?}"
+        );
     }
 
     #[test]

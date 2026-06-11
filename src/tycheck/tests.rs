@@ -107,6 +107,14 @@ fn inferred_type_violating_a_bound_is_rejected() {
 }
 
 #[test]
+fn derive_ord_struct_and_enum_check() {
+    // `@derive(Ord)` synthesizes a `compare` method that type-checks for a
+    // struct and a tuple enum. Feature for #499.
+    assert!(check("@derive(Ord)\nstruct P { x: Int, y: Int }\nfun main() {}\n").is_ok());
+    assert!(check("@derive(Ord)\nenum E { A, B(Int), C(Int, Int) }\nfun main() {}\n").is_ok());
+}
+
+#[test]
 fn module_level_let_non_literal_needs_annotation() {
     // An unannotated module-level `let` with a non-literal initializer is a
     // clean type error rather than an opaque codegen failure. Regression for

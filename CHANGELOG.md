@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.52] - 2026-06-11
+
+### Added
+
+- `@derive(Ord)` for structs and enums. It synthesizes `compare(self, other) -> Int`: a struct compares its fields in declaration order (first non-zero wins), and an enum compares variant order first, then payload slots for the same variant. A derived type can be sorted with `std/cmp` (`sort`, `sorted_by`) without a hand-written comparator (#499).
+
 ## [2.18.51] - 2026-06-11
 
 ### Fixed
