@@ -202,6 +202,32 @@ rvpm fmt
 
 Formats the package sources using the `[fmt]` settings from `rv.toml`.
 
+### rvpm doc
+
+```bash
+rvpm doc
+```
+
+Generates Markdown API documentation from the package sources into
+`target/doc/<name>.md`. For each `.rv` file (excluding `*_test.rv`) it lists
+the top-level `fun`, `struct`, `enum`, `trait`, and `const` items with their
+signatures and the `//` comment block written directly above each. Raven has
+no separate doc-comment syntax, so any contiguous run of `//` lines above an
+item is its documentation; an attribute line such as `@derive(...)` between
+the comment and the item is skipped. Items whose name begins with `_` are
+treated as internal and omitted.
+
+```rust
+// A semantic version, ordered by major then minor.
+@derive(Ord)
+struct Version {
+    major: Int,
+    minor: Int,
+}
+```
+
+documents `Version` with that comment as its description.
+
 ### rvpm cache
 
 ```bash
