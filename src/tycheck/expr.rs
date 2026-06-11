@@ -2966,7 +2966,15 @@ impl<'a, 'b> Checker<'a, 'b> {
         span: &Span,
     ) -> Result<Ty, RavenError> {
         let scrut_ty = self.check_expr(scrutinee)?;
-        let scrut_stripped = scrut_ty.strip_self().clone();
+        // Resolve the scrutinee type up front. A nested match binds its
+        // scrutinee to an inference variable that is already solved by the time
+        // the inner match runs (the inner `v` of `match opt { Some(v) -> match v
+        // { ... } }`). Without resolving, the patterns are bound against the
+        // bare variable, so a payload binding like `Str(s)` gets a fresh
+        // variable instead of its real type and the arms fail to infer, and the
+        // exhaustiveness check finds no constructors and wrongly flags the first
+        // arm as a catch-all that shadows the rest.
+        let scrut_stripped = self.infer.resolve(scrut_ty.strip_self());
 
         let mut result_ty: Option<Ty> = None;
         let mut pattern_names: Vec<super::match_check::PatternHead> = Vec::new();

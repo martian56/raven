@@ -107,6 +107,27 @@ fn inferred_type_violating_a_bound_is_rejected() {
 }
 
 #[test]
+fn nested_match_none_arm_infers() {
+    // A match arm that is itself a match returning Option, where both the inner
+    // and outer matches have a None arm. The inner scrutinee is an inference
+    // variable solved during checking; resolving it up front lets the inner
+    // None infer and keeps exhaustiveness from flagging a false catch-all.
+    // Regression for #515.
+    let src = "enum V { Str(String), Int(Int) }\n\
+               fun f(o: Option<V>) -> Option<String> {\n\
+               return match o {\n\
+               Some(v) -> match v {\n\
+               Str(s) -> Some(s),\n\
+               Int(n) -> None,\n\
+               },\n\
+               None -> None,\n\
+               }\n\
+               }\n\
+               fun main() {}\n";
+    assert!(check(src).is_ok());
+}
+
+#[test]
 fn derive_ord_struct_and_enum_check() {
     // `@derive(Ord)` synthesizes a `compare` method that type-checks for a
     // struct and a tuple enum. Feature for #499.
