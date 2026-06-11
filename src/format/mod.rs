@@ -196,7 +196,13 @@ impl<'a> Printer<'a> {
             // Emit any own-line comments that precede this item, each with a
             // gap-preserving blank, then the item itself.
             prev_end_line = self.emit_toplevel_comments(item.span.start, prev_end_line);
-            self.maybe_blank(prev_end_line, item.span.start);
+            // A struct/enum's `@derive`/`@repr` attributes are emitted by
+            // `decl()` but are not covered by `item.span`, so the source lines
+            // they occupy are discounted here. Otherwise a doc comment sitting
+            // directly above `@derive` would be split from its item by a
+            // spurious blank line.
+            let attr_lines = leading_attr_lines(&item.kind);
+            self.maybe_blank(prev_end_line.map(|p| p + attr_lines), item.span.start);
             let trailing = self.decl(item);
             if let Some(t) = trailing {
                 self.attach_trailing(&t);
@@ -1458,6 +1464,18 @@ fn macro_space_before(prev: &TokenKind, cur: &TokenKind) -> bool {
         return false;
     }
     true
+}
+
+/// The number of `@derive`/`@repr` attribute lines a declaration emits before
+/// its keyword. These attributes are not covered by the declaration's span, so
+/// the top-level blank-line logic discounts them when deciding whether a real
+/// blank line preceded the item.
+fn leading_attr_lines(kind: &DeclKind) -> usize {
+    match kind {
+        DeclKind::Struct(s) => (s.repr_c as usize) + (!s.derives.is_empty() as usize),
+        DeclKind::Enum(e) => !e.derives.is_empty() as usize,
+        _ => 0,
+    }
 }
 
 fn render_type(ty: &Type) -> String {

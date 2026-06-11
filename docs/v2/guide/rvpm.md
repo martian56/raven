@@ -197,10 +197,15 @@ a `*_test.rv` at the package root that imports `./lib` works without a
 ### rvpm fmt
 
 ```bash
-rvpm fmt
+rvpm fmt [--check] [paths...]
 ```
 
-Formats the package sources using the `[fmt]` settings from `rv.toml`.
+Formats Raven sources using the `[fmt]` settings from `rv.toml`. With no
+paths it formats every `.rv` file in the package (the build output and
+hidden directories are skipped), so it works for both an application
+(`src/main.rv`) and a library (`lib.rv` at the root). Pass explicit files
+or directories to format only those, and `--check` to verify formatting
+without writing (it lists unformatted files and exits non-zero).
 
 ### rvpm doc
 

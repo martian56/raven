@@ -62,6 +62,30 @@ fn comment_inside_call_args_stays_in_place() {
 }
 
 #[test]
+fn doc_comment_stays_attached_to_derived_item() {
+    // A comment directly above `@derive` documents the item, so the formatter
+    // must not split them with a blank line (which `rvpm doc` would read as the
+    // comment no longer documenting the item).
+    let src = "// A point.\n@derive(Eq, Ord)\nstruct Point {\n    x: Int,\n}\n";
+    let out = fmt(src);
+    assert!(
+        out.contains("// A point.\n@derive(Eq, Ord)"),
+        "comment was split from @derive: {out:?}"
+    );
+}
+
+#[test]
+fn intentional_blank_above_derived_item_is_preserved() {
+    // A real blank line between a comment and a derived item is kept.
+    let src = "// not the doc\n\n@derive(Eq)\nenum E {\n    A,\n}\n";
+    let out = fmt(src);
+    assert!(
+        out.contains("// not the doc\n\n@derive(Eq)"),
+        "intentional blank line was dropped: {out:?}"
+    );
+}
+
+#[test]
 fn call_without_comments_stays_single_line() {
     let out = fmt("fun main() {\n    let r = foo(\n        1,\n        2,\n    )\n}\n");
     assert!(

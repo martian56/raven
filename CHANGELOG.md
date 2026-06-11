@@ -2,6 +2,13 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.57] - 2026-06-11
+
+### Fixed
+
+- The formatter no longer inserts a blank line between a doc comment and a following `@derive`/`@repr` attribute, so a comment stays attached to the item it documents (and `rvpm doc` keeps picking it up). The blank-line gap calculation now accounts for the attribute lines, which are not part of the item's span (#511).
+- `rvpm fmt` with no arguments now formats every `.rv` file in the package (skipping the build output and hidden directories) instead of assuming a `src/` directory, so it works for a library (`lib.rv` at the root) as well as an application (#511).
+
 ## [2.18.56] - 2026-06-11
 
 ### Added

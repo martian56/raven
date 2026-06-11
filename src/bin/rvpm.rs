@@ -455,7 +455,7 @@ fn cmd_fmt(args: &[String]) -> ExitCode {
     let paths: Vec<&String> = args.iter().filter(|a| !a.starts_with('-')).collect();
 
     let files = if paths.is_empty() {
-        match collect_rv_files(PathBuf::from("src")) {
+        match collect_package_rv_files() {
             Ok(f) => f,
             Err(e) => {
                 eprintln!("rvpm: {}", e);
@@ -542,6 +542,36 @@ fn cmd_fmt(args: &[String]) -> ExitCode {
 
 /// Recursively collect `.rv` files under `dir`, sorted for deterministic
 /// output.
+/// Collect the `.rv` files to format by default: every `.rv` under the current
+/// directory, skipping the build output and hidden or VCS directories. This
+/// covers an application (`src/main.rv`) and a library (`lib.rv` at the root)
+/// alike, plus any test and example sources.
+fn collect_package_rv_files() -> Result<Vec<PathBuf>, String> {
+    let mut out = Vec::new();
+    collect_rv_excluding(Path::new("."), &mut out)?;
+    out.sort();
+    Ok(out)
+}
+
+fn collect_rv_excluding(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    let entries = std::fs::read_dir(dir).map_err(|e| format!("{}: {}", dir.display(), e))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if path.is_dir() {
+            if name == "target" || name.starts_with('.') {
+                continue;
+            }
+            collect_rv_excluding(&path, out)?;
+        } else if path.extension().and_then(|s| s.to_str()) == Some("rv") {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
 fn collect_rv_files(dir: PathBuf) -> Result<Vec<PathBuf>, String> {
     if !dir.exists() {
         return Err(format!("'{}' does not exist", dir.display()));
