@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.51] - 2026-06-11
+
+### Fixed
+
+- A module-level `let` with an unannotated, non-literal initializer (for example `let lock = mutex()`) now reports a clear type error pointing at the binding, asking for a type annotation, instead of crashing in codegen with `unresolved callee: Unit$<method>`. An annotated global (`let lock: Mutex = mutex()`) works as before, and literal globals are still inferred (#497).
+
 ## [2.18.50] - 2026-06-11
 
 ### Fixed

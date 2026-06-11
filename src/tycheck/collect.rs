@@ -168,11 +168,25 @@ pub fn collect_declarations(
                 let scope = GenericScope::new();
                 let ty = match &l.ty {
                     Some(t) => resolve_ty(t, resolved, env, None, &scope)?,
-                    // Infer an unannotated module-level `let` from a literal
-                    // initializer so references type-check (HIR inlines the
-                    // literal at each use; module-level bindings have no
-                    // runtime storage yet).
-                    None => l.init.as_ref().and_then(literal_ty_of).unwrap_or(Ty::Error),
+                    // An unannotated module-level `let` is inferred from a
+                    // literal initializer. A non-literal initializer (a call,
+                    // for example) cannot be typed at signature-collection time
+                    // without running the body checker, so require an
+                    // annotation instead of leaving the binding typed `Error`,
+                    // which previously surfaced only as an opaque codegen
+                    // failure (`unresolved callee: Unit$<method>`) at each use.
+                    None => match l.init.as_ref().and_then(literal_ty_of) {
+                        Some(t) => t,
+                        None => {
+                            return Err(RavenError::ty(
+                                TypeError::Custom(format!(
+                                    "cannot infer the type of module-level `let {0}` from a non-literal initializer; add a type annotation, for example `let {0}: SomeType = ...`",
+                                    l.name
+                                )),
+                                l.span.clone(),
+                            ));
+                        }
+                    },
                 };
                 env.statics.insert(id, ty);
             }
