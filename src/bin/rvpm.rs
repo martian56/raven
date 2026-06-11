@@ -5,12 +5,12 @@
 //! library code in `raven::manifest`, `raven::pkg`, `raven::lock`, and
 //! `raven::ops`.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use raven::format::format_source_with;
 use raven::lock::{self, LockFile, LOCK_FILE_NAME};
-use raven::manifest::init::{init_project, name_from_dir, InitError};
+use raven::manifest::init::{init_project, name_from_dir, InitError, ProjectKind};
 use raven::manifest::Manifest;
 use raven::ops;
 use raven::pkg;
@@ -68,6 +68,13 @@ fn dispatch() -> ExitCode {
         Some("build") => run(cmd_build(&args[1..])),
         Some("run") => cmd_run(&args[1..]),
         Some("fmt") => cmd_fmt(&args[1..]),
+        Some("cache") => match cmd_cache(&args[1..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("rvpm: {}", e);
+                ExitCode::from(1)
+            }
+        },
         Some(other) => {
             eprintln!("rvpm: unknown subcommand '{}'", other);
             eprintln!("Run 'rvpm help' for usage.");
@@ -77,17 +84,134 @@ fn dispatch() -> ExitCode {
 }
 
 fn cmd_init(args: &[String]) -> Result<(), InitError> {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", init_usage());
+        return Ok(());
+    }
     let cwd = std::env::current_dir().map_err(InitError::Io)?;
-    let name = match args.first() {
+    let kind = if args.iter().any(|a| a == "--lib") {
+        ProjectKind::Lib
+    } else {
+        ProjectKind::App
+    };
+    // The name is the first non-flag argument; default to the directory name.
+    let name = match args.iter().find(|a| !a.starts_with('-')) {
         Some(n) => n.clone(),
         None => name_from_dir(&cwd),
     };
     let dir = PathBuf::from(".");
-    init_project(&dir, &name)?;
-    println!("Created package '{}'", name);
+    init_project(&dir, &name, kind)?;
+    let label = match kind {
+        ProjectKind::App => "package",
+        ProjectKind::Lib => "library",
+    };
+    println!("Created {} '{}'", label, name);
     println!("  rv.toml");
-    println!("  src/main.rv");
+    println!("  .gitignore");
+    match kind {
+        ProjectKind::App => println!("  src/main.rv"),
+        ProjectKind::Lib => println!("  lib.rv"),
+    }
     Ok(())
+}
+
+/// Inspect or clear the shared package cache.
+fn cmd_cache(args: &[String]) -> Result<(), String> {
+    match args.first().map(String::as_str) {
+        None | Some("--help") | Some("-h") => {
+            println!("{}", cache_usage());
+            Ok(())
+        }
+        Some("dir") => {
+            println!("{}", pkg::cache_root().display());
+            Ok(())
+        }
+        Some("list") => cache_list(),
+        Some("clean") => cache_clean(&args[1..]),
+        Some(other) => Err(format!(
+            "unknown cache subcommand '{}'\n{}",
+            other,
+            cache_usage()
+        )),
+    }
+}
+
+/// List every cached `<host>/<user>/<repo>@<version>` directory.
+fn cache_list() -> Result<(), String> {
+    let root = pkg::cache_root();
+    if !root.exists() {
+        println!("cache is empty ({})", root.display());
+        return Ok(());
+    }
+    let mut entries = Vec::new();
+    for host in dir_names(&root)? {
+        let host_dir = root.join(&host);
+        for user in dir_names(&host_dir)? {
+            let user_dir = host_dir.join(&user);
+            for pkg_ver in dir_names(&user_dir)? {
+                entries.push(format!("{}/{}/{}", host, user, pkg_ver));
+            }
+        }
+    }
+    if entries.is_empty() {
+        println!("cache is empty ({})", root.display());
+    } else {
+        entries.sort();
+        for e in &entries {
+            println!("{}", e);
+        }
+    }
+    Ok(())
+}
+
+/// Remove the whole cache, or every cached version of one package given as a
+/// `github.com/<user>/<repo>` argument.
+fn cache_clean(args: &[String]) -> Result<(), String> {
+    let root = pkg::cache_root();
+    match args.iter().find(|a| !a.starts_with('-')) {
+        Some(spec) => {
+            let gh = GithubPath::parse(spec)
+                .ok_or_else(|| format!("'{}' is not a 'github.com/<user>/<repo>' path", spec))?;
+            let user_dir = root.join(&gh.host).join(&gh.user);
+            if !user_dir.exists() {
+                println!("nothing cached for {}", spec);
+                return Ok(());
+            }
+            let prefix = format!("{}@", gh.repo);
+            let mut removed = 0;
+            for name in dir_names(&user_dir)? {
+                if name == gh.repo || name.starts_with(&prefix) {
+                    std::fs::remove_dir_all(user_dir.join(&name)).map_err(|e| e.to_string())?;
+                    removed += 1;
+                }
+            }
+            println!("removed {} cached version(s) of {}", removed, spec);
+            Ok(())
+        }
+        None => {
+            if !root.exists() {
+                println!("cache is already empty ({})", root.display());
+                return Ok(());
+            }
+            std::fs::remove_dir_all(&root).map_err(|e| e.to_string())?;
+            println!("removed the package cache ({})", root.display());
+            Ok(())
+        }
+    }
+}
+
+/// The names of the immediate subdirectories of `dir`, ignoring files.
+fn dir_names(dir: &Path) -> Result<Vec<String>, String> {
+    let mut names = Vec::new();
+    for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        if entry.path().is_dir() {
+            if let Some(n) = entry.file_name().to_str() {
+                names.push(n.to_string());
+            }
+        }
+    }
+    Ok(names)
 }
 
 fn cmd_fetch(args: &[String]) -> Result<(), String> {
@@ -349,6 +473,14 @@ fn collect_rv_files(dir: PathBuf) -> Result<Vec<PathBuf>, String> {
     Ok(out)
 }
 
+fn init_usage() -> String {
+    "Usage: rvpm init [name] [--lib]".to_string()
+}
+
+fn cache_usage() -> String {
+    "Usage: rvpm cache <dir | list | clean [github.com/<user>/<repo>]>".to_string()
+}
+
 fn fmt_usage() -> String {
     "Usage: rvpm fmt [--check] [paths...]".to_string()
 }
@@ -380,7 +512,7 @@ fn print_usage() {
     println!("  rvpm <command> [arguments]");
     println!();
     println!("Commands:");
-    println!("  init [name]    Scaffold a new package in the current directory");
+    println!("  init [name]    Scaffold a new package here (--lib for a library, lib.rv)");
     println!("  add <pkg>      Add a dependency to rv.toml, then resolve and write rv.lock");
     println!("  install        Resolve rv.toml against rv.lock and fill the cache");
     println!("  update [pkg]   Re-resolve rv.toml and rewrite rv.lock for one package or all");
@@ -389,6 +521,7 @@ fn print_usage() {
     println!("  fmt [paths]    Format .rv files in place (--check to verify only)");
     println!("  fetch <pkg>    Fetch 'github.com/<user>/<repo>@<version>' into the shared cache");
     println!("  lock           Generate or validate rv.lock for the current package");
+    println!("  cache <sub>    Inspect or clear the shared package cache (dir/list/clean)");
     println!("  help           Print this message");
     println!();
     println!("Package arguments use the 'github.com/<user>/<repo>' form.");
