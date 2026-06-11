@@ -41,7 +41,18 @@ fn dispatch() -> ExitCode {
             print_usage();
             ExitCode::SUCCESS
         }
+        Some("--version") | Some("-V") | Some("version") => {
+            println!("rvpm {}", env!("CARGO_PKG_VERSION"));
+            ExitCode::SUCCESS
+        }
         Some("init") => match cmd_init(&args[1..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("rvpm: {}", e);
+                ExitCode::from(1)
+            }
+        },
+        Some("new") => match cmd_new(&args[1..]) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("rvpm: {}", e);
@@ -112,6 +123,42 @@ fn cmd_init(args: &[String]) -> Result<(), InitError> {
         ProjectKind::App => println!("  src/main.rv"),
         ProjectKind::Lib => println!("  lib.rv"),
     }
+    Ok(())
+}
+
+/// Scaffold a new package in a fresh `<name>/` directory (vs `init`, which
+/// scaffolds the current directory).
+fn cmd_new(args: &[String]) -> Result<(), String> {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", new_usage());
+        return Ok(());
+    }
+    let kind = if args.iter().any(|a| a == "--lib") {
+        ProjectKind::Lib
+    } else {
+        ProjectKind::App
+    };
+    let target = args
+        .iter()
+        .find(|a| !a.starts_with('-'))
+        .ok_or_else(|| format!("new needs a directory name\n{}", new_usage()))?;
+    let dir = PathBuf::from(target);
+    if dir.join("rv.toml").exists() {
+        return Err(format!("'{}' already contains an rv.toml", target));
+    }
+    // The package name is the final path component, so `rvpm new path/to/app`
+    // names the package `app`.
+    let name = Path::new(target)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(target.as_str());
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    init_project(&dir, name, kind).map_err(|e| e.to_string())?;
+    let label = match kind {
+        ProjectKind::App => "package",
+        ProjectKind::Lib => "library",
+    };
+    println!("Created {} '{}' in {}/", label, name, target);
     Ok(())
 }
 
@@ -477,6 +524,10 @@ fn init_usage() -> String {
     "Usage: rvpm init [name] [--lib]".to_string()
 }
 
+fn new_usage() -> String {
+    "Usage: rvpm new <name> [--lib]".to_string()
+}
+
 fn cache_usage() -> String {
     "Usage: rvpm cache <dir | list | clean [github.com/<user>/<repo>]>".to_string()
 }
@@ -513,16 +564,18 @@ fn print_usage() {
     println!();
     println!("Commands:");
     println!("  init [name]    Scaffold a new package here (--lib for a library, lib.rv)");
+    println!("  new <name>     Scaffold a new package in a fresh <name>/ directory (--lib)");
     println!("  add <pkg>      Add a dependency to rv.toml, then resolve and write rv.lock");
     println!("  install        Resolve rv.toml against rv.lock and fill the cache");
     println!("  update [pkg]   Re-resolve rv.toml and rewrite rv.lock for one package or all");
-    println!("  build          Compile src/main.rv to target/raven-out/<name>");
-    println!("  run [args]     Build the package then run it, forwarding args");
+    println!("  build          Compile src/main.rv to a binary, or type-check a lib.rv library");
+    println!("  run [args]     Build the application then run it, forwarding args");
     println!("  fmt [paths]    Format .rv files in place (--check to verify only)");
     println!("  fetch <pkg>    Fetch 'github.com/<user>/<repo>@<version>' into the shared cache");
     println!("  lock           Generate or validate rv.lock for the current package");
     println!("  cache <sub>    Inspect or clear the shared package cache (dir/list/clean)");
     println!("  help           Print this message");
+    println!("  version        Print the rvpm version (also --version, -V)");
     println!();
     println!("Package arguments use the 'github.com/<user>/<repo>' form.");
     println!("For 'add', append '@<version>' to pin a git tag or branch; without it");

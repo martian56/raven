@@ -50,8 +50,11 @@ pub enum OpError {
     Lock(LockError),
     /// `update` named a package that is not a dependency in `rv.toml`.
     UnknownPackage(String),
-    /// The package entry file (`src/main.rv`) was not found.
+    /// Neither entry file (`src/main.rv` for an application nor `lib.rv` for a
+    /// library) was found.
     MissingEntry(PathBuf),
+    /// `run` was asked to execute a library, which produces no binary.
+    NotRunnable,
     /// Compiling or linking the package failed.
     Build(DriverError),
     /// Running the produced binary failed to launch.
@@ -79,8 +82,23 @@ impl fmt::Display for OpError {
                 write!(f, "'{}' is not a dependency in rv.toml", p)
             }
             OpError::MissingEntry(p) => {
-                write!(f, "package entry file not found: '{}'", p.display())
+                let root = p.parent().and_then(|s| s.parent());
+                match root {
+                    Some(root) => write!(
+                        f,
+                        "no package entry in '{}': expected 'src/main.rv' (application) or 'lib.rv' (library)",
+                        root.display()
+                    ),
+                    None => write!(
+                        f,
+                        "no package entry: expected 'src/main.rv' (application) or 'lib.rv' (library)"
+                    ),
+                }
             }
+            OpError::NotRunnable => write!(
+                f,
+                "this package is a library (lib.rv) with no executable to run; use 'rvpm build' to type-check it"
+            ),
             OpError::Build(e) => write!(f, "{}", e),
             OpError::Run { binary, source } => {
                 write!(f, "cannot run '{}': {}", binary.display(), source)
@@ -333,19 +351,44 @@ pub fn update_in(
     }
 }
 
-/// The conventional package entry source, relative to the project root.
+/// The conventional application entry source, relative to the project root.
 pub const ENTRY_FILE: &str = "src/main.rv";
+
+/// The conventional library entry source, at the project root. This is the file
+/// other projects load for `import "github.com/<user>/<repo>"`.
+pub const LIB_ENTRY_FILE: &str = "lib.rv";
 
 /// The output directory for a built package binary, relative to the
 /// project root.
 pub const OUTPUT_DIR: &str = "target/raven-out";
 
-/// The result of a `build`: the path to the produced binary and the lines
-/// to report.
+/// The result of a `build`: the produced binary (`None` for a library, which is
+/// type-checked rather than compiled to a binary) and the lines to report.
 #[derive(Debug, Clone)]
 pub struct BuildReport {
-    pub binary: PathBuf,
+    pub binary: Option<PathBuf>,
     pub outcome_lines: Vec<String>,
+}
+
+/// A package's entry: an application compiled to a binary, or a library that is
+/// type-checked.
+enum Entry {
+    App(PathBuf),
+    Lib(PathBuf),
+}
+
+/// Find the package entry. `src/main.rv` (an application) takes precedence over
+/// `lib.rv` (a library) at the project root.
+fn resolve_entry(project_dir: &Path) -> Option<Entry> {
+    let app = project_dir.join(ENTRY_FILE);
+    if app.is_file() {
+        return Some(Entry::App(app));
+    }
+    let lib = project_dir.join(LIB_ENTRY_FILE);
+    if lib.is_file() {
+        return Some(Entry::Lib(lib));
+    }
+    None
 }
 
 /// Build the package under `project_dir`, using the default cache root.
@@ -381,30 +424,44 @@ pub fn build_in(project_dir: &Path, cache_root: &Path) -> Result<BuildReport, Op
     };
     let ctx = PackageContext::new(cache_root.to_path_buf(), &lock);
 
-    let entry = project_dir.join(ENTRY_FILE);
-    if !entry.is_file() {
-        return Err(OpError::MissingEntry(entry));
+    match resolve_entry(project_dir) {
+        Some(Entry::App(entry)) => {
+            let binary = output_binary_path(project_dir, &manifest.package.name);
+            if let Some(parent) = binary.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| OpError::Io {
+                    action: "create output directory".to_string(),
+                    path: parent.to_path_buf(),
+                    source: e,
+                })?;
+            }
+            driver::build_binary(&entry, &binary, Some(&ctx))?;
+            Ok(BuildReport {
+                outcome_lines: vec![format!(
+                    "Compiled {} to {}",
+                    manifest.package.name,
+                    binary.display()
+                )],
+                binary: Some(binary),
+            })
+        }
+        Some(Entry::Lib(entry)) => {
+            // A library has no `main`, so it is type-checked, not linked.
+            let source = std::fs::read_to_string(&entry).map_err(|e| OpError::Io {
+                action: "read".to_string(),
+                path: entry.clone(),
+                source: e,
+            })?;
+            driver::check(&source, &entry, Some(&ctx))?;
+            Ok(BuildReport {
+                binary: None,
+                outcome_lines: vec![format!(
+                    "Checked library {} ({})",
+                    manifest.package.name, LIB_ENTRY_FILE
+                )],
+            })
+        }
+        None => Err(OpError::MissingEntry(project_dir.join(ENTRY_FILE))),
     }
-
-    let binary = output_binary_path(project_dir, &manifest.package.name);
-    if let Some(parent) = binary.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| OpError::Io {
-            action: "create output directory".to_string(),
-            path: parent.to_path_buf(),
-            source: e,
-        })?;
-    }
-
-    driver::build_binary(&entry, &binary, Some(&ctx))?;
-
-    Ok(BuildReport {
-        binary: binary.clone(),
-        outcome_lines: vec![format!(
-            "Compiled {} to {}",
-            manifest.package.name,
-            binary.display()
-        )],
-    })
 }
 
 /// Build the package then run the produced binary, forwarding `args` to it
@@ -420,12 +477,17 @@ pub fn run_package_in(
     args: &[String],
     cache_root: &Path,
 ) -> Result<i32, OpError> {
+    // A library has no executable; report that before building.
+    if let Some(Entry::Lib(_)) = resolve_entry(project_dir) {
+        return Err(OpError::NotRunnable);
+    }
     let report = build_in(project_dir, cache_root)?;
-    let status = std::process::Command::new(&report.binary)
+    let binary = report.binary.ok_or(OpError::NotRunnable)?;
+    let status = std::process::Command::new(&binary)
         .args(args)
         .status()
         .map_err(|e| OpError::Run {
-            binary: report.binary.clone(),
+            binary: binary.clone(),
             source: e,
         })?;
     Ok(status.code().unwrap_or(1))
@@ -811,6 +873,43 @@ mod tests {
             }
             other => panic!("expected MissingEntry, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn build_type_checks_a_library() {
+        // A package with a `lib.rv` and no `src/main.rv` is type-checked rather
+        // than compiled to a binary, so the report carries no binary path.
+        let proj = TempProject::new("lib");
+        proj.write_manifest("[package]\nname = \"mylib\"\nversion = \"0.1.0\"\n");
+        std::fs::write(
+            proj.root.join(LIB_ENTRY_FILE),
+            "fun add(a: Int, b: Int) -> Int {\n    return a + b\n}\n",
+        )
+        .expect("write lib.rv");
+        let cache = proj.cache_root();
+        std::fs::create_dir_all(&cache).expect("mkdir cache");
+        let report = build_in(&proj.root, &cache).expect("library type-checks");
+        assert!(report.binary.is_none(), "a library produces no binary");
+        assert!(report
+            .outcome_lines
+            .iter()
+            .any(|l| l.contains("Checked library")));
+    }
+
+    #[test]
+    fn run_rejects_a_library() {
+        // `run` has nothing to execute for a library.
+        let proj = TempProject::new("librun");
+        proj.write_manifest("[package]\nname = \"mylib\"\nversion = \"0.1.0\"\n");
+        std::fs::write(
+            proj.root.join(LIB_ENTRY_FILE),
+            "fun add(a: Int, b: Int) -> Int {\n    return a + b\n}\n",
+        )
+        .expect("write lib.rv");
+        let cache = proj.cache_root();
+        std::fs::create_dir_all(&cache).expect("mkdir cache");
+        let err = run_package_in(&proj.root, &[], &cache).unwrap_err();
+        assert!(matches!(err, OpError::NotRunnable), "got {:?}", err);
     }
 
     #[test]

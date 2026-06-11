@@ -2,6 +2,14 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.54] - 2026-06-11
+
+### Added
+
+- `rvpm build` is now library-aware: a package with a `lib.rv` and no `src/main.rv` is type-checked (no binary), so a package author can verify the library compiles. `rvpm run` reports that a library has no executable instead of erroring on a missing entry.
+- `rvpm new <name>` scaffolds a package into a fresh `<name>/` directory (with `--lib` for a library), complementing `rvpm init`.
+- `rvpm --version` / `-V` / `version` prints the rvpm version (#505).
+
 ## [2.18.53] - 2026-06-11
 
 ### Added

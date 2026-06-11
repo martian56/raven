@@ -82,9 +82,14 @@ cd my_app
 ```
 my_app/
   rv.toml        # the package manifest
+  .gitignore     # ignores the generated target/ directory
   src/
     main.rv      # the entry point, defining fun main()
 ```
+
+To start a library instead (a package others import rather than run), use
+`rvpm init --lib`, which scaffolds `lib.rv` at the root in place of
+`src/main.rv`. `rvpm new <name>` does the same in a fresh directory.
 
 The generated `rv.toml`:
 
