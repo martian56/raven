@@ -1806,7 +1806,6 @@ fn fold_binary(op: BinaryOp, l: HirExprKind, r: HirExprKind) -> Option<HirExprKi
 /// function symbol (`std.<module>.<func>`) the call should target. The type
 /// checker has already verified the call against this function's signature.
 fn module_qualified_fn(receiver: &Expr, name: &str, cx: &LowerCtx<'_>) -> Option<String> {
-    use crate::resolve::bindings::ImportTarget;
     use crate::resolve::Binding;
     let ExprKind::Ident { generics, .. } = &receiver.kind else {
         return None;
@@ -1818,11 +1817,16 @@ fn module_qualified_fn(receiver: &Expr, name: &str, cx: &LowerCtx<'_>) -> Option
         return None;
     };
     let import = cx.resolved.map.imports.get(import_id.0)?;
-    let ImportTarget::StdlibModule { segments } = &import.target else {
-        return None;
-    };
-    let module = segments.first()?;
-    Some(crate::resolve::stdlib::mangle_stdlib_fn(module, name))
+    // The expander merged this module's functions under `mangled_prefix`, so an
+    // alias call `alias.fn()` targets `<prefix>.fn`, for std, local, and
+    // external sources alike.
+    let prefix = import.mangled_prefix.as_ref()?;
+    Some(format!(
+        "{}{}{}",
+        prefix,
+        crate::resolve::stdlib::NAMESPACE_SEP,
+        name
+    ))
 }
 
 /// Wrap an interpolation part in a `to_string()` method call when its

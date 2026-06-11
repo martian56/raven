@@ -795,7 +795,25 @@ fn parses_std_import_with_selectors() {
     let DeclKind::Import(im) = &f.items[0].kind else {
         panic!()
     };
-    assert_eq!(im.selectors, vec!["Map".to_string(), "Set".to_string()]);
+    let names: Vec<&str> = im.selectors.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, vec!["Map", "Set"]);
+    assert!(im.selectors.iter().all(|s| s.alias.is_none()));
+}
+
+#[test]
+fn parses_import_selector_renames() {
+    let f = parse_ok("import \"./a\" { parse as aparse, Table as MyTable, plain }\n");
+    let DeclKind::Import(im) = &f.items[0].kind else {
+        panic!()
+    };
+    assert_eq!(im.selectors[0].name, "parse");
+    assert_eq!(im.selectors[0].alias.as_deref(), Some("aparse"));
+    assert_eq!(im.selectors[0].local(), "aparse");
+    assert_eq!(im.selectors[1].name, "Table");
+    assert_eq!(im.selectors[1].alias.as_deref(), Some("MyTable"));
+    assert_eq!(im.selectors[2].name, "plain");
+    assert_eq!(im.selectors[2].alias, None);
+    assert_eq!(im.selectors[2].local(), "plain");
 }
 
 #[test]

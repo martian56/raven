@@ -2338,7 +2338,6 @@ impl<'a, 'b> Checker<'a, 'b> {
         args: &[Expr],
         span: &Span,
     ) -> Result<Option<Ty>, RavenError> {
-        use crate::resolve::bindings::ImportTarget;
         let ExprKind::Ident {
             name: alias,
             generics,
@@ -2357,13 +2356,19 @@ impl<'a, 'b> Checker<'a, 'b> {
         let Some(import) = self.resolved.map.imports.get(import_id.0) else {
             return Ok(None);
         };
-        let ImportTarget::StdlibModule { segments } = &import.target else {
+        // The expander merged this module's functions under `mangled_prefix`.
+        // An alias call `alias.fn()` resolves to `<prefix>.fn`, the same symbol
+        // a selective import of `fn` would bind. Works for std, local, and
+        // external sources alike.
+        let Some(prefix) = import.mangled_prefix.clone() else {
             return Ok(None);
         };
-        let Some(module) = segments.first() else {
-            return Ok(None);
-        };
-        let mangled = crate::resolve::stdlib::mangle_stdlib_fn(module, name);
+        let mangled = format!(
+            "{}{}{}",
+            prefix,
+            crate::resolve::stdlib::NAMESPACE_SEP,
+            name
+        );
         let decl = self
             .env
             .functions

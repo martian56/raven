@@ -571,7 +571,13 @@ impl Parser {
             self.skip_separators();
             while !matches!(self.peek_kind(), TokenKind::RBrace) {
                 let (n, _) = self.expect_ident("identifier")?;
-                selectors.push(n);
+                let alias = if self.eat(&TokenKind::As) {
+                    let (a, _) = self.expect_ident("alias name")?;
+                    Some(a)
+                } else {
+                    None
+                };
+                selectors.push(crate::ast::ImportSelector { name: n, alias });
                 if !self.eat(&TokenKind::Comma) {
                     break;
                 }

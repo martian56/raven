@@ -216,7 +216,15 @@ fn pretty_decl(buf: &mut String, decl: &Decl, depth: usize) {
                 write!(buf, " alias={}", quote(a)).unwrap();
             }
             if !im.selectors.is_empty() {
-                write!(buf, " selectors=({})", im.selectors.join(" ")).unwrap();
+                let sels: Vec<String> = im
+                    .selectors
+                    .iter()
+                    .map(|s| match &s.alias {
+                        Some(a) => format!("{} as {}", s.name, a),
+                        None => s.name.clone(),
+                    })
+                    .collect();
+                write!(buf, " selectors=({})", sels.join(" ")).unwrap();
             }
             buf.push_str(")\n");
         }

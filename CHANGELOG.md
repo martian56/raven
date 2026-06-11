@@ -2,6 +2,13 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.61] - 2026-06-11
+
+### Added
+
+- Import selector renames: `import "..." { name as local }` binds the import under `local`, so two packages that export the same free function (for example several config parsers that each expose `parse`) can be used in one file without wrapper modules. Works for functions and types, across std, local, and external imports.
+- Module-alias qualified calls: `import "..." as m` then `m.func(...)` now resolves for local and external packages, not just std modules. The call targets the same namespaced function a selective import would bind. Type access through an alias (`m.Type`) is not included; import types with a selector (optionally renamed) instead.
+
 ## [2.18.60] - 2026-06-11
 
 ### Fixed
