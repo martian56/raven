@@ -107,6 +107,20 @@ fn inferred_type_violating_a_bound_is_rejected() {
 }
 
 #[test]
+fn module_level_let_non_literal_needs_annotation() {
+    // An unannotated module-level `let` with a non-literal initializer is a
+    // clean type error rather than an opaque codegen failure. Regression for
+    // #497.
+    assert!(check("fun make() -> Int { return 5 }\nlet g = make()\nfun main() {}\n").is_err());
+}
+
+#[test]
+fn module_level_let_literal_is_inferred() {
+    // An unannotated literal global is still inferred. Companion to #497.
+    assert!(check("let n = 42\nlet s = \"hi\"\nfun main() {}\n").is_ok());
+}
+
+#[test]
 fn module_level_empty_list_adopts_annotation() {
     // A top-level `let xs: List<Int> = []` must adopt its annotated element
     // type, the same as a local binding does, rather than reporting that the
