@@ -78,6 +78,7 @@ fn dispatch() -> ExitCode {
         Some("update") => run(cmd_update(&args[1..])),
         Some("build") => run(cmd_build(&args[1..])),
         Some("run") => cmd_run(&args[1..]),
+        Some("test") => cmd_test(&args[1..]),
         Some("fmt") => cmd_fmt(&args[1..]),
         Some("cache") => match cmd_cache(&args[1..]) {
             Ok(()) => ExitCode::SUCCESS,
@@ -397,6 +398,38 @@ fn cmd_run(args: &[String]) -> ExitCode {
     }
 }
 
+/// Discover and run the package's `fun test_*()` tests, printing per-test
+/// results and a summary. Exits non-zero if any test fails.
+fn cmd_test(args: &[String]) -> ExitCode {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", test_usage());
+        return ExitCode::SUCCESS;
+    }
+    let cwd = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("rvpm: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+    match ops::test(&cwd) {
+        Ok(report) => {
+            for line in &report.outcome_lines {
+                println!("{}", line);
+            }
+            if report.failed == 0 {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(1)
+            }
+        }
+        Err(e) => {
+            eprintln!("rvpm: {}", e);
+            ExitCode::from(1)
+        }
+    }
+}
+
 /// Format Raven sources in place, or check formatting with `--check`.
 ///
 /// With no path arguments, formats every `.rv` file under the project
@@ -544,6 +577,10 @@ fn run_usage() -> String {
     "Usage: rvpm run [program arguments]".to_string()
 }
 
+fn test_usage() -> String {
+    "Usage: rvpm test".to_string()
+}
+
 fn add_usage() -> String {
     "Usage: rvpm add github.com/<user>/<repo>[@<version>]".to_string()
 }
@@ -570,6 +607,7 @@ fn print_usage() {
     println!("  update [pkg]   Re-resolve rv.toml and rewrite rv.lock for one package or all");
     println!("  build          Compile src/main.rv to a binary, or type-check a lib.rv library");
     println!("  run [args]     Build the application then run it, forwarding args");
+    println!("  test           Run fun test_*() tests in *_test.rv files");
     println!("  fmt [paths]    Format .rv files in place (--check to verify only)");
     println!("  fetch <pkg>    Fetch 'github.com/<user>/<repo>@<version>' into the shared cache");
     println!("  lock           Generate or validate rv.lock for the current package");

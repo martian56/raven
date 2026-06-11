@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.55] - 2026-06-11
+
+### Added
+
+- `rvpm test` runs a package's tests: zero-argument `test_*` functions in `*_test.rv` files. Each test runs in its own process (so a failed assertion's panic fails only that test), and the command prints a per-test `ok`/`FAIL` summary and exits non-zero if any test fails. Works for libraries too. The tests assert with `std/test` (#507).
+
 ## [2.18.54] - 2026-06-11
 
 ### Added

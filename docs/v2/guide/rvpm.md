@@ -158,6 +158,42 @@ binary, forwarding any arguments after `run` and exiting with the
 program's exit code. A library has no executable, so `run` reports that
 and exits non-zero; use `build` to type-check a library.
 
+### rvpm test
+
+```bash
+rvpm test
+```
+
+Discovers and runs the package's tests. A test is a zero-argument function
+named `test_*` in a `*_test.rv` file anywhere in the package (commonly
+under `src/` or a `tests/` directory). It asserts with `std/test`; a failed
+assertion panics, which the runner reports as a failure.
+
+```rust
+// src/math_test.rv
+import std/test { assert_eq_int }
+import "./main" { add }
+
+fun test_add() {
+    assert_eq_int(add(2, 3), 5)
+}
+```
+
+Each test runs in its own process, so a panic from one failed assertion
+fails only that test. The command prints a per-test `ok`/`FAIL` line and a
+summary, and exits non-zero if any test fails:
+
+```
+running 2 tests
+  ok   test_add
+  FAIL test_add_wrong (raven panic: assertion failed: 4 != 5)
+test result: FAILED. 1 passed; 1 failed
+```
+
+Test function names must be unique within a file. Libraries are supported:
+a `*_test.rv` at the package root that imports `./lib` works without a
+`src/main.rv`.
+
 ### rvpm fmt
 
 ```bash
