@@ -155,6 +155,11 @@ fn check_decl_body(
             if let Some(init) = &l.init {
                 let mut cx = Checker::new(resolved, env, types, None, expected.clone());
                 cx.errors = std::mem::take(&mut errors);
+                // Expose a declared `List<T>` element type so an empty `[]`
+                // initializer can adopt it, the same as a local `let` does.
+                if let Ty::List(elem) = &expected {
+                    cx.array_hint = Some((**elem).clone());
+                }
                 let actual = cx.check_expr_recover(init);
                 if !matches!(expected, Ty::Error) {
                     cx.unify_recover(&expected, &actual, &init.span);
