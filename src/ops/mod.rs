@@ -55,6 +55,8 @@ pub enum OpError {
     MissingEntry(PathBuf),
     /// `run` was asked to execute a library, which produces no binary.
     NotRunnable,
+    /// A `*_test.rv` file could not be lexed or parsed during test discovery.
+    TestParse { file: PathBuf, message: String },
     /// Compiling or linking the package failed.
     Build(DriverError),
     /// Running the produced binary failed to launch.
@@ -99,6 +101,9 @@ impl fmt::Display for OpError {
                 f,
                 "this package is a library (lib.rv) with no executable to run; use 'rvpm build' to type-check it"
             ),
+            OpError::TestParse { file, message } => {
+                write!(f, "cannot read test file '{}': {}", file.display(), message)
+            }
             OpError::Build(e) => write!(f, "{}", e),
             OpError::Run { binary, source } => {
                 write!(f, "cannot run '{}': {}", binary.display(), source)
@@ -503,6 +508,231 @@ fn output_binary_path(project_dir: &Path, name: &str) -> PathBuf {
         p.push(name);
     }
     p
+}
+
+/// The generated test-runner entry written to the project root while a test
+/// run compiles, then removed.
+const TEST_MAIN_FILE: &str = ".rvpm-test-main.rv";
+
+/// The name of the compiled test-runner binary under `target/raven-out`.
+const TEST_BINARY_NAME: &str = ".rvpm-test";
+
+/// The result of a `test` run.
+#[derive(Debug, Clone)]
+pub struct TestReport {
+    pub passed: usize,
+    pub failed: usize,
+    pub outcome_lines: Vec<String>,
+}
+
+/// Discover, compile, and run the package's tests under the default cache.
+pub fn test(project_dir: &Path) -> Result<TestReport, OpError> {
+    test_in(project_dir, &pkg::cache_root())
+}
+
+/// Run every `fun test_*()` found in the package's `*_test.rv` files. Each test
+/// runs in its own process (a small generated dispatcher selects the test by
+/// name) so a panic from a failed assertion fails only that test, not the run.
+pub fn test_in(project_dir: &Path, cache_root: &Path) -> Result<TestReport, OpError> {
+    Manifest::load(project_dir.join(MANIFEST_FILE_NAME))?;
+    let (_outcome, _report) = install_in(project_dir, cache_root)?;
+    let lock_path = project_dir.join(LOCK_FILE_NAME);
+    let lock = if lock_path.exists() {
+        LockFile::load(&lock_path)?
+    } else {
+        LockFile {
+            version: lock::LOCK_VERSION,
+            packages: Vec::new(),
+        }
+    };
+    let ctx = PackageContext::new(cache_root.to_path_buf(), &lock);
+
+    // Each suite is (relative import path of the test file, test function names).
+    let mut suites: Vec<(String, Vec<String>)> = Vec::new();
+    for file in discover_test_files(project_dir)? {
+        let names = test_functions_in(&file)?;
+        if !names.is_empty() {
+            suites.push((test_import_path(project_dir, &file), names));
+        }
+    }
+
+    let total: usize = suites.iter().map(|s| s.1.len()).sum();
+    let mut lines = vec![format!(
+        "running {} test{}",
+        total,
+        if total == 1 { "" } else { "s" }
+    )];
+    if total == 0 {
+        lines.push("no tests found (looked for `fun test_*` in `*_test.rv` files)".to_string());
+        return Ok(TestReport {
+            passed: 0,
+            failed: 0,
+            outcome_lines: lines,
+        });
+    }
+
+    let main_path = project_dir.join(TEST_MAIN_FILE);
+    let binary = output_binary_path(project_dir, TEST_BINARY_NAME);
+    if let Some(parent) = binary.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| OpError::Io {
+            action: "create output directory".to_string(),
+            path: parent.to_path_buf(),
+            source: e,
+        })?;
+    }
+
+    let mut passed = 0usize;
+    let mut failed = 0usize;
+    // Compile one dispatcher per file, then run each of its tests in isolation.
+    // The closure lets the generated entry be removed whether the run succeeds
+    // or fails.
+    let run = (|| -> Result<(), OpError> {
+        for (import, names) in &suites {
+            std::fs::write(&main_path, generate_test_dispatcher(import, names)).map_err(|e| {
+                OpError::Io {
+                    action: "write".to_string(),
+                    path: main_path.clone(),
+                    source: e,
+                }
+            })?;
+            driver::build_binary(&main_path, &binary, Some(&ctx))?;
+            for name in names {
+                let output = std::process::Command::new(&binary)
+                    .arg(name)
+                    .output()
+                    .map_err(|e| OpError::Run {
+                        binary: binary.clone(),
+                        source: e,
+                    })?;
+                if output.status.success() {
+                    passed += 1;
+                    lines.push(format!("  ok   {}", name));
+                } else {
+                    failed += 1;
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let reason = stderr.lines().next().unwrap_or("").trim();
+                    if reason.is_empty() {
+                        lines.push(format!("  FAIL {}", name));
+                    } else {
+                        lines.push(format!("  FAIL {} ({})", name, reason));
+                    }
+                }
+            }
+        }
+        Ok(())
+    })();
+    let _ = std::fs::remove_file(&main_path);
+    run?;
+
+    lines.push(format!(
+        "test result: {}. {} passed; {} failed",
+        if failed == 0 { "ok" } else { "FAILED" },
+        passed,
+        failed
+    ));
+    Ok(TestReport {
+        passed,
+        failed,
+        outcome_lines: lines,
+    })
+}
+
+/// Collect every `*_test.rv` file under `project_dir`, skipping the build
+/// output and hidden or VCS directories.
+fn discover_test_files(project_dir: &Path) -> Result<Vec<PathBuf>, OpError> {
+    let mut out = Vec::new();
+    collect_test_files(project_dir, &mut out)?;
+    out.sort();
+    Ok(out)
+}
+
+fn collect_test_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), OpError> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return Ok(()),
+    };
+    for entry in entries {
+        let entry = entry.map_err(|e| OpError::Io {
+            action: "read directory".to_string(),
+            path: dir.to_path_buf(),
+            source: e,
+        })?;
+        let path = entry.path();
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if path.is_dir() {
+            if name == "target" || name.starts_with('.') {
+                continue;
+            }
+            collect_test_files(&path, out)?;
+        } else if name.ends_with("_test.rv") {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+/// Parse `file` and return the names of its zero-argument `test_*` functions.
+fn test_functions_in(file: &Path) -> Result<Vec<String>, OpError> {
+    let source = std::fs::read_to_string(file).map_err(|e| OpError::Io {
+        action: "read".to_string(),
+        path: file.to_path_buf(),
+        source: e,
+    })?;
+    let tokens = crate::lexer::Lexer::new(source, file.to_path_buf())
+        .tokenize()
+        .map_err(|e| OpError::TestParse {
+            file: file.to_path_buf(),
+            message: format!("{}", e),
+        })?;
+    let parsed = crate::parser::parse(&tokens).map_err(|e| OpError::TestParse {
+        file: file.to_path_buf(),
+        message: format!("{}", e),
+    })?;
+    let mut names = Vec::new();
+    for item in &parsed.items {
+        if let crate::ast::DeclKind::Function(func) = &item.kind {
+            if func.name.starts_with("test_") && func.params.is_empty() {
+                names.push(func.name.clone());
+            }
+        }
+    }
+    Ok(names)
+}
+
+/// The `import` path the generated dispatcher uses to reach `file` from the
+/// project root: a `./`-prefixed, forward-slashed path with the `.rv`
+/// extension dropped.
+fn test_import_path(project_dir: &Path, file: &Path) -> String {
+    let rel = file.strip_prefix(project_dir).unwrap_or(file);
+    let rel = rel.with_extension("");
+    let joined = rel
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/");
+    format!("./{}", joined)
+}
+
+/// Render a runner that imports a test file's functions and calls the one named
+/// by the first process argument. Running it per test name isolates panics.
+fn generate_test_dispatcher(import: &str, names: &[String]) -> String {
+    let mut src = String::from("import std/env { arg_at }\n");
+    src.push_str(&format!(
+        "import \"{}\" {{ {} }}\n\n",
+        import,
+        names.join(", ")
+    ));
+    src.push_str("fun main() {\n    let name = arg_at(1)\n");
+    for (i, name) in names.iter().enumerate() {
+        let kw = if i == 0 { "if" } else { "} else if" };
+        src.push_str(&format!(
+            "    {} name.equals(\"{}\") {{\n        {}()\n",
+            kw, name, name
+        ));
+    }
+    src.push_str("    }\n}\n");
+    src
 }
 
 /// Build a manifest carrying only the one dependency `key`, reusing the
@@ -910,6 +1140,52 @@ mod tests {
         std::fs::create_dir_all(&cache).expect("mkdir cache");
         let err = run_package_in(&proj.root, &[], &cache).unwrap_err();
         assert!(matches!(err, OpError::NotRunnable), "got {:?}", err);
+    }
+
+    #[test]
+    fn discovers_test_files_and_skips_target() {
+        let proj = TempProject::new("disc");
+        std::fs::create_dir_all(proj.root.join("src")).unwrap();
+        std::fs::create_dir_all(proj.root.join("target")).unwrap();
+        std::fs::write(proj.root.join("src").join("math_test.rv"), "").unwrap();
+        std::fs::write(proj.root.join("src").join("helper.rv"), "").unwrap();
+        std::fs::write(proj.root.join("target").join("stale_test.rv"), "").unwrap();
+        let found = discover_test_files(&proj.root).unwrap();
+        assert_eq!(found.len(), 1, "found: {:?}", found);
+        assert!(found[0].ends_with("math_test.rv"));
+    }
+
+    #[test]
+    fn collects_zero_arg_test_functions() {
+        let proj = TempProject::new("fns");
+        let f = proj.root.join("a_test.rv");
+        std::fs::write(
+            &f,
+            "fun test_a() {}\nfun test_b(x: Int) {}\nfun helper() {}\nfun test_c() {}\n",
+        )
+        .unwrap();
+        let names = test_functions_in(&f).unwrap();
+        assert_eq!(names, vec!["test_a".to_string(), "test_c".to_string()]);
+    }
+
+    #[test]
+    fn dispatcher_imports_and_calls_by_name() {
+        let src = generate_test_dispatcher(
+            "./src/a_test",
+            &["test_a".to_string(), "test_b".to_string()],
+        );
+        assert!(src.contains("import \"./src/a_test\" { test_a, test_b }"));
+        assert!(src.contains("if name.equals(\"test_a\") {"));
+        assert!(src.contains("} else if name.equals(\"test_b\") {"));
+        assert!(src.contains("test_a()"));
+        assert!(src.contains("test_b()"));
+    }
+
+    #[test]
+    fn import_path_is_relative_and_forward_slashed() {
+        let proj = TempProject::new("imp");
+        let f = proj.root.join("src").join("math_test.rv");
+        assert_eq!(test_import_path(&proj.root, &f), "./src/math_test");
     }
 
     #[test]

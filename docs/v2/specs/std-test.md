@@ -6,9 +6,29 @@ program whose assertions all hold runs to completion and exits zero.
 
 ## Test model
 
-Raven has no attributes or reflection yet, so there is no test discovery
-or registration framework. A test is an ordinary Raven program whose
-`main` calls these assertions:
+Raven has no attributes or reflection yet, so a test is an ordinary
+function or program that calls these assertions; a failed assertion panics
+with a message and a nonzero exit. There are two ways to run them.
+
+`rvpm test` discovers zero-argument `test_*` functions in `*_test.rv`
+files, runs each in its own process (so one failed assertion fails only
+that test), and reports a per-test summary. The assertions here are what
+those `test_*` functions call. See the
+[rvpm guide](../guide/rvpm.md#rvpm-test).
+
+```rust
+// src/math_test.rv
+import std/test { assert, assert_eq_int }
+
+fun test_arithmetic() {
+    assert(1 + 1 == 2)
+    assert_eq_int(6 * 7, 42)
+}
+```
+
+A test can also be a standalone program whose `main` asserts, run by
+anything that checks its exit code (a shell loop or CI step). Exit zero
+means every assertion held:
 
 ```rust
 import std/test { assert, assert_eq_int }
@@ -20,11 +40,6 @@ fun main() {
     println("all passed")
 }
 ```
-
-Build and run the program. Exit zero means every assertion held; a
-nonzero exit means an assertion failed, and the panic message names the
-failure. A test runner is just whatever invokes the compiled program and
-checks its exit code (for example a shell loop or CI step).
 
 ## Import
 
