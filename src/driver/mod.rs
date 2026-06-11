@@ -119,6 +119,28 @@ pub fn build_binary(
     Ok(())
 }
 
+/// Type-check `source` and its modules without producing code. Runs the front
+/// end through type checking but stops before HIR/MIR/codegen, so it needs no
+/// `main` function and no runtime staticlib. `rvpm build` uses this for a
+/// library, which has no executable entry to compile to a binary.
+pub fn check(source: &str, input: &Path, ctx: Option<&PackageContext>) -> Result<(), DriverError> {
+    let tokens = Lexer::new(source.to_string(), input.to_path_buf())
+        .tokenize()
+        .map_err(|e| frontend_diag(e, input, source))?;
+    let macro_table =
+        crate::macros::collect_macro_table(&tokens).map_err(|e| frontend_diag(e, input, source))?;
+    let (tokens, macro_def_sites) = crate::macros::expand_tokens_hygienic(&tokens)
+        .map_err(|e| frontend_diag(e, input, source))?;
+    let file = parse_with_macros_all(&tokens, macro_table)
+        .map_err(|es| frontend_diags(es, input, source))?;
+    let file = expand_with_stdlib_ctx(&file, ctx).map_err(|e| frontend_diag(e, input, source))?;
+    let mut loader = FsLoader;
+    let resolved = resolve_file_ctx(&file, &mut loader, ctx, macro_def_sites)
+        .map_err(|e| frontend_diag(e, input, source))?;
+    check_file_all(&resolved).map_err(|es| frontend_diags(es, input, source))?;
+    Ok(())
+}
+
 /// Run the front and middle ends and Cranelift to produce a relocatable
 /// object for `source`. Threads `ctx` through expansion and resolution.
 pub fn compile_to_object(

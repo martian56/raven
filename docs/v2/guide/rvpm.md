@@ -7,19 +7,24 @@ cache.
 
 ## Project layout
 
-A package has an `rv.toml` manifest at its root and an entry file at
-`src/main.rv`:
+A package has an `rv.toml` manifest at its root. Its entry file decides
+its kind: an application has `src/main.rv` (which defines `fun main()`)
+and a library has `lib.rv` at the root (the file other projects import).
 
 ```
-my_app/
-  rv.toml
-  rv.lock              # written by rvpm, pins resolved dependencies
-  src/
-    main.rv            # must define fun main()
+my_app/                  my_lib/
+  rv.toml                  rv.toml
+  rv.lock                  rv.lock
+  .gitignore               .gitignore
+  src/                     lib.rv         # the package API others import
+    main.rv
 ```
 
-`rvpm init [name]` scaffolds this. The built binary is written to
-`target/raven-out/<name>` (with a `.exe` extension on Windows).
+`rvpm init` scaffolds an application; `rvpm init --lib` scaffolds a
+library. Both also write a `.gitignore` that ignores the generated
+`target/` directory. An application's binary is written to
+`target/raven-out/<name>` (with a `.exe` extension on Windows); a library
+has no `main`, so it is type-checked rather than compiled to a binary.
 
 ## The rv.toml manifest
 
@@ -77,12 +82,24 @@ resolved version equals what you write.
 ### rvpm init
 
 ```bash
-rvpm init [name]
+rvpm init [name] [--lib]
 ```
 
-Scaffolds `rv.toml` and `src/main.rv` in the current directory. The name
-defaults to the directory name. It will not overwrite an existing
-`rv.toml`.
+Scaffolds a package in the current directory: `rv.toml`, a `.gitignore`,
+and an entry file. By default that is an application (`src/main.rv`); with
+`--lib` it is a library (`lib.rv` at the root). The name defaults to the
+directory name. It will not overwrite an existing `rv.toml`, and it leaves
+an existing `.gitignore` or entry file untouched.
+
+### rvpm new
+
+```bash
+rvpm new <name> [--lib]
+```
+
+Like `init`, but scaffolds into a fresh `<name>/` directory instead of the
+current one. The package name is the final path component. Use `--lib` for
+a library.
 
 ### rvpm add
 
@@ -124,9 +141,11 @@ bump a dependency, edit its ref in `rv.toml`, then run `update`.
 rvpm build
 ```
 
-Ensures dependencies are installed, builds the package context from the
-lock, then compiles `src/main.rv` to `target/raven-out/<name>` and
-reports the binary path.
+Ensures dependencies are installed and builds the package context from the
+lock. For an application it compiles `src/main.rv` to
+`target/raven-out/<name>` and reports the binary path. For a library it
+type-checks `lib.rv` (and its modules) without producing a binary, so a
+package author can verify the library compiles before publishing.
 
 ### rvpm run
 
@@ -134,9 +153,10 @@ reports the binary path.
 rvpm run [program arguments]
 ```
 
-Builds the package (the same path as `build`), then runs the produced
+Builds the application (the same path as `build`), then runs the produced
 binary, forwarding any arguments after `run` and exiting with the
-program's exit code.
+program's exit code. A library has no executable, so `run` reports that
+and exits non-zero; use `build` to type-check a library.
 
 ### rvpm fmt
 
@@ -145,6 +165,28 @@ rvpm fmt
 ```
 
 Formats the package sources using the `[fmt]` settings from `rv.toml`.
+
+### rvpm cache
+
+```bash
+rvpm cache dir                              # print the cache root
+rvpm cache list                             # list cached packages
+rvpm cache clean                            # remove the whole cache
+rvpm cache clean github.com/<user>/<repo>   # remove one package's versions
+```
+
+Inspects or clears the shared package cache. `clean` with no argument
+removes the entire cache; with a `github.com/<user>/<repo>` argument it
+removes every cached version of that one package. The cache is repopulated
+on the next `install` or `build`.
+
+### rvpm version
+
+```bash
+rvpm version          # also: rvpm --version, rvpm -V
+```
+
+Prints the rvpm version.
 
 ## The cache and rv.lock
 
@@ -159,6 +201,8 @@ The cache root is `$RVPM_CACHE_DIR` if set, otherwise
 `${HOME}/.rvpm/cache` (`%USERPROFILE%` on Windows). A populated entry is
 reused and never re-cloned. Cloning is shallow, and the `.git` directory
 is dropped after a clone, so the cache stores only working-tree content.
+Use `rvpm cache list` to see what is cached and `rvpm cache clean` to
+clear it.
 
 `rv.lock` pins every transitive dependency by `(source, version)` plus a
 SHA-256 tree content hash, sorted deterministically so the file is stable
