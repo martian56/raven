@@ -605,7 +605,7 @@ pub fn test(project_dir: &Path) -> Result<TestReport, OpError> {
 /// runs in its own process (a small generated dispatcher selects the test by
 /// name) so a panic from a failed assertion fails only that test, not the run.
 pub fn test_in(project_dir: &Path, cache_root: &Path) -> Result<TestReport, OpError> {
-    Manifest::load(project_dir.join(MANIFEST_FILE_NAME))?;
+    let manifest = Manifest::load(project_dir.join(MANIFEST_FILE_NAME))?;
     let (_outcome, _report) = install_in(project_dir, cache_root)?;
     let lock_path = project_dir.join(LOCK_FILE_NAME);
     let lock = if lock_path.exists() {
@@ -652,6 +652,14 @@ pub fn test_in(project_dir: &Path, cache_root: &Path) -> Result<TestReport, OpEr
         })?;
     }
 
+    // Native code from the package's (and its dependencies') `[ffi]`, so a
+    // package can test its own FFI bindings. Compiled once and reused per suite.
+    let ffi_dir = binary
+        .parent()
+        .map(|p| p.join("ffi"))
+        .unwrap_or_else(|| PathBuf::from("ffi"));
+    let native = gather_native_link(project_dir, &manifest, &lock, cache_root, &ffi_dir)?;
+
     let mut passed = 0usize;
     let mut failed = 0usize;
     // Compile one dispatcher per file, then run each of its tests in isolation.
@@ -666,7 +674,7 @@ pub fn test_in(project_dir: &Path, cache_root: &Path) -> Result<TestReport, OpEr
                     source: e,
                 }
             })?;
-            driver::build_binary(&main_path, &binary, Some(&ctx))?;
+            driver::build_binary_native(&main_path, &binary, Some(&ctx), &native)?;
             for name in names {
                 let output = std::process::Command::new(&binary)
                     .arg(name)
