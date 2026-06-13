@@ -125,8 +125,9 @@ fn fetch_clones_then_hits_cache() {
     std::fs::remove_dir_all(&src).unwrap();
 
     let got = pkg::fetch("github.com", "acme", "dep", "v1.0.0").expect("cache hit");
-    assert_eq!(got, expected);
-    assert!(got.join("src").join("lib.rv").is_file());
+    assert_eq!(got.dir, expected);
+    assert!(got.cached, "a populated entry is served from the cache");
+    assert!(got.dir.join("src").join("lib.rv").is_file());
 
     std::env::remove_var("RVPM_CACHE_DIR");
     cleanup(&root);
