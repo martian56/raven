@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.66] - 2026-06-13
+
+### Changed
+
+- `rvpm build` no longer recompiles an unchanged `[ffi]` C source on every build. Each compiled object is reused when it is at least as new as its source, so a large bundled source (a 9 MB `sqlite3.c`) is compiled once and skipped on rebuilds.
+
 ## [2.18.65] - 2026-06-13
 
 ### Fixed

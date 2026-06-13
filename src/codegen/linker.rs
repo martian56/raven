@@ -169,6 +169,13 @@ pub fn compile_c_sources(
             index,
             if msvc { "obj" } else { "o" }
         ));
+        // Reuse a previously compiled object when the source has not changed
+        // since, so a large bundled source (a 9 MB sqlite3.c) is not recompiled
+        // on every build.
+        if object_is_fresh(source, &object) {
+            objects.push(object);
+            continue;
+        }
         let mut cmd = compiler.to_command();
         if msvc {
             cmd.arg("/nologo")
@@ -192,6 +199,65 @@ pub fn compile_c_sources(
         objects.push(object);
     }
     Ok(objects)
+}
+
+/// True when `object` exists and is at least as new as `source`, so the cached
+/// object can be reused instead of recompiling. A missing file or unreadable
+/// timestamp returns false, so the safe default is to recompile.
+fn object_is_fresh(source: &Path, object: &Path) -> bool {
+    let (Ok(src_meta), Ok(obj_meta)) = (std::fs::metadata(source), std::fs::metadata(object))
+    else {
+        return false;
+    };
+    match (src_meta.modified(), obj_meta.modified()) {
+        (Ok(src), Ok(obj)) => obj >= src,
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[test]
+    fn compile_reuses_an_unchanged_object() {
+        // Needs a C compiler; skip cleanly where none is available.
+        if !cc_available() {
+            return;
+        }
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "raven-ffi-cache-{}-{}",
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        let out = dir.join("out");
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let source = dir.join("t.c");
+        std::fs::write(
+            &source,
+            "#include <stdint.h>\nint64_t t(int64_t x){return x;}\n",
+        )
+        .expect("write source");
+
+        let first = compile_c_sources(&[source.clone()], &out).expect("first compile");
+        assert_eq!(first.len(), 1);
+        let object = first[0].clone();
+        let mtime = std::fs::metadata(&object).unwrap().modified().unwrap();
+
+        // A second compile with the source unchanged reuses the object: the
+        // file is not rewritten, so its mtime is identical.
+        let second = compile_c_sources(&[source.clone()], &out).expect("second compile");
+        assert_eq!(second[0], object);
+        assert_eq!(
+            std::fs::metadata(&object).unwrap().modified().unwrap(),
+            mtime,
+            "an unchanged source should reuse the cached object"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
 
 /// Link `object_path` with `runtime` and any `native` FFI inputs into `output`.
