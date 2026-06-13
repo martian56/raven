@@ -587,12 +587,49 @@ Forms:
   methods resolve by receiver type.
 - `import std/collections` is a whole module import; `Map` and `Set` are
   reached as `Map.new()` and `Set.new()` rather than through a selector.
-- A whole module import also allows module-qualified calls: after
-  `import std/fs` you can call `fs.write(path, data)`, the same function a
-  selector import would bind as a bare `write`.
 - `import "./helpers"` loads a local module relative to the current file.
 - `import "github.com/<user>/<repo>"` resolves a dependency through the
-  rvpm cache (see the [rvpm guide](rvpm.md)). Add `as name` for an alias.
+  rvpm cache (see the [rvpm guide](rvpm.md)).
+
+### Renaming an import
+
+A selector can be renamed with `as`, binding it under a different local
+name. This is how you pull in two items that would otherwise share a name.
+If two packages both export a `parse` function, rename one or both and the
+clash goes away:
+
+```rust
+import "github.com/martian56/raven-toml" { parse as parse_toml }
+import "github.com/martian56/raven-ini"  { parse as parse_ini }
+
+let cfg = parse_toml(toml_text)
+let ini = parse_ini(ini_text)
+```
+
+### Calling through a module alias
+
+A whole stdlib import already allows module-qualified calls: after
+`import std/fs`, `fs.write(path, data)` is the same function a selector
+would bind as a bare `write`. The `as name` alias extends that to local and
+package imports, so you can reach a package's functions namespace-style
+without listing each one:
+
+```rust
+import "github.com/martian56/raven-color" as color
+
+print(color.red("error"))     // same as importing { red } and calling red(...)
+```
+
+### Two packages, same type name
+
+Types from different packages are namespaced, so two packages can both
+export a type called `Table` without colliding. To use both in one file,
+rename one on the way in:
+
+```rust
+import "github.com/martian56/raven-table" { Table }
+import "github.com/martian56/raven-csv"   { Table as CsvTable }
+```
 
 The core traits (`ToString`, `Eq`, `Ord`, `Hash`, `Iterator`) are always
 in scope without an import.

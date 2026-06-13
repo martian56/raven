@@ -88,6 +88,7 @@ nav:
     - Modeling data with structs and enums: v2/guide/tutorials/task-tracker.md
     - A guestbook HTTP server: v2/guide/tutorials/http-server.md
     - Calling C from Raven: v2/guide/tutorials/c-interop.md
+    - Building and publishing a library: v2/guide/tutorials/publishing-a-library.md
   - Standard Library:
     - Overview: v2/guide/standard-library.md
     - Core traits: v2/guide/stdlib/core.md
