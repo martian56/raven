@@ -1,15 +1,19 @@
 //! Package fetching and the shared content cache for rvpm.
 //!
-//! A GitHub dependency `github.com/<user>/<repo>@<version>` is resolved
-//! by cloning the named tag or branch into a cache shared across
-//! projects. The cache lives at `<cache_root>/<host>/<user>/<repo>@<version>`.
+//! A GitHub dependency `github.com/<user>/<repo>@<version>` is resolved by
+//! downloading the named tag or branch into a cache shared across projects.
+//! The cache lives at `<cache_root>/<host>/<user>/<repo>@<version>`. A version
+//! is fetched as a gzip tarball through codeload (one HTTP GET, no history),
+//! falling back to a shallow `git clone` when that is unavailable. The hash of
+//! each version is recorded in a `<repo>@<version>.rvpm-hash` sidecar beside
+//! its directory so a warm install need not re-hash unchanged trees.
 //!
 //! Version-constraint resolution (semver ranges) is out of scope here.
 //! This module takes an explicit `version` string that is a git tag or
 //! branch and fetches it. The lock file (`rv.lock`) is built on top in
 //! `raven::lock`.
 //!
-//! See `docs/v2/specs/rvpm.md` for the cache layout and clone strategy.
+//! See `docs/v2/specs/rvpm.md` for the cache layout and fetch strategy.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -112,35 +116,150 @@ pub fn cache_dir_in(root: &Path, host: &str, user: &str, repo: &str, version: &s
         .join(format!("{}@{}", repo, version))
 }
 
-/// Fetch `host/user/repo` at `version` into the shared cache and return
-/// the cache directory.
+/// The outcome of a fetch: where the package landed, and whether it was
+/// already in the cache (no network) or freshly downloaded.
+#[derive(Debug, Clone)]
+pub struct Fetched {
+    pub dir: PathBuf,
+    /// True when the cache already held this version, so nothing was
+    /// downloaded.
+    pub cached: bool,
+}
+
+/// Fetch `host/user/repo` at `version` into the shared cache.
 ///
 /// If the cache directory already exists and is non-empty this is a
 /// cache hit: the existing directory is returned without contacting the
-/// remote. Otherwise the repository is cloned from
-/// `https://<host>/<user>/<repo>` at the given tag or branch.
-pub fn fetch(host: &str, user: &str, repo: &str, version: &str) -> Result<PathBuf, PkgError> {
+/// remote. Otherwise the version is downloaded (see [`fetch_in`]).
+pub fn fetch(host: &str, user: &str, repo: &str, version: &str) -> Result<Fetched, PkgError> {
     fetch_in(&cache_root(), host, user, repo, version)
 }
 
-/// Fetch `host/user/repo` at `version` into an explicit cache root and
-/// return the cache directory. Behaves like [`fetch`] but does not
-/// consult `RVPM_CACHE_DIR`, so callers can isolate the cache without
-/// touching global environment state.
+/// Fetch `host/user/repo` at `version` into an explicit cache root.
+///
+/// A populated cache directory is returned as-is. Otherwise the version is
+/// downloaded as a gzip tarball (a single HTTP GET, no git history), which
+/// is faster than a clone. If the tarball path is unavailable (no `curl` or
+/// `tar`, a non-github host, or a transient error) it falls back to a
+/// shallow `git clone`, which also reports a genuinely missing ref.
 pub fn fetch_in(
     root: &Path,
     host: &str,
     user: &str,
     repo: &str,
     version: &str,
-) -> Result<PathBuf, PkgError> {
+) -> Result<Fetched, PkgError> {
     let dest = cache_dir_in(root, host, user, repo, version);
     if is_populated(&dest) {
-        return Ok(dest);
+        return Ok(Fetched {
+            dir: dest,
+            cached: true,
+        });
     }
-    let url = format!("https://{}/{}/{}", host, user, repo);
-    clone_from(&url, version, &dest)?;
-    Ok(dest)
+    if download_tarball(host, user, repo, version, &dest).is_err() {
+        // Clear any partial extraction, then fall back to a git clone.
+        let _ = std::fs::remove_dir_all(&dest);
+        let url = format!("https://{}/{}/{}", host, user, repo);
+        clone_from(&url, version, &dest)?;
+    }
+    Ok(Fetched {
+        dir: dest,
+        cached: false,
+    })
+}
+
+/// The sidecar file that caches a version's tree hash, kept beside (not
+/// inside) the version directory so it never affects the tree hash itself.
+pub fn hash_sidecar(version_dir: &Path) -> PathBuf {
+    let mut name = version_dir.file_name().unwrap_or_default().to_os_string();
+    name.push(".rvpm-hash");
+    version_dir.parent().unwrap_or(version_dir).join(name)
+}
+
+/// Download `github.com/user/repo` at `version` as a gzip tarball through
+/// codeload and extract it into `dest`, stripping the version-prefixed top
+/// directory the archive carries. Only `github.com` is served this way; any
+/// failure (including a missing `curl`/`tar`) returns an error so the caller
+/// can fall back to git. A partial `dest` is removed on failure.
+fn download_tarball(
+    host: &str,
+    user: &str,
+    repo: &str,
+    version: &str,
+    dest: &Path,
+) -> Result<(), PkgError> {
+    if host != "github.com" {
+        return Err(PkgError::CloneFailed {
+            url: host.to_string(),
+            reference: version.to_string(),
+            stderr: "tarball download is only available for github.com".to_string(),
+        });
+    }
+    let url = format!(
+        "https://codeload.github.com/{}/{}/tar.gz/{}",
+        user, repo, version
+    );
+    let tmp = std::env::temp_dir().join(format!(
+        "rvpm-{}-{}-{}-{}.tar.gz",
+        user,
+        repo,
+        version.replace(['/', '\\', ':'], "_"),
+        std::process::id()
+    ));
+
+    let dl = Command::new("curl")
+        .args(["-fsSL", "--retry", "2", "-o"])
+        .arg(&tmp)
+        .arg(&url)
+        .output()
+        .map_err(PkgError::GitNotFound)?;
+    if !dl.status.success() {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(PkgError::CloneFailed {
+            url,
+            reference: version.to_string(),
+            stderr: String::from_utf8_lossy(&dl.stderr).into_owned(),
+        });
+    }
+
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| PkgError::Io {
+            action: "create cache directory".to_string(),
+            path: parent.to_path_buf(),
+            source: e,
+        })?;
+    }
+    std::fs::create_dir_all(dest).map_err(|e| PkgError::Io {
+        action: "create cache entry".to_string(),
+        path: dest.to_path_buf(),
+        source: e,
+    })?;
+
+    let ex = Command::new("tar")
+        .arg("-xzf")
+        .arg(&tmp)
+        .arg("-C")
+        .arg(dest)
+        .arg("--strip-components=1")
+        .output();
+    let _ = std::fs::remove_file(&tmp);
+    let ex = match ex {
+        Ok(o) => o,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(dest);
+            return Err(PkgError::GitNotFound(e));
+        }
+    };
+    if !ex.status.success() {
+        let stderr = String::from_utf8_lossy(&ex.stderr).into_owned();
+        let _ = std::fs::remove_dir_all(dest);
+        return Err(PkgError::CloneFailed {
+            url,
+            reference: version.to_string(),
+            stderr,
+        });
+    }
+    Ok(())
 }
 
 /// True when `dir` exists and contains at least one entry.

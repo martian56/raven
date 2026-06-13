@@ -266,10 +266,14 @@ version:
 
 The cache root is `$RVPM_CACHE_DIR` if set, otherwise
 `${HOME}/.rvpm/cache` (`%USERPROFILE%` on Windows). A populated entry is
-reused and never re-cloned. Cloning is shallow, and the `.git` directory
-is dropped after a clone, so the cache stores only working-tree content.
-Use `rvpm cache list` to see what is cached and `rvpm cache clean` to
-clear it.
+reused and never re-fetched. A new version is downloaded as a gzip tarball
+(a single HTTP GET, no history), falling back to a shallow `git clone` when
+that is unavailable; either way the cache stores only working-tree content.
+The dependencies of one install are fetched concurrently, and each version's
+tree hash is recorded in a sidecar so a warm install does not re-hash an
+unchanged tree. Commands that fetch print a line per package (downloaded or
+cached) and a short summary. Use `rvpm cache list` to see what is cached and
+`rvpm cache clean` to clear it.
 
 `rv.lock` pins every transitive dependency by `(source, version)` plus a
 SHA-256 tree content hash, sorted deterministically so the file is stable
