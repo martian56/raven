@@ -66,10 +66,16 @@ pub struct Dependency {
     pub constraint: String,
 }
 
-/// The optional `[ffi]` section. Linker pass-through; wiring into the
-/// actual link step is deferred.
+/// The optional `[ffi]` section: how a package's native code is linked into a
+/// program that uses it. `rvpm build` compiles each `sources` C file and links
+/// it in, links each `libs` library, and passes `link_args` to the linker. The
+/// `[ffi]` of every dependency is collected, so a package can bundle its own C
+/// (for example SQLite) and a consumer needs no system setup.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Ffi {
+    /// Bundled C source files, relative to the package root, compiled and
+    /// linked into the final binary. For example `["c/sqlite3.c"]`.
+    pub sources: Vec<String>,
     /// Library names to link, for example `["m", "z"]`.
     pub libs: Vec<String>,
     /// Extra raw linker arguments.
@@ -181,6 +187,8 @@ struct RawPackage {
 #[serde(deny_unknown_fields)]
 struct RawFfi {
     #[serde(default)]
+    sources: Vec<String>,
+    #[serde(default)]
     libs: Vec<String>,
     #[serde(default)]
     link_args: Vec<String>,
@@ -251,6 +259,7 @@ impl Manifest {
         let ffi = raw
             .ffi
             .map(|f| Ffi {
+                sources: f.sources,
                 libs: f.libs,
                 link_args: f.link_args,
             })

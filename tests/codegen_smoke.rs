@@ -935,7 +935,12 @@ fn env_program_compiles_and_runs() {
     } else {
         "use_env"
     });
-    if let Err(e) = linker::link(&object_path, &runtime, &binary) {
+    if let Err(e) = linker::link(
+        &object_path,
+        &runtime,
+        &linker::NativeLink::default(),
+        &binary,
+    ) {
         cleanup(&tmp);
         panic!("linker failed to produce an executable for {}: {}", name, e);
     }
@@ -993,7 +998,12 @@ fn fs_program_compiles_and_runs() {
     } else {
         "use_fs"
     });
-    if let Err(e) = linker::link(&object_path, &runtime, &binary) {
+    if let Err(e) = linker::link(
+        &object_path,
+        &runtime,
+        &linker::NativeLink::default(),
+        &binary,
+    ) {
         cleanup(&tmp);
         panic!("linker failed to produce an executable for {}: {}", name, e);
     }
@@ -1073,7 +1083,12 @@ fn net_program_compiles_and_runs() {
     } else {
         "use_net"
     });
-    if let Err(e) = linker::link(&object_path, &runtime, &binary) {
+    if let Err(e) = linker::link(
+        &object_path,
+        &runtime,
+        &linker::NativeLink::default(),
+        &binary,
+    ) {
         cleanup(&tmp);
         panic!("linker failed to produce an executable for {}: {}", name, e);
     }
@@ -1163,7 +1178,12 @@ fn http_program_compiles_and_runs() {
     } else {
         "use_http"
     });
-    if let Err(e) = linker::link(&object_path, &runtime, &binary) {
+    if let Err(e) = linker::link(
+        &object_path,
+        &runtime,
+        &linker::NativeLink::default(),
+        &binary,
+    ) {
         cleanup(&tmp);
         panic!("linker failed to produce an executable for {}: {}", name, e);
     }
@@ -1218,7 +1238,12 @@ fn time_program_compiles_and_runs() {
     } else {
         "use_time"
     });
-    if let Err(e) = linker::link(&object_path, &runtime, &binary) {
+    if let Err(e) = linker::link(
+        &object_path,
+        &runtime,
+        &linker::NativeLink::default(),
+        &binary,
+    ) {
         cleanup(&tmp);
         panic!("linker failed to produce an executable for {}: {}", name, e);
     }
@@ -1434,7 +1459,12 @@ fn build_example_binary(name: &str, runtime: &RuntimeStaticLib) -> ExampleBinary
     } else {
         stem.to_string()
     });
-    if let Err(e) = linker::link(&object_path, runtime, &binary) {
+    if let Err(e) = linker::link(
+        &object_path,
+        runtime,
+        &linker::NativeLink::default(),
+        &binary,
+    ) {
         cleanup(&tmp);
         panic!("linker failed to produce an executable for {}: {}", name, e);
     }
@@ -1491,7 +1521,12 @@ fn compile_link_run_and_check(name: &str, expected: &str, runtime: &RuntimeStati
         stem.to_string()
     });
 
-    if let Err(e) = linker::link(&object_path, runtime, &binary) {
+    if let Err(e) = linker::link(
+        &object_path,
+        runtime,
+        &linker::NativeLink::default(),
+        &binary,
+    ) {
         cleanup(&tmp);
         panic!("linker failed to produce an executable for {}: {}", name, e);
     }

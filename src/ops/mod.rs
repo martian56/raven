@@ -16,9 +16,10 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use crate::codegen::linker;
 use crate::driver::{self, DriverError};
 use crate::lock::{self, LockError, LockFile, LOCK_FILE_NAME};
-use crate::manifest::{Manifest, ManifestError};
+use crate::manifest::{Ffi, Manifest, ManifestError};
 use crate::pkg;
 use crate::resolve::{GithubPath, PackageContext};
 
@@ -215,6 +216,69 @@ pub fn add_in(
         outcome_lines: lines,
         package_count: lock.packages.len(),
     })
+}
+
+/// Collect the native link inputs from a project and its dependencies' `[ffi]`
+/// sections, compiling any bundled C sources into a single static archive.
+fn gather_native_link(
+    project_dir: &Path,
+    manifest: &Manifest,
+    lock: &LockFile,
+    cache_root: &Path,
+    out_dir: &Path,
+) -> Result<linker::NativeLink, OpError> {
+    let mut sources: Vec<PathBuf> = Vec::new();
+    let mut libs: Vec<String> = Vec::new();
+    let mut link_args: Vec<String> = Vec::new();
+
+    // The project's own [ffi], resolved against the project root.
+    collect_ffi(
+        &manifest.ffi,
+        project_dir,
+        &mut sources,
+        &mut libs,
+        &mut link_args,
+    );
+
+    // Each dependency's [ffi], resolved against its cache directory, so a
+    // package can bundle its own C and a consumer needs nothing installed.
+    for entry in &lock.packages {
+        let Some(gh) = GithubPath::parse(&entry.source) else {
+            continue;
+        };
+        let dir = pkg::cache_dir_in(cache_root, &gh.host, &gh.user, &gh.repo, &entry.version);
+        let dep_manifest = dir.join(MANIFEST_FILE_NAME);
+        if dep_manifest.exists() {
+            if let Ok(dep) = Manifest::load(&dep_manifest) {
+                collect_ffi(&dep.ffi, &dir, &mut sources, &mut libs, &mut link_args);
+            }
+        }
+    }
+
+    let objects = if sources.is_empty() {
+        Vec::new()
+    } else {
+        linker::compile_c_sources(&sources, out_dir).map_err(DriverError::from)?
+    };
+    Ok(linker::NativeLink {
+        objects,
+        libs,
+        link_args,
+    })
+}
+
+fn collect_ffi(
+    ffi: &Ffi,
+    base: &Path,
+    sources: &mut Vec<PathBuf>,
+    libs: &mut Vec<String>,
+    link_args: &mut Vec<String>,
+) {
+    for source in &ffi.sources {
+        sources.push(base.join(source));
+    }
+    libs.extend(ffi.libs.iter().cloned());
+    link_args.extend(ffi.link_args.iter().cloned());
 }
 
 /// What an install did, for reporting.
@@ -439,7 +503,14 @@ pub fn build_in(project_dir: &Path, cache_root: &Path) -> Result<BuildReport, Op
                     source: e,
                 })?;
             }
-            driver::build_binary(&entry, &binary, Some(&ctx))?;
+            // Gather native code to link from the `[ffi]` of the project and
+            // its dependencies (bundled C sources, libraries, linker args).
+            let ffi_dir = binary
+                .parent()
+                .map(|p| p.join("ffi"))
+                .unwrap_or_else(|| PathBuf::from("ffi"));
+            let native = gather_native_link(project_dir, &manifest, &lock, cache_root, &ffi_dir)?;
+            driver::build_binary_native(&entry, &binary, Some(&ctx), &native)?;
             Ok(BuildReport {
                 outcome_lines: vec![format!(
                     "Compiled {} to {}",

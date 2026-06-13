@@ -39,6 +39,7 @@ edition = "v2"
 "github.com/martian56/raven-http" = "1.0"
 
 [ffi]
+sources = ["c/sqlite3.c"]
 libs = ["m", "z"]
 link_args = ["-L/opt/lib"]
 
@@ -53,7 +54,12 @@ Sections:
   defaults to empty. `edition` defaults to `v2` (accepted: `v2`, `2026`).
 - `[dependencies]` (optional): keys are `github.com/<user>/<repo>` paths
   (optionally with a subpath); values are git refs (a tag or branch).
-- `[ffi]` (optional): native linker pass-through, `libs` and `link_args`.
+- `[ffi]` (optional): native code linked into a program that uses the
+  package. `sources` are bundled C files (relative to the package root)
+  that `rvpm build` compiles and links in, `libs` are libraries to link
+  (`-l<name>`), and `link_args` are raw linker arguments. The `[ffi]` of
+  every dependency is collected, so a package can ship its own C (for
+  example a bundled SQLite) and a consumer needs nothing installed.
 - `[fmt]` (optional): `indent_width` (default 4) and `wrap_width`
   (default 100) for the formatter.
 

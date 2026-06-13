@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.64] - 2026-06-13
+
+### Added
+
+- The `[ffi]` section of `rv.toml` is now wired into `rvpm build`. A package can list bundled C `sources` (relative to the package root) that are compiled and linked into the final program, plus `libs` to link (`-l<name>`) and raw `link_args`. The `[ffi]` of every dependency is collected, so a package can ship its own C (for example a bundled SQLite) and a consumer needs nothing installed. The C compiler is detected the same way the linker is (cl.exe on windows-msvc, `cc`/`gcc` elsewhere), and its output is discarded so it never reaches a program's stdout under `rvpm run`.
+
 ## [2.18.63] - 2026-06-13
 
 ### Changed
