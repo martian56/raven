@@ -16,14 +16,157 @@
 //! See `docs/v2/specs/rvpm.md` for the lock format and the tree-hash
 //! scheme.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 use sha2::{Digest, Sha256};
 
 use crate::manifest::{Manifest, ManifestError};
 use crate::pkg::{self, PkgError};
+
+/// A callback invoked once per package as it is fetched during resolution or
+/// validation, with the package source, version, and whether it was served
+/// from the cache (no network). Set by [`set_fetch_observer`]; rvpm uses it
+/// to print live progress.
+type FetchObserver = Box<dyn Fn(&str, &str, bool) + Send + Sync>;
+
+static FETCH_OBSERVER: Mutex<Option<FetchObserver>> = Mutex::new(None);
+
+/// Install a process-wide fetch observer, or clear it with `None`. The
+/// observer is called from worker threads, so it must be `Send + Sync`; calls
+/// are serialized through a lock, so it does not need its own.
+pub fn set_fetch_observer(observer: Option<FetchObserver>) {
+    if let Ok(mut guard) = FETCH_OBSERVER.lock() {
+        *guard = observer;
+    }
+}
+
+fn notify_fetch(source: &str, version: &str, cached: bool) {
+    if let Ok(guard) = FETCH_OBSERVER.lock() {
+        if let Some(observer) = guard.as_ref() {
+            observer(source, version, cached);
+        }
+    }
+}
+
+/// The most concurrent fetches to run at once. Fetching is network-bound, so
+/// this exceeds the core count, but stays modest to avoid hammering the host.
+fn max_fetch_workers() -> usize {
+    12
+}
+
+/// Map `f` over `items` with bounded concurrency, preserving input order. A
+/// single item runs inline; the rest fan out across scoped worker threads that
+/// pull from a shared index.
+fn par_map<T, R>(items: Vec<T>, f: impl Fn(T) -> R + Sync) -> Vec<R>
+where
+    T: Send,
+    R: Send,
+{
+    let n = items.len();
+    if n <= 1 {
+        return items.into_iter().map(f).collect();
+    }
+    let workers = n.min(max_fetch_workers());
+    let slots: Vec<Mutex<Option<T>>> = items.into_iter().map(|t| Mutex::new(Some(t))).collect();
+    let results: Vec<Mutex<Option<R>>> = (0..n).map(|_| Mutex::new(None)).collect();
+    let next = AtomicUsize::new(0);
+    let f = &f;
+    let slots = &slots;
+    let results = &results;
+    let next = &next;
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(move || loop {
+                let i = next.fetch_add(1, Ordering::Relaxed);
+                if i >= n {
+                    break;
+                }
+                let item = slots[i].lock().unwrap().take().unwrap();
+                let r = f(item);
+                *results[i].lock().unwrap() = Some(r);
+            });
+        }
+    });
+    results
+        .iter()
+        .map(|m| m.lock().unwrap().take().unwrap())
+        .collect()
+}
+
+/// Hash a fetched tree, reusing a persisted hash when the tree is unchanged so
+/// a warm install does not re-read and re-hash every file.
+///
+/// The sidecar stores the content hash plus a cheap metadata signature (file
+/// count, total bytes, newest mtime). When the recomputed signature matches,
+/// the stored hash is trusted; when it differs, or no sidecar exists, the full
+/// content hash is recomputed and the sidecar refreshed. The signature is a
+/// metadata-only walk (no file reads), so it stays fast while still catching an
+/// edited cache file, which changes its size or mtime.
+fn hash_with_cache(dir: &Path) -> Result<String, LockError> {
+    let to_io = |e: std::io::Error| LockError::Io {
+        action: "hash dependency tree".to_string(),
+        path: dir.to_path_buf(),
+        source: e,
+    };
+    let signature = tree_signature(dir).map_err(to_io)?;
+    let sidecar = pkg::hash_sidecar(dir);
+    if let Ok(content) = std::fs::read_to_string(&sidecar) {
+        let mut lines = content.lines();
+        let stored_hash = lines.next().unwrap_or("").trim();
+        let stored_sig = lines.next().unwrap_or("").trim();
+        if stored_hash.starts_with("sha256:") && stored_sig == signature {
+            return Ok(stored_hash.to_string());
+        }
+    }
+    let hash = tree_hash(dir).map_err(to_io)?;
+    let _ = std::fs::write(&sidecar, format!("{}\n{}\n", hash, signature));
+    Ok(hash)
+}
+
+/// A cheap fingerprint of a tree from file metadata alone (no content reads):
+/// file count, total bytes, and the newest mtime, formatted as one line. Any
+/// edit to a cached file changes its size or mtime, so it changes the
+/// signature. The `.git` directory is skipped, matching [`tree_hash`].
+fn tree_signature(dir: &Path) -> std::io::Result<String> {
+    let mut count: u64 = 0;
+    let mut bytes: u64 = 0;
+    let mut newest: u128 = 0;
+    signature_walk(dir, &mut count, &mut bytes, &mut newest)?;
+    Ok(format!("{} {} {}", count, bytes, newest))
+}
+
+fn signature_walk(
+    dir: &Path,
+    count: &mut u64,
+    bytes: &mut u64,
+    newest: &mut u128,
+) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            if entry.file_name() == ".git" {
+                continue;
+            }
+            signature_walk(&entry.path(), count, bytes, newest)?;
+        } else {
+            *count += 1;
+            if let Ok(meta) = entry.metadata() {
+                *bytes += meta.len();
+                if let Ok(modified) = meta.modified() {
+                    if let Ok(since) = modified.duration_since(std::time::UNIX_EPOCH) {
+                        *newest = (*newest).max(since.as_nanos());
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
 
 /// The lock format version stamped into `rv.lock`.
 pub const LOCK_VERSION: u32 = 1;
@@ -226,51 +369,29 @@ pub fn resolve_and_lock(manifest: &Manifest) -> Result<LockFile, LockError> {
 /// [`tree_hash`]. The returned lock is sorted deterministically.
 pub fn resolve_and_lock_in(manifest: &Manifest, cache_root: &Path) -> Result<LockFile, LockError> {
     let mut seen: BTreeMap<(String, String), LockedPackage> = BTreeMap::new();
-    // Work queue of (source, version) pairs to resolve.
-    let mut queue: Vec<(String, String)> = Vec::new();
+    let mut queued: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut wave: Vec<(String, String)> = Vec::new();
     for dep in &manifest.dependencies {
-        queue.push((dep.path.clone(), resolved_ref(dep)?));
+        let key = (dep.path.clone(), resolved_ref(dep)?);
+        if queued.insert(key.clone()) {
+            wave.push(key);
+        }
     }
 
-    while let Some((source, version)) = queue.pop() {
-        let key = (source.clone(), version.clone());
-        if seen.contains_key(&key) {
-            continue;
-        }
-
-        let gh = crate::resolve::GithubPath::parse(&source).ok_or_else(|| {
-            LockError::Parse(format!(
-                "dependency source '{}' is not a github.com path",
-                source
-            ))
-        })?;
-        let dir = pkg::fetch_in(cache_root, &gh.host, &gh.user, &gh.repo, &version)
-            .map_err(LockError::Fetch)?;
-
-        let hash = tree_hash(&dir).map_err(|e| LockError::Io {
-            action: "hash dependency tree".to_string(),
-            path: dir.clone(),
-            source: e,
-        })?;
-
-        seen.insert(
-            key,
-            LockedPackage {
-                source: source.clone(),
-                version: version.clone(),
-                hash,
-            },
-        );
-
-        // Read the fetched package's manifest for its own dependencies.
-        let sub_manifest_path = dir.join("rv.toml");
-        if sub_manifest_path.exists() {
-            let sub = Manifest::load(&sub_manifest_path).map_err(|error| LockError::Manifest {
-                source_path: source.clone(),
-                error,
-            })?;
-            for dep in &sub.dependencies {
-                queue.push((dep.path.clone(), resolved_ref(dep)?));
+    // Fetch each level of the graph concurrently, then queue the dependencies
+    // discovered from the fetched manifests as the next level.
+    while !wave.is_empty() {
+        let results = par_map(std::mem::take(&mut wave), |(source, version)| {
+            fetch_and_read(cache_root, &source, &version)
+        });
+        for result in results {
+            let (package, sub_deps) = result?;
+            let key = (package.source.clone(), package.version.clone());
+            seen.insert(key, package);
+            for dep in sub_deps {
+                if !seen.contains_key(&dep) && queued.insert(dep.clone()) {
+                    wave.push(dep);
+                }
             }
         }
     }
@@ -283,6 +404,46 @@ pub fn resolve_and_lock_in(manifest: &Manifest, cache_root: &Path) -> Result<Loc
     })
 }
 
+/// Fetch one package, report it to the observer, hash it (reusing a persisted
+/// hash when present), and read its direct dependencies from the fetched
+/// manifest.
+fn fetch_and_read(
+    cache_root: &Path,
+    source: &str,
+    version: &str,
+) -> Result<(LockedPackage, Vec<(String, String)>), LockError> {
+    let gh = crate::resolve::GithubPath::parse(source).ok_or_else(|| {
+        LockError::Parse(format!(
+            "dependency source '{}' is not a github.com path",
+            source
+        ))
+    })?;
+    let fetched = pkg::fetch_in(cache_root, &gh.host, &gh.user, &gh.repo, version)
+        .map_err(LockError::Fetch)?;
+    notify_fetch(source, version, fetched.cached);
+    let hash = hash_with_cache(&fetched.dir)?;
+
+    let mut sub_deps = Vec::new();
+    let sub_manifest_path = fetched.dir.join("rv.toml");
+    if sub_manifest_path.exists() {
+        let sub = Manifest::load(&sub_manifest_path).map_err(|error| LockError::Manifest {
+            source_path: source.to_string(),
+            error,
+        })?;
+        for dep in &sub.dependencies {
+            sub_deps.push((dep.path.clone(), resolved_ref(dep)?));
+        }
+    }
+    Ok((
+        LockedPackage {
+            source: source.to_string(),
+            version: version.to_string(),
+            hash,
+        },
+        sub_deps,
+    ))
+}
+
 /// Validate `lock` against the shared cache (default cache root).
 pub fn validate_lock(lock: &LockFile) -> Result<(), LockError> {
     validate_lock_in(lock, &pkg::cache_root())
@@ -292,28 +453,35 @@ pub fn validate_lock(lock: &LockFile) -> Result<(), LockError> {
 /// entry and verify its tree hash. A mismatch aborts with
 /// [`LockError::HashMismatch`] naming the package.
 pub fn validate_lock_in(lock: &LockFile, cache_root: &Path) -> Result<(), LockError> {
-    for entry in &lock.packages {
-        let gh = crate::resolve::GithubPath::parse(&entry.source).ok_or_else(|| {
-            LockError::Parse(format!(
-                "locked source '{}' is not a github.com path",
-                entry.source
-            ))
-        })?;
-        let dir = pkg::fetch_in(cache_root, &gh.host, &gh.user, &gh.repo, &entry.version)
-            .map_err(LockError::Fetch)?;
-        let actual = tree_hash(&dir).map_err(|e| LockError::Io {
-            action: "hash dependency tree".to_string(),
-            path: dir.clone(),
-            source: e,
-        })?;
-        if actual != entry.hash {
-            return Err(LockError::HashMismatch {
-                source: entry.source.clone(),
-                version: entry.version.clone(),
-                expected: entry.hash.clone(),
-                actual,
-            });
-        }
+    let results = par_map(lock.packages.clone(), |entry| {
+        validate_one(cache_root, &entry)
+    });
+    for result in results {
+        result?;
+    }
+    Ok(())
+}
+
+/// Fetch one locked package, report it, and verify its tree hash against the
+/// lock. A persisted hash is reused when present.
+fn validate_one(cache_root: &Path, entry: &LockedPackage) -> Result<(), LockError> {
+    let gh = crate::resolve::GithubPath::parse(&entry.source).ok_or_else(|| {
+        LockError::Parse(format!(
+            "locked source '{}' is not a github.com path",
+            entry.source
+        ))
+    })?;
+    let fetched = pkg::fetch_in(cache_root, &gh.host, &gh.user, &gh.repo, &entry.version)
+        .map_err(LockError::Fetch)?;
+    notify_fetch(&entry.source, &entry.version, fetched.cached);
+    let actual = hash_with_cache(&fetched.dir)?;
+    if actual != entry.hash {
+        return Err(LockError::HashMismatch {
+            source: entry.source.clone(),
+            version: entry.version.clone(),
+            expected: entry.hash.clone(),
+            actual,
+        });
     }
     Ok(())
 }
@@ -727,6 +895,30 @@ mod tests {
         let h2 = tree_hash(&dir).expect("hash again");
         assert_eq!(h1, h2, "hashing is deterministic");
         assert!(h1.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn hash_with_cache_persists_beside_dir_and_reuses() {
+        let cache = TempCache::new("hashcache");
+        let dir = cache.seed("github.com/acme/bar", "v1.0.0", &[("a.rv", "one")]);
+        let sidecar = pkg::hash_sidecar(&dir);
+        assert!(!sidecar.exists());
+
+        let first = hash_with_cache(&dir).expect("first");
+        assert!(sidecar.exists(), "a sidecar is written");
+        // The sidecar lives beside the version dir, so it does not perturb the
+        // tree hash of that dir.
+        assert_eq!(first, tree_hash(&dir).expect("direct"));
+        // A second call returns the same hash from the sidecar.
+        assert_eq!(first, hash_with_cache(&dir).expect("second"));
+    }
+
+    #[test]
+    fn par_map_preserves_order() {
+        let input: Vec<usize> = (0..50).collect();
+        let out = par_map(input, |x| x * 2);
+        let expected: Vec<usize> = (0..50).map(|x| x * 2).collect();
+        assert_eq!(out, expected);
     }
 
     #[test]

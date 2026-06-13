@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.63] - 2026-06-13
+
+### Changed
+
+- rvpm fetches package dependencies faster and shows live progress. A new version is downloaded as a gzip tarball through codeload (one HTTP GET, no git history) instead of a clone, falling back to `git clone` when `curl`/`tar` are unavailable. The dependencies of one install are fetched concurrently, and each fetched tree hash is recorded in a sidecar file so a warm install reuses it instead of re-reading every file (a cheap metadata signature still catches an edited cache entry). Commands that fetch (`install`, `build`, `run`, `add`, `update`) now print a line per package (downloaded or cached) and a one-line summary. `rvpm cache dir`, `list`, and `clean` account for the new sidecar files.
+
 ## [2.18.62] - 2026-06-12
 
 ### Added

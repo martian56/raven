@@ -234,6 +234,16 @@ fn cache_clean(args: &[String]) -> Result<(), String> {
                     removed += 1;
                 }
             }
+            // Remove the tree-hash sidecar files (`<repo>@<version>.rvpm-hash`)
+            // that sit beside the version directories.
+            for entry in std::fs::read_dir(&user_dir).map_err(|e| e.to_string())? {
+                let entry = entry.map_err(|e| e.to_string())?;
+                if let Some(name) = entry.file_name().to_str() {
+                    if name.ends_with(".rvpm-hash") && name.starts_with(&prefix) {
+                        let _ = std::fs::remove_file(entry.path());
+                    }
+                }
+            }
             println!("removed {} cached version(s) of {}", removed, spec);
             Ok(())
         }
@@ -272,8 +282,8 @@ fn cmd_fetch(args: &[String]) -> Result<(), String> {
         .ok_or_else(|| format!("'{}' is missing an '@<version>' suffix", spec))?;
     let gh = GithubPath::parse(path)
         .ok_or_else(|| format!("'{}' is not a 'github.com/<user>/<repo>' path", path))?;
-    let dir = pkg::fetch(&gh.host, &gh.user, &gh.repo, version).map_err(|e| e.to_string())?;
-    println!("{}", dir.display());
+    let fetched = pkg::fetch(&gh.host, &gh.user, &gh.repo, version).map_err(|e| e.to_string())?;
+    println!("{}", fetched.dir.display());
     Ok(())
 }
 
@@ -324,6 +334,57 @@ fn run(result: Result<Vec<String>, String>) -> ExitCode {
 /// Append (or update) a dependency in rv.toml, then resolve and write
 /// rv.lock. Accepts `github.com/<user>/<repo>` with an optional
 /// `@<version>`; without a version a placeholder constraint is recorded.
+/// Run `f` with a fetch observer installed, printing a live line per package
+/// as it is fetched (downloaded or served from cache) and a one-line summary
+/// afterward. Used by the commands that resolve or validate dependencies.
+fn with_fetch_progress<T>(f: impl FnOnce() -> T) -> T {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+    use std::time::Instant;
+
+    let started = Instant::now();
+    let downloaded = Arc::new(AtomicUsize::new(0));
+    let cached = Arc::new(AtomicUsize::new(0));
+    let last = Arc::new(Mutex::new(None::<Instant>));
+
+    let d = Arc::clone(&downloaded);
+    let c = Arc::clone(&cached);
+    let l = Arc::clone(&last);
+    lock::set_fetch_observer(Some(Box::new(
+        move |source: &str, version: &str, was_cached: bool| {
+            *l.lock().unwrap() = Some(Instant::now());
+            let status = if was_cached {
+                c.fetch_add(1, Ordering::Relaxed);
+                "cached"
+            } else {
+                d.fetch_add(1, Ordering::Relaxed);
+                "downloaded"
+            };
+            // Progress goes to stderr so it never mixes with a program's
+            // stdout under `rvpm run`.
+            eprintln!("  {:<10} {}@{}", status, source, version);
+        },
+    )));
+
+    let result = f();
+    lock::set_fetch_observer(None);
+
+    let dn = downloaded.load(Ordering::Relaxed);
+    let cn = cached.load(Ordering::Relaxed);
+    if dn + cn > 0 {
+        let secs = last
+            .lock()
+            .unwrap()
+            .map(|t| t.duration_since(started).as_secs_f64())
+            .unwrap_or(0.0);
+        eprintln!(
+            "  fetched in {:.2}s ({} downloaded, {} cached)",
+            secs, dn, cn
+        );
+    }
+    result
+}
+
 fn cmd_add(args: &[String]) -> Result<Vec<String>, String> {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         return Ok(vec![add_usage()]);
@@ -336,7 +397,8 @@ fn cmd_add(args: &[String]) -> Result<Vec<String>, String> {
         None => (spec.as_str(), None),
     };
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    let report = ops::add(&cwd, path, version).map_err(|e| e.to_string())?;
+    let report =
+        with_fetch_progress(|| ops::add(&cwd, path, version)).map_err(|e| e.to_string())?;
     Ok(report.outcome_lines)
 }
 
@@ -347,7 +409,8 @@ fn cmd_install(args: &[String]) -> Result<Vec<String>, String> {
         return Ok(vec![install_usage()]);
     }
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    let (_outcome, report) = ops::install(&cwd).map_err(|e| e.to_string())?;
+    let (_outcome, report) =
+        with_fetch_progress(|| ops::install(&cwd)).map_err(|e| e.to_string())?;
     Ok(report.outcome_lines)
 }
 
@@ -358,7 +421,7 @@ fn cmd_update(args: &[String]) -> Result<Vec<String>, String> {
     }
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     let package = args.first().map(String::as_str);
-    let report = ops::update(&cwd, package).map_err(|e| e.to_string())?;
+    let report = with_fetch_progress(|| ops::update(&cwd, package)).map_err(|e| e.to_string())?;
     Ok(report.outcome_lines)
 }
 
@@ -369,7 +432,7 @@ fn cmd_build(args: &[String]) -> Result<Vec<String>, String> {
         return Ok(vec![build_usage()]);
     }
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    let report = ops::build(&cwd).map_err(|e| e.to_string())?;
+    let report = with_fetch_progress(|| ops::build(&cwd)).map_err(|e| e.to_string())?;
     Ok(report.outcome_lines)
 }
 
@@ -387,7 +450,7 @@ fn cmd_run(args: &[String]) -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    match ops::run_package(&cwd, args) {
+    match with_fetch_progress(|| ops::run_package(&cwd, args)) {
         Ok(code) => {
             let code: u8 = code.try_into().unwrap_or(1);
             ExitCode::from(code)
