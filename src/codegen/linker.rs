@@ -120,22 +120,97 @@ fn host_triple_string() -> String {
     Triple::host().to_string()
 }
 
-/// Link `object_path` with `runtime` into `output`.
+/// Native code to link into the program, gathered from the `[ffi]` sections of
+/// a project and its dependencies: object files compiled from bundled C
+/// sources, system library names (`-l`), and raw linker arguments.
+#[derive(Debug, Clone, Default)]
+pub struct NativeLink {
+    /// Object files (compiled from bundled C sources) to link in.
+    pub objects: Vec<PathBuf>,
+    /// System library names to link, passed as `-l<name>` (or `<name>.lib`).
+    pub libs: Vec<String>,
+    /// Raw linker arguments passed through verbatim.
+    pub link_args: Vec<String>,
+}
+
+/// Compile each bundled C source into an object file under `out_dir`,
+/// returning their paths to link directly. Uses the `cc` crate's compiler
+/// detection (cl.exe on windows-msvc, `cc`/`gcc` elsewhere), configured
+/// explicitly so it needs no build-script environment. The compiler's stdout
+/// is discarded so chatter (cl.exe echoes the source name) never reaches a
+/// program's output under `rvpm run`.
+pub fn compile_c_sources(
+    sources: &[PathBuf],
+    out_dir: &Path,
+) -> Result<Vec<PathBuf>, CodegenError> {
+    std::fs::create_dir_all(out_dir)
+        .map_err(|e| CodegenError::Target(format!("create ffi build dir: {}", e)))?;
+    let triple = host_triple_string();
+    let mut build = cc::Build::new();
+    build
+        .cargo_metadata(false)
+        .opt_level(2)
+        .debug(false)
+        .warnings(false)
+        .host(&triple)
+        .target(&triple)
+        .out_dir(out_dir);
+    let compiler = build
+        .try_get_compiler()
+        .map_err(|e| CodegenError::Target(format!("no C compiler for the [ffi] sources: {}", e)))?;
+    let msvc = compiler.is_like_msvc();
+
+    let mut objects = Vec::with_capacity(sources.len());
+    for (index, source) in sources.iter().enumerate() {
+        let stem = source.file_stem().and_then(|s| s.to_str()).unwrap_or("src");
+        let object = out_dir.join(format!(
+            "{}_{}.{}",
+            stem,
+            index,
+            if msvc { "obj" } else { "o" }
+        ));
+        let mut cmd = compiler.to_command();
+        if msvc {
+            cmd.arg("/nologo")
+                .arg("/c")
+                .arg(source)
+                .arg(format!("/Fo{}", object.display()));
+        } else {
+            cmd.arg("-c").arg(source).arg("-o").arg(&object);
+        }
+        let out = cmd
+            .stdout(std::process::Stdio::null())
+            .output()
+            .map_err(|e| CodegenError::Target(format!("C compiler failed to launch: {}", e)))?;
+        if !out.status.success() {
+            return Err(CodegenError::Target(format!(
+                "compiling {} failed:\n{}",
+                source.display(),
+                String::from_utf8_lossy(&out.stderr).trim()
+            )));
+        }
+        objects.push(object);
+    }
+    Ok(objects)
+}
+
+/// Link `object_path` with `runtime` and any `native` FFI inputs into `output`.
 ///
 /// Selects the linker by host target triple. See the module docs for
 /// the per-platform behavior.
 pub fn link(
     object_path: &Path,
     runtime: &RuntimeStaticLib,
+    native: &NativeLink,
     output: &Path,
 ) -> Result<LinkOutput, CodegenError> {
     let triple = Triple::host();
     if is_windows_msvc(&triple) {
-        link_msvc(object_path, runtime, output)
+        link_msvc(object_path, runtime, native, output)
     } else if is_windows_gnu(&triple) {
-        link_gnu(object_path, runtime, output)
+        link_gnu(object_path, runtime, native, output)
     } else {
-        link_unix(object_path, runtime, output)
+        link_unix(object_path, runtime, native, output)
     }
 }
 
@@ -148,11 +223,12 @@ pub fn link(
 fn link_msvc(
     object_path: &Path,
     runtime: &RuntimeStaticLib,
+    native: &NativeLink,
     output: &Path,
 ) -> Result<LinkOutput, CodegenError> {
     let triple = host_triple_string();
     if let Some(mut cmd) = msvc_link_tool(&triple) {
-        push_msvc_args(&mut cmd, object_path, runtime, output);
+        push_msvc_args(&mut cmd, object_path, runtime, native, output);
         run_linker(cmd, "link.exe", output)
     } else if let Some(lld) = locate_rust_lld() {
         // Best-effort fallback. `rust-lld` in lld-link flavor speaks the
@@ -161,7 +237,7 @@ fn link_msvc(
         // shell (or a prior `link.exe` discovery) must already be set.
         let mut cmd = Command::new(&lld);
         cmd.arg("-flavor").arg("link");
-        push_msvc_args(&mut cmd, object_path, runtime, output);
+        push_msvc_args(&mut cmd, object_path, runtime, native, output);
         run_linker(cmd, "rust-lld", output)
     } else {
         Err(CodegenError::Target(
@@ -184,12 +260,24 @@ fn push_msvc_args(
     cmd: &mut Command,
     object_path: &Path,
     runtime: &RuntimeStaticLib,
+    native: &NativeLink,
     output: &Path,
 ) {
     cmd.arg("/NOLOGO");
     cmd.arg(format!("/OUT:{}", output.display()));
     cmd.arg(object_path);
     cmd.arg(&runtime.path);
+    // FFI inputs from `[ffi]`: compiled C objects, then named libraries
+    // (`name` links `name.lib`), then any raw linker arguments.
+    for object in &native.objects {
+        cmd.arg(object);
+    }
+    for lib in &native.libs {
+        cmd.arg(format!("{}.lib", lib));
+    }
+    for arg in &native.link_args {
+        cmd.arg(arg);
+    }
     for lib in MSVC_NATIVE_STATIC_LIBS {
         cmd.arg(lib);
     }
@@ -241,6 +329,7 @@ fn rustc_sysroot() -> Option<PathBuf> {
 fn link_gnu(
     object_path: &Path,
     runtime: &RuntimeStaticLib,
+    native: &NativeLink,
     output: &Path,
 ) -> Result<LinkOutput, CodegenError> {
     let cc = which_cc().ok_or_else(|| {
@@ -252,6 +341,7 @@ fn link_gnu(
     })?;
     let mut cmd = Command::new(&cc);
     cmd.arg(object_path).arg(&runtime.path);
+    push_native_unix(&mut cmd, native);
     cmd.arg("-o").arg(output);
     // Rust's std on MinGW pulls in these system libs.
     cmd.args([
@@ -285,12 +375,14 @@ fn link_gnu(
 fn link_unix(
     object_path: &Path,
     runtime: &RuntimeStaticLib,
+    native: &NativeLink,
     output: &Path,
 ) -> Result<LinkOutput, CodegenError> {
     let cc =
         which_cc().ok_or_else(|| CodegenError::Target("no `cc` driver on PATH".to_string()))?;
     let mut cmd = Command::new(&cc);
     cmd.arg(object_path).arg(&runtime.path);
+    push_native_unix(&mut cmd, native);
     cmd.arg("-o").arg(output);
     if cfg!(target_os = "linux") {
         cmd.args(["-lpthread", "-ldl", "-lm", "-lrt", "-lgcc_s", "-lutil"]);
@@ -327,6 +419,21 @@ fn link_unix(
     Ok(LinkOutput {
         binary: output.to_path_buf(),
     })
+}
+
+/// Append the FFI inputs to a `cc`/`gcc` command line, after the program and
+/// runtime objects: compiled C archives (linked in full), then `-l` libraries,
+/// then raw linker arguments.
+fn push_native_unix(cmd: &mut Command, native: &NativeLink) {
+    for object in &native.objects {
+        cmd.arg(object);
+    }
+    for lib in &native.libs {
+        cmd.arg(format!("-l{}", lib));
+    }
+    for arg in &native.link_args {
+        cmd.arg(arg);
+    }
 }
 
 /// Run a configured linker command and map its result.

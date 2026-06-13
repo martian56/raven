@@ -455,7 +455,12 @@ fn build_program(source: &str, runtime: &RuntimeStaticLib) -> Result<CompiledPro
     let object_path = tmp.join("gen.o");
     std::fs::write(&object_path, &object_bytes).expect("write object");
     let binary = tmp.join(if cfg!(windows) { "gen.exe" } else { "gen" });
-    if let Err(e) = linker::link(&object_path, runtime, &binary) {
+    if let Err(e) = linker::link(
+        &object_path,
+        runtime,
+        &linker::NativeLink::default(),
+        &binary,
+    ) {
         cleanup(&tmp);
         return Err(format!("link: {e}"));
     }

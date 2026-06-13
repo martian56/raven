@@ -104,6 +104,18 @@ pub fn build_binary(
     output: &Path,
     ctx: Option<&PackageContext>,
 ) -> Result<(), DriverError> {
+    build_binary_native(input, output, ctx, &linker::NativeLink::default())
+}
+
+/// Compile `input` to a native executable like [`build_binary`], additionally
+/// linking the `native` FFI inputs (compiled C archives, `-l` libraries, and
+/// raw linker arguments) gathered from `[ffi]` sections.
+pub fn build_binary_native(
+    input: &Path,
+    output: &Path,
+    ctx: Option<&PackageContext>,
+    native: &linker::NativeLink,
+) -> Result<(), DriverError> {
     let source = std::fs::read_to_string(input)
         .map_err(|e| DriverError::Io(format!("read {}: {}", input.display(), e)))?;
 
@@ -115,7 +127,7 @@ pub fn build_binary(
     std::fs::write(&object_path, &object_bytes)
         .map_err(|e| DriverError::Io(format!("write object: {}", e)))?;
 
-    linker::link(&object_path, &runtime, output).map_err(DriverError::from)?;
+    linker::link(&object_path, &runtime, native, output).map_err(DriverError::from)?;
     Ok(())
 }
 

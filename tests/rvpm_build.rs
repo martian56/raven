@@ -94,6 +94,71 @@ fn project_with_github_dependency_builds_and_runs() {
     assert_eq!(stdout, "hi!\n", "unexpected program stdout: {:?}", stdout);
 }
 
+/// A dependency that bundles a C source through `[ffi]` is compiled and linked
+/// into the consuming program: `cmath` ships `c/quad.c`, exposes it via an
+/// `extern "C"` wrapper, and the project calls it. This is the shape a SQLite
+/// binding (bundled `sqlite3.c`) takes.
+#[test]
+fn project_with_dependency_bundling_c_builds_and_runs() {
+    if !supported_runtime() {
+        return;
+    }
+
+    let work = workdir();
+    let cache = work.join("cache");
+    let project = work.join("project");
+    std::fs::create_dir_all(&project).expect("mkdir project");
+
+    let pkg_dir = cache.join("github.com").join("acme").join("cmath@v1.0.0");
+    std::fs::create_dir_all(pkg_dir.join("c")).expect("mkdir pkg/c");
+    std::fs::write(
+        pkg_dir.join("rv.toml"),
+        "[package]\nname = \"cmath\"\nversion = \"0.1.0\"\n\n[ffi]\nsources = [\"c/quad.c\"]\n",
+    )
+    .expect("write pkg toml");
+    std::fs::write(
+        pkg_dir.join("c").join("quad.c"),
+        "int quad(int x) { return x * 4; }\n",
+    )
+    .expect("write pkg c");
+    std::fs::write(
+        pkg_dir.join("lib.rv"),
+        "extern \"C\" {\n    fun quad(x: CInt) -> CInt\n}\nfun times4(x: CInt) -> CInt { return quad(x) }\n",
+    )
+    .expect("write pkg lib");
+
+    std::fs::write(
+        project.join("rv.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n\n[dependencies]\n\"github.com/acme/cmath\" = \"v1.0.0\"\n",
+    )
+    .expect("write project toml");
+    let src = project.join("src");
+    std::fs::create_dir_all(&src).expect("mkdir src");
+    std::fs::write(
+        src.join("main.rv"),
+        "import \"github.com/acme/cmath/lib\" { times4 }\nfun main() { print(times4(5)) }\n",
+    )
+    .expect("write main");
+
+    let run = rvpm(&project, &cache, &["run".to_string()]);
+    let stdout = String::from_utf8_lossy(&run.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&run.stderr).into_owned();
+    cleanup(&work);
+    assert!(
+        run.status.success(),
+        "rvpm run failed: stdout={} stderr={}",
+        stdout,
+        stderr
+    );
+    // times4(5) calls the bundled C quad(5) = 20.
+    assert_eq!(
+        stdout.trim(),
+        "20",
+        "unexpected program stdout: {:?}",
+        stdout
+    );
+}
+
 /// Invoke the real `rvpm` binary in `project_dir` with an isolated cache.
 fn rvpm(project_dir: &Path, cache: &Path, args: &[String]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_rvpm"))

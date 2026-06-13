@@ -57,7 +57,12 @@ fn v2_examples_match_golden_baselines() {
         } else {
             example.stem.clone()
         });
-        if let Err(e) = linker::link(&object_path, &runtime, &binary) {
+        if let Err(e) = linker::link(
+            &object_path,
+            &runtime,
+            &linker::NativeLink::default(),
+            &binary,
+        ) {
             cleanup(&tmp);
             failures.push(format!("{}: link failed: {}", example.label, e));
             continue;
