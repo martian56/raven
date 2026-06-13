@@ -360,7 +360,9 @@ fn with_fetch_progress<T>(f: impl FnOnce() -> T) -> T {
                 d.fetch_add(1, Ordering::Relaxed);
                 "downloaded"
             };
-            println!("  {:<10} {}@{}", status, source, version);
+            // Progress goes to stderr so it never mixes with a program's
+            // stdout under `rvpm run`.
+            eprintln!("  {:<10} {}@{}", status, source, version);
         },
     )));
 
@@ -375,7 +377,7 @@ fn with_fetch_progress<T>(f: impl FnOnce() -> T) -> T {
             .unwrap()
             .map(|t| t.duration_since(started).as_secs_f64())
             .unwrap_or(0.0);
-        println!(
+        eprintln!(
             "  fetched in {:.2}s ({} downloaded, {} cached)",
             secs, dn, cn
         );
