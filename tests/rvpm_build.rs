@@ -159,6 +159,58 @@ fn project_with_dependency_bundling_c_builds_and_runs() {
     );
 }
 
+/// `rvpm test` links the package's own `[ffi]` so a package can test its native
+/// bindings. A library bundles `c/inc.c`, wraps it, and a `*_test.rv` calls the
+/// wrapper.
+#[test]
+fn rvpm_test_links_package_ffi() {
+    if !supported_runtime() {
+        return;
+    }
+
+    let work = workdir();
+    let cache = work.join("cache");
+    let project = work.join("lib");
+    std::fs::create_dir_all(project.join("c")).expect("mkdir lib/c");
+
+    std::fs::write(
+        project.join("rv.toml"),
+        "[package]\nname = \"inc\"\nversion = \"0.1.0\"\n\n[ffi]\nsources = [\"c/inc.c\"]\n",
+    )
+    .expect("write toml");
+    std::fs::write(
+        project.join("c").join("inc.c"),
+        "#include <stdint.h>\nint64_t c_inc(int64_t x) { return x + 1; }\n",
+    )
+    .expect("write c");
+    std::fs::write(
+        project.join("lib.rv"),
+        "extern \"C\" {\n    fun c_inc(x: Int) -> Int\n}\nfun inc(x: Int) -> Int { return c_inc(x) }\n",
+    )
+    .expect("write lib");
+    std::fs::write(
+        project.join("lib_test.rv"),
+        "import std/test { assert_eq_int }\nimport \"./lib\" { inc }\nfun test_inc() { assert_eq_int(inc(4), 5) }\n",
+    )
+    .expect("write test");
+
+    let out = rvpm(&project, &cache, &["test".to_string()]);
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    cleanup(&work);
+    assert!(
+        out.status.success(),
+        "rvpm test failed: stdout={} stderr={}",
+        stdout,
+        stderr
+    );
+    assert!(
+        stdout.contains("ok   test_inc"),
+        "expected the test to pass: {}",
+        stdout
+    );
+}
+
 /// Invoke the real `rvpm` binary in `project_dir` with an isolated cache.
 fn rvpm(project_dir: &Path, cache: &Path, args: &[String]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_rvpm"))

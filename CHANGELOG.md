@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.65] - 2026-06-13
+
+### Fixed
+
+- `rvpm test` now links the package's (and its dependencies') `[ffi]` native code, so a package can test its own FFI bindings. Previously only `rvpm build`/`run` applied `[ffi]`, so a test that called into bundled C failed to link.
+
 ## [2.18.64] - 2026-06-13
 
 ### Added
