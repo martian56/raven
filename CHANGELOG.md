@@ -2,6 +2,13 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.71] - 2026-06-14
+
+### Added
+
+- `std/http` `Server` now applies read and write timeouts so a slow or idle client cannot hold a connection's goroutine open forever. Both default to 30 seconds and are configurable: `with_timeout(seconds)` sets both, `with_read_timeout(seconds)` and `with_write_timeout(seconds)` set one, and `0` disables a timeout.
+- `std/net` `TcpStream` gains `set_write_timeout_ms`, the write-side counterpart to `set_read_timeout_ms`.
+
 ## [2.18.70] - 2026-06-14
 
 ### Added

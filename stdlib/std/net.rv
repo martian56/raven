@@ -26,6 +26,7 @@ extern "C" {
     fun raven_net_write(stream_id: Int, data: String) -> Int
     fun raven_net_close(stream_id: Int)
     fun raven_net_set_read_timeout_ms(stream_id: Int, ms: Int)
+    fun raven_net_set_write_timeout_ms(stream_id: Int, ms: Int)
     fun raven_dns_lookup(host: String) -> String
     fun raven_net_reachable(addr: String) -> Bool
 }
@@ -112,6 +113,11 @@ impl TcpStream {
     // Set the read timeout in milliseconds. A value of 0 means no timeout.
     fun set_read_timeout_ms(self, ms: Int) {
         raven_net_set_read_timeout_ms(self.id, ms)
+    }
+
+    // Set the write timeout in milliseconds. A value of 0 means no timeout.
+    fun set_write_timeout_ms(self, ms: Int) {
+        raven_net_set_write_timeout_ms(self.id, ms)
     }
 
     // Close the stream, releasing the runtime-side socket.

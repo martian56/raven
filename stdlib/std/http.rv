@@ -311,16 +311,22 @@ struct Route {
 
 // An HTTP server: a routing table built with `get`/`post`/... and served with
 // `listen`. `access_log` is off by default; enable it with `with_access_log`.
+// `read_timeout_ms` and `write_timeout_ms` bound how long a single slow client
+// can hold a connection (0 disables); they default to 30 seconds so an idle or
+// slow client cannot pin a goroutine forever.
 struct Server {
     routes: List<Route>,
     access_log: Bool,
+    read_timeout_ms: Int,
+    write_timeout_ms: Int,
 }
 
 impl Server {
-    // A new server with an empty routing table and the access log off.
+    // A new server with an empty routing table, the access log off, and 30
+    // second read and write timeouts.
     fun new() -> Server {
         let r: List<Route> = []
-        return Server { routes: r, access_log: false }
+        return Server { routes: r, access_log: false, read_timeout_ms: 30000, write_timeout_ms: 30000 }
     }
 
     // Enable a one-line-per-request access log to stdout (method, path, and
@@ -330,6 +336,29 @@ impl Server {
     // line in each handler.
     fun with_access_log(self) -> Server {
         self.access_log = true
+        return self
+    }
+
+    // Set the read and write timeouts to `seconds` each, returning self so it
+    // chains. `0` disables both (a request or response may then block forever
+    // on a slow client). A read timeout bounds how long the server waits for
+    // the client to send its request; a write timeout bounds sending the
+    // response. The default is 30 seconds.
+    fun with_timeout(self, seconds: Int) -> Server {
+        self.read_timeout_ms = seconds * 1000
+        self.write_timeout_ms = seconds * 1000
+        return self
+    }
+
+    // Set only the read timeout, in seconds (`0` disables it). See `with_timeout`.
+    fun with_read_timeout(self, seconds: Int) -> Server {
+        self.read_timeout_ms = seconds * 1000
+        return self
+    }
+
+    // Set only the write timeout, in seconds (`0` disables it). See `with_timeout`.
+    fun with_write_timeout(self, seconds: Int) -> Server {
+        self.write_timeout_ms = seconds * 1000
         return self
     }
 
@@ -381,11 +410,13 @@ impl Server {
             Ok(socket) -> {
                 let routes = self.routes
                 let access_log = self.access_log
+                let read_timeout = self.read_timeout_ms
+                let write_timeout = self.write_timeout_ms
                 while true {
                     match socket.accept() {
                         Ok(stream) -> {
                             spawn(fun() -> Unit {
-                                serve_connection(routes, access_log, stream)
+                                serve_connection(routes, access_log, read_timeout, write_timeout, stream)
                             })
                         }
                         Err(_) -> {}
@@ -397,10 +428,19 @@ impl Server {
     }
 }
 
-// Read, parse, route, and answer a single connection, then close it. When
-// `access_log` is on, write one line per request to stdout after the response
-// is sent: the method, the path, and the status code.
-fun serve_connection(routes: List<Route>, access_log: Bool, stream: TcpStream) {
+// Read, parse, route, and answer a single connection, then close it. The read
+// and write timeouts (milliseconds, 0 to disable) are applied to the stream
+// first, so a slow client cannot hold the goroutine open indefinitely while
+// the request is read or the response is written. When `access_log` is on,
+// write one line per request to stdout after the response is sent: the method,
+// the path, and the status code.
+fun serve_connection(routes: List<Route>, access_log: Bool, read_timeout_ms: Int, write_timeout_ms: Int, stream: TcpStream) {
+    if read_timeout_ms > 0 {
+        stream.set_read_timeout_ms(read_timeout_ms)
+    }
+    if write_timeout_ms > 0 {
+        stream.set_write_timeout_ms(write_timeout_ms)
+    }
     match read_request(stream) {
         Ok(req) -> {
             let resp = dispatch(routes, req)

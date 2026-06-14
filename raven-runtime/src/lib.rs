@@ -1323,6 +1323,26 @@ pub extern "C" fn raven_net_set_read_timeout_ms(stream_id: i64, ms: i64) {
     }
 }
 
+/// Set the write timeout of the stream `stream_id` to `ms` milliseconds. A
+/// value of 0 clears the timeout (blocking writes). Errors are stored in the
+/// last-error slot.
+#[no_mangle]
+pub extern "C" fn raven_net_set_write_timeout_ms(stream_id: i64, ms: i64) {
+    let timeout = if ms <= 0 {
+        None
+    } else {
+        Some(Duration::from_millis(ms as u64))
+    };
+    let registry = net_registry().lock().unwrap();
+    match registry.get(&stream_id) {
+        Some(Socket::Stream(s)) => match s.set_write_timeout(timeout) {
+            Ok(()) => net_clear_error(),
+            Err(e) => net_set_error(e.to_string()),
+        },
+        _ => net_set_error("unknown socket id".to_string()),
+    }
+}
+
 /// Resolve `host` to its IP addresses, newline-joined. On failure stores
 /// the error and returns an empty `String`.
 ///
