@@ -9,11 +9,12 @@
 // kind "http". See docs/v2/specs/std-http.md.
 
 import std/error { error_kind }
-import std/net { listen, TcpStream }
+import std/net { listen, connect, TcpStream }
 import std/string
 import std/collections
 import std/json { JsonValue, ToJson, FromJson, stringify, parse, decode }
 import std/fs { read }
+import std/sync { mutex, wait_group, Mutex }
 
 struct HttpResponse {
     status_code: Int,
@@ -313,12 +314,16 @@ struct Route {
 // `listen`. `access_log` is off by default; enable it with `with_access_log`.
 // `read_timeout_ms` and `write_timeout_ms` bound how long a single slow client
 // can hold a connection (0 disables); they default to 30 seconds so an idle or
-// slow client cannot pin a goroutine forever.
+// slow client cannot pin a goroutine forever. `lock`/`stopping`/`addr` back
+// graceful shutdown.
 struct Server {
     routes: List<Route>,
     access_log: Bool,
     read_timeout_ms: Int,
     write_timeout_ms: Int,
+    lock: Mutex,
+    stopping: Bool,
+    addr: String,
 }
 
 impl Server {
@@ -326,7 +331,41 @@ impl Server {
     // second read and write timeouts.
     fun new() -> Server {
         let r: List<Route> = []
-        return Server { routes: r, access_log: false, read_timeout_ms: 30000, write_timeout_ms: 30000 }
+        return Server {
+            routes: r,
+            access_log: false,
+            read_timeout_ms: 30000,
+            write_timeout_ms: 30000,
+            lock: mutex(),
+            stopping: false,
+            addr: "",
+        }
+    }
+
+    // Request a graceful shutdown: stop accepting new connections, let the
+    // requests already in flight finish, then `listen` returns. Call it from
+    // another goroutine or from a handler, since `listen` blocks. Safe to call
+    // more than once.
+    fun shutdown(self) {
+        self.lock.lock()
+        self.stopping = true
+        self.lock.unlock()
+        // The runtime's `accept` blocks on a cloned listener handle and cannot
+        // be cancelled, so nudge it with a throwaway local connection: the
+        // accept loop then sees the stopping flag and drops it without serving.
+        match connect(wakeup_addr(self.addr)) {
+            Ok(s) -> s.close(),
+            Err(_) -> {},
+        }
+    }
+
+    // Whether a graceful shutdown has been requested. Read under the lock so the
+    // accept loop and the goroutine calling `shutdown` agree.
+    fun is_stopping(self) -> Bool {
+        self.lock.lock()
+        let s = self.stopping
+        self.lock.unlock()
+        return s
     }
 
     // Enable a one-line-per-request access log to stdout (method, path, and
@@ -402,62 +441,119 @@ impl Server {
         self.route(Method.Get, prefix.concat("/:file"), fun(req: Request) -> Response = serve_from(dir, req))
     }
 
-    // Bind `addr` ("host:port") and serve forever, handling each connection on
-    // its own goroutine so a slow client never blocks the others. Blocks until
-    // the process ends; a failed bind is reported and returns.
+    // Bind `addr` ("host:port") and serve, handling each connection on its own
+    // goroutine so a slow client never blocks the others. Blocks until
+    // `shutdown` is called, after which it stops accepting, waits for in-flight
+    // requests to finish, and returns. A failed bind is reported and returns.
     fun listen(self, addr: String) {
+        self.addr = addr
         match listen(addr) {
             Ok(socket) -> {
-                let routes = self.routes
-                let access_log = self.access_log
-                let read_timeout = self.read_timeout_ms
-                let write_timeout = self.write_timeout_ms
-                while true {
+                // Track in-flight connection goroutines so a graceful shutdown
+                // can wait for them to drain before returning.
+                let inflight = wait_group()
+                while !self.is_stopping() {
                     match socket.accept() {
                         Ok(stream) -> {
-                            spawn(fun() -> Unit {
-                                serve_connection(routes, access_log, read_timeout, write_timeout, stream)
-                            })
+                            // A connection accepted after shutdown began (a real
+                            // late arrival or the wakeup nudge) is dropped, not
+                            // served: only already-accepted requests drain.
+                            if self.is_stopping() {
+                                stream.close()
+                            } else {
+                                inflight.add(1)
+                                spawn(fun() -> Unit {
+                                    serve_connection(self, stream)
+                                    inflight.done()
+                                })
+                            }
                         }
                         Err(_) -> {}
                     }
                 }
+                inflight.wait()
             }
             Err(e) -> print("http: cannot bind ".concat(addr).concat(": ").concat(e.message()))
         }
     }
 }
 
-// Read, parse, route, and answer a single connection, then close it. The read
-// and write timeouts (milliseconds, 0 to disable) are applied to the stream
-// first, so a slow client cannot hold the goroutine open indefinitely while
-// the request is read or the response is written. When `access_log` is on,
-// write one line per request to stdout after the response is sent: the method,
-// the path, and the status code.
-fun serve_connection(routes: List<Route>, access_log: Bool, read_timeout_ms: Int, write_timeout_ms: Int, stream: TcpStream) {
-    if read_timeout_ms > 0 {
-        stream.set_read_timeout_ms(read_timeout_ms)
+// Serve one connection: read a request, route it, write the response, and
+// repeat on the same connection while keep-alive is in effect, then close it.
+// The read and write timeouts are applied to the stream first, so a slow client
+// cannot hold the goroutine open indefinitely. The connection is kept alive
+// for the next request unless the client asked to close it, the server is
+// shutting down, or the request could not be read. When the access log is on,
+// each served request prints its method, path, and status.
+fun serve_connection(server: Server, stream: TcpStream) {
+    if server.read_timeout_ms > 0 {
+        stream.set_read_timeout_ms(server.read_timeout_ms)
     }
-    if write_timeout_ms > 0 {
-        stream.set_write_timeout_ms(write_timeout_ms)
+    if server.write_timeout_ms > 0 {
+        stream.set_write_timeout_ms(server.write_timeout_ms)
     }
-    match read_request(stream) {
-        Ok(req) -> {
-            let resp = dispatch(routes, req)
-            write_response(stream, resp)
-            if access_log {
-                let method = req.method.to_string().to_upper()
-                print("${method} ${req.path} ${resp.status}")
+    let open = true
+    let served = 0
+    while open {
+        match read_request(stream) {
+            Ok(req) -> {
+                let resp = dispatch(server.routes, req)
+                let keep = should_keep_alive(req)
+                if server.is_stopping() {
+                    keep = false
+                }
+                write_response(stream, resp, keep)
+                if server.access_log {
+                    let method = req.method.to_string().to_upper()
+                    print("${method} ${req.path} ${resp.status}")
+                }
+                served += 1
+                if !keep {
+                    open = false
+                }
             }
-        }
-        Err(_) -> {
-            write_response(stream, Response.bad_request("Bad Request"))
-            if access_log {
-                print("- - 400")
+            Err(_) -> {
+                // A failed first read is a malformed request, answered with 400.
+                // A failed read after one or more served requests is just an
+                // idle or closed keep-alive connection, closed silently.
+                if served == 0 {
+                    write_response(stream, Response.bad_request("Bad Request"), false)
+                    if server.access_log {
+                        print("- - 400")
+                    }
+                }
+                open = false
             }
         }
     }
     stream.close()
+}
+
+// Whether to keep the connection open for another request. HTTP/1.1 keeps it
+// open unless the client sent `Connection: close`; HTTP/1.0 closes it unless
+// the client sent `Connection: keep-alive`.
+fun should_keep_alive(req: Request) -> Bool {
+    let conn = req.header("connection").to_lower()
+    if req.version == "HTTP/1.0" {
+        return conn == "keep-alive"
+    }
+    return conn != "close"
+}
+
+// A connectable address for the shutdown wakeup. A server bound to the
+// wildcard `0.0.0.0` (or an empty host) is not reachable by that address, but
+// its port is reachable on loopback; a concrete bound host is reachable as is.
+fun wakeup_addr(addr: String) -> String {
+    let colon = addr.index_of(":")
+    if colon < 0 {
+        return addr
+    }
+    let host = addr.substring(0, colon)
+    let port = addr.substring(colon, addr.length())
+    if host == "0.0.0.0" || host == "" {
+        return "127.0.0.1".concat(port)
+    }
+    return addr
 }
 
 // Find the first route matching `req` and run its handler; 404 if none match.
@@ -631,9 +727,13 @@ fun parse_query(qs: String, out: Map<String, String>) {
 
 // Write `resp` to `stream` as an HTTP/1.1 response, framing it with
 // Content-Length and closing the connection after.
-fun write_response(stream: TcpStream, resp: Response) {
+fun write_response(stream: TcpStream, resp: Response, keep_alive: Bool) {
     resp.headers.set("Content-Length", resp.body.length().to_string())
-    resp.headers.set("Connection", "close")
+    if keep_alive {
+        resp.headers.set("Connection", "keep-alive")
+    } else {
+        resp.headers.set("Connection", "close")
+    }
     let status_line = "HTTP/1.1 ".concat(resp.status.to_string()).concat(" ")
     let line = status_line.concat(reason_phrase(resp.status)).concat("\r\n")
     let block = ""

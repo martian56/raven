@@ -2,6 +2,13 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.72] - 2026-06-14
+
+### Added
+
+- `std/http` `Server` now keeps connections alive: an HTTP/1.1 connection is reused for subsequent requests instead of being closed after one, unless the client sends `Connection: close` (HTTP/1.0 stays close-by-default unless it sends `Connection: keep-alive`). Each response carries the matching `Connection` header. The read timeout bounds an idle kept-alive connection. (HTTP pipelining is not supported; clients send requests sequentially.)
+- `std/http` `Server.shutdown()` performs a graceful shutdown: it stops accepting new connections, lets in-flight requests finish, and then `listen` returns. Call it from another goroutine or a handler, since `listen` blocks. Useful for clean teardown in tests and controlled stops.
+
 ## [2.18.71] - 2026-06-14
 
 ### Added

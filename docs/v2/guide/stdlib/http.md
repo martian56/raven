@@ -268,6 +268,47 @@ client). The read timeout bounds reading the request line, headers, and body;
 the write timeout bounds writing the response. When a read times out the server
 closes the connection instead of waiting.
 
+### Keep-alive
+
+Connections are kept alive by default: an HTTP/1.1 client can send several
+requests over one connection instead of reconnecting each time, which is faster
+and is what browsers and HTTP libraries expect. The server reuses the
+connection unless the client sends `Connection: close` (an HTTP/1.0 client must
+opt in with `Connection: keep-alive`). Each response carries the matching
+`Connection` header, and an idle kept-alive connection is closed once the read
+timeout elapses. HTTP pipelining is not supported, send one request and read
+its response before sending the next.
+
+### Graceful shutdown
+
+`shutdown()` stops the server cleanly: it stops accepting new connections, lets
+the requests already in flight finish, and then `listen` returns. Because
+`listen` blocks, call `shutdown` from another goroutine:
+
+```rust
+import std/http { Server, Request, Response }
+import std/sync { sleep_millis }
+
+fun main() {
+    let app = Server.new()
+    app.get("/", fun(req: Request) -> Response = Response.text("ok"))
+    // Stop cleanly from another goroutine (here after a delay; in a real
+    // program on some condition):
+    spawn(fun() -> Unit {
+        sleep_millis(5000)
+        app.shutdown()
+    })
+    app.listen("127.0.0.1:8080")       // returns once in-flight requests drain
+    print("stopped")
+}
+```
+
+`shutdown` is safe to call more than once. It is the clean way to stop a server
+in a test (start it in a goroutine, exercise it, then shut it down) or to wire
+up a controlled stop. To trigger it from inside a request handler, have the
+handler call a named function that calls `app.shutdown()`, since a handler
+closure is a single expression.
+
 ### Routing
 
 Register a handler per method with `get`, `post`, `put`, `delete`, or `patch`
