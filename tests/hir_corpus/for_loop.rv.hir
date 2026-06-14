@@ -11,13 +11,13 @@
           )
           (tail
                         (block ty=()
+              (let "__hir_i_1" ty=Int
+                (int 0 ty=Int)
+              )
               (let "__hir_end_2" ty=Int
                 (method-call "len" ty=Int
                   (ident "__hir_list_0" ty=List<Int>)
                 )
-              )
-              (let "__hir_i_1" ty=Int
-                (int 0 ty=Int)
               )
               (let "__hir_first_3" ty=Bool
                 (bool true ty=Bool)
