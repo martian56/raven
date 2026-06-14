@@ -86,8 +86,12 @@ nav:
   - Tutorials:
     - Word-frequency counter: v2/guide/tutorials/word-frequency.md
     - Modeling data with structs and enums: v2/guide/tutorials/task-tracker.md
+    - Error handling with Option, Result, and ?: v2/guide/tutorials/error-handling.md
+    - Generics and traits: v2/guide/tutorials/generics-and-traits.md
+    - Concurrency with goroutines and channels: v2/guide/tutorials/concurrency.md
     - A guestbook HTTP server: v2/guide/tutorials/http-server.md
     - Calling C from Raven: v2/guide/tutorials/c-interop.md
+    - Testing your code: v2/guide/tutorials/testing.md
     - Building and publishing a library: v2/guide/tutorials/publishing-a-library.md
   - Standard Library:
     - Overview: v2/guide/standard-library.md
