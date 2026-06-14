@@ -401,12 +401,6 @@ fn lower_sequential_match(
                     },
                 );
             }
-            _ => {
-                if !cx.builder.is_closed(next_test) {
-                    cx.builder
-                        .close_block(next_test, MirTerminator::Goto(arm_block));
-                }
-            }
         }
 
         cx.current = arm_block;
