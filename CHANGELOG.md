@@ -2,6 +2,19 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.67] - 2026-06-14
+
+### Fixed
+
+- A `match` over integer ranges (`90..=100 -> ...`) now checks each arm's bounds. The range arms lowered through the single-value integer switch, so every range collapsed to the wildcard arm and produced the wrong result.
+- The `?` operator now requires the enclosing function to return a compatible `Result`/`Option`. Using `?` in a function that returns a plain value (or a `Result` with an incompatible error type) is reported as a type error instead of silently dropping the propagated error.
+- A counter `for i in start..end` now evaluates `start` before `end`. The lowering emitted the `end` binding first, so a range whose bounds have side effects ran them out of order.
+- Signed integer division now guards the `MIN / -1` overflow for every width, including a 32-bit `CInt`, not just 64-bit `Int`. The narrow case could trap with no diagnostic.
+- The compiler no longer panics on a `-9223372036854775808` (i64 minimum) literal pattern in a debug build; the magnitude now wraps to `i64::MIN` to match expression handling.
+- The formatter keeps a comment that sits between an opening `[`/`(` and the first element. Such a comment fell outside the multi-line decision window, so the construct collapsed to one line and the comment was lost or relocated.
+- Lock validation re-hashes a dependency's tree content rather than trusting the cached metadata signature, so a tampered cache entry whose sidecar was rewritten to reassert the old hash is now caught.
+- An interrupted package fetch no longer leaves a partial cache directory that a later build treats as complete. A download is staged in a sibling directory and promoted into place with a single atomic rename only once it finishes.
+
 ## [2.18.66] - 2026-06-13
 
 ### Changed

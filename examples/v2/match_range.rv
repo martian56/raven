@@ -1,0 +1,25 @@
+// A `match` over integer ranges checks each arm's bounds. Regression for
+// issue #526, where range arms lowered through the int switch path (which
+// keys on single values), so every range collapsed to the wildcard. Prints:
+//   A
+//   B
+//   C
+//   D
+//   F
+fun grade(score: Int) -> String {
+    return match score {
+        90..=100 -> "A",
+        80..=89 -> "B",
+        70..=79 -> "C",
+        60..=69 -> "D",
+        _ -> "F",
+    }
+}
+
+fun main() {
+    print(grade(95))
+    print(grade(85))
+    print(grade(72))
+    print(grade(64))
+    print(grade(40))
+}

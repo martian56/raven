@@ -923,19 +923,18 @@ impl Printer<'_> {
                 s
             }
             ExprKind::Array(items) => {
-                if let Some(first) = items.first() {
-                    if self.pending_comment_within(first.span.start, e.span.end) {
-                        return self.bracketed_multiline("[", "]", items, e.span.end, base);
-                    }
+                // Window from the opening `[` (e.span.start), not the first
+                // element, so a comment between `[` and the first element is
+                // detected and the literal is kept multi-line.
+                if !items.is_empty() && self.pending_comment_within(e.span.start, e.span.end) {
+                    return self.bracketed_multiline("[", "]", items, e.span.end, base);
                 }
                 let parts = self.expr_list(items, base);
                 format!("[{}]", parts.join(", "))
             }
             ExprKind::Tuple(items) => {
-                if let Some(first) = items.first() {
-                    if self.pending_comment_within(first.span.start, e.span.end) {
-                        return self.bracketed_multiline("(", ")", items, e.span.end, base);
-                    }
+                if !items.is_empty() && self.pending_comment_within(e.span.start, e.span.end) {
+                    return self.bracketed_multiline("(", ")", items, e.span.end, base);
                 }
                 let parts = self.expr_list(items, base);
                 format!("({})", parts.join(", "))
@@ -986,11 +985,12 @@ impl Printer<'_> {
             }
             ExprKind::Call { callee, args } => {
                 let callee = self.expr_at(callee, base);
-                if let Some(first) = args.first() {
-                    if self.pending_comment_within(first.span.start, e.span.end) {
-                        let list = self.bracketed_multiline("(", ")", args, e.span.end, base);
-                        return format!("{}{}", callee, list);
-                    }
+                // The callee already consumed any comments inside it, so a
+                // pending comment anywhere up to the closing `)` belongs to the
+                // argument list (including one right after the opening `(`).
+                if !args.is_empty() && self.pending_comment_within(e.span.start, e.span.end) {
+                    let list = self.bracketed_multiline("(", ")", args, e.span.end, base);
+                    return format!("{}{}", callee, list);
                 }
                 let parts = self.expr_list(args, base);
                 format!("{}({})", callee, parts.join(", "))
@@ -1007,12 +1007,10 @@ impl Printer<'_> {
                 if !generics.is_empty() {
                     s.push_str(&render_type_args(generics));
                 }
-                if let Some(first) = args.first() {
-                    if self.pending_comment_within(first.span.start, e.span.end) {
-                        let list = self.bracketed_multiline("(", ")", args, e.span.end, base);
-                        s.push_str(&list);
-                        return s;
-                    }
+                if !args.is_empty() && self.pending_comment_within(e.span.start, e.span.end) {
+                    let list = self.bracketed_multiline("(", ")", args, e.span.end, base);
+                    s.push_str(&list);
+                    return s;
                 }
                 let parts = self.expr_list(args, base);
                 let _ = write!(s, "({})", parts.join(", "));

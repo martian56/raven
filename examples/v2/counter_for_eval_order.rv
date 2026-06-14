@@ -1,0 +1,22 @@
+// A counter `for i in start..end` evaluates `start` before `end`. Regression
+// for issue #529, where the lowering emitted the `end` binding first, so a
+// range whose bounds have side effects ran them out of order. Prints:
+//   start
+//   end
+//   0
+//   1
+fun lo() -> Int {
+    print("start")
+    return 0
+}
+
+fun hi() -> Int {
+    print("end")
+    return 2
+}
+
+fun main() {
+    for i in lo()..hi() {
+        print(i)
+    }
+}

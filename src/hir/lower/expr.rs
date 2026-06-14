@@ -1363,7 +1363,9 @@ fn lower_counter_for(
     let loop_expr = make_expr(HirExprKind::Loop(loop_block), Ty::Unit, span.clone());
 
     let block = HirBlock {
-        stmts: vec![end_let, i_let, first_let],
+        // `i_let` (the start bound) before `end_let` so a `start..end` range
+        // evaluates its bounds left to right, matching source order.
+        stmts: vec![i_let, end_let, first_let],
         tail: Some(Box::new(loop_expr)),
         ty: Ty::Unit,
         span: span.clone(),
