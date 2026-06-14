@@ -59,11 +59,32 @@ Sections:
   that `rvpm build` compiles and links in, `libs` are libraries to link
   (`-l<name>`), and `link_args` are raw linker arguments. The `[ffi]` of
   every dependency is collected, so a package can ship its own C (for
-  example a bundled SQLite) and a consumer needs nothing installed.
+  example a bundled SQLite) and a consumer needs no system library
+  preinstalled. Building bundled `sources` does need a **C compiler** on
+  the machine doing the build (see below); pure-Raven packages with no
+  `[ffi]` sources do not.
 - `[fmt]` (optional): `indent_width` (default 4) and `wrap_width`
   (default 100) for the formatter.
 
 Unknown fields are rejected so typos surface early.
+
+### A C compiler for `[ffi]` sources
+
+Compiling a package's bundled C `sources` (for example raven-sqlite's
+`sqlite3.c`) needs a C compiler that matches the Raven build's ABI. On
+**Windows** that is the MSVC toolchain: install the Visual Studio C++ Build
+Tools, which rvpm then finds automatically, with no Developer Command Prompt
+needed:
+
+```text
+winget install Microsoft.VisualStudio.2022.BuildTools --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+```
+
+A MinGW `gcc` will not work for the prebuilt Windows release: it emits GNU-ABI
+objects that do not link into the MSVC-targeted build. On **Linux and macOS**,
+any `cc`, `gcc`, or `clang` on `PATH` is used. Packages with no `[ffi]` sources
+need only a linker, which the release ships with, so they build with no extra
+toolchain.
 
 ## Dependencies
 
