@@ -2,6 +2,17 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.68] - 2026-06-14
+
+### Changed
+
+- When a package with bundled C (`[ffi]`) `sources` is built and no C compiler is found, the error now says what to install instead of a raw "program not found". On a windows-msvc host it points to the Visual Studio C++ Build Tools (with the `winget` command) and notes that a MinGW `gcc` cannot be used for the MSVC-targeted release; elsewhere it points at installing `gcc`/`clang` or setting `CC`. The compiler is located through the Windows registry the same way the linker's `link.exe` is, so an installed toolchain is found with no Developer Command Prompt.
+- `rvpm` no longer leaks the C compiler's `cargo:warning=...` detection chatter to the console.
+
+### Docs
+
+- The rvpm guide documents the C-compiler prerequisite for building `[ffi]` sources, including the Windows Build Tools install command.
+
 ## [2.18.67] - 2026-06-14
 
 ### Fixed

@@ -133,6 +133,44 @@ pub struct NativeLink {
     pub link_args: Vec<String>,
 }
 
+/// The actionable error shown on a windows-msvc host when no MSVC C compiler
+/// can be located. A package such as raven-sqlite bundles C that must be
+/// compiled, and the MSVC build is the supported Windows toolchain.
+const NO_MSVC_C_COMPILER: &str = "no C compiler found to build this package's bundled C \
+    ([ffi]) sources, which a package such as raven-sqlite ships. Install the Visual Studio \
+    C++ Build Tools, which provide cl.exe: run\n  \
+    winget install Microsoft.VisualStudio.2022.BuildTools --override \"--quiet --wait --add \
+    Microsoft.VisualStudio.Workload.VCTools --includeRecommended\"\nthen open a new terminal \
+    and try again. (A MinGW gcc cannot be used here: it produces GNU-ABI objects that do not \
+    link into the MSVC-targeted Raven build.)";
+
+/// The actionable error shown on a non-msvc host when no C compiler is found.
+const NO_C_COMPILER: &str = "no C compiler found to build this package's bundled C ([ffi]) \
+    sources. Install a C toolchain (gcc or clang) and put it on PATH, or set the CC environment \
+    variable to the compiler's path.";
+
+/// Locate the C compiler for the `[ffi]` sources, with an actionable error when
+/// none is installed.
+///
+/// On a windows-msvc host this mirrors the linker's `link.exe` lookup: it
+/// resolves `cl.exe` through the Windows registry (vswhere), which also presets
+/// the SDK and CRT include/lib environment, so no Developer Command Prompt is
+/// needed. cc's own detection instead hands back a bare `cl.exe` that only
+/// fails to launch later (a cryptic "program not found"), so the registry
+/// result is checked directly to report the missing toolchain up front. A `CC`
+/// override or a non-msvc host defers to cc's normal detection.
+fn locate_c_compiler(triple: &str, build: &cc::Build) -> Result<cc::Tool, CodegenError> {
+    let host = Triple::host();
+    let cc_override = std::env::var_os("CC").is_some();
+    if is_windows_msvc(&host) && !cc_override {
+        return cc::windows_registry::find_tool(triple, "cl.exe")
+            .ok_or_else(|| CodegenError::Target(NO_MSVC_C_COMPILER.to_string()));
+    }
+    build
+        .try_get_compiler()
+        .map_err(|_| CodegenError::Target(NO_C_COMPILER.to_string()))
+}
+
 /// Compile each bundled C source into an object file under `out_dir`,
 /// returning their paths to link directly. Uses the `cc` crate's compiler
 /// detection (cl.exe on windows-msvc, `cc`/`gcc` elsewhere), configured
@@ -149,15 +187,17 @@ pub fn compile_c_sources(
     let mut build = cc::Build::new();
     build
         .cargo_metadata(false)
+        // Suppress cc's `cargo:warning=...` chatter (for example "Compiler
+        // family detection failed"): it leaks to the console of a user running
+        // `rvpm`, who is not running cargo at all.
+        .cargo_warnings(false)
         .opt_level(2)
         .debug(false)
         .warnings(false)
         .host(&triple)
         .target(&triple)
         .out_dir(out_dir);
-    let compiler = build
-        .try_get_compiler()
-        .map_err(|e| CodegenError::Target(format!("no C compiler for the [ffi] sources: {}", e)))?;
+    let compiler = locate_c_compiler(&triple, &build)?;
     let msvc = compiler.is_like_msvc();
 
     let mut objects = Vec::with_capacity(sources.len());
@@ -219,6 +259,19 @@ fn object_is_fresh(source: &Path, object: &Path) -> bool {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[test]
+    fn missing_compiler_errors_are_actionable() {
+        // The Windows message must name the toolchain and the command that
+        // installs it, so a user who hits the no-compiler path knows exactly
+        // what to do rather than seeing a raw "program not found".
+        assert!(NO_MSVC_C_COMPILER.contains("Build Tools"));
+        assert!(NO_MSVC_C_COMPILER.contains("winget"));
+        assert!(NO_MSVC_C_COMPILER.contains("cl.exe"));
+        // The non-Windows message must point at the fix (PATH or CC).
+        assert!(NO_C_COMPILER.contains("PATH"));
+        assert!(NO_C_COMPILER.contains("CC"));
+    }
 
     #[test]
     fn compile_reuses_an_unchanged_object() {
