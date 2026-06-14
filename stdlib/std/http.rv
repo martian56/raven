@@ -310,16 +310,27 @@ struct Route {
 }
 
 // An HTTP server: a routing table built with `get`/`post`/... and served with
-// `listen`.
+// `listen`. `access_log` is off by default; enable it with `with_access_log`.
 struct Server {
     routes: List<Route>,
+    access_log: Bool,
 }
 
 impl Server {
-    // A new server with an empty routing table.
+    // A new server with an empty routing table and the access log off.
     fun new() -> Server {
         let r: List<Route> = []
-        return Server { routes: r }
+        return Server { routes: r, access_log: false }
+    }
+
+    // Enable a one-line-per-request access log to stdout (method, path, and
+    // status code, for example `GET /tasks 200`), returning self so it chains:
+    // `let app = Server.new().with_access_log()`. Logging happens at the single
+    // point every request passes through, so it covers every route without a
+    // line in each handler.
+    fun with_access_log(self) -> Server {
+        self.access_log = true
+        return self
     }
 
     // Register `handler` for `method` requests whose path matches `pattern`.
@@ -369,11 +380,12 @@ impl Server {
         match listen(addr) {
             Ok(socket) -> {
                 let routes = self.routes
+                let access_log = self.access_log
                 while true {
                     match socket.accept() {
                         Ok(stream) -> {
                             spawn(fun() -> Unit {
-                                serve_connection(routes, stream)
+                                serve_connection(routes, access_log, stream)
                             })
                         }
                         Err(_) -> {}
@@ -385,14 +397,25 @@ impl Server {
     }
 }
 
-// Read, parse, route, and answer a single connection, then close it.
-fun serve_connection(routes: List<Route>, stream: TcpStream) {
+// Read, parse, route, and answer a single connection, then close it. When
+// `access_log` is on, write one line per request to stdout after the response
+// is sent: the method, the path, and the status code.
+fun serve_connection(routes: List<Route>, access_log: Bool, stream: TcpStream) {
     match read_request(stream) {
         Ok(req) -> {
             let resp = dispatch(routes, req)
             write_response(stream, resp)
+            if access_log {
+                let method = req.method.to_string().to_upper()
+                print("${method} ${req.path} ${resp.status}")
+            }
         }
-        Err(_) -> write_response(stream, Response.bad_request("Bad Request")),
+        Err(_) -> {
+            write_response(stream, Response.bad_request("Bad Request"))
+            if access_log {
+                print("- - 400")
+            }
+        }
     }
     stream.close()
 }

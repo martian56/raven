@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.70] - 2026-06-14
+
+### Added
+
+- `std/http` `Server` gains an opt-in access log: `Server.new().with_access_log()` writes one line per request to stdout (method, path, and status code, for example `GET /tasks 200`). Logging happens at the single point every request passes through, so it covers every route with no per-handler code.
+
 ## [2.18.69] - 2026-06-14
 
 ### Fixed

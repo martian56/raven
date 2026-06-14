@@ -226,6 +226,28 @@ fun main() {
 
 `listen` binds the address and blocks, serving connections one at a time.
 
+### Access log
+
+`with_access_log()` turns on a one-line-per-request log to stdout, returning the
+server so it chains onto `Server.new()`. Each served request prints its method,
+path, and status code:
+
+```rust
+fun main() {
+    let app = Server.new().with_access_log()
+    app.get("/", fun(req: Request) -> Response = Response.text("ok"))
+    app.listen("127.0.0.1:8080")
+}
+```
+
+```text
+GET / 200
+GET /missing 404
+```
+
+The log is written at the single point every request passes through, so it
+covers every route without a line in each handler. It is off by default.
+
 ### Routing
 
 Register a handler per method with `get`, `post`, `put`, `delete`, or `patch`
