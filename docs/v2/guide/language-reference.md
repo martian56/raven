@@ -382,6 +382,20 @@ fun classify(n: Int) -> String {
 }
 ```
 
+A range pattern matches any value the range covers. As with `for`, `a..b`
+excludes `b` and `a..=b` includes it:
+
+```rust
+fun grade(score: Int) -> String {
+    return match score {
+        90..=100 -> "A",
+        80..=89 -> "B",
+        70..=79 -> "C",
+        _ -> "F",
+    }
+}
+```
+
 ## List, set, and map literals
 
 A list literal is comma-separated values in brackets, `[1, 2, 3]`, and an
