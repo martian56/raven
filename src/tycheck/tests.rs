@@ -673,8 +673,7 @@ fn try_on_result_in_non_result_fn_is_error() {
     // `x?` propagates `Err(String)` out of a function that returns a plain
     // `Int`, which cannot carry the error. The checker must reject it instead
     // of silently dropping the propagated error (issue #527).
-    let err =
-        check("fun f(x: Result<Int, String>) -> Int { let v = x?; return v }\n").unwrap_err();
+    let err = check("fun f(x: Result<Int, String>) -> Int { let v = x?; return v }\n").unwrap_err();
     match err {
         RavenError::Type(b, _, _) => match *b {
             TypeError::Custom(m) => assert!(m.contains("not a Result"), "got: {}", m),
@@ -688,10 +687,9 @@ fn try_on_result_in_non_result_fn_is_error() {
 fn try_on_result_with_incompatible_error_type_is_error() {
     // The propagated error type (`String`) must unify with the enclosing
     // function's error type (`Int`); a mismatch is a type error.
-    let err = check(
-        "fun f(x: Result<Int, String>) -> Result<Int, Int> { let v = x?; return Ok(v) }\n",
-    )
-    .unwrap_err();
+    let err =
+        check("fun f(x: Result<Int, String>) -> Result<Int, Int> { let v = x?; return Ok(v) }\n")
+            .unwrap_err();
     assert!(
         matches!(err, RavenError::Type(_, _, _)),
         "expected a type error, got {:?}",
