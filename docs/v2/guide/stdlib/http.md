@@ -248,6 +248,26 @@ GET /missing 404
 The log is written at the single point every request passes through, so it
 covers every route without a line in each handler. It is off by default.
 
+### Timeouts
+
+A `Server` bounds how long one slow client can hold a connection, so an idle or
+trickling client cannot pin a goroutine open indefinitely. Read and write
+timeouts both default to **30 seconds** and are set in seconds:
+
+```rust
+let app = Server.new()
+    .with_timeout(15)         // both read and write -> 15s
+// or set them separately:
+let app2 = Server.new()
+    .with_read_timeout(10)    // waiting for the request
+    .with_write_timeout(30)   // sending the response
+```
+
+`0` disables a timeout (the connection may then block forever on a slow
+client). The read timeout bounds reading the request line, headers, and body;
+the write timeout bounds writing the response. When a read times out the server
+closes the connection instead of waiting.
+
 ### Routing
 
 Register a handler per method with `get`, `post`, `put`, `delete`, or `patch`
