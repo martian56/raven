@@ -1633,15 +1633,28 @@ fn emit_div_guard(
     let zero = builder.ins().iconst(ty, 0);
     let nonzero = builder.ins().icmp(IntCC::NotEqual, rhs, zero);
     emit_status_check(cx, builder, nonzero, zero_msg);
-    // The signed overflow `i64::MIN / -1` has no representable result and traps
-    // the same way. Continue only when the operands are not that pair.
-    if ty == types::I64 {
-        let min = builder.ins().iconst(ty, i64::MIN);
+    // The signed overflow `MIN / -1` has no representable result and traps the
+    // same way, at every width (a 32-bit `CInt` included). Continue only when
+    // the operands are not that pair, using the type-appropriate minimum.
+    let signed_min = match ty {
+        types::I8 => Some(i8::MIN as i64),
+        types::I16 => Some(i16::MIN as i64),
+        types::I32 => Some(i32::MIN as i64),
+        types::I64 => Some(i64::MIN),
+        _ => None,
+    };
+    if let Some(min_val) = signed_min {
+        let min = builder.ins().iconst(ty, min_val);
         let neg_one = builder.ins().iconst(ty, -1);
         let not_min = builder.ins().icmp(IntCC::NotEqual, lhs, min);
         let not_neg_one = builder.ins().icmp(IntCC::NotEqual, rhs, neg_one);
         let ok = builder.ins().bor(not_min, not_neg_one);
-        emit_status_check(cx, builder, ok, "integer overflow: dividing i64::MIN by -1");
+        emit_status_check(
+            cx,
+            builder,
+            ok,
+            "integer overflow: dividing the minimum value by -1",
+        );
     }
 }
 

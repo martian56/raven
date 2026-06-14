@@ -975,8 +975,45 @@ impl<'a, 'b> Checker<'a, 'b> {
                 let inner_ty = self.check_expr(inner)?;
                 let resolved = self.infer.resolve(&inner_ty);
                 match resolved {
-                    Ty::Result(t, _) => Ok(*t),
-                    Ty::Option(t) => Ok(*t),
+                    Ty::Result(t, e) => {
+                        // `?` propagates `Err(e)` to the caller, so the function
+                        // must return a Result whose error type accepts `e`.
+                        match self.infer.resolve(&self.return_ty) {
+                            Ty::Result(_, ret_e) => {
+                                self.unify(&ret_e, &e, &expr.span)?;
+                            }
+                            Ty::Error => {}
+                            other => {
+                                return Err(RavenError::ty(
+                                    TypeError::Custom(format!(
+                                        "`?` on a Result propagates an error, but the \
+                                         enclosing function returns `{}`, not a Result",
+                                        other
+                                    )),
+                                    expr.span.clone(),
+                                ));
+                            }
+                        }
+                        Ok(*t)
+                    }
+                    Ty::Option(t) => {
+                        // `?` on an Option propagates `None`, so the function
+                        // must return an Option.
+                        match self.infer.resolve(&self.return_ty) {
+                            Ty::Option(_) | Ty::Error => {}
+                            other => {
+                                return Err(RavenError::ty(
+                                    TypeError::Custom(format!(
+                                        "`?` on an Option propagates `None`, but the \
+                                         enclosing function returns `{}`, not an Option",
+                                        other
+                                    )),
+                                    expr.span.clone(),
+                                ));
+                            }
+                        }
+                        Ok(*t)
+                    }
                     Ty::Error => Ok(Ty::Error),
                     other => Err(RavenError::ty(
                         TypeError::Custom(format!(

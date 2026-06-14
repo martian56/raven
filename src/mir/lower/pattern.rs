@@ -54,7 +54,16 @@ pub fn lower_match(
     } else if is_enum_like(&scrut_ty) {
         lower_enum_match(cx, scrut_op, &scrut_ty, arms, result_local, cont);
     } else if matches!(scrut_ty, Ty::Int | Ty::Bool | Ty::Char) {
-        lower_int_match(cx, scrut_op, &scrut_ty, arms, result_local, cont);
+        // The switch-based int path keys on single values, so a match with a
+        // range pattern takes the sequential lowering, which tests bounds.
+        if arms
+            .iter()
+            .any(|a| matches!(a.pattern.kind, HirPatternKind::Range { .. }))
+        {
+            lower_sequential_match(cx, scrut_op, &scrut_ty, arms, result_local, cont);
+        } else {
+            lower_int_match(cx, scrut_op, &scrut_ty, arms, result_local, cont);
+        }
     } else {
         lower_fallback_match(cx, scrut_op, &scrut_ty, arms, result_local, cont);
     }
@@ -343,6 +352,54 @@ fn lower_sequential_match(
                         }
                     }
                 }
+            }
+            HirPatternKind::Range { lo, hi, inclusive } => {
+                // Take the arm only when `lo <= scrut` and `scrut < hi` (or
+                // `<= hi` when inclusive). Without this the bounds were ignored
+                // and the range arm matched every value.
+                let ge_local = cx.builder.fresh_temp("ge", MirType::Bool);
+                let hi_local = cx.builder.fresh_temp("lt", MirType::Bool);
+                let in_local = cx.builder.fresh_temp("inrange", MirType::Bool);
+                cx.builder.assign(
+                    next_test,
+                    ge_local,
+                    MirRvalue::BinaryOp(
+                        super::super::ir::MirBinOp::Ge,
+                        scrut.clone(),
+                        MirOperand::Const(MirConstant::Int(*lo)),
+                    ),
+                );
+                let hi_op = if *inclusive {
+                    super::super::ir::MirBinOp::Le
+                } else {
+                    super::super::ir::MirBinOp::Lt
+                };
+                cx.builder.assign(
+                    next_test,
+                    hi_local,
+                    MirRvalue::BinaryOp(
+                        hi_op,
+                        scrut.clone(),
+                        MirOperand::Const(MirConstant::Int(*hi)),
+                    ),
+                );
+                cx.builder.assign(
+                    next_test,
+                    in_local,
+                    MirRvalue::BinaryOp(
+                        super::super::ir::MirBinOp::And,
+                        MirOperand::Copy(ge_local),
+                        MirOperand::Copy(hi_local),
+                    ),
+                );
+                cx.builder.close_block(
+                    next_test,
+                    MirTerminator::SwitchInt {
+                        discriminant: MirOperand::Copy(in_local),
+                        targets: vec![(1, arm_block)],
+                        otherwise: test_next,
+                    },
+                );
             }
             _ => {
                 if !cx.builder.is_closed(next_test) {

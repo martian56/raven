@@ -142,6 +142,12 @@ pub fn fetch(host: &str, user: &str, repo: &str, version: &str) -> Result<Fetche
 /// is faster than a clone. If the tarball path is unavailable (no `curl` or
 /// `tar`, a non-github host, or a transient error) it falls back to a
 /// shallow `git clone`, which also reports a genuinely missing ref.
+///
+/// The download lands in a sibling staging directory and is promoted into
+/// the final cache path with a single atomic rename once it is complete, so
+/// an interrupted fetch (a killed process, a crash mid-extract) never leaves
+/// a partial directory that a later run would mistake for a complete cache
+/// entry.
 pub fn fetch_in(
     root: &Path,
     host: &str,
@@ -156,16 +162,73 @@ pub fn fetch_in(
             cached: true,
         });
     }
-    if download_tarball(host, user, repo, version, &dest).is_err() {
-        // Clear any partial extraction, then fall back to a git clone.
-        let _ = std::fs::remove_dir_all(&dest);
-        let url = format!("https://{}/{}/{}", host, user, repo);
-        clone_from(&url, version, &dest)?;
+
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| PkgError::Io {
+            action: "create cache directory".to_string(),
+            path: parent.to_path_buf(),
+            source: e,
+        })?;
     }
+
+    // Stage into a sibling temp dir on the same filesystem so the promote is a
+    // cheap atomic rename. Clear any leftover staging from a prior crash first.
+    let staging = staging_dir(&dest);
+    let _ = std::fs::remove_dir_all(&staging);
+    let staged = download_tarball(host, user, repo, version, &staging).or_else(|_| {
+        let _ = std::fs::remove_dir_all(&staging);
+        let url = format!("https://{}/{}/{}", host, user, repo);
+        clone_from(&url, version, &staging)
+    });
+    if let Err(e) = staged {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(e);
+    }
+    promote(&staging, &dest)?;
     Ok(Fetched {
         dir: dest,
         cached: false,
     })
+}
+
+/// The sibling staging directory a fetch extracts into before promotion. It
+/// sits beside the final entry (same parent, same filesystem) so the promote
+/// can be a rename. The pid keeps concurrent processes from colliding.
+fn staging_dir(dest: &Path) -> PathBuf {
+    let mut name = dest.file_name().unwrap_or_default().to_os_string();
+    name.push(format!(".rvpm-staging-{}", std::process::id()));
+    dest.parent().unwrap_or(dest).join(name)
+}
+
+/// Move a completed staging directory into its final cache path with an atomic
+/// rename. If another process populated `dest` first (a benign race), keep
+/// theirs and discard the staging copy.
+fn promote(staging: &Path, dest: &Path) -> Result<(), PkgError> {
+    if is_populated(dest) {
+        let _ = std::fs::remove_dir_all(staging);
+        return Ok(());
+    }
+    // A non-populated `dest` may still exist as an empty leftover; clear it so
+    // the rename does not fail on Windows, where rename onto an existing dir
+    // errors.
+    let _ = std::fs::remove_dir_all(dest);
+    match std::fs::rename(staging, dest) {
+        Ok(()) => Ok(()),
+        // A racing process may have populated `dest` between our checks; if the
+        // entry is good now, accept it and drop the staging copy.
+        Err(_) if is_populated(dest) => {
+            let _ = std::fs::remove_dir_all(staging);
+            Ok(())
+        }
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(staging);
+            Err(PkgError::Io {
+                action: "promote cache entry".to_string(),
+                path: dest.to_path_buf(),
+                source: e,
+            })
+        }
+    }
 }
 
 /// The sidecar file that caches a version's tree hash, kept beside (not
@@ -334,6 +397,19 @@ pub fn clone_from(url: &str, reference: &str, dest: &Path) -> Result<(), PkgErro
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    fn unique_temp(tag: &str) -> PathBuf {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let mut root = std::env::temp_dir();
+        root.push(format!(
+            "rvpm-pkg-{}-{}-{}",
+            tag,
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        root
+    }
 
     #[test]
     fn cache_dir_layout() {
@@ -341,5 +417,45 @@ mod tests {
         let dir = cache_dir("github.com", "acme", "json", "v1.0.0");
         std::env::remove_var("RVPM_CACHE_DIR");
         assert!(dir.ends_with("github.com/acme/json@v1.0.0"));
+    }
+
+    #[test]
+    fn promote_moves_staging_into_place() {
+        let root = unique_temp("promote");
+        let dest = root.join("github.com/acme/foo@v1.0.0");
+        let staging = staging_dir(&dest);
+        std::fs::create_dir_all(&staging).unwrap();
+        std::fs::write(staging.join("lib.rv"), "fun foo() {}\n").unwrap();
+
+        promote(&staging, &dest).expect("promote");
+
+        assert!(is_populated(&dest), "dest is populated after promote");
+        assert!(!staging.exists(), "staging is consumed by the rename");
+        assert_eq!(
+            std::fs::read_to_string(dest.join("lib.rv")).unwrap(),
+            "fun foo() {}\n"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn promote_keeps_existing_entry_on_race() {
+        let root = unique_temp("promoterace");
+        let dest = root.join("github.com/acme/foo@v1.0.0");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dest.join("winner.rv"), "winner\n").unwrap();
+        let staging = staging_dir(&dest);
+        std::fs::create_dir_all(&staging).unwrap();
+        std::fs::write(staging.join("loser.rv"), "loser\n").unwrap();
+
+        promote(&staging, &dest).expect("promote");
+
+        assert!(dest.join("winner.rv").exists(), "existing entry is kept");
+        assert!(
+            !dest.join("loser.rv").exists(),
+            "staging copy is discarded on a race"
+        );
+        assert!(!staging.exists(), "staging is cleaned up");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

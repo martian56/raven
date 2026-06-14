@@ -321,6 +321,26 @@ fn parses_match_expr() {
 }
 
 #[test]
+fn parses_negative_i64_min_literal_pattern() {
+    // The lexer emits `IntLit(i64::MIN)` for the bare magnitude
+    // `9223372036854775808`; negating it with a checked `-` overflowed and
+    // panicked the parser in a debug build (issue #531). It must instead
+    // wrap to `i64::MIN`.
+    let src = "let x = match v {\n  -9223372036854775808 -> \"min\"\n  _ -> \"other\"\n}\n";
+    let f = parse_ok(src);
+    let DeclKind::Let(d) = &f.items[0].kind else {
+        panic!()
+    };
+    let ExprKind::Match { arms, .. } = &d.init.as_ref().unwrap().kind else {
+        panic!()
+    };
+    assert!(matches!(
+        arms[0].pattern.kind,
+        PatternKind::Literal(LiteralPattern::Int(i64::MIN))
+    ));
+}
+
+#[test]
 fn parses_while_and_for() {
     let src = "fun f() { while a { let _ = 1 }\nfor x in xs { let _ = 1 }\n }\n";
     let f = parse_ok(src);

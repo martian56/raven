@@ -62,6 +62,44 @@ fn comment_inside_call_args_stays_in_place() {
 }
 
 #[test]
+fn comment_before_first_array_element_stays_inside_brackets() {
+    // A comment between the opening `[` and the first element must keep the
+    // array multi-line with the comment in place. Before #532 the multi-line
+    // decision window started at the first element, so this comment fell
+    // outside it: the array collapsed to one line and the comment was lost or
+    // relocated.
+    let src = "fun main() {\n    let xs = [\n        // the leading value\n        1,\n        2,\n    ]\n    print(xs)\n}\n";
+    let out = fmt(src);
+    let comment_pos = out
+        .find("// the leading value")
+        .expect("leading comment preserved");
+    let open_pos = out.find('[').expect("array opens");
+    let first_elem_pos = out.find('1').expect("first element present");
+    assert!(
+        open_pos < comment_pos && comment_pos < first_elem_pos,
+        "comment should sit between `[` and the first element: {out:?}"
+    );
+}
+
+#[test]
+fn comment_after_call_open_paren_stays_with_first_arg() {
+    // The same window fix applies to call arguments: a comment right after the
+    // opening `(`, before the first argument, must keep the call multi-line
+    // with the comment in place.
+    let src = "fun main() {\n    let r = foo(\n        // the first argument\n        1,\n        2,\n    )\n    print(r)\n}\n";
+    let out = fmt(src);
+    let comment_pos = out
+        .find("// the first argument")
+        .expect("leading arg comment preserved");
+    let call_pos = out.find("foo(").expect("call present");
+    let first_arg_pos = out.find('1').expect("first argument present");
+    assert!(
+        call_pos < comment_pos && comment_pos < first_arg_pos,
+        "comment should sit between `foo(` and the first argument: {out:?}"
+    );
+}
+
+#[test]
 fn doc_comment_stays_attached_to_derived_item() {
     // A comment directly above `@derive` documents the item, so the formatter
     // must not split them with a blank line (which `rvpm doc` would read as the

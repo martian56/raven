@@ -342,9 +342,17 @@ impl LockFile {
     /// checked here; a missing direct dependency forces a fresh resolve.
     pub fn covers(&self, manifest: &Manifest) -> bool {
         manifest.dependencies.iter().all(|d| {
-            self.packages
-                .iter()
-                .any(|p| p.source == dep_source(&d.path))
+            let source = dep_source(&d.path);
+            // Match both the source and the requested version, so editing a
+            // dependency's version in rv.toml invalidates the lock and forces a
+            // re-resolve instead of silently reusing the old pinned version.
+            match resolved_ref(d) {
+                Ok(version) => self
+                    .packages
+                    .iter()
+                    .any(|p| p.source == source && p.version == version),
+                Err(_) => false,
+            }
         })
     }
 }
@@ -474,7 +482,17 @@ fn validate_one(cache_root: &Path, entry: &LockedPackage) -> Result<(), LockErro
     let fetched = pkg::fetch_in(cache_root, &gh.host, &gh.user, &gh.repo, &entry.version)
         .map_err(LockError::Fetch)?;
     notify_fetch(&entry.source, &entry.version, fetched.cached);
-    let actual = hash_with_cache(&fetched.dir)?;
+    // Validation is the integrity boundary, so always re-read and re-hash the
+    // tree content rather than trusting the sidecar's metadata-signature
+    // shortcut. The signature catches an honest edit (it changes the file size
+    // or mtime), but an attacker who controls the cache can tamper a file and
+    // rewrite the sidecar to reassert the old hash; only re-hashing the content
+    // catches that.
+    let actual = tree_hash(&fetched.dir).map_err(|e| LockError::Io {
+        action: "hash dependency tree".to_string(),
+        path: fetched.dir.clone(),
+        source: e,
+    })?;
     if actual != entry.hash {
         return Err(LockError::HashMismatch {
             source: entry.source.clone(),
@@ -777,6 +795,40 @@ mod tests {
     }
 
     #[test]
+    fn validate_rehashes_content_despite_poisoned_sidecar() {
+        let cache = TempCache::new("poison");
+        let dir = cache.seed(
+            "github.com/acme/bar",
+            "v1.0.0",
+            &[(
+                "rv.toml",
+                "[package]\nname = \"bar\"\nversion = \"1.0.0\"\n",
+            )],
+        );
+        let manifest = manifest_with(&[("github.com/acme/bar", "v1.0.0")]);
+        let lock = resolve_and_lock_in(&manifest, &cache.root).expect("resolve");
+        let locked_hash = lock.packages[0].hash.clone();
+
+        // Tamper a cached file, then poison the sidecar so its metadata
+        // signature matches the tampered tree while it still asserts the old,
+        // locked hash. The cheap-signature shortcut would accept this, but
+        // validation must re-hash the content and reject it.
+        let f = dir.join("rv.toml");
+        std::fs::write(&f, "[package]\nname = \"bar\"\nversion = \"6.6.6\"\n").unwrap();
+        let tampered_sig = tree_signature(&dir).expect("signature");
+        let sidecar = pkg::hash_sidecar(&dir);
+        std::fs::write(&sidecar, format!("{}\n{}\n", locked_hash, tampered_sig)).unwrap();
+
+        let err = validate_lock_in(&lock, &cache.root).unwrap_err();
+        match err {
+            LockError::HashMismatch { source, .. } => {
+                assert_eq!(source, "github.com/acme/bar");
+            }
+            other => panic!("expected HashMismatch, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn missing_dep_in_lock_forces_fresh_resolve() {
         let cache = TempCache::new("missing");
         cache.seed(
@@ -813,6 +865,32 @@ mod tests {
             .packages
             .iter()
             .any(|p| p.source == "github.com/acme/bar"));
+    }
+
+    #[test]
+    fn changed_dep_version_in_lock_forces_fresh_resolve() {
+        let cache = TempCache::new("verbump");
+        cache.seed(
+            "github.com/acme/foo",
+            "v1.0.0",
+            &[(
+                "rv.toml",
+                "[package]\nname = \"foo\"\nversion = \"1.0.0\"\n",
+            )],
+        );
+
+        // Lock pins foo@v1.0.0; the manifest now asks for v2.0.0. The lock
+        // must not be treated as covering the new request just because the
+        // source path matches (issue #528).
+        let v1 = manifest_with(&[("github.com/acme/foo", "v1.0.0")]);
+        let lock = resolve_and_lock_in(&v1, &cache.root).expect("resolve v1");
+        assert!(lock.covers(&v1), "lock covers the version it pinned");
+
+        let v2 = manifest_with(&[("github.com/acme/foo", "v2.0.0")]);
+        assert!(
+            !lock.covers(&v2),
+            "lock must not cover a changed dependency version"
+        );
     }
 
     #[test]
