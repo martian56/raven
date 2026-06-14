@@ -316,6 +316,12 @@ pub fn expand_with_stdlib_ctx(
         merge_module_items(module_file.items, &rename, &mut combined_items);
     }
 
+    // The shared JSON derive helper free functions are global and fixed-named,
+    // so they are emitted exactly once for the whole program below, after every
+    // module and the user's own items have had their derives expanded. Track
+    // whether any of those expansions needs them.
+    let mut needs_json_helpers = false;
+
     // Merge the local modules loaded above through the same merge core,
     // with a path derived namespace instead of the `std.<module>.` one.
     for module_file in local_modules {
@@ -341,7 +347,10 @@ pub fn expand_with_stdlib_ctx(
         for name in top_level_type_names(&module_file) {
             rename.insert(name.clone(), mangle_local_fn(&key, &name));
         }
-        let items = expand_module_derives(module_file.items)?;
+        // A per-module label keeps the generated source's use-site spans from
+        // colliding with another module's `<derive>` source.
+        let (items, needs) = expand_module_derives(module_file.items, &format!("<derive:{key}>"))?;
+        needs_json_helpers |= needs;
         merge_module_items(items, &rename, &mut combined_items);
     }
 
@@ -361,7 +370,8 @@ pub fn expand_with_stdlib_ctx(
             for name in top_level_type_names(&ext.file) {
                 rename.insert(name.clone(), mangle_external_fn(&key, &name));
             }
-            let items = expand_module_derives(ext.file.items)?;
+            let (items, needs) = expand_module_derives(ext.file.items, &format!("<derive:{key}>"))?;
+            needs_json_helpers |= needs;
             merge_module_items(items, &rename, &mut combined_items);
         }
     }
@@ -378,8 +388,17 @@ pub fn expand_with_stdlib_ctx(
     // is harmless). The generated impls append after the user items and flow
     // through resolve, type checking, and codegen like hand written ones.
     let mut derived_impls = Vec::new();
-    super::derive::expand_derives(&combined_items, &mut derived_impls)?;
+    needs_json_helpers |=
+        super::derive::expand_derives(&combined_items, &mut derived_impls, "<derive>")?;
     combined_items.append(&mut derived_impls);
+
+    // Emit the shared JSON derive helpers exactly once for the whole program,
+    // as bare global free functions the derived `from_json` bodies (in the user
+    // and in every merged module) all call by name. Emitting them per module
+    // declared them several times in a multi-file project.
+    if needs_json_helpers {
+        combined_items.extend(super::derive::json_helper_decls()?);
+    }
 
     Ok(File {
         items: combined_items,
@@ -439,12 +458,15 @@ fn strip_derives(items: &mut [Decl]) {
 /// on the bare-named user and stdlib items only). Doing this after namespacing
 /// would fail, since the generated source is re-lexed and a namespaced name
 /// carries dots and a hash that do not lex as one identifier.
-fn expand_module_derives(mut items: Vec<Decl>) -> Result<Vec<Decl>, RavenError> {
+fn expand_module_derives(
+    mut items: Vec<Decl>,
+    source_label: &str,
+) -> Result<(Vec<Decl>, bool), RavenError> {
     let mut derived = Vec::new();
-    super::derive::expand_derives(&items, &mut derived)?;
+    let needs_json = super::derive::expand_derives(&items, &mut derived, source_label)?;
     strip_derives(&mut items);
     items.extend(derived);
-    Ok(items)
+    Ok((items, needs_json))
 }
 
 fn merge_module_items(
@@ -1083,8 +1105,20 @@ fn rewrite_expr(expr: &mut Expr, rename: &HashMap<String, String>) {
                 rewrite_expr(a, rename);
             }
         }
-        ExprKind::MethodCall { receiver, args, .. } => {
+        ExprKind::MethodCall {
+            receiver,
+            generics,
+            args,
+            ..
+        } => {
             rewrite_expr(receiver, rename);
+            // A method-call type argument (`req.json<NewTask>()`) names a type
+            // the same way an `Ident` or `StructLit` generic does, so it must be
+            // namespaced too. Without this a local or external type used only as
+            // a method type argument stayed bare and failed to resolve.
+            for g in generics {
+                rewrite_type(g, rename);
+            }
             for a in args {
                 rewrite_expr(a, rename);
             }
@@ -1793,6 +1827,36 @@ mod tests {
             .any(|d| matches!(&d.kind, DeclKind::Struct(s) if s.name == "Point"));
         assert!(present, "a local struct should merge under {mangled}");
         assert!(!bare, "the bare `Point` name should not remain");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn json_derive_helpers_emitted_once_across_modules() {
+        // Two local modules each derive a JSON trait. The shared helper free
+        // functions are global and fixed-named, so they must be declared
+        // exactly once in the combined program. Emitting them per module
+        // declared `raven_derive_json_decode` several times, which resolve
+        // rejected as "declared multiple times" in a multi-file project.
+        let main_src = "import \"./a\" { A }\nimport \"./b\" { B }\nfun main() {}\n";
+        let (dir, entry) = write_temp_project(
+            &[
+                ("a.rv", "@derive(FromJson)\nstruct A { x: Int }\n"),
+                ("b.rv", "@derive(ToJson)\nstruct B { y: Int }\n"),
+                ("main.rv", main_src),
+            ],
+            "main.rv",
+        );
+        let user = parse_at(main_src, &entry);
+        let combined = expand_with_stdlib(&user).expect("expand");
+        let decode_count = combined
+            .items
+            .iter()
+            .filter(|d| matches!(&d.kind, DeclKind::Function(f) if f.name == "raven_derive_json_decode"))
+            .count();
+        assert_eq!(
+            decode_count, 1,
+            "the JSON decode helper must be declared exactly once across modules"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 

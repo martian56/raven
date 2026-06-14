@@ -2,6 +2,14 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.69] - 2026-06-14
+
+### Fixed
+
+- A multi-file project that uses `@derive(ToJson)` or `@derive(FromJson)` in more than one module no longer fails to compile with "the name `raven_derive_json_decode` is declared multiple times". The shared JSON helper functions the derived `from_json` bodies call are now emitted once for the whole program instead of once per module.
+- A type used only as a method-call type argument is now namespaced when its module is merged, so `req.json<NewTask>()` resolves a selectively imported local or external type. Previously only types in signatures and struct literals were rewritten, so the type argument stayed unresolved.
+- Generated `@derive` code from different modules no longer collides on identifier resolution. Each generated source is lexed under a distinct pseudo-file, so use-sites keyed by `(file, byte range)` stay unique across modules.
+
 ## [2.18.68] - 2026-06-14
 
 ### Changed

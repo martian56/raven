@@ -57,9 +57,24 @@ pub fn needs_json_module(file: &File) -> bool {
 }
 
 /// Append a synthesized impl for every `@derive(...)` request in `items` to
-/// `combined`. Returns an error if a derive names an unsupported trait or a
-/// type the slice cannot derive (a struct enum variant payload).
-pub fn expand_derives(items: &[Decl], combined: &mut Vec<Decl>) -> Result<(), RavenError> {
+/// `combined`. Returns whether any derive needs the shared JSON helper free
+/// functions, so the caller can emit them exactly once for the whole program
+/// (see [`json_helper_decls`]); a derive over a single set of items is one of
+/// several such calls (the user's items plus every merged module), so emitting
+/// the helpers here would declare them several times. Returns an error if a
+/// derive names an unsupported trait or a type the slice cannot derive (a
+/// struct enum variant payload).
+///
+/// `source_label` is the pseudo-file the generated source is lexed under. Each
+/// call must pass a distinct label (the per-module key, the user file, the
+/// helpers), because identifier use-sites are keyed by `(file, byte range)`:
+/// two generated sources both labeled `<derive>` start at byte zero and their
+/// line-one identifiers would collide on that key.
+pub fn expand_derives(
+    items: &[Decl],
+    combined: &mut Vec<Decl>,
+    source_label: &str,
+) -> Result<bool, RavenError> {
     let mut generated = String::new();
     let mut needs_json_helpers = false;
     for decl in items {
@@ -88,22 +103,35 @@ pub fn expand_derives(items: &[Decl], combined: &mut Vec<Decl>) -> Result<(), Ra
         }
     }
     if generated.is_empty() {
-        return Ok(());
+        return Ok(false);
     }
-    // The derived `from_json` bodies call these helpers by bare name. A
-    // bundled stdlib free function is namespaced (`std.json.f`) and so not
-    // callable by its bare name from generated source, so the helpers are
-    // emitted into the generated file itself, exactly once per program.
-    if needs_json_helpers {
-        generated.insert_str(0, JSON_HELPERS);
-    }
-    let path = std::path::PathBuf::from("<derive>");
+    let path = std::path::PathBuf::from(source_label);
     let tokens = Lexer::new(generated.clone(), path.clone())
         .tokenize()
         .map_err(|e| derive_error(format!("lex: {e}")))?;
     let parsed = parse(&tokens).map_err(|e| derive_error(format!("parse: {e}")))?;
     combined.extend(parsed.items);
-    Ok(())
+    Ok(needs_json_helpers)
+}
+
+/// The shared JSON derive helper free functions, parsed into declarations.
+///
+/// The derived `from_json` bodies call these by bare name, and a bundled
+/// stdlib free function is namespaced (`std.json.f`) and so unreachable by its
+/// bare name from generated source. They are global free functions with fixed
+/// names, so the caller emits them exactly once per program (when any
+/// `@derive(ToJson|FromJson)` is present); a second copy would be a duplicate
+/// declaration. See [`expand_derives`], which reports when they are needed.
+pub fn json_helper_decls() -> Result<Vec<Decl>, RavenError> {
+    // A distinct label from every `expand_derives` source so the helper
+    // identifiers' `(file, byte range)` use-site keys cannot collide with an
+    // impl's.
+    let path = std::path::PathBuf::from("<derive-helpers>");
+    let tokens = Lexer::new(JSON_HELPERS.to_string(), path)
+        .tokenize()
+        .map_err(|e| derive_error(format!("lex: {e}")))?;
+    let parsed = parse(&tokens).map_err(|e| derive_error(format!("parse: {e}")))?;
+    Ok(parsed.items)
 }
 
 fn check_supported(trait_name: &str, span: &crate::span::Span) -> Result<(), RavenError> {
@@ -409,9 +437,10 @@ fn enum_to_string_body(e: &Enum, method: &str) -> String {
 // checker reports a missing impl with its normal bound diagnostic).
 
 /// Helper free functions the derived `from_json` bodies call by bare name.
-/// They are emitted into the generated file (not the bundled `std/json`)
-/// because a bundled free function is namespaced and so unreachable by its
-/// bare name from generated source. The names are prefixed to avoid
+/// They are emitted into the generated program once via [`json_helper_decls`]
+/// (not the bundled `std/json`) because a bundled free function is namespaced
+/// and so unreachable by its bare name from generated source. The names are
+/// prefixed to avoid
 /// colliding with a user declaration.
 const JSON_HELPERS: &str = r#"fun raven_derive_json_decode<T: FromJson>(j: JsonValue) -> Result<T, Error> {
     return T.from_json(j)
@@ -628,7 +657,7 @@ mod tests {
     fn derived_impls(src: &str) -> Vec<Impl> {
         let file = parse_src(src);
         let mut out = Vec::new();
-        expand_derives(&file.items, &mut out).expect("expand");
+        expand_derives(&file.items, &mut out, "<derive>").expect("expand");
         out.into_iter()
             .filter_map(|d| match d.kind {
                 DeclKind::Impl(i) => Some(i),
@@ -697,7 +726,8 @@ mod tests {
     fn unsupported_trait_is_rejected() {
         let file = parse_src("@derive(Clone)\nstruct Point { x: Int }\n");
         let mut out = Vec::new();
-        let err = expand_derives(&file.items, &mut out).expect_err("Clone is not derivable");
+        let err =
+            expand_derives(&file.items, &mut out, "<derive>").expect_err("Clone is not derivable");
         assert!(format!("{err}").contains("Clone"), "got: {err}");
     }
 
@@ -718,20 +748,12 @@ mod tests {
     fn struct_variant_enum_is_rejected() {
         let file = parse_src("@derive(Eq)\nenum E { V(a: Int) }\n");
         let mut out = Vec::new();
-        let err = expand_derives(&file.items, &mut out).expect_err("struct variant not supported");
+        let err = expand_derives(&file.items, &mut out, "<derive>")
+            .expect_err("struct variant not supported");
         assert!(
             format!("{err}").contains("struct-style variant"),
             "got: {err}"
         );
-    }
-
-    /// All declarations `expand_derives` synthesizes for `src`, including the
-    /// emitted JSON helper free functions.
-    fn derived_decls(src: &str) -> Vec<Decl> {
-        let file = parse_src(src);
-        let mut out = Vec::new();
-        expand_derives(&file.items, &mut out).expect("expand");
-        out
     }
 
     #[test]
@@ -754,30 +776,49 @@ mod tests {
     }
 
     #[test]
-    fn json_derive_emits_helper_functions_once() {
-        // Two types both derive the JSON traits; the shared helper free
-        // functions must be emitted exactly once.
-        let decls = derived_decls(
+    fn json_derive_reports_helpers_needed_and_keeps_them_out_of_the_impls() {
+        // A JSON derive reports that the shared helpers are needed, but does not
+        // emit them inline: they are global, fixed-named free functions, so the
+        // caller emits them once for the whole program. Emitting them per
+        // derive call declared them several times in a multi-module project.
+        let file = parse_src(
             "@derive(ToJson)\nstruct A { x: Int }\n@derive(FromJson)\nstruct B { y: Int }\n",
         );
-        let decode_count = decls
+        let mut out = Vec::new();
+        let needs = expand_derives(&file.items, &mut out, "<derive>").expect("expand");
+        assert!(needs, "a JSON derive reports the helpers are needed");
+        assert!(
+            !out.iter().any(|d| matches!(&d.kind, DeclKind::Function(f) if f.name.starts_with("raven_derive_json"))),
+            "the helpers must not be emitted inline with the impls"
+        );
+    }
+
+    #[test]
+    fn json_helper_decls_declares_each_helper_once() {
+        // The global helper set declares each helper exactly once, so a program
+        // that emits it a single time has no duplicate declaration.
+        let helpers = json_helper_decls().expect("helpers");
+        let decode_count = helpers
             .iter()
             .filter(|d| matches!(&d.kind, DeclKind::Function(f) if f.name == "raven_derive_json_decode"))
             .count();
-        assert_eq!(decode_count, 1, "decode helper must be emitted once");
-        let field_count = decls
+        assert_eq!(decode_count, 1, "exactly one decode helper");
+        let field_count = helpers
             .iter()
             .filter(
                 |d| matches!(&d.kind, DeclKind::Function(f) if f.name == "raven_derive_json_field"),
             )
             .count();
-        assert_eq!(field_count, 1);
+        assert_eq!(field_count, 1, "exactly one field helper");
     }
 
     #[test]
-    fn non_json_derive_emits_no_json_helpers() {
-        let decls = derived_decls("@derive(Eq)\nstruct Point { x: Int }\n");
-        let has_helper = decls.iter().any(
+    fn non_json_derive_reports_no_helpers_needed() {
+        let file = parse_src("@derive(Eq)\nstruct Point { x: Int }\n");
+        let mut out = Vec::new();
+        let needs = expand_derives(&file.items, &mut out, "<derive>").expect("expand");
+        assert!(!needs, "no JSON helpers without a JSON derive");
+        let has_helper = out.iter().any(
             |d| matches!(&d.kind, DeclKind::Function(f) if f.name.starts_with("raven_derive_json")),
         );
         assert!(!has_helper, "no JSON helper without a JSON derive");
@@ -805,7 +846,8 @@ mod tests {
     fn json_derive_rejects_struct_variant_enum() {
         let file = parse_src("@derive(ToJson)\nenum E { V(a: Int) }\n");
         let mut out = Vec::new();
-        let err = expand_derives(&file.items, &mut out).expect_err("struct variant not supported");
+        let err = expand_derives(&file.items, &mut out, "<derive>")
+            .expect_err("struct variant not supported");
         assert!(
             format!("{err}").contains("struct-style variant"),
             "got: {err}"
