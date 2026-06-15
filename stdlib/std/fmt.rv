@@ -225,6 +225,19 @@ fun float_digit_char(d: Float) -> String {
 // half up. `format_float(3.14159, 2)` is "3.14"; `format_float(-2.5, 0)` is
 // "-3".
 fun format_float(x: Float, decimals: Int) -> String {
+    // Non-finite values have no decimal form: NaN compares false everywhere
+    // (so the scaling loop would never run and pad to "0.00") and infinity
+    // never falls below 1.0 (so the digit loop would spin forever). `x != x`
+    // is true only for NaN; `x * 0.0` is NaN for an infinity and 0 otherwise.
+    if x != x {
+        return "NaN"
+    }
+    if x * 0.0 != 0.0 {
+        if x < 0.0 {
+            return "-inf"
+        }
+        return "inf"
+    }
     let neg = x < 0.0
     let v = fabs(x)
     let scale = 1.0
@@ -272,7 +285,11 @@ fun format_float(x: Float, decimals: Int) -> String {
 // digits, so pad_int(-7, 4) is "-007".
 fun pad_int(n: Int, width: Int) -> String {
     if n < 0 {
-        let digits = (0 - n).to_string()
+        // Render through `to_string` and strip the leading '-' rather than
+        // negating, which overflows (and stays negative) at Int::MIN, producing
+        // a doubled minus sign.
+        let s = n.to_string()
+        let digits = s.substring(1, s.length())
         return __str_concat("-", pad_left(digits, width - 1, "0"))
     }
     return pad_left(n.to_string(), width, "0")

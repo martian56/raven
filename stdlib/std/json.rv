@@ -192,16 +192,16 @@ fun parse_string(c: Cursor) -> Result<String, Error> {
                                 let astral = 65536 + ((cp - 55296) << 10) + (low - 56320)
                                 out = encode_utf8(out, astral)
                             } else {
-                                out = encode_utf8(out, 65533)
+                                return Err(json_error("invalid low surrogate in \\u escape"))
                             }
                         } else {
-                            out = encode_utf8(out, 65533)
+                            return Err(json_error("unpaired high surrogate in \\u escape"))
                         }
                     } else {
-                        out = encode_utf8(out, 65533)
+                        return Err(json_error("unpaired high surrogate in \\u escape"))
                     }
                 } else if cp >= 56320 && cp <= 57343 {
-                    out = encode_utf8(out, 65533)
+                    return Err(json_error("lone low surrogate in \\u escape"))
                 } else {
                     out = encode_utf8(out, cp)
                 }
@@ -209,6 +209,11 @@ fun parse_string(c: Cursor) -> Result<String, Error> {
                 return Err(json_error("bad escape"))
             }
         } else {
+            // JSON forbids a raw control character (U+0000..U+001F) in a
+            // string; it must be escaped. Reject it rather than copy it through.
+            if b < 32 {
+                return Err(json_error("unescaped control character in string"))
+            }
             out = __str_concat(out, __str_from_byte(b))
         }
     }
@@ -228,11 +233,19 @@ fun parse_number(c: Cursor) -> Result<Float, Error> {
     if !is_digit(c.peek()) {
         return Err(json_error("invalid number"))
     }
+    let lead = c.peek()
     let int_value = 0.0
+    let int_digits = 0
     while is_digit(c.peek()) {
         let d = c.peek() - 48
         int_value = int_value * 10.0 + raven_int_to_float(d)
         c.advance()
+        int_digits = int_digits + 1
+    }
+    // JSON forbids a leading zero in the integer part (`01`, `00`); a lone `0`
+    // is fine.
+    if lead == 48 && int_digits > 1 {
+        return Err(json_error("number has a leading zero"))
     }
     let value = int_value
     if c.peek() == 46 {
@@ -479,12 +492,61 @@ fun escape_string(out: String, s: String) -> String {
             r = __str_concat(r, "\\u00")
             r = __str_concat(r, __str_from_byte(hex_digit(b >> 4)))
             r = __str_concat(r, __str_from_byte(hex_digit(b & 15)))
-        } else {
+        } else if b < 128 {
             r = __str_concat(r, __str_from_byte(b))
+        } else {
+            // Non-ASCII: JSON allows raw UTF-8, so pass a valid sequence through
+            // unchanged, but a Raven String can hold arbitrary bytes. Replace an
+            // invalid byte with the U+FFFD escape so the output is always valid
+            // JSON (and valid UTF-8) rather than leaking a raw bad byte.
+            let len = utf8_seq_len(s, i, n)
+            if len == 0 {
+                r = __str_concat(r, "\\uFFFD")
+            } else {
+                let j = 0
+                while j < len {
+                    r = __str_concat(r, __str_from_byte(__str_byte_at(s, i + j)))
+                    j = j + 1
+                }
+                i = i + (len - 1)
+            }
         }
         i = i + 1
     }
     return r
+}
+
+// The length (1..4) of the valid UTF-8 sequence starting at byte `i` of `s`, or
+// 0 when the byte cannot begin a valid sequence (an invalid lead byte or a
+// truncated/ill-formed continuation).
+fun utf8_seq_len(s: String, i: Int, n: Int) -> Int {
+    let b = __str_byte_at(s, i)
+    if b < 128 {
+        return 1
+    }
+    if b >= 194 && b <= 223 {
+        if i + 1 < n && is_utf8_cont(__str_byte_at(s, i + 1)) {
+            return 2
+        }
+        return 0
+    }
+    if b >= 224 && b <= 239 {
+        if i + 2 < n && is_utf8_cont(__str_byte_at(s, i + 1)) && is_utf8_cont(__str_byte_at(s, i + 2)) {
+            return 3
+        }
+        return 0
+    }
+    if b >= 240 && b <= 244 {
+        if i + 3 < n && is_utf8_cont(__str_byte_at(s, i + 1)) && is_utf8_cont(__str_byte_at(s, i + 2)) && is_utf8_cont(__str_byte_at(s, i + 3)) {
+            return 4
+        }
+        return 0
+    }
+    return 0
+}
+
+fun is_utf8_cont(b: Int) -> Bool {
+    return b >= 128 && b <= 191
 }
 
 fun hex_digit(v: Int) -> Int {

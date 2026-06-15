@@ -58,6 +58,12 @@ fun assert_ne<T: Eq + ToString>(a: T, b: T) {
 // Assert two floats are within `eps` of each other (the right way to compare
 // floats).
 fun assert_eq_float(a: Float, b: Float, eps: Float) {
+    // A NaN operand makes every comparison false, so `d > eps` would not catch
+    // it and the assertion would silently pass. NaN is never equal to anything
+    // (including itself), so reject it explicitly. `v != v` is true only for NaN.
+    if a != a || b != b {
+        __panic("assertion failed: ${a} != ${b} within ${eps}")
+    }
     let d = a - b
     if d < 0.0 {
         d = 0.0 - d

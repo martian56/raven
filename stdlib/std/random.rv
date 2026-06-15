@@ -53,9 +53,20 @@ impl Rng {
             return lo
         }
         let span = hi - lo
-        // Force a non-negative magnitude before the modulo.
-        let r = ushr(self.next_int(), 1)
-        return lo + (r % span)
+        if span > 0 {
+            // Force a non-negative magnitude before the modulo.
+            let r = ushr(self.next_int(), 1)
+            return lo + (r % span)
+        }
+        // `hi - lo` overflowed Int, so the range is wider than Int::MAX and the
+        // modulo above would divide by a wrapped, non-positive span (returning
+        // only `lo`). Draw a full-width value and reject those outside [lo, hi);
+        // for a range this large most draws land in range, so this is quick.
+        let v = self.next_int()
+        while v < lo || v >= hi {
+            v = self.next_int()
+        }
+        return v
     }
 
     // In [0.0, 1.0): the top 53 bits of a draw scaled by 2^-53, which is
