@@ -1,0 +1,30 @@
+// Regressions for codex-review stdlib robustness fixes: non-finite float
+// formatting (#555), a capped parse_float exponent (#427), and JSON validation
+// of leading zeros and raw control bytes (#558). Prints:
+//   inf
+//   NaN
+//   ok-bigexp
+//   reject-leadingzero
+//   reject-control
+import std/fmt { format_float }
+import std/json { parse }
+import std/string
+import std/io { println }
+
+fun main() {
+    let zero = 0.0
+    println(format_float(1.0 / zero, 2))
+    println(format_float(zero / zero, 2))
+    match "1e999999999".parse_float() {
+        Some(v) -> println("ok-bigexp"),
+        None -> println("rejected-bigexp"),
+    }
+    match parse("01") {
+        Ok(v) -> println("BAD-leadingzero"),
+        Err(e) -> println("reject-leadingzero"),
+    }
+    match parse("\"a\tb\"") {
+        Ok(v) -> println("BAD-control"),
+        Err(e) -> println("reject-control"),
+    }
+}

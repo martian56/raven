@@ -523,6 +523,13 @@ impl String {
                         break
                     }
                     exp = exp * 10 + (b - 48)
+                    // Clamp the exponent: a Float overflows to infinity (or
+                    // underflows to zero) well before 1e400, so a larger value
+                    // changes nothing but would make the apply loop below run
+                    // billions of times (a DoS) and could overflow `exp` itself.
+                    if exp > 400 {
+                        exp = 400
+                    }
                     exp_digit = true
                     i = i + 1
                 }

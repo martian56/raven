@@ -2,6 +2,22 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.94] - 2026-06-15
+
+A batch of fixes from a full-codebase review (codex). The version is bumped one
+patch per issue fixed across this and the two preceding batches.
+
+### Fixed
+
+- Frontend diagnostics instead of compiler panics / Cranelift crashes / silent miscompiles: `break`/`continue` outside a loop (#547), `break` with a value outside a `loop` (#551), a named-field variant matched with `{ ... }` (#545), a constructor pattern on a non-enum value (#546), duplicate enum variants (#548), duplicate impl/trait methods (#550), and duplicate parameter names (#549).
+- `std/fmt`: `format_float` no longer hangs on infinity or formats NaN as zero (#555); `pad_int` renders `Int::MIN` without a doubled minus sign (#554).
+- `String.parse_float` caps its exponent so `"1e999999999"` no longer spins billions of iterations (#427).
+- `std/random` `gen_range` covers a full-width range instead of returning only `lo` when the span overflows (#557).
+- `std/json` rejects invalid input it used to accept: a leading zero in a number, a raw control byte in a string, and an unpaired/invalid `\u` surrogate (#558); and `stringify` no longer emits raw non-UTF-8 bytes, replacing an invalid byte with the U+FFFD escape (#559).
+- `std/test` `assert_eq_float` no longer treats a NaN operand as equal (#560).
+- Docs, website, and the VS Code extension: build the saved buffer (#582), broader macro/interpolation grammar (#583), v2-accurate extension docs (#584), `rvpm new` for the create-a-directory flow (#585), copy button excludes its own icon (#586), no macOS package claims (#587), no nonexistent `raven run` subcommand (#589), and `mkdocs build --strict` passes (#590).
+
+
 ## [2.18.72] - 2026-06-14
 
 ### Added
