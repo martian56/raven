@@ -134,9 +134,27 @@ pub fn bind(
                     )),
                 }
             }
+            // Suppress a cascade: a constructor pattern over an already-failed
+            // scrutinee binds its parts to Error without a second diagnostic.
+            (Some(_), Ty::Error) => {
+                for sub_pat in elements {
+                    bind(sub_pat, &Ty::Error, env, locals)?;
+                }
+                Ok(())
+            }
+            // A named constructor pattern (`Nope(x)`) over a non-enum value (an
+            // `Int`, a `List`, ...) is a type error, not a silent Error binding
+            // that would otherwise reach codegen and crash Cranelift.
+            (Some(ctor), other) => Err(RavenError::ty(
+                TypeError::Custom(format!(
+                    "`{}` is not a constructor of `{}`; a constructor pattern needs an enum, Option, or Result value",
+                    ctor, other
+                )),
+                pat.span.clone(),
+            )),
             _ => {
-                // Unhandled tuple pattern; bind sub patterns as Error
-                // to suppress cascading errors.
+                // A nameless tuple pattern; bind sub patterns as Error to
+                // suppress cascading errors.
                 for sub_pat in elements {
                     bind(sub_pat, &Ty::Error, env, locals)?;
                 }
@@ -177,7 +195,25 @@ pub fn bind(
                     return Ok(());
                 }
             }
-            // Struct enum variant pattern handling, or fallthrough.
+            // A struct pattern whose scrutinee is an enum is a named-field
+            // variant match (`Point { x, y }`). Struct-variants are only
+            // partially implemented (construction is rejected too), and the MIR
+            // path crashes Cranelift on this pattern, so reject it up front with
+            // a diagnostic instead of binding fields to Error and reaching
+            // codegen. (Matching by position with `Point(x, y)` works.)
+            if let Ty::Enum { id, .. } = scrut_ty.strip_self() {
+                if env.enums.contains_key(id) {
+                    return Err(RavenError::ty(
+                        TypeError::Custom(format!(
+                            "matching the named-field variant `{}` with `{{ ... }}` is not yet supported; match it positionally as `{}(...)`",
+                            name, name
+                        )),
+                        pat.span.clone(),
+                    ));
+                }
+            }
+            // Fallthrough (for example an already-failed scrutinee): bind to
+            // Error to suppress a cascade.
             for fpat in fields {
                 if let Some(p) = &fpat.pattern {
                     bind(p, &Ty::Error, env, locals)?;
