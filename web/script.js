@@ -167,7 +167,8 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             
             copyButton.addEventListener('click', function() {
-                const code = pre.textContent;
+                const codeEl = pre.querySelector('code');
+                const code = codeEl ? codeEl.textContent : pre.textContent;
                 navigator.clipboard.writeText(code).then(function() {
                     copyButton.innerHTML = '✅';
                     setTimeout(function() {

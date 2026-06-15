@@ -197,8 +197,9 @@ rvpm test
 If every `test_*` passes, the command exits zero and the job is green; the
 first failing assertion flips the exit code and the per-test `FAIL` line tells
 you which one. If you would rather run a single test program by hand, a
-`*_test.rv` you write with its own `main` full of assertions can also be run
-directly with `raven run path/to/test.rv`, where a zero exit means it passed.
+`*_test.rv` you write with its own `main` full of assertions can also be
+built directly with `raven build path/to/test.rv -o test_bin` and then run,
+where a zero exit means it passed.
 
 ## Where to go next
 
