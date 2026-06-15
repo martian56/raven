@@ -211,10 +211,11 @@ fun main() {
 }
 ```
 
-Run it directly:
+Build and run it directly:
 
 ```
-raven run tests/math_test.rv
+raven build tests/math_test.rv -o math_test
+./math_test
 ```
 
 If `shout("raven")` ever returned the wrong value, the program would print
@@ -226,9 +227,8 @@ the interpolated mismatch to stderr and exit nonzero instead of printing
 A test is a normal Raven program, so you run it the same way you run any
 other:
 
-- `raven run path/to/test.rv` compiles and runs a single test file.
-- `raven build path/to/test.rv` compiles it to a binary you can invoke
-  later (handy for CI, where the exit code is the pass/fail signal).
+- `raven build path/to/test.rv -o test_bin` compiles it to a binary you
+  can invoke (handy for CI, where the exit code is the pass/fail signal).
 - Inside an `rvpm` project, point `main.rv` (or a dedicated entry) at your
   assertions and use `rvpm run`. See the
   [rvpm guide](../rvpm.md) for project layout and how `rvpm run` builds and

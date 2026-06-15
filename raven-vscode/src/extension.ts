@@ -5,12 +5,23 @@ import { exec } from 'child_process';
 export function activate(context: vscode.ExtensionContext) {
     console.log('Raven Language Extension is now active!');
 
-    let runFileCommand = vscode.commands.registerCommand('raven.runFile', (uri: vscode.Uri) => {
+    let runFileCommand = vscode.commands.registerCommand('raven.runFile', async (uri: vscode.Uri) => {
         if (uri) {
+            // Save any open editor for this file so the build sees the latest
+            // buffer rather than stale on-disk contents.
+            const open = vscode.workspace.textDocuments.find(
+                doc => doc.uri.fsPath === uri.fsPath
+            );
+            if (open && open.isDirty) {
+                await open.save();
+            }
             runRavenFile(uri.fsPath);
         } else {
             const activeEditor = vscode.window.activeTextEditor;
             if (activeEditor && activeEditor.document.languageId === 'raven') {
+                if (activeEditor.document.isDirty) {
+                    await activeEditor.document.save();
+                }
                 runRavenFile(activeEditor.document.fileName);
             } else {
                 vscode.window.showErrorMessage('No Raven file is currently open.');

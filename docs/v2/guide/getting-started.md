@@ -73,11 +73,11 @@ the project layout, dependencies, and the build.
 Scaffold a new project:
 
 ```bash
-rvpm init my_app
+rvpm new my_app
 cd my_app
 ```
 
-`rvpm init` writes this layout:
+`rvpm new` writes this layout:
 
 ```
 my_app/

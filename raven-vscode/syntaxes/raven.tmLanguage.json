@@ -147,7 +147,7 @@
     "macroInvocation": {
       "patterns": [
         {
-          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)(!)\\s*(?=\\()",
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)(!)\\s*(?=[(\\[{])",
           "captures": {
             "1": { "name": "entity.name.function.macro.raven" },
             "2": { "name": "keyword.operator.macro.raven" }
@@ -326,6 +326,7 @@
                 "0": { "name": "punctuation.section.interpolation.end.raven" }
               },
               "patterns": [
+                { "include": "#interpolationNestedBraces" },
                 { "include": "#interpolationBody" }
               ]
             }
@@ -342,6 +343,14 @@
             }
           ]
         }
+      ]
+    },
+    "interpolationNestedBraces": {
+      "begin": "\\{",
+      "end": "\\}",
+      "patterns": [
+        { "include": "#interpolationNestedBraces" },
+        { "include": "#interpolationBody" }
       ]
     },
     "interpolationBody": {

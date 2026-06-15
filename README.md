@@ -70,7 +70,7 @@ raven build hello.rv -o hello
 Project workflow with `rvpm`:
 
 ```bash
-rvpm init my_app
+rvpm new my_app
 cd my_app
 rvpm run          # builds and runs src/main.rv
 rvpm fmt          # format the .rv sources

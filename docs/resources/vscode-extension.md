@@ -1,190 +1,164 @@
 # VS Code Extension
 
-The Raven VS Code extension provides a complete development environment for Raven programming language.
+The Raven VS Code extension adds language support for Raven v2: syntax
+highlighting, snippets, hover docs for builtins, basic completion, and a
+one-click build-and-run command. The extension is published as
+**Raven Language** (`martian56.raven-language`), version 2.2.0.
 
 ## Installation
 
-### From VS Code Marketplace
+### From the VS Code Marketplace
 
-1. **Open VS Code**
-2. **Go to Extensions** (Ctrl+Shift+X)
-3. **Search**: "Raven Language"
-4. **Click Install**
+1. Open VS Code.
+2. Go to Extensions (`Ctrl+Shift+X`).
+3. Search for "Raven Language".
+4. Click Install.
 
-### From Command Line
+### From the command line
 
 ```bash
 code --install-extension martian56.raven-language
 ```
 
-### Manual Installation
-
-1. **Download**: `raven-language-1.1.5.vsix` from [GitHub Releases](https://github.com/martian56/raven/releases)
-2. **Install**: `code --install-extension raven-language-1.1.5.vsix`
-
 ## Features
 
-### Syntax Highlighting
-- **Keywords**: `fun`, `let`, `if`, **`elseif`**, `else`, `while`, `for`, `struct`, `enum`, `import`, `export`, `from`, `print`, … (Raven uses the single keyword **`elseif`** for else-if branches, not two words `else if`.)
-- **Types**: `int`, `float`, `bool`, `string`, `void`
-- **Operators**: `+`, `-`, `*`, `/`, `%`, `==`, `!=`, `&&`, `||`
-- **Comments**: `//` and `/* */`
-- **Strings**: Proper string highlighting
-- **Numbers**: Integer and float highlighting
+### Syntax highlighting
 
-### Code Snippets
+- **Keywords**: `fun`, `let`, `const`, `if`, `else if`, `else`, `while`,
+  `for`, `loop`, `match`, `struct`, `enum`, `trait`, `impl`, `import`,
+  `as`, `extern`, `defer`, `dyn`, `spawn`, `macro`, `return`, `break`,
+  `continue`, `in`, `self`, `Self`. Else-if branches are written as two
+  words, `else if`, not a single keyword.
+- **Types** (PascalCase): `Int`, `Float`, `Bool`, `String`, `Char`,
+  `Unit`, `Any`, `Option`, `Result`, `List`, `Map`, `Set`, `Channel`, and
+  the C FFI types `CInt`, `CLong`, `CSize`, `CStr`, `CPtr`, `CFloat`,
+  `CDouble`, `CFnPtr`.
+- **Attributes**: `@derive(...)`, `@repr(C)`.
+- **Macros**: invocations such as `name!(...)`, `name![...]`, `name!{...}`.
+- **Strings**: double-quoted strings with `${...}` interpolation, `c"..."`
+  C strings, and `'...'` chars, with escape highlighting.
+- **Comments**: `//` line comments and `/* */` block comments.
+- **Numbers**: decimal, hex, binary, and float literals.
 
-Type these shortcuts and press Tab:
+### Hover and completion
 
-| Shortcut | Result |
+Hovering a builtin (for example `println`, `type_name`, `to_any`,
+`channel`, or the `std/ffi` helpers) shows a short description. Basic
+completion offers builtins, keywords, and the core types.
+
+### Code snippets
+
+Type a prefix and press Tab. A selection:
+
+| Prefix | Result |
 |----------|--------|
-| `let` | `let name: Type = value;` |
-| `fun` | `fun name() -> Type { }` |
-| `if` | `if (condition) { }` |
-| `ifelse` | `if (condition) { } else { }` |
-| `elseif` | `} elseif (condition) { }` (continues a chain) |
-| `ifelseif` | `if` / `elseif` / `else` chain |
-| `while` | `while (condition) { }` |
-| `for` | `for (let i: int = 0; i < len; i = i + 1) { }` |
-| `struct` | `struct Name { field: Type }` |
-| `enum` | `enum Name { Variant1, Variant2 }` |
-| `print` | `print("message");` |
-| `printf` | `print(format("{}", value));` |
-| `format` | `format("template", args)` |
-| `main` | `fun main() -> void { }` |
+| `let` | `let name: Int = value` |
+| `leti` | `let name = value` (inferred type) |
+| `const` | `const NAME: Int = value` |
+| `fun` | `fun name(params) -> Unit { }` |
+| `fune` | `fun name(params) -> Int = expr` |
+| `main` | `fun main() { }` |
+| `if` | `if condition { }` |
+| `ifelse` | `if condition { } else { }` |
+| `elseif` | `if` / `else if` / `else` chain |
+| `while` | `while condition { }` |
+| `loop` | `loop { }` |
+| `for` | `for i in 0..n { }` |
+| `foreach` | `for item in items { }` |
+| `match` | `match value { Pattern -> result, _ -> fallback, }` |
+| `struct` | `struct Name { field: Int, }` |
+| `enum` | `enum Name { Variant1, Variant2(Int), }` |
+| `trait` | `trait Name { fun method(self) -> Unit }` |
+| `impl` | `impl Type { ... }` |
+| `implfor` | `impl Trait for Type { ... }` |
+| `extern` | `extern "C" { fun name(arg: CInt) -> CInt }` |
+| `import` | `import std/io` |
+| `imports` | `import std/io { println }` |
+| `spawn` | `spawn(fun() -> Unit { })` |
+| `derive` | `@derive(Eq, Hash, ToString, Debug)` |
+| `macro` | `macro name { (matcher) => { template } }` |
 
-### Language Configuration
+### File association
 
-- **Comments**: `//` and `/* */`
-- **Brackets**: `()`, `[]`, `{}`
-- **Auto-indentation**: Smart indentation for blocks
-- **Word wrapping**: Proper line wrapping
-
-### File Association
-
-- **Extension**: `.rv` files are recognized as Raven
-- **Icon**: Raven logo in file explorer
-- **Language Mode**: Shows "Raven" in status bar
+- `.rv` files are recognized as Raven.
+- The file explorer shows the Raven icon, and the status bar shows "Raven".
 
 ## Usage
 
-### Creating Raven Files
+### Creating Raven files
 
-1. **Create new file**: `Ctrl+N`
-2. **Save as**: `filename.rv`
-3. **Language mode**: Automatically set to Raven
+1. Create a new file (`Ctrl+N`).
+2. Save it with a `.rv` extension.
+3. The language mode is set to Raven automatically.
 
-### Running Raven Programs
+### Building and running
 
-The extension doesn't include a built-in runner, but you can:
+Raven is compiled, so there is no bare-file run mode. The extension's
+**Run Raven File** command (the play button in the editor title bar, or the
+`.rv` context menu) compiles the current file with `raven build` and runs
+the produced native binary in an integrated terminal. The current editor is
+saved first, so the build always sees the latest buffer.
 
-1. **Open terminal**: `Ctrl+`` `
-2. **Run program**: `raven filename.rv`
-3. **Start REPL**: `raven`
+From a terminal you can do the same by hand:
 
-### Debugging
-
-Currently, Raven doesn't have a debugger, but you can:
-
-1. **Add print statements**: `print("Debug: ", variable);`
-2. **Use REPL**: Test code interactively
-3. **Check syntax**: `raven filename.rv -c`
-
-## Configuration
-
-### Settings
-
-You can customize the extension in VS Code settings:
-
-```json
-{
-  "raven.language.enabled": true,
-  "raven.snippets.enabled": true,
-  "raven.highlighting.enabled": true
-}
+```bash
+# Compile a single file and run the binary
+raven build hello.rv -o hello
+./hello
 ```
 
-### Keybindings
+For anything past a single file, use the package manager:
 
-Add custom keybindings in `keybindings.json`:
-
-```json
-[
-  {
-    "key": "ctrl+f5",
-    "command": "workbench.action.terminal.sendSequence",
-    "args": {
-      "text": "raven ${file}\n"
-    },
-    "when": "resourceExtname == '.rv'"
-  }
-]
+```bash
+rvpm new my_app
+cd my_app
+rvpm run          # builds and runs src/main.rv
 ```
 
 ## Troubleshooting
 
-### Common Issues
-
 **Extension not working**
-- Reload VS Code: `Ctrl+Shift+P` → "Developer: Reload Window"
-- Check if `.rv` files show "Raven" in status bar
-- Verify extension is enabled in Extensions panel
+
+- Reload VS Code: `Ctrl+Shift+P`, then "Developer: Reload Window".
+- Check that `.rv` files show "Raven" in the status bar.
+- Verify the extension is enabled in the Extensions panel.
 
 **Syntax highlighting not working**
-- Make sure file has `.rv` extension
-- Check if language mode is set to "Raven"
-- Try reopening the file
 
-**Snippets not working**
-- Type the shortcut and press Tab
-- Make sure snippets are enabled in settings
-- Check if there are conflicts with other extensions
+- Make sure the file has a `.rv` extension.
+- Check that the language mode is set to "Raven".
+- Try reopening the file.
 
-### Getting Help
+**Build command fails**
 
-- **GitHub Issues**: [Report bugs](https://github.com/martian56/raven/issues)
-- **VS Code Marketplace**: [Extension page](https://marketplace.visualstudio.com/items?itemName=martian56.raven-language)
-- **Documentation**: This site
+- Confirm `raven` is on your `PATH` (`raven --version`).
+- Compiling needs a C linker: the MSVC build tools on Windows, or
+  `cc`/`clang` on Linux.
 
 ## Development
 
-### Building the Extension
-
-If you want to modify the extension:
+The extension source lives in the `raven-vscode/` directory of the
+repository.
 
 ```bash
-# Clone the repository
 git clone https://github.com/martian56/raven.git
-cd raven/raven-vscode-extension
+cd raven/raven-vscode
 
-# Install dependencies
+# Install dependencies and compile the TypeScript
 npm install
+npm run compile
 
-# Build
-npm run build
-
-# Package
+# Package a .vsix
 vsce package
 ```
 
 ### Contributing
 
-1. **Fork the repository**
-2. **Make changes** to the extension
-3. **Test thoroughly**
-4. **Submit pull request**
-
-## Future Features
-
-Planned improvements:
-- **Language Server Protocol (LSP)** - Full IntelliSense
-- **Debugger support** - Step-through debugging
-- **Error highlighting** - Real-time error detection
-- **Code formatting** - Auto-formatting
-- **Go to definition** - Jump to function definitions
-- **Hover documentation** - Function documentation on hover
+1. Fork the repository.
+2. Make your changes in `raven-vscode/`.
+3. Test in an Extension Development Host (`F5` in VS Code).
+4. Open a pull request.
 
 ---
 
-**Next**: [GitHub Repository](https://github.com/martian56/raven) - Source code and issues
-
+**Next**: [GitHub Repository](https://github.com/martian56/raven) for source code and issues.
