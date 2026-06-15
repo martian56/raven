@@ -21,6 +21,19 @@ use crate::span::Span;
 use super::bindings::{Binding, DeclId, ResolutionMap};
 use super::scope::{ScopeKind, ScopeStack};
 
+/// Insert a parameter binding, rejecting a name that already appears in the
+/// same parameter list (which would otherwise silently shadow the earlier one,
+/// so reads selected the last). A repeated `_` is allowed: it never binds a
+/// usable name.
+fn insert_param(scope: &mut ScopeStack, name: &str, span: Span) -> Result<(), RavenError> {
+    if name == "_" {
+        scope.insert_shadowing(name, Binding::Param(span.clone()), span);
+        Ok(())
+    } else {
+        scope.insert(name, Binding::Param(span.clone()), span)
+    }
+}
+
 /// Walk every body in `file`, recording bindings in `map`.
 pub fn walk_file(
     file: &File,
@@ -44,7 +57,7 @@ fn walk_decl(
             scope.push(ScopeKind::Function);
             push_generics(scope, &f.generics, &decl.span)?;
             for p in &f.params {
-                scope.insert_shadowing(&p.name, Binding::Param(p.span.clone()), p.span.clone());
+                insert_param(scope, &p.name, p.span.clone())?;
                 walk_type(&p.ty, scope, map)?;
             }
             if let Some(r) = &f.ret {
@@ -124,7 +137,7 @@ fn walk_trait(
             if p.name == "self" {
                 scope.insert_shadowing("self", Binding::SelfValue, p.span.clone());
             } else {
-                scope.insert_shadowing(&p.name, Binding::Param(p.span.clone()), p.span.clone());
+                insert_param(scope, &p.name, p.span.clone())?;
                 walk_type(&p.ty, scope, map)?;
             }
         }
@@ -184,7 +197,7 @@ fn walk_impl(
             if p.name == "self" {
                 scope.insert_shadowing("self", Binding::SelfValue, p.span.clone());
             } else {
-                scope.insert_shadowing(&p.name, Binding::Param(p.span.clone()), p.span.clone());
+                insert_param(scope, &p.name, p.span.clone())?;
                 walk_type(&p.ty, scope, map)?;
             }
         }
@@ -510,7 +523,7 @@ fn walk_expr(
         } => {
             scope.push(ScopeKind::Function);
             for p in params {
-                scope.insert_shadowing(&p.name, Binding::Param(p.span.clone()), p.span.clone());
+                insert_param(scope, &p.name, p.span.clone())?;
                 if let Some(t) = &p.ty {
                     walk_type(t, scope, map)?;
                 }

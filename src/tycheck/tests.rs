@@ -712,6 +712,80 @@ fn try_on_option_in_non_option_fn_is_error() {
 }
 
 #[test]
+fn break_and_continue_outside_a_loop_are_rejected() {
+    assert!(check("fun f() { break }\n").is_err(), "break outside a loop");
+    assert!(
+        check("fun f() { continue }\n").is_err(),
+        "continue outside a loop"
+    );
+    // A loop does not extend into a nested lambda: a break inside the lambda is
+    // outside any loop.
+    assert!(
+        check("fun f() { loop { let g = fun() -> Unit { break } } }\n").is_err(),
+        "break inside a lambda body is outside the enclosing loop"
+    );
+}
+
+#[test]
+fn break_and_continue_inside_a_loop_are_ok() {
+    check("fun f() { loop { break } }\n").expect("break in a loop");
+    check("fun f() {\n    let i = 0\n    while i < 3 {\n        i = i + 1\n        continue\n    }\n}\n")
+        .expect("continue in a while");
+}
+
+#[test]
+fn break_with_a_value_outside_a_value_loop_is_rejected() {
+    assert!(
+        check("fun f() { while true { break 5 } }\n").is_err(),
+        "break with a value is only valid in a `loop`"
+    );
+}
+
+#[test]
+fn duplicate_enum_variant_is_rejected() {
+    assert!(check("enum E { A, A }\nfun main() {}\n").is_err());
+}
+
+#[test]
+fn duplicate_method_in_impl_is_rejected() {
+    assert!(
+        check("struct S {}\nimpl S {\n    fun m(self) -> Int = 1\n    fun m(self) -> Int = 2\n}\nfun main() {}\n")
+            .is_err()
+    );
+}
+
+#[test]
+fn duplicate_parameter_name_is_rejected() {
+    assert!(check("fun f(x: Int, x: Int) -> Int = x\nfun main() {}\n").is_err());
+}
+
+#[test]
+fn constructor_pattern_on_a_non_enum_is_rejected() {
+    let err = check("fun f(n: Int) -> Int {\n    return match n {\n        Nope(x) -> x,\n        _ -> 0,\n    }\n}\nfun main() {}\n")
+        .unwrap_err();
+    match err {
+        RavenError::Type(b, _, _) => match *b {
+            TypeError::Custom(m) => assert!(m.contains("not a constructor"), "got: {}", m),
+            other => panic!("expected Custom, got {:?}", other),
+        },
+        other => panic!("expected TypeError, got {:?}", other),
+    }
+}
+
+#[test]
+fn struct_variant_pattern_is_rejected_not_crashed() {
+    // A named-field variant matched with `{ ... }` is rejected with a
+    // diagnostic instead of reaching codegen and crashing Cranelift (#545).
+    let err = check("enum E {\n    P(x: Int, y: Int),\n    Z,\n}\nfun f(e: E) -> Int {\n    return match e {\n        P { x, y } -> x + y,\n        Z -> 0,\n    }\n}\nfun main() {}\n")
+        .unwrap_err();
+    assert!(
+        matches!(err, RavenError::Type(_, _, _)),
+        "expected a type error, got {:?}",
+        err
+    );
+}
+
+#[test]
 fn ty_display_does_not_panic() {
     // Sanity check that exotic Ty values render.
     let t = Ty::List(Box::new(Ty::Option(Box::new(Ty::Int))));

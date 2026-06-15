@@ -307,6 +307,12 @@ struct Checker<'a, 'b> {
     /// the whole shared map, so a later body never tries to resolve an earlier
     /// body's variable against its own (foreign) inference context.
     recorded: Vec<UseKey>,
+    /// Stack of enclosing loops, one entry per `loop`/`while`/`for` currently
+    /// being checked; `true` for a value-producing `loop`, `false` for
+    /// `while`/`for`. Empty means `break`/`continue` here is outside any loop.
+    /// Reset to empty when checking a lambda body, since a loop does not extend
+    /// across a nested function.
+    loop_kinds: Vec<bool>,
 }
 
 /// Keys used by the locals map. Mirrors the resolver's `Binding`
@@ -371,6 +377,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             errors: Vec::new(),
             const_locals: std::collections::HashSet::new(),
             recorded: Vec::new(),
+            loop_kinds: Vec::new(),
         }
     }
 
@@ -838,11 +845,35 @@ impl<'a, 'b> Checker<'a, 'b> {
                 self.unify_recover(&ret, &actual, &stmt.span);
             }
             StmtKind::Break(e) => {
+                match self.loop_kinds.last() {
+                    None => self.errors.push(RavenError::ty(
+                        TypeError::Custom("`break` is only valid inside a loop".to_string()),
+                        stmt.span.clone(),
+                    )),
+                    // A value carried by `break` is only meaningful in a `loop`,
+                    // which yields it; a `while`/`for` produces no value, so the
+                    // operand would be silently dropped by lowering.
+                    Some(false) if e.is_some() => self.errors.push(RavenError::ty(
+                        TypeError::Custom(
+                            "`break` with a value is only valid inside a `loop`, not a `while` or `for`"
+                                .to_string(),
+                        ),
+                        stmt.span.clone(),
+                    )),
+                    _ => {}
+                }
                 if let Some(expr) = e {
                     self.check_expr_recover(expr);
                 }
             }
-            StmtKind::Continue => {}
+            StmtKind::Continue => {
+                if self.loop_kinds.is_empty() {
+                    self.errors.push(RavenError::ty(
+                        TypeError::Custom("`continue` is only valid inside a loop".to_string()),
+                        stmt.span.clone(),
+                    ));
+                }
+            }
             StmtKind::Defer(e) => {
                 self.check_expr_recover(e);
             }
@@ -1031,13 +1062,19 @@ impl<'a, 'b> Checker<'a, 'b> {
             } => self.check_if(cond, then_branch, else_branch.as_deref(), &expr.span),
             ExprKind::Match { scrutinee, arms } => self.check_match(scrutinee, arms, &expr.span),
             ExprKind::Loop(b) => {
-                self.check_block(b)?;
+                self.loop_kinds.push(true);
+                let r = self.check_block(b);
+                self.loop_kinds.pop();
+                r?;
                 Ok(Ty::Unit)
             }
             ExprKind::While { cond, body } => {
                 let c = self.check_expr(cond)?;
                 self.unify(&Ty::Bool, &c, &cond.span)?;
-                self.check_block(body)?;
+                self.loop_kinds.push(false);
+                let r = self.check_block(body);
+                self.loop_kinds.pop();
+                r?;
                 Ok(Ty::Unit)
             }
             ExprKind::For {
@@ -1090,7 +1127,10 @@ impl<'a, 'b> Checker<'a, 'b> {
                 // method resolution (used by the iterator-driven path).
                 self.record(&pat.span, elem.clone());
                 pattern::bind(pat, &elem, self.env, &mut self.locals)?;
-                self.check_block(body)?;
+                self.loop_kinds.push(false);
+                let r = self.check_block(body);
+                self.loop_kinds.pop();
+                r?;
                 Ok(Ty::Unit)
             }
             ExprKind::Lambda {
@@ -3110,10 +3150,16 @@ impl<'a, 'b> Checker<'a, 'b> {
             Some(t) => Some(self.resolve_ast_ty(t)?),
             None => None,
         };
+        // A lambda is its own function: an enclosing loop does not extend into
+        // it, so `break`/`continue` in the body are outside any loop. Check the
+        // body with a fresh loop stack, then restore the caller's.
+        let saved_loops = std::mem::take(&mut self.loop_kinds);
         let body_ty = match body {
-            LambdaBody::Block(b) => self.check_block(b)?,
-            LambdaBody::Expr(e) => self.check_expr(e)?,
+            LambdaBody::Block(b) => self.check_block(b),
+            LambdaBody::Expr(e) => self.check_expr(e),
         };
+        self.loop_kinds = saved_loops;
+        let body_ty = body_ty?;
         let final_ret = match declared_ret {
             Some(d) => {
                 self.unify(

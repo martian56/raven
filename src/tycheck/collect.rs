@@ -480,6 +480,12 @@ fn fill_enum(
                 VariantPayloadSig::Struct(out)
             }
         };
+        if variants.iter().any(|x: &VariantSig| x.name == v.name) {
+            return Err(RavenError::ty(
+                TypeError::Custom(format!("duplicate enum variant `{}`", v.name)),
+                v.span.clone(),
+            ));
+        }
         variants.push(VariantSig {
             name: v.name.clone(),
             payload,
@@ -522,6 +528,12 @@ fn fill_trait(
         push_generics_into_scope(&mut scope, &m_generics);
         let sig = collect_fn_sig(member, resolved, env, Some(&trait_self), &scope, m_generics)?;
         scope.pop();
+        if methods.contains_key(&member.name) {
+            return Err(RavenError::ty(
+                TypeError::Custom(format!("duplicate method `{}` in this trait", member.name)),
+                member.span.clone(),
+            ));
+        }
         method_order.push(member.name.clone());
         methods.insert(member.name.clone(), sig);
     }
@@ -610,6 +622,14 @@ fn fill_impl(i: &Impl, resolved: &ResolvedFile<'_>, env: &mut TypeEnv) -> Result
         push_generics_into_scope(&mut scope, &m_generics);
         let sig = collect_fn_sig(f, resolved, env, Some(&self_ty), &scope, m_generics)?;
         scope.pop();
+        // Two methods of the same name in one impl mangle to the same symbol
+        // and collide at the linker; reject the duplicate here instead.
+        if methods.contains_key(&f.name) {
+            return Err(RavenError::ty(
+                TypeError::Custom(format!("duplicate method `{}` in this impl block", f.name)),
+                f.span.clone(),
+            ));
+        }
         methods.insert(f.name.clone(), sig);
     }
     env.impls.push(ImplSig {
