@@ -726,7 +726,10 @@ pub extern "C" fn raven_waitgroup_new() -> i64 {
 pub extern "C" fn raven_waitgroup_add(id: i64, delta: i64) {
     let woken = with_sched(|sched| match sched.wait_groups.get_mut(&id) {
         Some(wg) => {
-            wg.count += delta;
+            // Saturate at zero: a `done` past zero must not drive the count
+            // negative, or a later `add` would bring it back to zero and let a
+            // waiter that should still block return early.
+            wg.count = (wg.count + delta).max(0);
             if wg.count <= 0 {
                 std::mem::take(&mut wg.waiters)
             } else {

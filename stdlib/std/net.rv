@@ -73,6 +73,11 @@ impl TcpListener {
         }
         return Ok(TcpStream { id: id })
     }
+
+    // Close the listener, releasing the bound port so it can be reused.
+    fun close(self) {
+        raven_net_close(self.id)
+    }
 }
 
 impl TcpStream {

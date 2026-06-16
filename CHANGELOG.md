@@ -2,6 +2,17 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.101] - 2026-06-15
+
+Continuing the codex-review fix batch (one patch per issue).
+
+### Fixed
+
+- `std/fs` write/append now write the raw bytes of a Raven String, so binary or non-UTF-8 content is no longer rejected (#561).
+- The HTTP client keeps the raw response body bytes instead of a lossily UTF-8-decoded string, so a binary or non-UTF-8 response is not corrupted (#562).
+- `WaitGroup` saturates its counter at zero, so a `done` past zero cannot drive it negative and let a later `wait` return early (#563).
+- `std/http` `Server` releases the listening socket after a graceful shutdown so the port is freed (#564); `parse_query` percent-decodes keys/values and turns `+` into a space (#565); keep-alive carries bytes read past one request's body so a pipelined request is not lost (#566); a non-numeric `Content-Length` is answered with 400 rather than treated as an empty body (#567).
+
 ## [2.18.94] - 2026-06-15
 
 A batch of fixes from a full-codebase review (codex). The version is bumped one
