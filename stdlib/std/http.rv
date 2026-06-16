@@ -15,6 +15,7 @@ import std/collections
 import std/json { JsonValue, ToJson, FromJson, stringify, parse, decode }
 import std/fs { read }
 import std/sync { mutex, wait_group, Mutex }
+import std/encoding { url_decode }
 
 struct HttpResponse {
     status_code: Int,
@@ -472,6 +473,9 @@ impl Server {
                     }
                 }
                 inflight.wait()
+                // Release the listening socket so the port is free after a
+                // graceful shutdown returns, rather than staying bound.
+                socket.close()
             }
             Err(e) -> print("http: cannot bind ".concat(addr).concat(": ").concat(e.message()))
         }
@@ -494,9 +498,12 @@ fun serve_connection(server: Server, stream: TcpStream) {
     }
     let open = true
     let served = 0
+    let carry = ""
     while open {
-        match read_request(stream) {
-            Ok(req) -> {
+        match read_request(stream, carry) {
+            Ok(parsed) -> {
+                carry = parsed.rest
+                let req = parsed.request
                 let resp = dispatch(server.routes, req)
                 let keep = should_keep_alive(req)
                 if server.is_stopping() {
@@ -617,8 +624,17 @@ fun path_segments(path: String) -> List<String> {
 
 // Read one HTTP request off `stream`: the header block up to the first blank
 // line, then the body up to the request's Content-Length.
-fun read_request(stream: TcpStream) -> Result<Request, Error> {
-    let buf = ""
+// One parsed request plus any bytes read past its body, which belong to the
+// next (pipelined) request on a kept-alive connection.
+struct ReadResult {
+    request: Request,
+    rest: String,
+}
+
+// Parse one request, beginning from `initial` (bytes carried over from a prior
+// request on the same connection) and reading more from `stream` as needed.
+fun read_request(stream: TcpStream, initial: String) -> Result<ReadResult, Error> {
+    let buf = initial
     let split = buf.index_of("\r\n\r\n")
     while split < 0 {
         let chunk = stream.read(4096)?
@@ -666,7 +682,11 @@ fun read_request(stream: TcpStream) -> Result<Request, Error> {
             Some(n) -> {
                 want = n
             }
-            None -> {}
+            // A non-numeric Content-Length is a malformed request; answer 400
+            // rather than silently treating the body as empty.
+            None -> {
+                return Err(error_kind("http", "invalid Content-Length"))
+            }
         }
     }
     // Reject a negative or oversized declared body before reading it, so a
@@ -686,6 +706,11 @@ fun read_request(stream: TcpStream) -> Result<Request, Error> {
         }
         body = body.concat(chunk)
     }
+    // Keep exactly `want` bytes as this request's body; anything already read
+    // past it is the start of the next pipelined request, carried over so it is
+    // not lost when the keep-alive loop reads again.
+    let actual_body = body.substring(0, want)
+    let rest = body.substring(want, body.length())
 
     let path = target
     let query: Map<String, String> = Map.new()
@@ -696,18 +721,22 @@ fun read_request(stream: TcpStream) -> Result<Request, Error> {
     }
 
     let params: Map<String, String> = Map.new()
-    return Ok(Request {
-        method: method,
-        path: path,
-        version: version,
-        headers: headers,
-        params: params,
-        query: query,
-        body: body,
+    return Ok(ReadResult {
+        request: Request {
+            method: method,
+            path: path,
+            version: version,
+            headers: headers,
+            params: params,
+            query: query,
+            body: actual_body,
+        },
+        rest: rest,
     })
 }
 
-// Decode `a=1&b=2` query-string pairs into `out`.
+// Decode `a=1&b=2` query-string pairs into `out`, percent-decoding each key and
+// value and turning `+` into a space (the form-urlencoded convention).
 fun parse_query(qs: String, out: Map<String, String>) {
     let pairs = qs.split("&")
     let i = 0
@@ -716,13 +745,19 @@ fun parse_query(qs: String, out: Map<String, String>) {
         if pair.length() > 0 {
             let eq = pair.index_of("=")
             if eq >= 0 {
-                out.set(pair.substring(0, eq), pair.substring(eq + 1, pair.length()))
+                let k = decode_query_part(pair.substring(0, eq))
+                let v = decode_query_part(pair.substring(eq + 1, pair.length()))
+                out.set(k, v)
             } else {
-                out.set(pair, "")
+                out.set(decode_query_part(pair), "")
             }
         }
         i += 1
     }
+}
+
+fun decode_query_part(s: String) -> String {
+    return url_decode(s.replace("+", " "))
 }
 
 // Write `resp` to `stream` as an HTTP/1.1 response, framing it with

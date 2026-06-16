@@ -212,7 +212,10 @@ struct HttpResp {
     status_text: std::string::String,
     // Response headers as `Key: Value` lines joined by `\n`.
     headers: std::string::String,
-    body: std::string::String,
+    // The raw response body bytes. A Raven String is a byte buffer, so the body
+    // is kept as raw bytes rather than a lossily UTF-8-decoded `String`, which
+    // would corrupt a binary or non-UTF-8 response.
+    body: Vec<u8>,
 }
 
 /// The process-wide HTTP response registry keyed by an incrementing id.
@@ -800,11 +803,22 @@ pub extern "C" fn raven_fs_write(
     path: *const object::String,
     contents: *const object::String,
 ) -> bool {
-    let result = crate::gc::blocking(|| match (env_name(path), env_name(contents)) {
-        (Some(p), Some(c)) => std::fs::write(p, c),
-        _ => Err(io::Error::new(
+    // The contents are written as raw bytes: a Raven String is a byte buffer
+    // that may hold arbitrary (non-UTF-8) data, for example binary read back
+    // from another file. Only the path must be valid UTF-8.
+    let ptr = object::raven_string_bytes(contents);
+    let len = object::raven_string_len(contents) as usize;
+    let bytes: &[u8] = if ptr.is_null() || len == 0 {
+        &[]
+    } else {
+        // SAFETY: a Raven String holds `len` initialized bytes.
+        unsafe { slice::from_raw_parts(ptr, len) }
+    };
+    let result = crate::gc::blocking(|| match env_name(path) {
+        Some(p) => std::fs::write(p, bytes),
+        None => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "path or contents is not valid UTF-8",
+            "path is not valid UTF-8",
         )),
     });
     fs_record(result).is_some()
@@ -820,15 +834,25 @@ pub extern "C" fn raven_fs_append(
     path: *const object::String,
     contents: *const object::String,
 ) -> bool {
-    let result = crate::gc::blocking(|| match (env_name(path), env_name(contents)) {
-        (Some(p), Some(c)) => std::fs::OpenOptions::new()
+    // Append raw bytes for the same reason as `raven_fs_write`: a Raven String
+    // may hold non-UTF-8 data. Only the path must be valid UTF-8.
+    let ptr = object::raven_string_bytes(contents);
+    let len = object::raven_string_len(contents) as usize;
+    let bytes: &[u8] = if ptr.is_null() || len == 0 {
+        &[]
+    } else {
+        // SAFETY: a Raven String holds `len` initialized bytes.
+        unsafe { slice::from_raw_parts(ptr, len) }
+    };
+    let result = crate::gc::blocking(|| match env_name(path) {
+        Some(p) => std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(p)
-            .and_then(|mut f| f.write_all(c.as_bytes())),
-        _ => Err(io::Error::new(
+            .and_then(|mut f| f.write_all(bytes)),
+        None => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "path or contents is not valid UTF-8",
+            "path is not valid UTF-8",
         )),
     });
     fs_record(result).is_some()
@@ -1455,7 +1479,10 @@ fn http_capture(resp: ureq::Response) -> HttpResp {
         }
     }
     let headers = header_lines.join("\n");
-    let body = resp.into_string().unwrap_or_default();
+    // Read the body as raw bytes (not `into_string`, which lossily replaces a
+    // non-UTF-8 byte with U+FFFD and corrupts a binary response).
+    let mut body = Vec::new();
+    resp.into_reader().read_to_end(&mut body).ok();
     HttpResp {
         status: status as i64,
         status_text,
@@ -1575,7 +1602,8 @@ pub extern "C" fn raven_http_status_text(id: i64) -> *mut object::String {
 #[no_mangle]
 pub extern "C" fn raven_http_body(id: i64) -> *mut object::String {
     let registry = http_registry().lock().unwrap();
-    let body = registry.get(&id).map(|r| r.body.as_str()).unwrap_or("");
+    let empty: &[u8] = &[];
+    let body: &[u8] = registry.get(&id).map(|r| r.body.as_slice()).unwrap_or(empty);
     object::raven_string_from_bytes(body.as_ptr(), body.len())
 }
 
