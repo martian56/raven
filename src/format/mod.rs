@@ -589,9 +589,9 @@ impl Printer<'_> {
                 }
             }
             ImportSource::Quoted(s) => {
-                text.push('"');
-                text.push_str(s);
-                text.push('"');
+                // Re-escape the path body so a `"` or `\` in it stays valid (and
+                // round-trips), rather than emitting it raw between the quotes.
+                text.push_str(&render_string_lit(s));
             }
         }
         if let Some(alias) = &im.alias {
@@ -888,20 +888,28 @@ impl Printer<'_> {
                     s.push_str(" {}");
                     return s;
                 }
-                let multiline = self.spans_multiple_lines(e.span.start, e.span.end);
+                let multiline = self.spans_multiple_lines(e.span.start, e.span.end)
+                    || self.pending_comment_within(e.span.start, e.span.end);
                 if multiline {
                     s.push_str(" {\n");
                     for f in fields {
+                        self.weave_own_line_comments(&mut s, f.span.start, base + 1);
                         for _ in 0..base + 1 {
                             s.push_str(&self.indent_unit);
                         }
                         let value = self.field_value(f);
                         if is_field_shorthand(&f.name, &f.value) {
-                            let _ = writeln!(s, "{},", f.name);
+                            let _ = write!(s, "{},", f.name);
                         } else {
-                            let _ = writeln!(s, "{}: {},", f.name, value);
+                            let _ = write!(s, "{}: {},", f.name, value);
                         }
+                        if let Some(t) = self.take_trailing_comment(self.line_of(f.span.end)) {
+                            s.push(' ');
+                            s.push_str(&t);
+                        }
+                        s.push('\n');
                     }
+                    self.weave_own_line_comments(&mut s, e.span.end, base + 1);
                     for _ in 0..base {
                         s.push_str(&self.indent_unit);
                     }
@@ -952,6 +960,9 @@ impl Printer<'_> {
             ExprKind::MapLit(pairs) => {
                 if pairs.is_empty() {
                     return "[:]".to_string();
+                }
+                if self.pending_comment_within(e.span.start, e.span.end) {
+                    return self.map_multiline(pairs, e.span.end, base);
                 }
                 let parts: Vec<String> = pairs
                     .iter()
@@ -1034,7 +1045,9 @@ impl Printer<'_> {
                 then_branch,
                 else_branch,
             } => self.render_if(cond, then_branch, else_branch, base),
-            ExprKind::Match { scrutinee, arms } => self.render_match(scrutinee, arms, base),
+            ExprKind::Match { scrutinee, arms } => {
+                self.render_match(scrutinee, arms, e.span.end, base)
+            }
             ExprKind::Loop(b) => {
                 let body = self.render_block(b, base);
                 format!("loop {}", body)
@@ -1133,9 +1146,48 @@ impl Printer<'_> {
         s
     }
 
+    /// Render a map literal multi-line, weaving interior comments at their
+    /// source positions. `close_byte` is the position of the closing `]`.
+    fn map_multiline(&mut self, pairs: &[(Expr, Expr)], close_byte: usize, base: usize) -> String {
+        let mut s = String::from("[\n");
+        for (k, v) in pairs {
+            self.weave_own_line_comments(&mut s, k.span.start, base + 1);
+            self.push_indent(&mut s, base + 1);
+            let kk = self.expr_at(k, base + 1);
+            let vv = self.expr_at(v, base + 1);
+            let _ = write!(s, "{}: {},", kk, vv);
+            if let Some(t) = self.take_trailing_comment(self.line_of(v.span.end)) {
+                s.push(' ');
+                s.push_str(&t);
+            }
+            s.push('\n');
+        }
+        self.weave_own_line_comments(&mut s, close_byte, base + 1);
+        self.push_indent(&mut s, base);
+        s.push(']');
+        s
+    }
+
     fn push_indent(&self, s: &mut String, level: usize) {
         for _ in 0..level {
             s.push_str(&self.indent_unit);
+        }
+    }
+
+    /// Append every pending own-line comment that begins before `byte` into
+    /// `s`, each on its own line indented at `level`, advancing the cursor.
+    /// Used to weave interior comments into struct literals, map literals, and
+    /// match arms so they are not dropped.
+    fn weave_own_line_comments(&mut self, s: &mut String, byte: usize, level: usize) {
+        while let Some(c) = self.comments.get(self.next_comment) {
+            if c.start >= byte || !c.own_line {
+                break;
+            }
+            let text = c.text.clone();
+            self.push_indent(s, level);
+            s.push_str(&text);
+            s.push('\n');
+            self.next_comment += 1;
         }
     }
 
@@ -1218,28 +1270,38 @@ impl Printer<'_> {
         s
     }
 
-    fn render_match(&mut self, scrutinee: &Expr, arms: &[MatchArm], base: usize) -> String {
+    fn render_match(
+        &mut self,
+        scrutinee: &Expr,
+        arms: &[MatchArm],
+        end: usize,
+        base: usize,
+    ) -> String {
         let scrut = self.expr_at(scrutinee, base);
         let mut s = format!("match {} {{\n", scrut);
         for arm in arms {
-            let pat = render_pattern(&arm.pattern);
-            let guard = arm.guard.as_ref().map(|g| self.expr_at(g, base + 1));
-            let body = self.expr_at(&arm.body, base + 1);
-            for _ in 0..base + 1 {
-                s.push_str(&self.indent_unit);
-            }
-            s.push_str(&pat);
-            if let Some(g) = guard {
+            // Own-line comments that precede this arm.
+            self.weave_own_line_comments(&mut s, arm.span.start, base + 1);
+            self.push_indent(&mut s, base + 1);
+            s.push_str(&render_pattern(&arm.pattern));
+            if let Some(g) = arm.guard.as_ref() {
+                let g = self.expr_at(g, base + 1);
                 s.push_str(" if ");
                 s.push_str(&g);
             }
             s.push_str(" -> ");
+            let body = self.expr_at(&arm.body, base + 1);
             s.push_str(&body);
-            s.push_str(",\n");
+            s.push(',');
+            if let Some(t) = self.take_trailing_comment(self.line_of(arm.span.end)) {
+                s.push(' ');
+                s.push_str(&t);
+            }
+            s.push('\n');
         }
-        for _ in 0..base {
-            s.push_str(&self.indent_unit);
-        }
+        // Own-line comments between the last arm and the closing brace.
+        self.weave_own_line_comments(&mut s, end, base + 1);
+        self.push_indent(&mut s, base);
         s.push('}');
         s
     }

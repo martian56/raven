@@ -108,6 +108,36 @@ fn skip_string(bytes: &[u8], start: usize) -> usize {
             b'\\' => j += 2,
             b'"' => return j + 1,
             b'\n' => return j,
+            // A `${ ... }` interpolation: skip the balanced braces (respecting
+            // strings and chars nested in the expression) so an inner `"` does
+            // not terminate the outer literal and throw off comment scanning.
+            b'$' if j + 1 < n && bytes[j + 1] == b'{' => {
+                j = skip_interpolation(bytes, j + 1);
+            }
+            _ => j += 1,
+        }
+    }
+    j
+}
+
+/// Skip a `${ ... }` interpolation body. `brace` is the index of the opening
+/// `{`; returns the index just past the matching `}`.
+fn skip_interpolation(bytes: &[u8], brace: usize) -> usize {
+    let n = bytes.len();
+    let mut j = brace + 1;
+    let mut depth = 1u32;
+    while j < n && depth > 0 {
+        match bytes[j] {
+            b'{' => {
+                depth += 1;
+                j += 1;
+            }
+            b'}' => {
+                depth -= 1;
+                j += 1;
+            }
+            b'"' => j = skip_string(bytes, j),
+            b'\'' => j = skip_char(bytes, j),
             _ => j += 1,
         }
     }

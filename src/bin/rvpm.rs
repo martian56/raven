@@ -478,7 +478,10 @@ fn cmd_run(args: &[String]) -> ExitCode {
     let sep = args.iter().position(|a| a == "--");
     let rvpm_wants_help = match sep {
         Some(i) => args[..i].iter().any(|a| a == "--help" || a == "-h"),
-        None => args.first().map(|a| a == "--help" || a == "-h").unwrap_or(false),
+        None => args
+            .first()
+            .map(|a| a == "--help" || a == "-h")
+            .unwrap_or(false),
     };
     if rvpm_wants_help {
         println!("{}", run_usage());

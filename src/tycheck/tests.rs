@@ -713,7 +713,10 @@ fn try_on_option_in_non_option_fn_is_error() {
 
 #[test]
 fn break_and_continue_outside_a_loop_are_rejected() {
-    assert!(check("fun f() { break }\n").is_err(), "break outside a loop");
+    assert!(
+        check("fun f() { break }\n").is_err(),
+        "break outside a loop"
+    );
     assert!(
         check("fun f() { continue }\n").is_err(),
         "continue outside a loop"
@@ -790,7 +793,9 @@ fn duplicate_variant_arm_is_redundant() {
     let err = check("fun f(o: Option<Int>) -> Int {\n    return match o {\n        None -> 0,\n        None -> 1,\n        Some(n) -> n,\n    }\n}\nfun main() {}\n")
         .unwrap_err();
     match err {
-        RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::RedundantPattern), "got {:?}", b),
+        RavenError::Type(b, _, _) => {
+            assert!(matches!(*b, TypeError::RedundantPattern), "got {:?}", b)
+        }
         other => panic!("expected TypeError, got {:?}", other),
     }
 }
@@ -800,7 +805,9 @@ fn duplicate_literal_arm_is_redundant() {
     let err = check("fun f(n: Int) -> String {\n    return match n {\n        0 -> \"a\",\n        0 -> \"b\",\n        _ -> \"c\",\n    }\n}\nfun main() {}\n")
         .unwrap_err();
     match err {
-        RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::RedundantPattern), "got {:?}", b),
+        RavenError::Type(b, _, _) => {
+            assert!(matches!(*b, TypeError::RedundantPattern), "got {:?}", b)
+        }
         other => panic!("expected TypeError, got {:?}", other),
     }
 }

@@ -1603,7 +1603,10 @@ pub extern "C" fn raven_http_status_text(id: i64) -> *mut object::String {
 pub extern "C" fn raven_http_body(id: i64) -> *mut object::String {
     let registry = http_registry().lock().unwrap();
     let empty: &[u8] = &[];
-    let body: &[u8] = registry.get(&id).map(|r| r.body.as_slice()).unwrap_or(empty);
+    let body: &[u8] = registry
+        .get(&id)
+        .map(|r| r.body.as_slice())
+        .unwrap_or(empty);
     object::raven_string_from_bytes(body.as_ptr(), body.len())
 }
 
