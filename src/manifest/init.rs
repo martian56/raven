@@ -26,6 +26,8 @@ pub enum ProjectKind {
 pub enum InitError {
     /// An `rv.toml` already exists in the target directory.
     ManifestExists,
+    /// The package name is not a valid identifier.
+    InvalidName(String),
     /// A filesystem operation failed.
     Io(io::Error),
 }
@@ -36,6 +38,11 @@ impl std::fmt::Display for InitError {
             InitError::ManifestExists => {
                 write!(f, "rv.toml already exists; refusing to overwrite")
             }
+            InitError::InvalidName(name) => write!(
+                f,
+                "'{}' is not a valid package name; use only ASCII letters, digits, '-', and '_'",
+                name
+            ),
             InitError::Io(e) => write!(f, "{}", e),
         }
     }
@@ -98,6 +105,9 @@ pub fn gitignore_template() -> &'static str {
 /// without writing anything if `<dir>/rv.toml` already exists; an existing
 /// `.gitignore` or entry file is left untouched.
 pub fn init_project(dir: &Path, name: &str, kind: ProjectKind) -> Result<(), InitError> {
+    if !super::is_valid_package_name(name) {
+        return Err(InitError::InvalidName(name.to_string()));
+    }
     let manifest_path = dir.join("rv.toml");
     if manifest_path.exists() {
         return Err(InitError::ManifestExists);

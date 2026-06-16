@@ -26,6 +26,18 @@ pub const DEFAULT_EDITION: &str = "v2";
 /// The accepted `[package].edition` values.
 pub const ACCEPTED_EDITIONS: &[&str] = &["v2", "2026"];
 
+/// Whether `name` is a valid package name: a non-empty run of ASCII letters,
+/// digits, `-`, and `_` that does not start with `-`. The name is interpolated
+/// into scaffolded source and joined onto the output directory as a binary
+/// name, so a path separator or `..` must be rejected to prevent traversal.
+pub fn is_valid_package_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with('-')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
 /// The default `[fmt].indent_width` when the section or field is absent.
 pub const DEFAULT_INDENT_WIDTH: u32 = 4;
 
@@ -227,6 +239,13 @@ impl Manifest {
                 message: "must not be empty".to_string(),
             });
         }
+        if !is_valid_package_name(&name) {
+            return Err(ManifestError::InvalidValue {
+                section: "package".to_string(),
+                field: "name".to_string(),
+                message: "must contain only ASCII letters, digits, '-', and '_', and may not start with '-' (the name is used as a file and output binary name)".to_string(),
+            });
+        }
         let edition = match raw_pkg.edition {
             Some(e) => {
                 if !ACCEPTED_EDITIONS.contains(&e.as_str()) {
@@ -300,6 +319,25 @@ impl Manifest {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn package_name_validation() {
+        assert!(is_valid_package_name("raven-http"));
+        assert!(is_valid_package_name("my_lib2"));
+        // Path-traversal and separator forms are rejected.
+        assert!(!is_valid_package_name("../../../escaped"));
+        assert!(!is_valid_package_name("a/b"));
+        assert!(!is_valid_package_name(".."));
+        assert!(!is_valid_package_name("-leading"));
+        assert!(!is_valid_package_name(""));
+        assert!(!is_valid_package_name("has space"));
+    }
+
+    #[test]
+    fn manifest_rejects_a_traversal_name() {
+        let src = "[package]\nname = \"../../escaped\"\nversion = \"0.1.0\"\n";
+        assert!(Manifest::from_toml_str(src).is_err());
+    }
 
     #[test]
     fn full_manifest_parses() {
