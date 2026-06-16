@@ -417,6 +417,7 @@ pub(crate) fn describe_token(kind: &TokenKind) -> String {
     match kind {
         TokenKind::Identifier(s) => format!("identifier `{}`", s),
         TokenKind::IntLit(n) => format!("integer `{}`", n),
+        TokenKind::IntMinMagnitude => "integer `9223372036854775808`".to_string(),
         TokenKind::FloatLit(n) => format!("float `{}`", n),
         TokenKind::StringLit(_) => "string literal".to_string(),
         TokenKind::BlockStringLit(_) => "block string literal".to_string(),

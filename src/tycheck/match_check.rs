@@ -101,6 +101,27 @@ pub fn check(
         _ => false,
     };
 
+    // Redundancy: an arm whose head exactly repeats an earlier arm's can never
+    // match. A duplicate literal value, or a real variant named twice, is
+    // unreachable. (A `Float` literal carries no value here, so floats are not
+    // compared; a binding identifier matches everything and is handled by the
+    // catch-all check below; a range is `Other` and not compared.)
+    let mut seen: Vec<&PatternHead> = Vec::new();
+    for h in arms {
+        let compares = match h {
+            PatternHead::Literal(LiteralKind::Float) => false,
+            PatternHead::Literal(_) => true,
+            PatternHead::Ctor(name) => ctors.iter().any(|c| c == name),
+            _ => false,
+        };
+        if compares {
+            if seen.iter().any(|s| *s == h) {
+                return Err(RavenError::ty(TypeError::RedundantPattern, span.clone()));
+            }
+            seen.push(h);
+        }
+    }
+
     // Redundancy: a catch-all arm renders every arm after it unreachable. A
     // catch-all anywhere also makes the match exhaustive.
     if let Some(idx) = arms.iter().position(&is_catch_all) {

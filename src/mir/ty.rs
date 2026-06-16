@@ -134,11 +134,17 @@ impl MirType {
             MirType::Char => "Char".into(),
             MirType::Str => "Str".into(),
             MirType::Struct { name, args, .. } | MirType::Enum { name, args, .. } => {
+                // Escape underscores in the type name (double them) so the
+                // single `_` that separates the name from its type arguments is
+                // unambiguous. Without this, the generic `Box<Int>` and a struct
+                // literally named `Box_Int` both mangled to `Box_Int` and
+                // collided in the monomorphization cache.
+                let escaped = name.replace('_', "__");
                 if args.is_empty() {
-                    name.clone()
+                    escaped
                 } else {
                     let inner: Vec<String> = args.iter().map(|a| a.mangle()).collect();
-                    format!("{}_{}", name, inner.join("_"))
+                    format!("{}_{}", escaped, inner.join("_"))
                 }
             }
             MirType::Option(inner) => format!("Option_{}", inner.mangle()),

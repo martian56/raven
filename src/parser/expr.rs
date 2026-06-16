@@ -229,6 +229,18 @@ impl Parser {
         };
         if let Some(op) = op {
             self.advance();
+            // `-9223372036854775808` is i64::MIN: that magnitude only fits as
+            // the operand of a unary minus, so fold it here into the literal
+            // rather than negating a (nonexistent) positive value.
+            if matches!(op, UnaryOp::Neg) && matches!(self.peek_kind(), TokenKind::IntMinMagnitude)
+            {
+                let tok = self.advance();
+                let span = merge_spans(&start, &tok.span);
+                return Ok(Expr {
+                    kind: ExprKind::Int(i64::MIN),
+                    span,
+                });
+            }
             let operand = self.parse_unary()?;
             let span = merge_spans(&start, &operand.span);
             return Ok(Expr {
@@ -379,6 +391,18 @@ impl Parser {
                     kind: ExprKind::Int(n),
                     span: tok.span,
                 })
+            }
+            // The bare `9223372036854775808` magnitude reaches here only when it
+            // is not the operand of a unary `-` (which `parse_unary` folds into
+            // i64::MIN); as a positive literal it is out of range.
+            TokenKind::IntMinMagnitude => {
+                self.advance();
+                Err(RavenError::parse(
+                    ParseError::Custom(
+                        "integer literal 9223372036854775808 is out of range for Int (the maximum is 9223372036854775807); only -9223372036854775808 is valid".into(),
+                    ),
+                    tok.span,
+                ))
             }
             TokenKind::FloatLit(v) => {
                 self.advance();
