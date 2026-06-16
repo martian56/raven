@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.121] - 2026-06-16
+
+### Fixed
+
+- The garbage collector traces an enum value by its active variant rather than the union of every variant's pointer slots. An enum whose variants store a scalar (for example a `Float`) and a GC pointer (for example a `String`) in the same slot, such as a JSON value, previously had the scalar's bits followed as a pointer during a collection, corrupting the heap and crashing the program (a `SIGSEGV`, or a scheduler assertion under concurrency). The back end now registers a per-variant pointer mask and the collector selects it by the discriminant (#601).
+
 ## [2.18.120] - 2026-06-16
 
 Continuing the codex-review fix batch (one patch per issue).

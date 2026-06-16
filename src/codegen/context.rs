@@ -99,6 +99,12 @@ pub struct ModuleCx {
     /// `main` shim registers every descriptor with the collector before
     /// running the program so a struct is always traceable.
     descriptors: HashMap<String, StructDescriptor>,
+    /// Per-variant GC pointer masks for enum types, keyed by the enum's type id
+    /// and then by variant discriminant. An enum is traced by its active
+    /// variant's mask (selected at run time by the discriminant), not the union
+    /// of every variant, so a scalar payload sharing a slot with a pointer
+    /// payload in another variant is not mistaken for a pointer.
+    enum_variants: HashMap<u32, BTreeMap<u32, u64>>,
     /// Counter handing out the next struct descriptor id.
     next_type_id: u32,
     /// Emitted vtables keyed by `<concrete_type>$<trait>`. Each value is
@@ -154,6 +160,7 @@ impl ModuleCx {
             string_counter: 0,
             main_entry: None,
             descriptors: HashMap::new(),
+            enum_variants: HashMap::new(),
             next_type_id: 0,
             vtables: HashMap::new(),
             vtable_counter: 0,
@@ -373,6 +380,17 @@ impl ModuleCx {
         type_id
     }
 
+    /// Record the GC pointer mask of one enum variant under its enum type id, so
+    /// the entry shim can register it with the collector for discriminant-aware
+    /// tracing. Idempotent: the back end always passes the same mask for a given
+    /// `(type_id, variant)`.
+    pub fn record_enum_variant(&mut self, type_id: u32, variant: u32, mask: u64) {
+        self.enum_variants
+            .entry(type_id)
+            .or_default()
+            .insert(variant, mask);
+    }
+
     /// Borrow the underlying Cranelift module for low level operations.
     pub fn module(&mut self) -> &mut ObjectModule {
         &mut self.module
@@ -484,6 +502,10 @@ impl ModuleCx {
         // raven_struct_register(type_id: u32, ptr_mask: u64)
         sig = self.make_sig(&[i32t, i64t], &[]);
         self.declare_runtime(intrinsics::RUNTIME_STRUCT_REGISTER, &sig)?;
+
+        // raven_enum_register(type_id: u32, variant: u32, ptr_mask: u64)
+        sig = self.make_sig(&[i32t, i32t, i64t], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_ENUM_REGISTER, &sig)?;
 
         // raven_gc_enter_frame(roots: ptr, count: usize)
         sig = self.make_sig(&[ptr, ptr], &[]);
@@ -915,9 +937,19 @@ impl ModuleCx {
         // builder borrows the function, so the closure below only needs
         // the resolved references.
         let descriptors: Vec<StructDescriptor> = self.descriptors.values().copied().collect();
+        // Flatten the enum variant masks into (type_id, variant, mask) triples
+        // for the entry shim to register.
+        let enum_regs: Vec<(u32, u32, u64)> = self
+            .enum_variants
+            .iter()
+            .flat_map(|(&tid, variants)| variants.iter().map(move |(&v, &m)| (tid, v, m)))
+            .collect();
         let register_id = self.runtime_id(intrinsics::RUNTIME_STRUCT_REGISTER);
         let register_ref =
             register_id.map(|id| self.module.declare_func_in_func(id, &mut ctx.func));
+        let enum_register_id = self.runtime_id(intrinsics::RUNTIME_ENUM_REGISTER);
+        let enum_register_ref =
+            enum_register_id.map(|id| self.module.declare_func_in_func(id, &mut ctx.func));
         let type_register_id = self.runtime_id(intrinsics::RUNTIME_TYPE_REGISTER);
         let type_register_ref =
             type_register_id.map(|id| self.module.declare_func_in_func(id, &mut ctx.func));
@@ -985,6 +1017,16 @@ impl ModuleCx {
                     let id = builder.ins().iconst(types::I32, d.type_id as i64);
                     let mask = builder.ins().iconst(types::I64, d.ptr_mask as i64);
                     builder.ins().call(reg, &[id, mask]);
+                }
+            }
+            // Register each enum variant's own mask for discriminant-aware
+            // tracing, so a value is traced by its active variant, not the union.
+            if let Some(ereg) = enum_register_ref {
+                for &(tid, variant, mask) in &enum_regs {
+                    let id = builder.ins().iconst(types::I32, tid as i64);
+                    let v = builder.ins().iconst(types::I32, variant as i64);
+                    let m = builder.ins().iconst(types::I64, mask as i64);
+                    builder.ins().call(ereg, &[id, v, m]);
                 }
             }
             // Register runtime reflection metadata so a boxed value can
