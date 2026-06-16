@@ -557,6 +557,40 @@ fn struct_descriptor(type_id: u32) -> u64 {
         .unwrap_or(0)
 }
 
+/// Per-variant GC pointer descriptors for enum types, keyed by the enum's type
+/// id and then by the variant discriminant. Unlike a struct, an enum's pointer
+/// layout depends on the active variant: variant A may hold a `String` (a GC
+/// pointer) in a slot where variant B holds a `Float` (a scalar). A single
+/// per-type mask (the union) would trace the scalar's bits as a pointer, so the
+/// collector selects the mask by the value's discriminant instead. An enum's id
+/// appears only here, never in [`struct_descriptors`], so a present entry marks
+/// the value as an enum.
+fn enum_descriptors() -> &'static std::sync::RwLock<HashMap<u32, HashMap<u32, u64>>> {
+    static ENUM_DESCRIPTORS: std::sync::OnceLock<
+        std::sync::RwLock<HashMap<u32, HashMap<u32, u64>>>,
+    > = std::sync::OnceLock::new();
+    ENUM_DESCRIPTORS.get_or_init(|| std::sync::RwLock::new(HashMap::new()))
+}
+
+/// Register the GC pointer mask of one enum variant. `type_id` is the enum
+/// type's id (shared by every variant); `variant` is the discriminant; `mask`
+/// has bit `slot` set when that slot of this variant holds a GC pointer (slot 0
+/// is the discriminant and is never a pointer). The back end emits one call per
+/// constructed variant in the program entry point, before any value is built.
+///
+/// # Safety
+///
+/// Called only from the generated entry shim with back-end-computed arguments.
+#[no_mangle]
+pub extern "C" fn raven_enum_register(type_id: u32, variant: u32, mask: u64) {
+    enum_descriptors()
+        .write()
+        .unwrap()
+        .entry(type_id)
+        .or_default()
+        .insert(variant, mask);
+}
+
 /// Number of root slots currently registered. Test and diagnostic aid.
 #[cfg(test)]
 pub(crate) fn root_count() -> usize {
@@ -861,9 +895,24 @@ unsafe fn trace_object(object: *mut ObjectHeader, work: &mut Vec<*mut ObjectHead
             // SAFETY: tag confirms the struct layout. `len` is the field
             // count and `cap` is the per-type descriptor id.
             let (field_count, type_id) = unsafe { ((*object).len, (*object).cap) };
-            let mask = struct_descriptor(type_id);
+            let fields = (object as *const u8).wrapping_add(STRUCT_FIELDS_OFFSET);
+            // An enum's pointer layout depends on its active variant, so select
+            // the mask by the discriminant in slot 0; a plain struct uses its
+            // single per-type mask. Without this, a scalar payload (a `Float` in
+            // one variant) sharing a slot with a pointer payload (a `String` in
+            // another) would be traced as a pointer and corrupt the collector.
+            let mask = {
+                let enums = enum_descriptors().read().unwrap();
+                if let Some(variants) = enums.get(&type_id) {
+                    // SAFETY: an enum always has slot 0 (the discriminant).
+                    let disc = unsafe { *(fields as *const usize) } as u32;
+                    variants.get(&disc).copied().unwrap_or(0)
+                } else {
+                    drop(enums);
+                    struct_descriptor(type_id)
+                }
+            };
             if mask != 0 {
-                let fields = (object as *const u8).wrapping_add(STRUCT_FIELDS_OFFSET);
                 // The descriptor mask is 64 bits, so only the first 64 fields
                 // can be tracked. Cap the loop so a struct with more than 64
                 // fields does not shift `1u64 << i` past the word width (a panic
@@ -1604,6 +1653,68 @@ mod stress_tests {
                 assert_eq!(str_again, inner_str);
             }
             assert_marked(inner_str, 6, 0x10);
+            raven_gc_leave_frame();
+            raven_gc_collect();
+            assert_eq!(raven_gc_live_objects(), 0);
+        });
+    }
+
+    #[test]
+    fn enum_traces_by_active_variant_not_union() {
+        isolated(|| {
+            // Enum type 41: variant 0 (Text) holds a String pointer at slot 1;
+            // variant 1 (Num) holds a scalar Float at slot 1. The union of the
+            // two masks marks slot 1 as a pointer, so tracing a `Num` value by
+            // the union would follow its raw Float bits. Per-variant tracing,
+            // selected by the discriminant in slot 0, must not.
+            raven_enum_register(41, 0, 0b10); // Text: slot 1 is a GC pointer
+            raven_enum_register(41, 1, 0b00); // Num: slot 1 is a scalar
+
+            // A `Num` value: discriminant 1, slot 1 = 1.0's raw f64 bits (which,
+            // as an address, would fault if dereferenced).
+            let num = raven_struct_new(2, 41);
+            // SAFETY: two slots; write discriminant then payload.
+            unsafe {
+                let f = raven_struct_fields(num) as *mut u64;
+                f.write(1);
+                f.add(1).write(0x3ff0000000000000);
+            }
+
+            // A `Text` value: discriminant 0, slot 1 = a real String pointer.
+            let s = marked_string(6, 0x30);
+            let text = raven_struct_new(2, 41);
+            // SAFETY: two slots; write discriminant then the String pointer.
+            unsafe {
+                let f = raven_struct_fields(text) as *mut u64;
+                f.write(0);
+                f.add(1).write(s as u64);
+            }
+
+            let mut slot_a: *mut u8 = num as *mut u8;
+            let mut slot_b: *mut u8 = text as *mut u8;
+            let mut roots: [*mut *mut u8; 2] =
+                [&mut slot_a as *mut *mut u8, &mut slot_b as *mut *mut u8];
+            raven_gc_enter_frame(roots.as_mut_ptr() as *mut *mut u8, 2);
+
+            // num + text + the String. The Num's float payload is not an object.
+            assert_eq!(raven_gc_live_objects(), 3);
+            // Every churn collection traces both enums. Before the fix the Num's
+            // float bits were followed as a pointer and the collector crashed.
+            churn(20_000, 256);
+            assert_eq!(raven_gc_live_objects(), 3);
+            // SAFETY: the Num's scalar slot is untouched, the Text's String is
+            // intact and still marked.
+            unsafe {
+                let num_payload = (raven_struct_fields(num) as *const u64).add(1).read();
+                assert_eq!(
+                    num_payload, 0x3ff0000000000000,
+                    "Num float payload corrupted"
+                );
+                let s_again = (raven_struct_fields(text) as *const u64).add(1).read()
+                    as *mut crate::object::String;
+                assert_eq!(s_again, s);
+            }
+            assert_marked(s, 6, 0x30);
             raven_gc_leave_frame();
             raven_gc_collect();
             assert_eq!(raven_gc_live_objects(), 0);

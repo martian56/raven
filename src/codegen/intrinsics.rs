@@ -134,6 +134,11 @@ pub const RUNTIME_STRUCT_FIELDS: &str = "raven_struct_fields";
 /// descriptor.
 pub const RUNTIME_STRUCT_REGISTER: &str = "raven_struct_register";
 
+/// Runtime C symbol registering one enum variant's GC pointer descriptor, so
+/// the collector can pick the mask by the value's discriminant instead of
+/// tracing the union of every variant's pointers.
+pub const RUNTIME_ENUM_REGISTER: &str = "raven_enum_register";
+
 /// Runtime C symbol entering a GC root frame.
 pub const RUNTIME_GC_ENTER_FRAME: &str = "raven_gc_enter_frame";
 

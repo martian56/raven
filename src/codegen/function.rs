@@ -1238,6 +1238,11 @@ fn lower_enum_create(
     // their masks so any variant's pointer payload is traced.
     let key = ty.mangle();
     let type_id = cx.merge_descriptor(&key, mask);
+    // Record this variant's own mask so the collector traces an enum value by
+    // its active variant, not the union of all variants. Without this, a scalar
+    // payload (a `Float` in one variant) sharing a slot with a pointer payload
+    // (a `String` in another) would be traced as a GC pointer.
+    cx.record_enum_variant(type_id, variant as u32, mask);
 
     // Allocate the enum value first and root it while the payload is
     // evaluated, for the same reason struct creation does: a payload
