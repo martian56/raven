@@ -34,7 +34,7 @@ Configure the pretty-printer used by `rvpm fmt`:
 ```toml
 [fmt]
 indent_width = 4   # spaces per indent level (1–16, default 4)
-wrap_width = 88    # soft wrap width (40–200, default 88)
+wrap_width = 100   # soft wrap width (40-200, default 100)
 ```
 
 If `[fmt]` is missing or a value is out of range, defaults apply. When you run `rvpm fmt` outside a project (or with no discoverable `rv.toml`), formatting uses defaults only.

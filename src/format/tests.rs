@@ -1,4 +1,4 @@
-use super::{format_source, format_source_with};
+use super::{format_source, format_source_with, format_source_with_opts};
 use crate::ast::pretty_file;
 
 #[test]
@@ -431,6 +431,98 @@ fn comment_inside_match_is_kept() {
     assert!(
         out.contains("0 -> 1, // one"),
         "trailing arm comment lost: {out:?}"
+    );
+}
+
+/// Format at an explicit wrap width, asserting idempotency and that formatting
+/// preserved the AST (the same guarantees `fmt` checks at the default width).
+fn fmt_w(src: &str, wrap: u32) -> String {
+    let once = format_source_with_opts(src, 4, wrap).expect("format once");
+    let twice = format_source_with_opts(&once, 4, wrap).expect("format twice");
+    assert_eq!(once, twice, "wrapping formatter is not idempotent");
+    assert_eq!(
+        ast_string(src),
+        ast_string(&once),
+        "wrapping changed the AST"
+    );
+    once
+}
+
+#[test]
+fn long_call_wraps_one_argument_per_line() {
+    // A call whose single-line form exceeds wrap_width breaks one argument per
+    // line. Regression for #581.
+    let src = "fun f() {\n    let r = some_function_with_a_fairly_long_name(argument_one, argument_two, argument_three)\n}\n";
+    let out = fmt_w(src, 80);
+    assert!(
+        out.contains("some_function_with_a_fairly_long_name(\n"),
+        "long call should break after the open paren: {out:?}"
+    );
+    assert!(
+        out.contains("        argument_one,\n"),
+        "each argument should sit on its own indented line: {out:?}"
+    );
+    // No produced line exceeds the wrap width.
+    for line in out.lines() {
+        assert!(line.len() <= 80, "line exceeds wrap width: {line:?}");
+    }
+}
+
+#[test]
+fn long_array_literal_wraps() {
+    let src = "fun f() {\n    let xs = [element_one, element_two, element_three, element_four, element_five, six]\n}\n";
+    let out = fmt_w(src, 80);
+    assert!(out.contains("[\n"), "long array should break: {out:?}");
+    for line in out.lines() {
+        assert!(line.len() <= 80, "line exceeds wrap width: {line:?}");
+    }
+}
+
+#[test]
+fn long_function_signature_wraps_parameters() {
+    // A signature whose single-line form exceeds wrap_width breaks one
+    // parameter per line. Regression for #581.
+    let src = "fun a_function_with_many_parameters(first: Int, second: Int, third: Int, fourth: Int) -> Int {\n    return first\n}\n";
+    let out = fmt_w(src, 80);
+    assert!(
+        out.contains("a_function_with_many_parameters(\n"),
+        "long signature should break after the open paren: {out:?}"
+    );
+    assert!(
+        out.contains("    first: Int,\n"),
+        "each parameter on its own line: {out:?}"
+    );
+    assert!(
+        out.contains(") -> Int {"),
+        "the closing line carries the return type and body brace: {out:?}"
+    );
+    for line in out.lines() {
+        assert!(line.len() <= 80, "line exceeds wrap width: {line:?}");
+    }
+}
+
+#[test]
+fn short_call_stays_on_one_line() {
+    let out = fmt("fun f() {\n    let r = foo(a, b, c)\n}\n");
+    assert!(
+        out.contains("foo(a, b, c)"),
+        "short call must stay inline: {out:?}"
+    );
+}
+
+#[test]
+fn wrap_width_is_configurable() {
+    // A narrow wrap width breaks a call that a wide one keeps inline.
+    let src = "fun f() {\n    let r = foo(alpha, beta, gamma)\n}\n";
+    let wide = fmt_w(src, 80);
+    assert!(
+        wide.contains("foo(alpha, beta, gamma)"),
+        "wide stays inline: {wide:?}"
+    );
+    let narrow = fmt_w(src, 20);
+    assert!(
+        narrow.contains("foo(\n"),
+        "narrow wrap breaks the call: {narrow:?}"
     );
 }
 

@@ -48,14 +48,31 @@ impl std::fmt::Display for FormatError {
 
 impl std::error::Error for FormatError {}
 
+/// The default line width the formatter wraps at when the manifest does not
+/// set `[fmt].wrap_width`. Matches the manifest's own default so `rvpm fmt`
+/// behaves the same with or without an explicit setting.
+pub const DEFAULT_WRAP_WIDTH: u32 = 100;
+
 /// Format Raven source text into its canonical form.
 pub fn format_source(src: &str) -> Result<String, FormatError> {
     format_source_with(src, DEFAULT_INDENT_WIDTH)
 }
 
-/// Format `src` using `indent_width` spaces per level. `rvpm fmt` passes the
-/// width from the manifest's `[fmt].indent_width`.
+/// Format `src` using `indent_width` spaces per level and the default wrap
+/// width. `rvpm fmt` passes the width from the manifest's `[fmt].indent_width`.
 pub fn format_source_with(src: &str, indent_width: u32) -> Result<String, FormatError> {
+    format_source_with_opts(src, indent_width, DEFAULT_WRAP_WIDTH)
+}
+
+/// Format `src` using `indent_width` spaces per level and wrapping argument
+/// lists, collection literals, and function signatures that would otherwise
+/// exceed `wrap_width` columns. `rvpm fmt` passes both from the manifest's
+/// `[fmt]` section.
+pub fn format_source_with_opts(
+    src: &str,
+    indent_width: u32,
+    wrap_width: u32,
+) -> Result<String, FormatError> {
     let tokens = Lexer::new(src, "<fmt>")
         .tokenize()
         .map_err(|e| FormatError::Parse(e.to_string()))?;
@@ -67,7 +84,7 @@ pub fn format_source_with(src: &str, indent_width: u32) -> Result<String, Format
     let file = parse(&tokens).map_err(|e| FormatError::Parse(e.to_string()))?;
     let comments = comments::scan(src);
     let indent_unit = " ".repeat(indent_width as usize);
-    let mut p = Printer::new(src, comments, indent_unit);
+    let mut p = Printer::new(src, comments, indent_unit, wrap_width as usize);
     p.file(&file);
     Ok(p.finish())
 }
@@ -83,10 +100,13 @@ struct Printer<'a> {
     comments: Vec<Comment>,
     /// Index of the next comment not yet emitted.
     next_comment: usize,
+    /// The column an argument list, collection literal, or function signature
+    /// is wrapped at when its single-line form would overflow.
+    wrap_width: usize,
 }
 
 impl<'a> Printer<'a> {
-    fn new(src: &'a str, comments: Vec<Comment>, indent_unit: String) -> Self {
+    fn new(src: &'a str, comments: Vec<Comment>, indent_unit: String, wrap_width: usize) -> Self {
         Printer {
             out: String::new(),
             indent: 0,
@@ -94,7 +114,19 @@ impl<'a> Printer<'a> {
             src,
             comments,
             next_comment: 0,
+            wrap_width,
         }
+    }
+
+    /// The number of spaces in one indent level.
+    fn iw(&self) -> usize {
+        self.indent_unit.len()
+    }
+
+    /// The absolute output column at which a continuation line indented to
+    /// level `base` (relative to the statement) begins.
+    fn cont_col(&self, base: usize) -> usize {
+        (self.indent + base) * self.iw()
     }
 
     fn finish(mut self) -> String {
@@ -367,18 +399,38 @@ impl Printer<'_> {
     }
 
     fn function(&mut self, f: &Function, prefix: &str) -> Option<String> {
-        let mut head = String::new();
-        head.push_str(prefix);
-        head.push_str("fun ");
-        head.push_str(&f.name);
-        head.push_str(&render_generics(&f.generics));
-        head.push('(');
-        head.push_str(&render_params(&f.params));
-        head.push(')');
-        if let Some(ret) = &f.ret {
-            head.push_str(" -> ");
-            head.push_str(&render_type(ret));
-        }
+        let ret_suffix = match &f.ret {
+            Some(ret) => format!(" -> {}", render_type(ret)),
+            None => String::new(),
+        };
+        // The single-line signature, and the marker that would follow it on the
+        // same line (a body brace or `=`), to size the wrap decision.
+        let open = format!("{}fun {}{}(", prefix, f.name, render_generics(&f.generics));
+        let single = format!("{}{}){}", open, render_params(&f.params), ret_suffix);
+        let body_marker = match &f.body {
+            FunctionBody::Block(b) if b.stmts.is_empty() && b.trailing.is_none() => " {}",
+            FunctionBody::Block(_) => " {",
+            FunctionBody::Expr(_) => " =",
+            FunctionBody::None => "",
+        };
+        let col0 = self.indent * self.iw();
+        let wrap = f.params.len() > 1
+            && col0 + single.chars().count() + body_marker.len() > self.wrap_width;
+
+        // `head` is the signature up to (and including) the closing `)` and the
+        // return type. When wrapping, the open line and parameters are emitted
+        // here and `head` carries only the closing line.
+        let mut head = if wrap {
+            self.line(&open);
+            self.indent += 1;
+            for p in &f.params {
+                self.line(&format!("{},", render_param(p)));
+            }
+            self.indent -= 1;
+            format!("){}", ret_suffix)
+        } else {
+            single
+        };
 
         match &f.body {
             FunctionBody::None => {
@@ -387,9 +439,11 @@ impl Printer<'_> {
                 self.take_trailing_comment(line)
             }
             FunctionBody::Expr(e) => {
+                let ecol = self.indent * self.iw() + head.chars().count() + " = ".len();
+                let body = self.expr_at(e, 0, ecol);
                 head.push_str(" = ");
-                head.push_str(&self.render_expr(e));
-                self.line(&head);
+                head.push_str(&body);
+                self.emit_multiline(&head);
                 let line = self.line_of(f.span.end);
                 self.take_trailing_comment(line)
             }
@@ -616,13 +670,9 @@ impl Printer<'_> {
     }
 
     fn const_decl(&mut self, c: &Const) -> Option<String> {
-        let text = format!(
-            "const {}: {} = {}",
-            c.name,
-            render_type(&c.ty),
-            self.render_expr(&c.value)
-        );
-        self.line(&text);
+        let prefix = format!("const {}: {} = ", c.name, render_type(&c.ty));
+        let value = self.render_expr_col(&c.value, prefix.chars().count());
+        self.line(&format!("{}{}", prefix, value));
         self.take_trailing_comment(self.line_of(c.span.end))
     }
 
@@ -647,7 +697,8 @@ impl Printer<'_> {
             text.push_str(&render_type(t));
         }
         if let Some(e) = init {
-            let e = self.render_expr(e);
+            let prefix_len = text.chars().count() + " = ".len();
+            let e = self.render_expr_col(e, prefix_len);
             text.push_str(" = ");
             text.push_str(&e);
         }
@@ -755,21 +806,21 @@ impl Printer<'_> {
             }
             StmtKind::Return(e) => {
                 let text = match e {
-                    Some(e) => format!("return {}", self.render_expr(e)),
+                    Some(e) => format!("return {}", self.render_expr_col(e, "return ".len())),
                     None => "return".to_string(),
                 };
                 self.emit_multiline(&text);
             }
             StmtKind::Break(e) => {
                 let text = match e {
-                    Some(e) => format!("break {}", self.render_expr(e)),
+                    Some(e) => format!("break {}", self.render_expr_col(e, "break ".len())),
                     None => "break".to_string(),
                 };
                 self.emit_multiline(&text);
             }
             StmtKind::Continue => self.line("continue"),
             StmtKind::Defer(e) => {
-                let text = format!("defer {}", self.render_expr(e));
+                let text = format!("defer {}", self.render_expr_col(e, "defer ".len()));
                 self.emit_multiline(&text);
             }
             StmtKind::Spawn(e) => {
@@ -781,16 +832,15 @@ impl Printer<'_> {
                     ExprKind::Paren(inner) => inner.as_ref(),
                     _ => e,
                 };
-                let text = format!("spawn({})", self.render_expr(inner));
+                let text = format!("spawn({})", self.render_expr_col(inner, "spawn(".len()));
                 self.emit_multiline(&text);
             }
             StmtKind::Assign { target, op, value } => {
-                let text = format!(
-                    "{} {} {}",
-                    self.render_expr(target),
-                    assign_op(*op),
-                    self.render_expr(value)
-                );
+                let target = self.render_expr_col(target, 0);
+                let op = assign_op(*op);
+                let value_col = self.indent * self.iw() + target.chars().count() + op.len() + 2;
+                let value = self.expr_at(value, 0, value_col);
+                let text = format!("{} {} {}", target, op, value);
                 self.emit_multiline(&text);
             }
             StmtKind::Expr(e) => {
@@ -839,14 +889,26 @@ impl Printer<'_> {
 // indent. Leaf and operator expressions render on one line.
 
 impl Printer<'_> {
+    /// Render `e` as a statement-level expression that the caller will place
+    /// after `prefix_len` characters on the current line (for example the 7 of
+    /// `return `). The starting column folds in the enclosing indent so wrap
+    /// decisions measure the real output column.
+    fn render_expr_col(&mut self, e: &Expr, prefix_len: usize) -> String {
+        let col = self.indent * self.iw() + prefix_len;
+        self.expr_at(e, 0, col)
+    }
+
     fn render_expr(&mut self, e: &Expr) -> String {
-        self.expr_at(e, 0)
+        self.render_expr_col(e, 0)
     }
 
     /// Render an expression whose block continuations should be indented at
-    /// `base` levels relative to column zero. Comments inside nested blocks
-    /// are woven in from the shared cursor as the block renders.
-    fn expr_at(&mut self, e: &Expr, base: usize) -> String {
+    /// `base` levels relative to column zero, starting at output column `col`.
+    /// Comments inside nested blocks are woven in from the shared cursor as the
+    /// block renders. `col` drives line wrapping: an argument list, collection
+    /// literal, or signature whose single-line form would push past
+    /// `wrap_width` is broken onto multiple lines.
+    fn expr_at(&mut self, e: &Expr, base: usize, col: usize) -> String {
         match &e.kind {
             ExprKind::MacroCall(m) => {
                 let (open, close) = macro_delim_chars(m.delim);
@@ -888,8 +950,11 @@ impl Printer<'_> {
                     s.push_str(" {}");
                     return s;
                 }
+                // Break when the source already spanned lines, an interior
+                // comment must be kept, or the single-line form would overflow.
                 let multiline = self.spans_multiple_lines(e.span.start, e.span.end)
-                    || self.pending_comment_within(e.span.start, e.span.end);
+                    || self.pending_comment_within(e.span.start, e.span.end)
+                    || self.struct_lit_too_wide(fields, col + s.chars().count());
                 if multiline {
                     s.push_str(" {\n");
                     for f in fields {
@@ -897,10 +962,11 @@ impl Printer<'_> {
                         for _ in 0..base + 1 {
                             s.push_str(&self.indent_unit);
                         }
-                        let value = self.field_value(f);
                         if is_field_shorthand(&f.name, &f.value) {
                             let _ = write!(s, "{},", f.name);
                         } else {
+                            let vcol = self.cont_col(base + 1) + f.name.chars().count() + 2;
+                            let value = self.expr_at(&f.value, base + 1, vcol);
                             let _ = write!(s, "{}: {},", f.name, value);
                         }
                         if let Some(t) = self.take_trailing_comment(self.line_of(f.span.end)) {
@@ -931,31 +997,32 @@ impl Printer<'_> {
                 s
             }
             ExprKind::Array(items) => {
-                // Window from the opening `[` (e.span.start), not the first
-                // element, so a comment between `[` and the first element is
-                // detected and the literal is kept multi-line.
-                if !items.is_empty() && self.pending_comment_within(e.span.start, e.span.end) {
-                    return self.bracketed_multiline("[", "]", items, e.span.end, base);
-                }
-                let parts = self.expr_list(items, base);
-                format!("[{}]", parts.join(", "))
+                self.delimited("[", "]", items, (e.span.start, e.span.end), base, col)
             }
             ExprKind::Tuple(items) => {
-                if !items.is_empty() && self.pending_comment_within(e.span.start, e.span.end) {
-                    return self.bracketed_multiline("(", ")", items, e.span.end, base);
-                }
-                let parts = self.expr_list(items, base);
-                format!("({})", parts.join(", "))
+                self.delimited("(", ")", items, (e.span.start, e.span.end), base, col)
             }
             ExprKind::SetLit(items) => {
-                let parts = self.expr_list(items, base);
-                // A single-element set keeps a trailing comma so it does
-                // not re-parse as a one-expression block `{ x }`.
-                if parts.len() == 1 {
+                if items.is_empty() {
+                    return "{}".to_string();
+                }
+                if self.pending_comment_within(e.span.start, e.span.end) {
+                    return self.bracketed_multiline("{", "}", items, e.span.end, base);
+                }
+                let saved = self.next_comment;
+                let parts = self.expr_list_at(items, col + 1, base);
+                // A single-element set keeps a trailing comma so it does not
+                // re-parse as a one-expression block `{ x }`.
+                let flat = if parts.len() == 1 {
                     format!("{{{},}}", parts[0])
                 } else {
                     format!("{{{}}}", parts.join(", "))
+                };
+                if self.fits(col, &flat) {
+                    return flat;
                 }
+                self.next_comment = saved;
+                self.bracketed_multiline("{", "}", items, e.span.end, base)
             }
             ExprKind::MapLit(pairs) => {
                 if pairs.is_empty() {
@@ -964,25 +1031,40 @@ impl Printer<'_> {
                 if self.pending_comment_within(e.span.start, e.span.end) {
                     return self.map_multiline(pairs, e.span.end, base);
                 }
-                let parts: Vec<String> = pairs
-                    .iter()
-                    .map(|(k, v)| format!("{}: {}", self.expr_at(k, base), self.expr_at(v, base)))
-                    .collect();
-                format!("[{}]", parts.join(", "))
+                let saved = self.next_comment;
+                let mut c = col + 1;
+                let mut parts = Vec::with_capacity(pairs.len());
+                for (k, v) in pairs {
+                    let kk = self.expr_at(k, base, c);
+                    let vcol = self.after(c, &kk) + 2;
+                    let vv = self.expr_at(v, base, vcol);
+                    let part = format!("{}: {}", kk, vv);
+                    c = self.after(c, &part) + 2;
+                    parts.push(part);
+                }
+                let flat = format!("[{}]", parts.join(", "));
+                if self.fits(col, &flat) {
+                    return flat;
+                }
+                self.next_comment = saved;
+                self.map_multiline(pairs, e.span.end, base)
             }
             ExprKind::Paren(inner) => {
-                let inner = self.expr_at(inner, base);
+                let inner = self.expr_at(inner, base, col + 1);
                 format!("({})", inner)
             }
             ExprKind::Block(b) => self.render_block(b, base),
             ExprKind::Unary { op, operand } => {
-                let operand = self.expr_at(operand, base);
-                format!("{}{}", unary_op(*op), operand)
+                let op_s = unary_op(*op);
+                let operand = self.expr_at(operand, base, col + op_s.len());
+                format!("{}{}", op_s, operand)
             }
             ExprKind::Binary { op, lhs, rhs } => {
-                let l = self.expr_at(lhs, base);
-                let r = self.expr_at(rhs, base);
-                format!("{} {} {}", l, binary_op(*op), r)
+                let l = self.expr_at(lhs, base, col);
+                let op_s = binary_op(*op);
+                let rcol = self.after(col, &l) + op_s.len() + 2;
+                let r = self.expr_at(rhs, base, rcol);
+                format!("{} {} {}", l, op_s, r)
             }
             ExprKind::Range {
                 start,
@@ -990,21 +1072,20 @@ impl Printer<'_> {
                 inclusive,
             } => {
                 let sep = if *inclusive { "..=" } else { ".." };
-                let s = self.expr_at(start, base);
-                let e = self.expr_at(end, base);
+                let s = self.expr_at(start, base, col);
+                let ecol = self.after(col, &s) + sep.len();
+                let e = self.expr_at(end, base, ecol);
                 format!("{}{}{}", s, sep, e)
             }
             ExprKind::Call { callee, args } => {
-                let callee = self.expr_at(callee, base);
+                let callee = self.expr_at(callee, base, col);
                 // The callee already consumed any comments inside it, so a
                 // pending comment anywhere up to the closing `)` belongs to the
                 // argument list (including one right after the opening `(`).
-                if !args.is_empty() && self.pending_comment_within(e.span.start, e.span.end) {
-                    let list = self.bracketed_multiline("(", ")", args, e.span.end, base);
-                    return format!("{}{}", callee, list);
-                }
-                let parts = self.expr_list(args, base);
-                format!("{}({})", callee, parts.join(", "))
+                let open_col = self.after(col, &callee);
+                let list =
+                    self.delimited("(", ")", args, (e.span.start, e.span.end), base, open_col);
+                format!("{}{}", callee, list)
             }
             ExprKind::MethodCall {
                 receiver,
@@ -1012,48 +1093,46 @@ impl Printer<'_> {
                 generics,
                 args,
             } => {
-                let mut s = self.expr_at(receiver, base);
+                let mut s = self.expr_at(receiver, base, col);
                 s.push('.');
                 s.push_str(name);
                 if !generics.is_empty() {
                     s.push_str(&render_type_args(generics));
                 }
-                if !args.is_empty() && self.pending_comment_within(e.span.start, e.span.end) {
-                    let list = self.bracketed_multiline("(", ")", args, e.span.end, base);
-                    s.push_str(&list);
-                    return s;
-                }
-                let parts = self.expr_list(args, base);
-                let _ = write!(s, "({})", parts.join(", "));
+                let open_col = self.after(col, &s);
+                let list =
+                    self.delimited("(", ")", args, (e.span.start, e.span.end), base, open_col);
+                s.push_str(&list);
                 s
             }
             ExprKind::Field { receiver, name } => {
-                let r = self.expr_at(receiver, base);
+                let r = self.expr_at(receiver, base, col);
                 format!("{}.{}", r, name)
             }
             ExprKind::Index { receiver, index } => {
-                let r = self.expr_at(receiver, base);
-                let i = self.expr_at(index, base);
+                let r = self.expr_at(receiver, base, col);
+                let icol = self.after(col, &r) + 1;
+                let i = self.expr_at(index, base, icol);
                 format!("{}[{}]", r, i)
             }
             ExprKind::Try(inner) => {
-                let inner = self.expr_at(inner, base);
+                let inner = self.expr_at(inner, base, col);
                 format!("{}?", inner)
             }
             ExprKind::If {
                 cond,
                 then_branch,
                 else_branch,
-            } => self.render_if(cond, then_branch, else_branch, base),
+            } => self.render_if(cond, then_branch, else_branch, base, col),
             ExprKind::Match { scrutinee, arms } => {
-                self.render_match(scrutinee, arms, e.span.end, base)
+                self.render_match(scrutinee, arms, e.span.end, base, col)
             }
             ExprKind::Loop(b) => {
                 let body = self.render_block(b, base);
                 format!("loop {}", body)
             }
             ExprKind::While { cond, body } => {
-                let cond = self.expr_at(cond, base);
+                let cond = self.expr_at(cond, base, col + "while ".len());
                 let body = self.render_block(body, base);
                 format!("while {} {}", cond, body)
             }
@@ -1063,7 +1142,8 @@ impl Printer<'_> {
                 body,
             } => {
                 let pat = render_pattern(pattern);
-                let iter = self.expr_at(iter, base);
+                let icol = col + "for ".len() + pat.chars().count() + " in ".len();
+                let iter = self.expr_at(iter, base, icol);
                 let body = self.render_block(body, base);
                 format!("for {} in {} {}", pat, iter, body)
             }
@@ -1072,16 +1152,85 @@ impl Printer<'_> {
                 ret,
                 body,
                 params_inferred,
-            } => self.render_lambda(params, ret, body, *params_inferred, base),
+            } => self.render_lambda(params, ret, body, *params_inferred, base, col),
         }
     }
 
-    fn expr_list(&mut self, items: &[Expr], base: usize) -> Vec<String> {
+    /// The absolute output column reached after appending the already-rendered
+    /// `s` starting at column `col`. When `s` spans lines, the column is the
+    /// width of its last line; otherwise `col` plus its width.
+    fn after(&self, col: usize, s: &str) -> usize {
+        match s.rfind('\n') {
+            Some(i) => s[i + 1..].chars().count(),
+            None => col + s.chars().count(),
+        }
+    }
+
+    /// Whether the single-line `flat` rendering, placed at column `col`, stays
+    /// on one line and within `wrap_width`.
+    fn fits(&self, col: usize, flat: &str) -> bool {
+        !flat.contains('\n') && col + flat.chars().count() <= self.wrap_width
+    }
+
+    /// Render an `open`..`close` delimited, comma-separated list of expressions
+    /// whose opening delimiter sits at column `col`. Lays it out on one line,
+    /// or one element per line when an interior comment must be kept or the
+    /// single-line form would overflow `wrap_width`.
+    fn delimited(
+        &mut self,
+        open: &str,
+        close: &str,
+        items: &[Expr],
+        span: (usize, usize),
+        base: usize,
+        col: usize,
+    ) -> String {
+        if items.is_empty() {
+            return format!("{}{}", open, close);
+        }
+        if self.pending_comment_within(span.0, span.1) {
+            return self.bracketed_multiline(open, close, items, span.1, base);
+        }
+        let saved = self.next_comment;
+        let parts = self.expr_list_at(items, col + open.chars().count(), base);
+        let flat = format!("{}{}{}", open, parts.join(", "), close);
+        if self.fits(col, &flat) {
+            return flat;
+        }
+        self.next_comment = saved;
+        self.bracketed_multiline(open, close, items, span.1, base)
+    }
+
+    /// Render each item of a flat list, threading the running column so a
+    /// nested construct that itself overflows can break.
+    fn expr_list_at(&mut self, items: &[Expr], start_col: usize, base: usize) -> Vec<String> {
         let mut parts = Vec::with_capacity(items.len());
+        let mut c = start_col;
         for it in items {
-            parts.push(self.expr_at(it, base));
+            let p = self.expr_at(it, base, c);
+            c = self.after(c, &p) + 2;
+            parts.push(p);
         }
         parts
+    }
+
+    /// Whether a struct literal's single-line form, with its `name {` opening at
+    /// `header_col`, would overflow `wrap_width`. Measures without consuming
+    /// comments.
+    fn struct_lit_too_wide(&mut self, fields: &[crate::ast::FieldInit], header_col: usize) -> bool {
+        let saved = self.next_comment;
+        let mut parts: Vec<String> = Vec::with_capacity(fields.len());
+        for f in fields {
+            if is_field_shorthand(&f.name, &f.value) {
+                parts.push(f.name.clone());
+            } else {
+                let v = self.field_value(f);
+                parts.push(format!("{}: {}", f.name, v));
+            }
+        }
+        self.next_comment = saved;
+        let flat = format!(" {{ {} }}", parts.join(", "));
+        !self.fits(header_col, &flat)
     }
 
     /// Whether the next pending comment begins within `[start, end)`. Used to
@@ -1121,7 +1270,7 @@ impl Printer<'_> {
                 self.next_comment += 1;
             }
             self.push_indent(&mut s, base + 1);
-            let part = self.expr_at(it, base + 1);
+            let part = self.expr_at(it, base + 1, self.cont_col(base + 1));
             s.push_str(&part);
             s.push(',');
             if let Some(t) = self.take_trailing_comment(self.line_of(it.span.end)) {
@@ -1153,8 +1302,9 @@ impl Printer<'_> {
         for (k, v) in pairs {
             self.weave_own_line_comments(&mut s, k.span.start, base + 1);
             self.push_indent(&mut s, base + 1);
-            let kk = self.expr_at(k, base + 1);
-            let vv = self.expr_at(v, base + 1);
+            let kcol = self.cont_col(base + 1);
+            let kk = self.expr_at(k, base + 1, kcol);
+            let vv = self.expr_at(v, base + 1, self.after(kcol, &kk) + 2);
             let _ = write!(s, "{}: {},", kk, vv);
             if let Some(t) = self.take_trailing_comment(self.line_of(v.span.end)) {
                 s.push(' ');
@@ -1249,14 +1399,15 @@ impl Printer<'_> {
         then_branch: &Block,
         else_branch: &Option<Box<ElseBranch>>,
         base: usize,
+        col: usize,
     ) -> String {
-        let cond = self.expr_at(cond, base);
+        let cond = self.expr_at(cond, base, col + "if ".len());
         let then_block = self.render_block(then_branch, base);
         let mut s = format!("if {} {}", cond, then_block);
         if let Some(eb) = else_branch {
             match eb.as_ref() {
                 ElseBranch::If(e) => {
-                    let e = self.expr_at(e, base);
+                    let e = self.expr_at(e, base, col + "else ".len());
                     s.push_str(" else ");
                     s.push_str(&e);
                 }
@@ -1276,21 +1427,25 @@ impl Printer<'_> {
         arms: &[MatchArm],
         end: usize,
         base: usize,
+        col: usize,
     ) -> String {
-        let scrut = self.expr_at(scrutinee, base);
+        let scrut = self.expr_at(scrutinee, base, col + "match ".len());
         let mut s = format!("match {} {{\n", scrut);
         for arm in arms {
             // Own-line comments that precede this arm.
             self.weave_own_line_comments(&mut s, arm.span.start, base + 1);
             self.push_indent(&mut s, base + 1);
-            s.push_str(&render_pattern(&arm.pattern));
+            let pat = render_pattern(&arm.pattern);
+            let mut c = self.cont_col(base + 1) + pat.chars().count();
+            s.push_str(&pat);
             if let Some(g) = arm.guard.as_ref() {
-                let g = self.expr_at(g, base + 1);
+                let g = self.expr_at(g, base + 1, c + " if ".len());
                 s.push_str(" if ");
                 s.push_str(&g);
+                c = self.after(c + " if ".len(), &g);
             }
             s.push_str(" -> ");
-            let body = self.expr_at(&arm.body, base + 1);
+            let body = self.expr_at(&arm.body, base + 1, c + " -> ".len());
             s.push_str(&body);
             s.push(',');
             if let Some(t) = self.take_trailing_comment(self.line_of(arm.span.end)) {
@@ -1313,6 +1468,7 @@ impl Printer<'_> {
         body: &LambdaBody,
         params_inferred: bool,
         base: usize,
+        col: usize,
     ) -> String {
         if params_inferred {
             // Shorthand `{ x, y -> body }`. The parser always stores the body
@@ -1325,10 +1481,11 @@ impl Printer<'_> {
             } else {
                 format!("{{ {} ->", names.join(", "))
             };
+            let body_col = col + head.chars().count() + 1;
             let LambdaBody::Block(b) = body else {
                 // Defensive: shorthand always carries a block.
                 let body_str = match body {
-                    LambdaBody::Expr(e) => self.expr_at(e, base),
+                    LambdaBody::Expr(e) => self.expr_at(e, base, body_col),
                     LambdaBody::Block(b) => self.render_block(b, base),
                 };
                 return format!("{} {} }}", head, body_str);
@@ -1336,7 +1493,7 @@ impl Printer<'_> {
             if b.stmts.is_empty() {
                 match &b.trailing {
                     Some(t) => {
-                        let t = self.expr_at(t, base);
+                        let t = self.expr_at(t, base, body_col);
                         format!("{} {} }}", head, t)
                     }
                     None => format!("{} }}", head),
@@ -1369,7 +1526,8 @@ impl Printer<'_> {
             }
             match body {
                 LambdaBody::Expr(e) => {
-                    let e = self.expr_at(e, base);
+                    let ecol = self.after(col, &s) + " = ".len();
+                    let e = self.expr_at(e, base, ecol);
                     s.push_str(" = ");
                     s.push_str(&e);
                 }
