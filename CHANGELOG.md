@@ -2,6 +2,16 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.119] - 2026-06-16
+
+Continuing the codex-review fix batch (one patch per issue).
+
+### Fixed
+
+- The dependency resolver rejects a graph that pins one package source to two different versions instead of silently collapsing to one (which compiled a dependent against the wrong code); `rvpm install`/`build`/`update` report the conflict (#573).
+- A selective `rvpm update` prunes packages no longer reachable from the manifest graph, so a transitive dependency dropped by the new version no longer lingers in `rv.lock` (#575).
+- `rvpm install` verifies the lock contains the complete transitive graph, not just the direct dependencies, and re-resolves a fresh lock when a transitive package is missing (#576).
+
 ## [2.18.116] - 2026-06-16
 
 Continuing the codex-review fix batch (one patch per issue).

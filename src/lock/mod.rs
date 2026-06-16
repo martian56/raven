@@ -223,6 +223,14 @@ pub enum LockError {
         expected: String,
         actual: String,
     },
+    /// The dependency graph pins the same package source to two or more
+    /// different versions. Resolution indexes packages by source, so a single
+    /// version must win per source; rather than silently pick one (and compile
+    /// a dependent against the wrong code), the conflict is reported.
+    ConflictingVersions {
+        source: String,
+        versions: Vec<String>,
+    },
 }
 
 impl fmt::Display for LockError {
@@ -262,6 +270,12 @@ impl fmt::Display for LockError {
                 f,
                 "content hash mismatch for '{}' at '{}': locked {} but fetched tree hashes to {}",
                 source, version, expected, actual
+            ),
+            LockError::ConflictingVersions { source, versions } => write!(
+                f,
+                "dependency '{}' is required at conflicting versions ({}); a single version must be selected per package",
+                source,
+                versions.join(", ")
             ),
         }
     }
@@ -406,10 +420,88 @@ pub fn resolve_and_lock_in(manifest: &Manifest, cache_root: &Path) -> Result<Loc
 
     let mut packages: Vec<LockedPackage> = seen.into_values().collect();
     sort_packages(&mut packages);
+    if let Some((source, versions)) = conflicting_versions(&packages) {
+        return Err(LockError::ConflictingVersions { source, versions });
+    }
     Ok(LockFile {
         version: LOCK_VERSION,
         packages,
     })
+}
+
+/// If any package source appears with two or more distinct versions, return
+/// that source and its conflicting versions (sorted, deduplicated). Import
+/// resolution keys packages by source, so a source must resolve to exactly one
+/// version; a conflict is reported rather than silently collapsed.
+fn conflicting_versions(packages: &[LockedPackage]) -> Option<(String, Vec<String>)> {
+    let mut by_source: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    for p in packages {
+        by_source
+            .entry(p.source.as_str())
+            .or_default()
+            .insert(p.version.as_str());
+    }
+    by_source
+        .into_iter()
+        .find(|(_, vs)| vs.len() > 1)
+        .map(|(s, vs)| {
+            (
+                s.to_string(),
+                vs.into_iter().map(|v| v.to_string()).collect(),
+            )
+        })
+}
+
+/// Read the direct dependencies a cached package declares in its own
+/// `rv.toml`, as `(source, version)` pairs. The package is fetched into the
+/// cache if absent. A package with no `rv.toml` (or no `[dependencies]`)
+/// contributes nothing.
+pub fn cached_subdeps(
+    cache_root: &Path,
+    source: &str,
+    version: &str,
+) -> Result<Vec<(String, String)>, LockError> {
+    let gh = crate::resolve::GithubPath::parse(source).ok_or_else(|| {
+        LockError::Parse(format!(
+            "dependency source '{}' is not a github.com path",
+            source
+        ))
+    })?;
+    let fetched = pkg::fetch_in(cache_root, &gh.host, &gh.user, &gh.repo, version)
+        .map_err(LockError::Fetch)?;
+    let manifest_path = fetched.dir.join("rv.toml");
+    if !manifest_path.exists() {
+        return Ok(Vec::new());
+    }
+    let sub = Manifest::load(&manifest_path).map_err(|error| LockError::Manifest {
+        source_path: source.to_string(),
+        error,
+    })?;
+    let mut deps = Vec::with_capacity(sub.dependencies.len());
+    for dep in &sub.dependencies {
+        deps.push((dep.path.clone(), resolved_ref(dep)?));
+    }
+    Ok(deps)
+}
+
+/// Whether `lock` contains the complete transitive graph: every dependency
+/// declared by a locked package's own `rv.toml` is itself a locked entry.
+/// Reads each locked package's cached manifest. Used to detect a lock that
+/// lists a package but omits the packages it pulls in.
+pub fn lock_covers_transitive(lock: &LockFile, cache_root: &Path) -> Result<bool, LockError> {
+    let have: BTreeSet<(String, String)> = lock
+        .packages
+        .iter()
+        .map(|p| (p.source.clone(), p.version.clone()))
+        .collect();
+    for p in &lock.packages {
+        for dep in cached_subdeps(cache_root, &p.source, &p.version)? {
+            if !have.contains(&dep) {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
 }
 
 /// Fetch one package, report it to the observer, hash it (reusing a persisted
@@ -461,6 +553,9 @@ pub fn validate_lock(lock: &LockFile) -> Result<(), LockError> {
 /// entry and verify its tree hash. A mismatch aborts with
 /// [`LockError::HashMismatch`] naming the package.
 pub fn validate_lock_in(lock: &LockFile, cache_root: &Path) -> Result<(), LockError> {
+    if let Some((source, versions)) = conflicting_versions(&lock.packages) {
+        return Err(LockError::ConflictingVersions { source, versions });
+    }
     let results = par_map(lock.packages.clone(), |entry| {
         validate_one(cache_root, &entry)
     });
@@ -1010,5 +1105,110 @@ mod tests {
         std::fs::write(git.join("HEAD"), "ref: refs/heads/main\n").unwrap();
         let h_after = tree_hash(&dir).expect("hash");
         assert_eq!(h_before, h_after, ".git must be excluded");
+    }
+
+    #[test]
+    fn resolve_rejects_two_versions_of_one_source() {
+        // a depends on shared@v1, b depends on shared@v2. Resolution keys
+        // packages by source, so the diamond is rejected rather than silently
+        // collapsed to one version. Regression for #573.
+        let cache = TempCache::new("conflict");
+        cache.seed(
+            "github.com/acme/a",
+            "v1.0.0",
+            &[(
+                "rv.toml",
+                "[package]\nname = \"a\"\nversion = \"1.0.0\"\n\n[dependencies]\n\"github.com/acme/shared\" = \"v1.0.0\"\n",
+            )],
+        );
+        cache.seed(
+            "github.com/acme/b",
+            "v1.0.0",
+            &[(
+                "rv.toml",
+                "[package]\nname = \"b\"\nversion = \"1.0.0\"\n\n[dependencies]\n\"github.com/acme/shared\" = \"v2.0.0\"\n",
+            )],
+        );
+        cache.seed(
+            "github.com/acme/shared",
+            "v1.0.0",
+            &[(
+                "rv.toml",
+                "[package]\nname = \"shared\"\nversion = \"1.0.0\"\n",
+            )],
+        );
+        cache.seed(
+            "github.com/acme/shared",
+            "v2.0.0",
+            &[(
+                "rv.toml",
+                "[package]\nname = \"shared\"\nversion = \"2.0.0\"\n",
+            )],
+        );
+
+        let manifest = manifest_with(&[
+            ("github.com/acme/a", "v1.0.0"),
+            ("github.com/acme/b", "v1.0.0"),
+        ]);
+        let err = resolve_and_lock_in(&manifest, &cache.root).unwrap_err();
+        match err {
+            LockError::ConflictingVersions { source, versions } => {
+                assert_eq!(source, "github.com/acme/shared");
+                assert_eq!(versions, vec!["v1.0.0".to_string(), "v2.0.0".to_string()]);
+            }
+            other => panic!("expected ConflictingVersions, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn transitive_coverage_detects_a_missing_subdependency() {
+        // a@v1 declares a dependency on old@v1, but the lock lists only a@v1.
+        // The lock is therefore not transitively complete. Regression for #576.
+        let cache = TempCache::new("incomplete");
+        cache.seed(
+            "github.com/acme/a",
+            "v1.0.0",
+            &[(
+                "rv.toml",
+                "[package]\nname = \"a\"\nversion = \"1.0.0\"\n\n[dependencies]\n\"github.com/acme/old\" = \"v1.0.0\"\n",
+            )],
+        );
+        cache.seed(
+            "github.com/acme/old",
+            "v1.0.0",
+            &[(
+                "rv.toml",
+                "[package]\nname = \"old\"\nversion = \"1.0.0\"\n",
+            )],
+        );
+
+        // A lock that omits old@v1.
+        let partial = LockFile {
+            version: LOCK_VERSION,
+            packages: vec![LockedPackage {
+                source: "github.com/acme/a".to_string(),
+                version: "v1.0.0".to_string(),
+                hash: tree_hash(&pkg::cache_dir_in(
+                    &cache.root,
+                    "github.com",
+                    "acme",
+                    "a",
+                    "v1.0.0",
+                ))
+                .expect("hash"),
+            }],
+        };
+        assert!(
+            !lock_covers_transitive(&partial, &cache.root).expect("check"),
+            "a lock missing a declared sub-dependency is not transitively complete"
+        );
+
+        // The complete lock is covered.
+        let manifest = manifest_with(&[("github.com/acme/a", "v1.0.0")]);
+        let full = resolve_and_lock_in(&manifest, &cache.root).expect("resolve");
+        assert!(
+            lock_covers_transitive(&full, &cache.root).expect("check"),
+            "a freshly resolved lock is transitively complete"
+        );
     }
 }
