@@ -2,6 +2,14 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.120] - 2026-06-16
+
+Continuing the codex-review fix batch (one patch per issue).
+
+### Fixed
+
+- The formatter honors `[fmt].wrap_width`: an argument list, collection literal, or function signature whose single-line form would exceed the wrap width is broken onto multiple lines (one element or parameter per line). `rvpm fmt` reads the width from the manifest. Previously `wrap_width` was parsed but ignored (#581).
+
 ## [2.18.119] - 2026-06-16
 
 Continuing the codex-review fix batch (one patch per issue).
