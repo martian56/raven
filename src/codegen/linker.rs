@@ -22,6 +22,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sha2::{Digest, Sha256};
 use target_lexicon::{OperatingSystem, Triple};
 
 use super::CodegenError;
@@ -218,7 +219,11 @@ pub fn compile_c_sources(
         }
         let mut cmd = compiler.to_command();
         if msvc {
+            // `/MD` selects the dynamic CRT to match the Rust/Raven objects,
+            // which use it too. Without it cl.exe defaults to the static CRT
+            // (LIBCMT) and the linker reports a defaultlib conflict (LNK4098).
             cmd.arg("/nologo")
+                .arg("/MD")
                 .arg("/c")
                 .arg(source)
                 .arg(format!("/Fo{}", object.display()));
@@ -236,23 +241,49 @@ pub fn compile_c_sources(
                 String::from_utf8_lossy(&out.stderr).trim()
             )));
         }
+        // Record the source hash beside the fresh object so a later build reuses
+        // it only while the source is byte-for-byte unchanged.
+        if let Some(hash) = source_content_hash(source) {
+            let _ = std::fs::write(object_hash_sidecar(&object), hash);
+        }
         objects.push(object);
     }
     Ok(objects)
 }
 
-/// True when `object` exists and is at least as new as `source`, so the cached
-/// object can be reused instead of recompiling. A missing file or unreadable
-/// timestamp returns false, so the safe default is to recompile.
+/// True when `object` exists and was built from the current contents of
+/// `source`, so the cached object can be reused. Freshness is keyed on a content
+/// hash recorded in a `<object>.hash` sidecar, not the modification time: a
+/// source edited with its mtime preserved (a checkout, a restore) would
+/// otherwise be skipped. A missing object, missing sidecar, or hash mismatch
+/// returns false, so the safe default is to recompile.
 fn object_is_fresh(source: &Path, object: &Path) -> bool {
-    let (Ok(src_meta), Ok(obj_meta)) = (std::fs::metadata(source), std::fs::metadata(object))
-    else {
+    if !object.exists() {
+        return false;
+    }
+    let Some(hash) = source_content_hash(source) else {
         return false;
     };
-    match (src_meta.modified(), obj_meta.modified()) {
-        (Ok(src), Ok(obj)) => obj >= src,
-        _ => false,
+    match std::fs::read_to_string(object_hash_sidecar(object)) {
+        Ok(stored) => stored.trim() == hash,
+        Err(_) => false,
     }
+}
+
+/// The SHA-256 of `source`'s bytes as a hex string, or `None` when it cannot be
+/// read.
+fn source_content_hash(source: &Path) -> Option<String> {
+    let bytes = std::fs::read(source).ok()?;
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    Some(format!("{:x}", hasher.finalize()))
+}
+
+/// The sidecar path holding the source hash a cached object was built from.
+fn object_hash_sidecar(object: &Path) -> PathBuf {
+    let mut name = object.as_os_str().to_os_string();
+    name.push(".hash");
+    PathBuf::from(name)
 }
 
 #[cfg(test)]

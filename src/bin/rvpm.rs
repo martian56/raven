@@ -154,6 +154,20 @@ fn cmd_new(args: &[String]) -> Result<(), String> {
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or(target.as_str());
+    if !raven::manifest::is_valid_package_name(name) {
+        return Err(format!(
+            "'{}' is not a valid package name; use only ASCII letters, digits, '-', and '_'",
+            name
+        ));
+    }
+    // Reject a `..` in the target so `rvpm new` cannot scaffold outside the
+    // current directory tree.
+    if Path::new(target)
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(format!("target path '{}' must not contain '..'", target));
+    }
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     init_project(&dir, name, kind).map_err(|e| e.to_string())?;
     let label = match kind {
@@ -402,12 +416,28 @@ fn cmd_add(args: &[String]) -> Result<Vec<String>, String> {
     Ok(report.outcome_lines)
 }
 
+/// Reject an unrecognized `-`-prefixed option for `cmd`, so a typo'd or unknown
+/// flag is reported rather than silently ignored. `known` lists the options the
+/// command accepts; positional arguments (which do not start with `-`) pass.
+fn reject_unknown_options(args: &[String], cmd: &str, known: &[&str]) -> Result<(), String> {
+    for a in args {
+        if a.starts_with('-') && a != "-" && !known.contains(&a.as_str()) {
+            return Err(format!(
+                "unknown option `{}` for `rvpm {}`; run `rvpm {} --help`",
+                a, cmd, cmd
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Re-resolve rv.toml against rv.lock and fill the cache, validating an
 /// existing lock or writing a fresh one.
 fn cmd_install(args: &[String]) -> Result<Vec<String>, String> {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         return Ok(vec![install_usage()]);
     }
+    reject_unknown_options(args, "install", &["--help", "-h"])?;
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     let (_outcome, report) =
         with_fetch_progress(|| ops::install(&cwd)).map_err(|e| e.to_string())?;
@@ -419,6 +449,7 @@ fn cmd_update(args: &[String]) -> Result<Vec<String>, String> {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         return Ok(vec![update_usage()]);
     }
+    reject_unknown_options(args, "update", &["--help", "-h"])?;
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     let package = args.first().map(String::as_str);
     let report = with_fetch_progress(|| ops::update(&cwd, package)).map_err(|e| e.to_string())?;
@@ -431,6 +462,7 @@ fn cmd_build(args: &[String]) -> Result<Vec<String>, String> {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         return Ok(vec![build_usage()]);
     }
+    reject_unknown_options(args, "build", &["--help", "-h"])?;
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     let report = with_fetch_progress(|| ops::build(&cwd)).map_err(|e| e.to_string())?;
     Ok(report.outcome_lines)
@@ -439,10 +471,23 @@ fn cmd_build(args: &[String]) -> Result<Vec<String>, String> {
 /// Build the package then run the produced binary, forwarding any args
 /// after `run` to the program and exiting with its code.
 fn cmd_run(args: &[String]) -> ExitCode {
-    if args.iter().any(|a| a == "--help" || a == "-h") {
+    // Args before a `--` separator are rvpm's; everything after is forwarded to
+    // the program verbatim. With no separator only a leading `--help`/`-h` is
+    // rvpm's, so the program can still receive `--help` (`rvpm run -- --help`,
+    // or `rvpm run somearg --help`).
+    let sep = args.iter().position(|a| a == "--");
+    let rvpm_wants_help = match sep {
+        Some(i) => args[..i].iter().any(|a| a == "--help" || a == "-h"),
+        None => args.first().map(|a| a == "--help" || a == "-h").unwrap_or(false),
+    };
+    if rvpm_wants_help {
         println!("{}", run_usage());
         return ExitCode::SUCCESS;
     }
+    let prog_args: Vec<String> = match sep {
+        Some(i) => args[i + 1..].to_vec(),
+        None => args.to_vec(),
+    };
     let cwd = match std::env::current_dir() {
         Ok(d) => d,
         Err(e) => {
@@ -450,7 +495,7 @@ fn cmd_run(args: &[String]) -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    match with_fetch_progress(|| ops::run_package(&cwd, args)) {
+    match with_fetch_progress(|| ops::run_package(&cwd, &prog_args)) {
         Ok(code) => {
             let code: u8 = code.try_into().unwrap_or(1);
             ExitCode::from(code)
@@ -499,6 +544,7 @@ fn cmd_doc(args: &[String]) -> Result<Vec<String>, String> {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         return Ok(vec![doc_usage()]);
     }
+    reject_unknown_options(args, "doc", &["--help", "-h"])?;
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     let report = raven::doc::generate(&cwd).map_err(|e| e.to_string())?;
     Ok(report.outcome_lines)
@@ -513,6 +559,10 @@ fn cmd_fmt(args: &[String]) -> ExitCode {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         println!("{}", fmt_usage());
         return ExitCode::SUCCESS;
+    }
+    if let Err(e) = reject_unknown_options(args, "fmt", &["--help", "-h", "--check"]) {
+        eprintln!("rvpm: {}", e);
+        return ExitCode::from(1);
     }
     let check = args.iter().any(|a| a == "--check");
     let paths: Vec<&String> = args.iter().filter(|a| !a.starts_with('-')).collect();

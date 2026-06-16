@@ -2,6 +2,19 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.112] - 2026-06-15
+
+Continuing the codex-review fix batch (one patch per issue).
+
+### Fixed
+
+- Bundled `[ffi]` C is compiled with the dynamic CRT (`/MD`) on windows-msvc, matching the Rust/Raven objects, so the linker no longer reports an `LNK4098` defaultlib conflict (#568).
+- The bundled C object cache keys on a content hash, so a source edited with its modification time preserved is recompiled instead of skipped (#569).
+- `rvpm run` forwards `--help` to the program (only a leading `--help`, or one before a `--` separator, is rvpm's) (#570).
+- `rvpm build`/`install`/`update`/`doc`/`fmt` reject an unknown `-` option instead of silently ignoring it (#571).
+- Package names are validated as a restricted identifier at manifest parse and in `rvpm init`/`new`, and `rvpm new` rejects a `..` in the target path, closing a path-traversal vector (#572).
+- `rvpm test` writes its generated dispatcher to a per-process unique file, so it never overwrites or deletes a user file named `.rvpm-test-main.rv` (#574).
+
 ## [2.18.106] - 2026-06-15
 
 Continuing the codex-review fix batch (one patch per issue).

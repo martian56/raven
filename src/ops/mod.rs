@@ -581,10 +581,6 @@ fn output_binary_path(project_dir: &Path, name: &str) -> PathBuf {
     p
 }
 
-/// The generated test-runner entry written to the project root while a test
-/// run compiles, then removed.
-const TEST_MAIN_FILE: &str = ".rvpm-test-main.rv";
-
 /// The name of the compiled test-runner binary under `target/raven-out`.
 const TEST_BINARY_NAME: &str = ".rvpm-test";
 
@@ -642,7 +638,11 @@ pub fn test_in(project_dir: &Path, cache_root: &Path) -> Result<TestReport, OpEr
         });
     }
 
-    let main_path = project_dir.join(TEST_MAIN_FILE);
+    // A per-process unique name in the project root (where relative imports
+    // resolve), so a test run never overwrites or deletes a user file that
+    // happens to be named `.rvpm-test-main.rv`; only the file we create here is
+    // removed below.
+    let main_path = project_dir.join(format!(".rvpm-test-main-{}.rv", std::process::id()));
     let binary = output_binary_path(project_dir, TEST_BINARY_NAME);
     if let Some(parent) = binary.parent() {
         std::fs::create_dir_all(parent).map_err(|e| OpError::Io {
