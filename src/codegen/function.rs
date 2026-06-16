@@ -1174,6 +1174,13 @@ fn lower_struct_create(
     slots: &[LocalSlot],
 ) -> Result<RValue, CodegenError> {
     let ptr = cx.pointer_type();
+    if layout::gc_pointer_beyond_mask(field_tys, 0) {
+        return Err(CodegenError::Unsupported(format!(
+            "struct `{}` has a garbage-collected field beyond the 64th; the GC \
+             descriptor tracks only the first 64 fields",
+            ty.mangle()
+        )));
+    }
     let mask = layout::struct_pointer_mask(field_tys);
     // Merge rather than keep-first so a prior interning of this type with a
     // zero mask (for example a `to_any<T>` box site reached first) cannot
@@ -1217,6 +1224,13 @@ fn lower_enum_create(
     slots: &[LocalSlot],
 ) -> Result<RValue, CodegenError> {
     let ptr = cx.pointer_type();
+    if layout::gc_pointer_beyond_mask(payload_tys, 1) {
+        return Err(CodegenError::Unsupported(format!(
+            "enum `{}` has a garbage-collected payload field beyond the 63rd; \
+             the GC descriptor tracks only the first 64 slots",
+            ty.mangle()
+        )));
+    }
     let mask = layout::enum_pointer_mask(payload_tys);
     // The descriptor is per enum type; every variant of one enum shares
     // the same id and the union of payload pointer slots. Mangle the
@@ -2780,6 +2794,16 @@ fn lower_intrinsic(
                 lower_operand(cx, builder, &args[2], slots)?,
                 "__str_substring end argument",
             )?;
+            // Clamp negative bounds to 0 before widening to the unsigned
+            // pointer type: a negative `Int` would otherwise sign-extend to a
+            // huge value that the runtime's `.min(len)` maps to `len`, breaking
+            // the documented [0, len] clamp.
+            let start_ty = builder.func.dfg.value_type(start);
+            let zero_start = builder.ins().iconst(start_ty, 0);
+            let start = builder.ins().smax(start, zero_start);
+            let end_ty = builder.func.dfg.value_type(end);
+            let zero_end = builder.ins().iconst(end_ty, 0);
+            let end = builder.ins().smax(end, zero_end);
             let start = to_pointer_width(builder, start, ptr);
             let end = to_pointer_width(builder, end, ptr);
             let func_id = cx

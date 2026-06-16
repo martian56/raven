@@ -94,12 +94,20 @@ impl Parser {
                     TokenKind::IntLit(n) => {
                         let tok = self.advance();
                         let span = merge_spans(&minus.span, &tok.span);
-                        // `wrapping_neg` so `-9223372036854775808` (the lexer
-                        // emits `i64::MIN` for the magnitude) negates to
-                        // `i64::MIN` instead of overflowing and panicking the
-                        // compiler in a debug build, matching expression codegen.
+                        // `wrapping_neg` keeps `-0x8000000000000000` (a hex
+                        // i64::MIN bit pattern negated) from overflowing.
                         Ok(Pattern {
                             kind: PatternKind::Literal(LiteralPattern::Int(n.wrapping_neg())),
+                            span,
+                        })
+                    }
+                    // `-9223372036854775808` is i64::MIN: the magnitude only fits
+                    // negated, mirroring the expression parser.
+                    TokenKind::IntMinMagnitude => {
+                        let tok = self.advance();
+                        let span = merge_spans(&minus.span, &tok.span);
+                        Ok(Pattern {
+                            kind: PatternKind::Literal(LiteralPattern::Int(i64::MIN)),
                             span,
                         })
                     }

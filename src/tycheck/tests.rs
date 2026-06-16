@@ -786,6 +786,32 @@ fn struct_variant_pattern_is_rejected_not_crashed() {
 }
 
 #[test]
+fn duplicate_variant_arm_is_redundant() {
+    let err = check("fun f(o: Option<Int>) -> Int {\n    return match o {\n        None -> 0,\n        None -> 1,\n        Some(n) -> n,\n    }\n}\nfun main() {}\n")
+        .unwrap_err();
+    match err {
+        RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::RedundantPattern), "got {:?}", b),
+        other => panic!("expected TypeError, got {:?}", other),
+    }
+}
+
+#[test]
+fn duplicate_literal_arm_is_redundant() {
+    let err = check("fun f(n: Int) -> String {\n    return match n {\n        0 -> \"a\",\n        0 -> \"b\",\n        _ -> \"c\",\n    }\n}\nfun main() {}\n")
+        .unwrap_err();
+    match err {
+        RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::RedundantPattern), "got {:?}", b),
+        other => panic!("expected TypeError, got {:?}", other),
+    }
+}
+
+#[test]
+fn distinct_literal_arms_are_ok() {
+    check("fun f(n: Int) -> String {\n    return match n {\n        0 -> \"a\",\n        1 -> \"b\",\n        _ -> \"c\",\n    }\n}\nfun main() {}\n")
+        .expect("distinct literal arms are fine");
+}
+
+#[test]
 fn ty_display_does_not_panic() {
     // Sanity check that exotic Ty values render.
     let t = Ty::List(Box::new(Ty::Option(Box::new(Ty::Int))));

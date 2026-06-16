@@ -2,6 +2,18 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.106] - 2026-06-15
+
+Continuing the codex-review fix batch (one patch per issue).
+
+### Fixed
+
+- A positive integer literal above Int's maximum (`9223372036854775808`) is now a parse error instead of silently compiling as `Int::MIN`; `-9223372036854775808` still parses as `Int::MIN` (#543).
+- Match redundancy checking now reports a duplicate literal or duplicate variant arm as unreachable (#544).
+- Generic type name mangling is injective, so `Box<Int>` no longer collides with a struct literally named `Box_Int` in the monomorphization cache (#552).
+- A struct or enum with more than 64 fields no longer aborts the collector; a garbage-collected field beyond the 64th (which the descriptor mask cannot track) is rejected at compile time (#553).
+- `String.substring` clamps a negative bound to 0 instead of sign-extending it to a huge index (#556).
+
 ## [2.18.101] - 2026-06-15
 
 Continuing the codex-review fix batch (one patch per issue).

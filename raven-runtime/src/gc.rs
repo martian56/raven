@@ -864,7 +864,14 @@ unsafe fn trace_object(object: *mut ObjectHeader, work: &mut Vec<*mut ObjectHead
             let mask = struct_descriptor(type_id);
             if mask != 0 {
                 let fields = (object as *const u8).wrapping_add(STRUCT_FIELDS_OFFSET);
-                for i in 0..field_count as usize {
+                // The descriptor mask is 64 bits, so only the first 64 fields
+                // can be tracked. Cap the loop so a struct with more than 64
+                // fields does not shift `1u64 << i` past the word width (a panic
+                // in debug, undefined in release). The compiler rejects a struct
+                // whose pointer fields would fall beyond slot 63, so a capped
+                // field here is never a GC pointer.
+                let traced = (field_count as usize).min(64);
+                for i in 0..traced {
                     if mask & (1u64 << i) != 0 {
                         let slot = fields.wrapping_add(i * STRUCT_FIELD_SLOT);
                         visit_slot(slot as *const *mut u8, work);

@@ -341,6 +341,20 @@ fn parses_negative_i64_min_literal_pattern() {
 }
 
 #[test]
+fn bare_int_min_magnitude_is_out_of_range() {
+    // `9223372036854775808` as a positive literal overflows Int; it used to
+    // compile as i64::MIN (issue #543). It is now a parse error.
+    let err = parse_err("let x = 9223372036854775808\n");
+    assert!(matches!(err, RavenError::Parse(_, _, _)), "got: {}", err);
+}
+
+#[test]
+fn negated_int_min_magnitude_is_i64_min() {
+    let f = parse_ok("let x = -9223372036854775808\n");
+    assert!(matches!(let_init(&f), ExprKind::Int(i64::MIN)));
+}
+
+#[test]
 fn parses_while_and_for() {
     let src = "fun f() { while a { let _ = 1 }\nfor x in xs { let _ = 1 }\n }\n";
     let f = parse_ok(src);

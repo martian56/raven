@@ -1,0 +1,14 @@
+// substring clamps out-of-range bounds to [0, length] (#556): a negative start
+// or end becomes 0 instead of sign-extending to a huge index. Prints:
+//   hel
+//   (empty line)
+//   hello
+import std/string
+import std/io { println }
+
+fun main() {
+    let s = "hello"
+    println(s.substring(0 - 2, 3))
+    println(s.substring(2, 0 - 1))
+    println(s.substring(0 - 5, 100))
+}

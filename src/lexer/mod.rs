@@ -31,6 +31,11 @@ pub enum TokenKind {
     // Literals and identifiers.
     Identifier(String),
     IntLit(i64),
+    // The bare decimal magnitude `9223372036854775808` (= i64::MIN negated),
+    // which overflows i64 as a positive value and is only valid as the operand
+    // of a unary `-`. Kept distinct from `IntLit(i64::MIN)`, which a hex/binary
+    // bit-pattern literal produces and is a valid positive value.
+    IntMinMagnitude,
     FloatLit(f64),
     StringLit(String),
     BlockStringLit(String),
@@ -511,11 +516,12 @@ impl Lexer {
                     TokenKind::IntLit(v),
                     self.make_span(start, line, col),
                 )),
-                // `9223372036854775808` is the magnitude of `i64::MIN`, valid only
-                // as `-9223372036854775808`. Accept it as that bit pattern so the
-                // unary minus yields `i64::MIN`; any larger decimal is out of range.
+                // `9223372036854775808` is the magnitude of `i64::MIN`, valid
+                // only as `-9223372036854775808`. Emit a distinct token so the
+                // parser yields `i64::MIN` under a unary `-` but rejects it as a
+                // positive literal; any larger decimal is out of range.
                 Err(_) if cleaned == "9223372036854775808" => Ok(Token::new(
-                    TokenKind::IntLit(i64::MIN),
+                    TokenKind::IntMinMagnitude,
                     self.make_span(start, line, col),
                 )),
                 Err(_) => Err(self.err(LexError::InvalidNumber(lexeme.into()), start, line, col)),

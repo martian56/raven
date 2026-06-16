@@ -73,6 +73,17 @@ pub fn struct_pointer_mask(field_tys: &[MirType]) -> u64 {
     mask
 }
 
+/// Whether any garbage-collected field falls at or beyond bit 64, which the
+/// 64-bit descriptor mask cannot represent, so the collector could not trace it
+/// (the field would be reclaimed while still in use). `base_slot` is 0 for a
+/// struct and 1 for an enum payload (slot 0 holds the discriminant).
+pub fn gc_pointer_beyond_mask(field_tys: &[MirType], base_slot: usize) -> bool {
+    field_tys
+        .iter()
+        .enumerate()
+        .any(|(i, ty)| base_slot + i >= 64 && is_gc_pointer(ty))
+}
+
 /// Build the GC pointer bitmask for an enum value. Slot 0 is the scalar
 /// discriminant, so payload field `i` lands in slot `i + 1` and sets
 /// bit `i + 1` when it is a GC pointer.

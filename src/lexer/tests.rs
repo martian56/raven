@@ -24,11 +24,12 @@ fn empty_source_yields_eof_only() {
 
 #[test]
 fn full_width_integer_literals_are_writable() {
-    // i64::MIN's decimal magnitude is accepted as the bit pattern (valid with a
-    // leading minus), and a full-width hex pattern reinterprets its bits.
+    // i64::MIN's decimal magnitude lexes to a distinct token (valid only with a
+    // leading minus), while a full-width hex pattern reinterprets its bits as a
+    // normal `IntLit`.
     assert_eq!(
         lex("9223372036854775808")[0].kind,
-        TokenKind::IntLit(i64::MIN)
+        TokenKind::IntMinMagnitude
     );
     assert_eq!(lex("0xFFFFFFFFFFFFFFFF")[0].kind, TokenKind::IntLit(-1));
     assert_eq!(
