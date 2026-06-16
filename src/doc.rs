@@ -229,6 +229,13 @@ fn block_text(source: &str, start: usize) -> String {
     let mut end = source.len();
     let mut i = start;
     while i < bytes.len() {
+        // Skip comments, string, and char literals so a brace inside one (a
+        // `{` in a doc comment or a string default) does not throw off the
+        // structural depth count and truncate the declaration.
+        if let Some(next) = skip_non_code(bytes, i) {
+            i = next;
+            continue;
+        }
         match bytes[i] {
             b'{' => {
                 depth += 1;
@@ -246,6 +253,39 @@ fn block_text(source: &str, start: usize) -> String {
         i += 1;
     }
     source[start..end].trim_end().to_string()
+}
+
+/// If `bytes[i]` begins a comment, string, or char literal, return the index
+/// just past it; otherwise `None`. Lets a brace/`=` scanner skip non-code.
+fn skip_non_code(bytes: &[u8], i: usize) -> Option<usize> {
+    match bytes[i] {
+        b'/' if bytes.get(i + 1) == Some(&b'/') => {
+            let mut j = i + 2;
+            while j < bytes.len() && bytes[j] != b'\n' {
+                j += 1;
+            }
+            Some(j)
+        }
+        b'/' if bytes.get(i + 1) == Some(&b'*') => {
+            let mut j = i + 2;
+            while j + 1 < bytes.len() && !(bytes[j] == b'*' && bytes[j + 1] == b'/') {
+                j += 1;
+            }
+            Some((j + 2).min(bytes.len()))
+        }
+        b'"' | b'\'' => {
+            let quote = bytes[i];
+            let mut j = i + 1;
+            while j < bytes.len() && bytes[j] != quote {
+                if bytes[j] == b'\\' {
+                    j += 1;
+                }
+                j += 1;
+            }
+            Some((j + 1).min(bytes.len()))
+        }
+        _ => None,
+    }
 }
 
 /// The contiguous `//` comment block immediately above the item starting at

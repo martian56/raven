@@ -2,6 +2,17 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.116] - 2026-06-16
+
+Continuing the codex-review fix batch (one patch per issue).
+
+### Fixed
+
+- The doc extractor counts only structural braces when capturing a `struct`/`enum`/`trait` block, skipping braces inside comments, strings, and char literals so a brace in a doc comment no longer truncates the declaration (#577).
+- A quoted import path is re-escaped when formatted, so a `"` or `\` in the path produces valid, round-tripping output (#578).
+- The formatter weaves interior comments into struct literals, map literals, and `match` arms instead of dropping or relocating them (#579).
+- Comment scanning skips `${ ... }` interpolations as a unit, so a string nested in an interpolation no longer ends the outer literal early and mis-scans a following comment (#580).
+
 ## [2.18.112] - 2026-06-15
 
 Continuing the codex-review fix batch (one patch per issue).

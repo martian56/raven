@@ -389,3 +389,60 @@ fn empty_list_stays_a_list() {
     let out = fmt("fun f(){let e=[]}");
     assert_eq!(out, "fun f() {\n    let e = []\n}\n");
 }
+
+#[test]
+fn comment_inside_struct_literal_is_kept() {
+    // A comment interior to a struct literal must survive formatting. Before
+    // #579 the struct-literal printer ignored the comment cursor and the
+    // comment was relocated past the literal. Regression for #579.
+    let src = "fun f() {\n    let p = Point {\n        x: 1, // the x\n        // the y\n        y: 2,\n    }\n}\n";
+    let out = fmt(src);
+    assert!(
+        out.contains("x: 1, // the x"),
+        "trailing field comment lost: {out:?}"
+    );
+    assert!(
+        out.contains("// the y"),
+        "own-line field comment lost: {out:?}"
+    );
+}
+
+#[test]
+fn comment_inside_map_literal_is_kept() {
+    // Regression for #579: a comment inside a map literal must be kept and the
+    // literal laid out multi-line.
+    let src = "fun f() {\n    let m = [\n        \"a\": 1, // first\n        \"b\": 2,\n    ]\n}\n";
+    let out = fmt(src);
+    assert!(
+        out.contains("\"a\": 1, // first"),
+        "map entry comment lost: {out:?}"
+    );
+}
+
+#[test]
+fn comment_inside_match_is_kept() {
+    // Regression for #579: comments between and after match arms must survive.
+    let src = "fun f(x: Int) -> Int {\n    match x {\n        // the zero case\n        0 -> 1, // one\n        _ -> 2,\n    }\n}\n";
+    let out = fmt(src);
+    assert!(
+        out.contains("// the zero case"),
+        "own-line arm comment lost: {out:?}"
+    );
+    assert!(
+        out.contains("0 -> 1, // one"),
+        "trailing arm comment lost: {out:?}"
+    );
+}
+
+#[test]
+fn interpolation_with_nested_string_does_not_break_comment_scan() {
+    // A string interpolation may itself contain a string literal. The comment
+    // scanner must skip the whole interpolation so the inner `"` does not end
+    // the outer literal and mis-scan a following `//`. Regression for #580.
+    let src = "fun f(name: String) {\n    let s = \"hi ${name.concat(\"!\")}\" // a greeting\n    print(s)\n}\n";
+    let out = fmt(src);
+    assert!(
+        out.contains("// a greeting"),
+        "trailing comment after an interpolated string was lost: {out:?}"
+    );
+}
