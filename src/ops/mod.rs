@@ -13,6 +13,7 @@
 //!
 //! See `docs/v2/specs/rvpm.md` for the command semantics.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -313,16 +314,25 @@ pub fn install_in(
 
     if lock_path.exists() {
         let existing = LockFile::load(&lock_path)?;
+        // The lock is trusted only when it covers the direct dependencies AND
+        // contains the complete transitive graph. A lock that lists a package
+        // but omits the packages it pulls in is incomplete: fall through and
+        // re-resolve a fresh, complete lock instead of building against it.
         if existing.covers(&manifest) {
             lock::validate_lock_in(&existing, cache_root)?;
-            let count = existing.packages.len();
-            return Ok((
-                InstallOutcome::Validated,
-                OpReport {
-                    outcome_lines: vec![format!("Validated {} package(s) against rv.lock", count)],
-                    package_count: count,
-                },
-            ));
+            if lock::lock_covers_transitive(&existing, cache_root)? {
+                let count = existing.packages.len();
+                return Ok((
+                    InstallOutcome::Validated,
+                    OpReport {
+                        outcome_lines: vec![format!(
+                            "Validated {} package(s) against rv.lock",
+                            count
+                        )],
+                        package_count: count,
+                    },
+                ));
+            }
         }
     }
 
@@ -408,6 +418,11 @@ pub fn update_in(
                     merged.packages.push(entry.clone());
                 }
             }
+            // Prune packages no longer reachable from the manifest graph. After
+            // bumping the named dependency, a package that was only pulled in by
+            // its previous version is dead weight; walking the graph from the
+            // manifest through the merged pins drops it.
+            prune_unreachable(&mut merged, &manifest, cache_root)?;
             merged
                 .packages
                 .sort_by(|a, b| a.source.cmp(&b.source).then(a.version.cmp(&b.version)));
@@ -418,6 +433,41 @@ pub fn update_in(
             })
         }
     }
+}
+
+/// Drop every locked package not reachable from `manifest`'s dependency graph.
+/// Walks from the manifest's direct dependencies, following each package's
+/// declared sub-dependencies (read from its cached `rv.toml`) using the lock's
+/// own pins as the version for each source, and retains only the packages
+/// visited.
+fn prune_unreachable(
+    lock: &mut LockFile,
+    manifest: &Manifest,
+    cache_root: &Path,
+) -> Result<(), OpError> {
+    let by_source: BTreeMap<String, String> = lock
+        .packages
+        .iter()
+        .map(|p| (p.source.clone(), p.version.clone()))
+        .collect();
+    let mut reachable: BTreeSet<String> = BTreeSet::new();
+    let mut stack: Vec<String> = manifest
+        .dependencies
+        .iter()
+        .map(|d| d.path.clone())
+        .collect();
+    while let Some(source) = stack.pop() {
+        if !reachable.insert(source.clone()) {
+            continue;
+        }
+        if let Some(version) = by_source.get(&source) {
+            for (sub_source, _sub_version) in lock::cached_subdeps(cache_root, &source, version)? {
+                stack.push(sub_source);
+            }
+        }
+    }
+    lock.packages.retain(|p| reachable.contains(&p.source));
+    Ok(())
 }
 
 /// The conventional application entry source, relative to the project root.
@@ -1144,6 +1194,129 @@ mod tests {
             .unwrap();
         assert_eq!(foo.version, "v1.1.0");
         assert_ne!(foo.hash, old_hash);
+    }
+
+    #[test]
+    fn selective_update_prunes_a_removed_transitive_dependency() {
+        // a@v1 depends on old@v1; a@v2 has no dependencies. After updating a to
+        // v2, old must be pruned from the lock. Regression for #575.
+        let proj = TempProject::new("prune");
+        proj.write_manifest(
+            "[package]\nname = \"app\"\nversion = \"0.1.0\"\n\n[dependencies]\n\"github.com/acme/a\" = \"v1.0.0\"\n",
+        );
+        let cache = proj.cache_root();
+        proj.seed(
+            &cache,
+            "github.com/acme/a",
+            "v1.0.0",
+            &[(
+                "rv.toml",
+                "[package]\nname = \"a\"\nversion = \"1.0.0\"\n\n[dependencies]\n\"github.com/acme/old\" = \"v1.0.0\"\n",
+            )],
+        );
+        proj.seed(
+            &cache,
+            "github.com/acme/old",
+            "v1.0.0",
+            &[(
+                "rv.toml",
+                "[package]\nname = \"old\"\nversion = \"1.0.0\"\n",
+            )],
+        );
+        proj.seed(
+            &cache,
+            "github.com/acme/a",
+            "v2.0.0",
+            &[("rv.toml", "[package]\nname = \"a\"\nversion = \"2.0.0\"\n")],
+        );
+
+        install_in(&proj.root, &cache).expect("install");
+        let before = proj.lock();
+        assert!(
+            before
+                .packages
+                .iter()
+                .any(|p| p.source == "github.com/acme/old"),
+            "old should be present before the update"
+        );
+
+        // Bump a to v2 (which drops old) and update just a.
+        proj.write_manifest(
+            "[package]\nname = \"app\"\nversion = \"0.1.0\"\n\n[dependencies]\n\"github.com/acme/a\" = \"v2.0.0\"\n",
+        );
+        update_in(&proj.root, Some("github.com/acme/a"), &cache).expect("update");
+
+        let after = proj.lock();
+        assert!(
+            after
+                .packages
+                .iter()
+                .any(|p| p.source == "github.com/acme/a" && p.version == "v2.0.0"),
+            "a should be bumped to v2"
+        );
+        assert!(
+            !after
+                .packages
+                .iter()
+                .any(|p| p.source == "github.com/acme/old"),
+            "old should be pruned, lock was: {:?}",
+            after.packages
+        );
+    }
+
+    #[test]
+    fn install_regenerates_a_transitively_incomplete_lock() {
+        // The lock lists a@v1 but omits the old@v1 that a@v1 declares. install
+        // must detect the gap and re-resolve a complete lock. Regression for
+        // #576.
+        let proj = TempProject::new("incomplete");
+        proj.write_manifest(
+            "[package]\nname = \"app\"\nversion = \"0.1.0\"\n\n[dependencies]\n\"github.com/acme/a\" = \"v1.0.0\"\n",
+        );
+        let cache = proj.cache_root();
+        proj.seed(
+            &cache,
+            "github.com/acme/a",
+            "v1.0.0",
+            &[(
+                "rv.toml",
+                "[package]\nname = \"a\"\nversion = \"1.0.0\"\n\n[dependencies]\n\"github.com/acme/old\" = \"v1.0.0\"\n",
+            )],
+        );
+        proj.seed(
+            &cache,
+            "github.com/acme/old",
+            "v1.0.0",
+            &[(
+                "rv.toml",
+                "[package]\nname = \"old\"\nversion = \"1.0.0\"\n",
+            )],
+        );
+
+        // Hand-write a lock that covers the direct dep but omits the transitive
+        // old@v1.
+        let a_dir = pkg::cache_dir_in(&cache, "github.com", "acme", "a", "v1.0.0");
+        let a_hash = crate::lock::tree_hash(&a_dir).expect("hash");
+        let partial = format!(
+            "version = 1\n\n[[package]]\nsource = \"github.com/acme/a\"\nversion = \"v1.0.0\"\nhash = \"{}\"\n",
+            a_hash
+        );
+        write_file(&proj.root.join(LOCK_FILE_NAME), &partial).expect("write partial lock");
+
+        let (outcome, _) = install_in(&proj.root, &cache).expect("install");
+        assert_eq!(
+            outcome,
+            InstallOutcome::Resolved,
+            "an incomplete lock must be regenerated, not validated"
+        );
+        let after = proj.lock();
+        assert!(
+            after
+                .packages
+                .iter()
+                .any(|p| p.source == "github.com/acme/old"),
+            "the regenerated lock must include the missing transitive dependency"
+        );
     }
 
     #[test]
