@@ -196,7 +196,8 @@ mod tests {
 
     #[test]
     fn same_file_detects_the_input_as_output() {
-        let dir = std::env::temp_dir().join("raven_same_file_test");
+        // A per-process directory so parallel test runs do not collide.
+        let dir = std::env::temp_dir().join(format!("raven_same_file_test_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let src = dir.join("prog.rv");
         std::fs::write(&src, "fun main() {}\n").unwrap();
