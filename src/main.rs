@@ -101,10 +101,30 @@ fn print_usage() {
 
 fn run_build(rest: &[String]) -> Result<(), BuildError> {
     let opts = parse_build_args(rest)?;
+    // Refuse to write the executable over the input source. The compiler reads
+    // the source first and the linker writes the output last, so `-o` pointing
+    // at the source would silently replace it with the binary; a typo there
+    // could destroy the only copy of the file.
+    if same_file(&opts.input, &opts.output) {
+        return Err(BuildError::Args(format!(
+            "refusing to overwrite the input source `{}` with the build output; pass a different -o path",
+            opts.input.display()
+        )));
+    }
     // The single-file `raven build` has no package context, so external
     // (`github.com/...`) imports stay deferred and surface as unresolved.
     // Package-aware builds go through `rvpm build`.
     driver::build_binary(&opts.input, &opts.output, None).map_err(BuildError::Driver)
+}
+
+/// Whether two paths refer to the same file. Canonicalization resolves `.`,
+/// `..`, symlinks, and case differences; when the output does not exist yet it
+/// cannot be the input, so the paths are compared as written.
+fn same_file(input: &Path, output: &Path) -> bool {
+    match (std::fs::canonicalize(input), std::fs::canonicalize(output)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => input == output,
+    }
 }
 
 #[derive(Debug)]
@@ -167,5 +187,28 @@ impl std::fmt::Display for BuildError {
             BuildError::Args(s) => write!(f, "{}", s),
             BuildError::Driver(e) => write!(f, "{}", e),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn same_file_detects_the_input_as_output() {
+        let dir = std::env::temp_dir().join("raven_same_file_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("prog.rv");
+        std::fs::write(&src, "fun main() {}\n").unwrap();
+
+        // The output pointing at the existing source is the same file, even
+        // when written with a `.` segment.
+        assert!(same_file(&src, &src));
+        assert!(same_file(&src, &dir.join(".").join("prog.rv")));
+
+        // A distinct (non-existent) output path is not the input.
+        assert!(!same_file(&src, &dir.join("prog.exe")));
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
