@@ -425,10 +425,38 @@ fn parse_rules(inner: &[Token], name: &str, span: &Span) -> Result<Vec<Rule>, Ra
             )
         })?;
         let template = parse_template(&inner[j + 1..tclose], name)?;
+        // Every metavariable the template splices must be bound by the matcher.
+        // An undefined one (a typo, say) was silently dropped at expansion;
+        // reject it at the definition instead.
+        let bound = matcher_meta_names(&matcher);
+        for var in template_meta_names(&template) {
+            if !bound.contains(&var) {
+                return Err(err(
+                    inner[j].span.clone(),
+                    format!(
+                        "macro `{}`: template uses undefined metavariable `${}`",
+                        name, var
+                    ),
+                ));
+            }
+        }
         rules.push(Rule { matcher, template });
         i = tclose + 1;
     }
     Ok(rules)
+}
+
+/// Names of metavariables a matcher binds, including those inside repetitions.
+fn matcher_meta_names(items: &[MatchItem]) -> Vec<String> {
+    let mut out = Vec::new();
+    for it in items {
+        match it {
+            MatchItem::Meta { name, .. } => out.push(name.clone()),
+            MatchItem::Rep { sub, .. } => out.extend(matcher_meta_names(sub)),
+            MatchItem::Literal(_) => {}
+        }
+    }
+    out
 }
 
 /// Parse a matcher token slice into match items.

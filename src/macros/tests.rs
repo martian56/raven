@@ -107,6 +107,18 @@ fn literal_fragment_rejects_a_non_literal() {
 }
 
 #[test]
+fn template_undefined_metavar_is_an_error() {
+    let src = "macro keep { ($x:expr) => { $missing $x } }\nkeep!(7)\n";
+    let e = expand_tokens(&lex(src)).expect_err("undefined template metavariable");
+    let msg = format!("{}", e);
+    assert!(
+        msg.contains("undefined metavariable `$missing`"),
+        "got: {}",
+        msg
+    );
+}
+
+#[test]
 fn block_fragment_captures_a_brace_group() {
     let src = "macro run { ($b:block) => { $b } }\nrun!({ let a = 1 })\n";
     assert_eq!(expand_render(src), "{ let a = 1 }");

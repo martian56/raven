@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.145] - 2026-06-24
+
+### Fixed
+
+- A macro template that splices an undefined metavariable is rejected at the definition instead of silently dropping it. `macro keep { ($x:expr) => { $missing $x } }` now reports `template uses undefined metavariable $missing` rather than expanding to just `$x` (#663).
+
 ## [2.18.142] - 2026-06-24
 
 ### Fixed
