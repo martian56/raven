@@ -140,6 +140,9 @@ impl String {
     fun matches_at(self, needle: String, at: Int) -> Bool {
         let m = __str_len(needle)
         let n = __str_len(self)
+        if at < 0 {
+            return false
+        }
         if at + m > n {
             return false
         }

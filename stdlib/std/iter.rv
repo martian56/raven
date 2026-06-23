@@ -387,6 +387,9 @@ fun position<T, S: Iterator<T>>(it: S, pred: fun(T) -> Bool) -> Option<Int> {
 // The element at index `n` (zero-based), or `None` when the iterator is
 // shorter.
 fun nth<T, S: Iterator<T>>(it: S, n: Int) -> Option<T> {
+    if n < 0 {
+        return None
+    }
     let i = 0
     for x in it {
         if i == n {

@@ -153,14 +153,19 @@ fun normalize(p: String) -> String {
 // Replace the path's extension with `ext` (no leading dot). An empty `ext`
 // removes the extension.
 fun with_extension(p: String, ext: String) -> String {
-    let cur = extension(p)
-    if cur.length() > 0 {
-        let cut = p.length() - cur.length() - 1
-        let without = p.substring(0, cut)
-        if ext.length() == 0 {
-            return without
+    let base = basename(p)
+    let n = base.length()
+    let prefix = p.length() - n
+    let i = n - 1
+    while i > 0 {
+        if base.char_at(i).starts_with(".") {
+            let without = p.substring(0, prefix + i)
+            if ext.length() == 0 {
+                return without
+            }
+            return without.concat(".").concat(ext)
         }
-        return without.concat(".").concat(ext)
+        i = i - 1
     }
     if ext.length() == 0 {
         return p
