@@ -1339,17 +1339,27 @@ fn lower_counter_for(
     // temporary and `match` it so the pattern's variables come into scope for
     // the body. A refutable pattern gets a wildcard arm that skips an element
     // that does not match.
-    let bind_and_body: Vec<HirStmt> = if let Some(name) = pattern_binding_name(pat) {
+    // Dispatch on the lowered pattern, not the surface syntax: an identifier
+    // like `None` is a nullary constructor, not a binding, and must take the
+    // match path so `for None in xs` filters instead of rebinding.
+    let simple_let = |name: &str, ty: Ty, init: HirExpr, body: HirExpr| {
         vec![
-            let_stmt(&name, element_ty, element_init, span.clone()),
+            let_stmt(name, ty, init, span.clone()),
             HirStmt {
-                kind: HirStmtKind::Expr(body_expr),
+                kind: HirStmtKind::Expr(body),
                 span: span.clone(),
             },
         ]
-    } else {
-        match lower_pattern(pat, cx) {
-            Ok(hir_pat) if !matches!(hir_pat.kind, HirPatternKind::Wildcard) => {
+    };
+    let bind_and_body: Vec<HirStmt> = match lower_pattern(pat, cx) {
+        Ok(hir_pat) => {
+            if let HirPatternKind::Binding(name) = &hir_pat.kind {
+                let name = name.clone();
+                simple_let(&name, element_ty, element_init, body_expr)
+            } else if matches!(hir_pat.kind, HirPatternKind::Wildcard) {
+                simple_let(&cx.fresh("loopvar"), element_ty, element_init, body_expr)
+            } else {
+                let refutable = hir_pattern_is_refutable(&hir_pat);
                 let loopvar = cx.fresh("loopvar");
                 let bind_let = let_stmt(&loopvar, element_ty.clone(), element_init, span.clone());
                 let scrutinee = ident_expr(&loopvar, element_ty, span.clone());
@@ -1359,7 +1369,7 @@ fn lower_counter_for(
                     body: body_expr,
                     span: span.clone(),
                 }];
-                if for_pattern_is_refutable(pat) {
+                if refutable {
                     arms.push(HirArm {
                         pattern: HirPattern {
                             kind: HirPatternKind::Wildcard,
@@ -1395,19 +1405,10 @@ fn lower_counter_for(
                     },
                 ]
             }
-            _ => {
-                // A wildcard `for _ in ...` (or a pattern that did not lower):
-                // evaluate the element into a throwaway and run the body.
-                let loopvar = cx.fresh("loopvar");
-                vec![
-                    let_stmt(&loopvar, element_ty, element_init, span.clone()),
-                    HirStmt {
-                        kind: HirStmtKind::Expr(body_expr),
-                        span: span.clone(),
-                    },
-                ]
-            }
         }
+        // A pattern that did not lower: evaluate the element into a throwaway
+        // and run the body, so the loop still iterates.
+        Err(_) => simple_let(&cx.fresh("loopvar"), element_ty, element_init, body_expr),
     };
 
     let mut loop_stmts = vec![
@@ -1463,18 +1464,21 @@ fn pattern_binding_name(pat: &crate::ast::Pattern) -> Option<String> {
     }
 }
 
-/// Whether a `for` loop destructuring pattern can fail to match an element, so
-/// the desugared `match` needs a wildcard arm to skip a non-matching element.
-/// A plain struct destructure is irrefutable; an enum variant, a literal, or a
-/// range is not.
-fn for_pattern_is_refutable(pat: &crate::ast::Pattern) -> bool {
-    use crate::ast::PatternKind;
-    matches!(
-        pat.kind,
-        PatternKind::Tuple { name: Some(_), .. }
-            | PatternKind::Literal(_)
-            | PatternKind::Range { .. }
-    )
+/// Whether a pattern can fail to match a value of its scrutinee type, so a
+/// `for` loop desugared to a `match` needs a wildcard arm to skip an element
+/// that does not match. A binding or wildcard always matches; an enum
+/// constructor, a literal, or a range can fail; a struct is refutable only when
+/// one of its field patterns is. The check recurses so a nested refutable
+/// pattern is not missed.
+fn hir_pattern_is_refutable(pat: &HirPattern) -> bool {
+    match &pat.kind {
+        HirPatternKind::Wildcard | HirPatternKind::Binding(_) => false,
+        HirPatternKind::Literal(_) | HirPatternKind::Range { .. } => true,
+        HirPatternKind::Constructor { .. } => true,
+        HirPatternKind::Struct { fields, .. } => fields
+            .iter()
+            .any(|f| f.pattern.as_ref().is_some_and(hir_pattern_is_refutable)),
+    }
 }
 
 /// Lower a compound assignment `target op= value` into a flat
