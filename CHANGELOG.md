@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.147] - 2026-06-24
+
+### Fixed
+
+- A macro matcher that binds the same metavariable name twice is rejected. `macro choose { ($x:expr, $x:expr) => { $x } }` reported no error and the second capture silently overwrote the first; it now reports `metavariable $x is bound more than once` (#665).
+
 ## [2.18.146] - 2026-06-24
 
 ### Fixed
