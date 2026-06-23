@@ -7,6 +7,11 @@ All notable changes to Raven are documented in this file.
 ### Fixed
 
 - A `ty` macro fragment balances angle brackets, so a comma inside generic arguments stays part of the type. `$t:ty` matching `Pair<Int, String>` now captures the whole type instead of stopping at the first comma. `<`/`>` in an `expr` or `pat` fragment are still treated as comparison operators (#662).
+## [2.18.147] - 2026-06-24
+
+### Fixed
+
+- A macro matcher that binds the same metavariable name twice is rejected. `macro choose { ($x:expr, $x:expr) => { $x } }` reported no error and the second capture silently overwrote the first; it now reports `metavariable $x is bound more than once` (#665).
 
 ## [2.18.146] - 2026-06-24
 
