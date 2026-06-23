@@ -7,6 +7,11 @@ All notable changes to Raven are documented in this file.
 ### Fixed
 
 - `std/io.read_line` preserves a line that contains non-UTF-8 bytes. It read the line as UTF-8 text and silently returned an empty string on a bad byte; it now reads the raw bytes up to the newline, so the line round-trips through the byte-buffer `String` (#657).
+## [2.18.151] - 2026-06-24
+
+### Fixed
+
+- `std/fs.read` returns the file's raw bytes instead of requiring valid UTF-8. A Raven `String` is a byte buffer and `fs.write` already writes arbitrary bytes, so a binary file written through the API now reads back byte for byte instead of failing with a UTF-8 error (#609).
 
 ## [2.18.150] - 2026-06-24
 

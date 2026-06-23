@@ -788,10 +788,14 @@ pub extern "C" fn raven_fs_last_error() -> *mut object::String {
 /// `path` must be a valid `raven_string_from_bytes`-built `String`.
 #[no_mangle]
 pub extern "C" fn raven_fs_read(path: *const object::String) -> *mut object::String {
+    // Read the raw bytes, not UTF-8 text: a Raven String is a byte buffer, and
+    // `raven_fs_write` already writes arbitrary bytes, so a binary file written
+    // by one program must read back through the same API. Only the path needs
+    // to be valid UTF-8.
     let contents = crate::gc::blocking(|| {
         env_name(path)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
-            .and_then(std::fs::read_to_string)
+            .and_then(std::fs::read)
     });
     let value = fs_record(contents).unwrap_or_default();
     object::raven_string_from_bytes(value.as_ptr(), value.len())
