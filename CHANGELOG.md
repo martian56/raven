@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.139] - 2026-06-24
+
+### Fixed
+
+- An `extern "C"` function that is never called or address-taken no longer creates a link dependency. The back end declared every foreign symbol as an import, so an unused `extern` declaration left an undefined external that failed the link; it now declares only the foreign functions the program actually references (#623).
+
 ## [2.18.136] - 2026-06-23
 
 ### Fixed

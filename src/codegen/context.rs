@@ -730,12 +730,17 @@ impl ModuleCx {
     /// supplied on the link line. See `docs/v2/specs/ffi.md`.
     pub fn declare_externs(&mut self, program: &MirProgram) -> Result<(), CodegenError> {
         let ptr = self.pointer_type();
+        // Only declare a foreign function the program actually references.
+        // Declaring an `extern "C"` symbol as an import still emits an
+        // undefined external that the linker must resolve, so an `extern`
+        // block whose function is never called or address-taken would fail
+        // the link with an unresolved-symbol error.
+        let referenced = Self::referenced_symbols(program);
         for ext in &program.externs {
-            // A foreign function may be declared but never called; only
-            // the symbols a call site references need to resolve at link
-            // time, but declaring all of them is harmless and keeps the
-            // table complete for diagnostics.
             if self.functions.contains_key(&ext.name) {
+                continue;
+            }
+            if !referenced.contains(ext.name.as_str()) {
                 continue;
             }
             let conv = self.module.target_config().default_call_conv;
@@ -767,6 +772,32 @@ impl ModuleCx {
             }
         }
         Ok(())
+    }
+
+    /// The set of symbol names the program references directly: every call
+    /// target and every function whose address is taken. An `extern` symbol
+    /// outside this set is never used and need not be declared (and so linked).
+    fn referenced_symbols(program: &MirProgram) -> std::collections::HashSet<&str> {
+        use crate::mir::ir::{MirRvalue, MirStatement};
+        let mut set: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for func in &program.functions {
+            for block in &func.blocks {
+                for stmt in &block.statements {
+                    if let MirStatement::Assign { rvalue, .. } = stmt {
+                        match rvalue {
+                            MirRvalue::Call { callee, .. } => {
+                                set.insert(callee.mangled.as_str());
+                            }
+                            MirRvalue::FnAddr { mangled } => {
+                                set.insert(mangled.as_str());
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+        set
     }
 
     /// The by-value register plan for a MIR type, or `None` when it is not a
