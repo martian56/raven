@@ -7,6 +7,11 @@ All notable changes to Raven are documented in this file.
 ### Fixed
 
 - A macro template that splices an undefined metavariable is rejected at the definition instead of silently dropping it. `macro keep { ($x:expr) => { $missing $x } }` now reports `template uses undefined metavariable $missing` rather than expanding to just `$x` (#663).
+## [2.18.143] - 2026-06-24
+
+### Fixed
+
+- The `Eq` and `Ord` trait impls for `Float` are total in the presence of NaN. `Eq` is now reflexive (a NaN equals itself, so a `Float` map key or a derived struct compares to itself), and `Ord.compare` gives NaN one fixed position (two NaN are equal, a NaN sorts after every number) instead of comparing equal to everything. The `==`/`<` operators keep their IEEE meaning (#610).
 
 ## [2.18.142] - 2026-06-24
 
