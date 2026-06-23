@@ -558,7 +558,7 @@ dependencies = [
 
 [[package]]
 name = "raven"
-version = "2.18.134"
+version = "2.18.135"
 dependencies = [
  "cc",
  "cranelift-codegen",
@@ -575,7 +575,7 @@ dependencies = [
 
 [[package]]
 name = "raven-runtime"
-version = "2.18.134"
+version = "2.18.135"
 dependencies = [
  "chrono",
  "corosensei",

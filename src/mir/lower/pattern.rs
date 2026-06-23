@@ -114,9 +114,14 @@ fn lower_enum_match(
 
     for (arm, block) in arms.iter().zip(arm_blocks.iter()) {
         cx.current = *block;
+        // The arm's pattern bindings live only for this arm; a fresh scope
+        // keeps them from overwriting a same-named variable in the enclosing
+        // scope once the match is done.
+        cx.push_scope();
         bind_pattern(cx, &arm.pattern, scrut_ty, &scrut);
         let v = super::expr::lower_expr(cx, &arm.body);
         cx.builder.assign(cx.current, result, MirRvalue::Use(v));
+        cx.pop_scope();
         if !cx.builder.is_closed(cx.current) {
             cx.builder
                 .close_block(cx.current, MirTerminator::Goto(cont));
@@ -156,9 +161,11 @@ fn lower_int_match(
 
     for (arm, block) in arms.iter().zip(arm_blocks.iter()) {
         cx.current = *block;
+        cx.push_scope();
         // A binding arm (`other -> ...`) over an int/bool/char scrutinee binds
         // the name to the scrutinee value. Without this the name was unbound in
-        // the arm body and read a garbage slot.
+        // the arm body and read a garbage slot. The scope keeps the binding
+        // from leaking past the arm.
         if let HirPatternKind::Binding(name) = &arm.pattern.kind {
             let local = cx
                 .builder
@@ -169,6 +176,7 @@ fn lower_int_match(
         }
         let v = super::expr::lower_expr(cx, &arm.body);
         cx.builder.assign(cx.current, result, MirRvalue::Use(v));
+        cx.pop_scope();
         if !cx.builder.is_closed(cx.current) {
             cx.builder
                 .close_block(cx.current, MirTerminator::Goto(cont));
@@ -247,12 +255,15 @@ fn lower_fallback_match(
         }
 
         cx.current = arm_block;
+        cx.push_scope();
         // Bind whatever the pattern introduces: a plain `Binding` name, or the
         // field bindings of a struct destructure. Without this a struct pattern
         // arm reached its body with its fields unbound, so they read as Unit.
+        // The scope keeps those bindings from leaking past the arm.
         bind_pattern(cx, &arm.pattern, scrut_ty, &scrut);
         let v = super::expr::lower_expr(cx, &arm.body);
         cx.builder.assign(cx.current, result, MirRvalue::Use(v));
+        cx.pop_scope();
         if !cx.builder.is_closed(cx.current) {
             cx.builder
                 .close_block(cx.current, MirTerminator::Goto(cont));
@@ -396,6 +407,9 @@ fn lower_sequential_match(
         }
 
         cx.current = arm_block;
+        // The pattern bindings (and the guard that reads them) are scoped to
+        // this arm, so a same-named outer variable survives the match.
+        cx.push_scope();
         bind_pattern(cx, &arm.pattern, scrut_ty, &scrut);
         // A false guard drops through to the next arm's test.
         if let Some(guard) = &arm.guard {
@@ -413,6 +427,7 @@ fn lower_sequential_match(
         }
         let v = super::expr::lower_expr(cx, &arm.body);
         cx.builder.assign(cx.current, result, MirRvalue::Use(v));
+        cx.pop_scope();
         if !cx.builder.is_closed(cx.current) {
             cx.builder
                 .close_block(cx.current, MirTerminator::Goto(cont));
