@@ -8,6 +8,74 @@ All notable changes to Raven are documented in this file.
 
 - The `std/math` guide and spec no longer claim `pow_int` ignores overflow. They describe the current behavior: `pow_int` aborts with `pow_int overflow`, `abs_int` aborts on `i64::MIN`, and `lcm` aborts on an overflowing product (#633).
 
+## [2.18.132] - 2026-06-23
+
+### Fixed
+
+- A struct destructured in a `match` arm now binds its fields. The fallback match lowering used by struct scrutinees only bound plain name patterns, so a `Point { x, y }` arm reached its body with the fields unbound and codegen aborted with `binop lhs used a Unit value`. The field type and slot are also resolved from the struct declaration, so a pattern that lists fields out of order reads the right ones (#687).
+
+## [2.18.131] - 2026-06-23
+
+### Fixed
+
+- The JSON number parser caps an oversized exponent while it reads the digits, so an exponent such as `1e` followed by dozens of nines no longer overflows the `Int` accumulator and wraps into a small or negative step count. Every out-of-range positive exponent now parses as infinity (#611).
+
+## [2.18.130] - 2026-06-23
+
+### Fixed
+
+- `pad_left`, `pad_right`, and `center` in `std/fmt` repeat only enough whole copies of a multi-byte fill to span the requested width, so the result overshoots by at most `fill.len() - 1` bytes instead of growing with the amount of padding (#613).
+- The same padding helpers compare the width against the string length before subtracting, so an `Int::MIN` width no longer wraps to a huge positive count that spins the fill loop (#676).
+
+## [2.18.129] - 2026-06-23
+
+### Fixed
+
+- `Date.to_string` and `DateTime.to_string` keep the minus sign in front of the zero-padded year, so a negative year renders as `-0001` rather than `000-1` (#684).
+
+## [2.18.128] - 2026-06-23
+
+### Fixed
+
+- `Rng.gen_range_float` interpolates between the endpoints instead of computing `hi - lo` first, so a very wide finite range no longer overflows to infinity and the result stays within `[lo, hi)` (#672).
+
+## [2.18.127] - 2026-06-23
+
+### Fixed
+
+- `List.get` rejects an index outside the `u32` range as out of bounds instead of truncating it to 32 bits, so a positive or negative multiple of 2^32 no longer aliases a real element (#689).
+
+## [2.18.126] - 2026-06-23
+
+### Fixed
+
+- `Rng.weighted_choice` counts only the weights that have a matching item, so extra trailing weights no longer leave a slice of the draw range that returns `None` for a valid list (#604).
+- `Rng.weighted_choice` saturates its running total, so a set of large positive weights no longer wraps past `Int` into a non-positive total and loses the whole draw (#605).
+
+## [2.18.125] - 2026-06-23
+
+### Fixed
+
+- `String.matches_at` returns `false` for a negative offset instead of reporting a match for an empty needle at a position that does not exist (#654).
+
+## [2.18.124] - 2026-06-23
+
+### Fixed
+
+- `std/fmt.from_radix` accumulates toward the sign's own end of the range with a per-step overflow check, so an out-of-range value returns `None` instead of wrapping, and the most negative `i64` now parses (#429).
+
+## [2.18.123] - 2026-06-23
+
+### Fixed
+
+- `std/path.with_extension` treats a trailing dot as the extension separator, the same way `stem` does, so it neither appends a second dot (`report..txt`) nor leaves a stray one behind when removing the extension (#606).
+
+## [2.18.122] - 2026-06-23
+
+### Fixed
+
+- `std/iter.nth` returns `None` for a negative index without consuming the iterator, instead of draining it to the end on a lookup that can never match (#614).
+
 ## [2.18.121] - 2026-06-16
 
 ### Fixed

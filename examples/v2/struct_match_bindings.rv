@@ -1,0 +1,38 @@
+// Destructuring a struct in a match arm binds its fields, in declaration
+// order regardless of how the pattern lists them, including renamed bindings
+// and guards. Prints:
+//   23
+//   23
+//   Ann adult 30
+//   Bo minor 12
+import std/io { println }
+
+struct Point { x: Int, y: Int }
+
+struct Person { name: String, age: Int }
+
+fun combine(p: Point) -> Int {
+    return match p {
+        Point { x, y } -> x * 10 + y,
+    }
+}
+
+fun combine_reordered(p: Point) -> Int {
+    return match p {
+        Point { y, x } -> x * 10 + y,
+    }
+}
+
+fun describe(p: Person) -> String {
+    return match p {
+        Person { name: n, age: a } if a >= 18 -> "${n} adult ${a}",
+        Person { name: n, age: a } -> "${n} minor ${a}",
+    }
+}
+
+fun main() {
+    println(combine(Point { x: 2, y: 3 }).to_string())
+    println(combine_reordered(Point { x: 2, y: 3 }).to_string())
+    println(describe(Person { name: "Ann", age: 30 }))
+    println(describe(Person { name: "Bo", age: 12 }))
+}
