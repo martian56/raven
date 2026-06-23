@@ -101,9 +101,12 @@ impl Rng {
         }
     }
 
-    // A float in [lo, hi).
+    // A float in [lo, hi). Interpolating as lo*(1-t) + hi*t keeps the result
+    // a convex combination of the endpoints, so it stays finite even when
+    // hi - lo would overflow to infinity for a very wide range.
     fun gen_range_float(self, lo: Float, hi: Float) -> Float {
-        return lo + self.next_float() * (hi - lo)
+        let t = self.next_float()
+        return lo * (1.0 - t) + hi * t
     }
 
     // `n` elements drawn from `xs` without replacement, in random order. If
