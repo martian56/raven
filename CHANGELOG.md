@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.135] - 2026-06-23
+
+### Fixed
+
+- A `match` arm's pattern bindings are scoped to that arm. They were bound in the enclosing scope, so `match value { Some(x) -> ... }` overwrote an outer `x` for the rest of the function and a non-matching arm left the outer variable reading a stale slot. Each arm now binds in its own scope, so an outer variable keeps its value and nested matches shadow correctly (#688).
+
 ## [2.18.134] - 2026-06-23
 
 ### Fixed
