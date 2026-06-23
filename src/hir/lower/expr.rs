@@ -1324,13 +1324,6 @@ fn lower_counter_for(
         None => ident_expr(&i_name, element_ty.clone(), span.clone()),
     };
 
-    // The pattern binding is the loop variable. The basic `for x in ...`
-    // form binds a single name; richer destructuring patterns are
-    // type-checked but reuse the same `let pat = element` machinery, so
-    // a simple binding pattern lowers to a plain `let`.
-    let bind_name = pattern_binding_name(pat).unwrap_or_else(|| cx.fresh("loopvar"));
-    let bind_let = let_stmt(&bind_name, element_ty, element_init, span.clone());
-
     // The user body becomes the trailing statements of the loop body.
     let body_block = lower_block_to_block(body, &Ty::Unit, cx).unwrap_or_else(|_| HirBlock {
         stmts: Vec::new(),
@@ -1340,22 +1333,97 @@ fn lower_counter_for(
     });
     let body_expr = make_expr(HirExprKind::Block(body_block), Ty::Unit, span.clone());
 
+    // Bind the loop element to the pattern. `for x in ...` binds a single name
+    // directly. A destructuring pattern (`for Point { x, y } in ...`) cannot
+    // lower to a plain `let`, since Raven has no pattern `let`: bind a
+    // temporary and `match` it so the pattern's variables come into scope for
+    // the body. A refutable pattern gets a wildcard arm that skips an element
+    // that does not match.
+    // Dispatch on the lowered pattern, not the surface syntax: an identifier
+    // like `None` is a nullary constructor, not a binding, and must take the
+    // match path so `for None in xs` filters instead of rebinding.
+    let simple_let = |name: &str, ty: Ty, init: HirExpr, body: HirExpr| {
+        vec![
+            let_stmt(name, ty, init, span.clone()),
+            HirStmt {
+                kind: HirStmtKind::Expr(body),
+                span: span.clone(),
+            },
+        ]
+    };
+    let bind_and_body: Vec<HirStmt> = match lower_pattern(pat, cx) {
+        Ok(hir_pat) => {
+            if let HirPatternKind::Binding(name) = &hir_pat.kind {
+                let name = name.clone();
+                simple_let(&name, element_ty, element_init, body_expr)
+            } else if matches!(hir_pat.kind, HirPatternKind::Wildcard) {
+                simple_let(&cx.fresh("loopvar"), element_ty, element_init, body_expr)
+            } else {
+                let refutable = hir_pattern_is_refutable(&hir_pat);
+                let loopvar = cx.fresh("loopvar");
+                let bind_let = let_stmt(&loopvar, element_ty.clone(), element_init, span.clone());
+                let scrutinee = ident_expr(&loopvar, element_ty, span.clone());
+                let mut arms = vec![HirArm {
+                    pattern: hir_pat,
+                    guard: None,
+                    body: body_expr,
+                    span: span.clone(),
+                }];
+                if refutable {
+                    arms.push(HirArm {
+                        pattern: HirPattern {
+                            kind: HirPatternKind::Wildcard,
+                            span: span.clone(),
+                        },
+                        guard: None,
+                        body: make_expr(
+                            HirExprKind::Block(HirBlock {
+                                stmts: Vec::new(),
+                                tail: None,
+                                ty: Ty::Unit,
+                                span: span.clone(),
+                            }),
+                            Ty::Unit,
+                            span.clone(),
+                        ),
+                        span: span.clone(),
+                    });
+                }
+                let match_expr = make_expr(
+                    HirExprKind::Match {
+                        scrutinee: Box::new(scrutinee),
+                        arms,
+                    },
+                    Ty::Unit,
+                    span.clone(),
+                );
+                vec![
+                    bind_let,
+                    HirStmt {
+                        kind: HirStmtKind::Expr(match_expr),
+                        span: span.clone(),
+                    },
+                ]
+            }
+        }
+        // A pattern that did not lower: evaluate the element into a throwaway
+        // and run the body, so the loop still iterates.
+        Err(_) => simple_let(&cx.fresh("loopvar"), element_ty, element_init, body_expr),
+    };
+
+    let mut loop_stmts = vec![
+        HirStmt {
+            kind: HirStmtKind::Expr(advance),
+            span: span.clone(),
+        },
+        HirStmt {
+            kind: HirStmtKind::Expr(break_guard),
+            span: span.clone(),
+        },
+    ];
+    loop_stmts.extend(bind_and_body);
     let loop_block = HirBlock {
-        stmts: vec![
-            HirStmt {
-                kind: HirStmtKind::Expr(advance),
-                span: span.clone(),
-            },
-            HirStmt {
-                kind: HirStmtKind::Expr(break_guard),
-                span: span.clone(),
-            },
-            bind_let,
-            HirStmt {
-                kind: HirStmtKind::Expr(body_expr),
-                span: span.clone(),
-            },
-        ],
+        stmts: loop_stmts,
         tail: None,
         ty: Ty::Unit,
         span: span.clone(),
@@ -1393,6 +1461,23 @@ fn pattern_binding_name(pat: &crate::ast::Pattern) -> Option<String> {
     match &pat.kind {
         PatternKind::Ident(name) => Some(name.clone()),
         _ => None,
+    }
+}
+
+/// Whether a pattern can fail to match a value of its scrutinee type, so a
+/// `for` loop desugared to a `match` needs a wildcard arm to skip an element
+/// that does not match. A binding or wildcard always matches; an enum
+/// constructor, a literal, or a range can fail; a struct is refutable only when
+/// one of its field patterns is. The check recurses so a nested refutable
+/// pattern is not missed.
+fn hir_pattern_is_refutable(pat: &HirPattern) -> bool {
+    match &pat.kind {
+        HirPatternKind::Wildcard | HirPatternKind::Binding(_) => false,
+        HirPatternKind::Literal(_) | HirPatternKind::Range { .. } => true,
+        HirPatternKind::Constructor { .. } => true,
+        HirPatternKind::Struct { fields, .. } => fields
+            .iter()
+            .any(|f| f.pattern.as_ref().is_some_and(hir_pattern_is_refutable)),
     }
 }
 

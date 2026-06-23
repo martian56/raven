@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.136] - 2026-06-23
+
+### Fixed
+
+- A `for` loop can destructure its element with a pattern. `for Point { x, y } in points` binds the struct fields, and a refutable pattern like `for Some(x) in values` skips the elements that do not match. The loop previously kept only a single binding name and dropped the rest of the pattern, so the destructured variables were unbound and codegen aborted with `binop lhs used a Unit value` (#686).
+
 ## [2.18.135] - 2026-06-23
 
 ### Fixed
