@@ -1,0 +1,12 @@
+// An extern that is never called or address-taken creates no link
+// dependency, so a program declaring one still builds and runs. A called
+// extern still links normally. Prints:
+//   7
+extern "C" {
+    fun abs(x: CInt) -> CInt
+    fun definitely_missing(a: CStr) -> CInt
+}
+
+fun main() {
+    print(abs(0 - 7))
+}
