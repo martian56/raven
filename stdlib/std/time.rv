@@ -105,6 +105,12 @@ fun pad2(n: Int) -> String {
 }
 
 fun pad4(n: Int) -> String {
+    if n < 0 {
+        // Keep the sign in front of the zero fill: year -1 is "-0001", not
+        // "000-1". The calendar year range stays well within Int, so negating
+        // the magnitude here does not overflow.
+        return "-".concat(pad4(0 - n))
+    }
     if n < 10 {
         return "000".concat("${n}")
     }
