@@ -166,6 +166,12 @@ fun from_radix(s: String, base: Int) -> Option<Int> {
     if i >= n {
         return None
     }
+    let max = 9223372036854775807
+    let min = 0 - 9223372036854775807 - 1
+    // Accumulate toward the sign's own end of the range so the running value
+    // never has to leave it. A negative number builds down toward min, which
+    // also lets the most negative i64 parse. Each step checks for overflow
+    // before it happens and returns None instead of wrapping.
     let acc = 0
     while i < n {
         let v = radix_value(__str_byte_at(s, i))
@@ -175,11 +181,18 @@ fun from_radix(s: String, base: Int) -> Option<Int> {
         if v >= base {
             return None
         }
-        acc = acc * base + v
+        if neg {
+            if acc < (min + v) / base {
+                return None
+            }
+            acc = acc * base - v
+        } else {
+            if acc > (max - v) / base {
+                return None
+            }
+            acc = acc * base + v
+        }
         i = i + 1
-    }
-    if neg {
-        return Some(0 - acc)
     }
     return Some(acc)
 }
