@@ -12,7 +12,9 @@ fun main() {
     let i = 0
     while i < 1000 {
         let x = rng.gen_range_float(-1.0e308, 1.0e308)
-        if x < -1.0e308 || x >= 1.0e308 {
+        // Negated in-range test so a NaN draw counts as out of range; a bare
+        // x < lo || x >= hi would let NaN through, since it compares false.
+        if !(x >= -1.0e308 && x < 1.0e308) {
             in_range = false
         }
         i = i + 1
