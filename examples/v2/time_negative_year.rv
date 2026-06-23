@@ -1,0 +1,22 @@
+// Date.to_string keeps the sign in front of the zero-padded year, so a
+// negative year reads as ISO 8601 rather than burying the minus inside the
+// padding. Prints:
+//   -0001-01-01
+//   -0050-01-01
+//   -2024-01-01
+//   0001-01-01
+//   2024-01-01
+import std/time { Date }
+import std/io { println }
+
+fun show(y: Int) {
+    println(Date { year: y, month: 1, day: 1 }.to_string())
+}
+
+fun main() {
+    show(0 - 1)
+    show(0 - 50)
+    show(0 - 2024)
+    show(1)
+    show(2024)
+}
