@@ -268,12 +268,15 @@ fun total(a: String, b: String) -> Result<Int, Error> {
 fun exists(path: String) -> Bool
 fun is_file(path: String) -> Bool
 fun is_dir(path: String) -> Bool
+fun is_symlink(path: String) -> Bool
 ```
 
 These return a plain `Bool`, never a `Result`. A missing path is a normal
 `false`, not an `Err`. `is_file` is `false` for a path that exists but is not
 a regular file (a directory, say), and `is_dir` is `false` for anything that
-is not a directory.
+is not a directory. `is_symlink` reports whether the path itself is a symbolic
+link, without following it, so it stays `true` for a link whose target is
+missing.
 
 ```rust
 import std/fs { exists, is_dir, read }
