@@ -40,24 +40,18 @@ fun main() {
 | `dirname(p)` | `String` | everything up to the last `/`; `"."` when there is no `/`; `"/"` when the only `/` is at index 0. |
 | `extension(p)` | `String` | substring after the last `.` in the basename, or `""` when none. A leading dot (a dotfile such as `.gitignore`) is not an extension. |
 | `stem(p)` | `String` | basename without its extension. |
+| `with_extension(p, ext)` | `String` | replace the extension with `ext` (no leading dot); an empty `ext` removes it. A trailing dot counts as the separator, matching `stem`. |
 | `is_absolute(p)` | `Bool` | whether `p` starts with `/`. The empty string is relative. |
+| `is_relative(p)` | `Bool` | the negation of `is_absolute`. |
+| `components(p)` | `List<String>` | the non-empty `/`-separated segments, in order; leading, trailing, and repeated separators drop out. |
+| `normalize(p)` | `String` | resolve `.` and `..` segments and collapse repeated separators, keeping a leading `/` for an absolute path. An empty relative result is `"."`. A `..` that would escape a relative root is kept; one at an absolute root is dropped. |
 
 Indices are byte offsets, consistent with `std/string`. Paths are assumed
 to be valid UTF-8 with the separator and dot appearing only as their own
 single-byte ASCII forms.
 
-## normalize
-
-`normalize` (resolving `.` and `..` segments and collapsing repeated
-separators) is deferred. It is fiddly to specify (root escapes, trailing
-slashes, empty results) and not required by the current consumers. It can
-be added later without changing the existing surface.
-
 ## Out of scope
 
 - Windows `\` separators, drive letters, and UNC paths.
-- `normalize` and any `..`/`.` resolution.
 - Filesystem queries (existence, canonicalization); those belong to
   `std/fs`.
-- Splitting a path into a `List` of components (waits on a stable list
-  return convention in the stdlib).

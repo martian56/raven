@@ -51,6 +51,9 @@ fun main() {
 | `join(parts, sep)` | `String` | join a `List<String>` with `sep` between elements. |
 | `to_radix(n, base)` | `String` | `n` in `base`, lowercase digits, leading `-` for negatives. |
 | `to_binary(n)` / `to_octal(n)` / `to_hex(n)` | `String` | thin wrappers for base 2, 8, 16. |
+| `from_radix(s, base)` | `Option<Int>` | parse `s` in `base` (2..=16) with an optional sign; `None` on an empty string, a bad digit, an out-of-range `base`, or a value past `i64`. |
+| `from_hex(s)` | `Option<Int>` | `from_radix(s, 16)`. |
+| `format_float(x, decimals)` | `String` | `x` with exactly `decimals` digits after the point, rounded half up. A non-finite `x` is `"NaN"`, `"inf"`, or `"-inf"`. |
 | `pad_int(n, width)` | `String` | decimal zero-padded to byte width; sign kept leftmost. |
 
 | Trait | Method | Notes |
@@ -80,10 +83,18 @@ quotes (so `"hi".debug()` is the 4-character string `"hi"`). Inner quotes are
 not escaped: a String containing a `"` reproduces it literally inside the
 surrounding quotes.
 
-## Deferred
+## format_float
 
-`format_float(x, places)` (fixed decimal places) is deferred: it needs a
-Float-to-Int truncation runtime hook the surface language does not expose, and
-is not required for the rest of the module. It can land later as a small
-`extern "C"` addition (a `raven_float_trunc` symbol) without changing the
-existing surface.
+`format_float(x, decimals)` renders `x` with exactly `decimals` digits after
+the decimal point, rounding half up: `format_float(3.14159, 2)` is `"3.14"`
+and `format_float(-2.5, 0)` is `"-3"`. A non-finite input has no decimal form,
+so NaN renders as `"NaN"` and an infinity as `"inf"` or `"-inf"`. The rounding
+is done in pure Raven over the float digits, with no Float-to-Int runtime hook.
+
+## Radix parsing
+
+`from_radix(s, base)` is the inverse of `to_radix`: it parses `s` in `base`
+(2..=16) with an optional leading sign and returns `Option<Int>`, yielding
+`None` on an empty string, a non-digit, an out-of-range `base`, or a value
+outside `i64`. It accumulates toward the sign's end of the range so the most
+negative i64 parses. `from_hex(s)` is `from_radix(s, 16)`.

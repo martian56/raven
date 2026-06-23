@@ -7,6 +7,16 @@ All notable changes to Raven are documented in this file.
 ### Fixed
 
 - The `std/encoding` guide documents the current decoder return types. `hex_decode`, `base64_decode`, and `base32_decode` return `Result<String, Error>` and reject malformed input, but the guide still described them as returning `String` and mapping bad bytes to zero. Updated the prose, signatures, and examples to match (#677).
+## [2.18.141] - 2026-06-24
+
+### Fixed
+
+- The `std/fmt` spec documents `format_float`, `from_radix`, and `from_hex`. `format_float` was marked deferred and the radix parsers were missing from the surface table, though all three ship in `stdlib/std/fmt.rv` (#636).
+## [2.18.140] - 2026-06-24
+
+### Fixed
+
+- The `std/path` spec documents the operations the module ships. `normalize`, `components`, `is_relative`, and `with_extension` were either marked deferred or missing from the surface table even though they are implemented; the spec now lists them and no longer calls path normalization out of scope (#635).
 
 ## [2.18.139] - 2026-06-24
 
