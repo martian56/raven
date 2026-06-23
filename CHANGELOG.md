@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.141] - 2026-06-24
+
+### Fixed
+
+- The `std/fmt` spec documents `format_float`, `from_radix`, and `from_hex`. `format_float` was marked deferred and the radix parsers were missing from the surface table, though all three ship in `stdlib/std/fmt.rv` (#636).
+
 ## [2.18.139] - 2026-06-24
 
 ### Fixed
