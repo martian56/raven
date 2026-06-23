@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.142] - 2026-06-24
+
+### Fixed
+
+- The `std/encoding` guide documents the current decoder return types. `hex_decode`, `base64_decode`, and `base32_decode` return `Result<String, Error>` and reject malformed input, but the guide still described them as returning `String` and mapping bad bytes to zero. Updated the prose, signatures, and examples to match (#677).
+
 ## [2.18.139] - 2026-06-24
 
 ### Fixed
