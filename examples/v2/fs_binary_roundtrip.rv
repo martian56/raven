@@ -1,0 +1,41 @@
+// golden:skip - writes a file; the binary round-trip is checked in
+// codegen_smoke.rs (fs_binary_roundtrip_compiles_and_runs).
+//
+// fs.read returns raw bytes, so a file written with non-UTF-8 bytes reads
+// back byte-for-byte through the same API. Prints:
+//   wrote 5
+//   read 5
+//   0 255 104 105 254
+import std/fs { read, write, remove_file }
+import std/io { println }
+
+fun main() {
+    let data = __str_from_byte(0)
+        .concat(__str_from_byte(255))
+        .concat("hi")
+        .concat(__str_from_byte(254))
+    match write("fs_binary_roundtrip.dat", data) {
+        Ok(_) -> println("wrote ${data.length()}"),
+        Err(e) -> println("write err ${e.message()}"),
+    }
+    match read("fs_binary_roundtrip.dat") {
+        Ok(s) -> {
+            println("read ${s.length()}")
+            let i = 0
+            let line = ""
+            while i < s.length() {
+                if i > 0 {
+                    line = line.concat(" ")
+                }
+                line = line.concat("${__str_byte_at(s, i)}")
+                i = i + 1
+            }
+            println(line)
+        }
+        Err(e) -> println("read err ${e.message()}"),
+    }
+    match remove_file("fs_binary_roundtrip.dat") {
+        Ok(_) -> {},
+        Err(_) -> {},
+    }
+}

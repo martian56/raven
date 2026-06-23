@@ -1029,6 +1029,35 @@ fn fs_program_compiles_and_runs() {
 }
 
 #[test]
+fn fs_binary_roundtrip_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // fs.read returns raw bytes, so a file written with non-UTF-8 bytes reads
+    // back byte-for-byte. The program writes a small binary file in its working
+    // directory, reads it back, prints the byte values, and removes it.
+    let example = build_example_binary("fs_binary_roundtrip.rv", &runtime);
+    let output = Command::new(&example.binary)
+        .current_dir(&example.tmp)
+        .output()
+        .expect("run fs_binary_roundtrip binary");
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    cleanup(&example.tmp);
+    assert!(
+        output.status.success(),
+        "fs_binary_roundtrip exited non zero: status={:?} stderr={}",
+        output.status,
+        stderr
+    );
+    assert_eq!(
+        stdout, "wrote 5\nread 5\n0 255 104 105 254\n",
+        "unexpected stdout for fs_binary_roundtrip: {:?}",
+        stdout
+    );
+}
+
+#[test]
 fn net_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

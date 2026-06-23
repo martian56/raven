@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.151] - 2026-06-24
+
+### Fixed
+
+- `std/fs.read` returns the file's raw bytes instead of requiring valid UTF-8. A Raven `String` is a byte buffer and `fs.write` already writes arbitrary bytes, so a binary file written through the API now reads back byte for byte instead of failing with a UTF-8 error (#609).
+
 ## [2.18.150] - 2026-06-24
 
 ### Fixed
