@@ -429,6 +429,21 @@ fn parse_rules(inner: &[Token], name: &str, span: &Span) -> Result<Vec<Rule>, Ra
         // An undefined one (a typo, say) was silently dropped at expansion;
         // reject it at the definition instead.
         let bound = matcher_meta_names(&matcher);
+        // A matcher must not bind the same metavariable name twice: the second
+        // capture silently overwrote the first, so `$x` referred to only one of
+        // the arguments.
+        let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for var in &bound {
+            if !seen.insert(var.as_str()) {
+                return Err(err(
+                    inner[i].span.clone(),
+                    format!(
+                        "macro `{}`: metavariable `${}` is bound more than once",
+                        name, var
+                    ),
+                ));
+            }
+        }
         for var in template_meta_names(&template) {
             if !bound.contains(&var) {
                 return Err(err(

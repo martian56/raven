@@ -119,6 +119,18 @@ fn template_undefined_metavar_is_an_error() {
 }
 
 #[test]
+fn duplicate_matcher_metavariable_is_an_error() {
+    let src = "macro choose { ($x:expr, $x:expr) => { $x } }\nchoose!(1, 2)\n";
+    let e = expand_tokens(&lex(src)).expect_err("duplicate metavariable");
+    let msg = format!("{}", e);
+    assert!(
+        msg.contains("metavariable `$x` is bound more than once"),
+        "got: {}",
+        msg
+    );
+}
+
+#[test]
 fn block_fragment_captures_a_brace_group() {
     let src = "macro run { ($b:block) => { $b } }\nrun!({ let a = 1 })\n";
     assert_eq!(expand_render(src), "{ let a = 1 }");
