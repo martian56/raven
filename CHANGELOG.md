@@ -8,6 +8,12 @@ All notable changes to Raven are documented in this file.
 
 - A `for` loop can destructure its element with a pattern. `for Point { x, y } in points` binds the struct fields, and a refutable pattern like `for Some(x) in values` skips the elements that do not match. The loop previously kept only a single binding name and dropped the rest of the pattern, so the destructured variables were unbound and codegen aborted with `binop lhs used a Unit value` (#686).
 
+## [2.18.135] - 2026-06-23
+
+### Fixed
+
+- A `match` arm's pattern bindings are scoped to that arm. They were bound in the enclosing scope, so `match value { Some(x) -> ... }` overwrote an outer `x` for the rest of the function and a non-matching arm left the outer variable reading a stale slot. Each arm now binds in its own scope, so an outer variable keeps its value and nested matches shadow correctly (#688).
+
 ## [2.18.134] - 2026-06-23
 
 ### Fixed

@@ -1,0 +1,28 @@
+// A match arm's pattern binding is scoped to the arm, so a same-named
+// variable in the enclosing scope keeps its value after the match, and nested
+// matches shadow correctly. Prints:
+//   99
+//   7
+//   2
+//   1
+import std/io { println }
+
+fun main() {
+    let v = 7
+    match Some(99) {
+        Some(v) -> println(v.to_string()),
+        None -> {},
+    }
+    println(v.to_string())
+
+    match Some(1) {
+        Some(x) -> {
+            match Some(2) {
+                Some(x) -> println(x.to_string()),
+                None -> {},
+            }
+            println(x.to_string())
+        },
+        None -> {},
+    }
+}
