@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.144] - 2026-06-24
+
+### Fixed
+
+- `std/ffi.alloc<T>(count)` returns null when `count * sizeof(T)` overflows the pointer width instead of wrapping to a small byte count and handing back a buffer far smaller than requested. The back end checks the high half of the size multiply and forces an overflowing (or negative) request to fail, so the documented null-on-failure check holds (#668).
+
 ## [2.18.142] - 2026-06-24
 
 ### Fixed
