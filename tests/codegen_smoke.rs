@@ -1463,6 +1463,47 @@ fn list_get_rejects_out_of_range_index() {
     );
 }
 
+#[test]
+fn read_line_preserves_non_utf8() {
+    use std::io::Write;
+    use std::process::Stdio;
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // read_line returns the line's raw bytes, so a non-UTF-8 byte is preserved
+    // rather than dropped. The program reads one line and prints its length and
+    // each byte value; the input is `A` `0xFF` `B` then a newline.
+    let example = build_example_binary("read_line_binary.rv", &runtime);
+    let mut child = Command::new(&example.binary)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn read_line_binary");
+    child
+        .stdin
+        .take()
+        .expect("child stdin")
+        .write_all(&[0x41, 0xff, 0x42, b'\n'])
+        .expect("write stdin");
+    let output = child
+        .wait_with_output()
+        .expect("wait read_line_binary binary");
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    cleanup(&example.tmp);
+    assert!(
+        output.status.success(),
+        "read_line_binary exited non zero: status={:?} stderr={}",
+        output.status,
+        stderr
+    );
+    assert_eq!(
+        stdout, "3\n65\n255\n66\n",
+        "unexpected stdout for read_line_binary: {:?}",
+        stdout
+    );
+}
+
 /// A compiled example binary plus the temp dir holding it, so the caller
 /// can run the binary and then clean up.
 struct ExampleBinary {

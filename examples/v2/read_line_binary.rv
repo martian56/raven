@@ -1,0 +1,23 @@
+// golden:skip - reads from stdin; the non-UTF-8 round-trip is checked in
+// codegen_smoke.rs (read_line_preserves_non_utf8).
+//
+// read_line returns the line's raw bytes, so a byte that is not valid UTF-8
+// is preserved rather than dropped. For the input bytes 0x41 0xFF 0x42 it
+// prints:
+//   3
+//   65
+//   255
+//   66
+import std/io { read_line }
+import std/string
+import std/io { println }
+
+fun main() {
+    let line = read_line()
+    println("${line.length()}")
+    let i = 0
+    while i < line.length() {
+        println("${__str_byte_at(line, i)}")
+        i = i + 1
+    }
+}
