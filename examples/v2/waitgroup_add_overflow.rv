@@ -1,0 +1,20 @@
+// WaitGroup.add saturates its counter, so a delta that would overflow i64
+// neither aborts the runtime nor wraps negative and falsely completes the
+// group. A normal add/done/wait still completes. Prints:
+//   no abort on overflow
+//   normal wait completed
+import std/sync { wait_group }
+import std/io { println }
+
+fun main() {
+    let wg = wait_group()
+    wg.add(9223372036854775807)
+    wg.add(1)
+    println("no abort on overflow")
+
+    let wg2 = wait_group()
+    wg2.add(1)
+    wg2.done()
+    wg2.wait()
+    println("normal wait completed")
+}
