@@ -50,7 +50,14 @@ impl Eq for Int {
 }
 
 impl Eq for Float {
-    fun equals(self, other: Float) -> Bool = self == other
+    fun equals(self, other: Float) -> Bool {
+        if self == other {
+            return true
+        }
+        // `Eq` is reflexive, but IEEE says NaN != NaN. Count two NaN as equal so
+        // a Float used as a map key or in a derived struct compares to itself.
+        return self != self && other != other
+    }
 }
 
 impl Eq for Bool {
@@ -151,6 +158,20 @@ impl Ord for Float {
         }
         if self > other {
             return 1
+        }
+        // Equal under IEEE, or a NaN is involved (every `<` and `>` was false).
+        // Give NaN one fixed place so the order is total and reflexive: two NaN
+        // are equal, and a NaN sorts after every ordinary number.
+        let self_nan = self != self
+        let other_nan = other != other
+        if self_nan {
+            if other_nan {
+                return 0
+            }
+            return 1
+        }
+        if other_nan {
+            return -1
         }
         0
     }
