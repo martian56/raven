@@ -53,7 +53,8 @@ Clamp `x` into the closed range `[lo, hi]`: return `lo` if `x < lo`, `hi` if
 
 `base` raised to `exp`, computed by squaring. A negative `exp` has no integer
 result and returns `0`. The result is exact when it fits in a 64-bit signed
-integer; overflow is not detected.
+integer; a result that would overflow aborts with `pow_int overflow` rather
+than wrapping.
 
 ```rust
 import std/math { abs_int, min_int, max_int, clamp_int, pow_int }
