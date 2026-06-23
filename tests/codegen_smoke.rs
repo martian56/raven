@@ -1430,6 +1430,39 @@ fn gc_call_args_survive_repeated_collections() {
     cleanup(&example.tmp);
 }
 
+#[test]
+fn list_get_rejects_out_of_range_index() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A list index outside the u32 range used to be truncated before the
+    // bounds check, so a multiple of 2^32 aliased a real element. It must now
+    // be rejected as out of bounds. The program prints a valid get first to
+    // show normal access is unaffected, then aborts on the 2^32 index.
+    let example = build_example_binary("list_get_index_oob.rv", &runtime);
+    let output = Command::new(&example.binary)
+        .output()
+        .expect("run list_get_index_oob binary");
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    cleanup(&example.tmp);
+    assert!(
+        !output.status.success(),
+        "out-of-range get should abort, but the binary exited zero: stdout={:?}",
+        stdout
+    );
+    assert_eq!(
+        stdout, "20\n",
+        "the valid get should print before the abort: {:?}",
+        stdout
+    );
+    assert!(
+        stderr.contains("list index out of bounds"),
+        "expected an out-of-bounds abort, got stderr: {:?}",
+        stderr
+    );
+}
+
 /// A compiled example binary plus the temp dir holding it, so the caller
 /// can run the binary and then clean up.
 struct ExampleBinary {

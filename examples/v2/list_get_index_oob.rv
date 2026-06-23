@@ -1,0 +1,11 @@
+// golden:skip - aborts on purpose; the out-of-bounds abort is checked in
+// codegen_smoke.rs (list_get_rejects_out_of_range_index).
+//
+// 4294967296 is 2^32. Before the fix the index was truncated to u32, so this
+// aliased index 0 and printed 10. It is out of bounds for any list and now
+// aborts.
+fun main() {
+    let xs = [10, 20]
+    print(xs.get(1))
+    print(xs.get(4294967296))
+}
