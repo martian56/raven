@@ -7,6 +7,11 @@ All notable changes to Raven are documented in this file.
 ### Fixed
 
 - `WaitGroup.add` saturates its counter instead of doing an unchecked signed add. A delta that would overflow i64 no longer aborts the debug runtime, nor wraps negative and falsely completes the group so `wait()` returns without the work being done (#674).
+## [2.18.149] - 2026-06-24
+
+### Fixed
+
+- `format_timestamp` returns the empty string for an invalid strftime pattern instead of aborting the process. chrono reports a bad directive through its formatter's `Display` error, and the runtime's `to_string()` panicked on it, which cannot unwind across the C ABI; the runtime now formats fallibly (#673).
 
 ## [2.18.148] - 2026-06-24
 
