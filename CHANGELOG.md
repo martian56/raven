@@ -2,7 +2,7 @@
 
 All notable changes to Raven are documented in this file.
 
-## [2.18.147] - 2026-06-24
+## [2.18.148] - 2026-06-24
 
 ### Fixed
 
