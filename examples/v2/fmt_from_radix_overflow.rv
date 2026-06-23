@@ -1,0 +1,26 @@
+// from_radix detects overflow instead of wrapping, and parses i64::MIN by
+// accumulating toward the sign's end of the range. Prints:
+//   None
+//   None
+//   9223372036854775807
+//   -9223372036854775808
+//   -255
+//   5
+import std/fmt { from_radix }
+import std/io { println }
+
+fun show(s: String, base: Int) {
+    println(match from_radix(s, base) {
+        Some(n) -> n.to_string(),
+        None -> "None",
+    })
+}
+
+fun main() {
+    show("ffffffffffffffff", 16)   // 2^64-1 does not fit in i64
+    show("99999999999999999999", 10)
+    show("7fffffffffffffff", 16)   // i64 max
+    show("-8000000000000000", 16)  // i64 min
+    show("-ff", 16)
+    show("101", 2)
+}
