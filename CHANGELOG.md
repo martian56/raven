@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.132] - 2026-06-23
+
+### Fixed
+
+- A struct destructured in a `match` arm now binds its fields. The fallback match lowering used by struct scrutinees only bound plain name patterns, so a `Point { x, y }` arm reached its body with the fields unbound and codegen aborted with `binop lhs used a Unit value`. The field type and slot are also resolved from the struct declaration, so a pattern that lists fields out of order reads the right ones (#687).
+
 ## [2.18.121] - 2026-06-16
 
 ### Fixed
