@@ -1426,7 +1426,7 @@ fn call_ref_from_callee(
 /// occurrences and ordering them by their declaration index. The order
 /// fixes how the literal's concrete type arguments map onto the
 /// parameters, matching how the type checker built the argument list.
-fn struct_generic_params(s: &crate::hir::HirStruct) -> Vec<crate::tycheck::ty::ParamId> {
+pub(super) fn struct_generic_params(s: &crate::hir::HirStruct) -> Vec<crate::tycheck::ty::ParamId> {
     let mut found: Vec<crate::tycheck::ty::ParamId> = Vec::new();
     for (_, ty, _) in &s.fields {
         collect_ty_params(ty, &mut found);

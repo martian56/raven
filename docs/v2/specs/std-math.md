@@ -93,7 +93,9 @@ renamed to the conventional Raven spellings. The integer functions,
 The transcendentals are the platform C library's, so accuracy matches the
 host libm (correctly rounded or near-correctly-rounded doubles on a normal
 desktop target). `pow_int` is exact for results that fit in a 64-bit signed
-integer; it does not detect overflow.
+integer and aborts with `pow_int overflow` when a result would exceed it.
+`abs_int` aborts on `i64::MIN` (it has no positive counterpart), and `lcm`
+aborts on an overflowing product.
 
 ## Out of scope
 
