@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.150] - 2026-06-24
+
+### Fixed
+
+- `WaitGroup.add` saturates its counter instead of doing an unchecked signed add. A delta that would overflow i64 no longer aborts the debug runtime, nor wraps negative and falsely completes the group so `wait()` returns without the work being done (#674).
+
 ## [2.18.148] - 2026-06-24
 
 ### Fixed

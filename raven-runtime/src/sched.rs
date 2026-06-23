@@ -728,8 +728,10 @@ pub extern "C" fn raven_waitgroup_add(id: i64, delta: i64) {
         Some(wg) => {
             // Saturate at zero: a `done` past zero must not drive the count
             // negative, or a later `add` would bring it back to zero and let a
-            // waiter that should still block return early.
-            wg.count = (wg.count + delta).max(0);
+            // waiter that should still block return early. The add itself also
+            // saturates so a huge delta cannot overflow i64 (which aborts the
+            // debug runtime, or wraps negative and falsely completes the group).
+            wg.count = wg.count.saturating_add(delta).max(0);
             if wg.count <= 0 {
                 std::mem::take(&mut wg.waiters)
             } else {
