@@ -133,10 +133,26 @@ impl Rng {
     // entry of `weights`. Returns `None` when the lists are empty or the total
     // weight is not positive.
     fun weighted_choice<T>(self, xs: List<T>, weights: List<Int>) -> Option<T> {
+        // Only items that have a matching weight can be drawn, so the total
+        // must ignore any extra weights past the shorter list. Counting them
+        // would leave a slice of the range that a draw can land in but the
+        // selection loop never assigns, returning None for a valid list.
+        let count = xs.len()
+        if weights.len() < count {
+            count = weights.len()
+        }
+        // Saturate the running sum so a set of large positive weights does not
+        // wrap past i64 into a non-positive total and lose the whole draw.
+        let max = 9223372036854775807
         let total = 0
         let i = 0
-        while i < weights.len() {
-            total = total + weights.get(i)
+        while i < count {
+            let w = weights.get(i)
+            if w > 0 && total > max - w {
+                total = max
+            } else {
+                total = total + w
+            }
             i = i + 1
         }
         if total <= 0 {
@@ -145,12 +161,15 @@ impl Rng {
         let r = self.gen_range(0, total)
         let acc = 0
         let j = 0
-        while j < xs.len() {
-            if j < weights.len() {
-                acc = acc + weights.get(j)
-                if r < acc {
-                    return Some(xs.get(j))
-                }
+        while j < count {
+            let w = weights.get(j)
+            if w > 0 && acc > max - w {
+                acc = max
+            } else {
+                acc = acc + w
+            }
+            if r < acc {
+                return Some(xs.get(j))
             }
             j = j + 1
         }
