@@ -573,9 +573,16 @@ fn payload_type_at(scrut_ty: &Ty, variant: Option<&str>, index: usize, cx: &Lowe
             if params.is_empty() || args.is_empty() {
                 return fty.clone();
             }
+            // Map each parameter to the argument at its own declaration index,
+            // not by zip order: a field may mention only a non-leading generic
+            // (a struct `Pair<A, B> { second: B }`), and `B` must bind to
+            // `args[1]`, not `args[0]`.
             let mut subst = super::SubstMap::new();
-            for (p, arg) in params.iter().zip(args.iter()) {
-                subst.insert(p.clone(), arg.clone());
+            for p in params {
+                let Some(arg) = args.get(p.index) else {
+                    return Ty::Error;
+                };
+                subst.insert(p, arg.clone());
             }
             super::substitute(fty, &subst)
         }
