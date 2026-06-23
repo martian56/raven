@@ -2,11 +2,18 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.146] - 2026-06-24
+
+### Fixed
+
+- `std/ffi.alloc<T>(count)` returns null when `count * sizeof(T)` overflows the pointer width instead of wrapping to a small byte count and handing back a buffer far smaller than requested. The back end checks the high half of the size multiply and forces an overflowing (or negative) request to fail, so the documented null-on-failure check holds (#668).
+
 ## [2.18.145] - 2026-06-24
 
 ### Fixed
 
 - A macro template that splices an undefined metavariable is rejected at the definition instead of silently dropping it. `macro keep { ($x:expr) => { $missing $x } }` now reports `template uses undefined metavariable $missing` rather than expanding to just `$x` (#663).
+
 ## [2.18.143] - 2026-06-24
 
 ### Fixed

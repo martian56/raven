@@ -1,0 +1,21 @@
+// alloc detects a count whose byte size overflows the pointer width and
+// returns null instead of a buffer far smaller than requested. A normal
+// allocation is unaffected. Prints:
+//   true
+//   42
+import std/ffi { alloc, free, load, store, is_null }
+import std/io { println }
+
+fun main() {
+    // count * sizeof(CInt) overflows 64 bits (2^62 + 1 times 4 wraps), so the request must fail.
+    let huge = alloc<CInt>(4611686018427387905)
+    println(match is_null<CInt>(huge) {
+        true -> "true",
+        false -> "false",
+    })
+
+    let p = alloc<CInt>(3)
+    store<CInt>(p, 42)
+    println("${load<CInt>(p)}")
+    free<CInt>(p)
+}

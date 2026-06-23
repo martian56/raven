@@ -674,6 +674,15 @@ fn lower_ptr_alloc(
     let (_, size) = pointee_machine_ty(pointee, ptr);
     let stride = builder.ins().iconst(ptr, size);
     let bytes = builder.ins().imul(n, stride);
+    // Detect a `count * sizeof(T)` that overflows the pointer width: the high
+    // half of the unsigned product is then nonzero (a negative count widens to
+    // a huge value and trips this too). A wrapped byte count would allocate a
+    // buffer far smaller than requested, so force the request to the maximum
+    // and let the allocator reject it and return null.
+    let hi = builder.ins().umulhi(n, stride);
+    let overflow = builder.ins().icmp_imm(IntCC::NotEqual, hi, 0);
+    let max_bytes = builder.ins().iconst(ptr, -1);
+    let bytes = builder.ins().select(overflow, max_bytes, bytes);
     let func_id = cx
         .runtime_id(intrinsics::RUNTIME_FFI_ALLOC)
         .expect("ffi alloc runtime symbol declared at module init");
