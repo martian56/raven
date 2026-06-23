@@ -276,15 +276,18 @@ fun parse_number(c: Cursor) -> Result<Float, Error> {
         if !is_digit(c.peek()) {
             return Err(json_error("invalid exponent"))
         }
-        let exp = 0
-        while is_digit(c.peek()) {
-            exp = exp * 10 + (c.peek() - 48)
-            c.advance()
-        }
         // f64 saturates to infinity past about 1e308, so an exponent beyond a
         // few hundred yields the same result (infinity, or zero for a negative
-        // exponent) as any larger one. Cap the step count so a huge exponent
-        // like 1e999999999 is not a denial-of-service loop.
+        // exponent) as any larger one. Stop accumulating once the value is well
+        // past that point so the digits of a huge exponent like 1e999999999
+        // cannot overflow Int and wrap into a small or negative step count.
+        let exp = 0
+        while is_digit(c.peek()) {
+            if exp <= 400 {
+                exp = exp * 10 + (c.peek() - 48)
+            }
+            c.advance()
+        }
         let steps = exp
         if steps > 400 {
             steps = 400

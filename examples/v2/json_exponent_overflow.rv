@@ -1,0 +1,31 @@
+// A JSON exponent is capped while its digits are read, so a huge exponent
+// saturates to infinity instead of overflowing Int and wrapping into a small
+// step count. Normal exponents are unaffected. Prints:
+//   1e19... -> inf
+//   1e40... -> inf
+//   1e2 -> 100
+//   1.5e3 -> 1500
+//   1e-3 -> 0.001
+//   1e309 -> inf
+import std/json { parse }
+import std/io { println }
+import std/string
+
+fun show(label: String, text: String) {
+    println(match parse(text) {
+        Ok(value) -> match value.as_number() {
+            Some(n) -> "${label} -> ${n}",
+            None -> "${label} -> not a number",
+        },
+        Err(e) -> "${label} -> Err(${e.message})",
+    })
+}
+
+fun main() {
+    show("1e19...", "1e".concat("9".repeat(19)))
+    show("1e40...", "1e".concat("9".repeat(40)))
+    show("1e2", "1e2")
+    show("1.5e3", "1.5e3")
+    show("1e-3", "1e-3")
+    show("1e309", "1e309")
+}
