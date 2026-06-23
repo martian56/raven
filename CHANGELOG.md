@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.134] - 2026-06-23
+
+### Fixed
+
+- The `std/fs` guide and spec document `is_symlink(path: String) -> Bool`, the shipped query that reports whether a path is a symbolic link without following it. The boolean-check sections previously stopped at `is_dir` (#637).
+
 ## [2.18.121] - 2026-06-16
 
 ### Fixed

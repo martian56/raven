@@ -63,11 +63,14 @@ yields an empty list, not a one-element list containing `""`.
 fun exists(path: String) -> Bool
 fun is_file(path: String) -> Bool
 fun is_dir(path: String) -> Bool
+fun is_symlink(path: String) -> Bool
 ```
 
 These return a plain `Bool` and never an error: a missing path is a normal
 `false`, not an `Err`. A path that exists but is not a regular file is
-`false` from `is_file`, and likewise for `is_dir`.
+`false` from `is_file`, and likewise for `is_dir`. `is_symlink` tests the path
+itself without following it, so it is `true` for a symbolic link even when its
+target does not exist.
 
 ## Path manipulation
 
