@@ -1,0 +1,27 @@
+// Float's Eq and Ord trait impls are total: a NaN equals itself and sorts
+// after every ordinary number, so sorting and equality stay well defined even
+// with NaN present. The < and > operators keep their IEEE meaning. Prints:
+//   nan equals nan: true
+//   1
+//   2
+//   3
+//   NaN
+import std/cmp { sort }
+import std/math { nan }
+import std/io { println }
+
+fun main() {
+    let n = nan()
+    println("nan equals nan: ${n.equals(n)}")
+
+    let sorted = sort([3.0, nan(), 1.0, 2.0])
+    let i = 0
+    while i < sorted.len() {
+        let v = sorted.get(i)
+        println(match v != v {
+            true -> "NaN",
+            false -> v.to_string(),
+        })
+        i = i + 1
+    }
+}
