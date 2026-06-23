@@ -18,36 +18,55 @@ fun repeat(s: String, n: Int) -> String {
     return out
 }
 
-// Left-pad `s` with `fill` until its byte length is at least `width`.
-// `fill` is assumed to be a single-byte string; a multi-byte `fill` may
-// overshoot the target width by up to its length minus one.
+// Repeat `fill` just enough whole times to span at least `width` bytes. A
+// non-positive width or an empty fill yields the empty string. The result
+// overshoots `width` by at most fill.len() - 1 bytes.
+fun fill_span(width: Int, fill: String) -> String {
+    if width <= 0 {
+        return ""
+    }
+    let flen = __str_len(fill)
+    if flen == 0 {
+        return ""
+    }
+    let copies = width / flen
+    if copies * flen < width {
+        copies = copies + 1
+    }
+    return repeat(fill, copies)
+}
+
+// Left-pad `s` with `fill` until its byte length is at least `width`. A
+// multi-byte `fill` overshoots by at most its length minus one. `width` is
+// compared before any subtraction so a very negative width cannot wrap.
 fun pad_left(s: String, width: Int, fill: String) -> String {
-    let pad = width - __str_len(s)
-    if pad <= 0 {
+    let len = __str_len(s)
+    if width <= len {
         return s
     }
-    return __str_concat(repeat(fill, pad), s)
+    return __str_concat(fill_span(width - len, fill), s)
 }
 
 // Right-pad `s` with `fill` until its byte length is at least `width`.
 fun pad_right(s: String, width: Int, fill: String) -> String {
-    let pad = width - __str_len(s)
-    if pad <= 0 {
+    let len = __str_len(s)
+    if width <= len {
         return s
     }
-    return __str_concat(s, repeat(fill, pad))
+    return __str_concat(s, fill_span(width - len, fill))
 }
 
 // Center `s` in a field of byte width `width`, padding with `fill`. An
 // odd amount of padding puts the extra byte on the right.
 fun center(s: String, width: Int, fill: String) -> String {
-    let pad = width - __str_len(s)
-    if pad <= 0 {
+    let len = __str_len(s)
+    if width <= len {
         return s
     }
+    let pad = width - len
     let left = pad / 2
     let right = pad - left
-    return __str_concat(__str_concat(repeat(fill, left), s), repeat(fill, right))
+    return __str_concat(__str_concat(fill_span(left, fill), s), fill_span(right, fill))
 }
 
 // Join `parts` with `sep` between adjacent elements.

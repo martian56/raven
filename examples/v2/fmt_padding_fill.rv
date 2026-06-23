@@ -1,0 +1,28 @@
+// Padding repeats only whole copies of a multi-byte fill (overshoot at most
+// fill.len() - 1) and compares the width before subtracting, so an extreme
+// negative width returns at once instead of looping. Prints:
+//   abab 4
+//   abab 4
+//   abab 4
+//   0007 4
+//   hi... 5
+//   **x** 5
+//   x 1
+import std/fmt { pad_left, pad_right, center }
+import std/string
+import std/io { println }
+
+fun show(s: String) {
+    println("${s} ${s.len()}")
+}
+
+fun main() {
+    show(pad_left("", 3, "ab"))
+    show(pad_right("", 3, "ab"))
+    show(center("", 3, "ab"))
+    show(pad_left("7", 4, "0"))
+    show(pad_right("hi", 5, "."))
+    show(center("x", 5, "*"))
+    let min = 0 - 9223372036854775807 - 1
+    show(pad_left("x", min, ""))
+}
