@@ -172,8 +172,10 @@ fn process_clear_error() {
 /// id so only an opaque integer crosses the FFI.
 struct ProcResult {
     code: i64,
-    stdout: std::string::String,
-    stderr: std::string::String,
+    // Raw bytes, not text: a child can write arbitrary binary to stdout/stderr
+    // and a Raven String is a byte buffer, so the output is captured verbatim.
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
 }
 
 /// The process-wide child-result registry keyed by an incrementing id. Ids
@@ -1906,13 +1908,22 @@ pub extern "C" fn raven_process_run(
     args_nul_joined: *const object::String,
     stdin_data: *const object::String,
 ) -> i64 {
-    let (Some(program), Some(args_joined), Some(stdin_data)) = (
-        env_name(program),
-        env_name(args_nul_joined),
-        env_name(stdin_data),
-    ) else {
-        process_set_error("program, args, or stdin is not valid UTF-8".to_string());
+    let (Some(program), Some(args_joined)) = (env_name(program), env_name(args_nul_joined)) else {
+        process_set_error("program or args is not valid UTF-8".to_string());
         return 0;
+    };
+    // stdin is fed as raw bytes: a Raven String is a byte buffer, so binary
+    // input passes through unchanged. Only the program and its args, which are
+    // OS strings, need to be valid UTF-8.
+    let stdin_bytes = {
+        let ptr = object::raven_string_bytes(stdin_data);
+        let len = object::raven_string_len(stdin_data) as usize;
+        if ptr.is_null() || len == 0 {
+            Vec::new()
+        } else {
+            // SAFETY: a Raven String holds `len` initialized bytes.
+            unsafe { slice::from_raw_parts(ptr, len).to_vec() }
+        }
     };
 
     // The args are joined by NUL. An empty String is zero args; otherwise
@@ -1943,7 +1954,6 @@ pub extern "C" fn raven_process_run(
     // child fills its output pipe buffer faster than we consume it: the child
     // blocks writing stdout and we block writing stdin.
     let stdin_pipe = child.stdin.take();
-    let stdin_bytes = stdin_data.as_bytes().to_vec();
     let writer = std::thread::spawn(move || {
         if let Some(mut pipe) = stdin_pipe {
             // A broken pipe is fine: a child that exits without reading still
@@ -1968,8 +1978,8 @@ pub extern "C" fn raven_process_run(
     let code = output.status.code().map(|c| c as i64).unwrap_or(-1);
     let result = ProcResult {
         code,
-        stdout: std::string::String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: std::string::String::from_utf8_lossy(&output.stderr).into_owned(),
+        stdout: output.stdout,
+        stderr: output.stderr,
     };
     let id = process_next_id();
     process_registry().lock().unwrap().insert(id, result);
@@ -1994,7 +2004,10 @@ pub extern "C" fn raven_process_exit_code(id: i64) -> i64 {
 #[no_mangle]
 pub extern "C" fn raven_process_stdout(id: i64) -> *mut object::String {
     let registry = process_registry().lock().unwrap();
-    let out = registry.get(&id).map(|r| r.stdout.as_str()).unwrap_or("");
+    let out: &[u8] = registry
+        .get(&id)
+        .map(|r| r.stdout.as_slice())
+        .unwrap_or(&[]);
     object::raven_string_from_bytes(out.as_ptr(), out.len())
 }
 
@@ -2003,7 +2016,10 @@ pub extern "C" fn raven_process_stdout(id: i64) -> *mut object::String {
 #[no_mangle]
 pub extern "C" fn raven_process_stderr(id: i64) -> *mut object::String {
     let registry = process_registry().lock().unwrap();
-    let err = registry.get(&id).map(|r| r.stderr.as_str()).unwrap_or("");
+    let err: &[u8] = registry
+        .get(&id)
+        .map(|r| r.stderr.as_slice())
+        .unwrap_or(&[]);
     object::raven_string_from_bytes(err.as_ptr(), err.len())
 }
 

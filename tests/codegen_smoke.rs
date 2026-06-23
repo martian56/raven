@@ -1390,6 +1390,40 @@ fn process_program_compiles_and_runs() {
 }
 
 #[test]
+fn proc_binary_io_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // std/process carries arbitrary bytes both ways. The child writes the
+    // bytes 0x00 0xFF 0x41 (plus print's newline) to stdout; the parent feeds
+    // it non-UTF-8 stdin (which must be accepted, not rejected) and then prints
+    // the byte values of the child's captured stdout, which must come back
+    // verbatim rather than mangled into U+FFFD.
+    let child = build_example_binary("proc_binary_child.rv", &runtime);
+    let parent = build_example_binary("proc_binary_parent.rv", &runtime);
+
+    let output = Command::new(&parent.binary)
+        .env("RAVEN_PROC_CHILD", &child.binary)
+        .output()
+        .expect("run proc_binary_parent binary");
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    cleanup(&child.tmp);
+    cleanup(&parent.tmp);
+    assert!(
+        output.status.success(),
+        "proc_binary_parent exited non zero: status={:?} stderr={}",
+        output.status,
+        stderr
+    );
+    assert_eq!(
+        stdout, "stdin ok\n4\n0\n255\n65\n10\n",
+        "unexpected stdout for proc_binary_parent: {:?}",
+        stdout
+    );
+}
+
+#[test]
 fn gc_stress_survives_repeated_collections() {
     let Some(runtime) = supported_runtime() else {
         return;
