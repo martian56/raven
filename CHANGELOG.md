@@ -2,6 +2,11 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.152] - 2026-06-24
+
+### Fixed
+
+- `std/io.read_line` preserves a line that contains non-UTF-8 bytes. It read the line as UTF-8 text and silently returned an empty string on a bad byte; it now reads the raw bytes up to the newline, so the line round-trips through the byte-buffer `String` (#657).
 ## [2.18.151] - 2026-06-24
 
 ### Fixed

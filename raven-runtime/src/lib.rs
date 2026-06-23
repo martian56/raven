@@ -384,20 +384,24 @@ pub extern "C" fn raven_println_str(ptr: *const u8, len: usize) {
 /// Returns null only when the underlying `String` allocation fails.
 #[no_mangle]
 pub extern "C" fn raven_read_line() -> *mut object::String {
-    let mut line = std::string::String::new();
+    // Read raw bytes, not UTF-8 text: a Raven String is a byte buffer, so a line
+    // with a non-UTF-8 byte must be preserved rather than discarded. `read_line`
+    // requires valid UTF-8 and drops the line on a bad byte; `read_until` reads
+    // the bytes up to the newline regardless.
+    let mut line: Vec<u8> = Vec::new();
     let stdin = io::stdin();
     // A read error or clean EOF both leave `line` as the bytes gathered
     // so far (empty at a clean EOF); either way we hand back a String.
     // Reading a line blocks on input, so run it outside the collector's
     // running set (a goroutine waiting on stdin must not freeze a collection).
     crate::gc::blocking(|| {
-        let _ = stdin.lock().read_line(&mut line);
+        let _ = stdin.lock().read_until(b'\n', &mut line);
     });
     // Strip the trailing newline and an optional preceding carriage
     // return so callers see the line content without the terminator.
-    if line.ends_with('\n') {
+    if line.last() == Some(&b'\n') {
         line.pop();
-        if line.ends_with('\r') {
+        if line.last() == Some(&b'\r') {
             line.pop();
         }
     }
