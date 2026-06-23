@@ -1555,8 +1555,11 @@ fn lower_list_method(
                 lower_operand(cx, builder, arg.expect("get has one argument"), slots)?,
                 "list get index",
             )?;
-            // `raven_list_get` takes a u32 index; reduce the native Int.
-            let idx32 = narrow_to_u32(builder, idx);
+            // `raven_list_get` takes a u32 index. A native Int outside the
+            // u32 range can never be a valid position, so map it to an index
+            // the runtime always rejects instead of truncating it into a live
+            // slot (where a multiple of 2^32 would alias a real element).
+            let idx32 = index_to_u32_or_oob(builder, idx);
             let scratch = builder.create_sized_stack_slot(StackSlotData::new(
                 StackSlotKind::ExplicitSlot,
                 ELEMENT_SLOT as u32,
@@ -1747,6 +1750,27 @@ fn narrow_to_u32(builder: &mut FunctionBuilder<'_>, v: Value) -> Value {
     } else {
         v
     }
+}
+
+/// Reduce a native `Int` list index to the u32 the list runtime expects.
+/// No list can hold more than `u32::MAX` elements, so any index outside
+/// `0..=u32::MAX` is out of bounds. Those map to `u32::MAX`, which the
+/// runtime's bounds check always rejects, rather than being truncated into a
+/// valid slot where a multiple of 2^32 would alias a real element.
+fn index_to_u32_or_oob(builder: &mut FunctionBuilder<'_>, idx: Value) -> Value {
+    if builder.func.dfg.value_type(idx) != types::I64 {
+        return narrow_to_u32(builder, idx);
+    }
+    let zero = builder.ins().iconst(types::I64, 0);
+    let max = builder.ins().iconst(types::I64, 0xFFFF_FFFF);
+    let ge_zero = builder
+        .ins()
+        .icmp(IntCC::SignedGreaterThanOrEqual, idx, zero);
+    let le_max = builder.ins().icmp(IntCC::SignedLessThanOrEqual, idx, max);
+    let in_range = builder.ins().band(ge_zero, le_max);
+    let reduced = builder.ins().ireduce(types::I32, idx);
+    let oob = builder.ins().iconst(types::I32, 0xFFFF_FFFF);
+    builder.ins().select(in_range, reduced, oob)
 }
 
 /// Width in bytes of one capture slot in the closure env. Every capture,
