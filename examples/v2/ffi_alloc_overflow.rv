@@ -7,8 +7,8 @@ import std/ffi { alloc, free, load, store, is_null }
 import std/io { println }
 
 fun main() {
-    // count * sizeof(CInt) overflows 64 bits, so the request must fail.
-    let huge = alloc<CInt>(2305843009213693952)
+    // count * sizeof(CInt) overflows 64 bits (2^62 + 1 times 4 wraps), so the request must fail.
+    let huge = alloc<CInt>(4611686018427387905)
     println(match is_null<CInt>(huge) {
         true -> "true",
         false -> "false",
