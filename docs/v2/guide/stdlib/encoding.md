@@ -1,16 +1,15 @@
 # std/encoding
 
-Hex and standard base64 over the bytes of a `String`. These are free
-functions that turn a `String`'s raw bytes into encoded text and decode the
-inverse.
+Hex, base64, base32, and URL percent encoding over the bytes of a `String`.
+These are free functions that turn a `String`'s raw bytes into encoded text
+and decode the inverse.
 
 ```rust
-import std/encoding { hex_encode, base64_encode, base64_decode }
+import std/encoding { hex_encode, base64_encode }
 
 fun main() {
     print(hex_encode("abc"))        // 616263
     print(base64_encode("abc"))     // YWJj
-    print(base64_decode("YWJj"))    // abc
 }
 ```
 
@@ -31,10 +30,14 @@ import), these are plain functions you call as `hex_encode(s)`, not methods on
 
 A Raven `String` is a byte buffer. Every function here reads byte values
 `0..255` straight out of the input, so they work on arbitrary binary data
-carried in a `String`, not only valid UTF-8 text. A decoder likewise returns
-the decoded bytes as a `String`. None of these functions return a `Result`:
-they each return a `String`, and the decoders map anything unexpected to a
-defined value rather than failing (see [Invalid input](#invalid-input)).
+carried in a `String`, not only valid UTF-8 text.
+
+The encoders and `url_decode` always succeed and return a `String`. The
+`hex_decode`, `base64_decode`, and `base32_decode` decoders validate their
+input and return `Result<String, Error>`: well-formed text from the matching
+encoder decodes to `Ok(bytes)`, and malformed text (a bad character, a wrong
+length, or stray padding) returns an `Err` rather than silently dropping or
+zeroing data.
 
 ## Hex
 
@@ -52,17 +55,20 @@ fun main() {
 }
 ```
 
-### `hex_decode(s: String) -> String`
+### `hex_decode(s: String) -> Result<String, Error>`
 
 The inverse of `hex_encode`. Reads the input two digits at a time, accepting
-lowercase, uppercase, or mixed hex (`0-9`, `a-f`, `A-F`).
+lowercase, uppercase, or mixed hex (`0-9`, `a-f`, `A-F`). A non-hex character
+or an odd number of digits is an `Err`.
 
 ```rust
 import std/encoding { hex_decode }
 
 fun main() {
-    print(hex_decode("616263"))     // abc
-    print(hex_decode("4D61"))       // Ma  (uppercase digits)
+    match hex_decode("616263") {
+        Ok(bytes) -> print(bytes),       // abc
+        Err(e) -> print(e.message()),
+    }
 }
 ```
 
@@ -73,7 +79,10 @@ import std/encoding { hex_encode, hex_decode }
 
 fun main() {
     let s = "raven"
-    print(hex_decode(hex_encode(s)) == s)   // true
+    match hex_decode(hex_encode(s)) {
+        Ok(back) -> print(back == s),    // true
+        Err(e) -> print(e.message()),
+    }
 }
 ```
 
@@ -90,24 +99,25 @@ import std/encoding { base64_encode }
 
 fun main() {
     print(base64_encode("abc"))     // YWJj
-    print(base64_encode("Man"))     // TWFu
     print(base64_encode("Ma"))      // TWE=   (one byte of padding)
     print(base64_encode("M"))       // TQ==   (two bytes of padding)
 }
 ```
 
-### `base64_decode(s: String) -> String`
+### `base64_decode(s: String) -> Result<String, Error>`
 
 The inverse of `base64_encode`. Honors trailing `=` padding to recover how
-many bytes the final group yields.
+many bytes the final group yields. A length that is not a multiple of four, a
+character outside the alphabet, or misplaced padding is an `Err`.
 
 ```rust
 import std/encoding { base64_decode }
 
 fun main() {
-    print(base64_decode("YWJj"))    // abc
-    print(base64_decode("TWE="))    // Ma
-    print(base64_decode("TQ=="))    // M
+    match base64_decode("YWJj") {
+        Ok(bytes) -> print(bytes),       // abc
+        Err(e) -> print(e.message()),
+    }
 }
 ```
 
@@ -118,7 +128,10 @@ import std/encoding { base64_encode, base64_decode }
 
 fun main() {
     let s = "Hello, Raven"
-    print(base64_decode(base64_encode(s)) == s)   // true
+    match base64_decode(base64_encode(s)) {
+        Ok(back) -> print(back == s),    // true
+        Err(e) -> print(e.message()),
+    }
 }
 ```
 
@@ -142,22 +155,13 @@ fun main() {
 ### `url_decode(s: String) -> String`
 
 The inverse of `url_encode`. Reads each `%XX` escape back into its byte and
-leaves other characters untouched.
-
-```rust
-import std/encoding { url_decode }
-
-fun main() {
-    print(url_decode("a%20b%2Fc"))  // a b/c
-}
-```
-
-Encode then decode round-trips for any input:
+leaves other characters untouched. It always returns a `String`.
 
 ```rust
 import std/encoding { url_encode, url_decode }
 
 fun main() {
+    print(url_decode("a%20b%2Fc"))          // a b/c
     let s = "name=John Doe&id=7"
     print(url_decode(url_encode(s)) == s)   // true
 }
@@ -179,43 +183,37 @@ fun main() {
 }
 ```
 
-### `base32_decode(s: String) -> String`
+### `base32_decode(s: String) -> Result<String, Error>`
 
 The inverse of `base32_encode`. Honors trailing `=` padding to recover how
-many bytes the final group yields.
-
-```rust
-import std/encoding { base32_decode }
-
-fun main() {
-    print(base32_decode("MZXW6YTBOI======"))    // foobar
-}
-```
-
-Encode then decode round-trips for any input:
+many bytes the final group yields. A character outside the alphabet, a wrong
+length, or stray padding is an `Err`.
 
 ```rust
 import std/encoding { base32_encode, base32_decode }
 
 fun main() {
     let s = "Hello, Raven"
-    print(base32_decode(base32_encode(s)) == s)   // true
+    match base32_decode(base32_encode(s)) {
+        Ok(back) -> print(back == s),    // true
+        Err(e) -> print(e.message()),
+    }
 }
 ```
 
 ## Invalid input
 
-The decoders favor a simple, total mapping over rejecting input, so they
-never fail. Pass well-formed text from the matching encoder and you always
-get the original bytes back.
+The decoders validate and reject malformed input rather than guessing at a
+value, so a typo or a truncated string surfaces as an `Err` you can handle.
 
-- `hex_decode`: any byte outside `0-9 a-f A-F` maps to nibble `0`. A lone
-  final digit (odd input length) is read as the high nibble of a zero-padded
-  byte.
-- `base64_decode`: any byte outside the alphabet, other than `=` padding,
-  maps to sextet `0`. Trailing `=` padding sets how many bytes the final
-  group yields. Input whose length is not a multiple of four decodes the
-  leading whole groups and drops a trailing partial group.
+- `hex_decode`: a character outside `0-9 a-f A-F`, or an odd number of digits,
+  is an `Err`.
+- `base64_decode`: a length that is not a multiple of four, a character
+  outside the alphabet, or `=` padding anywhere but the end is an `Err`.
+- `base32_decode`: the same shape of rule for the base32 alphabet and its
+  eight-character groups.
+
+Round-tripping output from the matching encoder always decodes to `Ok`.
 
 ## Out of scope
 
@@ -235,9 +233,13 @@ fun main() {
     print(dumped)                       // 526176656e20312e30
 
     // Decode it back to the original bytes.
-    let restored = hex_decode(dumped)
-    print(restored)                     // Raven 1.0
-    print(restored == payload)          // true
+    match hex_decode(dumped) {
+        Ok(restored) -> {
+            print(restored)             // Raven 1.0
+            print(restored == payload)  // true
+        },
+        Err(e) -> print(e.message()),
+    }
 }
 ```
 
