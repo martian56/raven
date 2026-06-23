@@ -1084,7 +1084,18 @@ pub extern "C" fn raven_time_format(
 ) -> *mut object::String {
     let dt = time_from_ts(ts);
     let value = match env_name(pattern) {
-        Some(p) => dt.format(p).to_string(),
+        // chrono's formatter reports an invalid directive through its `Display`
+        // error. `to_string()` panics on that, which cannot unwind across the C
+        // ABI and aborts the process, so format fallibly and return the empty
+        // string for a bad pattern instead.
+        Some(p) => {
+            use std::fmt::Write;
+            let mut out = std::string::String::new();
+            if write!(out, "{}", dt.format(p)).is_err() {
+                out.clear();
+            }
+            out
+        }
         None => std::string::String::new(),
     };
     object::raven_string_from_bytes(value.as_ptr(), value.len())

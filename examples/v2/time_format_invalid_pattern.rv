@@ -1,0 +1,14 @@
+// format_timestamp returns the empty string for an invalid strftime pattern
+// instead of aborting the process, and a valid pattern formats normally.
+// Prints:
+//   [valid] 1970-01-01
+//   [invalid] []
+//   done
+import std/time { format_timestamp }
+import std/io { println }
+
+fun main() {
+    println("[valid] ${format_timestamp(0, "%Y-%m-%d")}")
+    println("[invalid] [${format_timestamp(0, "%Q")}]")
+    println("done")
+}
