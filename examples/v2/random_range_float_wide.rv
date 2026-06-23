@@ -1,0 +1,32 @@
+// gen_range_float stays within [lo, hi) even when hi - lo would overflow to
+// infinity. The result is a convex combination of the endpoints, so it is
+// always finite and in range regardless of the draw. Prints:
+//   all in range
+//   narrow ok
+import std/random
+import std/io { println }
+
+fun main() {
+    let rng = Rng.new(42)
+    let in_range = true
+    let i = 0
+    while i < 1000 {
+        let x = rng.gen_range_float(-1.0e308, 1.0e308)
+        // Negated in-range test so a NaN draw counts as out of range; a bare
+        // x < lo || x >= hi would let NaN through, since it compares false.
+        if !(x >= -1.0e308 && x < 1.0e308) {
+            in_range = false
+        }
+        i = i + 1
+    }
+    println(match in_range {
+        true -> "all in range",
+        false -> "out of range",
+    })
+
+    let y = rng.gen_range_float(2.0, 4.0)
+    println(match y >= 2.0 && y < 4.0 {
+        true -> "narrow ok",
+        false -> "narrow bad",
+    })
+}
