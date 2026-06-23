@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.138] - 2026-06-24
+
+### Fixed
+
+- `raven build` refuses to write the executable over its input source. The compiler reads the source first and the linker writes last, so `-o` pointing at the source would silently replace it with the binary; a typo there could destroy the only copy of a file. It now errors instead, leaving the source untouched (#612).
+
 ## [2.18.137] - 2026-06-24
 
 ### Fixed
