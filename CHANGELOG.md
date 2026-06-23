@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.133] - 2026-06-23
+
+### Fixed
+
+- The `std/math` guide and spec no longer claim `pow_int` ignores overflow. They describe the current behavior: `pow_int` aborts with `pow_int overflow`, `abs_int` aborts on `i64::MIN`, and `lcm` aborts on an overflowing product (#633).
+
 ## [2.18.121] - 2026-06-16
 
 ### Fixed
