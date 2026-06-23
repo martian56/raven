@@ -1,0 +1,19 @@
+// with_extension treats a trailing dot as the extension separator, matching
+// stem, so it neither doubles the dot nor leaves one behind. Prints:
+//   report
+//   report.txt
+//   report
+//   report.md
+//   .gitignore.txt
+//   dir.d/report.txt
+import std/path { stem, with_extension }
+import std/io { println }
+
+fun main() {
+    println(stem("report."))
+    println(with_extension("report.", "txt"))   // replace empty extension
+    println(with_extension("report.", ""))       // drop the trailing dot
+    println(with_extension("report.txt", "md"))
+    println(with_extension(".gitignore", "txt")) // dotfile has no extension
+    println(with_extension("dir.d/report", "txt")) // a dot in a directory is not an extension
+}
