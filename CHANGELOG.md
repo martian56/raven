@@ -8,6 +8,12 @@ All notable changes to Raven are documented in this file.
 
 - `raven build` refuses to write the executable over its input source. The compiler reads the source first and the linker writes last, so `-o` pointing at the source would silently replace it with the binary; a typo there could destroy the only copy of a file. It now errors instead, leaving the source untouched (#612).
 
+## [2.18.137] - 2026-06-24
+
+### Fixed
+
+- Compound assignment to a module-level global (`g += v`, `g -= v`, ...) works from any function. The desugar read the global through a local slot that did not exist, so the load came back as a Unit value and codegen aborted; it now loads and stores through the global symbol, the same way a plain read and write already did (#685).
+
 ## [2.18.136] - 2026-06-23
 
 ### Fixed

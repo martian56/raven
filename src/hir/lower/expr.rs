@@ -1503,11 +1503,25 @@ pub(crate) fn lower_compound_assign(
                 ExprKind::Ident { name, .. } => name.clone(),
                 _ => "self".to_string(),
             };
-            let load = make_expr(
-                target_kind_for_name(&target.kind, &name),
-                target_ty.clone(),
-                target.span.clone(),
-            );
+            // A module-level `let` reads and writes through its global symbol,
+            // not a local slot. `g += v` must load with `GlobalGet` and store
+            // to a `Global` target the same way a plain read and write do;
+            // otherwise the load resolved to a missing local and came back as
+            // a Unit value.
+            let (load_kind, store) = match module_global_name(&target.span, cx) {
+                Some(global) => (
+                    HirExprKind::GlobalGet(global.clone()),
+                    HirAssignTarget::Global { name: global },
+                ),
+                None => (
+                    target_kind_for_name(&target.kind, &name),
+                    HirAssignTarget::Ident {
+                        name,
+                        span: target.span.clone(),
+                    },
+                ),
+            };
+            let load = make_expr(load_kind, target_ty.clone(), target.span.clone());
             let combined = make_expr(
                 HirExprKind::Binary {
                     op,
@@ -1517,14 +1531,7 @@ pub(crate) fn lower_compound_assign(
                 target_ty,
                 span.clone(),
             );
-            Ok(vec![assign_stmt(
-                HirAssignTarget::Ident {
-                    name,
-                    span: target.span.clone(),
-                },
-                combined,
-                span.clone(),
-            )])
+            Ok(vec![assign_stmt(store, combined, span.clone())])
         }
         ExprKind::Field { receiver, name } => {
             // obj.field op= v  ->  let __recv = obj; __recv.field = __recv.field op v

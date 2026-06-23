@@ -1,0 +1,25 @@
+// Compound assignment to a module-level global reads and writes through its
+// global symbol, so `g += v` works from any function. Prints:
+//   20
+//   140
+import std/io { println }
+
+let counter: Int = 10
+let total: Int = 100
+
+fun bump() {
+    counter += 5
+}
+
+fun work() {
+    total -= 30
+    total *= 2
+}
+
+fun main() {
+    bump()
+    bump()
+    println(counter.to_string())
+    work()
+    println(total.to_string())
+}
