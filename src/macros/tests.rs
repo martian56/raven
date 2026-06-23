@@ -93,6 +93,18 @@ fn ty_fragment_captures_a_balanced_type() {
 }
 
 #[test]
+fn ty_fragment_keeps_a_comma_inside_generics() {
+    // The comma inside `Pair<Int, String>` belongs to the type, not the
+    // matcher's `,` delimiter, so the whole type is one `$t`.
+    let src = "macro first { ($t:ty, $e:expr) => { take($t, $e) } }\n\
+               let r = first!(Pair<Int, String>, 0)\n";
+    assert_eq!(
+        expand_render(src),
+        "let r = take ( Pair `<` Int , String > , 0 )"
+    );
+}
+
+#[test]
 fn literal_fragment_captures_one_literal() {
     let src = "macro dbl { ($x:literal) => { ($x) + ($x) } }\nlet y = dbl!(21)\n";
     assert_eq!(expand_render(src), "let y = ( 21 ) + ( 21 )");

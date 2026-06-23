@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.147] - 2026-06-24
+
+### Fixed
+
+- A `ty` macro fragment balances angle brackets, so a comma inside generic arguments stays part of the type. `$t:ty` matching `Pair<Int, String>` now captures the whole type instead of stopping at the first comma. `<`/`>` in an `expr` or `pat` fragment are still treated as comparison operators (#662).
+
 ## [2.18.146] - 2026-06-24
 
 ### Fixed

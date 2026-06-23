@@ -766,7 +766,12 @@ fn match_seq(
                 // and the parentheses of a constructor pattern stay balanced.
                 Fragment::Expr | Fragment::Ty | Fragment::Pat => {
                     let delim = next_delim(matcher, idx + 1, outer_delim);
-                    let end = capture_balanced(args, pos, delim.as_ref())?;
+                    // A `ty` fragment also balances angle brackets, so a comma
+                    // inside generic arguments (`Pair<Int, String>`) does not end
+                    // the type. `<`/`>` are comparison operators in an `expr` or
+                    // `pat`, so those fragments leave angles untracked.
+                    let angles = matches!(frag, Fragment::Ty);
+                    let end = capture_balanced(args, pos, delim.as_ref(), angles)?;
                     if end == pos {
                         return None;
                     }
@@ -889,7 +894,12 @@ fn next_delim(
 /// Capture a balanced token run from `start` until a top-level `delim` (or
 /// the end of `args` when `delim` is `None`). Bracket depth must be balanced
 /// at the stop point. Returns the index of the stop position.
-fn capture_balanced(args: &[Token], start: usize, delim: Option<&TokenKind>) -> Option<usize> {
+fn capture_balanced(
+    args: &[Token],
+    start: usize,
+    delim: Option<&TokenKind>,
+    angles: bool,
+) -> Option<usize> {
     let mut depth: i32 = 0;
     let mut i = start;
     while i < args.len() {
@@ -902,6 +912,13 @@ fn capture_balanced(args: &[Token], start: usize, delim: Option<&TokenKind>) -> 
                 }
                 depth -= 1;
             }
+            // For a `ty` fragment, angle brackets are generic delimiters: `<`
+            // opens one and `>` closes it, and a `<<`/`>>` token spans two (a
+            // nested generic like `Vec<Vec<Int>>`).
+            TokenKind::Lt if angles => depth += 1,
+            TokenKind::Shl if angles => depth += 2,
+            TokenKind::Gt if angles && depth > 0 => depth -= 1,
+            TokenKind::Shr if angles && depth > 0 => depth = (depth - 2).max(0),
             _ => {}
         }
         if depth == 0 {
