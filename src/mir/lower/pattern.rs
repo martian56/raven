@@ -247,18 +247,10 @@ fn lower_fallback_match(
         }
 
         cx.current = arm_block;
-        // Bind name for `Binding` patterns.
-        if let HirPatternKind::Binding(name) = &arm.pattern.kind {
-            // Bind the name to the scrutinee value at its real type. Using a
-            // Unit slot here dropped the value: a `String`, `Float`, or struct
-            // scrutinee came back empty inside the arm body.
-            let local = cx
-                .builder
-                .named_local(name.clone(), super::super::ty::MirType::from_ty(scrut_ty));
-            cx.builder
-                .assign(arm_block, local, MirRvalue::Use(scrut.clone()));
-            cx.bind(name.clone(), local);
-        }
+        // Bind whatever the pattern introduces: a plain `Binding` name, or the
+        // field bindings of a struct destructure. Without this a struct pattern
+        // arm reached its body with its fields unbound, so they read as Unit.
+        bind_pattern(cx, &arm.pattern, scrut_ty, &scrut);
         let v = super::expr::lower_expr(cx, &arm.body);
         cx.builder.assign(cx.current, result, MirRvalue::Use(v));
         if !cx.builder.is_closed(cx.current) {
@@ -507,35 +499,36 @@ fn bind_pattern(cx: &mut LowerCx<'_>, pat: &HirPattern, scrut_ty: &Ty, scrut: &M
             }
         }
         HirPatternKind::Struct { fields, name } => {
-            for (i, field) in fields.iter().enumerate() {
-                let payload_ty = payload_type_at(scrut_ty, Some(name), i, cx);
+            // A plain struct stores field `i` at slot `i`. A struct-shaped enum
+            // variant reserves slot 0 for the discriminant, so its fields start
+            // at slot 1. The slot follows the field's declaration order, not the
+            // order the pattern lists fields, so `Point { y, x }` still reads the
+            // right field.
+            let base_slot = match scrut_ty {
+                Ty::Struct { .. } => 0,
+                _ => 1,
+            };
+            for field in fields.iter() {
+                let decl_index = field_decl_index(scrut_ty, Some(name), &field.name, cx);
+                let payload_ty = payload_type_at(scrut_ty, Some(name), decl_index, cx);
                 let mty = MirType::from_ty(&payload_ty);
-                if let Some(p) = &field.pattern {
-                    if let HirPatternKind::Binding(bname) = &p.kind {
-                        let local = cx.builder.named_local(bname.clone(), mty);
-                        cx.builder.assign(
-                            cx.current,
-                            local,
-                            MirRvalue::FieldAccess {
-                                base: scrut.clone(),
-                                index: i + 1,
-                            },
-                        );
-                        cx.bind(bname.clone(), local);
-                    }
-                } else {
-                    // Shorthand `{ name }` binds the field name to a
-                    // local of the same name.
-                    let local = cx.builder.named_local(field.name.clone(), mty);
-                    cx.builder.assign(
-                        cx.current,
-                        local,
-                        MirRvalue::FieldAccess {
-                            base: scrut.clone(),
-                            index: i + 1,
-                        },
-                    );
-                    cx.bind(field.name.clone(), local);
+                let access = MirRvalue::FieldAccess {
+                    base: scrut.clone(),
+                    index: decl_index + base_slot,
+                };
+                // `{ name: binding }` binds the inner name; shorthand `{ name }`
+                // binds the field name itself.
+                let bind_name = match &field.pattern {
+                    Some(p) => match &p.kind {
+                        HirPatternKind::Binding(bname) => Some(bname.clone()),
+                        _ => None,
+                    },
+                    None => Some(field.name.clone()),
+                };
+                if let Some(bname) = bind_name {
+                    let local = cx.builder.named_local(bname.clone(), mty);
+                    cx.builder.assign(cx.current, local, access);
+                    cx.bind(bname, local);
                 }
             }
         }
@@ -567,7 +560,57 @@ fn payload_type_at(scrut_ty: &Ty, variant: Option<&str>, index: usize, cx: &Lowe
                 .map(|(_, ty, _)| ty.clone())
                 .unwrap_or(Ty::Error)
         }
+        // A plain struct scrutinee: the field type comes from the struct
+        // declaration, grounded under the scrutinee's generic arguments.
+        Ty::Struct { name, args, .. } => {
+            let Some(decl) = cx.decls.structs.get(name) else {
+                return Ty::Error;
+            };
+            let Some((_, fty, _)) = decl.fields.get(index) else {
+                return Ty::Error;
+            };
+            let params = super::expr::struct_generic_params(decl);
+            if params.is_empty() || args.is_empty() {
+                return fty.clone();
+            }
+            let mut subst = super::SubstMap::new();
+            for (p, arg) in params.iter().zip(args.iter()) {
+                subst.insert(p.clone(), arg.clone());
+            }
+            super::substitute(fty, &subst)
+        }
         _ => Ty::Error,
+    }
+}
+
+/// The declaration slot of a named field in a struct or struct-shaped enum
+/// variant, so a pattern that lists fields out of order still reads the right
+/// one. Falls back to 0 when the field or declaration is unknown.
+fn field_decl_index(
+    scrut_ty: &Ty,
+    variant: Option<&str>,
+    field_name: &str,
+    cx: &LowerCx<'_>,
+) -> usize {
+    match scrut_ty {
+        Ty::Struct { name, .. } => cx
+            .decls
+            .structs
+            .get(name)
+            .and_then(|d| d.fields.iter().position(|(n, _, _)| n == field_name))
+            .unwrap_or(0),
+        Ty::Enum { name, .. } => {
+            let Some(vname) = variant else {
+                return 0;
+            };
+            cx.decls
+                .enums
+                .get(name)
+                .and_then(|d| d.variants.iter().find(|v| v.name == vname))
+                .and_then(|v| v.fields.iter().position(|(n, _, _)| n == field_name))
+                .unwrap_or(0)
+        }
+        _ => 0,
     }
 }
 
