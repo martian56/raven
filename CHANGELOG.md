@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.183] - 2026-06-24
+
+### Fixed
+
+- A duplicated `[[package]]` block in `rv.lock` no longer compiles a dependency's FFI sources twice. Loading a lock now drops exact-duplicate entries, so a repeated identical block is collapsed to one and a dependency with an `[ffi]` source is not gathered twice (which previously made the linker fail with duplicate definitions). A genuine conflict (one source pinned to two versions) is still rejected (#649).
+
 ## [2.18.182] - 2026-06-24
 
 ### Fixed
