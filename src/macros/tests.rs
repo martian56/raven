@@ -310,6 +310,23 @@ fn plus_repetition_matches_multiple() {
 }
 
 #[test]
+fn repetition_can_be_followed_by_a_matcher_item() {
+    // The repetition's last element stops before the `;` that follows the
+    // repetition, so the trailing `; $t` matches and the rule applies.
+    let src = "macro tail { ($($x:expr),* ; $t:expr) => { $t } }\nlet r = tail!(1, 2; 99)\n";
+    assert_eq!(expand_render(src), "let r = 99");
+    // Zero reps before the trailing item also works.
+    let zero = "macro tail { ($($x:expr),* ; $t:expr) => { $t } }\nlet z = tail!(; 7)\n";
+    assert_eq!(expand_render(zero), "let z = 7");
+    // A payload-carrying follow token (the identifier `foo`) stops the last
+    // element only on that exact token, not on every identifier, so the `bar`
+    // inside the expression does not break the capture early.
+    let payload =
+        "macro pick { ($($x:expr),* foo $t:expr) => { $t } }\nlet p = pick!(1 + bar foo 99)\n";
+    assert_eq!(expand_render(payload), "let p = 99");
+}
+
+#[test]
 fn repetition_with_multiple_metavariables_per_rep() {
     let src = "macro pairs { ($($k:ident : $v:expr),*) => { [$(($k, $v)),*] } }\n\
                let p = pairs!(a : 1, b : 2)\n";
