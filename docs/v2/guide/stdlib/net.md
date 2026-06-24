@@ -273,5 +273,3 @@ fun main() {
   operator used above.
 - [std/string](string.md) for slicing and scanning the byte buffers that
   `read` returns.
-</content>
-</invoke>

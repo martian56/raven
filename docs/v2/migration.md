@@ -875,4 +875,3 @@ When converting a v1 file, work through this list:
    forms, dropping `export` and `from`.
 10. Move the project under `rvpm`: an `rv.toml` manifest with the entry at
     `src/main.rv`, built with `rvpm build` or run with `rvpm run`.
-</content>
