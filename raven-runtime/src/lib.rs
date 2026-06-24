@@ -195,8 +195,8 @@ fn process_next_id() -> i64 {
 /// The process-wide compiled-regex registry keyed by an incrementing id.
 /// Ids start at 1; 0 is the failure sentinel that pairs with a set
 /// last-error.
-fn regex_registry() -> &'static Mutex<HashMap<i64, regex::Regex>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<i64, regex::Regex>>> = OnceLock::new();
+fn regex_registry() -> &'static Mutex<HashMap<i64, regex::bytes::Regex>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<i64, regex::bytes::Regex>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -513,6 +513,27 @@ fn env_name<'a>(name: *const object::String) -> Option<&'a str> {
     // SAFETY: a Raven String holds `len` initialized UTF-8 bytes.
     let bytes = unsafe { slice::from_raw_parts(ptr, len) };
     std::str::from_utf8(bytes).ok()
+}
+
+/// Borrow the raw bytes of a Raven `String`. Unlike [`env_name`], this does not
+/// require valid UTF-8: a `String` is a byte buffer, so callers that handle
+/// arbitrary bytes (the regex engine) use this. The slice borrows the
+/// `String`'s storage, so it is valid for the duration of the FFI call.
+///
+/// # Safety
+///
+/// `s` must be a valid `raven_string_from_bytes`-built `String` or null.
+fn string_bytes<'a>(s: *const object::String) -> &'a [u8] {
+    if s.is_null() {
+        return &[];
+    }
+    let ptr = object::raven_string_bytes(s);
+    let len = object::raven_string_len(s) as usize;
+    if ptr.is_null() || len == 0 {
+        return &[];
+    }
+    // SAFETY: a Raven String holds `len` initialized bytes.
+    unsafe { slice::from_raw_parts(ptr, len) }
 }
 
 /// Reinterpret a signed 64-bit integer as an `f64` by value conversion.
@@ -1730,7 +1751,10 @@ pub extern "C" fn raven_regex_compile(pattern: *const object::String) -> i64 {
         regex_set_error("pattern is not valid UTF-8".to_string());
         return 0;
     };
-    match regex::Regex::new(pattern) {
+    // The byte-oriented engine matches a haystack of arbitrary bytes, so a
+    // Raven String that is not valid UTF-8 is matched as-is rather than
+    // discarded. The pattern itself is still text.
+    match regex::bytes::Regex::new(pattern) {
         Ok(re) => {
             let id = regex_next_id();
             regex_registry().lock().unwrap().insert(id, re);
@@ -1752,9 +1776,7 @@ pub extern "C" fn raven_regex_compile(pattern: *const object::String) -> i64 {
 /// `text` must be a valid `raven_string_from_bytes`-built `String`.
 #[no_mangle]
 pub extern "C" fn raven_regex_is_match(id: i64, text: *const object::String) -> bool {
-    let Some(text) = env_name(text) else {
-        return false;
-    };
+    let text = string_bytes(text);
     let registry = regex_registry().lock().unwrap();
     registry.get(&id).is_some_and(|re| re.is_match(text))
 }
@@ -1780,14 +1802,14 @@ pub extern "C" fn raven_regex_has_match(id: i64, text: *const object::String) ->
 /// `text` must be a valid `raven_string_from_bytes`-built `String`.
 #[no_mangle]
 pub extern "C" fn raven_regex_find(id: i64, text: *const object::String) -> *mut object::String {
-    let value = env_name(text)
-        .and_then(|text| {
-            let registry = regex_registry().lock().unwrap();
-            registry
-                .get(&id)
-                .and_then(|re| re.find(text).map(|m| m.as_str().to_string()))
-        })
-        .unwrap_or_default();
+    let text = string_bytes(text);
+    let value: Vec<u8> = {
+        let registry = regex_registry().lock().unwrap();
+        registry
+            .get(&id)
+            .and_then(|re| re.find(text).map(|m| m.as_bytes().to_vec()))
+            .unwrap_or_default()
+    };
     object::raven_string_from_bytes(value.as_ptr(), value.len())
 }
 
@@ -1803,28 +1825,28 @@ pub extern "C" fn raven_regex_find_all(
     id: i64,
     text: *const object::String,
 ) -> *mut object::String {
-    let value = env_name(text)
-        .map(|text| {
-            let registry = regex_registry().lock().unwrap();
-            match registry.get(&id) {
-                Some(re) => encode_str_list(re.find_iter(text).map(|m| m.as_str())),
-                None => std::string::String::new(),
-            }
-        })
-        .unwrap_or_default();
+    let text = string_bytes(text);
+    let value: Vec<u8> = {
+        let registry = regex_registry().lock().unwrap();
+        match registry.get(&id) {
+            Some(re) => encode_bytes_list(re.find_iter(text).map(|m| m.as_bytes())),
+            None => Vec::new(),
+        }
+    };
     object::raven_string_from_bytes(value.as_ptr(), value.len())
 }
 
-/// Encode a list of strings for transport to Raven as one `String`: each
-/// element is its byte length in decimal, then a `:`, then its bytes. This is
-/// unambiguous even when an element contains a newline or a colon, which the
-/// previous newline join was not. `std/regex` decodes it.
-fn encode_str_list<'a>(elems: impl IntoIterator<Item = &'a str>) -> std::string::String {
-    let mut out = std::string::String::new();
+/// Encode a list of byte strings for transport to Raven as one `String`: each
+/// element is its byte length in decimal, then a `:`, then its raw bytes. This
+/// is unambiguous even when an element contains a newline or a colon, which the
+/// previous newline join was not, and works for arbitrary (non-UTF-8) bytes.
+/// `std/regex` decodes it.
+fn encode_bytes_list<'a>(elems: impl IntoIterator<Item = &'a [u8]>) -> Vec<u8> {
+    let mut out = Vec::new();
     for e in elems {
-        out.push_str(&e.len().to_string());
-        out.push(':');
-        out.push_str(e);
+        out.extend_from_slice(e.len().to_string().as_bytes());
+        out.push(b':');
+        out.extend_from_slice(e);
     }
     out
 }
@@ -1842,16 +1864,18 @@ pub extern "C" fn raven_regex_captures(
     id: i64,
     text: *const object::String,
 ) -> *mut object::String {
-    let value = env_name(text)
-        .and_then(|text| {
-            let registry = regex_registry().lock().unwrap();
-            registry.get(&id).and_then(|re| {
+    let text = string_bytes(text);
+    let value: Vec<u8> = {
+        let registry = regex_registry().lock().unwrap();
+        registry
+            .get(&id)
+            .and_then(|re| {
                 re.captures(text).map(|caps| {
-                    encode_str_list(caps.iter().map(|g| g.map(|m| m.as_str()).unwrap_or("")))
+                    encode_bytes_list(caps.iter().map(|g| g.map(|m| m.as_bytes()).unwrap_or(b"")))
                 })
             })
-        })
-        .unwrap_or_default();
+            .unwrap_or_default()
+    };
     object::raven_string_from_bytes(value.as_ptr(), value.len())
 }
 
@@ -1869,16 +1893,14 @@ pub extern "C" fn raven_regex_replace_all(
     text: *const object::String,
     repl: *const object::String,
 ) -> *mut object::String {
-    let value = match (env_name(text), env_name(repl)) {
-        (Some(text), Some(repl)) => {
-            let registry = regex_registry().lock().unwrap();
-            match registry.get(&id) {
-                Some(re) => re.replace_all(text, repl).into_owned(),
-                None => text.to_string(),
-            }
+    let text = string_bytes(text);
+    let repl = string_bytes(repl);
+    let value: Vec<u8> = {
+        let registry = regex_registry().lock().unwrap();
+        match registry.get(&id) {
+            Some(re) => re.replace_all(text, repl).into_owned(),
+            None => text.to_vec(),
         }
-        (Some(text), None) => text.to_string(),
-        _ => std::string::String::new(),
     };
     object::raven_string_from_bytes(value.as_ptr(), value.len())
 }
@@ -1891,16 +1913,15 @@ pub extern "C" fn raven_regex_replace_all(
 /// `text` must be a valid `raven_string_from_bytes`-built `String`.
 #[no_mangle]
 pub extern "C" fn raven_regex_split(id: i64, text: *const object::String) -> *mut object::String {
-    let value = env_name(text)
-        .map(|text| {
-            let registry = regex_registry().lock().unwrap();
-            match registry.get(&id) {
-                Some(re) => encode_str_list(re.split(text)),
-                // Unknown id: the text unsplit, as a single encoded element.
-                None => encode_str_list(std::iter::once(text)),
-            }
-        })
-        .unwrap_or_default();
+    let text = string_bytes(text);
+    let value: Vec<u8> = {
+        let registry = regex_registry().lock().unwrap();
+        match registry.get(&id) {
+            Some(re) => encode_bytes_list(re.split(text)),
+            // Unknown id: the text unsplit, as a single encoded element.
+            None => encode_bytes_list(std::iter::once(text)),
+        }
+    };
     object::raven_string_from_bytes(value.as_ptr(), value.len())
 }
 

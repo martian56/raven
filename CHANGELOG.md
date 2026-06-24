@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.157] - 2026-06-24
+
+### Fixed
+
+- `std/regex` operates on raw bytes, so a Raven `String` that is not valid UTF-8 is matched as-is instead of silently failing or being discarded. Matching, capture, replacement, and split now run on the byte-oriented engine, so non-UTF-8 bytes around a match are preserved in the result. The pattern itself is still text (#621).
+
 ## [2.18.156] - 2026-06-24
 
 ### Fixed
