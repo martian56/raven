@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('Raven Language Extension is now active!');
@@ -156,18 +156,29 @@ function runRavenFile(filePath: string) {
     const cwd = path.dirname(filePath);
 
     vscode.window.setStatusBarMessage('Raven: building...', 3000);
-    exec(`raven build "${filePath}" -o "${out}"`, { cwd }, (err, _stdout, stderr) => {
+    // Pass the paths as arguments, not as a shell command string: a workspace
+    // file name can contain shell metacharacters (`$(...)`, backticks), and a
+    // command string would execute them. `execFile` runs `raven` directly with
+    // no shell.
+    execFile('raven', ['build', filePath, '-o', out], { cwd }, (err, _stdout, stderr) => {
         if (err) {
             const message = (stderr && stderr.trim()) || err.message;
             vscode.window.showErrorMessage(`Raven build failed:\n${message}`);
             return;
         }
-        const terminal = vscode.window.createTerminal('Raven');
-        // On Windows the default integrated terminal is PowerShell, where a
-        // quoted path must be invoked with the call operator `&`.
-        const invoke = process.platform === 'win32' ? `& "${out}"` : `"${out}"`;
-        terminal.sendText(invoke);
-        terminal.show();
+        // Run the built binary through a task that uses ProcessExecution, which
+        // launches the executable path directly with no shell. A terminal
+        // `sendText` would instead hand the path to the shell for parsing, so a
+        // path containing shell metacharacters could execute as a command.
+        const execution = new vscode.ProcessExecution(out, [], { cwd });
+        const task = new vscode.Task(
+            { type: 'raven-run' },
+            vscode.TaskScope.Workspace,
+            'Run Raven program',
+            'raven',
+            execution
+        );
+        vscode.tasks.executeTask(task);
     });
 }
 
