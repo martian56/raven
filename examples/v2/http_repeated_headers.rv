@@ -1,0 +1,15 @@
+// golden:skip - GETs a loopback server (URL in RAVEN_HTTP_URL) that returns
+// two Set-Cookie headers; the repeated-header handling is checked in
+// codegen_smoke.rs (http_keeps_repeated_headers). Prints the full response
+// header block, which must contain both cookie values.
+import std/http { get }
+import std/env { get_env }
+import std/io { println }
+
+fun main() {
+    let url = get_env("RAVEN_HTTP_URL")
+    match get(url) {
+        Ok(resp) -> println(resp.headers),
+        Err(e) -> println("request failed"),
+    }
+}

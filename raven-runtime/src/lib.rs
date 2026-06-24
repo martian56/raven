@@ -1530,8 +1530,16 @@ fn http_capture(resp: ureq::Response) -> HttpResp {
         reason.to_string()
     };
     let mut header_lines: Vec<std::string::String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     for name in resp.headers_names() {
-        if let Some(value) = resp.header(&name) {
+        // `headers_names` can list a repeated header (two `Set-Cookie` lines)
+        // more than once, and `header` only returns its first value. Process
+        // each name once and emit one line per value with `all`, so a repeated
+        // header keeps every value instead of duplicating the first.
+        if !seen.insert(name.to_ascii_lowercase()) {
+            continue;
+        }
+        for value in resp.all(&name) {
             header_lines.push(format!("{name}: {value}"));
         }
     }

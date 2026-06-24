@@ -2,6 +2,11 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.159] - 2026-06-24
+
+### Fixed
+
+- The HTTP client keeps every value of a repeated response header. A response with two `Set-Cookie` lines recorded the first value twice and lost the second, because it read only the first value per header name. It now emits one line per value for each header, so all values survive (#620).
 ## [2.18.158] - 2026-06-24
 
 ### Fixed

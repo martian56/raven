@@ -1284,6 +1284,70 @@ fn http_program_compiles_and_runs() {
 }
 
 #[test]
+fn http_keeps_repeated_headers() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A server that sends two Set-Cookie lines must surface both values, not
+    // the first one twice. The mock server returns Set-Cookie: a=1 and
+    // Set-Cookie: b=2; the client prints the whole header block, which must
+    // contain both distinct values.
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback listener");
+    let addr = listener
+        .local_addr()
+        .expect("listener local addr")
+        .to_string();
+    let url = format!("http://{addr}/");
+
+    let server = std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+            let mut buf = Vec::new();
+            let mut chunk = [0u8; 256];
+            loop {
+                match stream.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        buf.extend_from_slice(&chunk[..n]);
+                        if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            let resp = "HTTP/1.1 200 OK\r\nSet-Cookie: a=1\r\nSet-Cookie: b=2\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+            let _ = stream.write_all(resp.as_bytes());
+            let _ = stream.flush();
+        }
+    });
+
+    let example = build_example_binary("http_repeated_headers.rv", &runtime);
+    let output = Command::new(&example.binary)
+        .env("RAVEN_HTTP_URL", &url)
+        .output()
+        .expect("run http_repeated_headers binary");
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let _ = server.join();
+    cleanup(&example.tmp);
+    assert!(
+        output.status.success(),
+        "http_repeated_headers exited non zero: status={:?} stderr={}",
+        output.status,
+        stderr
+    );
+    assert!(
+        stdout.contains("a=1") && stdout.contains("b=2"),
+        "both Set-Cookie values must be present, got: {:?}",
+        stdout
+    );
+}
+
+#[test]
 fn http_sends_binary_body() {
     let Some(runtime) = supported_runtime() else {
         return;
