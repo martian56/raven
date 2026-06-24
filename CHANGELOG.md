@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.185] - 2026-06-24
+
+### Fixed
+
+- The VS Code "Run Raven File" command no longer passes the source path through a shell. It built `raven build "<path>"` as a command string and invoked the binary with a double-quoted path, so a workspace file name containing `$(...)` or backticks executed that command on Run (PowerShell expands `$(...)` even inside double quotes). The build now runs `raven` with `execFile` and an argument array (no shell), and the produced binary is invoked through a single-quoted path so the shell treats it as literal text (#622).
+
 ## [2.18.184] - 2026-06-24
 
 ### Fixed

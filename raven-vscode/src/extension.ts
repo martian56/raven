@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('Raven Language Extension is now active!');
@@ -156,16 +156,27 @@ function runRavenFile(filePath: string) {
     const cwd = path.dirname(filePath);
 
     vscode.window.setStatusBarMessage('Raven: building...', 3000);
-    exec(`raven build "${filePath}" -o "${out}"`, { cwd }, (err, _stdout, stderr) => {
+    // Pass the paths as arguments, not as a shell command string: a workspace
+    // file name can contain shell metacharacters (`$(...)`, backticks), and a
+    // command string would execute them. `execFile` runs `raven` directly with
+    // no shell.
+    execFile('raven', ['build', filePath, '-o', out], { cwd }, (err, _stdout, stderr) => {
         if (err) {
             const message = (stderr && stderr.trim()) || err.message;
             vscode.window.showErrorMessage(`Raven build failed:\n${message}`);
             return;
         }
         const terminal = vscode.window.createTerminal('Raven');
-        // On Windows the default integrated terminal is PowerShell, where a
-        // quoted path must be invoked with the call operator `&`.
-        const invoke = process.platform === 'win32' ? `& "${out}"` : `"${out}"`;
+        // Invoke the built binary through the terminal with the path single
+        // quoted so the shell treats it as literal text. Single quotes do not
+        // expand `$(...)` in POSIX shells, and on Windows PowerShell (which
+        // would expand `$(...)` even inside double quotes) a single-quoted path
+        // invoked with the call operator `&` is literal. Embedded single quotes
+        // are escaped per shell.
+        const invoke =
+            process.platform === 'win32'
+                ? `& '${out.replace(/'/g, "''")}'`
+                : `'${out.replace(/'/g, "'\\''")}'`;
         terminal.sendText(invoke);
         terminal.show();
     });
