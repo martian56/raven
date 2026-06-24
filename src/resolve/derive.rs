@@ -114,14 +114,6 @@ pub fn expand_derives(
     Ok(needs_json_helpers)
 }
 
-/// The shared JSON derive helper free functions, parsed into declarations.
-///
-/// The derived `from_json` bodies call these by bare name, and a bundled
-/// stdlib free function is namespaced (`std.json.f`) and so unreachable by its
-/// bare name from generated source. They are global free functions with fixed
-/// names, so the caller emits them exactly once per program (when any
-/// `@derive(ToJson|FromJson)` is present); a second copy would be a duplicate
-/// declaration. See [`expand_derives`], which reports when they are needed.
 /// The reserved name prefix for the free helper functions a `@derive`
 /// expansion emits (see [`json_helper_decls`]). A user declaration may not use
 /// it, or it would collide with a generated helper.
@@ -156,6 +148,14 @@ pub fn reject_reserved_helper_names(file: &File) -> Result<(), RavenError> {
     Ok(())
 }
 
+/// The shared JSON derive helper free functions, parsed into declarations.
+///
+/// The derived `from_json` bodies call these by bare name, and a bundled
+/// stdlib free function is namespaced (`std.json.f`) and so unreachable by its
+/// bare name from generated source. They are global free functions with fixed
+/// names, so the caller emits them exactly once per program (when any
+/// `@derive(ToJson|FromJson)` is present); a second copy would be a duplicate
+/// declaration. See [`expand_derives`], which reports when they are needed.
 pub fn json_helper_decls() -> Result<Vec<Decl>, RavenError> {
     // A distinct label from every `expand_derives` source so the helper
     // identifiers' `(file, byte range)` use-site keys cannot collide with an
