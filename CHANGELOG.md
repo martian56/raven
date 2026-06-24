@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.172] - 2026-06-24
+
+### Changed
+
+- The macro token-limit test asserts the token-limit-specific error wording (`produced over`) rather than the phrase the pass-limit error also uses, so it cannot pass without exercising the size cap.
+
 ## [2.18.171] - 2026-06-24
 
 ### Fixed
