@@ -243,7 +243,10 @@ fn token_limit_guards_exponential_expansion() {
     let src = "macro boom { () => { boom!() + boom!() } }\nlet y = boom!()\n";
     let e = expand_tokens(&lex(src)).expect_err("should hit the token limit");
     let msg = format!("{}", e);
-    assert!(msg.contains("a macro is likely recursive"), "got: {}", msg);
+    // Assert the token-limit-specific wording ("produced over"), not the
+    // "likely recursive" phrase the pass-limit error shares, so this test fails
+    // if the pass limit fires first instead of the size cap.
+    assert!(msg.contains("produced over"), "got: {}", msg);
 }
 
 #[test]

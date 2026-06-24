@@ -8,6 +8,12 @@ All notable changes to Raven are documented in this file.
 
 - A declarative macro call inside an imported local module is expanded. Macro expansion ran only on the entry file, so a macro used inside an imported module reached HIR lowering unexpanded and failed with an internal error; imported modules now get the same macro pre-pass, and the free identifiers their macros introduce flow to the resolver (#650).
 
+## [2.18.172] - 2026-06-24
+
+### Changed
+
+- The macro token-limit test asserts the token-limit-specific error wording (`produced over`) rather than the phrase the pass-limit error also uses, so it cannot pass without exercising the size cap.
+
 ## [2.18.171] - 2026-06-24
 
 ### Fixed
