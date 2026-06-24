@@ -166,19 +166,19 @@ function runRavenFile(filePath: string) {
             vscode.window.showErrorMessage(`Raven build failed:\n${message}`);
             return;
         }
-        const terminal = vscode.window.createTerminal('Raven');
-        // Invoke the built binary through the terminal with the path single
-        // quoted so the shell treats it as literal text. Single quotes do not
-        // expand `$(...)` in POSIX shells, and on Windows PowerShell (which
-        // would expand `$(...)` even inside double quotes) a single-quoted path
-        // invoked with the call operator `&` is literal. Embedded single quotes
-        // are escaped per shell.
-        const invoke =
-            process.platform === 'win32'
-                ? `& '${out.replace(/'/g, "''")}'`
-                : `'${out.replace(/'/g, "'\\''")}'`;
-        terminal.sendText(invoke);
-        terminal.show();
+        // Run the built binary through a task that uses ProcessExecution, which
+        // launches the executable path directly with no shell. A terminal
+        // `sendText` would instead hand the path to the shell for parsing, so a
+        // path containing shell metacharacters could execute as a command.
+        const execution = new vscode.ProcessExecution(out, [], { cwd });
+        const task = new vscode.Task(
+            { type: 'raven-run' },
+            vscode.TaskScope.Workspace,
+            'Run Raven program',
+            'raven',
+            execution
+        );
+        vscode.tasks.executeTask(task);
     });
 }
 
