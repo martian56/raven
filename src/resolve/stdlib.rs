@@ -347,6 +347,11 @@ pub fn expand_with_stdlib_ctx(
         for name in top_level_type_names(&module_file) {
             rename.insert(name.clone(), mangle_local_fn(&key, &name));
         }
+        // Module globals (`let`/`const`) are namespaced too, so two local
+        // modules can each declare a global of the same name.
+        for name in top_level_global_names(&module_file) {
+            rename.insert(name.clone(), mangle_local_fn(&key, &name));
+        }
         // A per-module label keeps the generated source's use-site spans from
         // colliding with another module's `<derive>` source.
         let (items, needs) = expand_module_derives(module_file.items, &format!("<derive:{key}>"))?;
@@ -368,6 +373,10 @@ pub fn expand_with_stdlib_ctx(
             // Types are namespaced like functions, so two packages can both
             // export a type of the same name without colliding at merge.
             for name in top_level_type_names(&ext.file) {
+                rename.insert(name.clone(), mangle_external_fn(&key, &name));
+            }
+            // Module globals are namespaced too, the same as functions.
+            for name in top_level_global_names(&ext.file) {
                 rename.insert(name.clone(), mangle_external_fn(&key, &name));
             }
             let (items, needs) = expand_module_derives(ext.file.items, &format!("<derive:{key}>"))?;
@@ -535,10 +544,12 @@ fn merge_module_items(
                 }
             }
             DeclKind::Const(c) => {
+                rename_decl(&mut c.name, rename);
                 rewrite_type(&mut c.ty, rename);
                 rewrite_expr(&mut c.value, rename);
             }
             DeclKind::Let(l) => {
+                rename_decl(&mut l.name, rename);
                 if let Some(t) = &mut l.ty {
                     rewrite_type(t, rename);
                 }
@@ -855,6 +866,20 @@ fn top_level_type_names(file: &File) -> BTreeSet<String> {
             DeclKind::Struct(s) => Some(s.name.clone()),
             DeclKind::Enum(e) => Some(e.name.clone()),
             DeclKind::Trait(t) => Some(t.name.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The module-level global (`let`/`const`) names a module declares. These are
+/// namespaced like functions and types so two modules can each declare a global
+/// of the same name without colliding under their bare names at merge.
+fn top_level_global_names(file: &File) -> BTreeSet<String> {
+    file.items
+        .iter()
+        .filter_map(|d| match &d.kind {
+            DeclKind::Let(l) => Some(l.name.clone()),
+            DeclKind::Const(c) => Some(c.name.clone()),
             _ => None,
         })
         .collect()
@@ -1856,6 +1881,36 @@ mod tests {
         assert_eq!(
             decode_count, 1,
             "the JSON decode helper must be declared exactly once across modules"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn module_globals_namespaced_across_modules() {
+        // Two local modules each declare a module-level `let value`. They are
+        // namespaced per module like functions, so merging them does not report
+        // `value` as declared multiple times even though the importer selects
+        // only the uniquely named functions.
+        let main_src = "import \"./a\" { get_a }\nimport \"./b\" { get_b }\nfun main() {}\n";
+        let (dir, entry) = write_temp_project(
+            &[
+                ("a.rv", "let value: Int = 1\nfun get_a() -> Int = value\n"),
+                ("b.rv", "let value: Int = 10\nfun get_b() -> Int = value\n"),
+                ("main.rv", main_src),
+            ],
+            "main.rv",
+        );
+        let user = parse_at(main_src, &entry);
+        let combined = expand_with_stdlib(&user).expect("two same-named globals must merge");
+        // Both globals survive the merge under distinct namespaced names.
+        let global_count = combined
+            .items
+            .iter()
+            .filter(|d| matches!(&d.kind, DeclKind::Let(l) if l.name.ends_with("value")))
+            .count();
+        assert_eq!(
+            global_count, 2,
+            "both module globals must be present under distinct names"
         );
         std::fs::remove_dir_all(&dir).ok();
     }
