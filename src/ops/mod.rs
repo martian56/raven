@@ -188,12 +188,14 @@ pub fn add_in(
     let text = read_to_string(&manifest_path)?;
     let (new_text, outcome) = upsert_dependency(&text, &key, constraint)?;
 
-    // Guard: the edited text must still parse as a manifest.
-    Manifest::from_toml_str(&new_text)?;
-    write_file(&manifest_path, &new_text)?;
-
+    // Resolve and lock the edited manifest before writing anything to disk: if
+    // parsing, resolution, or fetching fails, rv.toml is left unchanged and no
+    // rv.lock is written, so a failed `add` does not leave the manifest and
+    // lock out of sync. Only once both succeed are the two files committed.
     let manifest = Manifest::from_toml_str(&new_text)?;
     let lock = lock::resolve_and_lock_in(&manifest, cache_root)?;
+
+    write_file(&manifest_path, &new_text)?;
     let lock_path = project_dir.join(LOCK_FILE_NAME);
     lock.write(&lock_path)?;
 
@@ -1090,6 +1092,28 @@ mod tests {
             .expect("foo in lock");
         assert_eq!(foo.version, "v1.0.0");
         assert!(foo.hash.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn failed_add_leaves_manifest_and_lock_untouched() {
+        let proj = TempProject::new("addfail");
+        proj.write_manifest(APP_MANIFEST);
+        let cache = proj.cache_root();
+        // A constraint containing `..` is rejected during resolution, so the
+        // add fails before any file is written and without network access.
+        let result = add_in(&proj.root, "github.com/acme/foo", Some("../evil"), &cache);
+        assert!(result.is_err(), "add must fail on an invalid constraint");
+        // The manifest is untouched and no lock was written, so a failed add
+        // does not leave the project half-changed.
+        assert_eq!(
+            proj.manifest_text(),
+            APP_MANIFEST,
+            "rv.toml must be unchanged after a failed add"
+        );
+        assert!(
+            !proj.root.join(LOCK_FILE_NAME).exists(),
+            "no rv.lock must be written after a failed add"
+        );
     }
 
     #[test]

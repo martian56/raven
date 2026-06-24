@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.179] - 2026-06-24
+
+### Fixed
+
+- `rvpm add` no longer leaves `rv.toml` modified when resolution fails. The command wrote the edited manifest before resolving or fetching the dependency, so a failed resolve (a missing repo, an invalid constraint) left the dependency in `rv.toml` with no matching `rv.lock`. The manifest and lock are now resolved first and written only after both succeed, so a failed add leaves project state untouched (#648).
+
 ## [2.18.178] - 2026-06-24
 
 ### Fixed
