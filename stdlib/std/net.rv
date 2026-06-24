@@ -2,9 +2,9 @@
 // cannot cross the FFI, so the runtime keeps them in a registry keyed by an
 // opaque integer id and hands Raven that id; TcpStream and TcpListener wrap
 // the id. Fallible ops return Result<T, Error> tagged with kind "net" via
-// the runtime's thread-local last-error slot. A program is a client or a
-// server, not both at once, because Raven v2 has no threads. See
-// docs/v2/specs/std-net.md.
+// the runtime's thread-local last-error slot. Goroutines run in parallel, so a
+// program can be both a client and a server at once (spawn a goroutine per
+// accepted connection). See docs/v2/specs/std-net.md.
 
 import std/error { error_kind }
 import std/string

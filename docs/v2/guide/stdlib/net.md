@@ -89,10 +89,11 @@ The stream methods come in with the `TcpStream` type.
 
 ### `read(self, max: Int) -> Result<String, Error>`
 
-Read up to `max` bytes and return them as a `String`. The payload is a byte
-buffer carried in a `String` (lossy UTF-8 at the FFI boundary), not
-guaranteed text. A clean end of stream returns `Ok("")`, so an empty result
-means EOF rather than an error.
+Read up to `max` bytes and return them as a `String`. The payload is a raw
+byte buffer carried in a `String`, not guaranteed to be text; the bytes are
+preserved exactly, with no UTF-8 conversion, so binary data round-trips. A
+clean end of stream returns `Ok("")`, so an empty result means EOF rather than
+an error.
 
 ### `read_all(self) -> Result<String, Error>`
 
@@ -127,6 +128,12 @@ Write all bytes of `data` and return the count written.
 Set the read timeout in milliseconds. A value of `0` means no timeout
 (blocking reads); a positive value makes a stalled read fail rather than hang.
 This method does not return a `Result`.
+
+### `set_write_timeout_ms(self, ms: Int)`
+
+Set the write timeout in milliseconds, the same way as the read timeout: `0`
+means no timeout, and a positive value makes a stalled write fail rather than
+hang. This method does not return a `Result`.
 
 ### `close(self)`
 
@@ -164,11 +171,12 @@ Bind a TCP listener to `addr` in `"host:port"` form.
 ### `accept(self) -> Result<TcpStream, Error>`
 
 A method on `TcpListener`. Block until a connection arrives and return the
-accepted `TcpStream`. The block is intentional: Raven v2 has no concurrency,
-so accept waits rather than polling.
+accepted `TcpStream`. `accept` blocks the calling goroutine, but the other
+goroutines keep running on the worker pool.
 
-A server loops: bind once with `listen`, then call `accept` repeatedly,
-serving each accepted stream before accepting the next.
+A server loops: bind once with `listen`, then call `accept` repeatedly. It can
+serve each accepted stream before accepting the next, or `spawn` a goroutine
+per stream to serve connections concurrently.
 
 ```rust
 import std/net { listen }
@@ -196,8 +204,15 @@ fun serve() {
 }
 ```
 
-Because v2 has no threads, a single program is a client or a server, not both
-at once.
+A single program can act as both a client and a server at once: run the accept
+loop in one goroutine and open client connections from another. Goroutines run
+in parallel across the worker pool, so the server keeps accepting while the
+client work proceeds.
+
+### `close(self)`
+
+A method on `TcpListener`. Stop listening and release the runtime-side socket,
+freeing the bound port. It does not return a `Result`.
 
 ## Resolving and probing
 

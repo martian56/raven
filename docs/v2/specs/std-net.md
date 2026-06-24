@@ -67,16 +67,19 @@ fun reachable(addr: String) -> Bool
 listener to `addr`. `accept` blocks until a connection arrives and returns
 the accepted stream (blocking accept is intentional).
 
-`read` reads up to `max` bytes and returns them as a `String`. The payload
-is treated as a byte buffer carried in a String (lossy UTF-8 at the FFI
-boundary), not as guaranteed text. A clean EOF returns `Ok("")`: the runtime
-clears the last error on a successful read of zero bytes so the caller can
-tell EOF from an error. `write` writes all bytes of `data` and returns the
-count written.
+`read` reads up to `max` bytes and returns them as a `String`. The payload is
+a raw byte buffer carried in a String, preserved exactly with no UTF-8
+conversion, not guaranteed text; a negative `max` is an error. `read_all`
+reads to the end of the stream, accumulating every byte into one String. A
+clean EOF returns `Ok("")`: the runtime clears the last error on a successful
+read of zero bytes so the caller can tell EOF from an error. `write` writes all
+bytes of `data` and returns the count written.
 
-`set_read_timeout_ms` sets the stream read timeout. A value of 0 means no
-timeout (blocking reads); a positive value makes a stalled read fail rather
-than hang. `close` releases the runtime-side socket.
+`set_read_timeout_ms` and `set_write_timeout_ms` set the stream read and write
+timeouts. A value of 0 means no timeout (blocking); a positive value makes a
+stalled read or write fail rather than hang. `close` on a `TcpStream` releases
+the runtime-side socket, and `close` on a `TcpListener` stops listening and
+frees the bound port.
 
 `dns_lookup` resolves `host` to its IP addresses. The runtime joins them
 with `\n` into one String and the wrapper splits that into a
@@ -87,13 +90,13 @@ with `\n` into one String and the wrapper splits that into a
 connect_timeout to `addr` and returns whether it succeeded. It never sets an
 error and never returns a Result.
 
-## Client or server, not both
+## Client and server in one program
 
-Raven v2 has no concurrency, so a single Raven program cannot be both a
-server (blocking on `accept`) and a client at the same time. A program is
-one or the other. The end-to-end test reflects this: a loopback echo server
-runs on a background thread on the test side and the compiled Raven program
-is the client.
+Goroutines run in parallel across a worker pool, so a single Raven program can
+be both a server (a goroutine blocked on `accept`, spawning a goroutine per
+connection) and a client at the same time. The end-to-end test still runs a
+loopback echo server on a background thread on the test side with the compiled
+Raven program as the client, because the harness drives a single process.
 
 ## FFI path
 
