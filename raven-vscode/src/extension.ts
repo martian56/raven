@@ -175,7 +175,6 @@ async function runRavenFile(filePath: string) {
             return;
         }
     }
-    sessionBuiltOutputs.add(out);
 
     vscode.window.setStatusBarMessage('Raven: building...', 3000);
     // Pass the paths as arguments, not as a shell command string: a workspace
@@ -188,6 +187,10 @@ async function runRavenFile(filePath: string) {
             vscode.window.showErrorMessage(`Raven build failed:\n${message}`);
             return;
         }
+        // Record the output only after a successful build, so a failed build
+        // does not mark the path as ours and let a later run overwrite an
+        // unrelated file without confirmation.
+        sessionBuiltOutputs.add(out);
         // Run the built binary through a task that uses ProcessExecution, which
         // launches the executable path directly with no shell. A terminal
         // `sendText` would instead hand the path to the shell for parsing, so a
