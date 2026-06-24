@@ -1434,6 +1434,71 @@ fn http_sends_binary_body() {
 }
 
 #[test]
+fn http_detects_truncated_body() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A response whose body is shorter than its Content-Length was cut short in
+    // transit; the client must report an error rather than returning the
+    // partial body with a success status. The mock server advertises
+    // Content-Length: 100 but sends only 5 bytes and closes.
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback listener");
+    let addr = listener
+        .local_addr()
+        .expect("listener local addr")
+        .to_string();
+    let url = format!("http://{addr}/");
+
+    let server = std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+            let mut buf = Vec::new();
+            let mut chunk = [0u8; 256];
+            loop {
+                match stream.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        buf.extend_from_slice(&chunk[..n]);
+                        if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            // Promise 100 bytes, send 5, then close.
+            let resp = "HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\nhello";
+            let _ = stream.write_all(resp.as_bytes());
+            let _ = stream.flush();
+        }
+    });
+
+    let example = build_example_binary("http_truncated_body.rv", &runtime);
+    let output = Command::new(&example.binary)
+        .env("RAVEN_HTTP_URL", &url)
+        .output()
+        .expect("run http_truncated_body binary");
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let _ = server.join();
+    cleanup(&example.tmp);
+    assert!(
+        output.status.success(),
+        "http_truncated_body exited non zero: status={:?} stderr={}",
+        output.status,
+        stderr
+    );
+    assert_eq!(
+        stdout, "truncated\n",
+        "a truncated response must be an error, got: {:?}",
+        stdout
+    );
+}
+
+#[test]
 fn time_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
