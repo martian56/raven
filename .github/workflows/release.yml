@@ -46,11 +46,23 @@ jobs:
       - name: Resolve version
         id: version
         shell: bash
+        env:
+          # Pass the dispatch input through the environment, not string
+          # interpolation, so a value with a quote or command separator cannot
+          # break out of the assignment and run as shell.
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
           if [ "${{ github.ref_type }}" = "tag" ]; then
             v="${GITHUB_REF_NAME#v}"
           else
-            v="${{ github.event.inputs.version }}"
+            v="${INPUT_VERSION}"
+          fi
+          # The version becomes part of file names and an MSI ProductVersion, so
+          # accept only version characters. This also rejects any value crafted
+          # to escape a later shell or PowerShell assignment.
+          if ! [[ "$v" =~ ^[0-9A-Za-z.+_-]+$ ]]; then
+            echo "invalid release version: $v" >&2
+            exit 1
           fi
           echo "value=$v" >> "$GITHUB_OUTPUT"
           echo "Resolved version: $v"
@@ -66,8 +78,10 @@ jobs:
       - name: Stage tarball (Unix)
         if: runner.os != 'Windows'
         shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
         run: |
-          v="${{ steps.version.outputs.value }}"
+          v="$VERSION"
           dir="raven-$v-${{ matrix.target }}"
           bindir="target/${{ matrix.target }}/release"
           mkdir -p "stage/$dir"
@@ -92,8 +106,10 @@ jobs:
       - name: Stage zip (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
         run: |
-          $v = "${{ steps.version.outputs.value }}"
+          $v = $env:VERSION
           $dir = "raven-$v-${{ matrix.target }}"
           $bindir = "target/${{ matrix.target }}/release"
           New-Item -ItemType Directory -Force -Path "stage/$dir" | Out-Null
@@ -134,10 +150,12 @@ jobs:
       - name: Build Windows MSI
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
         run: |
           choco install wixtoolset --version 3.14.0 --allow-downgrade --yes
           cargo install cargo-wix --locked
-          $v = "${{ steps.version.outputs.value }}"
+          $v = $env:VERSION
           # An MSI ProductVersion must be numeric (X.Y.Z), so strip any
           # prerelease suffix (for example 2.0.0-rc1 becomes 2.0.0). The
           # filename keeps the full version label.
