@@ -1,0 +1,10 @@
+// golden:skip - the child of the std/process argv smoke test
+// (proc_argv_parent.rv, checked in codegen_smoke.rs). Prints its argument
+// count (including argv[0], the program path), so the parent can tell how
+// many arguments it actually received.
+import std/env { arg_count }
+import std/io { println }
+
+fun main() {
+    println("${arg_count()}")
+}

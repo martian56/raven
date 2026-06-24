@@ -1915,13 +1915,15 @@ pub extern "C" fn raven_process_run(
         return 0;
     };
 
-    // The args are joined by NUL. An empty String is zero args; otherwise
-    // each NUL-separated field is one arg. Program args effectively never
-    // contain NUL, so this round-trips unambiguously.
+    // Each arg is NUL-prefixed. An empty String is zero args; otherwise the
+    // split has a leading empty piece (before the first NUL) to drop, and each
+    // field after it is one arg. NUL-prefixing rather than NUL-separating keeps
+    // an empty arg list and a single empty arg distinct. Program args
+    // effectively never contain NUL, so this round-trips unambiguously.
     let args: Vec<&str> = if args_joined.is_empty() {
         Vec::new()
     } else {
-        args_joined.split('\0').collect()
+        args_joined.split('\0').skip(1).collect()
     };
 
     let mut command = process::Command::new(program);

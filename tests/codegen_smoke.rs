@@ -1390,6 +1390,39 @@ fn process_program_compiles_and_runs() {
 }
 
 #[test]
+fn proc_argv_preserves_empty_arg() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A single empty argument must reach the child, not vanish in the
+    // NUL-encoded argv. The child prints its argument count (argv[0] included);
+    // the parent runs it with no args (1), one empty arg (2), and "a" then ""
+    // (3).
+    let child = build_example_binary("proc_argv_child.rv", &runtime);
+    let parent = build_example_binary("proc_argv_parent.rv", &runtime);
+
+    let output = Command::new(&parent.binary)
+        .env("RAVEN_PROC_CHILD", &child.binary)
+        .output()
+        .expect("run proc_argv_parent binary");
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    cleanup(&child.tmp);
+    cleanup(&parent.tmp);
+    assert!(
+        output.status.success(),
+        "proc_argv_parent exited non zero: status={:?} stderr={}",
+        output.status,
+        stderr
+    );
+    assert_eq!(
+        stdout, "1\n2\n3\n",
+        "unexpected stdout for proc_argv_parent: {:?}",
+        stdout
+    );
+}
+
+#[test]
 fn gc_stress_survives_repeated_collections() {
     let Some(runtime) = supported_runtime() else {
         return;

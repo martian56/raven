@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.154] - 2026-06-24
+
+### Fixed
+
+- `std/process.run` passes a single empty command-line argument through to the child. The args were NUL-joined, so an empty argument list and a one-element list `[""]` both encoded to the empty String and the runtime rebuilt zero arguments for each. Each argument is now NUL-prefixed, so the two cases stay distinct (#607).
+
 ## [2.18.152] - 2026-06-24
 
 ### Fixed
