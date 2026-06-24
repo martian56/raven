@@ -1,6 +1,12 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import { execFile } from 'child_process';
+
+// Output paths this session's builds have produced. A build overwrites its own
+// output freely, but an output that already exists and is not in this set is
+// treated as an unrelated file and confirmed before overwriting.
+const sessionBuiltOutputs = new Set<string>();
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('Raven Language Extension is now active!');
@@ -147,13 +153,28 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(completionProvider);
 }
 
-function runRavenFile(filePath: string) {
+async function runRavenFile(filePath: string) {
     // The Raven CLI compiles a source file with `raven build <file> -o <out>`;
     // there is no bare-file run mode. Build first (capturing any compiler
     // diagnostic), then run the produced native binary in a terminal.
     const ext = process.platform === 'win32' ? '.exe' : '';
     const out = filePath.replace(/\.rv$/i, '') + ext;
     const cwd = path.dirname(filePath);
+
+    // The build writes the executable next to the source as `<basename><ext>`.
+    // If a file is already there that this session did not build, it is an
+    // unrelated file (`demo.exe` beside `demo.rv`), so confirm before
+    // overwriting it rather than clobbering it silently.
+    if (fs.existsSync(out) && !sessionBuiltOutputs.has(out)) {
+        const choice = await vscode.window.showWarningMessage(
+            `Running this file will overwrite "${path.basename(out)}", which already exists in this folder.`,
+            { modal: true },
+            'Overwrite'
+        );
+        if (choice !== 'Overwrite') {
+            return;
+        }
+    }
 
     vscode.window.setStatusBarMessage('Raven: building...', 3000);
     // Pass the paths as arguments, not as a shell command string: a workspace
@@ -166,6 +187,10 @@ function runRavenFile(filePath: string) {
             vscode.window.showErrorMessage(`Raven build failed:\n${message}`);
             return;
         }
+        // Record the output only after a successful build, so a failed build
+        // does not mark the path as ours and let a later run overwrite an
+        // unrelated file without confirmation.
+        sessionBuiltOutputs.add(out);
         // Run the built binary through a task that uses ProcessExecution, which
         // launches the executable path directly with no shell. A terminal
         // `sendText` would instead hand the path to the shell for parsing, so a
