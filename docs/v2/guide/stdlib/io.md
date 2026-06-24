@@ -132,5 +132,3 @@ fun main() {
   output.
 - [std/fs](fs.md) when you want to read from and write to files instead of the
   console.
-</content>
-</invoke>

@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.165] - 2026-06-24
+
+### Fixed
+
+- Removed stray `</content>` and `</invoke>` wrapper tags accidentally left at the end of `docs/v2/guide/stdlib/io.md`, `docs/v2/guide/stdlib/net.md`, and `docs/v2/migration.md`, which MkDocs copied verbatim into the published HTML (#658).
+
 ## [2.18.164] - 2026-06-24
 
 ### Fixed
