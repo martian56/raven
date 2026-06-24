@@ -188,14 +188,23 @@ pub fn add_in(
     let text = read_to_string(&manifest_path)?;
     let (new_text, outcome) = upsert_dependency(&text, &key, constraint)?;
 
-    // Resolve and lock the edited manifest before writing anything to disk: if
-    // parsing, resolution, or fetching fails, rv.toml is left unchanged and no
-    // rv.lock is written, so a failed `add` does not leave the manifest and
-    // lock out of sync. Only once both succeed are the two files committed.
+    // Guard: the edited text must still parse as a manifest.
     let manifest = Manifest::from_toml_str(&new_text)?;
-    let lock = lock::resolve_and_lock_in(&manifest, cache_root)?;
 
-    write_file(&manifest_path, &new_text)?;
+    // For a concrete ref, resolve and lock before writing anything to disk: if
+    // resolution or fetching fails, rv.toml is left unchanged and no rv.lock is
+    // written, so a failed `add` does not desync the manifest from the lock
+    // (#648). For the `latest` placeholder (no ref given), the manifest edit is
+    // the point: it cannot resolve yet, so it is recorded first and the user
+    // pins a real ref later, even though the resolution error is still surfaced.
+    let placeholder = version.is_none();
+    if placeholder {
+        write_file(&manifest_path, &new_text)?;
+    }
+    let lock = lock::resolve_and_lock_in(&manifest, cache_root)?;
+    if !placeholder {
+        write_file(&manifest_path, &new_text)?;
+    }
     let lock_path = project_dir.join(LOCK_FILE_NAME);
     lock.write(&lock_path)?;
 
