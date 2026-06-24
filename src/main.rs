@@ -15,6 +15,7 @@
 //! pipeline lives in `raven::driver` so `rvpm build` can drive it with a
 //! package context.
 
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -43,21 +44,26 @@ fn main() -> ExitCode {
 }
 
 fn run() -> ExitCode {
-    let args: Vec<String> = std::env::args().collect();
+    // Collect arguments with `args_os` rather than `args`. On Unix an argument
+    // is an arbitrary byte string, and `args` panics when one is not valid
+    // UTF-8, so a non-UTF-8 source path would crash the compiler before it
+    // could report an ordinary diagnostic. Source paths flow through as
+    // `OsString`, preserving the bytes; only the subcommand is matched as text.
+    let args: Vec<OsString> = std::env::args_os().collect();
     let Some(first) = args.get(1) else {
         print_usage();
         return ExitCode::SUCCESS;
     };
-    match first.as_str() {
-        "help" | "--help" | "-h" => {
+    match first.to_str() {
+        Some("help") | Some("--help") | Some("-h") => {
             print_usage();
             ExitCode::SUCCESS
         }
-        "--version" | "-V" => {
+        Some("--version") | Some("-V") => {
             print_version();
             ExitCode::SUCCESS
         }
-        "build" => match run_build(&args[2..]) {
+        Some("build") => match run_build(&args[2..]) {
             Ok(()) => ExitCode::SUCCESS,
             // A rendered source diagnostic prints verbatim; it carries its own
             // `error:` header, so the `raven:` prefix would only get in the way.
@@ -70,8 +76,8 @@ fn run() -> ExitCode {
                 ExitCode::from(1)
             }
         },
-        other => {
-            eprintln!("raven: unknown subcommand '{}'", other);
+        _ => {
+            eprintln!("raven: unknown subcommand '{}'", first.to_string_lossy());
             eprintln!("Run 'raven help' for usage.");
             ExitCode::from(2)
         }
@@ -99,7 +105,7 @@ fn print_usage() {
     println!("To manage packages, use the 'rvpm' command.");
 }
 
-fn run_build(rest: &[String]) -> Result<(), BuildError> {
+fn run_build(rest: &[OsString]) -> Result<(), BuildError> {
     let opts = parse_build_args(rest)?;
     // Refuse to write the executable over the input source. The compiler reads
     // the source first and the linker writes the output last, so `-o` pointing
@@ -133,7 +139,14 @@ struct BuildOpts {
     output: PathBuf,
 }
 
-fn parse_build_args(args: &[String]) -> Result<BuildOpts, BuildError> {
+/// Whether an argument is an option flag, i.e. begins with `-`. The leading
+/// byte is checked directly so the test works for arguments that are not valid
+/// UTF-8 (a non-UTF-8 source path is treated as a positional, not a flag).
+fn is_flag(arg: &OsStr) -> bool {
+    arg.as_encoded_bytes().first() == Some(&b'-')
+}
+
+fn parse_build_args(args: &[OsString]) -> Result<BuildOpts, BuildError> {
     let mut input: Option<PathBuf> = None;
     let mut output: Option<PathBuf> = None;
     let mut i = 0;
@@ -144,15 +157,20 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, BuildError> {
             if i >= args.len() {
                 return Err(BuildError::Args("expected an output path after -o".into()));
             }
+            // The path keeps its original bytes; a non-UTF-8 path then surfaces
+            // as an ordinary "no such file" diagnostic from the driver.
             output = Some(PathBuf::from(&args[i]));
-        } else if a.starts_with('-') {
-            return Err(BuildError::Args(format!("unknown flag `{}`", a)));
+        } else if is_flag(a) {
+            return Err(BuildError::Args(format!(
+                "unknown flag `{}`",
+                a.to_string_lossy()
+            )));
         } else if input.is_none() {
             input = Some(PathBuf::from(a));
         } else {
             return Err(BuildError::Args(format!(
                 "unexpected positional argument `{}`",
-                a
+                a.to_string_lossy()
             )));
         }
         i += 1;
@@ -211,5 +229,17 @@ mod tests {
         assert!(!same_file(&src, &dir.join("prog.exe")));
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // A non-UTF-8 source path must reach the build pipeline with its bytes
+    // intact instead of panicking while the arguments are collected.
+    #[cfg(unix)]
+    #[test]
+    fn build_args_keep_non_utf8_input_path() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let input = OsString::from_vec(b"bad-\xff.rv".to_vec());
+        let opts = parse_build_args(&[input.clone()]).expect("non-UTF-8 path parses");
+        assert_eq!(opts.input.as_os_str(), input.as_os_str());
     }
 }
