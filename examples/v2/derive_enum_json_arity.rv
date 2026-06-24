@@ -1,0 +1,49 @@
+// A derived enum FromJson validates that `values` is an array with exactly the
+// variant's payload arity, so malformed payloads are rejected instead of
+// decoding. Prints:
+//   rejected: enum payload values is not an array
+//   rejected: wrong number of payload values for variant
+//   rejected: wrong number of payload values for variant
+//   accepted: Dot
+//   accepted: Circle(5)
+import std/json { JsonValue }
+import std/collections { Map }
+
+@derive(FromJson, ToString)
+enum Shape {
+    Dot,
+    Circle(Int),
+}
+
+fun check(j: JsonValue) {
+    match Shape.from_json(j) {
+        Ok(value) -> print("accepted: ".concat(value.to_string())),
+        Err(e) -> print("rejected: ".concat(e.message)),
+    }
+}
+
+fun tagged(tag: String, values: List<JsonValue>) -> JsonValue {
+    let m: Map<String, JsonValue> = Map.new()
+    m.set("tag", JsonValue.Str(tag))
+    m.set("values", JsonValue.Array(values))
+    return JsonValue.Object(m)
+}
+
+fun main() {
+    // A unit variant with a non-array payload.
+    let wrong_type: Map<String, JsonValue> = Map.new()
+    wrong_type.set("tag", JsonValue.Str("Dot"))
+    wrong_type.set("values", JsonValue.Bool(false))
+    check(JsonValue.Object(wrong_type))
+
+    // A unit variant carrying an unexpected payload element.
+    check(tagged("Dot", [JsonValue.Number(1.0)]))
+
+    // A tuple variant with an extra element.
+    check(tagged("Circle", [JsonValue.Number(7.0), JsonValue.Number(8.0)]))
+
+    // Well-formed payloads decode.
+    let empty: List<JsonValue> = []
+    check(tagged("Dot", empty))
+    check(tagged("Circle", [JsonValue.Number(5.0)]))
+}
