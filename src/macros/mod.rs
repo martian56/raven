@@ -884,11 +884,9 @@ fn match_rep(
         // and not present, the repetition stops.
         if count > 0 {
             if let Some(s) = sep {
-                if !args
-                    .get(pos)
-                    .map(|t| same_kind(&t.kind, s))
-                    .unwrap_or(false)
-                {
+                // Compare the full token: a separator that carries a payload
+                // must match that exact token, not every token of its kind.
+                if !args.get(pos).map(|t| &t.kind == s).unwrap_or(false) {
                     break;
                 }
                 pos += 1;
@@ -996,9 +994,11 @@ fn capture_balanced(
             TokenKind::Shr if angles && depth > 0 => depth = (depth - 2).max(0),
             _ => {}
         }
-        if depth == 0
-            && (delim.is_some_and(|d| same_kind(k, d)) || delim2.is_some_and(|d| same_kind(k, d)))
-        {
+        // Compare the full token, not just its kind: a delimiter that carries a
+        // payload (a literal identifier or number, for instance a follow token
+        // like `foo`) must stop the capture only on that exact token, not on
+        // every identifier or number.
+        if depth == 0 && (delim.is_some_and(|d| k == d) || delim2.is_some_and(|d| k == d)) {
             break;
         }
         i += 1;

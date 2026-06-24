@@ -318,6 +318,12 @@ fn repetition_can_be_followed_by_a_matcher_item() {
     // Zero reps before the trailing item also works.
     let zero = "macro tail { ($($x:expr),* ; $t:expr) => { $t } }\nlet z = tail!(; 7)\n";
     assert_eq!(expand_render(zero), "let z = 7");
+    // A payload-carrying follow token (the identifier `foo`) stops the last
+    // element only on that exact token, not on every identifier, so the `bar`
+    // inside the expression does not break the capture early.
+    let payload =
+        "macro pick { ($($x:expr),* foo $t:expr) => { $t } }\nlet p = pick!(1 + bar foo 99)\n";
+    assert_eq!(expand_render(payload), "let p = 99");
 }
 
 #[test]
