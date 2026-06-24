@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.156] - 2026-06-24
+
+### Fixed
+
+- The `std/process` and `std/http` response accessors no longer hold their registry lock while allocating the returned `String`. The allocation can trigger a stop-the-world collection, so holding the lock across it could deadlock the collector against another worker blocked on the same lock. Each accessor now copies the value out and releases the lock before allocating (#670).
+
 ## [2.18.154] - 2026-06-24
 
 ### Fixed

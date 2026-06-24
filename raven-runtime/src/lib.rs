@@ -1610,11 +1610,16 @@ pub extern "C" fn raven_http_status(id: i64) -> i64 {
 /// unknown id yields an empty `String`.
 #[no_mangle]
 pub extern "C" fn raven_http_status_text(id: i64) -> *mut object::String {
-    let registry = http_registry().lock().unwrap();
-    let text = registry
-        .get(&id)
-        .map(|r| r.status_text.as_str())
-        .unwrap_or("");
+    // Copy out, then drop the registry lock before allocating the result: the
+    // allocation can trigger a stop-the-world collection, and holding the lock
+    // across it deadlocks a collector another worker is blocked behind.
+    let text: std::string::String = {
+        let registry = http_registry().lock().unwrap();
+        registry
+            .get(&id)
+            .map(|r| r.status_text.clone())
+            .unwrap_or_default()
+    };
     object::raven_string_from_bytes(text.as_ptr(), text.len())
 }
 
@@ -1622,12 +1627,15 @@ pub extern "C" fn raven_http_status_text(id: i64) -> *mut object::String {
 /// `String`.
 #[no_mangle]
 pub extern "C" fn raven_http_body(id: i64) -> *mut object::String {
-    let registry = http_registry().lock().unwrap();
-    let empty: &[u8] = &[];
-    let body: &[u8] = registry
-        .get(&id)
-        .map(|r| r.body.as_slice())
-        .unwrap_or(empty);
+    // Copy out before allocating; see `raven_http_status_text` for why the lock
+    // must not be held across the allocation.
+    let body: Vec<u8> = {
+        let registry = http_registry().lock().unwrap();
+        registry
+            .get(&id)
+            .map(|r| r.body.clone())
+            .unwrap_or_default()
+    };
     object::raven_string_from_bytes(body.as_ptr(), body.len())
 }
 
@@ -1640,20 +1648,24 @@ pub extern "C" fn raven_http_body(id: i64) -> *mut object::String {
 #[no_mangle]
 pub extern "C" fn raven_http_header(id: i64, name: *const object::String) -> *mut object::String {
     let wanted = env_name(name).unwrap_or("");
-    let registry = http_registry().lock().unwrap();
-    let value = registry
-        .get(&id)
-        .and_then(|r| {
-            r.headers.lines().find_map(|line| {
-                let (k, v) = line.split_once(':')?;
-                if k.trim().eq_ignore_ascii_case(wanted) {
-                    Some(v.trim().to_string())
-                } else {
-                    None
-                }
+    // Build the owned value, then drop the lock before allocating; see
+    // `raven_http_status_text` for why.
+    let value: std::string::String = {
+        let registry = http_registry().lock().unwrap();
+        registry
+            .get(&id)
+            .and_then(|r| {
+                r.headers.lines().find_map(|line| {
+                    let (k, v) = line.split_once(':')?;
+                    if k.trim().eq_ignore_ascii_case(wanted) {
+                        Some(v.trim().to_string())
+                    } else {
+                        None
+                    }
+                })
             })
-        })
-        .unwrap_or_default();
+            .unwrap_or_default()
+    };
     object::raven_string_from_bytes(value.as_ptr(), value.len())
 }
 
@@ -1661,8 +1673,14 @@ pub extern "C" fn raven_http_header(id: i64, name: *const object::String) -> *mu
 /// unknown id yields an empty `String`.
 #[no_mangle]
 pub extern "C" fn raven_http_headers(id: i64) -> *mut object::String {
-    let registry = http_registry().lock().unwrap();
-    let headers = registry.get(&id).map(|r| r.headers.as_str()).unwrap_or("");
+    // Copy out before allocating; see `raven_http_status_text` for why.
+    let headers: std::string::String = {
+        let registry = http_registry().lock().unwrap();
+        registry
+            .get(&id)
+            .map(|r| r.headers.clone())
+            .unwrap_or_default()
+    };
     object::raven_string_from_bytes(headers.as_ptr(), headers.len())
 }
 
@@ -2005,11 +2023,15 @@ pub extern "C" fn raven_process_exit_code(id: i64) -> i64 {
 /// empty `String`.
 #[no_mangle]
 pub extern "C" fn raven_process_stdout(id: i64) -> *mut object::String {
-    let registry = process_registry().lock().unwrap();
-    let out: &[u8] = registry
-        .get(&id)
-        .map(|r| r.stdout.as_slice())
-        .unwrap_or(&[]);
+    // Copy out before allocating; see `raven_http_status_text` for why the lock
+    // must not be held across the allocation.
+    let out: Vec<u8> = {
+        let registry = process_registry().lock().unwrap();
+        registry
+            .get(&id)
+            .map(|r| r.stdout.clone())
+            .unwrap_or_default()
+    };
     object::raven_string_from_bytes(out.as_ptr(), out.len())
 }
 
@@ -2017,11 +2039,14 @@ pub extern "C" fn raven_process_stdout(id: i64) -> *mut object::String {
 /// empty `String`.
 #[no_mangle]
 pub extern "C" fn raven_process_stderr(id: i64) -> *mut object::String {
-    let registry = process_registry().lock().unwrap();
-    let err: &[u8] = registry
-        .get(&id)
-        .map(|r| r.stderr.as_slice())
-        .unwrap_or(&[]);
+    // Copy out before allocating; see `raven_http_status_text` for why.
+    let err: Vec<u8> = {
+        let registry = process_registry().lock().unwrap();
+        registry
+            .get(&id)
+            .map(|r| r.stderr.clone())
+            .unwrap_or_default()
+    };
     object::raven_string_from_bytes(err.as_ptr(), err.len())
 }
 
