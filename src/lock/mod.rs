@@ -320,6 +320,14 @@ impl LockFile {
             })
             .collect();
         sort_packages(&mut packages);
+        // Drop exact-duplicate entries. The sort puts identical packages
+        // adjacent, so `dedup` collapses a lock that repeats the same
+        // `(source, version, hash)` block. Without this a duplicated entry is
+        // gathered twice during a build, so a dependency's FFI C sources are
+        // compiled twice and the linker fails with duplicate definitions. A
+        // genuine conflict (one source at two versions) survives and is caught
+        // by [`conflicting_versions`].
+        packages.dedup();
         Ok(LockFile {
             version: raw.version,
             packages,
@@ -1105,6 +1113,18 @@ mod tests {
         assert_eq!(parsed.packages[0].source, "github.com/acme/bar");
         assert_eq!(parsed.packages[1].source, "github.com/acme/foo");
         assert_eq!(parsed.version, LOCK_VERSION);
+    }
+
+    #[test]
+    fn from_toml_drops_exact_duplicate_entries() {
+        // A lock that repeats an identical package block parses to a single
+        // entry, so a dependency's FFI sources are not compiled twice.
+        let text = "version = 1\n\
+            \n[[package]]\nsource = \"github.com/acme/dup\"\nversion = \"v1\"\nhash = \"sha256:aa\"\n\
+            \n[[package]]\nsource = \"github.com/acme/dup\"\nversion = \"v1\"\nhash = \"sha256:aa\"\n";
+        let parsed = LockFile::from_toml_str(text).expect("parse");
+        assert_eq!(parsed.packages.len(), 1, "duplicate entry is collapsed");
+        assert_eq!(parsed.packages[0].source, "github.com/acme/dup");
     }
 
     #[test]
