@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.163] - 2026-06-24
+
+### Fixed
+
+- A user declaration that uses the `raven_derive_` prefix reserved for the generated JSON derive helpers is rejected with a clear message at the declaration, instead of failing later with a confusing `declared multiple times` error pointing at the synthetic helper source (#682).
+
 ## [2.18.162] - 2026-06-24
 
 ### Fixed

@@ -122,6 +122,40 @@ pub fn expand_derives(
 /// names, so the caller emits them exactly once per program (when any
 /// `@derive(ToJson|FromJson)` is present); a second copy would be a duplicate
 /// declaration. See [`expand_derives`], which reports when they are needed.
+/// The reserved name prefix for the free helper functions a `@derive`
+/// expansion emits (see [`json_helper_decls`]). A user declaration may not use
+/// it, or it would collide with a generated helper.
+pub const HELPER_PREFIX: &str = "raven_derive_";
+
+/// Reject a user-written top-level declaration whose name uses the reserved
+/// derive-helper prefix. The generated helpers are global free functions with
+/// fixed names, so a user declaration of the same name collided with them; this
+/// reports a clear reserved-name error at the user's declaration instead of a
+/// confusing "declared multiple times" pointing at the synthetic
+/// `<derive-helpers>` source.
+pub fn reject_reserved_helper_names(file: &File) -> Result<(), RavenError> {
+    for decl in &file.items {
+        let name = match &decl.kind {
+            DeclKind::Function(f) => &f.name,
+            DeclKind::Let(l) => &l.name,
+            DeclKind::Const(c) => &c.name,
+            DeclKind::Struct(s) => &s.name,
+            DeclKind::Enum(e) => &e.name,
+            DeclKind::Trait(t) => &t.name,
+            _ => continue,
+        };
+        if name.starts_with(HELPER_PREFIX) {
+            return Err(RavenError::resolve(
+                ResolveError::Other(format!(
+                    "the name `{name}` is reserved: names beginning with `{HELPER_PREFIX}` are used by derived trait implementations"
+                )),
+                decl.span.clone(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub fn json_helper_decls() -> Result<Vec<Decl>, RavenError> {
     // A distinct label from every `expand_derives` source so the helper
     // identifiers' `(file, byte range)` use-site keys cannot collide with an

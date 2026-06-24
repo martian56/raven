@@ -230,6 +230,11 @@ pub fn expand_with_stdlib_ctx(
     user: &File,
     ctx: Option<&PackageContext>,
 ) -> Result<File, RavenError> {
+    // The `@derive` expansion emits global helper functions under a reserved
+    // prefix; reject a user declaration that would collide with one before any
+    // merging, so the error names the user's declaration rather than the
+    // synthetic helper source.
+    super::derive::reject_reserved_helper_names(user)?;
     // Modules to merge, collected to a fixed point. A module enters the
     // set from the user file's `std/...` imports or from a bundled
     // module's own `import std/...` line. The set deduplicates, so each
@@ -1933,6 +1938,21 @@ mod tests {
             "both module globals must be present under distinct names"
         );
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn reserved_derive_helper_name_is_rejected() {
+        // A user declaration that uses the reserved `raven_derive_` prefix is
+        // rejected with a clear message, since it would otherwise collide with a
+        // generated JSON derive helper.
+        let src = "fun raven_derive_json_decode() -> Int = 1\nfun main() {}\n";
+        let user = parse_at(src, Path::new("main.rv"));
+        let err = expand_with_stdlib(&user).expect_err("reserved name must be rejected");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("raven_derive_json_decode") && msg.contains("reserved"),
+            "expected a reserved-name error, got: {msg}"
+        );
     }
 
     #[test]
