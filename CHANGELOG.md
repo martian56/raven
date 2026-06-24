@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.182] - 2026-06-24
+
+### Fixed
+
+- `rvpm` commands reject unexpected arguments instead of silently ignoring them. `new`, `init`, `fetch`, `lock`, `add`, and `test` did not validate their full argument list, and `build`/`install`/`update`/`doc` rejected an unknown flag but still ignored extra positional arguments, so a typo like `rvpm new app extr` or `rvpm lock --typo` looked like a success. Each command now rejects an unknown flag and any positional beyond what it accepts (#647).
+
 ## [2.18.181] - 2026-06-24
 
 ### Fixed
