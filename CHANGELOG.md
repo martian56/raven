@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.175] - 2026-06-24
+
+### Fixed
+
+- A literal token in a macro matcher matches by value, not just by token kind. `(foo)` matched every identifier and `(1)` every integer, so rules differing only by a literal value were unreachable; a literal matcher token now has to appear verbatim (#651).
+
 ## [2.18.174] - 2026-06-24
 
 ### Fixed
