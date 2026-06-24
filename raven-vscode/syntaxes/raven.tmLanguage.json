@@ -280,7 +280,7 @@
         },
         {
           "name": "support.type.ffi.raven",
-          "match": "\\b(CInt|CLong|CSize|CStr|CPtr|CDouble|CChar|CFloat|CVoid|CFnPtr)\\b"
+          "match": "\\b(CInt|CLong|CSize|CStr|CString|CPtr|CDouble|CFloat|CFnPtr)\\b"
         },
         {
           "name": "entity.name.type.raven",

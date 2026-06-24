@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.187] - 2026-06-24
+
+### Fixed
+
+- The VS Code grammar's FFI type list matches the compiler. It highlighted `CChar` and `CVoid`, which the type checker rejects, and omitted the supported `CString` alias. The grammar and the completion list now cover exactly `CInt`, `CLong`, `CSize`, `CStr`, `CString`, `CPtr`, `CFloat`, `CDouble`, and `CFnPtr` (#624).
+
 ## [2.18.186] - 2026-06-24
 
 ### Fixed
