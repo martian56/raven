@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.184] - 2026-06-24
+
+### Fixed
+
+- The release workflow no longer interpolates the manual `version` dispatch input directly into shell and PowerShell source. The input is passed through the environment and validated against an allowed character set before use, and every later staging step reads the resolved version from the environment too, so a value with a quote or command separator can no longer run as code on the release runners (#632).
+
 ## [2.18.183] - 2026-06-24
 
 ### Fixed
