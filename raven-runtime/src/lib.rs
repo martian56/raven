@@ -1580,15 +1580,16 @@ pub extern "C" fn raven_http_request(
     body: *const object::String,
     headers: *const object::String,
 ) -> i64 {
-    let (Some(method), Some(url), Some(body), Some(headers)) = (
-        env_name(method),
-        env_name(url),
-        env_name(body),
-        env_name(headers),
-    ) else {
-        http_set_error("method, url, body, or headers is not valid UTF-8".to_string());
+    let (Some(method), Some(url), Some(headers)) =
+        (env_name(method), env_name(url), env_name(headers))
+    else {
+        http_set_error("method, url, or headers is not valid UTF-8".to_string());
         return 0;
     };
+    // The request body is sent as raw bytes: a Raven String is a byte buffer,
+    // so a binary body (an image, a protobuf payload) passes through unchanged.
+    // The method, URL, and header lines are still text.
+    let body = string_bytes(body).to_vec();
 
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(5))
@@ -1615,7 +1616,7 @@ pub extern "C" fn raven_http_request(
         let result = if body.is_empty() {
             req.call()
         } else {
-            req.send_string(body)
+            req.send_bytes(&body)
         };
 
         match result {
