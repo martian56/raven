@@ -470,6 +470,20 @@ fn ffi_struct_program_compiles_and_runs() {
 }
 
 #[test]
+fn ffi_clong_program_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A C `long` crosses the FFI. `CLong` is 64-bit under LP64 (Linux) and
+    // 32-bit under LLP64 (Windows); the back end passes the argument and
+    // sign-extends the return at the platform width. The fixture negates its
+    // argument, so `raven_ffi_long_neg(1)` is -1 (the 32-bit return must
+    // sign-extend on Windows, not read back as 0xFFFFFFFF) and
+    // `raven_ffi_long_neg(-7)` is 7. Prints -1, 7.
+    compile_link_run_and_check("ffi_clong.rv", "-1\n7\n", &runtime);
+}
+
+#[test]
 fn use_ffi_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
