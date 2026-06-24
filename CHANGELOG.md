@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.177] - 2026-06-24
+
+### Fixed
+
+- `rvpm` no longer follows directory symlinks out of the package when walking sources. `rvpm doc`, `rvpm fmt`, and `rvpm test` descended into a symlinked directory pointing outside the project, so they could read, rewrite, or compile and run code from another tree. The source walks now skip symlinked entries (#678, #679, #680).
+
 ## [2.18.176] - 2026-06-24
 
 ### Fixed

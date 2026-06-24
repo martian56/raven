@@ -690,6 +690,11 @@ fn collect_rv_excluding(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String
     let entries = std::fs::read_dir(dir).map_err(|e| format!("{}: {}", dir.display(), e))?;
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
+        // Do not follow a link out of the package (a symlink, or a Windows
+        // junction): formatting a linked file would rewrite its target.
+        if ops::is_link_entry(&entry) {
+            continue;
+        }
         let path = entry.path();
         let name = entry.file_name();
         let name = name.to_string_lossy();
@@ -715,6 +720,11 @@ fn collect_rv_files(dir: PathBuf) -> Result<Vec<PathBuf>, String> {
         let entries = std::fs::read_dir(&d).map_err(|e| format!("{}: {}", d.display(), e))?;
         for entry in entries {
             let entry = entry.map_err(|e| e.to_string())?;
+            // Do not follow a link out of the requested tree (a symlink, or a
+            // Windows junction).
+            if ops::is_link_entry(&entry) {
+                continue;
+            }
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
