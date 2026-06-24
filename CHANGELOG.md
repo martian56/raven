@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.153] - 2026-06-24
+
+### Fixed
+
+- `std/process` carries arbitrary bytes through a child. A child's stdout and stderr are captured as raw bytes instead of being lossily decoded as UTF-8 (a non-UTF-8 byte was replaced with U+FFFD), and `run_with_input` feeds non-UTF-8 stdin instead of rejecting it before spawning. Only the program path and its args still need to be valid UTF-8 (#608).
+
 ## [2.18.152] - 2026-06-24
 
 ### Fixed

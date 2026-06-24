@@ -1,0 +1,40 @@
+// golden:skip - std/process binary I/O parent, checked in codegen_smoke.rs
+// (proc_binary_io_compiles_and_runs). Runs the child (path in
+// RAVEN_PROC_CHILD) with non-UTF-8 stdin, which must be accepted, then runs
+// it again and prints the byte values of its captured (binary) stdout.
+// Prints:
+//   stdin ok
+//   4
+//   0
+//   255
+//   65
+//   10
+import std/process { run, run_with_input }
+import std/env { get_env }
+import std/io { println }
+import std/string
+
+fun main() {
+    let child = get_env("RAVEN_PROC_CHILD")
+    let no_args: List<String> = []
+
+    // A Raven String is a byte buffer, so non-UTF-8 stdin must not be rejected.
+    let bin_stdin = __str_from_byte(255).concat(__str_from_byte(0))
+    match run_with_input(child, no_args, bin_stdin) {
+        Ok(_) -> println("stdin ok"),
+        Err(e) -> println("stdin rejected: ${e.message()}"),
+    }
+
+    // The child's binary stdout is captured byte for byte.
+    match run(child, no_args) {
+        Ok(out) -> {
+            println("${out.stdout.length()}")
+            let i = 0
+            while i < out.stdout.length() {
+                println("${__str_byte_at(out.stdout, i)}")
+                i = i + 1
+            }
+        }
+        Err(e) -> println("run failed: ${e.message()}"),
+    }
+}
