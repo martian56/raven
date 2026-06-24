@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.176] - 2026-06-24
+
+### Fixed
+
+- A declarative macro repetition can be followed by another matcher item. `($($x:expr),* ; $tail:expr)` failed to match because the repetition's last element ran past the `;`; the last element of a repetition now stops at the token that follows the repetition, so a trailing matcher item after a `*`/`+` group matches (#661).
+
 ## [2.18.175] - 2026-06-24
 
 ### Fixed

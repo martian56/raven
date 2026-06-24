@@ -758,7 +758,7 @@ fn expand_call(
 fn try_match(matcher: &[MatchItem], args: &[Token]) -> Option<HashMap<String, Capture>> {
     let args = strip_newlines(args);
     let mut binds: HashMap<String, Capture> = HashMap::new();
-    let pos = match_seq(matcher, &args, 0, None, &mut binds)?;
+    let pos = match_seq(matcher, &args, 0, None, None, &mut binds)?;
     if pos != args.len() {
         return None;
     }
@@ -774,6 +774,10 @@ fn match_seq(
     args: &[Token],
     mut pos: usize,
     outer_delim: Option<&TokenKind>,
+    // The token that follows the repetition this sequence is the body of, if
+    // any. The last element captured here stops before it, so a repetition can
+    // be followed by another matcher item (`$($x:expr),* ; $tail`).
+    follow: Option<&TokenKind>,
     binds: &mut HashMap<String, Capture>,
 ) -> Option<usize> {
     for (idx, item) in matcher.iter().enumerate() {
@@ -820,7 +824,10 @@ fn match_seq(
                     // the type. `<`/`>` are comparison operators in an `expr` or
                     // `pat`, so those fragments leave angles untracked.
                     let angles = matches!(frag, Fragment::Ty);
-                    let end = capture_balanced(args, pos, delim.as_ref(), angles)?;
+                    // The last item of a repetition body also stops at the token
+                    // following the repetition (`follow`), only relevant when
+                    // `delim` (the next matcher delimiter) is not hit first.
+                    let end = capture_balanced(args, pos, delim.as_ref(), follow, angles)?;
                     if end == pos {
                         return None;
                     }
@@ -829,7 +836,18 @@ fn match_seq(
                 }
             },
             MatchItem::Rep { sub, sep, plus } => {
-                pos = match_rep(sub, sep.as_ref(), *plus, args, pos, binds)?;
+                // The token after the repetition delimits the repetition's last
+                // element, so it can be followed by another matcher item.
+                let rep_follow = next_delim(matcher, idx + 1, outer_delim);
+                pos = match_rep(
+                    sub,
+                    sep.as_ref(),
+                    *plus,
+                    args,
+                    pos,
+                    rep_follow.as_ref(),
+                    binds,
+                )?;
             }
         }
     }
@@ -846,6 +864,10 @@ fn match_rep(
     plus: bool,
     args: &[Token],
     mut pos: usize,
+    // The token following the repetition in the enclosing matcher, used to
+    // bound the last captured element so the repetition can be followed by
+    // another matcher item.
+    follow: Option<&TokenKind>,
     binds: &mut HashMap<String, Capture>,
 ) -> Option<usize> {
     let names = meta_names(sub);
@@ -873,7 +895,7 @@ fn match_rep(
             }
         }
         let mut iter_binds: HashMap<String, Capture> = HashMap::new();
-        match match_seq(sub, args, pos, sep, &mut iter_binds) {
+        match match_seq(sub, args, pos, sep, follow, &mut iter_binds) {
             Some(next) if next > pos => {
                 // Each iteration contributes one capture per metavariable. A
                 // metavariable inside a nested repetition contributes a
@@ -940,13 +962,17 @@ fn next_delim(
         .or_else(|| outer_delim.cloned())
 }
 
-/// Capture a balanced token run from `start` until a top-level `delim` (or
-/// the end of `args` when `delim` is `None`). Bracket depth must be balanced
-/// at the stop point. Returns the index of the stop position.
+/// Capture a balanced token run from `start` until a top-level `delim` or
+/// `delim2` (or the end of `args` when both are `None`). `delim2` is the token
+/// that follows the enclosing repetition, if any, so the last element of a
+/// repetition stops before it (`$($x:expr),* ; $tail` captures the final `$x`
+/// up to the `;`). Bracket depth must be balanced at the stop point. Returns
+/// the index of the stop position.
 fn capture_balanced(
     args: &[Token],
     start: usize,
     delim: Option<&TokenKind>,
+    delim2: Option<&TokenKind>,
     angles: bool,
 ) -> Option<usize> {
     let mut depth: i32 = 0;
@@ -970,12 +996,10 @@ fn capture_balanced(
             TokenKind::Shr if angles && depth > 0 => depth = (depth - 2).max(0),
             _ => {}
         }
-        if depth == 0 {
-            if let Some(d) = delim {
-                if same_kind(k, d) {
-                    break;
-                }
-            }
+        if depth == 0
+            && (delim.is_some_and(|d| same_kind(k, d)) || delim2.is_some_and(|d| same_kind(k, d)))
+        {
+            break;
         }
         i += 1;
     }
