@@ -568,6 +568,12 @@ fn merge_module_items(
 /// file's `span.file` is its canonical path, so a later caller can derive
 /// the namespacing key from the same path the import binder uses.
 ///
+/// Modules come back in dependency order: a module appears after every module
+/// it imports (a post-order walk). The combined program's global-initializer
+/// runs the modules' top-level `let` initializers in this order, so an imported
+/// module's globals are initialized before an importer that reads them at load
+/// time.
+///
 /// Modules are deduplicated by canonical path, so a module imported from
 /// several places loads once. A cycle (a module that imports itself
 /// directly or transitively) is broken gracefully: each module is loaded
@@ -575,31 +581,45 @@ fn merge_module_items(
 /// point behavior. A missing file is left for the import resolution pass
 /// to report with a precise span; this function only loads what it can.
 fn load_local_modules(user: &File, loader: &mut dyn SourceLoader) -> Result<Vec<File>, RavenError> {
-    let mut to_load: Vec<(PathBuf, String)> = local_import_targets(user);
     let mut loaded_paths: BTreeSet<PathBuf> = BTreeSet::new();
     let mut out: Vec<File> = Vec::new();
+    for (importing, target) in local_import_targets(user) {
+        load_local_module(&importing, &target, loader, &mut loaded_paths, &mut out)?;
+    }
+    Ok(out)
+}
 
-    while let Some((importing, target)) = to_load.pop() {
-        let Some(loaded) = loader.load(&importing, &target) else {
-            continue;
-        };
-        if !loaded_paths.insert(loaded.canonical_path.clone()) {
-            continue;
-        }
-
-        let tokens = Lexer::new(loaded.source.clone(), loaded.canonical_path.clone())
-            .tokenize()
-            .map_err(|e| local_error(&loaded.canonical_path, format!("lex: {e}")))?;
-        let module_file = parse(&tokens)
-            .map_err(|e| local_error(&loaded.canonical_path, format!("parse: {e}")))?;
-
-        for (_, dep) in local_import_targets(&module_file) {
-            to_load.push((loaded.canonical_path.clone(), dep));
-        }
-        out.push(module_file);
+/// Load the module `target` (resolved relative to `importing`) and, before it,
+/// every module it imports, depth first. A module is pushed to `out` only after
+/// its dependencies, so the result is in dependency order; a module already in
+/// `loaded` (a diamond or a cycle back edge) is skipped.
+fn load_local_module(
+    importing: &Path,
+    target: &str,
+    loader: &mut dyn SourceLoader,
+    loaded: &mut BTreeSet<PathBuf>,
+    out: &mut Vec<File>,
+) -> Result<(), RavenError> {
+    let Some(loaded_mod) = loader.load(importing, target) else {
+        return Ok(());
+    };
+    if !loaded.insert(loaded_mod.canonical_path.clone()) {
+        return Ok(());
     }
 
-    Ok(out)
+    let tokens = Lexer::new(loaded_mod.source.clone(), loaded_mod.canonical_path.clone())
+        .tokenize()
+        .map_err(|e| local_error(&loaded_mod.canonical_path, format!("lex: {e}")))?;
+    let module_file = parse(&tokens)
+        .map_err(|e| local_error(&loaded_mod.canonical_path, format!("parse: {e}")))?;
+
+    // Load the imported modules first, so they sit ahead of this one in `out`
+    // and their globals initialize before this module's do.
+    for (_, dep) in local_import_targets(&module_file) {
+        load_local_module(&loaded_mod.canonical_path, &dep, loader, loaded, out)?;
+    }
+    out.push(module_file);
+    Ok(())
 }
 
 /// Build the rename entries a merged module needs for the names it
@@ -1911,6 +1931,40 @@ mod tests {
         assert_eq!(
             global_count, 2,
             "both module globals must be present under distinct names"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn imported_module_globals_initialize_first() {
+        // `a` imports `b` and initializes a global from `b`'s function at load
+        // time. `b` must be merged ahead of `a`, so its global initializer runs
+        // first and `a` reads the initialized value rather than zero.
+        let main_src = "import \"./a\" { get_result }\nfun main() {}\n";
+        let (dir, entry) = write_temp_project(
+            &[
+                ("b.rv", "let b_value: Int = 42\nfun get_b() -> Int = b_value\n"),
+                (
+                    "a.rv",
+                    "import \"./b\" { get_b }\nlet a_result: Int = get_b()\nfun get_result() -> Int = a_result\n",
+                ),
+                ("main.rv", main_src),
+            ],
+            "main.rv",
+        );
+        let user = parse_at(main_src, &entry);
+        let combined = expand_with_stdlib(&user).expect("expand");
+        let pos = |needle: &str| {
+            combined
+                .items
+                .iter()
+                .position(|d| matches!(&d.kind, DeclKind::Let(l) if l.name.ends_with(needle)))
+        };
+        let b_pos = pos("b_value").expect("b_value global present");
+        let a_pos = pos("a_result").expect("a_result global present");
+        assert!(
+            b_pos < a_pos,
+            "the imported module's global must initialize first (b={b_pos}, a={a_pos})"
         );
         std::fs::remove_dir_all(&dir).ok();
     }
