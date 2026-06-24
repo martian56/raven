@@ -42,6 +42,13 @@ use crate::span::Span;
 /// bound also limits recursion depth of macros that expand to other calls.
 const EXPANSION_LIMIT: usize = 128;
 
+/// Upper bound on the token-stream length during expansion. A macro that
+/// expands one call into several (`boom!() => boom!() + boom!()`) doubles the
+/// stream every pass and exhausts memory long before the pass limit, so a size
+/// cap reports the same likely-recursive diagnostic instead of aborting on a
+/// failed allocation. Far above any real program's expanded token count.
+const TOKEN_LIMIT: usize = 2_000_000;
+
 /// The free (definition-site) identifiers a macro expansion introduces, keyed
 /// by file and start offset. The resolver resolves these against the module
 /// scope so a call-site local cannot capture them. The file is part of the key
@@ -180,8 +187,29 @@ pub fn expand_with_table(tokens: &[Token], table: &MacroTable) -> Result<Vec<Tok
             ));
         }
         stream = expand_once(&stream, &table.defs, &mut spans)?;
+        if stream.len() > TOKEN_LIMIT {
+            return Err(token_limit_error(&stream, tokens));
+        }
     }
     Ok(stream)
+}
+
+/// The "likely recursive" diagnostic for an expansion whose token stream grew
+/// past [`TOKEN_LIMIT`]. Anchored at the first token of the runaway stream, or
+/// the original input's first token when the stream is somehow empty.
+fn token_limit_error(stream: &[Token], original: &[Token]) -> RavenError {
+    let span = stream
+        .first()
+        .or_else(|| original.first())
+        .map(|t| t.span.clone())
+        .expect("a non-empty token stream");
+    err(
+        span,
+        format!(
+            "macro expansion produced over {} tokens; a macro is likely recursive",
+            TOKEN_LIMIT
+        ),
+    )
 }
 
 /// Expand all declarative macros in `tokens`.
@@ -226,6 +254,9 @@ pub fn expand_tokens_hygienic(tokens: &[Token]) -> Result<(Vec<Token>, DefSites)
             ));
         }
         stream = expand_once(&stream, &defs, &mut spans)?;
+        if stream.len() > TOKEN_LIMIT {
+            return Err(token_limit_error(&stream, tokens));
+        }
     }
     Ok((stream, spans.def_sites))
 }

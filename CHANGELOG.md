@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.171] - 2026-06-24
+
+### Fixed
+
+- Declarative macro expansion caps the generated token count, not just the pass count. A macro that expands one call into several (`boom!() => boom!() + boom!()`) doubled the token stream every pass and exhausted memory before the 128-pass limit; it now reports the likely-recursive diagnostic once the stream grows past the size cap (#652).
+
 ## [2.18.170] - 2026-06-24
 
 ### Fixed
