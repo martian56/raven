@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.161] - 2026-06-24
+
+### Fixed
+
+- Two imported modules can each declare a module-level `let` or `const` with the same name. Module globals are now namespaced by their module path the way functions and types already are, so unrelated modules no longer collide during resolution with a `declared multiple times` error (#667).
+
 ## [2.18.160] - 2026-06-24
 
 ### Fixed
