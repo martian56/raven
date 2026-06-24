@@ -1348,6 +1348,92 @@ fn http_keeps_repeated_headers() {
 }
 
 #[test]
+fn http_sends_binary_body() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // An HTTP request body is sent as raw bytes, so a non-UTF-8 body is
+    // delivered intact. The mock server reads the request body (length from
+    // Content-Length) and echoes it back; the client POSTs the bytes
+    // A 0xFF B and prints the byte values it reads back.
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback listener");
+    let addr = listener
+        .local_addr()
+        .expect("listener local addr")
+        .to_string();
+    let url = format!("http://{addr}/");
+
+    let server = std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+            let mut buf = Vec::new();
+            let mut chunk = [0u8; 256];
+            // Read the headers, then enough more to cover the body length the
+            // request's Content-Length advertises.
+            let mut header_end = None;
+            while header_end.is_none() {
+                match stream.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        buf.extend_from_slice(&chunk[..n]);
+                        if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                            header_end = Some(pos + 4);
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            let head_len = header_end.unwrap_or(buf.len());
+            let headers = String::from_utf8_lossy(&buf[..head_len]).to_lowercase();
+            let content_len = headers
+                .lines()
+                .find_map(|l| l.strip_prefix("content-length:"))
+                .and_then(|v| v.trim().parse::<usize>().ok())
+                .unwrap_or(0);
+            while buf.len() - head_len < content_len {
+                match stream.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(n) => buf.extend_from_slice(&chunk[..n]),
+                    Err(_) => break,
+                }
+            }
+            let body = &buf[head_len..(head_len + content_len).min(buf.len())];
+            let resp_head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = stream.write_all(resp_head.as_bytes());
+            let _ = stream.write_all(body);
+            let _ = stream.flush();
+        }
+    });
+
+    let example = build_example_binary("http_binary_body.rv", &runtime);
+    let output = Command::new(&example.binary)
+        .env("RAVEN_HTTP_URL", &url)
+        .output()
+        .expect("run http_binary_body binary");
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let _ = server.join();
+    cleanup(&example.tmp);
+    assert!(
+        output.status.success(),
+        "http_binary_body exited non zero: status={:?} stderr={}",
+        output.status,
+        stderr
+    );
+    assert_eq!(
+        stdout, "200\nlen 3\n65\n255\n66\n",
+        "unexpected stdout for http_binary_body: {:?}",
+        stdout
+    );
+}
+
+#[test]
 fn time_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
