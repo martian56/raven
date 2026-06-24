@@ -779,8 +779,11 @@ fn match_seq(
     for (idx, item) in matcher.iter().enumerate() {
         match item {
             MatchItem::Literal(kind) => {
+                // A literal matcher token must appear verbatim: compare the full
+                // token, not just its kind, so `(foo)` matches the identifier
+                // `foo` and not every identifier, and `(1)` matches only `1`.
                 let tok = args.get(pos)?;
-                if !same_kind(&tok.kind, kind) {
+                if &tok.kind != kind {
                     return None;
                 }
                 pos += 1;

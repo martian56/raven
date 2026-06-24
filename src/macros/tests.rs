@@ -257,6 +257,16 @@ fn first_matching_rule_wins() {
 }
 
 #[test]
+fn literal_matcher_matches_by_value() {
+    // A literal matcher token must appear verbatim, so a rule that differs only
+    // by the literal value is selected by that value (not by token kind alone).
+    let by_ident = "macro pick { (foo) => { 10 } (bar) => { 20 } }\nlet a = pick!(bar)\n";
+    assert_eq!(expand_render(by_ident), "let a = 20");
+    let by_int = "macro num { (1) => { 100 } (2) => { 200 } }\nlet b = num!(2)\n";
+    assert_eq!(expand_render(by_int), "let b = 200");
+}
+
+#[test]
 fn duplicate_macro_is_an_error() {
     let src = "macro dup { ($x:expr) => { ($x) } }\nmacro dup { ($x:expr) => { ($x) } }\n";
     let e = expand_tokens(&lex(src)).expect_err("duplicate def");
