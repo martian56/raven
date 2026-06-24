@@ -43,6 +43,15 @@ pub extern "C" fn raven_ffi_make_rect(x: i32, y: i32, w: i32, h: i32) -> RavenFf
     RavenFfiRect { x, y, w, h }
 }
 
+/// Negate a C `long`. On Windows `long` is 32-bit (LLP64), so this exercises
+/// that the back end passes and sign-extends `CLong` at the platform width: a
+/// returned 32-bit `-1` must read back as a Raven `Int` `-1`, not `0xFFFFFFFF`.
+/// On LP64 (Linux) `long` is 64-bit and the same values round-trip.
+#[no_mangle]
+pub extern "C" fn raven_ffi_long_neg(x: std::os::raw::c_long) -> std::os::raw::c_long {
+    x.wrapping_neg()
+}
+
 /// A 12-byte struct of three 32-bit ints. Windows x64 passes it by
 /// reference; System V and AArch64 use two eightbytes where the second holds
 /// only 4 valid bytes.

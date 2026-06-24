@@ -64,7 +64,7 @@ not silently passed where the C ABI expects a foreign one.
 | Raven type | C type           | Cranelift ABI type     |
 |------------|------------------|------------------------|
 | `CInt`     | `int`            | `i32`                  |
-| `CLong`    | `long`           | `i64`                  |
+| `CLong`    | `long`           | `i64` (LP64) / `i32` (Windows LLP64) |
 | `CSize`    | `size_t`         | pointer width (`i64`)  |
 | `CStr`     | `const char *`   | pointer width (`i64`)  |
 | `CFloat`   | `float`          | `f32`                  |
@@ -72,8 +72,11 @@ not silently passed where the C ABI expects a foreign one.
 | `CPtr<T>`  | `T *` (opaque)   | pointer width (`i64`)  |
 
 `CInt` is fixed at 32-bit, which matches the C `int` on every ABI Raven
-targets. `CLong` and `CSize` are 64-bit on the 64-bit targets Raven
-supports. `CStr`, `CSize`, and `CPtr<T>` are all pointer width. `CDouble`
+targets. `CSize` is 64-bit on the 64-bit targets Raven supports. `CLong`
+follows the platform: it is C `long`, 64-bit under LP64 (Linux) and 32-bit
+under LLP64 (Windows), so a Windows `long` argument or return is passed and
+sign-extended at 32 bits. `CStr`, `CSize`, and `CPtr<T>` are all pointer
+width. `CDouble`
 is C `double`, the same `f64` representation a Raven `Float` already uses,
 so a `Float` argument is accepted where a `CDouble` is expected with no
 conversion at the call. `CFloat` is C `float` (`f32`). A `Float` argument

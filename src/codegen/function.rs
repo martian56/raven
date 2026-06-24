@@ -53,12 +53,20 @@ pub fn cranelift_ty(ty: &MirType, ptr: CType) -> Option<CType> {
         // An `Any` is a single GC pointer to an `Any` box.
         | MirType::Any => Some(ptr),
         // C FFI primitives map to their C ABI machine types. `CInt` is a
-        // 32-bit C `int`; `CLong`, `CSize`, `CStr`, and `CPtr<T>` are all
-        // pointer-width on the 64-bit targets Raven supports. See
+        // 32-bit C `int`; `CSize`, `CStr`, and `CPtr<T>` are pointer-width on
+        // the 64-bit targets Raven supports. `CLong` is C `long`, which is
+        // 64-bit under LP64 (Linux) but 32-bit under LLP64 (Windows); Raven
+        // compiles for the host, so the host OS decides its width. See
         // `docs/v2/specs/ffi.md`.
         MirType::Ffi(ffi) => Some(match ffi {
             MirFfiTy::CInt => types::I32,
-            MirFfiTy::CLong => types::I64,
+            MirFfiTy::CLong => {
+                if cfg!(target_os = "windows") {
+                    types::I32
+                } else {
+                    types::I64
+                }
+            }
             MirFfiTy::CFloat => types::F32,
             MirFfiTy::CDouble => types::F64,
             MirFfiTy::CSize | MirFfiTy::CStr | MirFfiTy::CPtr(_) | MirFfiTy::CFnPtr => ptr,

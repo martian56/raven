@@ -674,7 +674,7 @@ C types map to C as follows:
 | Raven   | C              | Width |
 |---------|----------------|-------|
 | `CInt`  | `int`          | 32-bit |
-| `CLong` | `long`         | 64-bit |
+| `CLong` | `long`         | 64-bit on Linux (LP64), 32-bit on Windows (LLP64) |
 | `CSize` | `size_t`       | pointer width (64-bit) |
 | `CStr`  | `const char *` | pointer width |
 | `CFloat` | `float`       | 32-bit |

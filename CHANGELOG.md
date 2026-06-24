@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.169] - 2026-06-24
+
+### Fixed
+
+- `CLong` uses the correct ABI width per platform. C `long` is 32-bit under LLP64 (Windows) and 64-bit under LP64 (Linux); the back end lowered it as 64-bit everywhere, so a Windows call truncated a 64-bit argument and read a 32-bit return without sign extension (`atol("-1")` came back as 4294967295). `CLong` is now 32-bit on Windows, so arguments pass and returns sign-extend at the right width (#639).
+
 ## [2.18.168] - 2026-06-24
 
 ### Fixed

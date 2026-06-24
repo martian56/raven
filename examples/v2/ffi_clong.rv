@@ -1,0 +1,14 @@
+// Pass and return a C `long` across the FFI. C `long` is 64-bit under LP64
+// (Linux) but 32-bit under LLP64 (Windows); `CLong` follows the platform, so
+// the back end passes the argument and sign-extends the return at the right
+// width. The runtime fixture negates its argument, so a returned negative
+// `long` must read back as a Raven `Int` with its sign intact. See
+// docs/v2/specs/ffi.md.
+extern "C" {
+    fun raven_ffi_long_neg(x: CLong) -> CLong
+}
+
+fun main() {
+    print(raven_ffi_long_neg(1))        // -1
+    print(raven_ffi_long_neg(0 - 7))    // 7
+}
