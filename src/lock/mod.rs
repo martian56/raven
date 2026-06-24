@@ -602,38 +602,89 @@ fn validate_one(cache_root: &Path, entry: &LockedPackage) -> Result<(), LockErro
 /// Compute the deterministic content hash of the file tree rooted at
 /// `dir`.
 ///
-/// Every regular file under `dir` (recursively) is collected, excluding
-/// any `.git` directory. Files are sorted by their relative path using
-/// forward-slash separators so the order is identical on Windows and
-/// Linux. For each file the hash absorbs the relative path bytes, a NUL
-/// separator, the file length as 8 little-endian bytes, and the file
-/// bytes. The result is the SHA-256 digest formatted `sha256:<hex>`. No
-/// file mode or timestamp is included, so the same tree hashes identically
-/// across platforms.
+/// Every regular file and symlink under `dir` (recursively) is collected,
+/// excluding any `.git` directory. Entries are sorted by relative path so the
+/// order is identical across runs and platforms. For each entry the hash
+/// absorbs the relative path one component at a time, then a kind discriminator
+/// and the file bytes or the symlink target. Every variable-length field (a
+/// path component, a symlink target, the file content) is length-prefixed, and
+/// each component is tagged by whether it is valid UTF-8: a valid component
+/// absorbs its UTF-8 bytes (identical across platforms), an invalid one absorbs
+/// its native OS bytes (lossless, so two distinct non-Unicode names never
+/// collide the way a lossy conversion would). The result is the SHA-256 digest
+/// formatted `sha256:<hex>`. No file mode or timestamp is included.
 pub fn tree_hash(dir: &Path) -> std::io::Result<String> {
     let mut files: Vec<(String, PathBuf, bool)> = Vec::new();
     collect_files(dir, dir, &mut files)?;
-    files.sort_by(|a, b| a.0.cmp(&b.0));
+    // Sort by the (lossy) relative path for a cross-platform-stable order, with
+    // the lossless absolute path as a tiebreaker so two names that share a lossy
+    // form still order deterministically.
+    files.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
 
     let mut hasher = Sha256::new();
-    for (rel, abs, is_symlink) in &files {
-        hasher.update(rel.as_bytes());
-        hasher.update([0u8]);
+    for (_rel, abs, is_symlink) in &files {
+        let relative = abs.strip_prefix(dir).unwrap_or(abs);
+        let components: Vec<_> = relative.components().collect();
+        hasher.update((components.len() as u64).to_le_bytes());
+        for component in components {
+            absorb_os_str(&mut hasher, component.as_os_str());
+        }
         if *is_symlink {
-            // Record the link's target so a symlink is not silently dropped
-            // from the tree. A tree of regular files hashes exactly as before,
-            // so existing lockfiles stay valid.
+            // Record the link's target, length-prefixed, so a symlink is not
+            // silently dropped and its bytes cannot run into the next entry.
             let target = std::fs::read_link(abs)?;
-            hasher.update(b"symlink:");
-            hasher.update(target.to_string_lossy().as_bytes());
+            hasher.update(b"L");
+            absorb_os_str(&mut hasher, target.as_os_str());
         } else {
             let bytes = std::fs::read(abs)?;
+            hasher.update(b"F");
             hasher.update((bytes.len() as u64).to_le_bytes());
             hasher.update(&bytes);
         }
     }
     let digest = hasher.finalize();
     Ok(format!("sha256:{:x}", digest))
+}
+
+/// Absorb a single `OsStr` into the hash losslessly and unambiguously: a tag
+/// byte for whether it is valid UTF-8, the byte length, then the bytes. A valid
+/// component uses its UTF-8 bytes so the hash is identical across platforms; an
+/// invalid one uses its native OS bytes so distinct non-Unicode names stay
+/// distinct instead of collapsing to a replacement character.
+fn absorb_os_str(hasher: &mut Sha256, os: &std::ffi::OsStr) {
+    match os.to_str() {
+        Some(s) => {
+            hasher.update([0u8]);
+            hasher.update((s.len() as u64).to_le_bytes());
+            hasher.update(s.as_bytes());
+        }
+        None => {
+            let bytes = os_native_bytes(os);
+            hasher.update([1u8]);
+            hasher.update((bytes.len() as u64).to_le_bytes());
+            hasher.update(&bytes);
+        }
+    }
+}
+
+/// The native byte encoding of an `OsStr` (UTF-8-ish bytes on Unix, the
+/// little-endian UTF-16 code units on Windows). Only reached for a component
+/// that is not valid Unicode, to keep distinct names distinct in the hash.
+#[cfg(unix)]
+fn os_native_bytes(os: &std::ffi::OsStr) -> Vec<u8> {
+    use std::os::unix::ffi::OsStrExt;
+    os.as_bytes().to_vec()
+}
+
+#[cfg(windows)]
+fn os_native_bytes(os: &std::ffi::OsStr) -> Vec<u8> {
+    use std::os::windows::ffi::OsStrExt;
+    os.encode_wide().flat_map(|u| u.to_le_bytes()).collect()
+}
+
+#[cfg(not(any(unix, windows)))]
+fn os_native_bytes(os: &std::ffi::OsStr) -> Vec<u8> {
+    os.to_string_lossy().into_owned().into_bytes()
 }
 
 fn rel_path(root: &Path, path: &Path) -> String {
@@ -1068,6 +1119,51 @@ mod tests {
         let h2 = tree_hash(&dir).expect("hash again");
         assert_eq!(h1, h2, "hashing is deterministic");
         assert!(h1.starts_with("sha256:"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tree_hash_distinguishes_non_unicode_names() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+        // Two distinct, non-Unicode file names with identical content. They
+        // share a lossy form, so a lossy hash would collide; the lossless hash
+        // must keep them apart.
+        let cache = TempCache::new("nonutf8");
+        let a = cache.root.join("a");
+        let b = cache.root.join("b");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(a.join(OsStr::from_bytes(b"x\xff")), "same").unwrap();
+        std::fs::write(b.join(OsStr::from_bytes(b"x\xfe")), "same").unwrap();
+        assert_ne!(
+            tree_hash(&a).unwrap(),
+            tree_hash(&b).unwrap(),
+            "distinct non-Unicode names must hash differently"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tree_hash_bounds_the_symlink_target() {
+        use std::os::unix::fs::symlink;
+        // Two trees that differ only in where the symlink-target / next-name
+        // boundary falls. Without a length prefix the target bytes run into the
+        // next entry's path and both trees hash the same.
+        let cache = TempCache::new("symboundary");
+        let a = cache.root.join("a");
+        let b = cache.root.join("b");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        symlink("xy", a.join("s")).unwrap();
+        std::fs::write(a.join("z"), "C").unwrap();
+        symlink("x", b.join("s")).unwrap();
+        std::fs::write(b.join("yz"), "C").unwrap();
+        assert_ne!(
+            tree_hash(&a).unwrap(),
+            tree_hash(&b).unwrap(),
+            "a symlink target must not bleed into the next entry"
+        );
     }
 
     #[test]

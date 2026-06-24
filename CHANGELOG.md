@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.181] - 2026-06-24
+
+### Fixed
+
+- The dependency tree hash is lossless and unambiguous, closing two ways a changed cache tree could pass lockfile validation. Path components and symlink targets were hashed through a lossy Unicode conversion, so distinct non-Unicode names collapsed to the same bytes (#659), and a symlink target was written with no length boundary, so its bytes could run into the next entry's path and two different trees could share a hash (#660). The hash now absorbs each path component and symlink target length-prefixed, using UTF-8 bytes for valid Unicode (identical across platforms) and native OS bytes otherwise, with distinct file and symlink markers.
+
 ## [2.18.180] - 2026-06-24
 
 ### Fixed
