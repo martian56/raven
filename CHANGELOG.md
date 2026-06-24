@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.174] - 2026-06-24
+
+### Fixed
+
+- A compiled Raven program no longer dies from SIGPIPE when it writes to a closed pipe or socket. Writing the rest of a child's stdin after the child exits, or to a network peer that has closed the connection, raised SIGPIPE on Unix, whose default disposition terminated the program; the runtime now ignores SIGPIPE so the write surfaces as an ordinary handled error instead.
+
 ## [2.18.173] - 2026-06-24
 
 ### Fixed

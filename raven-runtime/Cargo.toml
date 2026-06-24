@@ -16,3 +16,6 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 corosensei = "0.3.4"
 regex = "1"
 ureq = "2.12"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

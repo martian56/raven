@@ -1,0 +1,8 @@
+// golden:skip - the child half of the SIGPIPE regression test
+// (sigpipe_parent.rv, checked in codegen_smoke.rs). It prints "done" and exits
+// without reading stdin, so the parent's stdin write hits a closed pipe.
+import std/io { println }
+
+fun main() {
+    println("done")
+}

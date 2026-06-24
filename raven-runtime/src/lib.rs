@@ -59,6 +59,23 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
+/// Ignore `SIGPIPE` once, process-wide, on Unix. Writing to a pipe or socket
+/// whose read end has closed raises `SIGPIPE`, whose default disposition
+/// terminates the process. A compiled Raven program does not go through Rust's
+/// std startup (its `main` is a Cranelift-emitted C shim), so the signal is at
+/// its default. Ignoring it makes such a write return an ordinary `EPIPE` error
+/// the caller already handles, instead of killing the program. Called lazily at
+/// the start of the operations that can hit a broken pipe.
+fn ignore_sigpipe() {
+    #[cfg(unix)]
+    {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| unsafe {
+            libc::signal(libc::SIGPIPE, libc::SIG_IGN);
+        });
+    }
+}
+
 thread_local! {
     // Message of the most recent fallible fs op: empty on success, the OS
     // error text on failure. The Raven wrapper reads it through
@@ -1331,6 +1348,9 @@ pub extern "C" fn raven_net_read(stream_id: i64, max: i64) -> *mut object::Strin
 /// `data` must be a valid `raven_string_from_bytes`-built `String`.
 #[no_mangle]
 pub extern "C" fn raven_net_write(stream_id: i64, data: *const object::String) -> i64 {
+    // Writing to a peer that has closed the connection would raise SIGPIPE and
+    // kill the program; ignore it so the write surfaces as an error instead.
+    ignore_sigpipe();
     let ptr = object::raven_string_bytes(data);
     let len = object::raven_string_len(data) as usize;
     let bytes: &[u8] = if ptr.is_null() || len == 0 {
@@ -1995,6 +2015,10 @@ pub extern "C" fn raven_process_run(
     args_nul_joined: *const object::String,
     stdin_data: *const object::String,
 ) -> i64 {
+    // A child that exits before reading all of its stdin closes the pipe, so
+    // writing the rest would raise SIGPIPE and kill this program. Ignore it so
+    // the write returns a (handled) error instead.
+    ignore_sigpipe();
     let (Some(program), Some(args_joined)) = (env_name(program), env_name(args_nul_joined)) else {
         process_set_error("program or args is not valid UTF-8".to_string());
         return 0;
