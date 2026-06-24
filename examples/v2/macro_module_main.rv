@@ -1,0 +1,8 @@
+// golden:skip - imports a module that uses a macro internally and prints the
+// result, which is 42 once the imported module's macro is expanded. Checked in
+// codegen_smoke.rs (macro_in_imported_module_compiles_and_runs).
+import "./macro_module_lib" { compute }
+
+fun main() {
+    print(compute())
+}
