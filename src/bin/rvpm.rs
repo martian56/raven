@@ -241,18 +241,24 @@ fn check_new_target_in_tree(cwd: &Path, target: &str) -> Result<(), String> {
 
 /// Inspect or clear the shared package cache.
 fn cmd_cache(args: &[String]) -> Result<(), String> {
+    // Help is handled for the whole `cache` command, including its
+    // subcommands (`rvpm cache dir --help`), before any subcommand runs.
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", cache_usage());
+        return Ok(());
+    }
     match args.first().map(String::as_str) {
-        None | Some("--help") | Some("-h") => {
+        None => {
             println!("{}", cache_usage());
             Ok(())
         }
         Some("dir") => {
-            reject_extra_args(&args[1..], "cache dir", &["--help", "-h"], 0)?;
+            reject_extra_args(&args[1..], "cache dir", &[], 0)?;
             println!("{}", pkg::cache_root().display());
             Ok(())
         }
         Some("list") => {
-            reject_extra_args(&args[1..], "cache list", &["--help", "-h"], 0)?;
+            reject_extra_args(&args[1..], "cache list", &[], 0)?;
             cache_list()
         }
         Some("clean") => cache_clean(&args[1..]),
@@ -353,6 +359,10 @@ fn dir_names(dir: &Path) -> Result<Vec<String>, String> {
 }
 
 fn cmd_fetch(args: &[String]) -> Result<(), String> {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", fetch_usage());
+        return Ok(());
+    }
     reject_extra_args(args, "fetch", &["--help", "-h"], 1)?;
     let spec = args
         .first()
@@ -373,6 +383,10 @@ fn cmd_fetch(args: &[String]) -> Result<(), String> {
 /// the cache. The full install/build UX lands in later releases; this is a
 /// way to exercise resolution and validation directly.
 fn cmd_lock(args: &[String]) -> Result<(), String> {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", lock_usage());
+        return Ok(());
+    }
     reject_extra_args(args, "lock", &["--help", "-h"], 0)?;
     let manifest = Manifest::load("rv.toml").map_err(|e| e.to_string())?;
     let lock_path = std::path::Path::new(LOCK_FILE_NAME);
@@ -816,6 +830,14 @@ fn collect_rv_files(dir: PathBuf) -> Result<Vec<PathBuf>, String> {
 
 fn init_usage() -> String {
     "Usage: rvpm init [name] [--lib]".to_string()
+}
+
+fn fetch_usage() -> String {
+    "Usage: rvpm fetch <github.com/<user>/<repo>@<version>>".to_string()
+}
+
+fn lock_usage() -> String {
+    "Usage: rvpm lock".to_string()
 }
 
 fn new_usage() -> String {
