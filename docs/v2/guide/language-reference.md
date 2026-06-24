@@ -754,10 +754,17 @@ C. `T` must be a C scalar (`CInt`, `CLong`, `CSize`, `CFloat`, `CDouble`,
 
 `CFnPtr` is an untyped C function pointer. A C function that takes a
 callback can call back into Raven through one. Pass a non-capturing
-top-level function by naming it bare. Its parameters and return must all
-be C-FFI types so the C ABI is well defined. A capturing closure (a local
-of function type) is rejected, since C cannot supply its capture
-environment.
+top-level function by naming it bare; its parameters and return must all
+be C-FFI types so the C ABI is well defined.
+
+A capturing closure can also be used as a callback when the C function
+carries a userdata pointer (the common C idiom). Pass the closure both
+where the `CFnPtr` is expected and where the userdata `CPtr` is expected:
+the compiler emits a trampoline for the function-pointer slot and hands the
+closure object as the userdata, and C threads it back to the trampoline,
+which invokes the closure with its captured values. The garbage collector
+traces the suspended Raven stack through the call, so a closure that
+allocates mid-callback is safe.
 
 ```rust
 import std/ffi { alloc, free, load, store, offset }
@@ -785,14 +792,17 @@ fun main() {
 signature against what the C side expects. Matching it is your
 responsibility, as in C.
 
-### Small structs by value
+### Structs by value
 
-A small C struct can cross the boundary by value. Mark the matching Raven
-struct `@repr(C)` to give it C memory layout. The supported shape is a
-struct whose fields are all integer-class C scalars (`CInt`, `CLong`,
-`CSize`, `CStr`, `CPtr<T>`, or `CFnPtr`) and whose total size is at most
-8 bytes (one machine register). A larger struct, or one with a float
-field, is rejected; pass a `CPtr<...>` to it instead.
+A C struct can cross the boundary by value. Mark the matching Raven struct
+`@repr(C)` to give it C memory layout. Its fields may be any C scalars,
+integer-class (`CInt`, `CLong`, `CSize`, `CStr`, `CPtr<T>`, `CFnPtr`) or
+floating-point (`CFloat`, `CDouble`), and a field may itself be a `@repr(C)`
+struct. The back end classifies the struct for the platform C ABI, so a
+struct larger than one register, or one with float fields, is passed
+correctly (in registers, on the stack, or by reference as the ABI requires)
+rather than rejected. You can still pass a `CPtr<...>` to a struct when you
+need to share or mutate it by address.
 
 ```rust
 @repr(C)
