@@ -491,6 +491,12 @@ fun raven_derive_json_index(j: JsonValue, i: Int) -> Result<JsonValue, Error> {
         None -> Err(Error { kind: "json", message: "missing payload element" }),
     }
 }
+fun raven_derive_json_arity(vals: JsonValue, n: Int) -> Result<Bool, Error> {
+    return match vals {
+        Array(items) -> if items.len() == n { Ok(true) } else { Err(Error { kind: "json", message: "wrong number of payload values for variant" }) },
+        _ -> Err(Error { kind: "json", message: "enum payload values is not an array" }),
+    }
+}
 fun raven_derive_json_tag(j: JsonValue) -> Result<String, Error> {
     let t = raven_derive_json_field(j, "tag")?
     return match t {
@@ -634,6 +640,13 @@ fn enum_from_json_body(e: &Enum, self_ty: &str) -> String {
     for v in &e.variants {
         body.push_str(&format!("        if tag.equals(\"{}\") {{\n", v.name));
         let tys = variant_tuple_types(v);
+        // `values` must be an array holding exactly this variant's payload
+        // arity, so a unit variant rejects any non-empty payload and a tuple
+        // variant rejects too few or too many elements.
+        body.push_str(&format!(
+            "            let _arity = raven_derive_json_arity(vals, {})?\n",
+            tys.len()
+        ));
         if tys.is_empty() {
             body.push_str(&format!("            return Ok({}.{})\n", e.name, v.name));
         } else {

@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.164] - 2026-06-24
+
+### Fixed
+
+- A derived enum `FromJson` validates that the `values` payload is an array with exactly the variant's arity. A unit variant now rejects a non-array or non-empty payload, and a tuple variant rejects too few or too many elements, instead of decoding malformed data as `Ok` (#681).
+
 ## [2.18.163] - 2026-06-24
 
 ### Fixed

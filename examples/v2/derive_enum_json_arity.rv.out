@@ -1,0 +1,5 @@
+rejected: enum payload values is not an array
+rejected: wrong number of payload values for variant
+rejected: wrong number of payload values for variant
+accepted: Dot
+accepted: Circle(5)
