@@ -150,19 +150,15 @@ fn collect_source_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), DocErr
             path: dir.to_path_buf(),
             message: e.to_string(),
         })?;
-        let ftype = entry.file_type().map_err(|e| DocError::Io {
-            path: dir.to_path_buf(),
-            message: e.to_string(),
-        })?;
-        // Do not follow symlinks: a directory link could point outside the
-        // package and pull in sources from another tree.
-        if ftype.is_symlink() {
+        // Do not follow a link out of the package (a symlink, or a Windows
+        // junction), which would pull in sources from another tree.
+        if crate::ops::is_link_entry(&entry) {
             continue;
         }
         let path = entry.path();
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if ftype.is_dir() {
+        if path.is_dir() {
             if name == "target" || name.starts_with('.') {
                 continue;
             }

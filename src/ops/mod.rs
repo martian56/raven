@@ -766,6 +766,32 @@ pub fn test_in(project_dir: &Path, cache_root: &Path) -> Result<TestReport, OpEr
     })
 }
 
+/// Whether a directory entry is a link that a package source walk must not
+/// follow: a symlink on any platform, or, on Windows, a directory junction or
+/// other reparse point (which `FileType::is_symlink` does not report, since a
+/// junction uses a different reparse tag). Skipping these keeps `rvpm doc`,
+/// `fmt`, and `test` from reading, rewriting, or running code outside the
+/// project tree. An entry whose type cannot be read is treated as a link, so it
+/// is skipped rather than followed.
+pub fn is_link_entry(entry: &std::fs::DirEntry) -> bool {
+    let Ok(ftype) = entry.file_type() else {
+        return true;
+    };
+    if ftype.is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        // FILE_ATTRIBUTE_REPARSE_POINT marks a junction or other reparse point.
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+        if let Ok(meta) = std::fs::symlink_metadata(entry.path()) {
+            return meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+        }
+    }
+    false
+}
+
 /// Collect every `*_test.rv` file under `project_dir`, skipping the build
 /// output and hidden or VCS directories.
 fn discover_test_files(project_dir: &Path) -> Result<Vec<PathBuf>, OpError> {
@@ -786,21 +812,16 @@ fn collect_test_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), OpError>
             path: dir.to_path_buf(),
             source: e,
         })?;
-        let ftype = entry.file_type().map_err(|e| OpError::Io {
-            action: "read directory entry".to_string(),
-            path: dir.to_path_buf(),
-            source: e,
-        })?;
-        // Do not follow symlinks: a directory link could point outside the
-        // package, and a test file reached through it would compile and run
-        // code from outside the project tree.
-        if ftype.is_symlink() {
+        // Do not follow a link out of the package (a symlink, or a Windows
+        // junction): a test file reached through it would compile and run code
+        // from outside the project tree.
+        if is_link_entry(&entry) {
             continue;
         }
         let path = entry.path();
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if ftype.is_dir() {
+        if path.is_dir() {
             if name == "target" || name.starts_with('.') {
                 continue;
             }
