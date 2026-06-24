@@ -1,0 +1,30 @@
+// golden:skip - std/process argv parent, checked in codegen_smoke.rs
+// (proc_argv_preserves_empty_arg). Runs the child (path in RAVEN_PROC_CHILD)
+// with three argument lists and prints the child's reported argument count.
+// A single empty argument must not vanish, so the counts are:
+//   1   (no args)
+//   2   (one empty arg, plus argv[0])
+//   3   ("a" then "")
+import std/process { run }
+import std/env { get_env }
+import std/io { print }
+
+fun main() {
+    let child = get_env("RAVEN_PROC_CHILD")
+    let none: List<String> = []
+    let one_empty: List<String> = [""]
+    let a_then_empty: List<String> = ["a", ""]
+
+    match run(child, none) {
+        Ok(out) -> print(out.stdout),
+        Err(e) -> print("fail ${e.message()}"),
+    }
+    match run(child, one_empty) {
+        Ok(out) -> print(out.stdout),
+        Err(e) -> print("fail ${e.message()}"),
+    }
+    match run(child, a_then_empty) {
+        Ok(out) -> print(out.stdout),
+        Err(e) -> print("fail ${e.message()}"),
+    }
+}

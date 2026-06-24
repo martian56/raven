@@ -37,19 +37,18 @@ impl Output {
     }
 }
 
-// Join `args` into one String with a single NUL byte between elements, the
-// encoding the runtime splits back into the child's argument list. An empty
-// list yields the empty String (zero args). An arg must not contain NUL.
+// Join `args` into one String, NUL-prefixing each element, the encoding the
+// runtime splits back into the child's argument list. An empty list yields the
+// empty String (zero args); a one-element list `[""]` yields a single NUL, so a
+// lone empty argument is distinguishable from no arguments. An arg must not
+// contain NUL.
 fun join_args(args: List<String>) -> String {
     let out = ""
     let nul = __str_from_byte(0)
     let i = 0
     let n = args.len()
     while i < n {
-        if i > 0 {
-            out = out.concat(nul)
-        }
-        out = out.concat(args[i])
+        out = out.concat(nul).concat(args[i])
         i = i + 1
     }
     return out
