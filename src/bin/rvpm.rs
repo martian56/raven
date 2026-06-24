@@ -35,7 +35,24 @@ fn main() -> ExitCode {
 }
 
 fn dispatch() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    // Use `args_os` rather than `args`: on Unix an argument is an arbitrary byte
+    // string and `args` panics when one is not valid UTF-8, which would crash
+    // rvpm before it could report an ordinary error. rvpm's subcommands, package
+    // names, and manifest fields are text, so a non-UTF-8 argument is rejected
+    // with a diagnostic that names it instead of aborting with a panic.
+    let mut args: Vec<String> = Vec::new();
+    for arg in std::env::args_os().skip(1) {
+        match arg.into_string() {
+            Ok(s) => args.push(s),
+            Err(bad) => {
+                eprintln!(
+                    "rvpm: argument is not valid UTF-8: {}",
+                    bad.to_string_lossy()
+                );
+                return ExitCode::from(1);
+            }
+        }
+    }
     match args.first().map(String::as_str) {
         None | Some("help") | Some("--help") | Some("-h") => {
             print_usage();
