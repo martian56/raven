@@ -1248,7 +1248,13 @@ pub extern "C" fn raven_net_accept(listener_id: i64) -> i64 {
 /// On error sets the last error and returns an empty `String`.
 #[no_mangle]
 pub extern "C" fn raven_net_read(stream_id: i64, max: i64) -> *mut object::String {
-    let cap = max.max(0) as usize;
+    // A negative limit is a caller error, not a zero-length read: returning
+    // Ok("") would be indistinguishable from a clean EOF.
+    if max < 0 {
+        net_set_error("read size must be non-negative".to_string());
+        return object::raven_string_from_bytes(std::ptr::null(), 0);
+    }
+    let cap = max as usize;
     // Clone the stream handle under the registry lock, then read without holding
     // it, so a blocked read does not serialize other goroutines' net operations
     // on the shared registry. Block outside the collector's running set so a slow
@@ -1267,11 +1273,20 @@ pub extern "C" fn raven_net_read(stream_id: i64, max: i64) -> *mut object::Strin
     };
     let result = match stream {
         Ok(mut s) => crate::gc::blocking(|| {
-            let mut buf = vec![0u8; cap];
-            s.read(&mut buf).map(|n| {
-                buf.truncate(n);
-                buf
-            })
+            // A very large `max` must fail gracefully: a plain `vec![0; cap]`
+            // aborts the process when the allocation fails. Reserve fallibly so
+            // an oversized request becomes an error instead.
+            let mut buf: Vec<u8> = Vec::new();
+            buf.try_reserve_exact(cap).map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::OutOfMemory,
+                    "read size too large to allocate",
+                )
+            })?;
+            buf.resize(cap, 0);
+            let n = s.read(&mut buf)?;
+            buf.truncate(n);
+            Ok(buf)
         }),
         Err(e) => Err(e),
     };
