@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.180] - 2026-06-24
+
+### Fixed
+
+- The package manager validates a dependency's user, repo, and version before using them to build a cache path. Each becomes a directory name under the cache, so a single shared check (`is_safe_cache_component`) now rejects an empty, `.`/`..`, separator-, drive-colon-, or control-character-bearing component in `GithubPath::parse` (user/repo) and the lock's version resolution, and the fetch and clone paths refuse a cache destination that still contains a `..` component, so a malicious transitive dependency cannot steer directory creation outside the cache root (#431).
+
 ## [2.18.179] - 2026-06-24
 
 ### Fixed

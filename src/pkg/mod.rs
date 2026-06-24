@@ -38,6 +38,10 @@ pub enum PkgError {
         reference: String,
         stderr: String,
     },
+    /// The cache destination contains a parent (`..`) component, which would
+    /// place it outside the cache root. A defense-in-depth check at directory
+    /// creation, independent of the upstream component validation.
+    UnsafeCachePath { path: PathBuf },
 }
 
 impl fmt::Display for PkgError {
@@ -67,6 +71,11 @@ impl fmt::Display for PkgError {
                 url,
                 reference,
                 stderr.trim()
+            ),
+            PkgError::UnsafeCachePath { path } => write!(
+                f,
+                "refusing to create cache directory outside the cache root: '{}'",
+                path.display()
             ),
         }
     }
@@ -116,6 +125,21 @@ pub fn cache_dir_in(root: &Path, host: &str, user: &str, repo: &str, version: &s
         .join(format!("{}@{}", repo, version))
 }
 
+/// Whether `s` is safe to use as a single path component under the package
+/// cache. A package's user, repo, and version each become a directory name, so
+/// each must be a single, in-tree segment: non-empty, not a current or parent
+/// directory reference, and free of a path separator, a Windows drive/stream
+/// colon, or a control character. This blocks a malicious dependency from
+/// steering cache directory creation outside the cache root.
+pub fn is_safe_cache_component(s: &str) -> bool {
+    !s.is_empty()
+        && s != "."
+        && s != ".."
+        && !s
+            .chars()
+            .any(|c| matches!(c, '/' | '\\' | ':') || c.is_control())
+}
+
 /// The outcome of a fetch: where the package landed, and whether it was
 /// already in the cache (no network) or freshly downloaded.
 #[derive(Debug, Clone)]
@@ -156,6 +180,15 @@ pub fn fetch_in(
     version: &str,
 ) -> Result<Fetched, PkgError> {
     let dest = cache_dir_in(root, host, user, repo, version);
+    // Defense in depth: a `..` in any component would place the cache entry
+    // outside the cache root. The path components are validated upstream, but
+    // this guards the directory creation directly.
+    if dest
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(PkgError::UnsafeCachePath { path: dest.clone() });
+    }
     if is_populated(&dest) {
         return Ok(Fetched {
             dir: dest,
@@ -343,6 +376,16 @@ fn is_populated(dir: &Path) -> bool {
 /// pinned tag or branch is never updated in place, so the history is not
 /// needed.
 pub fn clone_from(url: &str, reference: &str, dest: &Path) -> Result<(), PkgError> {
+    // Defense in depth: never create a cache directory through a parent
+    // reference, even if a component validation upstream were bypassed.
+    if dest
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(PkgError::UnsafeCachePath {
+            path: dest.to_path_buf(),
+        });
+    }
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent).map_err(|e| PkgError::Io {
             action: "create cache directory".to_string(),
@@ -398,6 +441,41 @@ pub fn clone_from(url: &str, reference: &str, dest: &Path) -> Result<(), PkgErro
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[test]
+    fn safe_cache_component_accepts_real_names_and_rejects_escapes() {
+        // Real GitHub users, repos, and version refs, including a leading-dot
+        // directory name (a normal segment, unlike `.`/`..`).
+        for ok in [
+            "martian56",
+            "raven-http",
+            "raven.rs",
+            "v1.2.3",
+            "v1.0.0-rc.1",
+            "a_b",
+            ".config",
+        ] {
+            assert!(is_safe_cache_component(ok), "should accept `{ok}`");
+        }
+        // Empty, current/parent refs, separators, a drive colon, and control
+        // characters cannot be a single in-tree segment.
+        for bad in [
+            "", ".", "..", "a/b", "a\\b", "C:", "../x", "a\nb", "a\u{0}b",
+        ] {
+            assert!(!is_safe_cache_component(bad), "should reject `{bad:?}`");
+        }
+    }
+
+    #[test]
+    fn clone_from_refuses_a_parent_reference_in_the_dest() {
+        let dest = Path::new("cache/github.com/../../escape@v1");
+        let err = clone_from("https://example.invalid", "v1", dest)
+            .expect_err("must reject a `..` cache path");
+        assert!(
+            matches!(err, PkgError::UnsafeCachePath { .. }),
+            "got {err:?}"
+        );
+    }
 
     fn unique_temp(tag: &str) -> PathBuf {
         static COUNTER: AtomicU64 = AtomicU64::new(0);

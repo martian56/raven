@@ -255,12 +255,14 @@ impl GithubPath {
         let user = parts.next()?.to_string();
         let repo = parts.next()?.to_string();
         let subpath: Vec<String> = parts.map(|s| s.to_string()).collect();
-        // Every segment becomes a directory name under the cache, so reject an
-        // empty, `.`, `..`, or backslash-bearing segment that could escape it.
-        let unsafe_segment = |s: &str| s.is_empty() || s == "." || s == ".." || s.contains('\\');
-        if unsafe_segment(&user)
-            || unsafe_segment(&repo)
-            || subpath.iter().any(|s| unsafe_segment(s))
+        // Every segment becomes a directory name under the cache, so each must
+        // be a single, in-tree path component (no separator, `..`, drive colon,
+        // or control character) that cannot escape the cache root.
+        if !crate::pkg::is_safe_cache_component(&user)
+            || !crate::pkg::is_safe_cache_component(&repo)
+            || !subpath
+                .iter()
+                .all(|s| crate::pkg::is_safe_cache_component(s))
         {
             return None;
         }
