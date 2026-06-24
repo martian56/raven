@@ -177,14 +177,7 @@ fn cmd_new(args: &[String]) -> Result<(), String> {
             name
         ));
     }
-    // Reject a `..` in the target so `rvpm new` cannot scaffold outside the
-    // current directory tree.
-    if Path::new(target)
-        .components()
-        .any(|c| matches!(c, std::path::Component::ParentDir))
-    {
-        return Err(format!("target path '{}' must not contain '..'", target));
-    }
+    check_new_target_in_tree(target)?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     init_project(&dir, name, kind).map_err(|e| e.to_string())?;
     let label = match kind {
@@ -192,6 +185,26 @@ fn cmd_new(args: &[String]) -> Result<(), String> {
         ProjectKind::Lib => "library",
     };
     println!("Created {} '{}' in {}/", label, name, target);
+    Ok(())
+}
+
+/// Keep an `rvpm new` target inside the current directory tree: reject a `..`
+/// component, an absolute path, or a drive/root prefix (`C:\...`, `\...`,
+/// `C:...`). Any of those would let `rvpm new` scaffold a package outside the
+/// current directory, which the relative-only contract forbids.
+fn check_new_target_in_tree(target: &str) -> Result<(), String> {
+    use std::path::Component;
+    if Path::new(target).components().any(|c| {
+        matches!(
+            c,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        )
+    }) {
+        return Err(format!(
+            "target path '{}' must be a relative path inside the current directory",
+            target
+        ));
+    }
     Ok(())
 }
 
@@ -807,4 +820,29 @@ fn print_usage() {
     println!("Package arguments use the 'github.com/<user>/<repo>' form.");
     println!("For 'add', append '@<version>' to pin a git tag or branch; without it");
     println!("a placeholder constraint is recorded.");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_target_must_stay_in_tree() {
+        // Ordinary relative targets are allowed.
+        assert!(check_new_target_in_tree("app").is_ok());
+        assert!(check_new_target_in_tree("path/to/app").is_ok());
+        // A `..` escape and a Unix-style absolute/root path are rejected on
+        // every platform.
+        assert!(check_new_target_in_tree("../escape").is_err());
+        assert!(check_new_target_in_tree("a/../b").is_err());
+        assert!(check_new_target_in_tree("/etc/foo").is_err());
+        // Drive and backslash-rooted paths are only parsed as such on Windows;
+        // on Unix they are ordinary relative file names.
+        #[cfg(windows)]
+        {
+            assert!(check_new_target_in_tree(r"C:\tmp\app").is_err());
+            assert!(check_new_target_in_tree("C:app").is_err());
+            assert!(check_new_target_in_tree(r"\rooted").is_err());
+        }
+    }
 }

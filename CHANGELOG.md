@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.178] - 2026-06-24
+
+### Fixed
+
+- `rvpm new` rejects an absolute or drive/root-prefixed target, not just a `..` component. An absolute path (`/path/app`, `C:\path\app`) has no `..` component, so it bypassed the outside-tree guard and scaffolded a package anywhere the process could write; the target must now be a relative path inside the current directory (#646).
+
 ## [2.18.177] - 2026-06-24
 
 ### Fixed
