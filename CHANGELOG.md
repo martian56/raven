@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.186] - 2026-06-24
+
+### Fixed
+
+- The VS Code "Run Raven File" command no longer silently overwrites an unrelated sibling file. It builds the executable next to the source as `<basename>` (or `<basename>.exe`), so running `demo.rv` could clobber an existing `demo`/`demo.exe`. It now confirms before overwriting a file it did not build this session (#625).
+
 ## [2.18.185] - 2026-06-24
 
 ### Fixed
