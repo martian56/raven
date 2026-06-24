@@ -1521,7 +1521,7 @@ fn http_reason(code: u16) -> &'static str {
 /// Capture a ureq response into an owned `HttpResp`, reading the status,
 /// reason, headers, and body eagerly (reading the body consumes the
 /// response).
-fn http_capture(resp: ureq::Response) -> HttpResp {
+fn http_capture(resp: ureq::Response) -> Option<HttpResp> {
     let status = resp.status();
     let reason = resp.status_text();
     let status_text = if reason.is_empty() {
@@ -1544,16 +1544,38 @@ fn http_capture(resp: ureq::Response) -> HttpResp {
         }
     }
     let headers = header_lines.join("\n");
+    // The body length the server promised, if any. A body shorter than this was
+    // cut short in transit.
+    let expected_len: Option<u64> = resp
+        .header("Content-Length")
+        .and_then(|v| v.trim().parse::<u64>().ok());
     // Read the body as raw bytes (not `into_string`, which lossily replaces a
     // non-UTF-8 byte with U+FFFD and corrupts a binary response).
     let mut body = Vec::new();
-    resp.into_reader().read_to_end(&mut body).ok();
-    HttpResp {
+    let read = resp.into_reader().read_to_end(&mut body);
+    // A read error, or fewer bytes than Content-Length promised, means a
+    // truncated transfer. Report it instead of returning the partial body with
+    // a success status, so a caller can tell a complete response from a broken
+    // one.
+    if read.is_err() {
+        http_set_error("incomplete response body".to_string());
+        return None;
+    }
+    if let Some(expected) = expected_len {
+        if (body.len() as u64) < expected {
+            http_set_error(format!(
+                "incomplete response body: expected {expected} bytes, received {}",
+                body.len()
+            ));
+            return None;
+        }
+    }
+    Some(HttpResp {
         status: status as i64,
         status_text,
         headers,
         body,
-    }
+    })
 }
 
 /// Store a captured response and return its id, clearing the last error.
@@ -1628,9 +1650,11 @@ pub extern "C" fn raven_http_request(
         };
 
         match result {
-            Ok(resp) => http_store(http_capture(resp)),
+            // A captured `None` means a truncated body; `http_capture` has set
+            // the last error, so surface the failure as id 0.
+            Ok(resp) => http_capture(resp).map(http_store).unwrap_or(0),
             // A non-2xx status is a response, not a transport failure.
-            Err(ureq::Error::Status(_, resp)) => http_store(http_capture(resp)),
+            Err(ureq::Error::Status(_, resp)) => http_capture(resp).map(http_store).unwrap_or(0),
             Err(ureq::Error::Transport(t)) => {
                 http_set_error(t.to_string());
                 0

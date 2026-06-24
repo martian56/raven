@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.160] - 2026-06-24
+
+### Fixed
+
+- The HTTP client reports a truncated response body as an error instead of `Ok`. If the server advertised a larger `Content-Length` and closed the connection early, the partial bytes were returned with the original success status; the client now treats a body shorter than `Content-Length` (or a read error) as a failed request (#615).
+
 ## [2.18.159] - 2026-06-24
 
 ### Fixed
