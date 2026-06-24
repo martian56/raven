@@ -530,10 +530,12 @@ holds different implementers.
 ## Concurrency
 
 `spawn` starts a goroutine: a lightweight green thread that runs a
-`fun() -> Unit` closure. Goroutines run on a cooperative scheduler. The
-program multiplexes many of them onto one OS thread, and exactly one runs
-at a time. A goroutine runs until it reaches a yield point, then the
-scheduler resumes another ready goroutine.
+`fun() -> Unit` closure. Goroutines run on an M:N scheduler that
+multiplexes them onto a pool of worker OS threads, one per available core,
+so goroutines run in parallel. Scheduling within a worker is cooperative: a
+goroutine runs until it reaches a yield point (a channel operation, an
+explicit `yield_now()`, or its body finishing), then the worker resumes
+another ready goroutine.
 
 ```rust
 spawn(fun() -> Unit {
@@ -575,11 +577,13 @@ When `main` returns the program exits, and any goroutines still alive are
 abandoned. If every goroutine is blocked with none ready, the scheduler
 reports a deadlock and exits.
 
-The model is cooperative on a single OS thread in this release: there is
-no preemption and no multicore parallelism. A goroutine that blocks in a
-runtime IO call (a net read, a file read, an http request) stalls the
-whole scheduler, since those calls are synchronous. True multicore
-parallelism, `select`, and non-blocking IO are future work.
+Goroutines run in parallel across the worker pool, so the runtime uses
+every core. A goroutine that blocks in a runtime IO call (a net read, a
+file read, an http request) does so without stalling the other workers: the
+blocking call runs outside the scheduler's running set, so other goroutines
+keep running on the remaining workers. Beyond channels, `std/sync` provides
+`select_recv` to wait on the first ready of several channels, a mutex, a
+wait group, and `sleep_millis`.
 
 ## Modules and imports
 

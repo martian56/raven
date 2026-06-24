@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.166] - 2026-06-24
+
+### Fixed
+
+- The concurrency documentation describes the current parallel scheduler. The language reference and the `std/sync` guide no longer claim that exactly one goroutine runs at a time on a single OS thread or that multicore parallelism and `select` are future work; the M:N scheduler runs goroutines in parallel across a worker pool, and the `std/sync` guide now documents `sleep_millis`, the mutex, the wait group, `select_recv`, and channel `free` (#638).
+
 ## [2.18.165] - 2026-06-24
 
 ### Fixed
