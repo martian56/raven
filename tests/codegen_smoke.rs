@@ -1143,6 +1143,52 @@ fn net_program_compiles_and_runs() {
 }
 
 #[test]
+fn net_read_rejects_bad_limits() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // TcpStream.read validates its limit: a negative size is an error (not a
+    // zero-length Ok that mimics EOF), and a size too large to allocate fails
+    // gracefully instead of aborting. The server only has to accept the
+    // connection; both reads fail before any bytes move.
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback listener");
+    let addr = listener
+        .local_addr()
+        .expect("listener local addr")
+        .to_string();
+    let server = std::thread::spawn(move || {
+        if let Ok((stream, _)) = listener.accept() {
+            // Hold the connection briefly so the client can run its reads.
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            drop(stream);
+        }
+    });
+
+    let example = build_example_binary("net_read_limits.rv", &runtime);
+    let output = Command::new(&example.binary)
+        .env("RAVEN_NET_ADDR", &addr)
+        .output()
+        .expect("run net_read_limits binary");
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let _ = server.join();
+    cleanup(&example.tmp);
+    assert!(
+        output.status.success(),
+        "net_read_limits exited non zero: status={:?} stderr={}",
+        output.status,
+        stderr
+    );
+    assert_eq!(
+        stdout, "neg err\nhuge err\nalive\n",
+        "unexpected stdout for net_read_limits: {:?}",
+        stdout
+    );
+}
+
+#[test]
 fn http_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

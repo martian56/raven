@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.155] - 2026-06-24
+
+### Fixed
+
+- `TcpStream.read` validates its size limit. A negative limit is now an error instead of a zero-length `Ok("")` that looked like a clean EOF, and a limit too large to allocate fails gracefully instead of aborting the process on the buffer allocation (#671).
+
 ## [2.18.154] - 2026-06-24
 
 ### Fixed
