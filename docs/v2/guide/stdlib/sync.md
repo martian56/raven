@@ -1,11 +1,13 @@
 # std/sync
 
 Goroutine-style concurrency primitives: channels for passing values between
-green threads. `std/sync` pairs with the `spawn` keyword, which starts a
-goroutine running a `fun() -> Unit` closure. Goroutines are cooperative green
-threads: exactly one runs at a time, and a goroutine keeps running until it
-hits a yield point (a blocking channel operation or an explicit `yield_now()`),
-at which the scheduler resumes another ready goroutine.
+green threads, plus a mutex, a wait group, timed sleeping, and a multi-channel
+receive. `std/sync` pairs with the `spawn` keyword, which starts a goroutine
+running a `fun() -> Unit` closure. Goroutines run on an M:N scheduler that
+spreads them across a pool of worker threads (one per available core), so they
+run in parallel. Within a worker, scheduling is cooperative: a goroutine keeps
+running until it hits a yield point (a blocking channel operation or an explicit
+`yield_now()`), at which the worker resumes another ready goroutine.
 
 ```rust
 import std/sync { channel, channel_buffered, yield_now }
@@ -193,7 +195,109 @@ fun main() {
 }
 ```
 
+## Releasing a channel
+
+### `free(self)`
+
+Release a channel's runtime resources when you are done with it. A channel is
+otherwise reclaimed when the program exits; `free` is for a long-running program
+that creates many channels over time.
+
+## Sleeping
+
+### `sleep_millis(ms: Int)`
+
+Block the current goroutine for `ms` milliseconds, yielding so other goroutines
+run in the meantime.
+
+```rust
+import std/sync { sleep_millis }
+
+fun main() {
+    spawn(fun() -> Unit {
+        sleep_millis(50)
+        print(2)
+    })
+    print(1)
+    sleep_millis(100)           // give the goroutine time to finish
+}
+```
+
+## Mutex
+
+A mutex guards a critical section so only one goroutine holds it at a time,
+which matters now that goroutines run in parallel across worker threads.
+
+### `mutex() -> Mutex`, `lock(self)`, `unlock(self)`
+
+```rust
+import std/sync { mutex }
+
+fun main() {
+    let m = mutex()
+    m.lock()
+    // ... exclusive section ...
+    m.unlock()
+}
+```
+
+## Wait group
+
+A wait group counts outstanding work and lets one goroutine block until it
+reaches zero, the usual way to wait for spawned goroutines to finish.
+
+### `wait_group() -> WaitGroup`
+
+Create a wait group with a zero counter.
+
+### `add(self, n: Int)`, `done(self)`, `wait(self)`, `free(self)`
+
+`add(n)` raises the counter by `n` (call it before spawning the work),
+`done()` lowers it by one (call it as each unit finishes), `wait()` blocks
+until the counter reaches zero, and `free()` releases the wait group.
+
+```rust
+import std/sync { wait_group, sleep_millis }
+
+fun main() {
+    let wg = wait_group()
+    wg.add(2)
+    spawn(fun() -> Unit {
+        sleep_millis(20)
+        wg.done()
+    })
+    spawn(fun() -> Unit {
+        sleep_millis(20)
+        wg.done()
+    })
+    wg.wait()                   // both goroutines have finished
+    wg.free()
+}
+```
+
+## Selecting over several channels
+
+### `select_recv(channels: List<Channel>) -> SelectResult`
+
+Block until one of `channels` has a value to receive, then return a
+`SelectResult` with `index` (the position in the list of the channel that
+produced the value, or `-1` when the list is empty) and `value` (that value).
+When several channels are ready, the lowest index wins.
+
+```rust
+import std/sync { channel_buffered, select_recv }
+
+fun main() {
+    let a = channel_buffered(1)
+    let b = channel_buffered(1)
+    b.send(22)
+    let chosen = select_recv([a, b])
+    print(chosen.index)         // 1
+    print(chosen.value)         // 22
+}
+```
+
 ## See also
 
 - The [language reference](../language-reference.md#concurrency) for `spawn`,
-  goroutines, the cooperative scheduler, and deadlock behavior.
+  goroutines, the parallel scheduler, and deadlock behavior.
