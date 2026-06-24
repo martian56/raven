@@ -2,6 +2,17 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.188] - 2026-06-24
+
+### Fixed
+
+- The website deploy script reports failure when triggering the deployment fails, instead of warning and exiting `0` so the workflow looked successful (#626).
+- The website hero no longer keeps applying parallax on mobile: the scroll listener now skips the transform on small viewports, matching the mobile setup that clears it (#627).
+- The responsive example-tab rule under `@media (max-width: 480px)` targets the real `.tab-btn` class, so the full-width mobile tab layout applies (#628).
+- The mobile navigation toggle is keyboard operable: it carries a button role, focus, an accessible name, and `aria-expanded`, and responds to Enter and Space (#629).
+- The double-tap zoom guard only cancels when both taps hit the same element, so quickly tapping two different controls no longer loses the second tap (#630).
+- The website Basics example imports `std/collections`, which its map literal requires, so copying it compiles (#631).
+
 ## [2.18.187] - 2026-06-24
 
 ### Fixed

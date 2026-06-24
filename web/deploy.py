@@ -88,9 +88,10 @@ def main():
         print(f"✓ Deployment triggered successfully")
         print(f"  Status: {status}")
     except Exception as e:
-        print(f"⚠ Warning: Could not trigger deployment: {e}")
-        print("Files have been uploaded. Deployment may start automatically.")
-    
+        print(f"✗ Error: Could not trigger deployment: {e}")
+        print("Files were uploaded, but the deployment was not triggered.")
+        sys.exit(1)
+
     print("\n" + "=" * 50)
     print("✅ Deployment process completed!")
     if domain:
