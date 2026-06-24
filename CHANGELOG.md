@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.158] - 2026-06-24
+
+### Fixed
+
+- `std/http` sends a request body of arbitrary bytes. The body was run through a UTF-8-only helper and a request was rejected as soon as the body held a byte such as `0xFF`; it is now sent as raw bytes, so a binary payload is delivered intact. The method, URL, and header lines are still text (#616).
+
 ## [2.18.157] - 2026-06-24
 
 ### Fixed
