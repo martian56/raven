@@ -786,10 +786,21 @@ fn collect_test_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), OpError>
             path: dir.to_path_buf(),
             source: e,
         })?;
+        let ftype = entry.file_type().map_err(|e| OpError::Io {
+            action: "read directory entry".to_string(),
+            path: dir.to_path_buf(),
+            source: e,
+        })?;
+        // Do not follow symlinks: a directory link could point outside the
+        // package, and a test file reached through it would compile and run
+        // code from outside the project tree.
+        if ftype.is_symlink() {
+            continue;
+        }
         let path = entry.path();
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if path.is_dir() {
+        if ftype.is_dir() {
             if name == "target" || name.starts_with('.') {
                 continue;
             }
@@ -989,6 +1000,34 @@ mod tests {
 
     const APP_MANIFEST: &str =
         "[package]\nname = \"app\"\nversion = \"0.1.0\"\n\n# keep this comment\n";
+
+    #[cfg(unix)]
+    #[test]
+    fn discover_test_files_does_not_follow_symlinks() {
+        use std::os::unix::fs::symlink;
+        let proj = TempProject::new("symlink");
+        std::fs::create_dir_all(proj.root.join("src")).expect("create src");
+        std::fs::write(proj.root.join("src/inside_test.rv"), "fun test_a() {}\n")
+            .expect("write inside test");
+        // A directory outside the package, with its own test file.
+        let outside = TempProject::new("symlink-outside");
+        std::fs::write(outside.root.join("outside_test.rv"), "fun test_b() {}\n")
+            .expect("write outside test");
+        // A directory symlink inside the package pointing at the outside tree.
+        symlink(&outside.root, proj.root.join("linked")).expect("create symlink");
+
+        let found = discover_test_files(&proj.root).expect("discover test files");
+        assert!(
+            found.iter().any(|p| p.ends_with("inside_test.rv")),
+            "the package's own test file must be found: {found:?}"
+        );
+        assert!(
+            !found
+                .iter()
+                .any(|p| p.to_string_lossy().contains("outside_test")),
+            "a test file reached only through a directory symlink must not be discovered: {found:?}"
+        );
+    }
 
     #[test]
     fn add_appends_dependency_and_writes_lock() {

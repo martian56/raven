@@ -690,10 +690,16 @@ fn collect_rv_excluding(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String
     let entries = std::fs::read_dir(dir).map_err(|e| format!("{}: {}", dir.display(), e))?;
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
+        let ftype = entry.file_type().map_err(|e| e.to_string())?;
+        // Do not follow symlinks: a directory link could point outside the
+        // package, and formatting a linked file would rewrite its target.
+        if ftype.is_symlink() {
+            continue;
+        }
         let path = entry.path();
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if path.is_dir() {
+        if ftype.is_dir() {
             if name == "target" || name.starts_with('.') {
                 continue;
             }
@@ -715,8 +721,13 @@ fn collect_rv_files(dir: PathBuf) -> Result<Vec<PathBuf>, String> {
         let entries = std::fs::read_dir(&d).map_err(|e| format!("{}: {}", d.display(), e))?;
         for entry in entries {
             let entry = entry.map_err(|e| e.to_string())?;
+            let ftype = entry.file_type().map_err(|e| e.to_string())?;
+            // Do not follow symlinks out of the requested tree.
+            if ftype.is_symlink() {
+                continue;
+            }
             let path = entry.path();
-            if path.is_dir() {
+            if ftype.is_dir() {
                 stack.push(path);
             } else if path.extension().and_then(|s| s.to_str()) == Some("rv") {
                 out.push(path);
