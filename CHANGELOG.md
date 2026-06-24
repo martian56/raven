@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.168] - 2026-06-24
+
+### Fixed
+
+- The `std/net` guide, spec, and module header describe current behavior: `TcpStream.read` returns raw bytes with no lossy UTF-8 conversion, goroutines let one program be both a client and a server, and the documented surface now includes `read_all`, `set_write_timeout_ms`, and `TcpListener.close` (#634).
+
 ## [2.18.167] - 2026-06-24
 
 ### Fixed
