@@ -62,13 +62,17 @@ fn dispatch() -> ExitCode {
             println!("rvpm {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
-        Some("init") => match cmd_init(&args[1..]) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(e) => {
-                eprintln!("rvpm: {}", e);
-                ExitCode::from(1)
+        Some("init") => {
+            let result = reject_extra_args(&args[1..], "init", &["--help", "-h", "--lib"], 1)
+                .and_then(|()| cmd_init(&args[1..]).map_err(|e| e.to_string()));
+            match result {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("rvpm: {}", e);
+                    ExitCode::from(1)
+                }
             }
-        },
+        }
         Some("new") => match cmd_new(&args[1..]) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
@@ -83,7 +87,7 @@ fn dispatch() -> ExitCode {
                 ExitCode::from(1)
             }
         },
-        Some("lock") => match cmd_lock() {
+        Some("lock") => match cmd_lock(&args[1..]) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("rvpm: {}", e);
@@ -152,6 +156,7 @@ fn cmd_new(args: &[String]) -> Result<(), String> {
         println!("{}", new_usage());
         return Ok(());
     }
+    reject_extra_args(args, "new", &["--help", "-h", "--lib"], 1)?;
     let kind = if args.iter().any(|a| a == "--lib") {
         ProjectKind::Lib
     } else {
@@ -242,10 +247,14 @@ fn cmd_cache(args: &[String]) -> Result<(), String> {
             Ok(())
         }
         Some("dir") => {
+            reject_extra_args(&args[1..], "cache dir", &["--help", "-h"], 0)?;
             println!("{}", pkg::cache_root().display());
             Ok(())
         }
-        Some("list") => cache_list(),
+        Some("list") => {
+            reject_extra_args(&args[1..], "cache list", &["--help", "-h"], 0)?;
+            cache_list()
+        }
         Some("clean") => cache_clean(&args[1..]),
         Some(other) => Err(format!(
             "unknown cache subcommand '{}'\n{}",
@@ -344,6 +353,7 @@ fn dir_names(dir: &Path) -> Result<Vec<String>, String> {
 }
 
 fn cmd_fetch(args: &[String]) -> Result<(), String> {
+    reject_extra_args(args, "fetch", &["--help", "-h"], 1)?;
     let spec = args
         .first()
         .ok_or_else(|| "fetch needs a 'github.com/<user>/<repo>@<version>' argument".to_string())?;
@@ -362,7 +372,8 @@ fn cmd_fetch(args: &[String]) -> Result<(), String> {
 /// dependency in `rv.toml`; otherwise validates the existing lock against
 /// the cache. The full install/build UX lands in later releases; this is a
 /// way to exercise resolution and validation directly.
-fn cmd_lock() -> Result<(), String> {
+fn cmd_lock(args: &[String]) -> Result<(), String> {
+    reject_extra_args(args, "lock", &["--help", "-h"], 0)?;
     let manifest = Manifest::load("rv.toml").map_err(|e| e.to_string())?;
     let lock_path = std::path::Path::new(LOCK_FILE_NAME);
 
@@ -459,6 +470,7 @@ fn cmd_add(args: &[String]) -> Result<Vec<String>, String> {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         return Ok(vec![add_usage()]);
     }
+    reject_extra_args(args, "add", &["--help", "-h"], 1)?;
     let spec = args
         .first()
         .ok_or_else(|| format!("add needs a package argument\n{}", add_usage()))?;
@@ -487,13 +499,35 @@ fn reject_unknown_options(args: &[String], cmd: &str, known: &[&str]) -> Result<
     Ok(())
 }
 
+/// Reject arguments a command does not accept: an unknown flag (via
+/// [`reject_unknown_options`]) and any positional argument beyond
+/// `max_positionals`. A positional is an argument that does not start with `-`.
+/// This keeps a typo (`rvpm new app extr` or `rvpm lock --typo`) from looking
+/// like a success instead of silently ignoring the extra word.
+fn reject_extra_args(
+    args: &[String],
+    cmd: &str,
+    known: &[&str],
+    max_positionals: usize,
+) -> Result<(), String> {
+    reject_unknown_options(args, cmd, known)?;
+    let positionals = args.iter().filter(|a| !a.starts_with('-')).count();
+    if positionals > max_positionals {
+        return Err(format!(
+            "`rvpm {}` takes at most {} positional argument(s), but {} were given; run `rvpm {} --help`",
+            cmd, max_positionals, positionals, cmd
+        ));
+    }
+    Ok(())
+}
+
 /// Re-resolve rv.toml against rv.lock and fill the cache, validating an
 /// existing lock or writing a fresh one.
 fn cmd_install(args: &[String]) -> Result<Vec<String>, String> {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         return Ok(vec![install_usage()]);
     }
-    reject_unknown_options(args, "install", &["--help", "-h"])?;
+    reject_extra_args(args, "install", &["--help", "-h"], 0)?;
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     let (_outcome, report) =
         with_fetch_progress(|| ops::install(&cwd)).map_err(|e| e.to_string())?;
@@ -505,7 +539,7 @@ fn cmd_update(args: &[String]) -> Result<Vec<String>, String> {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         return Ok(vec![update_usage()]);
     }
-    reject_unknown_options(args, "update", &["--help", "-h"])?;
+    reject_extra_args(args, "update", &["--help", "-h"], 1)?;
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     let package = args.first().map(String::as_str);
     let report = with_fetch_progress(|| ops::update(&cwd, package)).map_err(|e| e.to_string())?;
@@ -518,7 +552,7 @@ fn cmd_build(args: &[String]) -> Result<Vec<String>, String> {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         return Ok(vec![build_usage()]);
     }
-    reject_unknown_options(args, "build", &["--help", "-h"])?;
+    reject_extra_args(args, "build", &["--help", "-h"], 0)?;
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     let report = with_fetch_progress(|| ops::build(&cwd)).map_err(|e| e.to_string())?;
     Ok(report.outcome_lines)
@@ -573,6 +607,10 @@ fn cmd_test(args: &[String]) -> ExitCode {
         println!("{}", test_usage());
         return ExitCode::SUCCESS;
     }
+    if let Err(e) = reject_extra_args(args, "test", &["--help", "-h"], 0) {
+        eprintln!("rvpm: {}", e);
+        return ExitCode::from(1);
+    }
     let cwd = match std::env::current_dir() {
         Ok(d) => d,
         Err(e) => {
@@ -603,7 +641,7 @@ fn cmd_doc(args: &[String]) -> Result<Vec<String>, String> {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         return Ok(vec![doc_usage()]);
     }
-    reject_unknown_options(args, "doc", &["--help", "-h"])?;
+    reject_extra_args(args, "doc", &["--help", "-h"], 0)?;
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     let report = raven::doc::generate(&cwd).map_err(|e| e.to_string())?;
     Ok(report.outcome_lines)
@@ -865,6 +903,20 @@ mod tests {
         ));
         std::fs::create_dir_all(&d).expect("create temp dir");
         d
+    }
+
+    #[test]
+    fn reject_extra_args_catches_unknown_flags_and_extra_positionals() {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        // Within the allowed flags and positional budget: accepted.
+        assert!(reject_extra_args(&s(&["app", "--lib"]), "new", &["--lib"], 1).is_ok());
+        assert!(reject_extra_args(&s(&[]), "lock", &[], 0).is_ok());
+        // An unknown flag is rejected.
+        assert!(reject_extra_args(&s(&["--typo"]), "new", &["--lib"], 1).is_err());
+        // A positional beyond the budget is rejected (so a typo'd extra word
+        // does not look like success).
+        assert!(reject_extra_args(&s(&["a", "b"]), "new", &["--lib"], 1).is_err());
+        assert!(reject_extra_args(&s(&["stray"]), "build", &[], 0).is_err());
     }
 
     #[test]
