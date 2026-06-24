@@ -1665,6 +1665,41 @@ fn process_program_compiles_and_runs() {
 }
 
 #[test]
+fn process_stdin_broken_pipe_does_not_kill() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A child that exits without reading its stdin closes the pipe, so the
+    // parent's remaining stdin write hits a broken pipe. On Unix that raises
+    // SIGPIPE, whose default disposition would kill the parent (exit signal 13);
+    // the runtime ignores SIGPIPE so the write fails harmlessly. The parent
+    // feeds ~160 KB (over a pipe buffer) and must still print `ok` then
+    // `survived` and exit zero.
+    let child = build_example_binary("sigpipe_child.rv", &runtime);
+    let parent = build_example_binary("sigpipe_parent.rv", &runtime);
+
+    let output = Command::new(&parent.binary)
+        .env("RAVEN_PROC_CHILD", &child.binary)
+        .output()
+        .expect("run sigpipe_parent binary");
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    cleanup(&child.tmp);
+    cleanup(&parent.tmp);
+    assert!(
+        output.status.success(),
+        "sigpipe_parent exited non zero (SIGPIPE?): status={:?} stderr={}",
+        output.status,
+        stderr
+    );
+    assert_eq!(
+        stdout, "ok\nsurvived\n",
+        "unexpected stdout for sigpipe_parent: {:?}",
+        stdout
+    );
+}
+
+#[test]
 fn proc_argv_preserves_empty_arg() {
     let Some(runtime) = supported_runtime() else {
         return;
