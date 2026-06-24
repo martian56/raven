@@ -177,7 +177,8 @@ fn cmd_new(args: &[String]) -> Result<(), String> {
             name
         ));
     }
-    check_new_target_in_tree(target)?;
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    check_new_target_in_tree(&cwd, target)?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     init_project(&dir, name, kind).map_err(|e| e.to_string())?;
     let label = match kind {
@@ -188,11 +189,13 @@ fn cmd_new(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Keep an `rvpm new` target inside the current directory tree: reject a `..`
-/// component, an absolute path, or a drive/root prefix (`C:\...`, `\...`,
-/// `C:...`). Any of those would let `rvpm new` scaffold a package outside the
-/// current directory, which the relative-only contract forbids.
-fn check_new_target_in_tree(target: &str) -> Result<(), String> {
+/// Keep an `rvpm new` target inside `cwd`. Two checks: a lexical one rejects a
+/// `..` component, an absolute path, or a drive/root prefix (`C:\...`, `\...`,
+/// `C:...`); a resolving one canonicalizes the target's deepest existing
+/// ancestor and requires it to stay under `cwd`, so a symlinked intermediate
+/// component (`link/app` with `link` pointing elsewhere) cannot escape the tree
+/// the way a purely lexical check would miss.
+fn check_new_target_in_tree(cwd: &Path, target: &str) -> Result<(), String> {
     use std::path::Component;
     if Path::new(target).components().any(|c| {
         matches!(
@@ -202,6 +205,29 @@ fn check_new_target_in_tree(target: &str) -> Result<(), String> {
     }) {
         return Err(format!(
             "target path '{}' must be a relative path inside the current directory",
+            target
+        ));
+    }
+    let root = cwd
+        .canonicalize()
+        .map_err(|e| format!("cannot resolve the current directory: {}", e))?;
+    // Walk up from the target to its deepest component that exists on disk, then
+    // canonicalize that (resolving any symlink). A not-yet-created target has no
+    // entry to resolve, so the first existing ancestor is what matters.
+    let target_path = cwd.join(target);
+    let mut anchor = target_path.as_path();
+    let resolved = loop {
+        match anchor.canonicalize() {
+            Ok(c) => break c,
+            Err(_) => match anchor.parent() {
+                Some(parent) => anchor = parent,
+                None => return Ok(()),
+            },
+        }
+    };
+    if !resolved.starts_with(&root) {
+        return Err(format!(
+            "target path '{}' must resolve inside the current directory",
             target
         ));
     }
@@ -825,24 +851,58 @@ fn print_usage() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let mut d = std::env::temp_dir();
+        d.push(format!(
+            "rvpm-new-{}-{}-{}",
+            tag,
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&d).expect("create temp dir");
+        d
+    }
 
     #[test]
     fn new_target_must_stay_in_tree() {
+        let cwd = temp_dir("cwd");
         // Ordinary relative targets are allowed.
-        assert!(check_new_target_in_tree("app").is_ok());
-        assert!(check_new_target_in_tree("path/to/app").is_ok());
+        assert!(check_new_target_in_tree(&cwd, "app").is_ok());
+        assert!(check_new_target_in_tree(&cwd, "path/to/app").is_ok());
         // A `..` escape and a Unix-style absolute/root path are rejected on
         // every platform.
-        assert!(check_new_target_in_tree("../escape").is_err());
-        assert!(check_new_target_in_tree("a/../b").is_err());
-        assert!(check_new_target_in_tree("/etc/foo").is_err());
+        assert!(check_new_target_in_tree(&cwd, "../escape").is_err());
+        assert!(check_new_target_in_tree(&cwd, "a/../b").is_err());
+        assert!(check_new_target_in_tree(&cwd, "/etc/foo").is_err());
         // Drive and backslash-rooted paths are only parsed as such on Windows;
         // on Unix they are ordinary relative file names.
         #[cfg(windows)]
         {
-            assert!(check_new_target_in_tree(r"C:\tmp\app").is_err());
-            assert!(check_new_target_in_tree("C:app").is_err());
-            assert!(check_new_target_in_tree(r"\rooted").is_err());
+            assert!(check_new_target_in_tree(&cwd, r"C:\tmp\app").is_err());
+            assert!(check_new_target_in_tree(&cwd, "C:app").is_err());
+            assert!(check_new_target_in_tree(&cwd, r"\rooted").is_err());
         }
+        let _ = std::fs::remove_dir_all(&cwd);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn new_target_rejects_a_symlinked_component() {
+        use std::os::unix::fs::symlink;
+        let cwd = temp_dir("cwd");
+        let outside = temp_dir("outside");
+        // `link` inside the current directory points at an outside tree.
+        symlink(&outside, cwd.join("link")).expect("create symlink");
+        // A target under the symlink resolves outside the tree and is rejected,
+        // even though every path component is lexically normal.
+        assert!(check_new_target_in_tree(&cwd, "link/app").is_err());
+        // A real (non-symlinked) nested target is still allowed.
+        assert!(check_new_target_in_tree(&cwd, "real/app").is_ok());
+        let _ = std::fs::remove_dir_all(&cwd);
+        let _ = std::fs::remove_dir_all(&outside);
     }
 }
