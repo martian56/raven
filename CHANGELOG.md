@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.162] - 2026-06-24
+
+### Fixed
+
+- A local module's globals initialize before an importer that reads them at load time. Modules are now merged in dependency order (a module after every module it imports), so a top-level `let` that calls an imported function during initialization sees the imported module's initialized globals instead of zero (#669).
+
 ## [2.18.161] - 2026-06-24
 
 ### Fixed
