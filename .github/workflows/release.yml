@@ -57,10 +57,12 @@ jobs:
           else
             v="${INPUT_VERSION}"
           fi
-          # The version becomes part of file names and an MSI ProductVersion, so
-          # accept only version characters. This also rejects any value crafted
-          # to escape a later shell or PowerShell assignment.
-          if ! [[ "$v" =~ ^[0-9A-Za-z.+_-]+$ ]]; then
+          # Accept only `X.Y.Z` with an optional `-prerelease` suffix: the MSI
+          # ProductVersion must be numeric `X.Y.Z` and only a `-...` suffix is
+          # stripped later, so reject other shapes (build metadata, underscores)
+          # here instead of failing deep in cargo wix. This also rejects any
+          # value crafted to escape a later shell or PowerShell assignment.
+          if ! [[ "$v" =~ ^[0-9]+(\.[0-9]+){2}(-[0-9A-Za-z.-]+)?$ ]]; then
             echo "invalid release version: $v" >&2
             exit 1
           fi
