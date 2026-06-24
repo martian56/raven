@@ -236,6 +236,17 @@ fn expansion_limit_guards_recursion() {
 }
 
 #[test]
+fn token_limit_guards_exponential_expansion() {
+    // A macro that expands one call into two doubles the token stream every
+    // pass, exhausting memory before the pass limit. The size cap reports the
+    // likely-recursive diagnostic instead.
+    let src = "macro boom { () => { boom!() + boom!() } }\nlet y = boom!()\n";
+    let e = expand_tokens(&lex(src)).expect_err("should hit the token limit");
+    let msg = format!("{}", e);
+    assert!(msg.contains("a macro is likely recursive"), "got: {}", msg);
+}
+
+#[test]
 fn first_matching_rule_wins() {
     let src = "macro pick { ($a:expr, $b:expr) => { two } ($a:expr) => { one } }\n\
                let r = pick!(x)\n";
