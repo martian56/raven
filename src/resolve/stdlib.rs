@@ -29,7 +29,8 @@ use crate::ast::{
 };
 use crate::error::{RavenError, ResolveError};
 use crate::lexer::Lexer;
-use crate::parser::parse;
+use crate::macros::{collect_macro_table, expand_tokens_hygienic, DefSites};
+use crate::parser::{parse, parse_with_macros};
 
 use super::imports::{FsLoader, GithubPath, SourceLoader};
 
@@ -211,7 +212,7 @@ pub fn bundled_source(module_path: &str) -> Option<&'static str> {
 /// the import pass to report as `UnresolvedImport`; this function only
 /// merges the modules it can load.
 pub fn expand_with_stdlib(user: &File) -> Result<File, RavenError> {
-    expand_with_stdlib_ctx(user, None)
+    expand_with_stdlib_ctx(user, None).map(|(file, _def_sites)| file)
 }
 
 /// Expand `user` like [`expand_with_stdlib`], additionally resolving any
@@ -229,7 +230,11 @@ pub fn expand_with_stdlib(user: &File) -> Result<File, RavenError> {
 pub fn expand_with_stdlib_ctx(
     user: &File,
     ctx: Option<&PackageContext>,
-) -> Result<File, RavenError> {
+) -> Result<(File, DefSites), RavenError> {
+    // Definition-site identifiers introduced by macros in imported local
+    // modules, accumulated as the modules are loaded and handed back to the
+    // resolver alongside the entry file's own.
+    let mut def_sites = DefSites::new();
     // The `@derive` expansion emits global helper functions under a reserved
     // prefix; reject a user declaration that would collide with one before any
     // merging, so the error names the user's declaration rather than the
@@ -271,7 +276,7 @@ pub fn expand_with_stdlib_ctx(
     // itself `import std/...`, and those bundled modules must merge too so
     // the local module's own calls resolve.
     let mut loader = FsLoader;
-    let local_modules = load_local_modules(user, &mut loader)?;
+    let local_modules = load_local_modules(user, &mut loader, &mut def_sites)?;
     for module_file in &local_modules {
         collect_std_module_imports(module_file, &mut wanted);
     }
@@ -414,10 +419,13 @@ pub fn expand_with_stdlib_ctx(
         combined_items.extend(super::derive::json_helper_decls()?);
     }
 
-    Ok(File {
-        items: combined_items,
-        span: user.span.clone(),
-    })
+    Ok((
+        File {
+            items: combined_items,
+            span: user.span.clone(),
+        },
+        def_sites,
+    ))
 }
 
 /// Add every bundled `std/<module>` imported by `file` to `wanted`. Only
@@ -585,11 +593,22 @@ fn merge_module_items(
 /// once and the back edge is ignored, mirroring the bundled set's fixed
 /// point behavior. A missing file is left for the import resolution pass
 /// to report with a precise span; this function only loads what it can.
-fn load_local_modules(user: &File, loader: &mut dyn SourceLoader) -> Result<Vec<File>, RavenError> {
+fn load_local_modules(
+    user: &File,
+    loader: &mut dyn SourceLoader,
+    def_sites: &mut DefSites,
+) -> Result<Vec<File>, RavenError> {
     let mut loaded_paths: BTreeSet<PathBuf> = BTreeSet::new();
     let mut out: Vec<File> = Vec::new();
     for (importing, target) in local_import_targets(user) {
-        load_local_module(&importing, &target, loader, &mut loaded_paths, &mut out)?;
+        load_local_module(
+            &importing,
+            &target,
+            loader,
+            &mut loaded_paths,
+            &mut out,
+            def_sites,
+        )?;
     }
     Ok(out)
 }
@@ -604,6 +623,7 @@ fn load_local_module(
     loader: &mut dyn SourceLoader,
     loaded: &mut BTreeSet<PathBuf>,
     out: &mut Vec<File>,
+    def_sites: &mut DefSites,
 ) -> Result<(), RavenError> {
     let Some(loaded_mod) = loader.load(importing, target) else {
         return Ok(());
@@ -615,13 +635,31 @@ fn load_local_module(
     let tokens = Lexer::new(loaded_mod.source.clone(), loaded_mod.canonical_path.clone())
         .tokenize()
         .map_err(|e| local_error(&loaded_mod.canonical_path, format!("lex: {e}")))?;
-    let module_file = parse(&tokens)
+    // Expand the module's own declarative macros, the same pre-pass the entry
+    // file gets, so a macro call inside an imported module is rewritten rather
+    // than reaching later stages unexpanded. The macro table (collected before
+    // the definitions are stripped) handles a call inside a `"${...}"`
+    // interpolation fragment, and the def-sites flow to the resolver so a free
+    // identifier the module's macros introduce resolves at the module scope.
+    let table = collect_macro_table(&tokens)
+        .map_err(|e| local_error(&loaded_mod.canonical_path, format!("macro: {e}")))?;
+    let (tokens, module_def_sites) = expand_tokens_hygienic(&tokens)
+        .map_err(|e| local_error(&loaded_mod.canonical_path, format!("macro: {e}")))?;
+    def_sites.extend(module_def_sites);
+    let module_file = parse_with_macros(&tokens, table)
         .map_err(|e| local_error(&loaded_mod.canonical_path, format!("parse: {e}")))?;
 
     // Load the imported modules first, so they sit ahead of this one in `out`
     // and their globals initialize before this module's do.
     for (_, dep) in local_import_targets(&module_file) {
-        load_local_module(&loaded_mod.canonical_path, &dep, loader, loaded, out)?;
+        load_local_module(
+            &loaded_mod.canonical_path,
+            &dep,
+            loader,
+            loaded,
+            out,
+            def_sites,
+        )?;
     }
     out.push(module_file);
     Ok(())
@@ -1677,7 +1715,7 @@ mod tests {
         let user = parse_src(
             "import \"github.com/acme/greet/lib\" { shout }\nfun main() { print(shout(\"hi\")) }\n",
         );
-        let combined = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
+        let (combined, _sites) = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
 
         let key = external_module_key("github.com", "acme", "greet", &src_path);
         let mangled = mangle_external_fn(&key, "shout");
@@ -1744,7 +1782,7 @@ mod tests {
             "import \"./helper\" { loud }\nfun main() { print(loud(\"hi\")) }\n",
             &entry,
         );
-        let combined = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
+        let (combined, _sites) = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
 
         let ext_shout = mangle_external_fn(
             &external_module_key("github.com", "acme", "greet", &src_path),

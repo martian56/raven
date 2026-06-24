@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.173] - 2026-06-24
+
+### Fixed
+
+- A declarative macro call inside an imported local module is expanded. Macro expansion ran only on the entry file, so a macro used inside an imported module reached HIR lowering unexpanded and failed with an internal error; imported modules now get the same macro pre-pass, and the free identifiers their macros introduce flow to the resolver (#650).
+
 ## [2.18.171] - 2026-06-24
 
 ### Fixed

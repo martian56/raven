@@ -1875,6 +1875,35 @@ fn read_line_preserves_non_utf8() {
     );
 }
 
+#[test]
+fn macro_in_imported_module_compiles_and_runs() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A declarative macro call inside an imported local module must be expanded
+    // the same way the entry file's macros are. macro_module_lib.rv defines
+    // `double!` and uses it in `compute`; the main program imports `compute`
+    // and prints its result, which is 42 once the module's macro expands.
+    let example = build_example_binary("macro_module_main.rv", &runtime);
+    let output = Command::new(&example.binary)
+        .output()
+        .expect("run macro_module_main binary");
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    cleanup(&example.tmp);
+    assert!(
+        output.status.success(),
+        "macro_module_main exited non zero: status={:?} stderr={}",
+        output.status,
+        stderr
+    );
+    assert_eq!(
+        stdout, "42\n",
+        "unexpected stdout for macro_module_main: {:?}",
+        stdout
+    );
+}
+
 /// A compiled example binary plus the temp dir holding it, so the caller
 /// can run the binary and then clean up.
 struct ExampleBinary {

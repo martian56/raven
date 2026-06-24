@@ -145,7 +145,13 @@ pub fn check(source: &str, input: &Path, ctx: Option<&PackageContext>) -> Result
         .map_err(|e| frontend_diag(e, input, source))?;
     let file = parse_with_macros_all(&tokens, macro_table)
         .map_err(|es| frontend_diags(es, input, source))?;
-    let file = expand_with_stdlib_ctx(&file, ctx).map_err(|e| frontend_diag(e, input, source))?;
+    let (file, module_def_sites) =
+        expand_with_stdlib_ctx(&file, ctx).map_err(|e| frontend_diag(e, input, source))?;
+    // Merge the entry file's macro def-sites with those from imported modules'
+    // macros so the resolver treats every macro-introduced free identifier the
+    // same way, regardless of which file the macro was defined in.
+    let mut macro_def_sites = macro_def_sites;
+    macro_def_sites.extend(module_def_sites);
     let mut loader = FsLoader;
     let resolved = resolve_file_ctx(&file, &mut loader, ctx, macro_def_sites)
         .map_err(|e| frontend_diag(e, input, source))?;
@@ -172,7 +178,13 @@ pub fn compile_to_object(
         .map_err(|e| frontend_diag(e, input, source))?;
     let file = parse_with_macros_all(&tokens, macro_table)
         .map_err(|es| frontend_diags(es, input, source))?;
-    let file = expand_with_stdlib_ctx(&file, ctx).map_err(|e| frontend_diag(e, input, source))?;
+    let (file, module_def_sites) =
+        expand_with_stdlib_ctx(&file, ctx).map_err(|e| frontend_diag(e, input, source))?;
+    // Merge the entry file's macro def-sites with those from imported modules'
+    // macros so the resolver treats every macro-introduced free identifier the
+    // same way, regardless of which file the macro was defined in.
+    let mut macro_def_sites = macro_def_sites;
+    macro_def_sites.extend(module_def_sites);
     let mut loader = FsLoader;
     let resolved = resolve_file_ctx(&file, &mut loader, ctx, macro_def_sites)
         .map_err(|e| frontend_diag(e, input, source))?;

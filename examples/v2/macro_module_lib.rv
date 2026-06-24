@@ -1,0 +1,9 @@
+// golden:skip - the imported module half of the macro-in-module test
+// (macro_module_main.rv, checked in codegen_smoke.rs). Defines a macro and a
+// function that uses it; the macro must expand even though this file is
+// imported, not the entry point.
+macro double { ($x:expr) => { ($x) + ($x) } }
+
+fun compute() -> Int {
+    return double!(21)
+}
