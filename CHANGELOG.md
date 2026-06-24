@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.167] - 2026-06-24
+
+### Fixed
+
+- The `std/http` guide describes the current server: `listen` serves each connection in its own goroutine (connections are handled concurrently), and HTTP pipelining is supported (bytes past one request are carried into the next parse), correcting the previous claims that connections are served one at a time and that pipelining is unsupported (#644).
+
 ## [2.18.166] - 2026-06-24
 
 ### Fixed

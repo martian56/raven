@@ -224,7 +224,8 @@ fun main() {
 }
 ```
 
-`listen` binds the address and blocks, serving connections one at a time.
+`listen` binds the address and blocks, accepting connections and serving each
+in its own goroutine, so connections are handled concurrently.
 
 ### Access log
 
@@ -276,8 +277,9 @@ and is what browsers and HTTP libraries expect. The server reuses the
 connection unless the client sends `Connection: close` (an HTTP/1.0 client must
 opt in with `Connection: keep-alive`). Each response carries the matching
 `Connection` header, and an idle kept-alive connection is closed once the read
-timeout elapses. HTTP pipelining is not supported, send one request and read
-its response before sending the next.
+timeout elapses. HTTP pipelining is supported: bytes read past one request are
+carried into the next parse, so a client may send several requests back to back
+on one connection and read the responses in order.
 
 ### Graceful shutdown
 
