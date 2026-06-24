@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.170] - 2026-06-24
+
+### Fixed
+
+- The language reference describes the current FFI surface. A capturing closure can be used as a C callback through a userdata pointer (pass it to both the `CFnPtr` and the userdata `CPtr`; the compiler emits a trampoline), and a `@repr(C)` struct passed by value may have float fields, nested struct fields, and any size (the back end classifies it for the platform ABI), correcting the old claims that capturing closures are rejected and that by-value structs must be integer-class and at most 8 bytes (#640).
+
 ## [2.18.169] - 2026-06-24
 
 ### Fixed
