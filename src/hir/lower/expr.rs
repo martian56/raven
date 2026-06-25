@@ -1825,7 +1825,9 @@ fn literal_hir_kind(e: &Expr) -> Option<HirExprKind> {
         ExprKind::Unary { op, operand } => {
             let v = literal_hir_kind(operand)?;
             match (op, v) {
-                (UnaryOp::Neg, HirExprKind::Int(i)) => i.checked_neg().map(HirExprKind::Int),
+                // `ineg` wraps at runtime, so `-i64::MIN` is `i64::MIN`, not an
+                // overflow to reject.
+                (UnaryOp::Neg, HirExprKind::Int(i)) => Some(HirExprKind::Int(i.wrapping_neg())),
                 (UnaryOp::Neg, HirExprKind::Float(f)) => Some(HirExprKind::Float(-f)),
                 (UnaryOp::Not, HirExprKind::Bool(b)) => Some(HirExprKind::Bool(!b)),
                 _ => None,
@@ -1841,28 +1843,41 @@ fn literal_hir_kind(e: &Expr) -> Option<HirExprKind> {
 }
 
 /// Fold a binary operation over two already-folded literal operands. Integer
-/// arithmetic is checked (overflow and divide-by-zero yield `None`).
+/// arithmetic matches the runtime: add/sub/mul wrap, shifts saturate, and only
+/// a divide or modulo by zero (which traps at runtime) yields `None`.
 fn fold_binary(op: BinaryOp, l: HirExprKind, r: HirExprKind) -> Option<HirExprKind> {
     use BinaryOp::*;
     use HirExprKind::{Bool, Float, Int};
     match (l, r) {
         (Int(a), Int(b)) => match op {
-            Add => a.checked_add(b).map(Int),
-            Sub => a.checked_sub(b).map(Int),
-            Mul => a.checked_mul(b).map(Int),
+            // Integer arithmetic wraps two's-complement at runtime (`iadd`,
+            // `isub`, `imul`), so fold it the same way rather than rejecting an
+            // overflow that a runtime expression evaluates fine.
+            Add => Some(Int(a.wrapping_add(b))),
+            Sub => Some(Int(a.wrapping_sub(b))),
+            Mul => Some(Int(a.wrapping_mul(b))),
+            // Division by zero (and `i64::MIN / -1`) traps at runtime, so leave
+            // those unfolded rather than inventing a value.
             Div => a.checked_div(b).map(Int),
             Mod => a.checked_rem(b).map(Int),
             BitAnd => Some(Int(a & b)),
             BitOr => Some(Int(a | b)),
             BitXor => Some(Int(a ^ b)),
-            Shl => u32::try_from(b)
-                .ok()
-                .and_then(|s| a.checked_shl(s))
-                .map(Int),
-            Shr => u32::try_from(b)
-                .ok()
-                .and_then(|s| a.checked_shr(s))
-                .map(Int),
+            // Shifts saturate at runtime, matching `emit_binop`: a left shift by
+            // 64 or more clears every bit (0), and a right shift by 64 or more
+            // collapses to the sign (a shift by 63). A negative count is a huge
+            // unsigned amount, so it saturates the same way.
+            Shl => {
+                if (0..64).contains(&b) {
+                    Some(Int(a.wrapping_shl(b as u32)))
+                } else {
+                    Some(Int(0))
+                }
+            }
+            Shr => {
+                let amount = if (0..63).contains(&b) { b as u32 } else { 63 };
+                Some(Int(a >> amount))
+            }
             Eq => Some(Bool(a == b)),
             Ne => Some(Bool(a != b)),
             Lt => Some(Bool(a < b)),
