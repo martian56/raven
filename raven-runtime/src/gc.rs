@@ -121,10 +121,17 @@ pub(crate) fn blocking<R>(f: impl FnOnce() -> R) -> R {
     // in the kernel: on a worker thread this spawns a replacement so goroutines
     // queued behind blocked I/O still run. A no-op off a worker thread.
     crate::sched::worker_block_begin();
-    let r = f();
-    crate::sched::worker_block_end();
-    block_end(was);
-    r
+    // Restore the worker accounting and the GC running-state on the way out, even
+    // if `f` unwinds, so a panic in the syscall cannot leave the counts skewed.
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            crate::sched::worker_block_end();
+            block_end(self.0);
+        }
+    }
+    let _restore = Restore(was);
+    f()
 }
 
 /// A safepoint poll. The back end emits a call at loop back-edges (and the

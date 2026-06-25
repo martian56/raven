@@ -142,15 +142,16 @@ static BLOCKED_WORKERS: AtomicUsize = AtomicUsize::new(0);
 /// connections degrades to queuing rather than spawning threads without bound.
 const MAX_WORKERS: usize = 512;
 
-/// The steady-state worker count: one per core, cached after the first read so
-/// the idle loop does not query the OS each iteration.
+/// The steady-state worker count: one per core, capped at [`MAX_WORKERS`] so the
+/// initial pool also honors the ceiling on a host with more cores than the cap.
+/// Cached after the first read so the idle loop does not query the OS each pass.
 fn worker_target() -> usize {
     static TARGET: AtomicUsize = AtomicUsize::new(0);
     let cached = TARGET.load(Ordering::Relaxed);
     if cached != 0 {
         return cached;
     }
-    let n = worker_count();
+    let n = worker_count().min(MAX_WORKERS);
     TARGET.store(n, Ordering::Relaxed);
     n
 }
