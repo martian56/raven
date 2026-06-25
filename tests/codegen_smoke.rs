@@ -1378,6 +1378,21 @@ fn http_server_reason_and_head_responses() {
 }
 
 #[test]
+fn http_server_timeout_does_not_overflow() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A huge timeout in seconds must not overflow `seconds * 1000` into a
+    // negative, disabled timeout: it saturates to a large positive bound, while
+    // a normal value stays exact and zero disables the timeout.
+    let expected = "huge read positive: true\n\
+                    huge write positive: true\n\
+                    normal read ms: 5000\n\
+                    disabled read ms: 0\n";
+    compile_link_run_and_check("http_timeout_overflow.rv", expected, &runtime);
+}
+
+#[test]
 fn http_sends_binary_body() {
     let Some(runtime) = supported_runtime() else {
         return;
