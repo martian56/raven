@@ -138,8 +138,12 @@ pub fn mangle_external_fn(key: &str, name: &str) -> String {
 #[derive(Debug, Clone)]
 pub struct PackageContext {
     cache_root: PathBuf,
-    /// Map from a `github.com/<user>/<repo>` source to its pinned version.
-    locked_versions: BTreeMap<String, String>,
+    /// Map from the lowercased `github.com/<user>/<repo>` source to its locked
+    /// `(canonical source, pinned version)`. GitHub owner and repo paths are
+    /// case-insensitive, so an import that differs only in case from the locked
+    /// source still resolves; the canonical (locked) casing is used for the
+    /// cache path, matching the directory the fetch created.
+    locked_versions: BTreeMap<String, (String, String)>,
 }
 
 impl PackageContext {
@@ -147,12 +151,21 @@ impl PackageContext {
     pub fn new(cache_root: PathBuf, lock: &crate::lock::LockFile) -> PackageContext {
         let mut locked_versions = BTreeMap::new();
         for p in &lock.packages {
-            locked_versions.insert(p.source.clone(), p.version.clone());
+            locked_versions.insert(
+                p.source.to_ascii_lowercase(),
+                (p.source.clone(), p.version.clone()),
+            );
         }
         PackageContext {
             cache_root,
             locked_versions,
         }
+    }
+
+    /// Look up an import source against the lock, case-insensitively, returning
+    /// the canonical (locked) source and its pinned version.
+    fn locked(&self, source: &str) -> Option<&(String, String)> {
+        self.locked_versions.get(&source.to_ascii_lowercase())
     }
 
     /// Resolve the cached `.rv` source file for a `github.com/<user>/<repo>`
@@ -166,8 +179,8 @@ impl PackageContext {
     /// `<cachedir>/util/text.rv`. Returns the resolved file path, or `None`
     /// when the package is not pinned in the lock.
     pub fn external_source_path(&self, source: &str, subpath: &[String]) -> Option<PathBuf> {
-        let version = self.locked_versions.get(source)?;
-        let gh = GithubPath::parse(source)?;
+        let (canonical, version) = self.locked(source)?;
+        let gh = GithubPath::parse(canonical)?;
         let dir = crate::pkg::cache_dir_in(&self.cache_root, &gh.host, &gh.user, &gh.repo, version);
         let mut file = dir;
         if subpath.is_empty() {
@@ -185,8 +198,8 @@ impl PackageContext {
     /// transitive dependencies. Returns `None` when the package is not
     /// pinned in the lock.
     fn package_manifest_path(&self, source: &str) -> Option<PathBuf> {
-        let version = self.locked_versions.get(source)?;
-        let gh = GithubPath::parse(source)?;
+        let (canonical, version) = self.locked(source)?;
+        let gh = GithubPath::parse(canonical)?;
         let dir = crate::pkg::cache_dir_in(&self.cache_root, &gh.host, &gh.user, &gh.repo, version);
         Some(dir.join("rv.toml"))
     }
@@ -1680,6 +1693,32 @@ mod tests {
         assert!(ctx
             .external_source_path("github.com/acme/missing", &[])
             .is_none());
+    }
+
+    #[test]
+    fn external_source_path_matches_lock_case_insensitively() {
+        // GitHub owner/repo paths are case-insensitive, so an import that
+        // differs only in case from the locked source still resolves, and the
+        // cache path uses the canonical (locked) casing the fetch created.
+        let lock = crate::lock::LockFile {
+            version: crate::lock::LOCK_VERSION,
+            packages: vec![crate::lock::LockedPackage {
+                source: "github.com/Acme/Demo".to_string(),
+                version: "v1.0.0".to_string(),
+                hash: "sha256:abc".to_string(),
+            }],
+        };
+        let ctx = PackageContext::new(PathBuf::from("/cache"), &lock);
+
+        let path = ctx
+            .external_source_path("github.com/acme/demo", &[])
+            .expect("a case-different import still resolves");
+        assert!(
+            path.ends_with("github.com/Acme/Demo@v1.0.0/lib.rv"),
+            "the cache path keeps the locked casing, got {}",
+            path.display()
+        );
+        assert!(ctx.package_manifest_path("github.com/ACME/DEMO").is_some());
     }
 
     #[test]

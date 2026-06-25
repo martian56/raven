@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.218] - 2026-06-25
+
+### Fixed
+
+- An external dependency import that differs only in case from the locked source now resolves. GitHub owner and repo paths are case-insensitive and the lock conflict check already treats them that way, but import resolution looked the source up case-sensitively, so `import "github.com/acme/demo"` failed to load a package locked as `github.com/Acme/Demo`. The lock is now consulted case-insensitively, using the canonical locked casing for the cache path (#810).
+
 ## [2.18.217] - 2026-06-25
 
 ### Fixed
