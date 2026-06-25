@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.211] - 2026-06-25
+
+### Fixed
+
+- rvpm's conflicting-version check compares dependency sources case-insensitively. A GitHub owner and repository path is case-insensitive, so two casing variants (`github.com/Acme/Demo` and `github.com/acme/demo`) named the same repository twice and slipped past the check, letting the lock pin one repository at two different refs. The check now groups by the lowercased source (#724).
+
 ## [2.18.210] - 2026-06-25
 
 ### Fixed
