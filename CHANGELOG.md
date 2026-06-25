@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.207] - 2026-06-25
+
+### Fixed
+
+- Constant folding matches the runtime instead of rejecting expressions with defined behavior. Integer `+`/`-`/`*` and unary `-` fold with wrapping (two's complement) arithmetic, and `<<`/`>>` fold with the same saturation the back end emits (a left shift by 64 or more is 0, a right shift by 64 or more collapses to the sign). A `const` like `9223372036854775807 + 1` or `1 << 64` now compiles to the value the equivalent runtime expression produces; only a divide or modulo by zero (a runtime trap) stays unfolded (#736).
+
 ## [2.18.206] - 2026-06-25
 
 ### Fixed
