@@ -19,13 +19,17 @@
 //!   separator token. Metavariables under a matcher repetition bind to a
 //!   sequence and must be used under a template repetition. Repetition nests
 //!   to any depth: a group inside another binds a sequence of sequences.
-//! * Hygiene: identifiers introduced by a template that are binding sites
-//!   (`let`, `const`, `for` targets) are renamed to fresh, unique names per
-//!   expansion, so a template temporary cannot capture or be captured by a
-//!   caller name. A free identifier a template names (a function it calls) is
-//!   marked so the resolver resolves it at the macro's definition site (the
-//!   module scope), not the call site. Metavariable-captured tokens keep their
-//!   original identity, referring to call-site bindings.
+//! * Hygiene: a `let`/`const`/`for` target or a function or closure parameter a
+//!   template introduces is renamed to a fresh, unique name per expansion, so a
+//!   template temporary cannot capture or be captured by a caller name. The
+//!   `let`/`const`/`for` rename is scope-aware: a binding only renames its own
+//!   lexical scope, so a nested local does not rename a free use in an outer
+//!   scope. A match-arm pattern variable is kept verbatim (a shorthand struct
+//!   field is also the field name) but recorded so its uses resolve. A free
+//!   identifier a template names (a function it calls) is marked so the resolver
+//!   resolves it at the macro's definition site (the module scope), not the call
+//!   site. Metavariable-captured tokens keep their original identity, referring
+//!   to call-site bindings.
 //!
 //! The pass is a strict no-op when the source defines no macros: in that
 //! case the input tokens are returned unchanged, so non-macro programs are
@@ -1063,117 +1067,170 @@ fn instantiate(
     call_span: &Span,
     spans: &mut SpanGen,
 ) -> Vec<Token> {
-    let mut renames: HashMap<String, String> = HashMap::new();
-    collect_hygiene_renames(template, &mut renames, spans);
+    // Instantiate first (splice metavariables, expand repetitions) into a flat
+    // token stream, tracking which tokens came from the template versus a
+    // captured metavariable. Then apply hygiene as a scope-aware pass over that
+    // stream: a template-introduced binding renames only its own lexical scope,
+    // so a nested local does not rename a free use in an outer scope.
     let mut out = Vec::new();
-    instantiate_into(template, binds, &renames, call_span, spans, &mut out);
+    let mut from_template = Vec::new();
+    instantiate_into(
+        template,
+        binds,
+        call_span,
+        spans,
+        &mut out,
+        &mut from_template,
+    );
+    scope_aware_rename(&mut out, &from_template, spans);
     out
 }
 
-/// Walk a template (including repetition bodies) and assign a fresh gensym name
-/// to each template-introduced binding-site identifier, keyed by its original
-/// spelling so all uses rename consistently.
-fn collect_hygiene_renames(
-    template: &[TemplateItem],
-    renames: &mut HashMap<String, String>,
-    spans: &mut SpanGen,
-) {
-    let mut i = 0;
-    while i < template.len() {
-        match &template[i] {
-            TemplateItem::Token(t) if introduces_binding(&t.kind) => {
-                if let Some(TemplateItem::Token(next)) = template.get(i + 1) {
-                    if let TokenKind::Identifier(s) = &next.kind {
-                        renames.entry(s.clone()).or_insert_with(|| spans.gensym(s));
-                    }
-                }
-                i += 1;
-            }
-            // A `fun` (named or a closure) introduces its parameters as
-            // bindings: without this, a parameter and its uses in the body are
-            // treated as free definition-site names, so the resolver cannot find
-            // them. Scan forward to the parameter list's `(`, past an optional
-            // name whether it is a literal identifier or a spliced metavariable.
-            TemplateItem::Token(t) if matches!(t.kind, TokenKind::Fun) => {
-                let mut j = i + 1;
-                while let Some(item) = template.get(j) {
-                    if let TemplateItem::Token(p) = item {
-                        if matches!(p.kind, TokenKind::LParen) {
-                            collect_param_names(template, j, renames, spans);
-                            break;
-                        }
-                    }
-                    j += 1;
-                }
-                i += 1;
-            }
-            // A `match` introduces the bindings named by each arm's pattern. Find
-            // the `{` that opens the arms (after the scrutinee) and collect the
-            // pattern bindings, so a pattern variable and its uses in the arm
-            // body are not treated as free definition-site names.
-            TemplateItem::Token(t) if matches!(t.kind, TokenKind::Match) => {
-                let mut j = i + 1;
-                while j < template.len() {
-                    if let Some(TemplateItem::Token(b)) = template.get(j) {
-                        if matches!(b.kind, TokenKind::LBrace) {
-                            break;
-                        }
-                    }
-                    j += 1;
-                }
-                if j < template.len() {
-                    collect_match_bindings(template, j, renames, spans);
-                }
-                i += 1;
-            }
-            TemplateItem::Rep { sub, .. } => {
-                collect_hygiene_renames(sub, renames, spans);
-                i += 1;
-            }
-            _ => i += 1,
-        }
-    }
+/// How a template-introduced binding is made hygienic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BindKind {
+    /// A `let`/`const`/`for` target: gensym'd and block-scoped, so it only
+    /// renames its own `{}` scope and nested ones.
+    Block,
+    /// A function or closure parameter: gensym'd and renamed across the whole
+    /// expansion (it is not brace-delimited). Safe because a parameter name is
+    /// positional, never a struct field label.
+    Param,
+    /// A match-arm pattern variable: kept verbatim (not gensym'd) but recorded
+    /// so its uses resolve rather than being treated as free. A shorthand struct
+    /// pattern field (`Point { x }`) is both the field name and the binding, so
+    /// renaming it would break the field match.
+    Pattern,
 }
 
-/// Collect the binding names of the match arms whose brace opens at `open`. A
-/// pattern binding is a lowercase identifier (Raven names constructors and types
-/// in PascalCase) that is not in constructor position (not followed by `(` or
-/// `{`). Tracking bracket depth keeps an arm-separating comma and the `->` that
-/// ends a pattern distinct from a comma or arrow nested inside a pattern or an
-/// arm body.
-fn collect_match_bindings(
-    template: &[TemplateItem],
-    open: usize,
-    renames: &mut HashMap<String, String>,
-    spans: &mut SpanGen,
-) {
-    let mut depth = 0i32;
-    let mut in_pattern = true;
-    let mut k = open;
-    while k < template.len() {
-        if let TemplateItem::Token(t) = &template[k] {
-            match &t.kind {
-                TokenKind::LParen | TokenKind::LBracket | TokenKind::LBrace => depth += 1,
-                TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return;
+/// The token indices of the template-introduced bindings in an instantiated
+/// stream, each mapped to its spelling and how it should be made hygienic. Only
+/// tokens that came from the template (`from_template[i]`) are considered: a
+/// captured metavariable keeps its caller identity and is never a template
+/// binding.
+fn collect_binding_indices(
+    tokens: &[Token],
+    from_template: &[bool],
+) -> HashMap<usize, (String, BindKind)> {
+    let mut bindings = HashMap::new();
+    let is_t = |i: usize| from_template.get(i).copied().unwrap_or(false);
+    let mut i = 0;
+    while i < tokens.len() {
+        if is_t(i) {
+            match &tokens[i].kind {
+                TokenKind::Let | TokenKind::Const | TokenKind::For => {
+                    if is_t(i + 1) {
+                        if let Some(TokenKind::Identifier(s)) = tokens.get(i + 1).map(|t| &t.kind) {
+                            bindings.insert(i + 1, (s.clone(), BindKind::Block));
+                        }
                     }
                 }
-                TokenKind::Arrow if depth == 1 => in_pattern = false,
-                TokenKind::Comma if depth == 1 => in_pattern = true,
-                TokenKind::Identifier(s) if in_pattern && starts_lowercase(s) => {
-                    let constructor = matches!(
-                        template.get(k + 1),
-                        Some(TemplateItem::Token(n))
-                            if matches!(n.kind, TokenKind::LParen | TokenKind::LBrace)
-                    );
-                    if !constructor {
-                        renames.entry(s.clone()).or_insert_with(|| spans.gensym(s));
+                // Scan forward to the parameter list's `(`, past an optional
+                // function name (a literal identifier or a spliced metavariable).
+                TokenKind::Fun => {
+                    let mut j = i + 1;
+                    while j < tokens.len() {
+                        if is_t(j) && matches!(tokens[j].kind, TokenKind::LParen) {
+                            collect_param_indices(tokens, from_template, j, &mut bindings);
+                            break;
+                        }
+                        j += 1;
+                    }
+                }
+                // Find the `{` that opens the arms (after the scrutinee) and
+                // collect each arm pattern's bindings.
+                TokenKind::Match => {
+                    let mut j = i + 1;
+                    while j < tokens.len() {
+                        if is_t(j) && matches!(tokens[j].kind, TokenKind::LBrace) {
+                            collect_match_pattern_indices(tokens, from_template, j, &mut bindings);
+                            break;
+                        }
+                        j += 1;
                     }
                 }
                 _ => {}
             }
+        }
+        i += 1;
+    }
+    bindings
+}
+
+/// Record the parameter names of a function or closure whose parameter list
+/// opens at `open` (a `(`). A parameter is a template identifier immediately
+/// followed by a `:` at the top level of the list (`fun(a: Int, b: String)`); a
+/// spliced metavariable parameter keeps its caller identity and is skipped.
+fn collect_param_indices(
+    tokens: &[Token],
+    from_template: &[bool],
+    open: usize,
+    bindings: &mut HashMap<usize, (String, BindKind)>,
+) {
+    let is_t = |i: usize| from_template.get(i).copied().unwrap_or(false);
+    let mut depth = 0i32;
+    let mut k = open;
+    while k < tokens.len() {
+        match &tokens[k].kind {
+            TokenKind::LParen => depth += 1,
+            TokenKind::RParen => {
+                depth -= 1;
+                if depth == 0 {
+                    return;
+                }
+            }
+            TokenKind::Identifier(s) if depth == 1 && is_t(k) => {
+                if is_t(k + 1)
+                    && matches!(tokens.get(k + 1).map(|t| &t.kind), Some(TokenKind::Colon))
+                {
+                    bindings.insert(k, (s.clone(), BindKind::Param));
+                }
+            }
+            _ => {}
+        }
+        k += 1;
+    }
+}
+
+/// Record the pattern bindings of the match arms whose brace opens at `open`. A
+/// pattern binding is a lowercase template identifier (Raven names constructors
+/// and types in PascalCase) not in constructor position (not followed by `(` or
+/// `{`). Bracket-depth tracking keeps an arm-separating comma and the `->` that
+/// ends a pattern distinct from a comma or arrow nested in a pattern or body.
+fn collect_match_pattern_indices(
+    tokens: &[Token],
+    from_template: &[bool],
+    open: usize,
+    bindings: &mut HashMap<usize, (String, BindKind)>,
+) {
+    let is_t = |i: usize| from_template.get(i).copied().unwrap_or(false);
+    let mut depth = 0i32;
+    let mut in_pattern = true;
+    let mut k = open;
+    while k < tokens.len() {
+        match &tokens[k].kind {
+            TokenKind::LParen | TokenKind::LBracket | TokenKind::LBrace => depth += 1,
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                depth -= 1;
+                if depth == 0 {
+                    return;
+                }
+            }
+            TokenKind::Arrow if depth == 1 => in_pattern = false,
+            TokenKind::Comma if depth == 1 => in_pattern = true,
+            TokenKind::Identifier(s) if in_pattern && is_t(k) && starts_lowercase(s) => {
+                // Skip constructor heads (followed by `(` or `{`) and record
+                // pattern field labels (followed by `:`, as in `Point { x: a }`):
+                // the label is not the binding; the value pattern after it is.
+                let non_binding = matches!(
+                    tokens.get(k + 1).map(|t| &t.kind),
+                    Some(TokenKind::LParen | TokenKind::LBrace | TokenKind::Colon)
+                );
+                if !non_binding {
+                    bindings.insert(k, (s.clone(), BindKind::Pattern));
+                }
+            }
+            _ => {}
         }
         k += 1;
     }
@@ -1185,46 +1242,75 @@ fn starts_lowercase(s: &str) -> bool {
     s.chars().next().is_some_and(|c| c.is_ascii_lowercase())
 }
 
-/// Collect the parameter names of a function or closure whose parameter list
-/// opens at `open` (a `(`), assigning each a fresh gensym. A parameter is a
-/// literal identifier immediately followed by a `:` at the top level of the
-/// list (`fun(a: Int, b: String)`); a `$x:expr` metavariable parameter is not a
-/// template-introduced binding, so it is left alone.
-fn collect_param_names(
-    template: &[TemplateItem],
-    open: usize,
-    renames: &mut HashMap<String, String>,
-    spans: &mut SpanGen,
-) {
-    let mut depth = 0i32;
-    let mut k = open;
-    while k < template.len() {
-        if let TemplateItem::Token(t) = &template[k] {
-            match &t.kind {
-                TokenKind::LParen => depth += 1,
-                TokenKind::RParen => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return;
-                    }
+/// Rename template-introduced bindings and their uses over the instantiated
+/// token stream. A `Block` binding (`let`/`const`/`for`) adds a fresh gensym to
+/// the current `{}` scope and only renames uses in that scope or a nested one,
+/// so a nested local cannot rename a free use in an outer scope. A `Param`
+/// binding is gensym'd and renamed across the whole expansion (it is not
+/// brace-delimited). A `Pattern` binding is kept verbatim, since a shorthand
+/// struct field is also the field name, but still recorded so its uses resolve.
+/// A use with no binding is free: its span is recorded as a definition-site use
+/// so the resolver resolves it against the macro's module scope. A captured
+/// metavariable token (`!from_template[i]`) keeps its caller identity untouched.
+fn scope_aware_rename(tokens: &mut [Token], from_template: &[bool], spans: &mut SpanGen) {
+    let bindings = collect_binding_indices(tokens, from_template);
+    let mut scopes: Vec<HashMap<String, String>> = vec![HashMap::new()];
+    let mut flat: HashMap<String, String> = HashMap::new();
+    for i in 0..tokens.len() {
+        if !from_template.get(i).copied().unwrap_or(false) {
+            continue;
+        }
+        match &tokens[i].kind {
+            TokenKind::LBrace => scopes.push(HashMap::new()),
+            TokenKind::RBrace => {
+                if scopes.len() > 1 {
+                    scopes.pop();
                 }
-                TokenKind::Identifier(s) if depth == 1 => {
-                    if let Some(TemplateItem::Token(next)) = template.get(k + 1) {
-                        if matches!(next.kind, TokenKind::Colon) {
-                            renames.entry(s.clone()).or_insert_with(|| spans.gensym(s));
+            }
+            TokenKind::Identifier(s) => {
+                if let Some((name, kind)) = bindings.get(&i).cloned() {
+                    let fresh = match kind {
+                        BindKind::Block => {
+                            let fresh = spans.gensym(&name);
+                            scopes
+                                .last_mut()
+                                .expect("a scope is always present")
+                                .insert(name, fresh.clone());
+                            fresh
+                        }
+                        // One fresh name per spelling, shared by every use.
+                        BindKind::Param => flat
+                            .entry(name.clone())
+                            .or_insert_with(|| spans.gensym(&name))
+                            .clone(),
+                        // Kept verbatim so a struct field name still matches; the
+                        // identity entry lets its uses resolve instead of free.
+                        BindKind::Pattern => flat
+                            .entry(name.clone())
+                            .or_insert_with(|| name.clone())
+                            .clone(),
+                    };
+                    tokens[i].kind = TokenKind::Identifier(fresh);
+                } else {
+                    // A use: an in-scope block binding wins over a flat binding.
+                    let resolved = scopes
+                        .iter()
+                        .rev()
+                        .find_map(|scope| scope.get(s))
+                        .or_else(|| flat.get(s))
+                        .cloned();
+                    match resolved {
+                        Some(fresh) => tokens[i].kind = TokenKind::Identifier(fresh),
+                        None => {
+                            let span = &tokens[i].span;
+                            spans.def_sites.insert((span.file.clone(), span.start));
                         }
                     }
                 }
-                _ => {}
             }
+            _ => {}
         }
-        k += 1;
     }
-}
-
-/// True for keywords whose immediately following identifier is a new binding.
-fn introduces_binding(kind: &TokenKind) -> bool {
-    matches!(kind, TokenKind::Let | TokenKind::Const | TokenKind::For)
 }
 
 /// Emit the instantiated tokens of `template` into `out`. Repetition groups are
@@ -1233,10 +1319,10 @@ fn introduces_binding(kind: &TokenKind) -> bool {
 fn instantiate_into(
     template: &[TemplateItem],
     binds: &HashMap<String, Capture>,
-    renames: &HashMap<String, String>,
     call_span: &Span,
     spans: &mut SpanGen,
     out: &mut Vec<Token>,
+    from_template: &mut Vec<bool>,
 ) {
     for item in template {
         match item {
@@ -1253,11 +1339,13 @@ fn instantiate_into(
                     // rename): they refer to caller bindings.
                     for t in toks {
                         out.push(Token::new(t.kind.clone(), spans.fresh(call_span)));
+                        from_template.push(false);
                     }
                 }
             }
             TemplateItem::Token(t) => {
-                push_renamed(std::slice::from_ref(t), renames, call_span, spans, out);
+                out.push(Token::new(t.kind.clone(), spans.fresh(call_span)));
+                from_template.push(true);
             }
             TemplateItem::Rep { sub, sep } => {
                 let count = rep_count(sub, binds);
@@ -1265,10 +1353,11 @@ fn instantiate_into(
                     if r > 0 {
                         if let Some(septok) = sep {
                             out.push(Token::new(septok.kind.clone(), spans.fresh(call_span)));
+                            from_template.push(true);
                         }
                     }
                     let view = rep_view(binds, r);
-                    instantiate_into(sub, &view, renames, call_span, spans, out);
+                    instantiate_into(sub, &view, call_span, spans, out, from_template);
                 }
             }
         }
@@ -1317,34 +1406,6 @@ fn template_meta_names(items: &[TemplateItem]) -> Vec<String> {
         }
     }
     out
-}
-
-/// Push tokens with fresh spans, applying hygiene renames to identifiers.
-fn push_renamed(
-    toks: &[Token],
-    renames: &HashMap<String, String>,
-    call_span: &Span,
-    spans: &mut SpanGen,
-    out: &mut Vec<Token>,
-) {
-    for t in toks {
-        // A template identifier that names a template-introduced binding is
-        // renamed to its gensym (a fresh local). Any other identifier is free:
-        // it refers to a name visible where the macro is defined, so mark its
-        // span as a definition-site use for the resolver.
-        let (kind, free_ident) = match &t.kind {
-            TokenKind::Identifier(s) => match renames.get(s) {
-                Some(fresh) => (TokenKind::Identifier(fresh.clone()), false),
-                None => (t.kind.clone(), true),
-            },
-            _ => (t.kind.clone(), false),
-        };
-        let span = spans.fresh(call_span);
-        if free_ident {
-            spans.def_sites.insert((span.file.clone(), span.start));
-        }
-        out.push(Token::new(kind, span));
-    }
 }
 
 /// Find the matching close bracket for the open bracket at `open`. Supports
