@@ -505,39 +505,47 @@ fun serve_connection(server: Server, stream: TcpStream) {
     let carry = ""
     while open {
         match read_request(stream, carry) {
-            Ok(parsed) -> {
-                carry = parsed.rest
-                let req = parsed.request
-                let resp = dispatch(server.routes, req)
-                let keep = should_keep_alive(req)
-                if server.is_stopping() {
-                    keep = false
-                }
-                let is_head = match req.method {
-                    Head -> true,
-                    _ -> false,
-                }
-                write_response(stream, resp, keep, is_head)
-                if server.access_log {
-                    let method = req.method.to_string().to_upper()
-                    // Log the sanitized status that went on the wire, not the raw
-                    // handler value, so the log matches what the client received.
-                    print("${method} ${req.path} ${sanitize_status(resp.status)}")
-                }
-                served += 1
-                if !keep {
-                    open = false
+            Ok(maybe) -> {
+                match maybe {
+                    Some(parsed) -> {
+                        carry = parsed.rest
+                        let req = parsed.request
+                        let resp = dispatch(server.routes, req)
+                        let keep = should_keep_alive(req)
+                        if server.is_stopping() {
+                            keep = false
+                        }
+                        let is_head = match req.method {
+                            Head -> true,
+                            _ -> false,
+                        }
+                        write_response(stream, resp, keep, is_head)
+                        if server.access_log {
+                            let method = req.method.to_string().to_upper()
+                            // Log the sanitized status that went on the wire, not
+                            // the raw handler value, so the log matches what the
+                            // client received.
+                            print("${method} ${req.path} ${sanitize_status(resp.status)}")
+                        }
+                        served += 1
+                        if !keep {
+                            open = false
+                        }
+                    }
+                    // A clean close with no request pending: an idle keep-alive
+                    // client hung up. Close silently.
+                    None -> {
+                        open = false
+                    }
                 }
             }
             Err(_) -> {
-                // A failed first read is a malformed request, answered with 400.
-                // A failed read after one or more served requests is just an
-                // idle or closed keep-alive connection, closed silently.
-                if served == 0 {
-                    write_response(stream, Response.bad_request("Bad Request"), false, false)
-                    if server.access_log {
-                        print("- - 400")
-                    }
+                // A malformed request is answered with 400 whether or not earlier
+                // requests on this keep-alive connection succeeded; only a clean
+                // idle hang-up (Ok(None) above) closes silently.
+                write_response(stream, Response.bad_request("Bad Request"), false, false)
+                if server.access_log {
+                    print("- - 400")
                 }
                 open = false
             }
@@ -792,12 +800,20 @@ fun decode_chunked(stream: TcpStream, initial: String) -> Result<ChunkedBody, Er
 
 // Parse one request, beginning from `initial` (bytes carried over from a prior
 // request on the same connection) and reading more from `stream` as needed.
-fun read_request(stream: TcpStream, initial: String) -> Result<ReadResult, Error> {
+// `Ok(None)` means the connection closed cleanly with no request pending (an
+// idle keep-alive client hanging up), which the caller treats as a normal close
+// rather than a malformed request; any other failure is an `Err`.
+fun read_request(stream: TcpStream, initial: String) -> Result<Option<ReadResult>, Error> {
     let buf = initial
     let split = buf.index_of("\r\n\r\n")
     while split < 0 {
         let chunk = stream.read(4096)?
         if chunk.length() == 0 {
+            // No bytes buffered and the peer closed: an idle keep-alive hang-up,
+            // not a request. With bytes buffered it is a truncated request.
+            if buf.length() == 0 {
+                return Ok(None)
+            }
             return Err(error_kind("http", "connection closed before headers"))
         }
         buf = buf.concat(chunk)
@@ -966,7 +982,7 @@ fun read_request(stream: TcpStream, initial: String) -> Result<ReadResult, Error
     }
 
     let params: Map<String, String> = Map.new()
-    return Ok(ReadResult {
+    return Ok(Some(ReadResult {
         request: Request {
             method: method,
             path: path,
@@ -977,7 +993,7 @@ fun read_request(stream: TcpStream, initial: String) -> Result<ReadResult, Error
             body: actual_body,
         },
         rest: rest,
-    })
+    }))
 }
 
 // Decode `a=1&b=2` query-string pairs into `out`, percent-decoding each key and
