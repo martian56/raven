@@ -276,6 +276,14 @@ impl Manifest {
         for (key, constraint) in raw.dependencies {
             let github = GithubPath::parse(&key)
                 .ok_or_else(|| ManifestError::InvalidDependencyKey { key: key.clone() })?;
+            // A dependency identifies a whole repository, so its key must be a
+            // bare `github.com/<user>/<repo>`. A subpath (`.../repo/lib`) would
+            // be recorded in the lock as the source, but import resolution looks
+            // up the repository identity `github.com/<user>/<repo>`, so the lock
+            // entry could never be matched.
+            if !github.subpath.is_empty() {
+                return Err(ManifestError::InvalidDependencyKey { key });
+            }
             dependencies.push(Dependency {
                 path: key,
                 github,
@@ -443,6 +451,18 @@ version = "0.0.1"
         let m = Manifest::from_toml_str(in_bounds).expect("in-bounds widths parse");
         assert_eq!(m.fmt.indent_width, 16);
         assert_eq!(m.fmt.wrap_width, 200);
+    }
+
+    #[test]
+    fn dependency_subpath_key_is_rejected() {
+        // A dependency key with a subpath cannot be matched to a lock entry, so
+        // it is rejected (issue #718).
+        let with_subpath = "[package]\nname = \"x\"\nversion = \"0.0.1\"\n[dependencies]\n\"github.com/acme/demo/lib\" = \"1.0\"\n";
+        assert!(Manifest::from_toml_str(with_subpath).is_err());
+        // A bare repository key is accepted.
+        let bare = "[package]\nname = \"x\"\nversion = \"0.0.1\"\n[dependencies]\n\"github.com/acme/demo\" = \"1.0\"\n";
+        let m = Manifest::from_toml_str(bare).expect("bare dependency key parses");
+        assert_eq!(m.dependencies.len(), 1);
     }
 
     #[test]

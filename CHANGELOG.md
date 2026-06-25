@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.210] - 2026-06-25
+
+### Fixed
+
+- The `rv.toml` manifest rejects a dependency key with a subpath (`github.com/<user>/<repo>/<sub>`). A dependency identifies a whole repository, but a subpath key was accepted and recorded in the lock as the source, while import resolution looks up the bare repository identity, so the lock entry could never be matched. A dependency key must now be a bare `github.com/<user>/<repo>` (#718).
+
 ## [2.18.209] - 2026-06-25
 
 ### Fixed
