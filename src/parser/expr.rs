@@ -489,8 +489,12 @@ impl Parser {
     /// fragments. A literal with no real `${...}` becomes a plain
     /// `ExprKind::Str` (with any escaped dollars un-escaped). One or more
     /// real interpolations produce an `ExprKind::InterpolatedString`.
-    fn string_literal_expr(&self, decoded: String, span: Span) -> ParseResult<Expr> {
-        let fragments = split_interpolation(&decoded, &span, &self.macros)?;
+    fn string_literal_expr(&mut self, decoded: String, span: Span) -> ParseResult<Expr> {
+        let (fragments, def_sites) = split_interpolation(&decoded, &span, &self.macros)?;
+        // A macro that expanded inside a `"${...}"` fragment may have introduced
+        // free identifiers; carry their def-sites up so the resolver binds them
+        // at the macro's definition scope.
+        self.def_sites.extend(def_sites);
         // Collapse to a plain string when no embedded expression survived.
         if fragments
             .iter()
@@ -1348,8 +1352,9 @@ fn split_interpolation(
     decoded: &str,
     span: &Span,
     macros: &crate::macros::MacroTable,
-) -> ParseResult<Vec<StrFragment>> {
+) -> ParseResult<(Vec<StrFragment>, crate::macros::DefSites)> {
     let mut fragments: Vec<StrFragment> = Vec::new();
+    let mut def_sites = crate::macros::DefSites::new();
     let mut text = String::new();
     let mut frag_index = 0usize;
     let bytes = decoded.as_bytes();
@@ -1436,7 +1441,9 @@ fn split_interpolation(
                     span.clone(),
                 ));
             }
-            let expr = parse_interpolation_snippet(snippet, span, frag_index, macros)?;
+            let (expr, frag_def_sites) =
+                parse_interpolation_snippet(snippet, span, frag_index, macros)?;
+            def_sites.extend(frag_def_sites);
             fragments.push(StrFragment::Expr(Box::new(expr)));
             frag_index += 1;
             i = j + 1;
@@ -1449,7 +1456,7 @@ fn split_interpolation(
     if !text.is_empty() {
         fragments.push(StrFragment::Literal(text));
     }
-    Ok(fragments)
+    Ok((fragments, def_sites))
 }
 
 /// Re-lex and re-parse a single `${...}` snippet into an [`Expr`].
@@ -1465,7 +1472,7 @@ fn parse_interpolation_snippet(
     span: &Span,
     frag_index: usize,
     macros: &crate::macros::MacroTable,
-) -> ParseResult<Expr> {
+) -> ParseResult<(Expr, crate::macros::DefSites)> {
     let synthetic = std::path::PathBuf::from(format!(
         "{}<interp:{}:{}>",
         span.file.display(),
@@ -1479,7 +1486,7 @@ fn parse_interpolation_snippet(
     // file's main pre-pass never saw it (the call lived inside a string
     // token), so expand it here against the file's macro table before
     // parsing. A no-op when the file defines no macros.
-    let tokens =
+    let (tokens, mut def_sites) =
         crate::macros::expand_with_table(&tokens, macros).map_err(|e| reanchor(e, span))?;
     let mut parser = Parser::new_with_macros(&tokens, macros.clone());
     parser.skip_newlines();
@@ -1494,7 +1501,10 @@ fn parse_interpolation_snippet(
             span.clone(),
         ));
     }
-    Ok(expr)
+    // A fragment can itself hold a nested interpolation, so fold in the def-sites
+    // the inner parser collected as well.
+    def_sites.extend(parser.def_sites);
+    Ok((expr, def_sites))
 }
 
 /// Re-anchor an error raised while parsing an interpolation snippet onto

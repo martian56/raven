@@ -68,6 +68,11 @@ pub struct Parser {
     /// replays it so a failed speculative parse does not leave a split `>>`
     /// behind.
     token_edits: Vec<(usize, Token)>,
+    /// Definition-site identifiers a macro expansion in a `"${...}"`
+    /// interpolation fragment introduced. Collected here and handed back by
+    /// `parse_with_macros`/`parse_with_macros_all` so the resolver resolves them
+    /// at the macro's module scope, not against a call-site local.
+    def_sites: crate::macros::DefSites,
 }
 
 impl Parser {
@@ -84,6 +89,7 @@ impl Parser {
             recovering: false,
             errors: Vec::new(),
             token_edits: Vec::new(),
+            def_sites: crate::macros::DefSites::new(),
         }
     }
 
@@ -100,6 +106,7 @@ impl Parser {
             recovering: false,
             errors: Vec::new(),
             token_edits: Vec::new(),
+            def_sites: crate::macros::DefSites::new(),
         }
     }
 
@@ -356,9 +363,13 @@ pub fn parse(tokens: &[Token]) -> ParseResult<File> {
 
 /// Parse a complete source file, carrying the file's macro definitions so a
 /// macro call inside a `"${...}"` interpolation fragment expands.
-pub fn parse_with_macros(tokens: &[Token], macros: crate::macros::MacroTable) -> ParseResult<File> {
+pub fn parse_with_macros(
+    tokens: &[Token],
+    macros: crate::macros::MacroTable,
+) -> ParseResult<(File, crate::macros::DefSites)> {
     let mut p = Parser::new_with_macros(tokens, macros);
-    p.parse_file()
+    let file = p.parse_file()?;
+    Ok((file, p.def_sites))
 }
 
 /// Parse a complete source file with item-level error recovery, carrying the
@@ -367,9 +378,10 @@ pub fn parse_with_macros(tokens: &[Token], macros: crate::macros::MacroTable) ->
 pub fn parse_with_macros_all(
     tokens: &[Token],
     macros: crate::macros::MacroTable,
-) -> Result<File, Vec<RavenError>> {
+) -> Result<(File, crate::macros::DefSites), Vec<RavenError>> {
     let mut p = Parser::new_with_macros(tokens, macros);
-    p.parse_file_recover()
+    let file = p.parse_file_recover()?;
+    Ok((file, p.def_sites))
 }
 
 /// Whether `k` begins an unambiguous top-level item, used as a parser

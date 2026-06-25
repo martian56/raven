@@ -195,7 +195,7 @@ fn macro_table_expands_a_snippet() {
     let table = collect_macro_table(&file).expect("table ok");
     assert!(!table.is_empty());
     let snippet = lex("twice!(n + 1)");
-    let out = expand_with_table(&snippet, &table).expect("expand ok");
+    let (out, _def_sites) = expand_with_table(&snippet, &table).expect("expand ok");
     assert_eq!(render(&out), "( n + 1 ) + ( n + 1 )");
 }
 
@@ -206,7 +206,7 @@ fn macro_table_is_empty_without_definitions() {
     // An empty table leaves a snippet untouched, even one that looks like a
     // call (no definition means nothing to expand).
     let snippet = lex("foo!(1)");
-    let out = expand_with_table(&snippet, &table).expect("noop");
+    let (out, _def_sites) = expand_with_table(&snippet, &table).expect("noop");
     assert_eq!(out, snippet);
 }
 

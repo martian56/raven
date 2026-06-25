@@ -646,8 +646,11 @@ fn load_local_module(
     let (tokens, module_def_sites) = expand_tokens_hygienic(&tokens)
         .map_err(|e| local_error(&loaded_mod.canonical_path, format!("macro: {e}")))?;
     def_sites.extend(module_def_sites);
-    let module_file = parse_with_macros(&tokens, table)
+    let (module_file, interp_def_sites) = parse_with_macros(&tokens, table)
         .map_err(|e| local_error(&loaded_mod.canonical_path, format!("parse: {e}")))?;
+    // Fold in the def-sites a macro expanded inside one of the module's
+    // `"${...}"` interpolation fragments introduced.
+    def_sites.extend(interp_def_sites);
 
     // Load the imported modules first, so they sit ahead of this one in `out`
     // and their globals initialize before this module's do.

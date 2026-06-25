@@ -1,0 +1,17 @@
+import std/io { println }
+
+// A free identifier a macro introduces resolves at the macro's definition
+// scope, not against a same-named local at the call site, even when the macro
+// is called inside a `"${...}"` string interpolation. Here `SCALE` inside the
+// macro binds to the module const (10), so the output is 3 * 10, not 3 * 2.
+
+const SCALE: Int = 10
+
+macro scaled {
+    ($n:expr) => { ($n) * SCALE }
+}
+
+fun main() {
+    let SCALE = 2
+    println("${scaled!(3)}")
+}

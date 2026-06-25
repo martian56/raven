@@ -143,14 +143,16 @@ pub fn check(source: &str, input: &Path, ctx: Option<&PackageContext>) -> Result
         crate::macros::collect_macro_table(&tokens).map_err(|e| frontend_diag(e, input, source))?;
     let (tokens, macro_def_sites) = crate::macros::expand_tokens_hygienic(&tokens)
         .map_err(|e| frontend_diag(e, input, source))?;
-    let file = parse_with_macros_all(&tokens, macro_table)
+    let (file, interp_def_sites) = parse_with_macros_all(&tokens, macro_table)
         .map_err(|es| frontend_diags(es, input, source))?;
     let (file, module_def_sites) =
         expand_with_stdlib_ctx(&file, ctx).map_err(|e| frontend_diag(e, input, source))?;
-    // Merge the entry file's macro def-sites with those from imported modules'
-    // macros so the resolver treats every macro-introduced free identifier the
-    // same way, regardless of which file the macro was defined in.
+    // Merge the entry file's macro def-sites with those a macro expanded inside a
+    // `"${...}"` interpolation fragment introduced and those from imported
+    // modules' macros, so the resolver treats every macro-introduced free
+    // identifier the same way, regardless of where the macro was defined.
     let mut macro_def_sites = macro_def_sites;
+    macro_def_sites.extend(interp_def_sites);
     macro_def_sites.extend(module_def_sites);
     let mut loader = FsLoader;
     let resolved = resolve_file_ctx(&file, &mut loader, ctx, macro_def_sites)
@@ -176,14 +178,16 @@ pub fn compile_to_object(
         crate::macros::collect_macro_table(&tokens).map_err(|e| frontend_diag(e, input, source))?;
     let (tokens, macro_def_sites) = crate::macros::expand_tokens_hygienic(&tokens)
         .map_err(|e| frontend_diag(e, input, source))?;
-    let file = parse_with_macros_all(&tokens, macro_table)
+    let (file, interp_def_sites) = parse_with_macros_all(&tokens, macro_table)
         .map_err(|es| frontend_diags(es, input, source))?;
     let (file, module_def_sites) =
         expand_with_stdlib_ctx(&file, ctx).map_err(|e| frontend_diag(e, input, source))?;
-    // Merge the entry file's macro def-sites with those from imported modules'
-    // macros so the resolver treats every macro-introduced free identifier the
-    // same way, regardless of which file the macro was defined in.
+    // Merge the entry file's macro def-sites with those a macro expanded inside a
+    // `"${...}"` interpolation fragment introduced and those from imported
+    // modules' macros, so the resolver treats every macro-introduced free
+    // identifier the same way, regardless of where the macro was defined.
     let mut macro_def_sites = macro_def_sites;
+    macro_def_sites.extend(interp_def_sites);
     macro_def_sites.extend(module_def_sites);
     let mut loader = FsLoader;
     let resolved = resolve_file_ctx(&file, &mut loader, ctx, macro_def_sites)

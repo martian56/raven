@@ -2222,7 +2222,8 @@ fn build_object_inner(source: &str, path: &Path) -> Result<Vec<u8>, String> {
     let macro_table =
         raven::macros::collect_macro_table(&tokens).map_err(|e| format!("macro: {}", e))?;
     let tokens = raven::macros::expand_tokens(&tokens).map_err(|e| format!("macro: {}", e))?;
-    let file = parse_with_macros(&tokens, macro_table).map_err(|e| format!("parse: {}", e))?;
+    let (file, _interp_def_sites) =
+        parse_with_macros(&tokens, macro_table).map_err(|e| format!("parse: {}", e))?;
     // Mirror the driver: merge any imported bundled stdlib modules before
     // resolving. A program with no `std/` imports is unchanged.
     let file = expand_with_stdlib(&file).map_err(|e| format!("stdlib: {}", e))?;
