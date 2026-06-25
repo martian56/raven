@@ -2,6 +2,13 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.191] - 2026-06-24
+
+### Fixed
+
+- The HTTP server rejects a malformed request line or header instead of parsing it loosely. A request line must be exactly `METHOD TARGET VERSION` with an `HTTP/` version, and every header must be `name: value` with a non-empty name and no obsolete line folding; anything else now answers 400 (#641).
+- The HTTP server rejects two Content-Length headers with different values rather than silently keeping the last, closing a request-smuggling vector (#618).
+
 ## [2.18.190] - 2026-06-24
 
 ### Fixed

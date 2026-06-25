@@ -659,24 +659,53 @@ fun read_request(stream: TcpStream, initial: String) -> Result<ReadResult, Error
     if lines.len() == 0 {
         return Err(error_kind("http", "empty request"))
     }
+    // A request line is exactly `METHOD SP TARGET SP VERSION`: reject anything
+    // with a different token count (extra or missing fields, a target with a
+    // raw space) or a version that is not `HTTP/x.y`.
     let request_line = lines[0].split(" ")
-    if request_line.len() < 3 {
+    if request_line.len() != 3 {
         return Err(error_kind("http", "malformed request line"))
     }
     let method = parse_method(request_line[0])
     let target = request_line[1]
     let version = request_line[2]
+    if !version.starts_with("HTTP/") {
+        return Err(error_kind("http", "unsupported HTTP version"))
+    }
 
     let headers: Map<String, String> = Map.new()
     let i = 1
     while i < lines.len() {
         let line = lines[i]
-        let colon = line.index_of(":")
-        if colon > 0 {
-            let key = line.substring(0, colon).trim().to_lower()
-            let value = line.substring(colon + 1, line.length()).trim()
-            headers.set(key, value)
+        if line.length() == 0 {
+            i += 1
+            continue
         }
+        // Reject obsolete line folding: a header that begins with whitespace is
+        // a continuation of the previous one, which current HTTP forbids.
+        if line.starts_with(" ") || line.starts_with("\t") {
+            return Err(error_kind("http", "obsolete header line folding"))
+        }
+        // Every header is `name: value`; a line with no colon, or an empty
+        // name, is malformed.
+        let colon = line.index_of(":")
+        if colon <= 0 {
+            return Err(error_kind("http", "malformed header line"))
+        }
+        let key = line.substring(0, colon).trim().to_lower()
+        if key.length() == 0 {
+            return Err(error_kind("http", "empty header name"))
+        }
+        let value = line.substring(colon + 1, line.length()).trim()
+        // Two Content-Length headers with different values are a request
+        // smuggling vector; reject the conflict rather than trusting one.
+        if key == "content-length" {
+            let existing = headers.get_or("content-length", "")
+            if existing.length() > 0 && existing != value {
+                return Err(error_kind("http", "conflicting Content-Length"))
+            }
+        }
+        headers.set(key, value)
         i += 1
     }
 
