@@ -1,0 +1,68 @@
+// Binds the HTTP server to the IPv6 wildcard `[::]`, serves one request over
+// IPv6 loopback to confirm the bind, then shuts it down. The graceful shutdown
+// must wake the blocked `accept`, so `listen` returns and the program prints a
+// final line; before the fix the wakeup address was misparsed and shutdown hung
+// forever. golden:skip (binds a port and depends on timing; a codegen smoke
+// test runs it and checks output).
+import std/http { Server, Response, Request }
+import std/net { connect, TcpStream }
+import std/time { sleep_millis }
+import std/io { println }
+
+fun ok_handler(req: Request) -> Response {
+    return Response.with_body(200, "ok")
+}
+
+fun first_line(s: String) -> String {
+    let idx = s.index_of("\r\n")
+    if idx < 0 {
+        return s
+    }
+    return s.substring(0, idx)
+}
+
+fun connect_retry(addr: String) -> Result<TcpStream, Error> {
+    let attempt = 0
+    while attempt < 50 {
+        match connect(addr) {
+            Ok(s) -> {
+                return Ok(s)
+            }
+            Err(_) -> {
+                sleep_millis(20)
+            }
+        }
+        attempt += 1
+    }
+    return connect(addr)
+}
+
+fun status_of(addr: String, request: String) -> String {
+    let result = ""
+    match connect_retry(addr) {
+        Ok(s) -> {
+            let _ = s.write(request)
+            match s.read_all() {
+                Ok(r) -> {
+                    result = r
+                }
+                Err(_) -> {}
+            }
+            s.close()
+        }
+        Err(_) -> {}
+    }
+    return first_line(result)
+}
+
+fun main() {
+    let app = Server.new()
+    app.get("/x", ok_handler)
+    spawn(fun() -> Unit {
+        let resp = status_of("[::1]:18643", "GET /x HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
+        println("served: ${resp}")
+        app.shutdown()
+    })
+    app.listen("[::]:18643")
+    println("listen returned")
+}

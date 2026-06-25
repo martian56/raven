@@ -556,6 +556,22 @@ fun should_keep_alive(req: Request) -> Bool {
 // wildcard `0.0.0.0` (or an empty host) is not reachable by that address, but
 // its port is reachable on loopback; a concrete bound host is reachable as is.
 fun wakeup_addr(addr: String) -> String {
+    // An IPv6 address is bracketed (`[host]:port`), and its host part itself
+    // contains colons, so the IPv4 split on the first colon does not apply. A
+    // wildcard `[::]` (or `[::0]`) is not connectable, so rewrite it to the IPv6
+    // loopback `[::1]`, which the wildcard listener accepts.
+    if addr.starts_with("[") {
+        let close = addr.index_of("]")
+        if close < 0 {
+            return addr
+        }
+        let host = addr.substring(1, close)
+        let port = addr.substring(close + 1, addr.length())
+        if host == "::" || host == "::0" || host == "0:0:0:0:0:0:0:0" {
+            return "[::1]".concat(port)
+        }
+        return addr
+    }
     let colon = addr.index_of(":")
     if colon < 0 {
         return addr
