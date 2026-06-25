@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.203] - 2026-06-25
+
+### Fixed
+
+- `Rng.gen_range_float(lo, hi)` no longer returns the excluded upper endpoint `hi`. The convex-combination interpolation could round onto `hi`, especially when `lo` and `hi` are adjacent floats; it now re-draws until the result falls below `hi` (bounded, falling back to `lo`), keeping the interval half-open while staying finite for very wide ranges (#738).
+
 ## [2.18.202] - 2026-06-25
 
 ### Fixed

@@ -101,12 +101,28 @@ impl Rng {
         }
     }
 
-    // A float in [lo, hi). Interpolating as lo*(1-t) + hi*t keeps the result
-    // a convex combination of the endpoints, so it stays finite even when
-    // hi - lo would overflow to infinity for a very wide range.
+    // A float in [lo, hi). Interpolating as lo*(1-t) + hi*t keeps the result a
+    // convex combination of the endpoints, so it stays finite even when hi - lo
+    // would overflow to infinity for a very wide range. Rounding can still land
+    // the combination on the excluded endpoint hi (common when lo and hi are
+    // adjacent floats), so re-draw until it falls below hi. A draw lands in range
+    // with high probability, so this resolves in a draw or two; the loop is
+    // bounded so it always terminates, falling back to lo (the one value an empty
+    // or inverted range can yield).
     fun gen_range_float(self, lo: Float, hi: Float) -> Float {
-        let t = self.next_float()
-        return lo * (1.0 - t) + hi * t
+        if hi <= lo {
+            return lo
+        }
+        let attempts = 0
+        while attempts < 64 {
+            let t = self.next_float()
+            let r = lo * (1.0 - t) + hi * t
+            if r < hi {
+                return r
+            }
+            attempts = attempts + 1
+        }
+        return lo
     }
 
     // `n` elements drawn from `xs` without replacement, in random order. If
