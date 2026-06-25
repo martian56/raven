@@ -1429,6 +1429,23 @@ fn http_server_shuts_down_on_ipv6_wildcard() {
 }
 
 #[test]
+fn http_server_decodes_chunked_request_body() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A `Transfer-Encoding: chunked` request body is de-chunked and delivered to
+    // the handler (it used to be discarded as empty). The echo route returns the
+    // two chunks `Wiki` and `pedia` joined as `Wikipedia`. A coding list other
+    // than a sole `chunked`, and a chunk with a non-CRLF terminator, are
+    // rejected with 400.
+    let expected = "status: HTTP/1.1 200 OK\n\
+                    body: Wikipedia\n\
+                    unsupported: HTTP/1.1 400 Bad Request\n\
+                    bad-term: HTTP/1.1 400 Bad Request\n";
+    compile_link_run_and_check("http_chunked_body.rv", expected, &runtime);
+}
+
+#[test]
 fn http_sends_binary_body() {
     let Some(runtime) = supported_runtime() else {
         return;

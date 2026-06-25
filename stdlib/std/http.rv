@@ -11,6 +11,7 @@
 import std/error { error_kind }
 import std/net { listen, connect, TcpStream }
 import std/string
+import std/fmt { from_radix }
 import std/collections
 import std/json { JsonValue, ToJson, FromJson, stringify, parse, decode }
 import std/fs { read }
@@ -652,6 +653,116 @@ struct ReadResult {
     rest: String,
 }
 
+// A decoded chunked body plus any bytes read past the final chunk (the start of
+// the next pipelined request).
+struct ChunkedBody {
+    body: String,
+    rest: String,
+}
+
+// Decode a `Transfer-Encoding: chunked` body, beginning from `initial` (the
+// bytes already read after the headers) and reading more from `stream` as
+// needed. Each chunk is `<hex-size>[;ext]\r\n<data>\r\n`; a zero-size chunk
+// ends the body, followed by optional trailer lines and a final blank line.
+fun is_chunked_only(te: String) -> Bool {
+    let parts = te.split(",")
+    if parts.len() != 1 {
+        return false
+    }
+    return parts[0].trim().to_lower() == "chunked"
+}
+
+fun decode_chunked(stream: TcpStream, initial: String) -> Result<ChunkedBody, Error> {
+    let buf = initial
+    let decoded = ""
+    let total = 0
+    let max_body = 10485760
+    // A single chunk-size line or the whole trailer block must fit this, so an
+    // oversized extension or trailer cannot force unbounded buffering.
+    let max_frame = 65536
+    let done = false
+    while !done {
+        // Read up to the end of the chunk-size line.
+        let nl = buf.index_of("\r\n")
+        while nl < 0 {
+            if buf.length() > max_frame {
+                return Err(error_kind("http", "chunk size line too large"))
+            }
+            let chunk = stream.read(4096)?
+            if chunk.length() == 0 {
+                return Err(error_kind("http", "connection closed in chunk size"))
+            }
+            buf = buf.concat(chunk)
+            nl = buf.index_of("\r\n")
+        }
+        let size_line = buf.substring(0, nl)
+        // A chunk extension follows the size after a `;`; ignore it.
+        let semi = size_line.index_of(";")
+        if semi >= 0 {
+            size_line = size_line.substring(0, semi)
+        }
+        let size = 0
+        match from_radix(size_line.trim(), 16) {
+            Some(n) -> {
+                size = n
+            }
+            None -> {
+                return Err(error_kind("http", "invalid chunk size"))
+            }
+        }
+        if size < 0 {
+            return Err(error_kind("http", "negative chunk size"))
+        }
+        buf = buf.substring(nl + 2, buf.length())
+        if size == 0 {
+            // Final chunk: consume any trailer lines up to the blank line.
+            done = true
+            let stop = false
+            while !stop {
+                let tnl = buf.index_of("\r\n")
+                if tnl == 0 {
+                    buf = buf.substring(2, buf.length())
+                    stop = true
+                } else if tnl > 0 {
+                    buf = buf.substring(tnl + 2, buf.length())
+                } else {
+                    if buf.length() > max_frame {
+                        return Err(error_kind("http", "chunk trailer too large"))
+                    }
+                    let chunk = stream.read(4096)?
+                    // EOF before the terminating blank line is a truncated body,
+                    // not a complete one.
+                    if chunk.length() == 0 {
+                        return Err(error_kind("http", "connection closed in chunk trailer"))
+                    }
+                    buf = buf.concat(chunk)
+                }
+            }
+        } else {
+            total += size
+            if total > max_body {
+                return Err(error_kind("http", "chunked body too large"))
+            }
+            // Read the chunk data plus its trailing CRLF.
+            while buf.length() < size + 2 {
+                let chunk = stream.read(4096)?
+                if chunk.length() == 0 {
+                    return Err(error_kind("http", "connection closed in chunk data"))
+                }
+                buf = buf.concat(chunk)
+            }
+            // The two bytes after the data must be the CRLF that terminates the
+            // chunk, not arbitrary bytes from a malformed body.
+            if buf.substring(size, size + 2) != "\r\n" {
+                return Err(error_kind("http", "malformed chunk terminator"))
+            }
+            decoded = decoded.concat(buf.substring(0, size))
+            buf = buf.substring(size + 2, buf.length())
+        }
+    }
+    return Ok(ChunkedBody { body: decoded, rest: buf })
+}
+
 // Parse one request, beginning from `initial` (bytes carried over from a prior
 // request on the same connection) and reading more from `stream` as needed.
 fun read_request(stream: TcpStream, initial: String) -> Result<ReadResult, Error> {
@@ -727,6 +838,15 @@ fun read_request(stream: TcpStream, initial: String) -> Result<ReadResult, Error
                 return Err(error_kind("http", "conflicting Content-Length"))
             }
         }
+        // Repeated Transfer-Encoding lines combine into one comma-separated
+        // coding list, so a split `gzip` + `chunked` cannot hide a coding the
+        // server does not implement.
+        if key == "transfer-encoding" {
+            let existing = headers.get_or("transfer-encoding", "")
+            if existing.length() > 0 {
+                value = existing.concat(", ").concat(value)
+            }
+        }
         headers.set(key, value)
         i += 1
     }
@@ -736,42 +856,62 @@ fun read_request(stream: TcpStream, initial: String) -> Result<ReadResult, Error
         return Err(error_kind("http", "missing Host header"))
     }
 
-    let want = 0
-    let clen = headers.get_or("content-length", "")
-    if clen.length() > 0 {
-        match clen.parse_int() {
-            Some(n) -> {
-                want = n
-            }
-            // A non-numeric Content-Length is a malformed request; answer 400
-            // rather than silently treating the body as empty.
-            None -> {
-                return Err(error_kind("http", "invalid Content-Length"))
+    let actual_body = ""
+    let rest = ""
+    let te = headers.get_or("transfer-encoding", "").trim()
+    if te.length() > 0 {
+        // The server implements only a sole `chunked` coding. Reject any other
+        // coding list (`gzip, chunked`, an unknown coding) rather than routing
+        // the request with the wrong or an empty body.
+        if !is_chunked_only(te) {
+            return Err(error_kind("http", "unsupported transfer-coding"))
+        }
+        // RFC 7230 3.3.3: Content-Length together with chunked framing is a
+        // request-smuggling vector; reject it rather than guessing.
+        if headers.get_or("content-length", "").length() > 0 {
+            return Err(error_kind("http", "Content-Length with chunked encoding"))
+        }
+        let decoded = decode_chunked(stream, body)?
+        actual_body = decoded.body
+        rest = decoded.rest
+    } else {
+        let want = 0
+        let clen = headers.get_or("content-length", "")
+        if clen.length() > 0 {
+            match clen.parse_int() {
+                Some(n) -> {
+                    want = n
+                }
+                // A non-numeric Content-Length is a malformed request; answer
+                // 400 rather than silently treating the body as empty.
+                None -> {
+                    return Err(error_kind("http", "invalid Content-Length"))
+                }
             }
         }
-    }
-    // Reject a negative or oversized declared body before reading it, so a
-    // client cannot make the server buffer unbounded memory. 10 MiB is a
-    // generous default for a simple server.
-    if want < 0 {
-        return Err(error_kind("http", "negative Content-Length"))
-    }
-    let max_body = 10485760
-    if want > max_body {
-        return Err(error_kind("http", "request body too large"))
-    }
-    while body.length() < want {
-        let chunk = stream.read(4096)?
-        if chunk.length() == 0 {
-            return Err(error_kind("http", "connection closed before body complete"))
+        // Reject a negative or oversized declared body before reading it, so a
+        // client cannot make the server buffer unbounded memory. 10 MiB is a
+        // generous default for a simple server.
+        if want < 0 {
+            return Err(error_kind("http", "negative Content-Length"))
         }
-        body = body.concat(chunk)
+        let max_body = 10485760
+        if want > max_body {
+            return Err(error_kind("http", "request body too large"))
+        }
+        while body.length() < want {
+            let chunk = stream.read(4096)?
+            if chunk.length() == 0 {
+                return Err(error_kind("http", "connection closed before body complete"))
+            }
+            body = body.concat(chunk)
+        }
+        // Keep exactly `want` bytes as this request's body; anything already
+        // read past it is the start of the next pipelined request, carried over
+        // so it is not lost when the keep-alive loop reads again.
+        actual_body = body.substring(0, want)
+        rest = body.substring(want, body.length())
     }
-    // Keep exactly `want` bytes as this request's body; anything already read
-    // past it is the start of the next pipelined request, carried over so it is
-    // not lost when the keep-alive loop reads again.
-    let actual_body = body.substring(0, want)
-    let rest = body.substring(want, body.length())
 
     let path = target
     let query: Map<String, String> = Map.new()

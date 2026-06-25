@@ -1,0 +1,87 @@
+// Starts an HTTP server in a goroutine and POSTs a chunked request body to an
+// echo route, checking that the server de-chunks the body and the handler
+// receives it (it used to be silently discarded as empty). golden:skip (binds a
+// port and depends on timing; a codegen smoke test runs it and checks output).
+import std/http { Server, Request, Response }
+import std/net { connect, TcpStream }
+import std/time { sleep_millis }
+import std/io { println }
+
+fun echo(req: Request) -> Response {
+    return Response.with_body(200, req.body)
+}
+
+fun first_line(s: String) -> String {
+    let idx = s.index_of("\r\n")
+    if idx < 0 {
+        return s
+    }
+    return s.substring(0, idx)
+}
+
+fun body_after_headers(s: String) -> String {
+    let idx = s.index_of("\r\n\r\n")
+    if idx < 0 {
+        return ""
+    }
+    return s.substring(idx + 4, s.length())
+}
+
+fun connect_retry(addr: String) -> Result<TcpStream, Error> {
+    let attempt = 0
+    while attempt < 50 {
+        match connect(addr) {
+            Ok(s) -> {
+                return Ok(s)
+            }
+            Err(_) -> {
+                sleep_millis(20)
+            }
+        }
+        attempt += 1
+    }
+    return connect(addr)
+}
+
+fun send(addr: String, request: String) -> String {
+    let result = ""
+    match connect_retry(addr) {
+        Ok(s) -> {
+            let _ = s.write(request)
+            match s.read_all() {
+                Ok(r) -> {
+                    result = r
+                }
+                Err(_) -> {}
+            }
+            s.close()
+        }
+        Err(_) -> {}
+    }
+    return result
+}
+
+fun main() {
+    let addr = "127.0.0.1:18617"
+    let app = Server.new()
+    app.post("/echo", echo)
+    spawn(fun() -> Unit {
+        app.listen(addr)
+    })
+
+    // Two chunks "Wiki" (4) and "pedia" (5), then the zero-size terminator.
+    let req = "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n"
+    let resp = send(addr, req)
+    println("status: ${first_line(resp)}")
+    println("body: ${body_after_headers(resp)}")
+
+    // A coding list other than a sole `chunked` is not implemented, so reject.
+    let unsupported = "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: gzip, chunked\r\nConnection: close\r\n\r\n4\r\nWiki\r\n0\r\n\r\n"
+    println("unsupported: ${first_line(send(addr, unsupported))}")
+
+    // The two bytes after a chunk's data must be CRLF; `XX` is malformed.
+    let bad_term = "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n4\r\nWikiXX0\r\n\r\n"
+    println("bad-term: ${first_line(send(addr, bad_term))}")
+
+    app.shutdown()
+}
