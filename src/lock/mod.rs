@@ -97,77 +97,6 @@ where
         .collect()
 }
 
-/// Hash a fetched tree, reusing a persisted hash when the tree is unchanged so
-/// a warm install does not re-read and re-hash every file.
-///
-/// The sidecar stores the content hash plus a cheap metadata signature (file
-/// count, total bytes, newest mtime). When the recomputed signature matches,
-/// the stored hash is trusted; when it differs, or no sidecar exists, the full
-/// content hash is recomputed and the sidecar refreshed. The signature is a
-/// metadata-only walk (no file reads), so it stays fast while still catching an
-/// edited cache file, which changes its size or mtime.
-fn hash_with_cache(dir: &Path) -> Result<String, LockError> {
-    let to_io = |e: std::io::Error| LockError::Io {
-        action: "hash dependency tree".to_string(),
-        path: dir.to_path_buf(),
-        source: e,
-    };
-    let signature = tree_signature(dir).map_err(to_io)?;
-    let sidecar = pkg::hash_sidecar(dir);
-    if let Ok(content) = std::fs::read_to_string(&sidecar) {
-        let mut lines = content.lines();
-        let stored_hash = lines.next().unwrap_or("").trim();
-        let stored_sig = lines.next().unwrap_or("").trim();
-        if stored_hash.starts_with("sha256:") && stored_sig == signature {
-            return Ok(stored_hash.to_string());
-        }
-    }
-    let hash = tree_hash(dir).map_err(to_io)?;
-    let _ = std::fs::write(&sidecar, format!("{}\n{}\n", hash, signature));
-    Ok(hash)
-}
-
-/// A cheap fingerprint of a tree from file metadata alone (no content reads):
-/// file count, total bytes, and the newest mtime, formatted as one line. Any
-/// edit to a cached file changes its size or mtime, so it changes the
-/// signature. The `.git` directory is skipped, matching [`tree_hash`].
-fn tree_signature(dir: &Path) -> std::io::Result<String> {
-    let mut count: u64 = 0;
-    let mut bytes: u64 = 0;
-    let mut newest: u128 = 0;
-    signature_walk(dir, &mut count, &mut bytes, &mut newest)?;
-    Ok(format!("{} {} {}", count, bytes, newest))
-}
-
-fn signature_walk(
-    dir: &Path,
-    count: &mut u64,
-    bytes: &mut u64,
-    newest: &mut u128,
-) -> std::io::Result<()> {
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let file_type = entry.file_type()?;
-        if file_type.is_dir() {
-            if entry.file_name() == ".git" {
-                continue;
-            }
-            signature_walk(&entry.path(), count, bytes, newest)?;
-        } else {
-            *count += 1;
-            if let Ok(meta) = entry.metadata() {
-                *bytes += meta.len();
-                if let Ok(modified) = meta.modified() {
-                    if let Ok(since) = modified.duration_since(std::time::UNIX_EPOCH) {
-                        *newest = (*newest).max(since.as_nanos());
-                    }
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
 /// The lock format version stamped into `rv.lock`.
 pub const LOCK_VERSION: u32 = 1;
 
@@ -529,7 +458,14 @@ fn fetch_and_read(
     let fetched = pkg::fetch_in(cache_root, &gh.host, &gh.user, &gh.repo, version)
         .map_err(LockError::Fetch)?;
     notify_fetch(source, version, fetched.cached);
-    let hash = hash_with_cache(&fetched.dir)?;
+    // Hash the full tree content, the same way validation does, so the lock
+    // records the authoritative hash. A cheaper metadata signature could miss a
+    // same-size, same-mtime edit and write a lock that validation then rejects.
+    let hash = tree_hash(&fetched.dir).map_err(|e| LockError::Io {
+        action: "hash dependency tree".to_string(),
+        path: fetched.dir.clone(),
+        source: e,
+    })?;
 
     let mut sub_deps = Vec::new();
     let sub_manifest_path = fetched.dir.join("rv.toml");
@@ -974,7 +910,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_rehashes_content_despite_poisoned_sidecar() {
+    fn validate_rejects_a_tampered_cached_tree() {
         let cache = TempCache::new("poison");
         let dir = cache.seed(
             "github.com/acme/bar",
@@ -986,17 +922,11 @@ mod tests {
         );
         let manifest = manifest_with(&[("github.com/acme/bar", "v1.0.0")]);
         let lock = resolve_and_lock_in(&manifest, &cache.root).expect("resolve");
-        let locked_hash = lock.packages[0].hash.clone();
 
-        // Tamper a cached file, then poison the sidecar so its metadata
-        // signature matches the tampered tree while it still asserts the old,
-        // locked hash. The cheap-signature shortcut would accept this, but
-        // validation must re-hash the content and reject it.
+        // Tamper a cached file after locking. Validation re-hashes the full tree
+        // content, so the tree no longer matches the locked hash and is rejected.
         let f = dir.join("rv.toml");
         std::fs::write(&f, "[package]\nname = \"bar\"\nversion = \"6.6.6\"\n").unwrap();
-        let tampered_sig = tree_signature(&dir).expect("signature");
-        let sidecar = pkg::hash_sidecar(&dir);
-        std::fs::write(&sidecar, format!("{}\n{}\n", locked_hash, tampered_sig)).unwrap();
 
         let err = validate_lock_in(&lock, &cache.root).unwrap_err();
         match err {
@@ -1209,22 +1139,6 @@ mod tests {
             tree_hash(&b).unwrap(),
             "a symlink target must not bleed into the next entry"
         );
-    }
-
-    #[test]
-    fn hash_with_cache_persists_beside_dir_and_reuses() {
-        let cache = TempCache::new("hashcache");
-        let dir = cache.seed("github.com/acme/bar", "v1.0.0", &[("a.rv", "one")]);
-        let sidecar = pkg::hash_sidecar(&dir);
-        assert!(!sidecar.exists());
-
-        let first = hash_with_cache(&dir).expect("first");
-        assert!(sidecar.exists(), "a sidecar is written");
-        // The sidecar lives beside the version dir, so it does not perturb the
-        // tree hash of that dir.
-        assert_eq!(first, tree_hash(&dir).expect("direct"));
-        // A second call returns the same hash from the sidecar.
-        assert_eq!(first, hash_with_cache(&dir).expect("second"));
     }
 
     #[test]

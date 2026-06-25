@@ -4,9 +4,7 @@
 //! downloading the named tag or branch into a cache shared across projects.
 //! The cache lives at `<cache_root>/<host>/<user>/<repo>@<version>`. A version
 //! is fetched as a gzip tarball through codeload (one HTTP GET, no history),
-//! falling back to a shallow `git clone` when that is unavailable. The hash of
-//! each version is recorded in a `<repo>@<version>.rvpm-hash` sidecar beside
-//! its directory so a warm install need not re-hash unchanged trees.
+//! falling back to a shallow `git clone` when that is unavailable.
 //!
 //! Version-constraint resolution (semver ranges) is out of scope here.
 //! This module takes an explicit `version` string that is a git tag or
@@ -262,14 +260,6 @@ fn promote(staging: &Path, dest: &Path) -> Result<(), PkgError> {
             })
         }
     }
-}
-
-/// The sidecar file that caches a version's tree hash, kept beside (not
-/// inside) the version directory so it never affects the tree hash itself.
-pub fn hash_sidecar(version_dir: &Path) -> PathBuf {
-    let mut name = version_dir.file_name().unwrap_or_default().to_os_string();
-    name.push(".rvpm-hash");
-    version_dir.parent().unwrap_or(version_dir).join(name)
 }
 
 /// Download `github.com/user/repo` at `version` as a gzip tarball through

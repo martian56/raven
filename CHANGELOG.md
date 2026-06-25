@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.212] - 2026-06-25
+
+### Fixed
+
+- `rvpm update`/`install` records the authoritative content hash in `rv.lock`, so a freshly written lock validates. Lock generation reused a cached hash trusted from a cheap metadata signature (file count, total bytes, newest mtime), which a same-size, same-mtime edit to a cached dependency left unchanged; the lock then carried a stale hash that the validation path (which always re-hashes content) immediately rejected. Lock generation now hashes the full tree content like validation does (#715).
+
 ## [2.18.211] - 2026-06-25
 
 ### Fixed
