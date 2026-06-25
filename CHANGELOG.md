@@ -2,6 +2,13 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.189] - 2026-06-24
+
+### Fixed
+
+- The HTTP server returns a correct reason phrase for any status code. `reason_phrase` defaulted to `OK`, so a `503` was written as `503 OK`; it now covers the common codes and falls back to a class phrase (`Server Error` for 5xx, and so on) for an unknown code (#642).
+- The HTTP server omits the body of a HEAD response, which previously carried the full GET body. The response still reports the `Content-Length` a GET would return, but writes no body (#619).
+
 ## [2.18.188] - 2026-06-24
 
 ### Fixed

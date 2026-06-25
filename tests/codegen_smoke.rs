@@ -1362,6 +1362,22 @@ fn http_keeps_repeated_headers() {
 }
 
 #[test]
+fn http_server_reason_and_head_responses() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // The Raven program is both server and client: it starts the HTTP server in
+    // a goroutine and probes it over a raw TCP socket. It checks that an unusual
+    // status code gets the right reason phrase (503 is "Service Unavailable",
+    // not a blanket "OK") and that a HEAD response carries no body.
+    let expected = "GET status: HTTP/1.1 503 Service Unavailable\n\
+                    GET body: unavailable\n\
+                    HEAD status: HTTP/1.1 503 Service Unavailable\n\
+                    HEAD body empty: true\n";
+    compile_link_run_and_check("http_server_reason_head.rv", expected, &runtime);
+}
+
+#[test]
 fn http_sends_binary_body() {
     let Some(runtime) = supported_runtime() else {
         return;

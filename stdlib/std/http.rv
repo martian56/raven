@@ -509,7 +509,11 @@ fun serve_connection(server: Server, stream: TcpStream) {
                 if server.is_stopping() {
                     keep = false
                 }
-                write_response(stream, resp, keep)
+                let is_head = match req.method {
+                    Head -> true,
+                    _ -> false,
+                }
+                write_response(stream, resp, keep, is_head)
                 if server.access_log {
                     let method = req.method.to_string().to_upper()
                     print("${method} ${req.path} ${resp.status}")
@@ -524,7 +528,7 @@ fun serve_connection(server: Server, stream: TcpStream) {
                 // A failed read after one or more served requests is just an
                 // idle or closed keep-alive connection, closed silently.
                 if served == 0 {
-                    write_response(stream, Response.bad_request("Bad Request"), false)
+                    write_response(stream, Response.bad_request("Bad Request"), false, false)
                     if server.access_log {
                         print("- - 400")
                     }
@@ -762,7 +766,8 @@ fun decode_query_part(s: String) -> String {
 
 // Write `resp` to `stream` as an HTTP/1.1 response, framing it with
 // Content-Length and closing the connection after.
-fun write_response(stream: TcpStream, resp: Response, keep_alive: Bool) {
+fun write_response(stream: TcpStream, resp: Response, keep_alive: Bool, is_head: Bool) {
+    // Content-Length always reports what a GET would return, even for HEAD.
     resp.headers.set("Content-Length", resp.body.length().to_string())
     if keep_alive {
         resp.headers.set("Connection", "keep-alive")
@@ -779,11 +784,17 @@ fun write_response(stream: TcpStream, resp: Response, keep_alive: Bool) {
         block = block.concat(k).concat(": ").concat(resp.headers.get_or(k, "")).concat("\r\n")
         i += 1
     }
-    let out = line.concat(block).concat("\r\n").concat(resp.body)
+    // A response to a HEAD request carries the headers but no body.
+    let out = line.concat(block).concat("\r\n")
+    if !is_head {
+        out = out.concat(resp.body)
+    }
     let _ = stream.write(out)
 }
 
-// The reason phrase for a status code (a small common set; defaults to "OK").
+// The reason phrase for a status code. Covers the common codes; an unknown
+// code falls back to a phrase for its class (`Server Error` for 5xx, and so on)
+// rather than a misleading `OK`, so a 503 is never labelled `503 OK`.
 fun reason_phrase(status: Int) -> String {
     if status == 200 {
         return "OK"
@@ -791,22 +802,76 @@ fun reason_phrase(status: Int) -> String {
     if status == 201 {
         return "Created"
     }
+    if status == 202 {
+        return "Accepted"
+    }
     if status == 204 {
         return "No Content"
+    }
+    if status == 301 {
+        return "Moved Permanently"
     }
     if status == 302 {
         return "Found"
     }
+    if status == 304 {
+        return "Not Modified"
+    }
     if status == 400 {
         return "Bad Request"
+    }
+    if status == 401 {
+        return "Unauthorized"
+    }
+    if status == 403 {
+        return "Forbidden"
     }
     if status == 404 {
         return "Not Found"
     }
+    if status == 405 {
+        return "Method Not Allowed"
+    }
+    if status == 409 {
+        return "Conflict"
+    }
+    if status == 422 {
+        return "Unprocessable Entity"
+    }
+    if status == 429 {
+        return "Too Many Requests"
+    }
     if status == 500 {
         return "Internal Server Error"
     }
-    return "OK"
+    if status == 501 {
+        return "Not Implemented"
+    }
+    if status == 502 {
+        return "Bad Gateway"
+    }
+    if status == 503 {
+        return "Service Unavailable"
+    }
+    if status == 504 {
+        return "Gateway Timeout"
+    }
+    if status >= 100 && status < 200 {
+        return "Informational"
+    }
+    if status >= 200 && status < 300 {
+        return "Success"
+    }
+    if status >= 300 && status < 400 {
+        return "Redirection"
+    }
+    if status >= 400 && status < 500 {
+        return "Client Error"
+    }
+    if status >= 500 && status < 600 {
+        return "Server Error"
+    }
+    return "Unknown"
 }
 
 // Serve the `:file` capture of a `Server.static` route from its directory.
