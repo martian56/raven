@@ -98,7 +98,13 @@ fun list_dir(path: String) -> Result<List<String>, Error> {
     if raven_fs_last_error().length() > 0 {
         return Err(io_error("list_dir"))
     }
-    return Ok(split_lines(joined))
+    // Names are joined by a NUL byte, which cannot appear in a filename, so a
+    // name containing a newline is not split and a non-UTF-8 name is preserved.
+    if joined.length() == 0 {
+        let empty: List<String> = []
+        return Ok(empty)
+    }
+    return Ok(joined.split(__str_from_byte(0)))
 }
 
 // File size at `path` in bytes.

@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.213] - 2026-06-25
+
+### Fixed
+
+- `std/fs.list_dir` preserves entry names that contain a newline and non-UTF-8 Unix names. The runtime joined names by a newline and decoded them lossily, so a filename with a newline was split into two entries and a non-UTF-8 name was mangled into a different path that could not be passed back to `exists`/`read`/`remove_file`. Names are now joined by a NUL byte (which cannot occur in a filename) using their raw bytes, so each entry round-trips (#655, #656).
+
 ## [2.18.212] - 2026-06-25
 
 ### Fixed
