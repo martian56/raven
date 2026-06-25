@@ -1382,11 +1382,13 @@ fn http_server_omits_body_for_bodyless_status() {
     let Some(runtime) = supported_runtime() else {
         return;
     };
-    // Regression for #745: a 204 response must not carry a body or a
-    // Content-Length header, even when the handler put bytes in the body.
+    // Regression for #745: a 204 response must not carry a body, a
+    // Content-Length, or a Transfer-Encoding header, even when the handler set
+    // them, since the server frames every response itself.
     let expected = "status: HTTP/1.1 204 No Content\n\
                     body empty: true\n\
-                    no content-length: true\n";
+                    no content-length: true\n\
+                    no transfer-encoding: true\n";
     compile_link_run_and_check("http_server_bodyless_status.rv", expected, &runtime);
 }
 

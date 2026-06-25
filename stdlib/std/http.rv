@@ -979,14 +979,13 @@ fun status_forbids_content_length(status: Int) -> Bool {
     return status == 204
 }
 
-// Remove every Content-Length header the handler set, matched case-insensitively
-// since HTTP field names are case-insensitive: the server's own framing is
-// authoritative, and a handler variant like `content-length` must not survive.
-fun clear_content_length(headers: Map<String, String>) {
+// Remove every header whose name matches `lower_name` (already lowercase),
+// compared case-insensitively since HTTP field names are case-insensitive.
+fun remove_header_ci(headers: Map<String, String>, lower_name: String) {
     let keys = headers.keys()
     let i = 0
     while i < keys.len() {
-        if keys[i].to_lower() == "content-length" {
+        if keys[i].to_lower() == lower_name {
             let _ = headers.remove(keys[i])
         }
         i += 1
@@ -996,9 +995,12 @@ fun clear_content_length(headers: Map<String, String>) {
 // Write `resp` to `stream` as an HTTP/1.1 response, framing it with
 // Content-Length and closing the connection after.
 fun write_response(stream: TcpStream, resp: Response, keep_alive: Bool, is_head: Bool) {
-    // Clear any handler-set Content-Length first, then set the authoritative one
-    // unless the status forbids it (1xx, 204).
-    clear_content_length(resp.headers)
+    // The server frames every response with Content-Length and never uses chunked
+    // transfer, so a handler-set framing header must not override that. Clear both
+    // (case-insensitively), then set the authoritative Content-Length unless the
+    // status forbids it (1xx, 204).
+    remove_header_ci(resp.headers, "content-length")
+    remove_header_ci(resp.headers, "transfer-encoding")
     if !status_forbids_content_length(resp.status) {
         // Content-Length always reports what a GET would return, even for HEAD.
         resp.headers.set("Content-Length", resp.body.length().to_string())

@@ -11,8 +11,12 @@ import std/io { println }
 
 fun no_content(req: Request) -> Response {
     // The lowercase content-length must also be cleared: HTTP field names are
-    // case-insensitive, so the server must not let a handler variant through.
-    return Response.with_body(204, "should not appear").header("content-length", "17")
+    // case-insensitive, so the server must not let a handler variant through. A
+    // handler-set Transfer-Encoding must be stripped too: the server always frames
+    // with Content-Length and never emits chunked transfer.
+    return Response.with_body(204, "should not appear")
+        .header("content-length", "17")
+        .header("Transfer-Encoding", "chunked")
 }
 
 fun first_line(s: String) -> String {
@@ -86,6 +90,7 @@ fun main() {
     println("status: ${first_line(resp)}")
     println("body empty: ${body_after_headers(resp) == ""}")
     println("no content-length: ${headers_block(resp).to_lower().index_of("content-length") < 0}")
+    println("no transfer-encoding: ${headers_block(resp).to_lower().index_of("transfer-encoding") < 0}")
 
     app.shutdown()
 }
