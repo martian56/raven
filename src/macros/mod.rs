@@ -1452,7 +1452,7 @@ fn validate_template_rep_counts(
     items: &[TemplateItem],
     seq_bound: &std::collections::HashSet<String>,
     name: &str,
-    span: &Span,
+    fallback: &Span,
 ) -> Result<(), RavenError> {
     for it in items {
         if let TemplateItem::Rep { sub, .. } = it {
@@ -1460,8 +1460,11 @@ fn validate_template_rep_counts(
                 .iter()
                 .any(|m| seq_bound.contains(m));
             if !refs_seq {
+                // Point at the offending repetition (its first concrete token),
+                // falling back to the template brace when it holds no token span.
+                let at = first_template_token_span(sub).unwrap_or_else(|| fallback.clone());
                 return Err(err(
-                    span.clone(),
+                    at,
                     format!(
                         "macro `{}`: a template repetition `$( ... )` must reference a \
                          metavariable captured by a matcher repetition, which sets how many \
@@ -1471,10 +1474,28 @@ fn validate_template_rep_counts(
                     ),
                 ));
             }
-            validate_template_rep_counts(sub, seq_bound, name, span)?;
+            validate_template_rep_counts(sub, seq_bound, name, fallback)?;
         }
     }
     Ok(())
+}
+
+/// The span of the first concrete token in a template slice, used to anchor a
+/// repetition diagnostic on the repetition itself. A metavariable carries no
+/// token span, so a slice of only metavariables yields `None`.
+fn first_template_token_span(items: &[TemplateItem]) -> Option<Span> {
+    for it in items {
+        match it {
+            TemplateItem::Token(t) => return Some(t.span.clone()),
+            TemplateItem::Rep { sub, .. } => {
+                if let Some(s) = first_template_token_span(sub) {
+                    return Some(s);
+                }
+            }
+            TemplateItem::Meta(_) => {}
+        }
+    }
+    None
 }
 
 /// Find the matching close bracket for the open bracket at `open`. Supports
