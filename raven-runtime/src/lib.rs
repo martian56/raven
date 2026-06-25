@@ -367,6 +367,9 @@ pub extern "C" fn raven_print_str(ptr: *const u8, len: usize) {
     if len == 0 || ptr.is_null() {
         return;
     }
+    // Writing to stdout after its pipe reader has exited would raise SIGPIPE and
+    // kill the program; ignore it so the write returns an ignored EPIPE instead.
+    ignore_sigpipe();
     // SAFETY: caller guarantees the slice is initialized.
     let bytes = unsafe { slice::from_raw_parts(ptr, len) };
     let stdout = io::stdout();
@@ -383,6 +386,9 @@ pub extern "C" fn raven_print_str(ptr: *const u8, len: usize) {
 /// zero.
 #[no_mangle]
 pub extern "C" fn raven_println_str(ptr: *const u8, len: usize) {
+    // See `raven_print_str`: ignore SIGPIPE so a closed stdout reader cannot
+    // terminate the program mid-write.
+    ignore_sigpipe();
     let stdout = io::stdout();
     let mut handle = stdout.lock();
     if len > 0 && !ptr.is_null() {

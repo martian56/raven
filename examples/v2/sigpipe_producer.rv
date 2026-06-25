@@ -1,0 +1,14 @@
+// golden:skip - drives the SIGPIPE regression test in codegen_smoke.rs
+// (stdout_writes_survive_a_closed_pipe_reader). Writes far more than a pipe
+// buffer holds, so a reader that exits after one line leaves the rest of the
+// writes hitting a broken pipe; the runtime must ignore SIGPIPE so the program
+// runs to completion instead of being killed.
+import std/io { println }
+
+fun main() {
+    let i = 0
+    while i < 100000 {
+        println("line")
+        i = i + 1
+    }
+}

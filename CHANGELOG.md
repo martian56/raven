@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.196] - 2026-06-25
+
+### Fixed
+
+- Writes to stdout now ignore `SIGPIPE` on Unix, so a program that keeps printing after its pipe reader exits (`./prog | head -n 1`) is no longer killed by the signal; the broken-pipe write returns an ignored `EPIPE` and the program runs to completion. The runtime already did this for TCP and child-stdin writes but not for `print`/`println` (#766).
+
 ## [2.18.195] - 2026-06-25
 
 ### Fixed
