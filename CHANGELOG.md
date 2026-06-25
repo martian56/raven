@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.205] - 2026-06-25
+
+### Fixed
+
+- The base64 and base32 decoders reject malformed padding rather than accepting it. `base64_decode` now rejects a `=` before the final group and a third-position pad without a fourth (`X=Z=`); `base32_decode` now requires a length that is a multiple of 8 (a partial group was silently dropped) and rejects data after a padding byte (#434).
+
 ## [2.18.204] - 2026-06-25
 
 ### Fixed
