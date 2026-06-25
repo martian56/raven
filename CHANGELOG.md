@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.202] - 2026-06-25
+
+### Fixed
+
+- `Rng.weighted_choice` ignores non-positive weights instead of summing them. A negative weight was added to the total and the cumulative sum, which could shrink the total to zero or below (making every draw return `None`) or leave a later positive item unreachable; only positive weights now contribute, so a non-positive weight is simply never drawn (#737).
+
 ## [2.18.201] - 2026-06-25
 
 ### Fixed

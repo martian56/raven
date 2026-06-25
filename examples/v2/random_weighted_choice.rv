@@ -1,0 +1,37 @@
+// weighted_choice must ignore non-positive weights rather than summing them: a
+// negative weight beside positive ones used to shrink the total to <= 0 and make
+// every draw return None, hiding the reachable positive items.
+import std/random
+import std/io { println }
+
+fun main() {
+    let rng = Rng.new(0)
+    let xs = ["a", "b", "c"]
+    // b carries a negative weight; only a and c can be drawn.
+    let weights = [1, 0 - 5, 2]
+
+    let drew_b = false
+    let none = 0
+    let drew_c = 0
+    let i = 0
+    while i < 1000 {
+        match rng.weighted_choice(xs, weights) {
+            Some(v) -> {
+                if v == "b" {
+                    drew_b = true
+                }
+                if v == "c" {
+                    drew_c = drew_c + 1
+                }
+            }
+            None -> {
+                none = none + 1
+            }
+        }
+        i = i + 1
+    }
+
+    println("never None: ${none == 0}")
+    println("negative-weight item never drawn: ${!drew_b}")
+    println("positive item past it reachable: ${drew_c > 0}")
+}

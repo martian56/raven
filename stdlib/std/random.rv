@@ -144,17 +144,22 @@ impl Rng {
         if weights.len() < count {
             count = weights.len()
         }
-        // Saturate the running sum so a set of large positive weights does not
-        // wrap past i64 into a non-positive total and lose the whole draw.
+        // A non-positive weight contributes nothing and is never drawn: counting
+        // a negative weight would shrink the total and the cumulative sum, leaving
+        // a later positive item unreachable. Only positive weights are summed, and
+        // the sum saturates so a set of large weights does not wrap past i64 into
+        // a non-positive total and lose the whole draw.
         let max = 9223372036854775807
         let total = 0
         let i = 0
         while i < count {
             let w = weights.get(i)
-            if w > 0 && total > max - w {
-                total = max
-            } else {
-                total = total + w
+            if w > 0 {
+                if total > max - w {
+                    total = max
+                } else {
+                    total = total + w
+                }
             }
             i = i + 1
         }
@@ -166,13 +171,15 @@ impl Rng {
         let j = 0
         while j < count {
             let w = weights.get(j)
-            if w > 0 && acc > max - w {
-                acc = max
-            } else {
-                acc = acc + w
-            }
-            if r < acc {
-                return Some(xs.get(j))
+            if w > 0 {
+                if acc > max - w {
+                    acc = max
+                } else {
+                    acc = acc + w
+                }
+                if r < acc {
+                    return Some(xs.get(j))
+                }
             }
             j = j + 1
         }
