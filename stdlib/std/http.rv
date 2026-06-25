@@ -722,8 +722,14 @@ fun decode_chunked(stream: TcpStream, initial: String) -> Result<ChunkedBody, Er
         if semi >= 0 {
             size_line = size_line.substring(0, semi)
         }
+        // A chunk size is one or more hex digits, nothing else: reject a leading
+        // sign or any surrounding whitespace (`+a`, ` a`, `a `) rather than
+        // trimming it away and accepting it.
+        if !is_hex_digits(size_line) {
+            return Err(error_kind("http", "invalid chunk size"))
+        }
         let size = 0
-        match from_radix(size_line.trim(), 16) {
+        match from_radix(size_line, 16) {
             Some(n) -> {
                 size = n
             }
@@ -840,15 +846,24 @@ fun read_request(stream: TcpStream, initial: String) -> Result<ReadResult, Error
         if line.starts_with(" ") || line.starts_with("\t") {
             return Err(error_kind("http", "obsolete header line folding"))
         }
-        // Every header is `name: value`; a line with no colon, or an empty
-        // name, is malformed.
+        // Every header is `name: value`; a line with no colon is malformed.
         let colon = line.index_of(":")
         if colon <= 0 {
             return Err(error_kind("http", "malformed header line"))
         }
-        let key = line.substring(0, colon).trim().to_lower()
-        if key.length() == 0 {
-            return Err(error_kind("http", "empty header name"))
+        // The field name is a token: it must be non-empty and every byte a token
+        // character, with no surrounding whitespace (a space or tab inside or
+        // before the name, like `X Foo:` or `Host :`, is malformed). Validate the
+        // raw name before lowercasing it for the lookup key.
+        let raw_name = line.substring(0, colon)
+        if !is_valid_field_name(raw_name) {
+            return Err(error_kind("http", "invalid header field name"))
+        }
+        let key = raw_name.to_lower()
+        // HTTP/1.1 allows exactly one Host header; a second is a routing and
+        // request-smuggling ambiguity, so reject a duplicate.
+        if key == "host" && headers.has("host") {
+            return Err(error_kind("http", "duplicate Host header"))
         }
         let value = line.substring(colon + 1, line.length()).trim()
         // Two Content-Length headers with different values are a request
@@ -901,6 +916,12 @@ fun read_request(stream: TcpStream, initial: String) -> Result<ReadResult, Error
         let want = 0
         let clen = headers.get_or("content-length", "")
         if clen.length() > 0 {
+            // Content-Length is one or more decimal digits, nothing else: reject a
+            // leading sign (`+5`, `-5`) or any surrounding whitespace rather than
+            // letting a lenient integer parse accept it.
+            if !is_all_digits(clen) {
+                return Err(error_kind("http", "invalid Content-Length"))
+            }
             match clen.parse_int() {
                 Some(n) -> {
                     want = n
@@ -1028,6 +1049,43 @@ fun is_tchar(b: Int) -> Bool {
     // ! # $ % & ' * + - . ^ _ ` | ~
     return b == 33 || b == 35 || b == 36 || b == 37 || b == 38 || b == 39 || b == 42 || b == 43
         || b == 45 || b == 46 || b == 94 || b == 95 || b == 96 || b == 124 || b == 126
+}
+
+// Non-empty and every byte an ASCII decimal digit. Used to validate a numeric
+// header field (Content-Length) strictly, with no sign or whitespace.
+fun is_all_digits(s: String) -> Bool {
+    if s.length() == 0 {
+        return false
+    }
+    let i = 0
+    while i < s.length() {
+        let b = __str_byte_at(s, i)
+        if b < 48 || b > 57 {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// Non-empty and every byte an ASCII hex digit (`0-9`, `a-f`, `A-F`). Used to
+// validate a chunk size strictly, with no sign or surrounding whitespace.
+fun is_hex_digits(s: String) -> Bool {
+    if s.length() == 0 {
+        return false
+    }
+    let i = 0
+    while i < s.length() {
+        let b = __str_byte_at(s, i)
+        let digit = b >= 48 && b <= 57
+        let lower = b >= 97 && b <= 102
+        let upper = b >= 65 && b <= 70
+        if !(digit || lower || upper) {
+            return false
+        }
+        i += 1
+    }
+    return true
 }
 
 // A field name is valid when it is non-empty and every byte is a token character.
