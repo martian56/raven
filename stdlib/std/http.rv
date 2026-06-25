@@ -546,15 +546,32 @@ fun serve_connection(server: Server, stream: TcpStream) {
     stream.close()
 }
 
+// Whether the `Connection` header value carries `token` as one of its
+// comma-separated options, compared after trimming each. The whole value cannot
+// be compared directly: `keep-alive, close` lists two options, and a `close`
+// beside another option must still be honored.
+fun connection_has_token(conn: String, token: String) -> Bool {
+    let parts = conn.split(",")
+    let i = 0
+    while i < parts.len() {
+        if parts[i].trim() == token {
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
 // Whether to keep the connection open for another request. HTTP/1.1 keeps it
-// open unless the client sent `Connection: close`; HTTP/1.0 closes it unless
-// the client sent `Connection: keep-alive`.
+// open unless the client sent a `close` option; HTTP/1.0 closes it unless the
+// client sent a `keep-alive` option. The `Connection` header is a list of
+// tokens, so each is checked individually.
 fun should_keep_alive(req: Request) -> Bool {
     let conn = req.header("connection").to_lower()
     if req.version == "HTTP/1.0" {
-        return conn == "keep-alive"
+        return connection_has_token(conn, "keep-alive")
     }
-    return conn != "close"
+    return !connection_has_token(conn, "close")
 }
 
 // A connectable address for the shutdown wakeup. A server bound to the
@@ -842,11 +859,13 @@ fun read_request(stream: TcpStream, initial: String) -> Result<ReadResult, Error
                 return Err(error_kind("http", "conflicting Content-Length"))
             }
         }
-        // Repeated Transfer-Encoding lines combine into one comma-separated
-        // coding list, so a split `gzip` + `chunked` cannot hide a coding the
-        // server does not implement.
-        if key == "transfer-encoding" {
-            let existing = headers.get_or("transfer-encoding", "")
+        // Repeated Transfer-Encoding or Connection lines combine into one
+        // comma-separated list, so a split set of options is seen whole: a
+        // `gzip` + `chunked` coding cannot hide a coding the server does not
+        // implement, and a `close` on one line beside a `keep-alive` on another
+        // is still honored as a close.
+        if key == "transfer-encoding" || key == "connection" {
+            let existing = headers.get_or(key, "")
             if existing.length() > 0 {
                 value = existing.concat(", ").concat(value)
             }

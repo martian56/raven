@@ -1392,6 +1392,20 @@ fn http_server_validates_response_headers() {
 }
 
 #[test]
+fn http_server_honors_close_in_multi_token_connection() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Regression for #744: a `close` token beside another Connection option,
+    // whether on the same line or a repeated Connection line, must still close
+    // the connection, not be ignored.
+    let expected = "keep-alive+close closes: true\n\
+                    close+x closes: true\n\
+                    split close closes: true\n";
+    compile_link_run_and_check("http_server_connection_tokens.rv", expected, &runtime);
+}
+
+#[test]
 fn http_server_sanitizes_invalid_status_codes() {
     let Some(runtime) = supported_runtime() else {
         return;
