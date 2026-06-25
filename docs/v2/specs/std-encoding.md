@@ -32,8 +32,8 @@ fun main() {
 | `hex_encode(s: String)` | `String` | each input byte to two lowercase hex digits |
 | `hex_decode(s: String)` | `Result<String, Error>` | inverse; accepts lower, upper, or mixed; Err on an odd length or a non-hex byte |
 | `base64_encode(s: String)` | `String` | standard alphabet (`A-Z a-z 0-9 + /`), `=` padding |
-| `base64_decode(s: String)` | `Result<String, Error>` | inverse; honors `=` padding; Err on a bad length or a non-alphabet byte |
-| `base32_decode(s: String)` | `Result<String, Error>` | inverse; honors `=` padding; Err on a non-alphabet byte |
+| `base64_decode(s: String)` | `Result<String, Error>` | inverse; honors `=` padding; Err on a bad length, a non-alphabet byte, or misplaced padding |
+| `base32_decode(s: String)` | `Result<String, Error>` | inverse; honors `=` padding; Err on a bad length, a non-alphabet byte, or data after padding |
 
 ## Known vectors
 
@@ -48,10 +48,12 @@ The decoders reject malformed input with an `Err` rather than silently
 producing wrong bytes:
 
 - `hex_decode`: an odd length, or any byte outside `0-9 a-f A-F`, is an `Err`.
-- `base64_decode`: a length that is not a multiple of four, or any byte outside
-  the alphabet other than `=` padding, is an `Err`.
-- `base32_decode`: any byte outside the alphabet other than `=` padding is an
-  `Err`.
+- `base64_decode`: a length that is not a multiple of four, any byte outside
+  the alphabet other than `=` padding, or padding before the final group (or a
+  third-position pad without a fourth), is an `Err`.
+- `base32_decode`: a length that is not a multiple of eight, any byte outside
+  the alphabet other than `=` padding, or any data byte after a padding byte, is
+  an `Err`.
 
 ## Out of scope
 
