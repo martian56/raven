@@ -128,11 +128,27 @@ pub fn cache_dir_in(root: &Path, host: &str, user: &str, repo: &str, version: &s
 }
 
 /// Percent-encode the characters that would break a version's use as a single
-/// cache directory component. A `/` (valid in a Git branch ref like
-/// `release/2.x`) becomes `%2F`; `%` itself is encoded first so the mapping is
-/// reversible and collision-free.
+/// cache directory component. A `/` is valid in a Git branch ref
+/// (`release/2.x`); `<`, `>`, `"`, and `|` pass `git check-ref-format` but are
+/// forbidden in a Windows filename, so a Git-valid ref using them would fail on
+/// Windows before the fetch. Each becomes a `%XX` escape; `%` itself is encoded
+/// first so the mapping is reversible and collision-free.
 fn encode_cache_version(version: &str) -> String {
-    version.replace('%', "%25").replace('/', "%2F")
+    let mut out = String::with_capacity(version.len());
+    for c in version.chars() {
+        match c {
+            '%' => out.push_str("%25"),
+            '/' => out.push_str("%2F"),
+            '<' => out.push_str("%3C"),
+            '>' => out.push_str("%3E"),
+            '"' => out.push_str("%22"),
+            '|' => out.push_str("%7C"),
+            '?' => out.push_str("%3F"),
+            '*' => out.push_str("%2A"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 /// Whether `r` is safe to use as a Git ref that becomes a cache version. Unlike
@@ -502,6 +518,13 @@ mod tests {
         // A `%` in the ref is encoded first, so the mapping cannot collide.
         let pct = cache_dir_in(root, "github.com", "acme", "demo", "a%2Fb");
         assert_eq!(pct.file_name().unwrap().to_str().unwrap(), "demo@a%252Fb");
+        // Characters that pass `git check-ref-format` but are forbidden in a
+        // Windows filename are encoded too, so a Git-valid ref is a usable name.
+        let win = cache_dir_in(root, "github.com", "acme", "demo", "feat<x>\"y|z?*");
+        assert_eq!(
+            win.file_name().unwrap().to_str().unwrap(),
+            "demo@feat%3Cx%3E%22y%7Cz%3F%2A"
+        );
     }
 
     #[test]

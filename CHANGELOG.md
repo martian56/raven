@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.217] - 2026-06-25
+
+### Fixed
+
+- rvpm encodes a dependency version's Windows-forbidden filename characters (`<`, `>`, `"`, `|`, and also `?`/`*`) when forming the cache directory name. These pass `git check-ref-format`, so a Git-valid branch or tag using them previously failed on Windows before the fetch; each is now percent-encoded into the cache component the same way `/` and `%` already are (#811).
+
 ## [2.18.216] - 2026-06-25
 
 ### Fixed
