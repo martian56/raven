@@ -979,6 +979,16 @@ fun status_forbids_content_length(status: Int) -> Bool {
     return status == 204
 }
 
+// A valid HTTP status code is three digits, 100 through 599. A handler can set
+// any Int through `status_code`, so an out-of-range value (which would frame a
+// malformed status line like `HTTP/1.1 -1 OK`) is replaced with 500.
+fun sanitize_status(status: Int) -> Int {
+    if status < 100 || status > 599 {
+        return 500
+    }
+    return status
+}
+
 // Remove every header whose name matches `lower_name` (already lowercase),
 // compared case-insensitively since HTTP field names are case-insensitive.
 fun remove_header_ci(headers: Map<String, String>, lower_name: String) {
@@ -995,13 +1005,16 @@ fun remove_header_ci(headers: Map<String, String>, lower_name: String) {
 // Write `resp` to `stream` as an HTTP/1.1 response, framing it with
 // Content-Length and closing the connection after.
 fun write_response(stream: TcpStream, resp: Response, keep_alive: Bool, is_head: Bool) {
+    // Frame the wire status from a sanitized code, so a handler's out-of-range
+    // status cannot produce a malformed status line.
+    let code = sanitize_status(resp.status)
     // The server frames every response with Content-Length and never uses chunked
     // transfer, so a handler-set framing header must not override that. Clear both
     // (case-insensitively), then set the authoritative Content-Length unless the
     // status forbids it (1xx, 204).
     remove_header_ci(resp.headers, "content-length")
     remove_header_ci(resp.headers, "transfer-encoding")
-    if !status_forbids_content_length(resp.status) {
+    if !status_forbids_content_length(code) {
         // Content-Length always reports what a GET would return, even for HEAD.
         resp.headers.set("Content-Length", resp.body.length().to_string())
     }
@@ -1010,8 +1023,8 @@ fun write_response(stream: TcpStream, resp: Response, keep_alive: Bool, is_head:
     } else {
         resp.headers.set("Connection", "close")
     }
-    let status_line = "HTTP/1.1 ".concat(resp.status.to_string()).concat(" ")
-    let line = status_line.concat(reason_phrase(resp.status)).concat("\r\n")
+    let status_line = "HTTP/1.1 ".concat(code.to_string()).concat(" ")
+    let line = status_line.concat(reason_phrase(code)).concat("\r\n")
     let block = ""
     let keys = resp.headers.keys()
     let i = 0
@@ -1023,7 +1036,7 @@ fun write_response(stream: TcpStream, resp: Response, keep_alive: Bool, is_head:
     // A response to a HEAD request, or one whose status forbids a body, carries
     // the headers but no body.
     let out = line.concat(block).concat("\r\n")
-    if !is_head && !status_forbids_body(resp.status) {
+    if !is_head && !status_forbids_body(code) {
         out = out.concat(resp.body)
     }
     let _ = stream.write(out)

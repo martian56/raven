@@ -1,0 +1,76 @@
+// Starts an HTTP server in a goroutine and probes it over a raw TCP socket to
+// check that a handler's out-of-range status code does not produce a malformed
+// status line: an invalid code is replaced with 500.
+// golden:skip (binds a port and depends on timing, so it is not diffed by the
+// golden suite; run it directly to verify the server response path).
+import std/http { Server, Response, Request }
+import std/net { connect, TcpStream }
+import std/time { sleep_millis }
+import std/io { println }
+
+fun negative(req: Request) -> Response {
+    return Response.text("body").status_code(0 - 1)
+}
+
+fun huge(req: Request) -> Response {
+    return Response.text("body").status_code(99999)
+}
+
+fun first_line(s: String) -> String {
+    let idx = s.index_of("\r\n")
+    if idx < 0 {
+        return s
+    }
+    return s.substring(0, idx)
+}
+
+fun connect_retry(addr: String) -> Result<TcpStream, Error> {
+    let attempt = 0
+    while attempt < 50 {
+        match connect(addr) {
+            Ok(s) -> {
+                return Ok(s)
+            }
+            Err(_) -> {
+                sleep_millis(20)
+            }
+        }
+        attempt += 1
+    }
+    return connect(addr)
+}
+
+fun send(addr: String, request: String) -> String {
+    let result = ""
+    match connect_retry(addr) {
+        Ok(s) -> {
+            let _ = s.write(request)
+            match s.read_all() {
+                Ok(r) -> {
+                    result = r
+                }
+                Err(_) -> {}
+            }
+            s.close()
+        }
+        Err(_) -> {}
+    }
+    return result
+}
+
+fun main() {
+    let addr = "127.0.0.1:19477"
+    let app = Server.new()
+    app.get("/neg", negative)
+    app.get("/big", huge)
+    spawn(fun() -> Unit {
+        app.listen(addr)
+    })
+
+    let neg = send(addr, "GET /neg HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
+    println("negative: ${first_line(neg)}")
+    let big = send(addr, "GET /big HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
+    println("huge: ${first_line(big)}")
+
+    app.shutdown()
+}
