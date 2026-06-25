@@ -310,6 +310,19 @@ fn plus_repetition_matches_multiple() {
 }
 
 #[test]
+fn literal_only_template_repetition_is_rejected() {
+    // A template repetition with no metavariable has no count to repeat, so it
+    // would silently expand zero times; the macro definition is rejected.
+    let src = "macro ones { ($(foo),*) => { [$(1),*] } }\nlet xs = ones!(foo, foo)\n";
+    let e = expand_tokens(&lex(src)).expect_err("a literal-only template repetition has no count");
+    assert!(
+        format!("{}", e).contains("must reference a metavariable"),
+        "got: {}",
+        e
+    );
+}
+
+#[test]
 fn repetition_can_be_followed_by_a_matcher_item() {
     // The repetition's last element stops before the `;` that follows the
     // repetition, so the trailing `; $t` matches and the rule applies.

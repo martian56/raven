@@ -663,6 +663,23 @@ fn parse_template(slice: &[Token], name: &str) -> Result<Vec<TemplateItem>, Rave
                         ))
                     }
                 }
+                // A template repetition expands once per matched item, and that
+                // count comes from a metavariable bound by a matcher repetition.
+                // A repetition of only literal tokens has no such metavariable,
+                // so its count is unknowable and it would silently expand zero
+                // times; reject it rather than drop the matched items.
+                if template_meta_names(&sub).is_empty() {
+                    return Err(err(
+                        slice[i].span.clone(),
+                        format!(
+                            "macro `{}`: a template repetition `$( ... )` must reference a \
+                             metavariable, which sets how many times it expands; a repetition \
+                             of only literal tokens has no count. Capture the repeated items \
+                             with a metavariable (for example `$( $x ),*`) and reference it here",
+                            name
+                        ),
+                    ));
+                }
                 items.push(TemplateItem::Rep { sub, sep });
                 i = marker + 1;
             }
