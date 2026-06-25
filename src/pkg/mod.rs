@@ -117,10 +117,32 @@ pub fn cache_dir(host: &str, user: &str, repo: &str, version: &str) -> PathBuf {
 /// The cache directory for one package version under an explicit cache
 /// root. Threading the root explicitly lets callers (and tests) avoid the
 /// global `RVPM_CACHE_DIR` environment variable and the races it brings.
+///
+/// The version becomes part of a single directory name (`<repo>@<version>`), so
+/// a slash in a branch ref (`feature/parser`) is percent-encoded to keep it one
+/// component. The git operations receive the original version, not this name.
 pub fn cache_dir_in(root: &Path, host: &str, user: &str, repo: &str, version: &str) -> PathBuf {
     root.join(host)
         .join(user)
-        .join(format!("{}@{}", repo, version))
+        .join(format!("{}@{}", repo, encode_cache_version(version)))
+}
+
+/// Percent-encode the characters that would break a version's use as a single
+/// cache directory component. A `/` (valid in a Git branch ref like
+/// `release/2.x`) becomes `%2F`; `%` itself is encoded first so the mapping is
+/// reversible and collision-free.
+fn encode_cache_version(version: &str) -> String {
+    version.replace('%', "%25").replace('/', "%2F")
+}
+
+/// Whether `r` is safe to use as a Git ref that becomes a cache version. Unlike
+/// a single cache component, a ref may contain `/` (a branch like
+/// `feature/parser`), so each `/`-separated segment must be a safe component:
+/// this rejects an empty segment (a leading, trailing, or doubled slash), `.`
+/// or `..`, and a drive colon or control character, while allowing the slashes
+/// between segments.
+pub fn is_safe_ref(r: &str) -> bool {
+    !r.is_empty() && r.split('/').all(is_safe_cache_component)
 }
 
 /// Whether `s` is safe to use as a single path component under the package
@@ -454,6 +476,32 @@ mod tests {
         ] {
             assert!(!is_safe_cache_component(bad), "should reject `{bad:?}`");
         }
+    }
+
+    #[test]
+    fn safe_ref_allows_slashed_branch_names() {
+        // A branch ref may contain `/`; each segment must still be safe.
+        for ok in ["v1.2.3", "feature/parser", "release/2.x", "fix/windows"] {
+            assert!(is_safe_ref(ok), "should accept `{ok}`");
+        }
+        // A separator escape, an empty segment, or `..` is still rejected.
+        for bad in ["", "../x", "a/../b", "feature/", "/leading", "a//b"] {
+            assert!(!is_safe_ref(bad), "should reject `{bad:?}`");
+        }
+    }
+
+    #[test]
+    fn cache_dir_encodes_a_slashed_version_into_one_component() {
+        let root = Path::new("/cache");
+        let dir = cache_dir_in(root, "github.com", "acme", "demo", "feature/parser");
+        // The `@version` stays a single component: the slash is percent-encoded.
+        assert_eq!(
+            dir.file_name().unwrap().to_str().unwrap(),
+            "demo@feature%2Fparser"
+        );
+        // A `%` in the ref is encoded first, so the mapping cannot collide.
+        let pct = cache_dir_in(root, "github.com", "acme", "demo", "a%2Fb");
+        assert_eq!(pct.file_name().unwrap().to_str().unwrap(), "demo@a%252Fb");
     }
 
     #[test]

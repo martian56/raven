@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.215] - 2026-06-25
+
+### Fixed
+
+- rvpm accepts a dependency version that is a slash-bearing Git branch name (`feature/parser`, `release/2.x`). The lock resolver rejected every `/` to keep the cache path a single component; it now validates the ref per slash-separated segment and the cache layer percent-encodes the slash into the directory name, while the original ref is used for the Git fetch (#723).
+
 ## [2.18.214] - 2026-06-25
 
 ### Fixed

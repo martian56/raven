@@ -674,10 +674,11 @@ fn resolved_ref(dep: &crate::manifest::Dependency) -> Result<String, LockError> 
             source: dep_source(&dep.path),
         });
     }
-    // The version becomes a directory name under the cache, so it must be a
-    // single, in-tree path component: reject a separator, `..`, drive colon, or
-    // control character that could climb out of the cache root.
-    if !crate::pkg::is_safe_cache_component(r) {
+    // The version is a Git ref (a tag or branch) that becomes a cache directory
+    // name. A branch ref may contain `/` (`feature/parser`), so it is validated
+    // as a ref (each `/`-segment is in-tree and safe) and percent-encoded by the
+    // cache layer, rather than rejected outright for the separator.
+    if !crate::pkg::is_safe_ref(r) {
         return Err(LockError::InvalidConstraint {
             source: dep_source(&dep.path),
             value: r.to_string(),
