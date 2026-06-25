@@ -264,14 +264,6 @@ fn promote(staging: &Path, dest: &Path) -> Result<(), PkgError> {
     }
 }
 
-/// The sidecar file that caches a version's tree hash, kept beside (not
-/// inside) the version directory so it never affects the tree hash itself.
-pub fn hash_sidecar(version_dir: &Path) -> PathBuf {
-    let mut name = version_dir.file_name().unwrap_or_default().to_os_string();
-    name.push(".rvpm-hash");
-    version_dir.parent().unwrap_or(version_dir).join(name)
-}
-
 /// Download `github.com/user/repo` at `version` as a gzip tarball through
 /// codeload and extract it into `dest`, stripping the version-prefixed top
 /// directory the archive carries. Only `github.com` is served this way; any
