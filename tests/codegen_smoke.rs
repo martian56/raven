@@ -1448,6 +1448,52 @@ fn http_server_timeout_does_not_overflow() {
 }
 
 #[test]
+fn blocking_goroutines_run_concurrently_via_the_elastic_pool() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // 48 goroutines each block in a 1s sleep. The scheduler spawns a replacement
+    // worker when one blocks (issue #407), so they all run at once and the batch
+    // finishes well under the 2.5s bound instead of queuing through the fixed
+    // core-sized pool. A server proves this matters: blocked keep-alive reads
+    // would otherwise starve the pool and hang new requests. The program is run
+    // under a deadline so a scheduler regression that deadlocks fails the test
+    // rather than wedging CI on `output()` with no bound.
+    let example = build_example_binary("concurrent_blocking_goroutines.rv", &runtime);
+    let mut child = Command::new(&example.binary)
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn concurrent_blocking_goroutines");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let status = loop {
+        if let Some(s) = child.try_wait().expect("try_wait") {
+            break Some(s);
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            break None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    let mut stdout = String::new();
+    if let Some(mut out) = child.stdout.take() {
+        use std::io::Read;
+        let _ = out.read_to_string(&mut stdout);
+    }
+    cleanup(&example.tmp);
+    assert!(
+        status.is_some(),
+        "the blocking goroutines did not finish within 30s: the scheduler hung instead of running them concurrently"
+    );
+    assert!(
+        status.unwrap().success(),
+        "concurrent_blocking_goroutines exited non-zero"
+    );
+    assert_eq!(stdout, "concurrent\n", "unexpected stdout: {:?}", stdout);
+}
+
+#[test]
 fn http_server_rejects_malformed_requests() {
     let Some(runtime) = supported_runtime() else {
         return;

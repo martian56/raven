@@ -19,8 +19,9 @@ use crate::object::Closure;
 use corosensei::{Coroutine, CoroutineResult, Yielder};
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Condvar, LazyLock, Mutex};
+use std::time::Duration;
 
 /// Why a goroutine suspended back to the scheduler. Yielded by the
 /// coroutine body to the resume loop.
@@ -128,7 +129,64 @@ static MAIN_CV: Condvar = Condvar::new();
 /// Whether the worker pool has been started (lazily, on the first spawn).
 static POOL_STARTED: AtomicBool = AtomicBool::new(false);
 
+/// Worker OS threads currently alive. Starts at [`worker_target`]; grows when a
+/// worker blocks in a syscall (a replacement is spawned so the pool keeps
+/// `worker_target` runnable threads) and shrinks as the extra workers go idle.
+static LIVE_WORKERS: AtomicUsize = AtomicUsize::new(0);
+
+/// Worker OS threads currently parked inside a blocking syscall (a `gc::blocking`
+/// region). `LIVE_WORKERS - BLOCKED_WORKERS` is how many can still run goroutines.
+static BLOCKED_WORKERS: AtomicUsize = AtomicUsize::new(0);
+
+/// Hard ceiling on worker threads, so a flood of simultaneous blocking
+/// connections degrades to queuing rather than spawning threads without bound.
+const MAX_WORKERS: usize = 512;
+
+/// The steady-state worker count: one per core, capped at [`MAX_WORKERS`] so the
+/// initial pool also honors the ceiling on a host with more cores than the cap.
+/// Cached after the first read so the idle loop does not query the OS each pass.
+fn worker_target() -> usize {
+    static TARGET: AtomicUsize = AtomicUsize::new(0);
+    let cached = TARGET.load(Ordering::Relaxed);
+    if cached != 0 {
+        return cached;
+    }
+    let n = worker_count().min(MAX_WORKERS);
+    TARGET.store(n, Ordering::Relaxed);
+    n
+}
+
+/// Called when this thread is about to block in a syscall (via `gc::blocking`).
+/// On a worker thread it spawns a replacement when blocking would drop the pool
+/// below `worker_target` runnable threads, so goroutines queued behind blocked
+/// I/O still make progress instead of starving the fixed pool. A no-op off a
+/// worker thread (the main accept loop, a native caller), which holds no slot.
+pub(crate) fn worker_block_begin() {
+    if !IS_WORKER.with(|w| w.get()) {
+        return;
+    }
+    let blocked = BLOCKED_WORKERS.fetch_add(1, Ordering::SeqCst) + 1;
+    let live = LIVE_WORKERS.load(Ordering::SeqCst);
+    if live.saturating_sub(blocked) < worker_target() && live < MAX_WORKERS {
+        LIVE_WORKERS.fetch_add(1, Ordering::SeqCst);
+        std::thread::spawn(worker_loop);
+        WORK_CV.notify_one();
+    }
+}
+
+/// Called when this thread's blocking syscall returns. Pairs with
+/// [`worker_block_begin`]; a no-op off a worker thread.
+pub(crate) fn worker_block_end() {
+    if IS_WORKER.with(|w| w.get()) {
+        BLOCKED_WORKERS.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 thread_local! {
+    /// Set on a worker thread so the blocking hook knows it holds a pool slot,
+    /// and the idle loop knows it may retire when the pool is over target.
+    static IS_WORKER: Cell<bool> = const { Cell::new(false) };
+
     /// The yielder of the coroutine this OS thread is currently running, so
     /// `suspend_current` can reach it. Per-thread because each worker runs a
     /// different goroutine; null when the thread is between goroutines or
@@ -302,7 +360,9 @@ fn ensure_pool() {
     if POOL_STARTED.swap(true, Ordering::SeqCst) {
         return;
     }
-    for _ in 0..worker_count() {
+    let n = worker_target();
+    LIVE_WORKERS.store(n, Ordering::SeqCst);
+    for _ in 0..n {
         std::thread::spawn(worker_loop);
     }
 }
@@ -318,11 +378,13 @@ fn is_deadlocked(sched: &Scheduler) -> bool {
 /// A worker thread: pull a ready goroutine and run it to its next suspension,
 /// forever. Parks on `WORK_CV` when nothing is ready.
 fn worker_loop() {
+    IS_WORKER.with(|w| w.set(true));
     loop {
         let id = {
             let mut guard = SCHED.lock().unwrap();
             loop {
                 if guard.0.shutdown {
+                    LIVE_WORKERS.fetch_sub(1, Ordering::SeqCst);
                     return;
                 }
                 if let Some(id) = guard.0.ready.pop_front() {
@@ -339,7 +401,22 @@ fn worker_loop() {
                     drop(guard);
                     deadlock_panic();
                 }
-                guard = WORK_CV.wait(guard).unwrap();
+                // Retire only when there are more *runnable* workers than the
+                // target, so the pool shrinks back after a burst of blocking I/O
+                // without killing the spares that cover workers still blocked in
+                // syscalls (counting total here would drop runnable capacity to
+                // zero whenever many workers are parked in I/O). The wait is timed
+                // so an idle extra re-checks and exits even when no work wakes it.
+                let live = LIVE_WORKERS.load(Ordering::SeqCst);
+                let blocked = BLOCKED_WORKERS.load(Ordering::SeqCst);
+                if live.saturating_sub(blocked) > worker_target() {
+                    LIVE_WORKERS.fetch_sub(1, Ordering::SeqCst);
+                    return;
+                }
+                guard = WORK_CV
+                    .wait_timeout(guard, Duration::from_millis(500))
+                    .unwrap()
+                    .0;
             }
         };
         run_goroutine(id);

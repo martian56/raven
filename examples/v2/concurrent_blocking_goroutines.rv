@@ -1,0 +1,34 @@
+// golden:skip (timing-dependent; a codegen smoke test runs it).
+//
+// Spawns far more goroutines than cores, each parked in a blocking syscall (a
+// sleep), and times the whole batch. The scheduler runs one worker thread per
+// core, so a blocking syscall holds its worker; an elastic pool spawns a
+// replacement when a worker blocks, so every sleep runs at once and the batch
+// finishes near one sleep duration. Without it the goroutines queue through the
+// fixed pool and take roughly `goroutines / cores` durations: with 48 sleeps of
+// 1s on up to 16 cores that is at least ~3s, well past the 2.5s bound, while the
+// elastic pool finishes in ~1.5s.
+import std/time { sleep_millis, now_millis }
+import std/sync { wait_group }
+
+fun main() {
+    let n = 48
+    let dur = 1000
+    let wg = wait_group()
+    let start = now_millis()
+    let i = 0
+    while i < n {
+        wg.add(1)
+        spawn(fun() -> Unit {
+            sleep_millis(dur)
+            wg.done()
+        })
+        i = i + 1
+    }
+    wg.wait()
+    if now_millis() - start < 2500 {
+        print("concurrent")
+    } else {
+        print("batched")
+    }
+}
