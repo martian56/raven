@@ -8,6 +8,12 @@ All notable changes to Raven are documented in this file.
 
 - `String.substring` clamps negative bounds to 0 instead of converting them to a huge unsigned index. The runtime took the bounds as unsigned, so a negative `start` or `end` became a pointer-sized value that clamped to the string length and gave the wrong slice; the bounds are now signed and clamped into `0..length` as documented (#556).
 
+## [2.18.197] - 2026-06-25
+
+### Fixed
+
+- The HTTP server no longer sends a message body or a Content-Length header for a status that forbids one. A 1xx, 204, or 304 response previously carried `resp.body` and a `Content-Length`, putting bytes on the wire that corrupt framing for clients and persistent connections; the server now omits the body for those statuses and the Content-Length for 1xx and 204. The server also strips any handler-set `Content-Length` or `Transfer-Encoding` (case-insensitively), since it always frames responses itself, and the HTTP client no longer reports a 1xx/204/304 or HEAD response as a truncated transfer when its Content-Length advertises a body it correctly does not carry (#745).
+
 ## [2.18.196] - 2026-06-25
 
 ### Fixed

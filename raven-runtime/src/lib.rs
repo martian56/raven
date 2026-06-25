@@ -1547,7 +1547,7 @@ fn http_reason(code: u16) -> &'static str {
 /// Capture a ureq response into an owned `HttpResp`, reading the status,
 /// reason, headers, and body eagerly (reading the body consumes the
 /// response).
-fn http_capture(resp: ureq::Response) -> Option<HttpResp> {
+fn http_capture(resp: ureq::Response, head_request: bool) -> Option<HttpResp> {
     let status = resp.status();
     let reason = resp.status_text();
     let status_text = if reason.is_empty() {
@@ -1570,11 +1570,18 @@ fn http_capture(resp: ureq::Response) -> Option<HttpResp> {
         }
     }
     let headers = header_lines.join("\n");
+    // A 1xx, 204, or 304 response, and any response to a HEAD request, carries no
+    // body even when Content-Length advertises the length the body would have, so
+    // an empty body is correct and must not be reported as a truncated transfer.
+    let bodyless = head_request || (100..200).contains(&status) || status == 204 || status == 304;
     // The body length the server promised, if any. A body shorter than this was
-    // cut short in transit.
-    let expected_len: Option<u64> = resp
-        .header("Content-Length")
-        .and_then(|v| v.trim().parse::<u64>().ok());
+    // cut short in transit. Bodyless responses never carry one to verify.
+    let expected_len: Option<u64> = if bodyless {
+        None
+    } else {
+        resp.header("Content-Length")
+            .and_then(|v| v.trim().parse::<u64>().ok())
+    };
     // Read the body as raw bytes (not `into_string`, which lossily replaces a
     // non-UTF-8 byte with U+FFFD and corrupts a binary response).
     let mut body = Vec::new();
@@ -1667,6 +1674,8 @@ pub extern "C" fn raven_http_request(
     // outside the collector's running set. `http_capture`/`http_store` work
     // entirely in Rust memory and the registry (no GC allocation), so it is
     // sound inside the blocking region.
+    // A response to a HEAD request carries no body, whatever Content-Length says.
+    let head_request = method.eq_ignore_ascii_case("HEAD");
     crate::gc::blocking(|| {
         // GET and DELETE send no body; POST and PUT send `body`.
         let result = if body.is_empty() {
@@ -1678,9 +1687,13 @@ pub extern "C" fn raven_http_request(
         match result {
             // A captured `None` means a truncated body; `http_capture` has set
             // the last error, so surface the failure as id 0.
-            Ok(resp) => http_capture(resp).map(http_store).unwrap_or(0),
+            Ok(resp) => http_capture(resp, head_request)
+                .map(http_store)
+                .unwrap_or(0),
             // A non-2xx status is a response, not a transport failure.
-            Err(ureq::Error::Status(_, resp)) => http_capture(resp).map(http_store).unwrap_or(0),
+            Err(ureq::Error::Status(_, resp)) => http_capture(resp, head_request)
+                .map(http_store)
+                .unwrap_or(0),
             Err(ureq::Error::Transport(t)) => {
                 http_set_error(t.to_string());
                 0
