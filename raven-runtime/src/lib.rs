@@ -957,9 +957,27 @@ pub extern "C" fn raven_fs_remove_dir(path: *const object::String) -> bool {
     fs_record(result).is_some()
 }
 
-/// List the entry names of the directory at `path`, joined by `\n`. An
-/// empty directory yields an empty `String`. On failure stores the OS
-/// message and returns an empty `String`.
+/// The raw bytes of a directory entry name. On Unix a filename is an arbitrary
+/// non-NUL byte string, so the exact bytes are preserved (a non-UTF-8 name would
+/// otherwise be mangled by a lossy decode). On other platforms a name is Unicode,
+/// rendered as its UTF-8 bytes.
+#[cfg(unix)]
+fn os_name_bytes(name: &std::ffi::OsStr) -> Vec<u8> {
+    use std::os::unix::ffi::OsStrExt;
+    name.as_bytes().to_vec()
+}
+
+#[cfg(not(unix))]
+fn os_name_bytes(name: &std::ffi::OsStr) -> Vec<u8> {
+    name.to_string_lossy().into_owned().into_bytes()
+}
+
+/// List the entry names of the directory at `path`, joined by a NUL byte. A NUL
+/// cannot occur in a filename on any platform, so it separates names without
+/// risk of splitting a name that contains a newline; the raw filename bytes are
+/// preserved so a non-UTF-8 Unix name round-trips. An empty directory yields an
+/// empty `String`. On failure stores the OS message and returns an empty
+/// `String`.
 ///
 /// # Safety
 ///
@@ -970,12 +988,15 @@ pub extern "C" fn raven_fs_list(path: *const object::String) -> *mut object::Str
         env_name(path)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
             .and_then(|p| {
-                let mut names: Vec<std::string::String> = Vec::new();
+                let mut out: Vec<u8> = Vec::new();
                 for entry in std::fs::read_dir(p)? {
                     let entry = entry?;
-                    names.push(entry.file_name().to_string_lossy().into_owned());
+                    if !out.is_empty() {
+                        out.push(0);
+                    }
+                    out.extend_from_slice(&os_name_bytes(&entry.file_name()));
                 }
-                Ok(names.join("\n"))
+                Ok(out)
             })
     });
     let value = fs_record(result).unwrap_or_default();
@@ -2196,6 +2217,40 @@ mod tests {
     fn object_header_alignment_divides_object_align() {
         assert!(OBJECT_ALIGN.is_power_of_two());
         assert_eq!(OBJECT_ALIGN % align_of::<ObjectHeader>(), 0);
+    }
+
+    // Regressions for #655 and #656: `raven_fs_list` joins names by a NUL byte
+    // using their raw bytes, so a filename with a newline is not split and a
+    // non-UTF-8 Unix name is preserved. Both names are Unix-only (a Windows
+    // filename cannot contain a newline or be non-Unicode).
+    #[cfg(unix)]
+    #[test]
+    fn list_dir_preserves_newline_and_non_utf8_names() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let dir = std::env::temp_dir().join(format!("raven_listdir_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(OsStr::from_bytes(b"a\nb")), b"1").unwrap();
+        std::fs::write(dir.join(OsStr::from_bytes(b"f\xff")), b"2").unwrap();
+
+        let path = dir.to_str().unwrap().as_bytes();
+        let path_str = object::raven_string_from_bytes(path.as_ptr(), path.len());
+        let result = raven_fs_list(path_str);
+        let names: Vec<&[u8]> = string_bytes(result).split(|b| *b == 0).collect();
+
+        assert_eq!(names.len(), 2, "two entries, neither split on the newline");
+        assert!(
+            names.contains(&&b"a\nb"[..]),
+            "the newline name is preserved whole"
+        );
+        assert!(
+            names.contains(&&b"f\xff"[..]),
+            "the non-UTF-8 name is preserved"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
