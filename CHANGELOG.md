@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.214] - 2026-06-25
+
+### Fixed
+
+- `std/fs.create_dir_all` no longer corrupts a Windows UNC path. It split the path on `/` and rebuilt it, turning a leading `//server/share` into `/server/share` rooted on the current drive, so it created directories in the wrong place and returned `Ok`. It now hands the whole path to the OS through `create_dir`, which already creates every missing parent and resolves UNC paths, drive letters, and `..` correctly (#675).
+
 ## [2.18.213] - 2026-06-25
 
 ### Fixed
