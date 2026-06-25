@@ -281,14 +281,16 @@ impl Response {
         return Response.with_body(302, "").header("Location", location)
     }
 
-    // Set a response header, returning self so calls chain. A header name or
-    // value must never contain CR or LF: those characters frame the header
-    // block, so an untrusted value carrying them could inject extra headers or
-    // split the response. Strip them before storing.
+    // Set a response header, returning self so calls chain. A name that is not a
+    // valid HTTP field token (it has a space, control, or separator byte) is
+    // dropped, and control bytes are stripped from the value (HTAB excepted).
+    // Either would otherwise frame a malformed response or inject extra headers,
+    // since CR/LF and other controls have meaning in the header block.
     fun header(self, name: String, value: String) -> Response {
-        let clean_name = name.replace("\r", "").replace("\n", "")
-        let clean_value = value.replace("\r", "").replace("\n", "")
-        self.headers.set(clean_name, clean_value)
+        if !is_valid_field_name(name) {
+            return self
+        }
+        self.headers.set(name, sanitize_field_value(value))
         return self
     }
 
@@ -989,6 +991,56 @@ fun sanitize_status(status: Int) -> Int {
         return 500
     }
     return status
+}
+
+// True if `b` is an HTTP token character (RFC 7230): a letter, digit, or one of
+// the punctuation marks a field name may contain. A field name is `1*tchar`, so
+// a space, control, or separator byte makes the name invalid.
+fun is_tchar(b: Int) -> Bool {
+    if b >= 65 && b <= 90 {
+        return true
+    }
+    if b >= 97 && b <= 122 {
+        return true
+    }
+    if b >= 48 && b <= 57 {
+        return true
+    }
+    // ! # $ % & ' * + - . ^ _ ` | ~
+    return b == 33 || b == 35 || b == 36 || b == 37 || b == 38 || b == 39 || b == 42 || b == 43
+        || b == 45 || b == 46 || b == 94 || b == 95 || b == 96 || b == 124 || b == 126
+}
+
+// A field name is valid when it is non-empty and every byte is a token character.
+fun is_valid_field_name(name: String) -> Bool {
+    if name.length() == 0 {
+        return false
+    }
+    let i = 0
+    while i < name.length() {
+        if !is_tchar(__str_byte_at(name, i)) {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// Strip the bytes a field value must not contain: the C0 controls and DEL,
+// except HTAB which is allowed. The visible bytes and obs-text (0x80..0xFF) are
+// kept, so a normal value is unchanged.
+fun sanitize_field_value(value: String) -> String {
+    let out = ""
+    let i = 0
+    while i < value.length() {
+        let b = __str_byte_at(value, i)
+        let forbidden = (b < 32 && b != 9) || b == 127
+        if !forbidden {
+            out = out.concat(value.substring(i, i + 1))
+        }
+        i += 1
+    }
+    return out
 }
 
 // Remove every header whose name matches `lower_name` (already lowercase),

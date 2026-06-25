@@ -1,0 +1,76 @@
+// Starts an HTTP server in a goroutine and probes it over a raw TCP socket to
+// check that the response builder rejects an invalid field name and strips
+// control bytes from a field value, so a handler cannot frame a malformed
+// response or inject extra headers.
+// golden:skip (binds a port and depends on timing, so it is not diffed by the
+// golden suite; run it directly to verify the server response path).
+import std/http { Server, Response, Request }
+import std/net { connect, TcpStream }
+import std/time { sleep_millis }
+import std/io { println }
+
+fun handler(req: Request) -> Response {
+    return Response.text("body")
+        .header("Bad Name", "dropped")
+        .header("X-Ctrl", "a".concat(__str_from_byte(1)).concat("b"))
+        .header("X-Good", "fine")
+}
+
+fun headers_block(s: String) -> String {
+    let idx = s.index_of("\r\n\r\n")
+    if idx < 0 {
+        return s
+    }
+    return s.substring(0, idx)
+}
+
+fun connect_retry(addr: String) -> Result<TcpStream, Error> {
+    let attempt = 0
+    while attempt < 50 {
+        match connect(addr) {
+            Ok(s) -> {
+                return Ok(s)
+            }
+            Err(_) -> {
+                sleep_millis(20)
+            }
+        }
+        attempt += 1
+    }
+    return connect(addr)
+}
+
+fun send(addr: String, request: String) -> String {
+    let result = ""
+    match connect_retry(addr) {
+        Ok(s) -> {
+            let _ = s.write(request)
+            match s.read_all() {
+                Ok(r) -> {
+                    result = r
+                }
+                Err(_) -> {}
+            }
+            s.close()
+        }
+        Err(_) -> {}
+    }
+    return result
+}
+
+fun main() {
+    let addr = "127.0.0.1:19478"
+    let app = Server.new()
+    app.get("/", handler)
+    spawn(fun() -> Unit {
+        app.listen(addr)
+    })
+
+    let resp = send(addr, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
+    let block = headers_block(resp)
+    println("bad-name dropped: ${block.index_of("Bad Name") < 0}")
+    println("good present: ${block.index_of("X-Good: fine") >= 0}")
+    println("control stripped: ${block.index_of("X-Ctrl: ab") >= 0}")
+
+    app.shutdown()
+}
