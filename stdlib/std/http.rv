@@ -979,13 +979,27 @@ fun status_forbids_content_length(status: Int) -> Bool {
     return status == 204
 }
 
+// Remove every Content-Length header the handler set, matched case-insensitively
+// since HTTP field names are case-insensitive: the server's own framing is
+// authoritative, and a handler variant like `content-length` must not survive.
+fun clear_content_length(headers: Map<String, String>) {
+    let keys = headers.keys()
+    let i = 0
+    while i < keys.len() {
+        if keys[i].to_lower() == "content-length" {
+            let _ = headers.remove(keys[i])
+        }
+        i += 1
+    }
+}
+
 // Write `resp` to `stream` as an HTTP/1.1 response, framing it with
 // Content-Length and closing the connection after.
 fun write_response(stream: TcpStream, resp: Response, keep_alive: Bool, is_head: Bool) {
-    if status_forbids_content_length(resp.status) {
-        // Clear any Content-Length the handler set: the status forbids it.
-        let _ = resp.headers.remove("Content-Length")
-    } else {
+    // Clear any handler-set Content-Length first, then set the authoritative one
+    // unless the status forbids it (1xx, 204).
+    clear_content_length(resp.headers)
+    if !status_forbids_content_length(resp.status) {
         // Content-Length always reports what a GET would return, even for HEAD.
         resp.headers.set("Content-Length", resp.body.length().to_string())
     }

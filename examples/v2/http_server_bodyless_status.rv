@@ -9,7 +9,9 @@ import std/time { sleep_millis }
 import std/io { println }
 
 fun no_content(req: Request) -> Response {
-    return Response.with_body(204, "should not appear")
+    // The lowercase content-length must also be cleared: HTTP field names are
+    // case-insensitive, so the server must not let a handler variant through.
+    return Response.with_body(204, "should not appear").header("content-length", "17")
 }
 
 fun first_line(s: String) -> String {
@@ -82,7 +84,7 @@ fun main() {
     let resp = send(addr, "GET /x HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
     println("status: ${first_line(resp)}")
     println("body empty: ${body_after_headers(resp) == ""}")
-    println("no content-length: ${headers_block(resp).index_of("Content-Length") < 0}")
+    println("no content-length: ${headers_block(resp).to_lower().index_of("content-length") < 0}")
 
     app.shutdown()
 }
