@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.206] - 2026-06-25
+
+### Fixed
+
+- `String.parse_float` and JSON number parsing preserve the sign of negative zero. Both negated a negative input by subtracting from `0.0`, and `0.0 - 0.0` is `+0.0`, so `-0.0` (and JSON `-0`) lost its sign; they now negate by multiplying by `-1.0`, which keeps `-0.0` (#740).
+
 ## [2.18.205] - 2026-06-25
 
 ### Fixed

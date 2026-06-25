@@ -554,7 +554,9 @@ impl String {
             return None
         }
         if neg {
-            return Some(0.0 - value)
+            // Multiply by -1 rather than subtract from 0, so a value of 0.0 keeps
+            // its sign: `0.0 - 0.0` is `+0.0`, but `0.0 * -1.0` is `-0.0`.
+            return Some(value * (0.0 - 1.0))
         }
         return Some(value)
     }
