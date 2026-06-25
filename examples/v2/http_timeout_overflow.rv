@@ -1,0 +1,19 @@
+// A huge per-connection timeout used to overflow `seconds * 1000` into a
+// negative value, which the server reads back as a disabled timeout. The
+// conversion now saturates, so a large timeout stays a large positive bound and
+// a normal value is exact. golden:skip (kept as a focused demo; a codegen smoke
+// test runs it and checks the output).
+import std/http { Server }
+import std/io { println }
+
+fun main() {
+    let huge = Server.new().with_timeout(9999999999999999)
+    println("huge read positive: ${huge.read_timeout_ms > 0}")
+    println("huge write positive: ${huge.write_timeout_ms > 0}")
+
+    let normal = Server.new().with_read_timeout(5)
+    println("normal read ms: ${normal.read_timeout_ms}")
+
+    let disabled = Server.new().with_timeout(0)
+    println("disabled read ms: ${disabled.read_timeout_ms}")
+}

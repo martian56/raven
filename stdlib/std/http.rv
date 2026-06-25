@@ -380,25 +380,26 @@ impl Server {
     }
 
     // Set the read and write timeouts to `seconds` each, returning self so it
-    // chains. `0` disables both (a request or response may then block forever
-    // on a slow client). A read timeout bounds how long the server waits for
-    // the client to send its request; a write timeout bounds sending the
-    // response. The default is 30 seconds.
+    // chains. `0` (or a negative value) disables both (a request or response may
+    // then block forever on a slow client). A read timeout bounds how long the
+    // server waits for the client to send its request; a write timeout bounds
+    // sending the response. The default is 30 seconds.
     fun with_timeout(self, seconds: Int) -> Server {
-        self.read_timeout_ms = seconds * 1000
-        self.write_timeout_ms = seconds * 1000
+        let ms = timeout_ms(seconds)
+        self.read_timeout_ms = ms
+        self.write_timeout_ms = ms
         return self
     }
 
     // Set only the read timeout, in seconds (`0` disables it). See `with_timeout`.
     fun with_read_timeout(self, seconds: Int) -> Server {
-        self.read_timeout_ms = seconds * 1000
+        self.read_timeout_ms = timeout_ms(seconds)
         return self
     }
 
     // Set only the write timeout, in seconds (`0` disables it). See `with_timeout`.
     fun with_write_timeout(self, seconds: Int) -> Server {
-        self.write_timeout_ms = seconds * 1000
+        self.write_timeout_ms = timeout_ms(seconds)
         return self
     }
 
@@ -790,6 +791,22 @@ fun write_response(stream: TcpStream, resp: Response, keep_alive: Bool, is_head:
         out = out.concat(resp.body)
     }
     let _ = stream.write(out)
+}
+
+// Convert a timeout in seconds to milliseconds without overflowing. A value so
+// large that `seconds * 1000` would wrap past the Int range (and read back as a
+// non-positive, "disabled" timeout) is clamped to a very large bound instead. A
+// non-positive `seconds` disables the timeout (0).
+fun timeout_ms(seconds: Int) -> Int {
+    if seconds <= 0 {
+        return 0
+    }
+    // Int is 64-bit, so 9223372036854775 is floor(max / 1000): anything larger
+    // would overflow when multiplied by 1000.
+    if seconds > 9223372036854775 {
+        return 9223372036854775000
+    }
+    return seconds * 1000
 }
 
 // The reason phrase for a status code. Covers the common codes; an unknown

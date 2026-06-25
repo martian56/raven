@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.190] - 2026-06-24
+
+### Fixed
+
+- A large HTTP server timeout no longer silently disables timeouts. `with_timeout`, `with_read_timeout`, and `with_write_timeout` computed `seconds * 1000`, which overflowed for a large `seconds` and wrapped to a non-positive value the server reads as "disabled". The conversion now saturates to a large positive bound, so a big timeout stays in effect; a normal value is exact and a non-positive value disables the timeout (#683).
+
 ## [2.18.189] - 2026-06-24
 
 ### Fixed
