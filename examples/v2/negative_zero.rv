@@ -1,0 +1,27 @@
+// parse_float and JSON number parsing preserve the sign of negative zero:
+// negating by multiplying by -1 keeps -0.0, where subtracting from 0 would
+// collapse it to +0.0. 1.0 / -0.0 is -inf, so a negative reciprocal proves
+// the sign survived.
+import std/json { parse, JsonValue }
+fun pf(s: String) -> Bool {
+    return match s.parse_float() {
+        Some(x) -> 1.0 / x < 0.0,
+        None -> false,
+    }
+}
+fun jn(s: String) -> Bool {
+    return match parse(s) {
+        Ok(v) -> match v {
+            Number(x) -> 1.0 / x < 0.0,
+            _ -> false,
+        },
+        Err(_) -> false,
+    }
+}
+fun main() {
+    print("parse_float -0.0 neg: ${pf("-0.0")}")
+    print("parse_float 0.0 pos: ${pf("0.0") == false}")
+    print("json -0 neg: ${jn("-0")}")
+    print("json -0.0 neg: ${jn("-0.0")}")
+    print("json 0 pos: ${jn("0") == false}")
+}

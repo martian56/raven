@@ -1,0 +1,5 @@
+parse_float -0.0 neg: true
+parse_float 0.0 pos: true
+json -0 neg: true
+json -0.0 neg: true
+json 0 pos: true

@@ -305,7 +305,9 @@ fun parse_number(c: Cursor) -> Result<Float, Error> {
         }
     }
     if negative {
-        value = 0.0 - value
+        // Multiply by -1 rather than subtract from 0, so `-0` and `-0.0` keep
+        // their sign: `0.0 - 0.0` is `+0.0`, but `0.0 * -1.0` is `-0.0`.
+        value = value * (0.0 - 1.0)
     }
     return Ok(value)
 }
