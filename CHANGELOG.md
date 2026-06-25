@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.194] - 2026-06-25
+
+### Fixed
+
+- Macro hygiene recognizes function and closure parameters and match-pattern bindings, not only `let`/`const`/`for` targets. A parameter or pattern variable a template introduced was treated as a free definition-site name, so the resolver could not find it; a macro can now generate a function, a closure, or a match whose body uses names the template binds (#653).
+
 ## [2.18.193] - 2026-06-24
 
 ### Fixed
