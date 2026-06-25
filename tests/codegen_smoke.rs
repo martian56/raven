@@ -1405,7 +1405,8 @@ fn http_server_rejects_malformed_requests() {
                     bad-line: HTTP/1.1 400 Bad Request\n\
                     no-colon: HTTP/1.1 400 Bad Request\n\
                     dup-clen: HTTP/1.1 400 Bad Request\n\
-                    no-host: HTTP/1.1 400 Bad Request\n";
+                    no-host: HTTP/1.1 400 Bad Request\n\
+                    low-method: HTTP/1.1 400 Bad Request\n";
     compile_link_run_and_check("http_request_validation.rv", expected, &runtime);
 }
 

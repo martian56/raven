@@ -666,7 +666,13 @@ fun read_request(stream: TcpStream, initial: String) -> Result<ReadResult, Error
     if request_line.len() != 3 {
         return Err(error_kind("http", "malformed request line"))
     }
-    let method = parse_method(request_line[0])
+    // Method tokens are case-sensitive: reject a lowercase one (`get`) rather
+    // than normalizing it, so it cannot route as if it were `GET`.
+    let method_token = request_line[0]
+    if method_token != method_token.to_upper() {
+        return Err(error_kind("http", "malformed method token"))
+    }
+    let method = parse_method(method_token)
     let target = request_line[1]
     let version = request_line[2]
     if version != "HTTP/1.0" && version != "HTTP/1.1" {

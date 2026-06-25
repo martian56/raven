@@ -76,5 +76,8 @@ fun main() {
     let no_host = "GET /x HTTP/1.1\r\nConnection: close\r\n\r\n"
     println("no-host: ${status_of(addr, no_host)}")
 
+    let low_method = "get /x HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n"
+    println("low-method: ${status_of(addr, low_method)}")
+
     app.shutdown()
 }
