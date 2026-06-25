@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.219] - 2026-06-25
+
+### Fixed
+
+- The HTTP server rejects more malformed requests with 400 instead of routing them: a header field name that is not a valid token (a space or tab inside or before the name) (#812), a request with more than one `Host` header (#814), a chunk size with a leading sign or surrounding whitespace (#816), and a `Content-Length` with a leading `+` or `-` sign (#817). Numeric request fields are now validated as strict digit/hex strings rather than passed to a lenient integer parse.
+
 ## [2.18.218] - 2026-06-25
 
 ### Fixed

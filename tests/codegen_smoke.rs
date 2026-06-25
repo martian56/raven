@@ -1453,15 +1453,20 @@ fn http_server_rejects_malformed_requests() {
         return;
     };
     // A valid request is served, while a request line with the wrong token
-    // count, a header with no colon, two conflicting Content-Length headers, and
-    // an HTTP/1.1 request with no Host are each rejected with 400 instead of
-    // being parsed loosely.
+    // count, a header with no colon, two conflicting Content-Length headers, an
+    // HTTP/1.1 request with no Host, a lowercase method, a header name with a
+    // space, a duplicate Host, a plus-signed Content-Length, and a plus-signed
+    // chunk size are each rejected with 400 instead of being parsed loosely.
     let expected = "valid: HTTP/1.1 200 OK\n\
                     bad-line: HTTP/1.1 400 Bad Request\n\
                     no-colon: HTTP/1.1 400 Bad Request\n\
                     dup-clen: HTTP/1.1 400 Bad Request\n\
                     no-host: HTTP/1.1 400 Bad Request\n\
-                    low-method: HTTP/1.1 400 Bad Request\n";
+                    low-method: HTTP/1.1 400 Bad Request\n\
+                    bad-name: HTTP/1.1 400 Bad Request\n\
+                    dup-host: HTTP/1.1 400 Bad Request\n\
+                    plus-clen: HTTP/1.1 400 Bad Request\n\
+                    bad-chunk: HTTP/1.1 400 Bad Request\n";
     compile_link_run_and_check("http_request_validation.rv", expected, &runtime);
 }
 
