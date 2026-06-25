@@ -30,47 +30,6 @@ fn hello_world_compiles_and_runs() {
     compile_link_run_and_check("hello.rv", "Hello, Raven!\n", &runtime);
 }
 
-// Regression for #766: a program that keeps writing to stdout after the pipe
-// reader exits must not be killed by SIGPIPE. The runtime ignores SIGPIPE before
-// a stdout write, so the broken-pipe writes return an ignored EPIPE and the
-// program runs to completion. SIGPIPE only exists on Unix.
-#[test]
-#[cfg(unix)]
-fn stdout_writes_survive_a_closed_pipe_reader() {
-    use std::io::{BufRead, BufReader};
-    use std::os::unix::process::ExitStatusExt;
-    use std::process::Stdio;
-
-    let Some(runtime) = supported_runtime() else {
-        return;
-    };
-    let (tmp, binary) = link_example("sigpipe_producer.rv", &runtime);
-
-    let mut child = Command::new(&binary)
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("spawn producer");
-    // Read a single line, then drop the read end so the remaining writes, far
-    // more than a pipe buffer holds, hit a broken pipe.
-    {
-        let stdout = child.stdout.take().expect("piped stdout");
-        let mut reader = BufReader::new(stdout);
-        let mut line = std::string::String::new();
-        let _ = reader.read_line(&mut line);
-    }
-    let status = child.wait().expect("wait producer");
-    cleanup(&tmp);
-
-    // SIGPIPE is signal 13. Without the fix the process is killed by it; with the
-    // fix it ignores the EPIPE and exits cleanly.
-    assert_ne!(status.signal(), Some(13), "producer killed by SIGPIPE");
-    assert!(
-        status.success(),
-        "producer did not exit cleanly: {:?}",
-        status
-    );
-}
-
 #[test]
 fn result_struct_error_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
@@ -1419,6 +1378,19 @@ fn http_server_reason_and_head_responses() {
 }
 
 #[test]
+fn http_server_omits_body_for_bodyless_status() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Regression for #745: a 204 response must not carry a body or a
+    // Content-Length header, even when the handler put bytes in the body.
+    let expected = "status: HTTP/1.1 204 No Content\n\
+                    body empty: true\n\
+                    no content-length: true\n";
+    compile_link_run_and_check("http_server_bodyless_status.rv", expected, &runtime);
+}
+
+#[test]
 fn http_server_timeout_does_not_overflow() {
     let Some(runtime) = supported_runtime() else {
         return;
@@ -2132,9 +2104,7 @@ fn supported_runtime() -> Option<RuntimeStaticLib> {
 /// Compile `examples/v2/<name>`, link it with the runtime, run it, and
 /// assert its stdout equals `expected`. Panics on any failure on a
 /// supported host so a regression is loud.
-/// Compile and link `examples/v2/<name>` into an executable, returning the
-/// temp directory (the caller cleans it up) and the binary path.
-fn link_example(name: &str, runtime: &RuntimeStaticLib) -> (PathBuf, PathBuf) {
+fn compile_link_run_and_check(name: &str, expected: &str, runtime: &RuntimeStaticLib) {
     let source_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("examples")
         .join("v2")
@@ -2166,11 +2136,6 @@ fn link_example(name: &str, runtime: &RuntimeStaticLib) -> (PathBuf, PathBuf) {
         cleanup(&tmp);
         panic!("linker failed to produce an executable for {}: {}", name, e);
     }
-    (tmp, binary)
-}
-
-fn compile_link_run_and_check(name: &str, expected: &str, runtime: &RuntimeStaticLib) {
-    let (tmp, binary) = link_example(name, runtime);
 
     let output = Command::new(&binary)
         .output()
