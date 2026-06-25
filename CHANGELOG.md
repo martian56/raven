@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.222] - 2026-06-25
+
+### Fixed
+
+- A macro template repetition that contains only literal tokens is now rejected at definition instead of silently expanding zero times. A template repetition expands once per matched item, and that count comes from a metavariable bound by a matcher repetition; a repetition of only literals has no such metavariable, so `($(foo),*) => { [$(1),*] }` used to drop every match and produce an empty result. It now reports a clear error pointing at the repetition (#666).
+
 ## [2.18.221] - 2026-06-25
 
 ### Fixed
