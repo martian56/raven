@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.209] - 2026-06-25
+
+### Fixed
+
+- `Cargo.lock` is kept in sync with the workspace version, so `cargo build --locked` (and `cargo install --locked`) works against a clean checkout. The committed lock had drifted behind the manifest version because routine builds rewrite it locally but CI never committed it; the lock now records the current version and is updated alongside future version bumps (#764).
+
 ## [2.18.208] - 2026-06-25
 
 ### Fixed
