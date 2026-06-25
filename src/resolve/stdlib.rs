@@ -407,6 +407,12 @@ pub fn expand_with_stdlib_ctx(
         for ext in external_modules {
             let key = external_module_key(&ext.host, &ext.user, &ext.repo, &ext.source_path);
             let mut rename = external_import_rename_map(&ext.file, ctx);
+            // A whole-module alias (`import "github.com/x/b" as dep`) inside an
+            // external module is recorded too, so a qualified `dep.fn()` resolves
+            // to b's namespaced symbol after the import declaration is stripped.
+            for (alias_key, target_key) in whole_module_external_alias_renames(&ext.file, ctx) {
+                rename.insert(alias_key, target_key);
+            }
             for name in top_level_fn_names(&ext.file) {
                 rename.insert(name.clone(), mangle_external_fn(&key, &name));
             }
@@ -794,6 +800,37 @@ fn whole_module_alias_renames(
         }
         if let Some(loaded) = loader.load(importing, path) {
             let key = local_module_key(&loaded.canonical_path);
+            out.push((alias_rename_key(alias), key));
+        }
+    }
+    out
+}
+
+/// Like [`whole_module_alias_renames`] but for a `github.com/...` whole-module
+/// alias inside an external module, mapping the alias to the target package's
+/// `ext.` namespace key. The two share the `key.member` mangling, so the same
+/// rewrite handles a qualified call through either kind of alias.
+fn whole_module_external_alias_renames(file: &File, ctx: &PackageContext) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for decl in &file.items {
+        let DeclKind::Import(import) = &decl.kind else {
+            continue;
+        };
+        let Some(alias) = &import.alias else {
+            continue;
+        };
+        if !import.selectors.is_empty() {
+            continue;
+        }
+        let ImportSource::Quoted(path) = &import.source else {
+            continue;
+        };
+        let Some(gh) = GithubPath::parse(path) else {
+            continue;
+        };
+        let source = format!("github.com/{}/{}", gh.user, gh.repo);
+        if let Some(src_path) = ctx.external_source_path(&source, &gh.subpath) {
+            let key = external_module_key(&gh.host, &gh.user, &gh.repo, &src_path);
             out.push((alias_rename_key(alias), key));
         }
     }
