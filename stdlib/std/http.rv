@@ -518,7 +518,9 @@ fun serve_connection(server: Server, stream: TcpStream) {
                 write_response(stream, resp, keep, is_head)
                 if server.access_log {
                     let method = req.method.to_string().to_upper()
-                    print("${method} ${req.path} ${resp.status}")
+                    // Log the sanitized status that went on the wire, not the raw
+                    // handler value, so the log matches what the client received.
+                    print("${method} ${req.path} ${sanitize_status(resp.status)}")
                 }
                 served += 1
                 if !keep {
