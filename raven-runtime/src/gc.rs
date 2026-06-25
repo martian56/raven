@@ -117,7 +117,12 @@ pub(crate) fn block_end(was_running: bool) {
 /// returns, so this holds.
 pub(crate) fn blocking<R>(f: impl FnOnce() -> R) -> R {
     let was = block_begin();
+    // Keep the scheduler's worker pool from starving while this thread is parked
+    // in the kernel: on a worker thread this spawns a replacement so goroutines
+    // queued behind blocked I/O still run. A no-op off a worker thread.
+    crate::sched::worker_block_begin();
     let r = f();
+    crate::sched::worker_block_end();
     block_end(was);
     r
 }

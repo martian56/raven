@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.224] - 2026-06-26
+
+### Fixed
+
+- The goroutine scheduler no longer hangs when many goroutines block in syscalls at once. The worker pool was fixed at one thread per core, and a blocking syscall (a socket `read`/`accept`, a `sleep`) holds its worker, so a server with enough concurrent keep-alive connections parked in `read` exhausted the pool and stopped serving new requests, never recovering. The pool is now elastic: when a worker blocks it spawns a replacement so the scheduler keeps one runnable worker per core, and the extra workers retire once the burst drains (bounded by a cap). A server now keeps accepting and serving under concurrent load instead of locking up (#407).
+
 ## [2.18.223] - 2026-06-25
 
 ### Fixed

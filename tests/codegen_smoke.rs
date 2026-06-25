@@ -1448,6 +1448,23 @@ fn http_server_timeout_does_not_overflow() {
 }
 
 #[test]
+fn blocking_goroutines_run_concurrently_via_the_elastic_pool() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // 48 goroutines each block in a 1s sleep. The scheduler spawns a replacement
+    // worker when one blocks (issue #407), so they all run at once and the batch
+    // finishes well under the 2.5s bound instead of queuing through the fixed
+    // core-sized pool. A server proves this matters: blocked keep-alive reads
+    // would otherwise starve the pool and hang new requests.
+    compile_link_run_and_check(
+        "concurrent_blocking_goroutines.rv",
+        "concurrent\n",
+        &runtime,
+    );
+}
+
+#[test]
 fn http_server_rejects_malformed_requests() {
     let Some(runtime) = supported_runtime() else {
         return;
