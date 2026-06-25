@@ -28,43 +28,49 @@ document.addEventListener('DOMContentLoaded', function() {
     const navLinks = document.querySelector('.nav-links');
     
     if (navToggle && navLinks) {
-        navToggle.addEventListener('click', function() {
-            navLinks.classList.toggle('active');
-            navToggle.classList.toggle('active');
-            
-            // Prevent body scroll when menu is open
-            if (navLinks.classList.contains('active')) {
-                document.body.style.overflow = 'hidden';
-            } else {
-                document.body.style.overflow = '';
+        // Centralize the menu state so the toggle's `aria-expanded`, the active
+        // classes, and the body scroll lock never drift apart.
+        function setMenu(open) {
+            navLinks.classList.toggle('active', open);
+            navToggle.classList.toggle('active', open);
+            navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+            document.body.style.overflow = open ? 'hidden' : '';
+        }
+
+        function toggleMenu() {
+            setMenu(!navLinks.classList.contains('active'));
+        }
+
+        navToggle.addEventListener('click', toggleMenu);
+
+        // The toggle is a `div` with a button role, so it must respond to the
+        // keyboard like a native button: Enter and Space activate it.
+        navToggle.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+                e.preventDefault();
+                toggleMenu();
             }
         });
-        
+
         // Close mobile menu when clicking on a link
         const mobileNavLinks = navLinks.querySelectorAll('.nav-link');
         mobileNavLinks.forEach(link => {
             link.addEventListener('click', function() {
-                navLinks.classList.remove('active');
-                navToggle.classList.remove('active');
-                document.body.style.overflow = '';
+                setMenu(false);
             });
         });
-        
+
         // Close mobile menu when clicking outside
         document.addEventListener('click', function(e) {
             if (!navToggle.contains(e.target) && !navLinks.contains(e.target)) {
-                navLinks.classList.remove('active');
-                navToggle.classList.remove('active');
-                document.body.style.overflow = '';
+                setMenu(false);
             }
         });
-        
+
         // Close mobile menu on window resize (if screen becomes larger)
         window.addEventListener('resize', function() {
             if (window.innerWidth > 768) {
-                navLinks.classList.remove('active');
-                navToggle.classList.remove('active');
-                document.body.style.overflow = '';
+                setMenu(false);
             }
         });
     }
@@ -224,6 +230,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const hero = document.querySelector('.hero');
     if (hero) {
         window.addEventListener('scroll', function() {
+            // Parallax is disabled on mobile for performance, so the scroll
+            // listener must also skip it there; otherwise it keeps applying a
+            // transform that the mobile setup cleared. `isMobile` is a hoisted
+            // function declaration, so it is callable here.
+            if (isMobile()) {
+                return;
+            }
             const scrolled = window.pageYOffset;
             const rate = scrolled * -0.5;
             hero.style.transform = `translateY(${rate}px)`;
@@ -317,14 +330,18 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
-    // Prevent zoom on double tap for iOS
+    // Prevent zoom on double tap for iOS. Only cancel when both taps land on
+    // the same element, so quickly tapping two different controls does not lose
+    // the second tap's default action to a false double-tap.
     let lastTouchEnd = 0;
+    let lastTouchTarget = null;
     document.addEventListener('touchend', function(event) {
         const now = (new Date()).getTime();
-        if (now - lastTouchEnd <= 300) {
+        if (now - lastTouchEnd <= 300 && event.target === lastTouchTarget) {
             event.preventDefault();
         }
         lastTouchEnd = now;
+        lastTouchTarget = event.target;
     }, false);
     
     // Optimize scroll performance on mobile

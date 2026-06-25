@@ -912,7 +912,7 @@ body {
         width: 100%;
     }
     
-    .tab-button {
+    .tab-btn {
         width: 100%;
         max-width: 200px;
         padding: var(--spacing-3) var(--spacing-4);

@@ -18,14 +18,14 @@
                 <div class="logo-icon">🐦‍⬛</div>
                 <span class="logo-text">Raven</span>
             </div>
-            <div class="nav-links">
+            <div class="nav-links" id="primary-navigation">
                 <a href="#features" class="nav-link">Features</a>
                 <a href="#examples" class="nav-link">Examples</a>
                 <a href="#download" class="nav-link">Download</a>
                 <a href="#docs" class="nav-link">Documentation</a>
                 <a href="https://github.com/martian56/raven" class="nav-link github-link" target="_blank" rel="noopener noreferrer">GitHub</a>
             </div>
-            <div class="nav-toggle">
+            <div class="nav-toggle" role="button" tabindex="0" aria-label="Toggle navigation menu" aria-controls="primary-navigation" aria-expanded="false">
                 <span></span>
                 <span></span>
                 <span></span>
@@ -152,7 +152,10 @@
             <div class="examples-content">
                 <div class="tab-content active" id="basics">
                     <div class="code-example">
-                        <pre><code><span class="comment">// Inferred types, no semicolons</span>
+                        <pre><code><span class="comment">// A map literal needs the collections module</span>
+<span class="keyword">import</span> std/collections
+
+<span class="comment">// Inferred types, no semicolons</span>
 <span class="keyword">let</span> <span class="variable">name</span> <span class="operator">=</span> <span class="string">"Raven"</span>
 <span class="keyword">let</span> <span class="variable">version</span> <span class="operator">=</span> <span class="number">2</span>
 
