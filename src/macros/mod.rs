@@ -1092,23 +1092,18 @@ fn collect_hygiene_renames(
             // A `fun` (named or a closure) introduces its parameters as
             // bindings: without this, a parameter and its uses in the body are
             // treated as free definition-site names, so the resolver cannot find
-            // them. Skip an optional function name, then collect the parameter
-            // names inside the parameter list.
+            // them. Scan forward to the parameter list's `(`, past an optional
+            // name whether it is a literal identifier or a spliced metavariable.
             TemplateItem::Token(t) if matches!(t.kind, TokenKind::Fun) => {
                 let mut j = i + 1;
-                if let Some(TemplateItem::Token(name)) = template.get(j) {
-                    if matches!(name.kind, TokenKind::Identifier(_)) {
-                        if let Some(TemplateItem::Token(p)) = template.get(j + 1) {
-                            if matches!(p.kind, TokenKind::LParen) {
-                                j += 1;
-                            }
+                while let Some(item) = template.get(j) {
+                    if let TemplateItem::Token(p) = item {
+                        if matches!(p.kind, TokenKind::LParen) {
+                            collect_param_names(template, j, renames, spans);
+                            break;
                         }
                     }
-                }
-                if let Some(TemplateItem::Token(p)) = template.get(j) {
-                    if matches!(p.kind, TokenKind::LParen) {
-                        collect_param_names(template, j, renames, spans);
-                    }
+                    j += 1;
                 }
                 i += 1;
             }

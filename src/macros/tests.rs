@@ -414,6 +414,25 @@ fn hygiene_renames_match_pattern_bindings() {
 }
 
 #[test]
+fn hygiene_renames_parameters_past_a_spliced_function_name() {
+    // The function name is a spliced metavariable, not a literal token, so the
+    // parameter scan must look past it to the parameter list's `(`.
+    let src = "macro mk { ($n:ident) => { fun $n(arg: Int) -> Int = arg } }\nmk!(myfn)\n";
+    let out = expand_render(src);
+    let names: Vec<&str> = out
+        .split_whitespace()
+        .filter(|w| w.starts_with("arg$"))
+        .collect();
+    assert_eq!(
+        names.len(),
+        2,
+        "parameter renamed even with a spliced name: {}",
+        out
+    );
+    assert!(out.contains("myfn"), "spliced name spliced: {}", out);
+}
+
+#[test]
 fn missing_repetition_marker_is_an_error() {
     let src = "macro bad { ($($x:expr),) => { ($x) } }\nlet s = bad!(1)\n";
     let e = expand_tokens(&lex(src)).expect_err("missing marker");
