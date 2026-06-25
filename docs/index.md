@@ -84,7 +84,6 @@ fun main() {
 - Want the whole surface of the language? See the [Language Reference](v2/guide/language-reference.md).
 - Looking for what the standard library gives you? The [Standard Library](v2/guide/standard-library.md) page walks through every module.
 - Managing dependencies and builds? Read the [rvpm guide](v2/guide/rvpm.md).
-- Coming from Raven v1? The [migration guide](v2/migration.md) maps every breaking change.
 
 ## Install
 
@@ -104,4 +103,4 @@ The [VS Code extension](https://marketplace.visualstudio.com/items?itemName=mart
 
 ## A note on versions
 
-This site documents **Raven v2**, the compiled language. Raven v1 was a tree walking interpreter with a different syntax; its docs still live under [v1 docs](getting-started/installation.md) for anyone maintaining older code. If you are starting fresh, you want v2.
+This site documents **Raven v2**, the compiled language. Raven v1 was the original tree walking interpreter with a different syntax; it is no longer developed and its source is kept only on the `v1.x-maintenance` branch for anyone still maintaining old code.

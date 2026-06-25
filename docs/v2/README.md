@@ -10,4 +10,4 @@ As each phase begins, its own spec lands in this directory alongside the roadmap
 
 ## v1 documentation
 
-The v1 (interpreted) language docs remain at `docs/syntax.md` and the rest of `docs/` for historical reference. v1 source itself lives on the `v1.x-maintenance` branch; it has been deleted from `v2.x`.
+The v1 (interpreted) language docs have been removed. v1 is no longer developed; its source lives only on the `v1.x-maintenance` branch.
