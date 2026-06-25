@@ -1,0 +1,24 @@
+// gen_range_float must never return the excluded upper endpoint, even when lo
+// and hi are adjacent floats so the convex combination rounds onto hi. With
+// hi just above 1.0, every draw must stay strictly below hi (and at or above lo).
+import std/random
+import std/io { println }
+
+fun main() {
+    let rng = Rng.new(0)
+    let lo = 1.0
+    let hi = 1.0000000000000002
+    let in_range = true
+    let i = 0
+    while i < 1000 {
+        let v = rng.gen_range_float(lo, hi)
+        if v < lo || v >= hi {
+            in_range = false
+        }
+        i = i + 1
+    }
+    println(match in_range {
+        true -> "all below hi",
+        false -> "hit excluded endpoint",
+    })
+}
