@@ -1096,6 +1096,61 @@ fn rewrite_generics(generics: &mut [GenericParam], rename: &HashMap<String, Stri
 
 /// Rewrite a function's signature (generic bounds, parameter and return types)
 /// and body. Used for free functions, trait members, and impl methods.
+/// Whether `s` begins with a lowercase letter. A pattern's bare identifier is a
+/// binding when it is lowercase and an enum or struct constructor when it is
+/// PascalCase, so this tells a shadowing local apart from a constructor name.
+fn starts_lowercase(s: &str) -> bool {
+    s.chars().next().is_some_and(|c| c.is_lowercase())
+}
+
+/// Collect the value names a pattern binds, so a binding that shadows a module
+/// global is dropped from the rename map within its scope. A bare lowercase
+/// identifier is a binding; a PascalCase one names a constructor and binds
+/// nothing. A tuple's leading name is a constructor; a struct field with no
+/// nested pattern is a shorthand binding of the field name.
+fn collect_pattern_bindings(pat: &Pattern, out: &mut Vec<String>) {
+    match &pat.kind {
+        PatternKind::Ident(name) => {
+            if starts_lowercase(name) {
+                out.push(name.clone());
+            }
+        }
+        PatternKind::Tuple { elements, .. } => {
+            for e in elements {
+                collect_pattern_bindings(e, out);
+            }
+        }
+        PatternKind::Struct { fields, .. } => {
+            for f in fields {
+                match &f.pattern {
+                    Some(p) => collect_pattern_bindings(p, out),
+                    None => out.push(f.name.clone()),
+                }
+            }
+        }
+        PatternKind::Wildcard | PatternKind::Literal(_) | PatternKind::Range { .. } => {}
+    }
+}
+
+/// A copy of `rename` with every `bound` name it holds removed, or `None` when
+/// `bound` shadows nothing (so the caller reuses the original map without a
+/// clone). A local that shadows a module global must keep its own value rather
+/// than be rewritten to the global's namespaced name within its scope.
+fn rename_without_shadowed(
+    rename: &HashMap<String, String>,
+    bound: &[String],
+) -> Option<HashMap<String, String>> {
+    if bound.iter().any(|n| rename.contains_key(n)) {
+        let mut m = rename.clone();
+        for n in bound {
+            m.remove(n);
+        }
+        Some(m)
+    } else {
+        None
+    }
+}
+
 fn rewrite_fn(f: &mut Function, rename: &HashMap<String, String>) {
     rewrite_generics(&mut f.generics, rename);
     for p in &mut f.params {
@@ -1104,7 +1159,13 @@ fn rewrite_fn(f: &mut Function, rename: &HashMap<String, String>) {
     if let Some(ret) = &mut f.ret {
         rewrite_type(ret, rename);
     }
-    rewrite_fn_body_calls(&mut f.body, rename);
+    // A parameter shadows a module global of the same name throughout the body,
+    // so it is dropped from the rename map the body is rewritten with.
+    let bound: Vec<String> = f.params.iter().map(|p| p.name.clone()).collect();
+    match rename_without_shadowed(rename, &bound) {
+        Some(inner) => rewrite_fn_body_calls(&mut f.body, &inner),
+        None => rewrite_fn_body_calls(&mut f.body, rename),
+    }
 }
 
 /// Rewrite the type names a pattern mentions: a struct pattern's name is a
@@ -1207,11 +1268,22 @@ fn rewrite_fn_body_calls(body: &mut FunctionBody, rename: &HashMap<String, Strin
 }
 
 fn rewrite_block(block: &mut Block, rename: &HashMap<String, String>) {
+    // A `let` shadows a same-named module global for the rest of the block, so
+    // the name is dropped from the rename map once it is bound. The map is only
+    // cloned when a binding actually shadows a global.
+    let mut shadowed: Option<HashMap<String, String>> = None;
     for stmt in &mut block.stmts {
-        rewrite_stmt(stmt, rename);
+        rewrite_stmt(stmt, shadowed.as_ref().unwrap_or(rename));
+        if let StmtKind::Let { name, .. } = &stmt.kind {
+            if shadowed.as_ref().unwrap_or(rename).contains_key(name) {
+                let mut m = shadowed.as_ref().unwrap_or(rename).clone();
+                m.remove(name);
+                shadowed = Some(m);
+            }
+        }
     }
     if let Some(trailing) = &mut block.trailing {
-        rewrite_expr(trailing, rename);
+        rewrite_expr(trailing, shadowed.as_ref().unwrap_or(rename));
     }
 }
 
@@ -1424,14 +1496,30 @@ fn rewrite_expr(expr: &mut Expr, rename: &HashMap<String, String>) {
             rewrite_expr(cond, rename);
             rewrite_block(body, rename);
         }
-        ExprKind::For { iter, body, .. } => {
+        ExprKind::For {
+            pattern,
+            iter,
+            body,
+        } => {
             rewrite_expr(iter, rename);
-            rewrite_block(body, rename);
+            // The loop pattern binds names that shadow a global within the body.
+            let mut bound = Vec::new();
+            collect_pattern_bindings(pattern, &mut bound);
+            match rename_without_shadowed(rename, &bound) {
+                Some(inner) => rewrite_block(body, &inner),
+                None => rewrite_block(body, rename),
+            }
         }
-        ExprKind::Lambda { body, .. } => match body {
-            LambdaBody::Block(b) => rewrite_block(b, rename),
-            LambdaBody::Expr(e) => rewrite_expr(e, rename),
-        },
+        ExprKind::Lambda { params, body, .. } => {
+            // Lambda parameters shadow a global of the same name in the body.
+            let bound: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
+            let inner = rename_without_shadowed(rename, &bound);
+            let active = inner.as_ref().unwrap_or(rename);
+            match body {
+                LambdaBody::Block(b) => rewrite_block(b, active),
+                LambdaBody::Expr(e) => rewrite_expr(e, active),
+            }
+        }
         // Leaf literals and the `self`/`Self` keywords carry no nested
         // expressions to rewrite.
         ExprKind::Int(_)
@@ -1451,10 +1539,15 @@ fn rewrite_expr(expr: &mut Expr, rename: &HashMap<String, String>) {
 
 fn rewrite_match_arm(arm: &mut MatchArm, rename: &HashMap<String, String>) {
     rewrite_pattern(&mut arm.pattern, rename);
+    // The arm pattern binds names that shadow a global in the guard and body.
+    let mut bound = Vec::new();
+    collect_pattern_bindings(&arm.pattern, &mut bound);
+    let inner = rename_without_shadowed(rename, &bound);
+    let active = inner.as_ref().unwrap_or(rename);
     if let Some(guard) = &mut arm.guard {
-        rewrite_expr(guard, rename);
+        rewrite_expr(guard, active);
     }
-    rewrite_expr(&mut arm.body, rename);
+    rewrite_expr(&mut arm.body, active);
 }
 
 /// Build a resolve error for a bundled module that failed to load. A
@@ -2312,6 +2405,49 @@ mod tests {
         assert!(
             idents.iter().any(|n| *n == base_mangled),
             "via should call {base_mangled}, got {idents:?}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_parameter_is_not_rewritten_to_a_shadowed_module_global() {
+        // `module.rv` has a global `value` and an `echo(value)` whose parameter
+        // shadows it. The merge namespaces the global, but the parameter use in
+        // the body must stay bare so it reads the argument, not the global.
+        let (dir, entry) = write_temp_project(
+            &[
+                (
+                    "module.rv",
+                    "let value: Int = 1\nfun echo(value: Int) -> Int { return value }\n",
+                ),
+                ("main.rv", "import \"./module\" { echo }\nfun main() {}\n"),
+            ],
+            "main.rv",
+        );
+        let canon = dir.join("module.rv").canonicalize().expect("canon");
+        let user = parse_at("import \"./module\" { echo }\nfun main() {}\n", &entry);
+        let combined = expand_with_stdlib(&user).expect("expand");
+
+        let key = local_module_key(&canon);
+        let global_mangled = mangle_local_fn(&key, "value");
+        let echo = combined
+            .items
+            .iter()
+            .filter_map(|d| match &d.kind {
+                DeclKind::Function(f) if f.name.ends_with(".echo") => Some(f),
+                _ => None,
+            })
+            .next()
+            .expect("echo present");
+        let mut idents = Vec::new();
+        collect_fn_body_idents(&echo.body, &mut idents);
+        assert!(
+            idents.iter().any(|n| n == "value"),
+            "the parameter use stays bare, got {idents:?}"
+        );
+        assert!(
+            !idents.iter().any(|n| *n == global_mangled),
+            "the parameter must not be rewritten to {global_mangled}, got {idents:?}"
         );
         std::fs::remove_dir_all(&dir).ok();
     }
