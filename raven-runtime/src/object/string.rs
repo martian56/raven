@@ -246,23 +246,23 @@ pub extern "C" fn raven_string_cmp(a: *const String, b: *const String) -> i64 {
 }
 
 /// Allocate a fresh `String` holding the half-open byte range
-/// `[start, end)` of `s`. The bounds are clamped to `0..=len` and a
-/// `start` past `end` yields an empty string, so the function never
-/// reads out of range. The range is in bytes; slicing through the
-/// middle of a multi-byte UTF-8 sequence produces a string whose bytes
-/// are not valid UTF-8, which the byte-oriented `std/string` surface
-/// documents as the caller's responsibility.
+/// `[start, end)` of `s`. The bounds are signed and clamped to
+/// `0..=len` (a negative bound clamps to 0), and a `start` past `end`
+/// yields an empty string, so the function never reads out of range.
+/// The range is in bytes; slicing through the middle of a multi-byte
+/// UTF-8 sequence produces a string whose bytes are not valid UTF-8,
+/// which the byte-oriented `std/string` surface documents as the
+/// caller's responsibility.
 ///
 /// Backs the `__str_substring` compiler intrinsic.
 #[no_mangle]
-pub extern "C" fn raven_string_substring(
-    s: *const String,
-    start: usize,
-    end: usize,
-) -> *mut String {
+pub extern "C" fn raven_string_substring(s: *const String, start: i64, end: i64) -> *mut String {
     let len = raven_string_len(s) as usize;
-    let start = start.min(len);
-    let end = end.min(len);
+    // A Raven Int is signed, so the bounds arrive as `i64`. Clamp each into
+    // `0..=len`: a negative bound clamps up to 0 and an over-long one clamps down
+    // to `len`, matching the documented `0..length` clamping.
+    let start = start.clamp(0, len as i64) as usize;
+    let end = end.clamp(0, len as i64) as usize;
     if start >= end {
         return raven_string_new(0);
     }
@@ -660,12 +660,19 @@ mod tests {
         assert_eq!(read(empty), "");
         let whole = raven_string_substring(s, 0, 5);
         assert_eq!(read(whole), "hello");
+        // A negative bound clamps to 0, not to a huge unsigned index (#556).
+        let neg_start = raven_string_substring(s, -1, 4);
+        assert_eq!(read(neg_start), "hell");
+        let neg_end = raven_string_substring(s, 1, -1);
+        assert_eq!(read(neg_end), "");
         unsafe {
             drop_string_for_test(s);
             drop_string_for_test(mid);
             drop_string_for_test(tail);
             drop_string_for_test(empty);
             drop_string_for_test(whole);
+            drop_string_for_test(neg_start);
+            drop_string_for_test(neg_end);
         }
     }
 

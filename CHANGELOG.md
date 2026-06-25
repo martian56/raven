@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.198] - 2026-06-25
+
+### Fixed
+
+- `String.substring` clamps negative bounds to 0 instead of converting them to a huge unsigned index. The runtime took the bounds as unsigned, so a negative `start` or `end` became a pointer-sized value that clamped to the string length and gave the wrong slice; the bounds are now signed and clamped into `0..length` as documented (#556).
+
 ## [2.18.196] - 2026-06-25
 
 ### Fixed
