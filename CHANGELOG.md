@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.193] - 2026-06-24
+
+### Fixed
+
+- The HTTP server decodes a `Transfer-Encoding: chunked` request body instead of discarding it. It ignored the chunked framing, so the handler received an empty body and the unread chunk bytes desynchronized a keep-alive connection. The server now de-chunks the body, delivers it to the handler, and rejects `Content-Length` combined with chunked framing as a smuggling vector (#617).
+
 ## [2.18.192] - 2026-06-24
 
 ### Fixed
