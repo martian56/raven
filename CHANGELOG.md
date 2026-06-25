@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.192] - 2026-06-24
+
+### Fixed
+
+- `Server.shutdown()` wakes a server bound to an IPv6 wildcard address. The wakeup helper split the address on the first colon, which mangles a bracketed IPv6 address (`[::]:8080`), so the throwaway self-connection went to an unreachable address and `listen` blocked forever. It now parses a bracketed host and rewrites the IPv6 wildcard `[::]` to the loopback `[::1]`, which the wildcard listener accepts (#643).
+
 ## [2.18.191] - 2026-06-24
 
 ### Fixed

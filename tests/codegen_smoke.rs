@@ -1411,6 +1411,24 @@ fn http_server_rejects_malformed_requests() {
 }
 
 #[test]
+fn http_server_shuts_down_on_ipv6_wildcard() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // The graceful-shutdown wakeup must reach a server bound to the IPv6
+    // wildcard `[::]`. Skip on a runner without IPv6 loopback (where binding
+    // `[::1]` fails), so the test never hangs waiting on an address it cannot
+    // reach; where IPv6 is present the program serves one request and then
+    // shuts down, so `listen` returns instead of blocking forever.
+    if std::net::TcpListener::bind("[::1]:0").is_err() {
+        return;
+    }
+    let expected = "served: HTTP/1.1 200 OK\n\
+                    listen returned\n";
+    compile_link_run_and_check("http_ipv6_shutdown.rv", expected, &runtime);
+}
+
+#[test]
 fn http_sends_binary_body() {
     let Some(runtime) = supported_runtime() else {
         return;
