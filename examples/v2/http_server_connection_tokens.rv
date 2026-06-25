@@ -70,6 +70,9 @@ fun main() {
     println("keep-alive+close closes: ${closes(r1)}")
     let r2 = send(addr, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close, x\r\n\r\n")
     println("close+x closes: ${closes(r2)}")
+    // A close on one Connection line beside a keep-alive on another must combine.
+    let r3 = send(addr, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\nConnection: keep-alive\r\n\r\n")
+    println("split close closes: ${closes(r3)}")
 
     app.shutdown()
 }

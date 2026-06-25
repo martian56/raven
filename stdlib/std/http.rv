@@ -859,11 +859,13 @@ fun read_request(stream: TcpStream, initial: String) -> Result<ReadResult, Error
                 return Err(error_kind("http", "conflicting Content-Length"))
             }
         }
-        // Repeated Transfer-Encoding lines combine into one comma-separated
-        // coding list, so a split `gzip` + `chunked` cannot hide a coding the
-        // server does not implement.
-        if key == "transfer-encoding" {
-            let existing = headers.get_or("transfer-encoding", "")
+        // Repeated Transfer-Encoding or Connection lines combine into one
+        // comma-separated list, so a split set of options is seen whole: a
+        // `gzip` + `chunked` coding cannot hide a coding the server does not
+        // implement, and a `close` on one line beside a `keep-alive` on another
+        // is still honored as a close.
+        if key == "transfer-encoding" || key == "connection" {
+            let existing = headers.get_or(key, "")
             if existing.length() > 0 {
                 value = existing.concat(", ").concat(value)
             }
