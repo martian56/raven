@@ -800,26 +800,36 @@ fun decode_chunked(stream: TcpStream, initial: String) -> Result<ChunkedBody, Er
 
 // Parse one request, beginning from `initial` (bytes carried over from a prior
 // request on the same connection) and reading more from `stream` as needed.
-// `Ok(None)` means the connection closed cleanly with no request pending (an
-// idle keep-alive client hanging up), which the caller treats as a normal close
-// rather than a malformed request; any other failure is an `Err`.
+// `Ok(None)` means no request arrived and the connection should close quietly:
+// an idle keep-alive client that hung up or sat past the read timeout. A request
+// that arrived but failed to parse is an `Err`, which the caller answers with a
+// 400, so a read timeout is never mistaken for a malformed request.
 fun read_request(stream: TcpStream, initial: String) -> Result<Option<ReadResult>, Error> {
     let buf = initial
     let split = buf.index_of("\r\n\r\n")
     while split < 0 {
-        let chunk = stream.read(4096)?
-        if chunk.length() == 0 {
-            // No bytes buffered and the peer closed: an idle keep-alive hang-up,
-            // not a request. With bytes buffered it is a truncated request.
-            if buf.length() == 0 {
+        match stream.read(4096) {
+            Ok(chunk) -> {
+                if chunk.length() == 0 {
+                    // No bytes buffered and the peer closed: an idle keep-alive
+                    // hang-up, not a request. With bytes buffered it is truncated.
+                    if buf.length() == 0 {
+                        return Ok(None)
+                    }
+                    return Err(error_kind("http", "connection closed before headers"))
+                }
+                buf = buf.concat(chunk)
+                split = buf.index_of("\r\n\r\n")
+                if buf.length() > 65536 {
+                    return Err(error_kind("http", "request headers too large"))
+                }
+            }
+            // A read failure while waiting for the next request line (a read
+            // timeout on an idle keep-alive connection, or a reset) is not a
+            // malformed request, so close quietly rather than answering 400.
+            Err(_) -> {
                 return Ok(None)
             }
-            return Err(error_kind("http", "connection closed before headers"))
-        }
-        buf = buf.concat(chunk)
-        split = buf.index_of("\r\n\r\n")
-        if buf.length() > 65536 {
-            return Err(error_kind("http", "request headers too large"))
         }
     }
     let head_text = buf.substring(0, split)
