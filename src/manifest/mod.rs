@@ -44,6 +44,14 @@ pub const DEFAULT_INDENT_WIDTH: u32 = 4;
 /// The default `[fmt].wrap_width` when the section or field is absent.
 pub const DEFAULT_WRAP_WIDTH: u32 = 100;
 
+/// The inclusive bounds for `[fmt].indent_width`, matching the documented range.
+pub const MIN_INDENT_WIDTH: u32 = 1;
+pub const MAX_INDENT_WIDTH: u32 = 16;
+
+/// The inclusive bounds for `[fmt].wrap_width`, matching the documented range.
+pub const MIN_WRAP_WIDTH: u32 = 40;
+pub const MAX_WRAP_WIDTH: u32 = 200;
+
 /// A parsed `rv.toml` manifest.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Manifest {
@@ -284,13 +292,37 @@ impl Manifest {
             })
             .unwrap_or_default();
 
-        let fmt = raw
-            .fmt
-            .map(|f| Fmt {
-                indent_width: f.indent_width.unwrap_or(DEFAULT_INDENT_WIDTH),
-                wrap_width: f.wrap_width.unwrap_or(DEFAULT_WRAP_WIDTH),
-            })
-            .unwrap_or_default();
+        let fmt = match raw.fmt {
+            Some(f) => {
+                let indent_width = f.indent_width.unwrap_or(DEFAULT_INDENT_WIDTH);
+                if !(MIN_INDENT_WIDTH..=MAX_INDENT_WIDTH).contains(&indent_width) {
+                    return Err(ManifestError::InvalidValue {
+                        section: "fmt".to_string(),
+                        field: "indent_width".to_string(),
+                        message: format!(
+                            "must be between {} and {}",
+                            MIN_INDENT_WIDTH, MAX_INDENT_WIDTH
+                        ),
+                    });
+                }
+                let wrap_width = f.wrap_width.unwrap_or(DEFAULT_WRAP_WIDTH);
+                if !(MIN_WRAP_WIDTH..=MAX_WRAP_WIDTH).contains(&wrap_width) {
+                    return Err(ManifestError::InvalidValue {
+                        section: "fmt".to_string(),
+                        field: "wrap_width".to_string(),
+                        message: format!(
+                            "must be between {} and {}",
+                            MIN_WRAP_WIDTH, MAX_WRAP_WIDTH
+                        ),
+                    });
+                }
+                Fmt {
+                    indent_width,
+                    wrap_width,
+                }
+            }
+            None => Fmt::default(),
+        };
 
         Ok(Manifest {
             package: Package {
@@ -395,6 +427,22 @@ version = "0.0.1"
         assert_eq!(m.ffi, Ffi::default());
         assert_eq!(m.fmt.indent_width, DEFAULT_INDENT_WIDTH);
         assert_eq!(m.fmt.wrap_width, DEFAULT_WRAP_WIDTH);
+    }
+
+    #[test]
+    fn fmt_widths_outside_bounds_are_rejected() {
+        let indent_too_big =
+            "[package]\nname = \"x\"\nversion = \"0.0.1\"\n[fmt]\nindent_width = 100\n";
+        assert!(Manifest::from_toml_str(indent_too_big).is_err());
+        let wrap_too_small =
+            "[package]\nname = \"x\"\nversion = \"0.0.1\"\n[fmt]\nwrap_width = 10\n";
+        assert!(Manifest::from_toml_str(wrap_too_small).is_err());
+        // The documented bounds (indent 1..=16, wrap 40..=200) parse fine.
+        let in_bounds =
+            "[package]\nname = \"x\"\nversion = \"0.0.1\"\n[fmt]\nindent_width = 16\nwrap_width = 200\n";
+        let m = Manifest::from_toml_str(in_bounds).expect("in-bounds widths parse");
+        assert_eq!(m.fmt.indent_width, 16);
+        assert_eq!(m.fmt.wrap_width, 200);
     }
 
     #[test]

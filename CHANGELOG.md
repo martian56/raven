@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.208] - 2026-06-25
+
+### Fixed
+
+- The `rv.toml` manifest rejects `[fmt]` widths outside their documented bounds instead of accepting any value. `indent_width` must be 1..=16 and `wrap_width` must be 40..=200 (the ranges the docs state); a value outside the range is now an `invalid value for [fmt]....` error rather than being silently used (#721).
+
 ## [2.18.207] - 2026-06-25
 
 ### Fixed
