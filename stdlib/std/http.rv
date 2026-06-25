@@ -661,7 +661,7 @@ fun read_request(stream: TcpStream, initial: String) -> Result<ReadResult, Error
     }
     // A request line is exactly `METHOD SP TARGET SP VERSION`: reject anything
     // with a different token count (extra or missing fields, a target with a
-    // raw space) or a version that is not `HTTP/x.y`.
+    // raw space). The server speaks HTTP/1.x, so the version must be 1.0 or 1.1.
     let request_line = lines[0].split(" ")
     if request_line.len() != 3 {
         return Err(error_kind("http", "malformed request line"))
@@ -669,7 +669,7 @@ fun read_request(stream: TcpStream, initial: String) -> Result<ReadResult, Error
     let method = parse_method(request_line[0])
     let target = request_line[1]
     let version = request_line[2]
-    if !version.starts_with("HTTP/") {
+    if version != "HTTP/1.0" && version != "HTTP/1.1" {
         return Err(error_kind("http", "unsupported HTTP version"))
     }
 
@@ -707,6 +707,11 @@ fun read_request(stream: TcpStream, initial: String) -> Result<ReadResult, Error
         }
         headers.set(key, value)
         i += 1
+    }
+
+    // HTTP/1.1 requires a Host header (RFC 7230 5.4); its absence is malformed.
+    if version == "HTTP/1.1" && headers.get_or("host", "").length() == 0 {
+        return Err(error_kind("http", "missing Host header"))
     }
 
     let want = 0
