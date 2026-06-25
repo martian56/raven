@@ -1378,6 +1378,20 @@ fn http_server_reason_and_head_responses() {
 }
 
 #[test]
+fn http_server_validates_response_headers() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Regression for #742: the response builder drops a header with an invalid
+    // field name and strips control bytes from a value, so a handler cannot frame
+    // a malformed response or inject extra headers.
+    let expected = "bad-name dropped: true\n\
+                    good present: true\n\
+                    control stripped: true\n";
+    compile_link_run_and_check("http_server_header_validation.rv", expected, &runtime);
+}
+
+#[test]
 fn http_server_sanitizes_invalid_status_codes() {
     let Some(runtime) = supported_runtime() else {
         return;

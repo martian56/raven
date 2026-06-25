@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.200] - 2026-06-25
+
+### Fixed
+
+- The HTTP response builder rejects an invalid field name and strips control bytes from a field value, instead of sending them unchanged. `Response.header` removed only CR and LF, so a handler could set a name with a space or other forbidden byte, or a value with a NUL or other control byte, and produce a malformed response clients may reject or parse inconsistently. A name that is not a valid HTTP token is now dropped, and a value's C0 controls and DEL (except HTAB) are stripped (#742).
+
 ## [2.18.199] - 2026-06-25
 
 ### Fixed
