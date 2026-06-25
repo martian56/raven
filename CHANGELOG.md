@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.220] - 2026-06-25
+
+### Fixed
+
+- A whole-module alias import (`import "./b" as dep`) now resolves when the importing file is itself an imported module. The module merge strips a module's own import declarations, so a qualified `dep.fn()` call lost the alias binding and failed with `cannot find dep in scope`. The merge now records each whole-module alias and rewrites a qualified `dep.member` access to the target module's namespaced symbol, the same as a selective import (#765).
+
 ## [2.18.219] - 2026-06-25
 
 ### Fixed
