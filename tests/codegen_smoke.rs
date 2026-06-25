@@ -1378,6 +1378,18 @@ fn http_server_reason_and_head_responses() {
 }
 
 #[test]
+fn http_server_sanitizes_invalid_status_codes() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Regression for #741: a handler's out-of-range status code must not produce
+    // a malformed status line; an invalid code is replaced with 500.
+    let expected = "negative: HTTP/1.1 500 Internal Server Error\n\
+                    huge: HTTP/1.1 500 Internal Server Error\n";
+    compile_link_run_and_check("http_server_invalid_status.rv", expected, &runtime);
+}
+
+#[test]
 fn http_server_omits_body_for_bodyless_status() {
     let Some(runtime) = supported_runtime() else {
         return;

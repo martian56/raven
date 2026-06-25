@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.199] - 2026-06-25
+
+### Fixed
+
+- The HTTP server replaces an out-of-range response status code with 500 instead of writing it into the status line verbatim. `Response.status_code` accepts any `Int`, so a handler could emit a malformed status line like `HTTP/1.1 -1 OK`; the server now frames the wire status from a value clamped to the valid 100..599 range (#741).
+
 ## [2.18.198] - 2026-06-25
 
 ### Fixed
