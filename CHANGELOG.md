@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.223] - 2026-06-25
+
+### Fixed
+
+- The HTTP server answers a malformed request on a kept-alive connection with `400 Bad Request` instead of closing it silently. After one request was served, the read path could not tell a clean idle hang-up from a malformed follow-up request, so it closed both without a response. `read_request` now returns `Ok(None)` only for a clean close with no request pending; any real parse failure is an error that the connection loop answers with 400 whether or not earlier requests succeeded (#818).
+
 ## [2.18.222] - 2026-06-25
 
 ### Fixed

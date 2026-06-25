@@ -1471,6 +1471,17 @@ fn http_server_rejects_malformed_requests() {
 }
 
 #[test]
+fn http_server_answers_a_malformed_keep_alive_request_with_400() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A valid keep-alive request is served (200), then a malformed request on the
+    // same connection still receives 400 rather than being closed silently.
+    let expected = "served-200: true\nmalformed-400: true\n";
+    compile_link_run_and_check("http_keepalive_malformed.rv", expected, &runtime);
+}
+
+#[test]
 fn http_server_shuts_down_on_ipv6_wildcard() {
     let Some(runtime) = supported_runtime() else {
         return;

@@ -1,0 +1,64 @@
+// Sends a valid keep-alive request and a malformed one back to back on a single
+// connection, checking that the malformed request still gets 400 after a prior
+// request was served (rather than being closed silently). golden:skip (binds a
+// port and depends on timing; a codegen smoke test runs it and checks output).
+import std/http { Server, Response, Request }
+import std/net { connect, TcpStream }
+import std/time { sleep_millis }
+import std/io { println }
+
+fun ok_handler(req: Request) -> Response {
+    return Response.with_body(200, "ok")
+}
+
+fun has(s: String, sub: String) -> Bool {
+    return s.index_of(sub) >= 0
+}
+
+fun connect_retry(addr: String) -> Result<TcpStream, Error> {
+    let attempt = 0
+    while attempt < 50 {
+        match connect(addr) {
+            Ok(s) -> {
+                return Ok(s)
+            }
+            Err(_) -> {
+                sleep_millis(20)
+            }
+        }
+        attempt += 1
+    }
+    return connect(addr)
+}
+
+fun main() {
+    let addr = "127.0.0.1:18642"
+    let app = Server.new()
+    app.get("/x", ok_handler)
+    spawn(fun() -> Unit {
+        app.listen(addr)
+    })
+
+    // A valid keep-alive request, then a malformed one (no HTTP version) on the
+    // same connection, sent together so the server reads the second from the
+    // first request's carried-over bytes.
+    let both = "GET /x HTTP/1.1\r\nHost: t\r\n\r\nGET /x\r\nHost: t\r\n\r\n"
+    let result = ""
+    match connect_retry(addr) {
+        Ok(s) -> {
+            let _ = s.write(both)
+            match s.read_all() {
+                Ok(r) -> {
+                    result = r
+                }
+                Err(_) -> {}
+            }
+            s.close()
+        }
+        Err(_) -> {}
+    }
+
+    println("served-200: ${has(result, "200 OK")}")
+    println("malformed-400: ${has(result, "400 Bad Request")}")
+    app.shutdown()
+}
