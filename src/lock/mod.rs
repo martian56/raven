@@ -442,22 +442,22 @@ pub fn resolve_and_lock_in(manifest: &Manifest, cache_root: &Path) -> Result<Loc
 /// resolution keys packages by source, so a source must resolve to exactly one
 /// version; a conflict is reported rather than silently collapsed.
 fn conflicting_versions(packages: &[LockedPackage]) -> Option<(String, Vec<String>)> {
-    let mut by_source: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    // A GitHub owner and repository path is case-insensitive, so `acme/Demo` and
+    // `acme/demo` name the same repository. Group by the lowercased source so two
+    // casing variants at different versions are caught as one conflict rather
+    // than sneaking past as two separate sources. A representative original
+    // spelling is kept for the message.
+    let mut by_source: BTreeMap<String, (String, BTreeSet<String>)> = BTreeMap::new();
     for p in packages {
-        by_source
-            .entry(p.source.as_str())
-            .or_default()
-            .insert(p.version.as_str());
+        let entry = by_source
+            .entry(p.source.to_ascii_lowercase())
+            .or_insert_with(|| (p.source.clone(), BTreeSet::new()));
+        entry.1.insert(p.version.clone());
     }
     by_source
-        .into_iter()
+        .into_values()
         .find(|(_, vs)| vs.len() > 1)
-        .map(|(s, vs)| {
-            (
-                s.to_string(),
-                vs.into_iter().map(|v| v.to_string()).collect(),
-            )
-        })
+        .map(|(s, vs)| (s, vs.into_iter().collect()))
 }
 
 /// Read the direct dependencies a cached package declares in its own
@@ -861,6 +861,31 @@ mod tests {
             src.push_str(&format!("\"{}\" = \"{}\"\n", path, constraint));
         }
         Manifest::from_toml_str(&src).expect("manifest parses")
+    }
+
+    #[test]
+    fn conflicting_versions_compares_source_case_insensitively() {
+        // A GitHub path is case-insensitive, so two casings of one repo at
+        // different versions are a single conflict (issue #724).
+        let pkg = |source: &str, version: &str| LockedPackage {
+            source: source.to_string(),
+            version: version.to_string(),
+            hash: "sha256:00".to_string(),
+        };
+        let differ = vec![
+            pkg("github.com/Acme/Demo", "v1.0.0"),
+            pkg("github.com/acme/demo", "v2.0.0"),
+        ];
+        assert!(
+            conflicting_versions(&differ).is_some(),
+            "casing variants at different versions must conflict"
+        );
+        // The same repo at the same version (different casing) is not a conflict.
+        let same = vec![
+            pkg("github.com/Acme/Demo", "v1.0.0"),
+            pkg("github.com/acme/demo", "v1.0.0"),
+        ];
+        assert!(conflicting_versions(&same).is_none());
     }
 
     #[test]
