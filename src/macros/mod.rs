@@ -495,6 +495,13 @@ fn parse_rules(inner: &[Token], name: &str, span: &Span) -> Result<Vec<Rule>, Ra
                 ));
             }
         }
+        // A template repetition expands once per matched item, and that count
+        // comes from a metavariable a matcher repetition captured as a sequence.
+        // A repetition that references no such metavariable (only literals, or
+        // only metavariables bound outside a matcher repetition) has no count and
+        // would silently expand zero times; reject it.
+        let seq_bound = matcher_seq_bound_metas(&matcher);
+        validate_template_rep_counts(&template, &seq_bound, name, &inner[j].span)?;
         rules.push(Rule { matcher, template });
         i = tclose + 1;
     }
@@ -662,23 +669,6 @@ fn parse_template(slice: &[Token], name: &str) -> Result<Vec<TemplateItem>, Rave
                         ),
                         ))
                     }
-                }
-                // A template repetition expands once per matched item, and that
-                // count comes from a metavariable bound by a matcher repetition.
-                // A repetition of only literal tokens has no such metavariable,
-                // so its count is unknowable and it would silently expand zero
-                // times; reject it rather than drop the matched items.
-                if template_meta_names(&sub).is_empty() {
-                    return Err(err(
-                        slice[i].span.clone(),
-                        format!(
-                            "macro `{}`: a template repetition `$( ... )` must reference a \
-                             metavariable, which sets how many times it expands; a repetition \
-                             of only literal tokens has no count. Capture the repeated items \
-                             with a metavariable (for example `$( $x ),*`) and reference it here",
-                            name
-                        ),
-                    ));
                 }
                 items.push(TemplateItem::Rep { sub, sep });
                 i = marker + 1;
@@ -1428,6 +1418,63 @@ fn template_meta_names(items: &[TemplateItem]) -> Vec<String> {
         }
     }
     out
+}
+
+/// The matcher metavariables captured as a sequence, that is, bound somewhere
+/// under a matcher repetition. Only these carry a repetition count a template
+/// repetition can expand against; a metavariable bound outside every repetition
+/// is a single capture.
+fn matcher_seq_bound_metas(items: &[MatchItem]) -> std::collections::HashSet<String> {
+    fn walk(items: &[MatchItem], under_rep: bool, out: &mut std::collections::HashSet<String>) {
+        for it in items {
+            match it {
+                MatchItem::Meta { name, .. } => {
+                    if under_rep {
+                        out.insert(name.clone());
+                    }
+                }
+                MatchItem::Rep { sub, .. } => walk(sub, true, out),
+                MatchItem::Literal(_) => {}
+            }
+        }
+    }
+    let mut out = std::collections::HashSet::new();
+    walk(items, false, &mut out);
+    out
+}
+
+/// Reject a template repetition whose count cannot be determined: it must
+/// reference at least one metavariable a matcher repetition captured as a
+/// sequence. A repetition of only literals, or one referencing only single-bound
+/// metavariables, would silently expand zero times. Nested repetitions are
+/// checked recursively.
+fn validate_template_rep_counts(
+    items: &[TemplateItem],
+    seq_bound: &std::collections::HashSet<String>,
+    name: &str,
+    span: &Span,
+) -> Result<(), RavenError> {
+    for it in items {
+        if let TemplateItem::Rep { sub, .. } = it {
+            let refs_seq = template_meta_names(sub)
+                .iter()
+                .any(|m| seq_bound.contains(m));
+            if !refs_seq {
+                return Err(err(
+                    span.clone(),
+                    format!(
+                        "macro `{}`: a template repetition `$( ... )` must reference a \
+                         metavariable captured by a matcher repetition, which sets how many \
+                         times it expands; a repetition with no such metavariable has no count. \
+                         Capture the repeated items with `$( $x:expr ),*` and reference `$x` here",
+                        name
+                    ),
+                ));
+            }
+            validate_template_rep_counts(sub, seq_bound, name, span)?;
+        }
+    }
+    Ok(())
 }
 
 /// Find the matching close bracket for the open bracket at `open`. Supports
