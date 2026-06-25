@@ -393,23 +393,24 @@ fn hygiene_renames_function_parameters() {
 }
 
 #[test]
-fn hygiene_renames_match_pattern_bindings() {
-    // A pattern binding and its use rename together; the PascalCase constructors
-    // are left alone.
+fn hygiene_keeps_match_pattern_bindings_verbatim() {
+    // A pattern binding is kept verbatim (a shorthand struct field is also the
+    // field name, so it cannot be gensym'd) and its body use resolves to it
+    // rather than being treated as a free definition-site name. The constructors
+    // are left alone too.
     let src = "macro classify { ($e:expr) => { match ($e) { Some(n) -> n, None -> 0 } } }\n\
                let r = classify!(v)\n";
     let out = expand_render(src);
-    let names: Vec<&str> = out
-        .split_whitespace()
-        .filter(|w| w.starts_with("n$"))
-        .collect();
-    assert_eq!(names.len(), 2, "pattern binding and use renamed: {}", out);
     assert!(
-        names.iter().all(|n| *n == names[0]),
-        "inconsistent: {}",
+        out.contains("Some ( n ) `->` n"),
+        "pattern binding and use kept verbatim: {}",
         out
     );
-    assert!(out.contains("Some"), "constructor preserved: {}", out);
+    assert!(
+        !out.contains("n$"),
+        "pattern binding must not be gensym'd: {}",
+        out
+    );
     assert!(out.contains("None"), "constructor preserved: {}", out);
 }
 

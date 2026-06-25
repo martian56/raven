@@ -18,6 +18,17 @@ macro size {
     ($s:expr) => { match ($s) { Circle(r) -> r, Square(side) -> side } }
 }
 
+struct Pair {
+    a: Int,
+    b: Int,
+}
+
+// A shorthand struct pattern field is both the field name and the binding, so
+// the binding must keep its spelling and still resolve in the arm body.
+macro first {
+    ($p:expr) => { match ($p) { Pair { a, b } -> a } }
+}
+
 // The outer `helper()` is a free call; the nested `let helper` is a separate
 // local that must not rename it.
 macro call_then_bind {
@@ -35,5 +46,7 @@ fun main() {
     print(id(7))
     print(size!(Shape.Circle(3)))
     print(size!(Shape.Square(9)))
+    let pair = Pair { a: 4, b: 8 }
+    print(first!(pair))
     print(call_then_bind!())
 }

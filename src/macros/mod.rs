@@ -19,12 +19,13 @@
 //!   separator token. Metavariables under a matcher repetition bind to a
 //!   sequence and must be used under a template repetition. Repetition nests
 //!   to any depth: a group inside another binds a sequence of sequences.
-//! * Hygiene: identifiers introduced by a template at a binding site (a `let`,
-//!   `const`, or `for` target, a function or closure parameter, or a match-arm
-//!   pattern variable) are renamed to fresh, unique names per expansion, so a
+//! * Hygiene: a `let`/`const`/`for` target or a function or closure parameter a
+//!   template introduces is renamed to a fresh, unique name per expansion, so a
 //!   template temporary cannot capture or be captured by a caller name. The
-//!   rename is scope-aware: a binding only renames its own lexical scope, so a
-//!   nested local does not rename a free use in an outer scope. A free
+//!   `let`/`const`/`for` rename is scope-aware: a binding only renames its own
+//!   lexical scope, so a nested local does not rename a free use in an outer
+//!   scope. A match-arm pattern variable is kept verbatim (a shorthand struct
+//!   field is also the field name) but recorded so its uses resolve. A free
 //!   identifier a template names (a function it calls) is marked so the resolver
 //!   resolves it at the macro's definition site (the module scope), not the call
 //!   site. Metavariable-captured tokens keep their original identity, referring
@@ -1085,13 +1086,32 @@ fn instantiate(
     out
 }
 
+/// How a template-introduced binding is made hygienic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BindKind {
+    /// A `let`/`const`/`for` target: gensym'd and block-scoped, so it only
+    /// renames its own `{}` scope and nested ones.
+    Block,
+    /// A function or closure parameter: gensym'd and renamed across the whole
+    /// expansion (it is not brace-delimited). Safe because a parameter name is
+    /// positional, never a struct field label.
+    Param,
+    /// A match-arm pattern variable: kept verbatim (not gensym'd) but recorded
+    /// so its uses resolve rather than being treated as free. A shorthand struct
+    /// pattern field (`Point { x }`) is both the field name and the binding, so
+    /// renaming it would break the field match.
+    Pattern,
+}
+
 /// The token indices of the template-introduced bindings in an instantiated
-/// stream, mapped to their original spelling. Only tokens that came from the
-/// template (`from_template[i]`) are considered: a captured metavariable token
-/// keeps its caller identity and is never a template binding. A binding is a
-/// `let`/`const`/`for` target, a function or closure parameter, or a lowercase
-/// match-arm pattern variable.
-fn collect_binding_indices(tokens: &[Token], from_template: &[bool]) -> HashMap<usize, String> {
+/// stream, each mapped to its spelling and how it should be made hygienic. Only
+/// tokens that came from the template (`from_template[i]`) are considered: a
+/// captured metavariable keeps its caller identity and is never a template
+/// binding.
+fn collect_binding_indices(
+    tokens: &[Token],
+    from_template: &[bool],
+) -> HashMap<usize, (String, BindKind)> {
     let mut bindings = HashMap::new();
     let is_t = |i: usize| from_template.get(i).copied().unwrap_or(false);
     let mut i = 0;
@@ -1101,7 +1121,7 @@ fn collect_binding_indices(tokens: &[Token], from_template: &[bool]) -> HashMap<
                 TokenKind::Let | TokenKind::Const | TokenKind::For => {
                     if is_t(i + 1) {
                         if let Some(TokenKind::Identifier(s)) = tokens.get(i + 1).map(|t| &t.kind) {
-                            bindings.insert(i + 1, s.clone());
+                            bindings.insert(i + 1, (s.clone(), BindKind::Block));
                         }
                     }
                 }
@@ -1145,7 +1165,7 @@ fn collect_param_indices(
     tokens: &[Token],
     from_template: &[bool],
     open: usize,
-    bindings: &mut HashMap<usize, String>,
+    bindings: &mut HashMap<usize, (String, BindKind)>,
 ) {
     let is_t = |i: usize| from_template.get(i).copied().unwrap_or(false);
     let mut depth = 0i32;
@@ -1163,7 +1183,7 @@ fn collect_param_indices(
                 if is_t(k + 1)
                     && matches!(tokens.get(k + 1).map(|t| &t.kind), Some(TokenKind::Colon))
                 {
-                    bindings.insert(k, s.clone());
+                    bindings.insert(k, (s.clone(), BindKind::Param));
                 }
             }
             _ => {}
@@ -1181,7 +1201,7 @@ fn collect_match_pattern_indices(
     tokens: &[Token],
     from_template: &[bool],
     open: usize,
-    bindings: &mut HashMap<usize, String>,
+    bindings: &mut HashMap<usize, (String, BindKind)>,
 ) {
     let is_t = |i: usize| from_template.get(i).copied().unwrap_or(false);
     let mut depth = 0i32;
@@ -1199,12 +1219,15 @@ fn collect_match_pattern_indices(
             TokenKind::Arrow if depth == 1 => in_pattern = false,
             TokenKind::Comma if depth == 1 => in_pattern = true,
             TokenKind::Identifier(s) if in_pattern && is_t(k) && starts_lowercase(s) => {
-                let constructor = matches!(
+                // Skip constructor heads (followed by `(` or `{`) and record
+                // pattern field labels (followed by `:`, as in `Point { x: a }`):
+                // the label is not the binding; the value pattern after it is.
+                let non_binding = matches!(
                     tokens.get(k + 1).map(|t| &t.kind),
-                    Some(TokenKind::LParen | TokenKind::LBrace)
+                    Some(TokenKind::LParen | TokenKind::LBrace | TokenKind::Colon)
                 );
-                if !constructor {
-                    bindings.insert(k, s.clone());
+                if !non_binding {
+                    bindings.insert(k, (s.clone(), BindKind::Pattern));
                 }
             }
             _ => {}
@@ -1219,18 +1242,20 @@ fn starts_lowercase(s: &str) -> bool {
     s.chars().next().is_some_and(|c| c.is_ascii_lowercase())
 }
 
-/// Rename template-introduced bindings and their uses to fresh names, in a
-/// scope-aware pass over the instantiated token stream. Each `{` opens a scope
-/// and each `}` closes it; a binding adds a fresh gensym to the current scope,
-/// and a later use of that spelling, in the same scope or a nested one, renames
-/// to it. A use with no in-scope binding is free: its span is recorded as a
-/// definition-site use so the resolver resolves it against the macro's module
-/// scope. A captured metavariable token (`!from_template[i]`) keeps its caller
-/// identity and is left untouched. Because a binding only covers its own scope,
-/// a nested local cannot rename a free use in an outer scope.
+/// Rename template-introduced bindings and their uses over the instantiated
+/// token stream. A `Block` binding (`let`/`const`/`for`) adds a fresh gensym to
+/// the current `{}` scope and only renames uses in that scope or a nested one,
+/// so a nested local cannot rename a free use in an outer scope. A `Param`
+/// binding is gensym'd and renamed across the whole expansion (it is not
+/// brace-delimited). A `Pattern` binding is kept verbatim, since a shorthand
+/// struct field is also the field name, but still recorded so its uses resolve.
+/// A use with no binding is free: its span is recorded as a definition-site use
+/// so the resolver resolves it against the macro's module scope. A captured
+/// metavariable token (`!from_template[i]`) keeps its caller identity untouched.
 fn scope_aware_rename(tokens: &mut [Token], from_template: &[bool], spans: &mut SpanGen) {
     let bindings = collect_binding_indices(tokens, from_template);
     let mut scopes: Vec<HashMap<String, String>> = vec![HashMap::new()];
+    let mut flat: HashMap<String, String> = HashMap::new();
     for i in 0..tokens.len() {
         if !from_template.get(i).copied().unwrap_or(false) {
             continue;
@@ -1243,15 +1268,37 @@ fn scope_aware_rename(tokens: &mut [Token], from_template: &[bool], spans: &mut 
                 }
             }
             TokenKind::Identifier(s) => {
-                if let Some(name) = bindings.get(&i) {
-                    let fresh = spans.gensym(name);
-                    scopes
-                        .last_mut()
-                        .expect("a scope is always present")
-                        .insert(name.clone(), fresh.clone());
+                if let Some((name, kind)) = bindings.get(&i).cloned() {
+                    let fresh = match kind {
+                        BindKind::Block => {
+                            let fresh = spans.gensym(&name);
+                            scopes
+                                .last_mut()
+                                .expect("a scope is always present")
+                                .insert(name, fresh.clone());
+                            fresh
+                        }
+                        // One fresh name per spelling, shared by every use.
+                        BindKind::Param => flat
+                            .entry(name.clone())
+                            .or_insert_with(|| spans.gensym(&name))
+                            .clone(),
+                        // Kept verbatim so a struct field name still matches; the
+                        // identity entry lets its uses resolve instead of free.
+                        BindKind::Pattern => flat
+                            .entry(name.clone())
+                            .or_insert_with(|| name.clone())
+                            .clone(),
+                    };
                     tokens[i].kind = TokenKind::Identifier(fresh);
                 } else {
-                    let resolved = scopes.iter().rev().find_map(|scope| scope.get(s)).cloned();
+                    // A use: an in-scope block binding wins over a flat binding.
+                    let resolved = scopes
+                        .iter()
+                        .rev()
+                        .find_map(|scope| scope.get(s))
+                        .or_else(|| flat.get(s))
+                        .cloned();
                     match resolved {
                         Some(fresh) => tokens[i].kind = TokenKind::Identifier(fresh),
                         None => {
