@@ -106,6 +106,15 @@ pub fn mangle_local_fn(key: &str, name: &str) -> String {
     format!("{key}{sep}{name}", sep = NAMESPACE_SEP)
 }
 
+/// The rename-map key under which a whole-module alias (`import "./b" as dep`)
+/// records its target module key, so the merge rewrite can turn a qualified
+/// `dep.member` access into the namespaced symbol. The `@` prefix cannot be a
+/// real identifier, so it never collides with an ordinary rename entry and a
+/// bare-identifier rewrite never matches it.
+fn alias_rename_key(alias: &str) -> String {
+    format!("@module-alias@{alias}")
+}
+
 /// Build a namespacing key for one external package source file:
 /// `ext.<host>.<user>.<repo>.<hash>`. The host/user/repo segments are
 /// sanitized (any `.` in `host` becomes `_`) so the key has a fixed dot
@@ -361,6 +370,14 @@ pub fn expand_with_stdlib_ctx(
             for (selector, symbol) in external_import_rename_map(&module_file, ctx) {
                 rename.insert(selector, symbol);
             }
+        }
+        // A whole-module alias (`import "./b" as dep`) is recorded so the rewrite
+        // can turn a qualified `dep.fn()` call into b's namespaced symbol; the
+        // import declaration itself is stripped by the merge.
+        for (alias_key, target_key) in
+            whole_module_alias_renames(&module_file, &importing, &mut loader)
+        {
+            rename.insert(alias_key, target_key);
         }
         for name in top_level_fn_names(&module_file) {
             rename.insert(name.clone(), mangle_local_fn(&key, &name));
@@ -745,6 +762,42 @@ fn import_rename_map(
         }
     }
     map
+}
+
+/// Collect the whole-module alias imports of `file` (`import "./b" as dep`, an
+/// alias with no selector list) as `(alias rename key, target module key)`
+/// pairs. A merged module strips its own import declarations, so a qualified
+/// `dep.member` call would otherwise lose the binding the alias stood for; the
+/// merge rewrite uses these to namespace it instead. Only local (`./`, `../`)
+/// imports are handled here.
+fn whole_module_alias_renames(
+    file: &File,
+    importing: &Path,
+    loader: &mut dyn SourceLoader,
+) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for decl in &file.items {
+        let DeclKind::Import(import) = &decl.kind else {
+            continue;
+        };
+        let Some(alias) = &import.alias else {
+            continue;
+        };
+        if !import.selectors.is_empty() {
+            continue;
+        }
+        let ImportSource::Quoted(path) = &import.source else {
+            continue;
+        };
+        if !(path.starts_with("./") || path.starts_with("../")) {
+            continue;
+        }
+        if let Some(loaded) = loader.load(importing, path) {
+            let key = local_module_key(&loaded.canonical_path);
+            out.push((alias_rename_key(alias), key));
+        }
+    }
+    out
 }
 
 /// One loaded external package source file plus the package identity it
@@ -1149,7 +1202,84 @@ fn rewrite_stmt(stmt: &mut Stmt, rename: &HashMap<String, String>) {
     }
 }
 
+/// The identifier name of `e` when it is a bare `Ident` with no generic
+/// arguments (a whole-module alias receiver looks like this), else `None`.
+fn bare_ident_name(e: &Expr) -> Option<&str> {
+    match &e.kind {
+        ExprKind::Ident { name, generics } if generics.is_empty() => Some(name),
+        _ => None,
+    }
+}
+
+/// Rewrite a `dep.member` access where `dep` is a whole-module alias into the
+/// target module's namespaced symbol: `dep.fn(args)` becomes a call to
+/// `loc.<hash>.fn`, and a `dep.GLOBAL` field access becomes the bare namespaced
+/// global. Returns true when it rewrote `expr` (the caller then skips the
+/// ordinary walk for this node). Other expressions are left untouched.
+fn rewrite_module_alias_access(expr: &mut Expr, rename: &HashMap<String, String>) -> bool {
+    // Resolve the alias target without holding a borrow across the mutation.
+    let (target_key, member, is_call) = match &expr.kind {
+        ExprKind::MethodCall { receiver, name, .. } => {
+            let Some(alias) = bare_ident_name(receiver) else {
+                return false;
+            };
+            match rename.get(&alias_rename_key(alias)) {
+                Some(key) => (key.clone(), name.clone(), true),
+                None => return false,
+            }
+        }
+        ExprKind::Field { receiver, name } => {
+            let Some(alias) = bare_ident_name(receiver) else {
+                return false;
+            };
+            match rename.get(&alias_rename_key(alias)) {
+                Some(key) => (key.clone(), name.clone(), false),
+                None => return false,
+            }
+        }
+        _ => return false,
+    };
+    let symbol = mangle_local_fn(&target_key, &member);
+    let span = expr.span.clone();
+    if is_call {
+        let ExprKind::MethodCall { generics, args, .. } = &mut expr.kind else {
+            return false;
+        };
+        let mut gens = std::mem::take(generics);
+        let mut call_args = std::mem::take(args);
+        for g in &mut gens {
+            rewrite_type(g, rename);
+        }
+        for a in &mut call_args {
+            rewrite_expr(a, rename);
+        }
+        let callee = Expr {
+            kind: ExprKind::Ident {
+                name: symbol,
+                generics: gens,
+            },
+            span,
+        };
+        expr.kind = ExprKind::Call {
+            callee: Box::new(callee),
+            args: call_args,
+        };
+    } else {
+        expr.kind = ExprKind::Ident {
+            name: symbol,
+            generics: Vec::new(),
+        };
+    }
+    true
+}
+
 fn rewrite_expr(expr: &mut Expr, rename: &HashMap<String, String>) {
+    // A qualified access through a whole-module alias (`dep.fn()` / `dep.GLOBAL`
+    // from `import "./b" as dep`) is rewritten to b's namespaced symbol before
+    // the ordinary walk, since the alias binding itself is gone after the merge.
+    if rewrite_module_alias_access(expr, rename) {
+        return;
+    }
     match &mut expr.kind {
         ExprKind::Ident { name, generics } => {
             if let Some(replacement) = rename.get(name) {
@@ -2088,6 +2218,47 @@ mod tests {
 
         // `a::via` calls `base`, imported from `./b`. The merged `via` body
         // must reference `b`'s namespaced symbol, not the bare name.
+        let key_b = local_module_key(&canon_b);
+        let base_mangled = mangle_local_fn(&key_b, "base");
+        let via = combined
+            .items
+            .iter()
+            .filter_map(|d| match &d.kind {
+                DeclKind::Function(f) if f.name.ends_with(".via") => Some(f),
+                _ => None,
+            })
+            .next()
+            .expect("via present");
+        let mut idents = Vec::new();
+        collect_fn_body_idents(&via.body, &mut idents);
+        assert!(
+            idents.iter().any(|n| *n == base_mangled),
+            "via should call {base_mangled}, got {idents:?}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn whole_module_alias_call_is_rewritten_in_a_merged_module() {
+        // `a.rv` uses a whole-module alias (`import "./b" as dep`) and calls
+        // `dep.base()`. When `a` is merged as an imported module its alias
+        // binding is stripped, so the qualified call must be rewritten to `b`'s
+        // namespaced symbol rather than left as an unresolved `dep`.
+        let (dir, entry) = write_temp_project(
+            &[
+                ("b.rv", "fun base() -> Int { return 1 }\n"),
+                (
+                    "a.rv",
+                    "import \"./b\" as dep\nfun via() -> Int { return dep.base() }\n",
+                ),
+                ("main.rv", "import \"./a\" { via }\nfun main() {}\n"),
+            ],
+            "main.rv",
+        );
+        let canon_b = dir.join("b.rv").canonicalize().expect("canon b");
+        let user = parse_at("import \"./a\" { via }\nfun main() {}\n", &entry);
+        let combined = expand_with_stdlib(&user).expect("expand");
+
         let key_b = local_module_key(&canon_b);
         let base_mangled = mangle_local_fn(&key_b, "base");
         let via = combined
