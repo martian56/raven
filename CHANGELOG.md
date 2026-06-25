@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.221] - 2026-06-25
+
+### Fixed
+
+- The module merge no longer rewrites a parameter or local that shadows a module global to the namespaced global. When an imported module declared a `let`/`const` global, every same-named identifier (a function parameter, a `let`, a closure parameter, a `for` variable, a match-arm binding) was rewritten to the global, so the program silently read the global instead of the local value. The rename pass is now scope-aware: a shadowing binding is dropped from the rename map within its scope (#746).
+
 ## [2.18.220] - 2026-06-25
 
 ### Fixed
