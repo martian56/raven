@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.201] - 2026-06-25
+
+### Fixed
+
+- The HTTP server honors a `close` token in a multi-token `Connection` header. It compared the whole header value as one string, so an HTTP/1.1 `Connection: keep-alive, close` was treated as keep-alive and the connection was retained against the client's request; the value is now split into comma-separated tokens and each is checked, so a `close` beside any other option closes the connection (#744).
+
 ## [2.18.200] - 2026-06-25
 
 ### Fixed
