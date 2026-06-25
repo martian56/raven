@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.216] - 2026-06-25
+
+### Fixed
+
+- A free identifier a macro introduces inside a `"${...}"` interpolation fragment now resolves at the macro's definition scope, not against a same-named local at the call site. The interpolation-macro path (`expand_with_table`, run while a fragment is parsed) generated def-sites but discarded them; they are now threaded out of the parser and merged into the set the resolver sees, matching the top-level macro pre-pass (#760).
+
 ## [2.18.215] - 2026-06-25
 
 ### Fixed

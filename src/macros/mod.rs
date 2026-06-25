@@ -168,9 +168,12 @@ pub fn collect_macro_table(tokens: &[Token]) -> Result<MacroTable, RavenError> {
 /// after the file's main macro pre-pass has already run and stripped the
 /// definitions from the stream. Returns the input unchanged when the table
 /// is empty or the tokens contain no macro call.
-pub fn expand_with_table(tokens: &[Token], table: &MacroTable) -> Result<Vec<Token>, RavenError> {
+pub fn expand_with_table(
+    tokens: &[Token],
+    table: &MacroTable,
+) -> Result<(Vec<Token>, DefSites), RavenError> {
     if table.is_empty() || !contains_call(tokens) {
-        return Ok(tokens.to_vec());
+        return Ok((tokens.to_vec(), DefSites::new()));
     }
     let mut stream = tokens.to_vec();
     let mut spans = SpanGen::starting_after(tokens);
@@ -195,7 +198,9 @@ pub fn expand_with_table(tokens: &[Token], table: &MacroTable) -> Result<Vec<Tok
             return Err(token_limit_error(&stream, tokens));
         }
     }
-    Ok(stream)
+    // The free identifiers this expansion introduced must reach the resolver so
+    // they resolve at the macro's definition site, not a call-site local.
+    Ok((stream, spans.def_sites))
 }
 
 /// The "likely recursive" diagnostic for an expansion whose token stream grew

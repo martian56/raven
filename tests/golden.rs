@@ -246,8 +246,11 @@ fn build_object_inner(source: &str, path: &Path) -> Result<Vec<u8>, String> {
         raven::macros::collect_macro_table(&tokens).map_err(|e| format!("macro: {}", e))?;
     let (tokens, macro_def_sites) =
         raven::macros::expand_tokens_hygienic(&tokens).map_err(|e| format!("macro: {}", e))?;
-    let file = parse_with_macros(&tokens, macro_table).map_err(|e| format!("parse: {}", e))?;
+    let (file, interp_def_sites) =
+        parse_with_macros(&tokens, macro_table).map_err(|e| format!("parse: {}", e))?;
     let file = expand_with_stdlib(&file).map_err(|e| format!("stdlib: {}", e))?;
+    let mut macro_def_sites = macro_def_sites;
+    macro_def_sites.extend(interp_def_sites);
     let mut loader = FsLoader;
     let resolved = raven::resolve::resolve_file_ctx(&file, &mut loader, None, macro_def_sites)
         .map_err(|e| format!("resolve: {}", e))?;
