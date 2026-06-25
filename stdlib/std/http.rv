@@ -659,25 +659,65 @@ fun read_request(stream: TcpStream, initial: String) -> Result<ReadResult, Error
     if lines.len() == 0 {
         return Err(error_kind("http", "empty request"))
     }
+    // A request line is exactly `METHOD SP TARGET SP VERSION`: reject anything
+    // with a different token count (extra or missing fields, a target with a
+    // raw space). The server speaks HTTP/1.x, so the version must be 1.0 or 1.1.
     let request_line = lines[0].split(" ")
-    if request_line.len() < 3 {
+    if request_line.len() != 3 {
         return Err(error_kind("http", "malformed request line"))
     }
-    let method = parse_method(request_line[0])
+    // Method tokens are case-sensitive: reject a lowercase one (`get`) rather
+    // than normalizing it, so it cannot route as if it were `GET`.
+    let method_token = request_line[0]
+    if method_token != method_token.to_upper() {
+        return Err(error_kind("http", "malformed method token"))
+    }
+    let method = parse_method(method_token)
     let target = request_line[1]
     let version = request_line[2]
+    if version != "HTTP/1.0" && version != "HTTP/1.1" {
+        return Err(error_kind("http", "unsupported HTTP version"))
+    }
 
     let headers: Map<String, String> = Map.new()
     let i = 1
     while i < lines.len() {
         let line = lines[i]
-        let colon = line.index_of(":")
-        if colon > 0 {
-            let key = line.substring(0, colon).trim().to_lower()
-            let value = line.substring(colon + 1, line.length()).trim()
-            headers.set(key, value)
+        if line.length() == 0 {
+            i += 1
+            continue
         }
+        // Reject obsolete line folding: a header that begins with whitespace is
+        // a continuation of the previous one, which current HTTP forbids.
+        if line.starts_with(" ") || line.starts_with("\t") {
+            return Err(error_kind("http", "obsolete header line folding"))
+        }
+        // Every header is `name: value`; a line with no colon, or an empty
+        // name, is malformed.
+        let colon = line.index_of(":")
+        if colon <= 0 {
+            return Err(error_kind("http", "malformed header line"))
+        }
+        let key = line.substring(0, colon).trim().to_lower()
+        if key.length() == 0 {
+            return Err(error_kind("http", "empty header name"))
+        }
+        let value = line.substring(colon + 1, line.length()).trim()
+        // Two Content-Length headers with different values are a request
+        // smuggling vector; reject the conflict rather than trusting one.
+        if key == "content-length" {
+            let existing = headers.get_or("content-length", "")
+            if existing.length() > 0 && existing != value {
+                return Err(error_kind("http", "conflicting Content-Length"))
+            }
+        }
+        headers.set(key, value)
         i += 1
+    }
+
+    // HTTP/1.1 requires a Host header (RFC 7230 5.4); its absence is malformed.
+    if version == "HTTP/1.1" && headers.get_or("host", "").length() == 0 {
+        return Err(error_kind("http", "missing Host header"))
     }
 
     let want = 0

@@ -1393,6 +1393,24 @@ fn http_server_timeout_does_not_overflow() {
 }
 
 #[test]
+fn http_server_rejects_malformed_requests() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // A valid request is served, while a request line with the wrong token
+    // count, a header with no colon, two conflicting Content-Length headers, and
+    // an HTTP/1.1 request with no Host are each rejected with 400 instead of
+    // being parsed loosely.
+    let expected = "valid: HTTP/1.1 200 OK\n\
+                    bad-line: HTTP/1.1 400 Bad Request\n\
+                    no-colon: HTTP/1.1 400 Bad Request\n\
+                    dup-clen: HTTP/1.1 400 Bad Request\n\
+                    no-host: HTTP/1.1 400 Bad Request\n\
+                    low-method: HTTP/1.1 400 Bad Request\n";
+    compile_link_run_and_check("http_request_validation.rv", expected, &runtime);
+}
+
+#[test]
 fn http_sends_binary_body() {
     let Some(runtime) = supported_runtime() else {
         return;

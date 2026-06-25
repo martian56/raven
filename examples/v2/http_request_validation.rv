@@ -1,0 +1,83 @@
+// Starts an HTTP server in a goroutine and probes it over raw TCP with one
+// valid request and three malformed ones, checking that the malformed requests
+// are rejected with 400 instead of being parsed loosely. golden:skip (binds a
+// port and depends on timing; a codegen smoke test runs it and checks output).
+import std/http { Server, Response, Request }
+import std/net { connect, TcpStream }
+import std/time { sleep_millis }
+import std/io { println }
+
+fun ok_handler(req: Request) -> Response {
+    return Response.with_body(200, "ok")
+}
+
+fun first_line(s: String) -> String {
+    let idx = s.index_of("\r\n")
+    if idx < 0 {
+        return s
+    }
+    return s.substring(0, idx)
+}
+
+fun connect_retry(addr: String) -> Result<TcpStream, Error> {
+    let attempt = 0
+    while attempt < 50 {
+        match connect(addr) {
+            Ok(s) -> {
+                return Ok(s)
+            }
+            Err(_) -> {
+                sleep_millis(20)
+            }
+        }
+        attempt += 1
+    }
+    return connect(addr)
+}
+
+fun status_of(addr: String, request: String) -> String {
+    let result = ""
+    match connect_retry(addr) {
+        Ok(s) -> {
+            let _ = s.write(request)
+            match s.read_all() {
+                Ok(r) -> {
+                    result = r
+                }
+                Err(_) -> {}
+            }
+            s.close()
+        }
+        Err(_) -> {}
+    }
+    return first_line(result)
+}
+
+fun main() {
+    let addr = "127.0.0.1:18641"
+    let app = Server.new()
+    app.get("/x", ok_handler)
+    spawn(fun() -> Unit {
+        app.listen(addr)
+    })
+
+    let valid = "GET /x HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n"
+    println("valid: ${status_of(addr, valid)}")
+
+    let bad_line = "GET /x\r\nHost: t\r\nConnection: close\r\n\r\n"
+    println("bad-line: ${status_of(addr, bad_line)}")
+
+    let no_colon = "GET /x HTTP/1.1\r\nBadHeader\r\nConnection: close\r\n\r\n"
+    println("no-colon: ${status_of(addr, no_colon)}")
+
+    let dup_clen = "POST /x HTTP/1.1\r\nHost: t\r\nContent-Length: 1\r\nContent-Length: 2\r\nConnection: close\r\n\r\nx"
+    println("dup-clen: ${status_of(addr, dup_clen)}")
+
+    let no_host = "GET /x HTTP/1.1\r\nConnection: close\r\n\r\n"
+    println("no-host: ${status_of(addr, no_host)}")
+
+    let low_method = "get /x HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n"
+    println("low-method: ${status_of(addr, low_method)}")
+
+    app.shutdown()
+}
