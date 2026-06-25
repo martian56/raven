@@ -1,0 +1,23 @@
+// Macro hygiene for template-introduced bindings beyond let/const/for: a macro
+// that generates a closure must let the closure's parameter resolve in its body,
+// and a macro that generates a match must let each arm's pattern bindings
+// resolve in the arm body.
+macro identity {
+    () => { fun(arg: Int) -> Int = arg }
+}
+
+enum Shape {
+    Circle(Int),
+    Square(Int),
+}
+
+macro size {
+    ($s:expr) => { match ($s) { Circle(r) -> r, Square(side) -> side } }
+}
+
+fun main() {
+    let id = identity!()
+    print(id(7))
+    print(size!(Shape.Circle(3)))
+    print(size!(Shape.Square(9)))
+}

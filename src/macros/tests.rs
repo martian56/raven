@@ -369,6 +369,70 @@ fn hygiene_renames_are_consistent_within_one_expansion() {
 }
 
 #[test]
+fn hygiene_renames_function_parameters() {
+    // A function/closure parameter and its uses are renamed together, so they
+    // are not treated as free definition-site names the resolver cannot find.
+    let src = "macro identity { () => { fun(arg: Int) -> Int = arg } }\nlet id = identity!()\n";
+    let out = expand_render(src);
+    let names: Vec<&str> = out
+        .split_whitespace()
+        .filter(|w| w.starts_with("arg$"))
+        .collect();
+    assert_eq!(
+        names.len(),
+        2,
+        "parameter decl and use both renamed: {}",
+        out
+    );
+    assert!(
+        names.iter().all(|n| *n == names[0]),
+        "inconsistent: {}",
+        out
+    );
+    assert!(!out.contains(" arg "), "bare parameter leaked: {}", out);
+}
+
+#[test]
+fn hygiene_renames_match_pattern_bindings() {
+    // A pattern binding and its use rename together; the PascalCase constructors
+    // are left alone.
+    let src = "macro classify { ($e:expr) => { match ($e) { Some(n) -> n, None -> 0 } } }\n\
+               let r = classify!(v)\n";
+    let out = expand_render(src);
+    let names: Vec<&str> = out
+        .split_whitespace()
+        .filter(|w| w.starts_with("n$"))
+        .collect();
+    assert_eq!(names.len(), 2, "pattern binding and use renamed: {}", out);
+    assert!(
+        names.iter().all(|n| *n == names[0]),
+        "inconsistent: {}",
+        out
+    );
+    assert!(out.contains("Some"), "constructor preserved: {}", out);
+    assert!(out.contains("None"), "constructor preserved: {}", out);
+}
+
+#[test]
+fn hygiene_renames_parameters_past_a_spliced_function_name() {
+    // The function name is a spliced metavariable, not a literal token, so the
+    // parameter scan must look past it to the parameter list's `(`.
+    let src = "macro mk { ($n:ident) => { fun $n(arg: Int) -> Int = arg } }\nmk!(myfn)\n";
+    let out = expand_render(src);
+    let names: Vec<&str> = out
+        .split_whitespace()
+        .filter(|w| w.starts_with("arg$"))
+        .collect();
+    assert_eq!(
+        names.len(),
+        2,
+        "parameter renamed even with a spliced name: {}",
+        out
+    );
+    assert!(out.contains("myfn"), "spliced name spliced: {}", out);
+}
+
+#[test]
 fn missing_repetition_marker_is_an_error() {
     let src = "macro bad { ($($x:expr),) => { ($x) } }\nlet s = bad!(1)\n";
     let e = expand_tokens(&lex(src)).expect_err("missing marker");

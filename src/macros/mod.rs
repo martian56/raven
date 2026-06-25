@@ -1089,12 +1089,136 @@ fn collect_hygiene_renames(
                 }
                 i += 1;
             }
+            // A `fun` (named or a closure) introduces its parameters as
+            // bindings: without this, a parameter and its uses in the body are
+            // treated as free definition-site names, so the resolver cannot find
+            // them. Scan forward to the parameter list's `(`, past an optional
+            // name whether it is a literal identifier or a spliced metavariable.
+            TemplateItem::Token(t) if matches!(t.kind, TokenKind::Fun) => {
+                let mut j = i + 1;
+                while let Some(item) = template.get(j) {
+                    if let TemplateItem::Token(p) = item {
+                        if matches!(p.kind, TokenKind::LParen) {
+                            collect_param_names(template, j, renames, spans);
+                            break;
+                        }
+                    }
+                    j += 1;
+                }
+                i += 1;
+            }
+            // A `match` introduces the bindings named by each arm's pattern. Find
+            // the `{` that opens the arms (after the scrutinee) and collect the
+            // pattern bindings, so a pattern variable and its uses in the arm
+            // body are not treated as free definition-site names.
+            TemplateItem::Token(t) if matches!(t.kind, TokenKind::Match) => {
+                let mut j = i + 1;
+                while j < template.len() {
+                    if let Some(TemplateItem::Token(b)) = template.get(j) {
+                        if matches!(b.kind, TokenKind::LBrace) {
+                            break;
+                        }
+                    }
+                    j += 1;
+                }
+                if j < template.len() {
+                    collect_match_bindings(template, j, renames, spans);
+                }
+                i += 1;
+            }
             TemplateItem::Rep { sub, .. } => {
                 collect_hygiene_renames(sub, renames, spans);
                 i += 1;
             }
             _ => i += 1,
         }
+    }
+}
+
+/// Collect the binding names of the match arms whose brace opens at `open`. A
+/// pattern binding is a lowercase identifier (Raven names constructors and types
+/// in PascalCase) that is not in constructor position (not followed by `(` or
+/// `{`). Tracking bracket depth keeps an arm-separating comma and the `->` that
+/// ends a pattern distinct from a comma or arrow nested inside a pattern or an
+/// arm body.
+fn collect_match_bindings(
+    template: &[TemplateItem],
+    open: usize,
+    renames: &mut HashMap<String, String>,
+    spans: &mut SpanGen,
+) {
+    let mut depth = 0i32;
+    let mut in_pattern = true;
+    let mut k = open;
+    while k < template.len() {
+        if let TemplateItem::Token(t) = &template[k] {
+            match &t.kind {
+                TokenKind::LParen | TokenKind::LBracket | TokenKind::LBrace => depth += 1,
+                TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return;
+                    }
+                }
+                TokenKind::Arrow if depth == 1 => in_pattern = false,
+                TokenKind::Comma if depth == 1 => in_pattern = true,
+                TokenKind::Identifier(s) if in_pattern && starts_lowercase(s) => {
+                    let constructor = matches!(
+                        template.get(k + 1),
+                        Some(TemplateItem::Token(n))
+                            if matches!(n.kind, TokenKind::LParen | TokenKind::LBrace)
+                    );
+                    if !constructor {
+                        renames.entry(s.clone()).or_insert_with(|| spans.gensym(s));
+                    }
+                }
+                _ => {}
+            }
+        }
+        k += 1;
+    }
+}
+
+/// Whether `s` begins with an ASCII lowercase letter, the spelling convention
+/// for a value binding (constructors and types are PascalCase).
+fn starts_lowercase(s: &str) -> bool {
+    s.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+}
+
+/// Collect the parameter names of a function or closure whose parameter list
+/// opens at `open` (a `(`), assigning each a fresh gensym. A parameter is a
+/// literal identifier immediately followed by a `:` at the top level of the
+/// list (`fun(a: Int, b: String)`); a `$x:expr` metavariable parameter is not a
+/// template-introduced binding, so it is left alone.
+fn collect_param_names(
+    template: &[TemplateItem],
+    open: usize,
+    renames: &mut HashMap<String, String>,
+    spans: &mut SpanGen,
+) {
+    let mut depth = 0i32;
+    let mut k = open;
+    while k < template.len() {
+        if let TemplateItem::Token(t) = &template[k] {
+            match &t.kind {
+                TokenKind::LParen => depth += 1,
+                TokenKind::RParen => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return;
+                    }
+                }
+                TokenKind::Identifier(s) if depth == 1 => {
+                    if let Some(TemplateItem::Token(next)) = template.get(k + 1) {
+                        if matches!(next.kind, TokenKind::Colon) {
+                            renames.entry(s.clone()).or_insert_with(|| spans.gensym(s));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        k += 1;
     }
 }
 
