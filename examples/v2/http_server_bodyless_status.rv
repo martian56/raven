@@ -1,0 +1,88 @@
+// Starts an HTTP server in a goroutine and probes it over a raw TCP socket to
+// check that a 204 response carries neither a body nor a Content-Length header,
+// even when the handler put bytes in the response body.
+// golden:skip (binds a port and depends on timing, so it is not diffed by the
+// golden suite; run it directly to verify the server response path).
+import std/http { Server, Response, Request }
+import std/net { connect, TcpStream }
+import std/time { sleep_millis }
+import std/io { println }
+
+fun no_content(req: Request) -> Response {
+    return Response.with_body(204, "should not appear")
+}
+
+fun first_line(s: String) -> String {
+    let idx = s.index_of("\r\n")
+    if idx < 0 {
+        return s
+    }
+    return s.substring(0, idx)
+}
+
+fun headers_block(s: String) -> String {
+    let idx = s.index_of("\r\n\r\n")
+    if idx < 0 {
+        return s
+    }
+    return s.substring(0, idx)
+}
+
+fun body_after_headers(s: String) -> String {
+    let idx = s.index_of("\r\n\r\n")
+    if idx < 0 {
+        return ""
+    }
+    return s.substring(idx + 4, s.length())
+}
+
+// Connect with a few retries so a slow server bind does not race the probe.
+fun connect_retry(addr: String) -> Result<TcpStream, Error> {
+    let attempt = 0
+    while attempt < 50 {
+        match connect(addr) {
+            Ok(s) -> {
+                return Ok(s)
+            }
+            Err(_) -> {
+                sleep_millis(20)
+            }
+        }
+        attempt += 1
+    }
+    return connect(addr)
+}
+
+fun send(addr: String, request: String) -> String {
+    let result = ""
+    match connect_retry(addr) {
+        Ok(s) -> {
+            let _ = s.write(request)
+            match s.read_all() {
+                Ok(r) -> {
+                    result = r
+                }
+                Err(_) -> {}
+            }
+            s.close()
+        }
+        Err(_) -> {}
+    }
+    return result
+}
+
+fun main() {
+    let addr = "127.0.0.1:18643"
+    let app = Server.new()
+    app.get("/x", no_content)
+    spawn(fun() -> Unit {
+        app.listen(addr)
+    })
+
+    let resp = send(addr, "GET /x HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
+    println("status: ${first_line(resp)}")
+    println("body empty: ${body_after_headers(resp) == ""}")
+    println("no content-length: ${headers_block(resp).index_of("Content-Length") < 0}")
+
+    app.shutdown()
+}

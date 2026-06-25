@@ -1378,6 +1378,19 @@ fn http_server_reason_and_head_responses() {
 }
 
 #[test]
+fn http_server_omits_body_for_bodyless_status() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Regression for #745: a 204 response must not carry a body or a
+    // Content-Length header, even when the handler put bytes in the body.
+    let expected = "status: HTTP/1.1 204 No Content\n\
+                    body empty: true\n\
+                    no content-length: true\n";
+    compile_link_run_and_check("http_server_bodyless_status.rv", expected, &runtime);
+}
+
+#[test]
 fn http_server_timeout_does_not_overflow() {
     let Some(runtime) = supported_runtime() else {
         return;

@@ -961,11 +961,34 @@ fun decode_query_part(s: String) -> String {
     return url_decode(s.replace("+", " "))
 }
 
+// A 1xx, 204, or 304 response must not carry a message body (RFC 7230 3.3.2),
+// regardless of what the handler put in `resp.body`.
+fun status_forbids_body(status: Int) -> Bool {
+    if status >= 100 && status < 200 {
+        return true
+    }
+    return status == 204 || status == 304
+}
+
+// A 1xx or 204 response must not carry Content-Length either. A 304 still
+// reports the length the body would have, like a HEAD response.
+fun status_forbids_content_length(status: Int) -> Bool {
+    if status >= 100 && status < 200 {
+        return true
+    }
+    return status == 204
+}
+
 // Write `resp` to `stream` as an HTTP/1.1 response, framing it with
 // Content-Length and closing the connection after.
 fun write_response(stream: TcpStream, resp: Response, keep_alive: Bool, is_head: Bool) {
-    // Content-Length always reports what a GET would return, even for HEAD.
-    resp.headers.set("Content-Length", resp.body.length().to_string())
+    if status_forbids_content_length(resp.status) {
+        // Clear any Content-Length the handler set: the status forbids it.
+        let _ = resp.headers.remove("Content-Length")
+    } else {
+        // Content-Length always reports what a GET would return, even for HEAD.
+        resp.headers.set("Content-Length", resp.body.length().to_string())
+    }
     if keep_alive {
         resp.headers.set("Connection", "keep-alive")
     } else {
@@ -981,9 +1004,10 @@ fun write_response(stream: TcpStream, resp: Response, keep_alive: Bool, is_head:
         block = block.concat(k).concat(": ").concat(resp.headers.get_or(k, "")).concat("\r\n")
         i += 1
     }
-    // A response to a HEAD request carries the headers but no body.
+    // A response to a HEAD request, or one whose status forbids a body, carries
+    // the headers but no body.
     let out = line.concat(block).concat("\r\n")
-    if !is_head {
+    if !is_head && !status_forbids_body(resp.status) {
         out = out.concat(resp.body)
     }
     let _ = stream.write(out)
