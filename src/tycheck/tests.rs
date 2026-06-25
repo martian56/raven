@@ -86,6 +86,21 @@ fn generic_arg_violating_a_bound_is_rejected() {
 }
 
 #[test]
+fn unary_address_of_is_rejected() {
+    // Unary `&` has no reference or pointer type to produce, so it is rejected
+    // rather than silently returning the operand (issue #720).
+    let err = check("fun main() {\n    let x = 41\n    let y = &x\n}\n").unwrap_err();
+    match err {
+        RavenError::Type(b, _, _) => assert!(
+            matches!(*b, TypeError::Custom(ref m) if m.contains("address-of")),
+            "got: {:?}",
+            b
+        ),
+        other => panic!("expected a type error, got {:?}", other),
+    }
+}
+
+#[test]
 fn inferred_type_violating_a_bound_is_rejected() {
     // A call that infers a type argument violating the bound is rejected the
     // moment the inference variable resolves to a concrete type, not deferred

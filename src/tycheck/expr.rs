@@ -1478,7 +1478,17 @@ impl<'a, 'b> Checker<'a, 'b> {
                 self.unify(&Ty::Bool, &t, &operand.span)?;
                 Ok(Ty::Bool)
             }
-            UnaryOp::Ref => Ok(t),
+            // Raven has no reference or pointer type, so there is nothing for an
+            // address-of to produce. Accepting it silently (returning the operand
+            // unchanged) made `&x` a misleading no-op, so reject it instead.
+            UnaryOp::Ref => Err(RavenError::ty(
+                TypeError::Custom(
+                    "unary `&` (address-of) is not supported: Raven has no reference \
+                     or pointer type for it to produce"
+                        .into(),
+                ),
+                operand.span.clone(),
+            )),
         }
     }
 

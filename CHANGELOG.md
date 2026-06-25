@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.204] - 2026-06-25
+
+### Fixed
+
+- Unary `&` (address-of) is rejected at type-check instead of behaving as a silent identity operator. Code generation returned the operand unchanged, so `&x` compiled to `x` while looking like it took a reference; Raven has no reference or pointer type for it to produce, so the type checker now reports it as unsupported (#720).
+
 ## [2.18.203] - 2026-06-25
 
 ### Fixed
