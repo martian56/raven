@@ -138,27 +138,13 @@ fun is_symlink(path: String) -> Bool {
 }
 
 // Create `path` and every missing parent directory, like `mkdir -p`. An
-// already-existing directory in the chain is not an error.
+// already-existing directory in the chain is not an error. The OS resolves the
+// path: splitting and rebuilding it in Raven mishandled a Windows UNC path
+// (`//server/share`), rebuilding it as `/server/share` rooted on the current
+// drive, so the whole path is handed to `create_dir`, which already creates
+// every missing parent.
 fun create_dir_all(path: String) -> Result<Bool, Error> {
-    let abs = path.starts_with("/")
-    let prefix = ""
-    for seg in path.split("/") {
-        if seg.length() > 0 {
-            if prefix.length() == 0 {
-                if abs {
-                    prefix = "/".concat(seg)
-                } else {
-                    prefix = seg
-                }
-            } else {
-                prefix = prefix.concat("/").concat(seg)
-            }
-            if is_dir(prefix) == false {
-                let _made = create_dir(prefix)?
-            }
-        }
-    }
-    return Ok(true)
+    return create_dir(path)
 }
 
 // Read a whole file and split it into lines (handling CRLF).
