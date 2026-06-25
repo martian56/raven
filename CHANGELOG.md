@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.195] - 2026-06-25
+
+### Fixed
+
+- Macro hygiene renames bindings scope-aware, so a binding in a nested block no longer renames a free use of the same name in an outer scope. The hygiene built one rename map by spelling for the whole template, so an inner local (`let helper` inside a nested block) renamed every occurrence of that spelling, breaking an unrelated outer `helper()` call. Renaming is now a scope-aware pass over the instantiated tokens: each block is its own scope and a binding only covers its own scope and nested ones (#664).
+
 ## [2.18.194] - 2026-06-25
 
 ### Fixed

@@ -1,7 +1,10 @@
 // Macro hygiene for template-introduced bindings beyond let/const/for: a macro
 // that generates a closure must let the closure's parameter resolve in its body,
-// and a macro that generates a match must let each arm's pattern bindings
-// resolve in the arm body.
+// a macro that generates a match must let each arm's pattern bindings resolve in
+// the arm body, and a binding in a nested block must not rename a free use in an
+// outer scope (scope-aware renaming).
+fun helper() -> Int = 99
+
 macro identity {
     () => { fun(arg: Int) -> Int = arg }
 }
@@ -15,9 +18,22 @@ macro size {
     ($s:expr) => { match ($s) { Circle(r) -> r, Square(side) -> side } }
 }
 
+// The outer `helper()` is a free call; the nested `let helper` is a separate
+// local that must not rename it.
+macro call_then_bind {
+    () => {{
+        let value = helper()
+        {
+            let helper = 1
+        }
+        value
+    }}
+}
+
 fun main() {
     let id = identity!()
     print(id(7))
     print(size!(Shape.Circle(3)))
     print(size!(Shape.Square(9)))
+    print(call_then_bind!())
 }

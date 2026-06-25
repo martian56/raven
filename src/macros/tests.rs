@@ -433,6 +433,26 @@ fn hygiene_renames_parameters_past_a_spliced_function_name() {
 }
 
 #[test]
+fn hygiene_binding_in_nested_scope_does_not_rename_outer_use() {
+    // The inner `let helper` binds only its own block, so it must not rename the
+    // outer free `helper()` call, which stays bare and is resolved at the macro's
+    // definition site.
+    let src =
+        "macro m { () => {{ let value = helper() { let helper = 1 } value }} }\nlet r = m!()\n";
+    let out = expand_render(src);
+    assert!(
+        out.contains("helper ("),
+        "outer free call must stay bare: {}",
+        out
+    );
+    assert!(
+        out.contains("helper$"),
+        "inner nested binding must be renamed: {}",
+        out
+    );
+}
+
+#[test]
 fn missing_repetition_marker_is_an_error() {
     let src = "macro bad { ($($x:expr),) => { ($x) } }\nlet s = bad!(1)\n";
     let e = expand_tokens(&lex(src)).expect_err("missing marker");
