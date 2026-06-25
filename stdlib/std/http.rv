@@ -664,16 +664,30 @@ struct ChunkedBody {
 // bytes already read after the headers) and reading more from `stream` as
 // needed. Each chunk is `<hex-size>[;ext]\r\n<data>\r\n`; a zero-size chunk
 // ends the body, followed by optional trailer lines and a final blank line.
+fun is_chunked_only(te: String) -> Bool {
+    let parts = te.split(",")
+    if parts.len() != 1 {
+        return false
+    }
+    return parts[0].trim().to_lower() == "chunked"
+}
+
 fun decode_chunked(stream: TcpStream, initial: String) -> Result<ChunkedBody, Error> {
     let buf = initial
     let decoded = ""
     let total = 0
     let max_body = 10485760
+    // A single chunk-size line or the whole trailer block must fit this, so an
+    // oversized extension or trailer cannot force unbounded buffering.
+    let max_frame = 65536
     let done = false
     while !done {
         // Read up to the end of the chunk-size line.
         let nl = buf.index_of("\r\n")
         while nl < 0 {
+            if buf.length() > max_frame {
+                return Err(error_kind("http", "chunk size line too large"))
+            }
             let chunk = stream.read(4096)?
             if chunk.length() == 0 {
                 return Err(error_kind("http", "connection closed in chunk size"))
@@ -712,12 +726,16 @@ fun decode_chunked(stream: TcpStream, initial: String) -> Result<ChunkedBody, Er
                 } else if tnl > 0 {
                     buf = buf.substring(tnl + 2, buf.length())
                 } else {
-                    let chunk = stream.read(4096)?
-                    if chunk.length() == 0 {
-                        stop = true
-                    } else {
-                        buf = buf.concat(chunk)
+                    if buf.length() > max_frame {
+                        return Err(error_kind("http", "chunk trailer too large"))
                     }
+                    let chunk = stream.read(4096)?
+                    // EOF before the terminating blank line is a truncated body,
+                    // not a complete one.
+                    if chunk.length() == 0 {
+                        return Err(error_kind("http", "connection closed in chunk trailer"))
+                    }
+                    buf = buf.concat(chunk)
                 }
             }
         } else {
@@ -732,6 +750,11 @@ fun decode_chunked(stream: TcpStream, initial: String) -> Result<ChunkedBody, Er
                     return Err(error_kind("http", "connection closed in chunk data"))
                 }
                 buf = buf.concat(chunk)
+            }
+            // The two bytes after the data must be the CRLF that terminates the
+            // chunk, not arbitrary bytes from a malformed body.
+            if buf.substring(size, size + 2) != "\r\n" {
+                return Err(error_kind("http", "malformed chunk terminator"))
             }
             decoded = decoded.concat(buf.substring(0, size))
             buf = buf.substring(size + 2, buf.length())
@@ -815,6 +838,15 @@ fun read_request(stream: TcpStream, initial: String) -> Result<ReadResult, Error
                 return Err(error_kind("http", "conflicting Content-Length"))
             }
         }
+        // Repeated Transfer-Encoding lines combine into one comma-separated
+        // coding list, so a split `gzip` + `chunked` cannot hide a coding the
+        // server does not implement.
+        if key == "transfer-encoding" {
+            let existing = headers.get_or("transfer-encoding", "")
+            if existing.length() > 0 {
+                value = existing.concat(", ").concat(value)
+            }
+        }
         headers.set(key, value)
         i += 1
     }
@@ -826,8 +858,14 @@ fun read_request(stream: TcpStream, initial: String) -> Result<ReadResult, Error
 
     let actual_body = ""
     let rest = ""
-    let te = headers.get_or("transfer-encoding", "").to_lower()
-    if te.contains("chunked") {
+    let te = headers.get_or("transfer-encoding", "").trim()
+    if te.length() > 0 {
+        // The server implements only a sole `chunked` coding. Reject any other
+        // coding list (`gzip, chunked`, an unknown coding) rather than routing
+        // the request with the wrong or an empty body.
+        if !is_chunked_only(te) {
+            return Err(error_kind("http", "unsupported transfer-coding"))
+        }
         // RFC 7230 3.3.3: Content-Length together with chunked framing is a
         // request-smuggling vector; reject it rather than guessing.
         if headers.get_or("content-length", "").length() > 0 {

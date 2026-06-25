@@ -75,5 +75,13 @@ fun main() {
     println("status: ${first_line(resp)}")
     println("body: ${body_after_headers(resp)}")
 
+    // A coding list other than a sole `chunked` is not implemented, so reject.
+    let unsupported = "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: gzip, chunked\r\nConnection: close\r\n\r\n4\r\nWiki\r\n0\r\n\r\n"
+    println("unsupported: ${first_line(send(addr, unsupported))}")
+
+    // The two bytes after a chunk's data must be CRLF; `XX` is malformed.
+    let bad_term = "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n4\r\nWikiXX0\r\n\r\n"
+    println("bad-term: ${first_line(send(addr, bad_term))}")
+
     app.shutdown()
 }
