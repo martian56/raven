@@ -142,8 +142,9 @@ pub enum LockError {
     },
     /// A dependency constraint was not a usable git ref (empty).
     EmptyConstraint { source: String },
-    /// A dependency constraint held a path separator or `..`, which could
-    /// escape the cache directory when used as a directory name.
+    /// A dependency constraint was not a usable git ref: a `/`-separated segment
+    /// was empty (a leading, trailing, or doubled slash), `.` or `..`, or held a
+    /// drive colon or control byte, any of which could escape the cache root.
     InvalidConstraint { source: String, value: String },
     /// A pinned tree hash did not match the fetched tree.
     HashMismatch {
@@ -187,7 +188,7 @@ impl fmt::Display for LockError {
             ),
             LockError::InvalidConstraint { source, value } => write!(
                 f,
-                "dependency '{}' has an invalid version '{}': a version may not contain a path separator or '..'",
+                "dependency '{}' has an invalid version '{}': each '/'-separated segment must be a non-empty in-tree name (no '.', '..', drive colon, or control character)",
                 source, value
             ),
             LockError::HashMismatch {
