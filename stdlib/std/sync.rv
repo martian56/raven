@@ -1,9 +1,9 @@
-// std/sync: goroutine-style concurrency over the raven-runtime cooperative
-// scheduler. A Channel wraps an opaque runtime id, the same registry
-// pattern std/net uses for sockets. send and recv block by yielding to the
-// scheduler when the channel is full or empty. This slice carries Int
-// values; a goroutine body is started with the `spawn` keyword. See
-// docs/v2/specs/concurrency.md.
+// std/sync: goroutine-style concurrency over the raven-runtime scheduler,
+// which runs goroutines in parallel on a per-core worker pool. A Channel wraps
+// an opaque runtime id, the same registry pattern std/net uses for sockets.
+// send and recv block (suspending the goroutine back to the scheduler) when the
+// channel is full or empty. This slice carries Int values; a goroutine body is
+// started with the `spawn` keyword. See docs/v2/specs/concurrency.md.
 
 extern "C" {
     fun raven_channel_new() -> Int
