@@ -68,6 +68,7 @@ pub const BUNDLED_MODULES: &[(&str, &str)] = &[
     ("ffi", include_str!("../../stdlib/std/ffi.rv")),
     ("test", include_str!("../../stdlib/std/test.rv")),
     ("sync", include_str!("../../stdlib/std/sync.rv")),
+    ("tls", include_str!("../../stdlib/std/tls.rv")),
 ];
 
 /// The prelude module that is implicitly imported into every program.
