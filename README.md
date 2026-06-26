@@ -116,7 +116,7 @@ The `raven` and `rvpm` binaries land in `target/release/`.
 </a>
 
 ## Repo Activity
-![Raven Repo Activity](https://repobeats.axiom.co/api/embed/9d035f992470205e678447d3b03b50356374c34e.svg "Repobeats analytics image")
+![Alt](https://repobeats.axiom.co/api/embed/e187d96a01084aee8baae40ab0638927b2032dec.svg "Repobeats analytics image")
 
 ## Contributors
 
