@@ -21,6 +21,7 @@ pub mod reflect;
 pub mod roots;
 pub mod sched;
 pub mod stw;
+pub mod tls;
 
 pub use gc::{
     raven_defer_enter_frame, raven_defer_push, raven_defer_run_frame, raven_gc_alloc,

@@ -1,0 +1,160 @@
+// std/tls: client-side TLS over the raven-runtime C ABI. Like std/net, the
+// runtime keeps each TLS connection in a registry keyed by an opaque integer id
+// and hands Raven that id; TlsStream wraps it. Reads and writes carry bytes in a
+// String buffer, the same convention std/net uses. Fallible ops return
+// Result<T, Error> tagged kind "tls" via the runtime's thread-local last-error
+// slot. TLS I/O blocks by suspending the goroutine to the scheduler, so a
+// program can run many TLS connections across the worker pool at once.
+//
+// The default connect verifies the server against the bundled Mozilla root
+// store and sends `server_name` for SNI. For a private CA, a client certificate
+// (mTLS), or a dev-only skip of verification, build a TlsConfig and use
+// connect_with. See docs/v2/specs/std-tls.md.
+
+import std/error { error_kind }
+import std/string
+
+// An established TLS connection. The id keys the runtime's TLS registry.
+struct TlsStream {
+    id: Int,
+}
+
+// A client TLS configuration, built up with the methods below and handed to
+// connect_with. The id keys the runtime's TLS config registry.
+struct TlsConfig {
+    id: Int,
+}
+
+extern "C" {
+    fun raven_tls_last_error() -> String
+    fun raven_tls_config_new() -> Int
+    fun raven_tls_config_add_ca_file(cfg: Int, path: String) -> Int
+    fun raven_tls_config_client_cert(cfg: Int, cert_path: String, key_path: String) -> Int
+    fun raven_tls_config_insecure_skip_verify(cfg: Int, on: Bool)
+    fun raven_tls_config_free(cfg: Int)
+    fun raven_tls_connect(addr: String, server_name: String, cfg: Int) -> Int
+    fun raven_tls_read(stream_id: Int, max: Int) -> String
+    fun raven_tls_write(stream_id: Int, data: String) -> Int
+    fun raven_tls_close(stream_id: Int)
+    fun raven_tls_set_read_timeout_ms(stream_id: Int, ms: Int)
+    fun raven_tls_set_write_timeout_ms(stream_id: Int, ms: Int)
+}
+
+// An Error tagged with kind "tls", its message a context prefix joined to the
+// runtime's last-error text.
+fun tls_error(ctx: String) -> Error {
+    return error_kind("tls", ctx.concat(": ").concat(raven_tls_last_error()))
+}
+
+// Connect a verified TLS stream to `addr` ("host:port"), presenting
+// `server_name` for SNI and certificate verification against the bundled root
+// store. For most public services `server_name` is the host part of `addr`.
+fun connect(addr: String, server_name: String) -> Result<TlsStream, Error> {
+    let id = raven_tls_connect(addr, server_name, 0)
+    if id == 0 {
+        return Err(tls_error("connect"))
+    }
+    if raven_tls_last_error().length() > 0 {
+        return Err(tls_error("connect"))
+    }
+    return Ok(TlsStream { id })
+}
+
+// Connect using a custom TlsConfig (private CA, client certificate, or a
+// dev-only skip of verification).
+fun connect_with(addr: String, server_name: String, cfg: TlsConfig) -> Result<TlsStream, Error> {
+    let id = raven_tls_connect(addr, server_name, cfg.id)
+    if id == 0 {
+        return Err(tls_error("connect"))
+    }
+    if raven_tls_last_error().length() > 0 {
+        return Err(tls_error("connect"))
+    }
+    return Ok(TlsStream { id })
+}
+
+// Start a new client TLS configuration. It verifies against the bundled root
+// store until you change that with a builder method below.
+fun config() -> TlsConfig {
+    return TlsConfig { id: raven_tls_config_new() }
+}
+
+impl TlsConfig {
+    // Trust the PEM certificate(s) in `path` in addition to the bundled roots,
+    // for a server signed by a private CA. Returns self so calls can chain.
+    fun add_ca_file(self, path: String) -> TlsConfig {
+        let _ = raven_tls_config_add_ca_file(self.id, path)
+        return self
+    }
+
+    // Present a client certificate for mutual TLS. `cert_path` is the PEM
+    // certificate chain, `key_path` the PEM private key. Returns self.
+    fun client_cert(self, cert_path: String, key_path: String) -> TlsConfig {
+        let _ = raven_tls_config_client_cert(self.id, cert_path, key_path)
+        return self
+    }
+
+    // Disable certificate verification. For local development only: this makes
+    // the connection trivially interceptable. Returns self.
+    fun insecure_skip_verify(self) -> TlsConfig {
+        raven_tls_config_insecure_skip_verify(self.id, true)
+        return self
+    }
+
+    // Release the config's runtime registry entry. A connect copies what it
+    // needs, so a config can be freed once no more connects will use it.
+    fun free(self) {
+        raven_tls_config_free(self.id)
+    }
+}
+
+impl TlsStream {
+    // Read up to `max` decrypted bytes, returning them as a String byte buffer.
+    // A clean close yields Ok("").
+    fun read(self, max: Int) -> Result<String, Error> {
+        let data = raven_tls_read(self.id, max)
+        if raven_tls_last_error().length() > 0 {
+            return Err(tls_error("read"))
+        }
+        return Ok(data)
+    }
+
+    // Read until the peer closes the connection, accumulating every decrypted
+    // byte into one String. Reads in 4 KiB chunks.
+    fun read_all(self) -> Result<String, Error> {
+        let out = ""
+        let chunk = self.read(4096)?
+        while chunk.length() > 0 {
+            out = out.concat(chunk)
+            chunk = self.read(4096)?
+        }
+        return Ok(out)
+    }
+
+    // Encrypt and write all bytes of `data`, returning the count written.
+    fun write(self, data: String) -> Result<Int, Error> {
+        let n = raven_tls_write(self.id, data)
+        if n < 0 {
+            return Err(tls_error("write"))
+        }
+        if raven_tls_last_error().length() > 0 {
+            return Err(tls_error("write"))
+        }
+        return Ok(n)
+    }
+
+    // Set the read timeout in milliseconds. A value of 0 means no timeout.
+    fun set_read_timeout_ms(self, ms: Int) {
+        raven_tls_set_read_timeout_ms(self.id, ms)
+    }
+
+    // Set the write timeout in milliseconds. A value of 0 means no timeout.
+    fun set_write_timeout_ms(self, ms: Int) {
+        raven_tls_set_write_timeout_ms(self.id, ms)
+    }
+
+    // Send a close-notify and release the runtime-side connection.
+    fun close(self) {
+        raven_tls_close(self.id)
+    }
+}

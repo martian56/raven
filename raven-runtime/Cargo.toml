@@ -15,7 +15,10 @@ name = "raven_runtime"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 corosensei = "0.3.4"
 regex = "1"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls-pemfile = "2"
 ureq = "2.12"
+webpki-roots = "0.26"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
