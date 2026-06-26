@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.18.225] - 2026-06-26
+
+### Fixed
+
+- The goroutine scheduler corrupted its per-thread current-yielder slot when a goroutine resumed on a different worker than the one it suspended on. The slot was republished from inside the coroutine after `yielder.suspend()`, but the optimizer treats the thread-local base as constant within a function (a function never changes threads in ordinary code), so on a release build the write could land in the suspending thread's slot while the resuming thread's slot stayed stale. The next suspend on the resuming thread then read a null or wrong yielder, crashing concurrent programs (notably a server under load) with a segfault or a `suspend_current called with no running coroutine` panic. The worker now republishes the yielder on the resuming thread before each resume, so the slot is never written across a thread migration. This was release-only and timing-dependent, so it surfaced under sustained concurrent load. (#603)
+
 ## [2.18.224] - 2026-06-26
 
 ### Fixed

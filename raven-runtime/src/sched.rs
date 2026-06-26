@@ -54,6 +54,18 @@ struct Goroutine {
     /// would free it and the values it captured. Null for goroutine 0 (main),
     /// which has no spawn closure.
     spawn_root: *mut u8,
+    /// This goroutine's `corosensei` yielder, published by the coroutine body on
+    /// its first run and stable for the goroutine's life (one closure call, one
+    /// yielder reference). The worker republishes it into the per-thread
+    /// `CURRENT_YIELDER` slot before each resume, so the slot is always written on
+    /// the resuming thread. Republishing from inside the coroutine *after*
+    /// `yielder.suspend()` instead is unsound: the coroutine can resume on a
+    /// different worker than it suspended on, and the optimizer caches the
+    /// thread-local base across the suspend (it assumes a function never changes
+    /// threads), so the write lands in the old thread's slot and the new thread's
+    /// slot stays stale, crashing the next suspend. Null until the first run, and
+    /// for goroutine 0 (main), which suspends via a condvar, not a yielder.
+    yielder: *const GoYielder,
 }
 
 /// A channel: a bounded queue of pointer-width value slots plus the wait
@@ -241,6 +253,7 @@ impl Scheduler {
                 coro: None,
                 roots: (Vec::new(), Vec::new(), Vec::new()),
                 spawn_root: std::ptr::null_mut(),
+                yielder: std::ptr::null(),
             },
         );
         Scheduler {
@@ -308,9 +321,20 @@ pub extern "C" fn raven_go_spawn(closure: *mut Closure) {
     let env_addr = env as usize;
 
     let coro = Coroutine::new(move |yielder: &GoYielder, _input: ()| {
-        // Publish this goroutine's yielder so its channel ops and
-        // `yield_now` can suspend back to the scheduler.
-        CURRENT_YIELDER.with(|y| y.set(yielder as *const GoYielder));
+        // Publish this goroutine's yielder so its channel ops and `yield_now`
+        // can suspend back to the scheduler. Set the per-thread slot for this
+        // first run, and record the (stable) pointer in the goroutine so the
+        // worker republishes it on the resuming thread before every later resume
+        // (see `Goroutine::yielder`); the coroutine never writes the slot across
+        // a suspend itself, where a thread migration would corrupt it.
+        let yp = yielder as *const GoYielder;
+        CURRENT_YIELDER.with(|y| y.set(yp));
+        let gid = CURRENT_GOROUTINE.with(|c| c.get());
+        with_sched(|sched| {
+            if let Some(g) = sched.goroutines.get_mut(&gid) {
+                g.yielder = yp;
+            }
+        });
         // The closure body is `extern "C" fn(env)`.
         // SAFETY: spawn's contract guarantees a `fun() -> Unit` lifted
         // body taking the capture env.
@@ -334,6 +358,7 @@ pub extern "C" fn raven_go_spawn(closure: *mut Closure) {
                 // Root the closure so it and its captures survive until and
                 // while the goroutine runs.
                 spawn_root: closure as *mut u8,
+                yielder: std::ptr::null(),
             },
         );
         sched.ready.push_back(id);
@@ -454,15 +479,17 @@ fn run_goroutine(id: usize) {
             .unwrap_or_default()
     });
     install_root_chain(saved);
-    let mut coro = with_sched(|sched| {
-        sched
-            .goroutines
-            .get_mut(&id)
-            .expect("live goroutine")
-            .coro
-            .take()
-            .expect("coroutine handle")
+    let (mut coro, yielder) = with_sched(|sched| {
+        let g = sched.goroutines.get_mut(&id).expect("live goroutine");
+        (g.coro.take().expect("coroutine handle"), g.yielder)
     });
+    // Republish the yielder into this worker's per-thread slot before resuming,
+    // so a goroutine that suspended on another worker finds its slot correct on
+    // this one. Null on the very first run, where the coroutine body sets the
+    // slot itself. See `Goroutine::yielder`.
+    if !yielder.is_null() {
+        CURRENT_YIELDER.with(|y| y.set(yielder));
+    }
     let result = coro.resume(());
     // Save this goroutine's live roots and clear `running` before leaving the
     // running state, so once the collector may proceed the saved chain is
@@ -515,9 +542,12 @@ fn suspend_current(reason: Suspend) {
     // coroutine, valid for the duration of the body.
     let yielder = unsafe { &*yielder };
     yielder.suspend(reason);
-    // On resume, re-publish our yielder: the scheduler may have run other
-    // goroutines that overwrote the shared slot.
-    CURRENT_YIELDER.with(|y| y.set(yielder as *const GoYielder));
+    // Do not republish the slot here. On resume this body may be running on a
+    // different worker than it suspended on, and writing the thread-local across
+    // the suspend can land in the wrong thread's slot (the optimizer treats the
+    // TLS base as thread-constant within a function). The worker republishes the
+    // slot on the resuming thread before each resume instead (see `run_goroutine`
+    // and `Goroutine::yielder`).
 }
 
 /// Cooperative yield point. A spawned goroutine yields its worker to another
