@@ -196,6 +196,51 @@ pub extern "C" fn raven_tls_config_free(cfg: i64) {
     cfg_registry().lock().unwrap().remove(&cfg);
 }
 
+/// Resolve a config id (0 = default) and an SNI name into the rustls config and
+/// server name a connection needs, without touching the network.
+fn prepare(
+    sni: &str,
+    cfg: i64,
+) -> Result<(Arc<ClientConfig>, ServerName<'static>), std::string::String> {
+    let spec = if cfg == 0 {
+        TlsConfigSpec::default()
+    } else {
+        match cfg_registry().lock().unwrap().get(&cfg) {
+            Some(s) => s.clone(),
+            None => return Err("unknown tls config id".to_string()),
+        }
+    };
+    let config = build_client_config(&spec)?;
+    let server =
+        ServerName::try_from(sni.to_string()).map_err(|_| format!("invalid server name: {sni}"))?;
+    Ok((config, server))
+}
+
+/// Run the TLS handshake to completion over `tcp`. Caller wraps this in
+/// `gc::blocking`.
+fn drive_handshake(
+    conn: &mut ClientConnection,
+    tcp: &mut TcpStream,
+) -> Result<(), std::string::String> {
+    while conn.is_handshaking() {
+        let (rd, wr) = conn.complete_io(tcp).map_err(|e| e.to_string())?;
+        if rd == 0 && wr == 0 && conn.is_handshaking() {
+            return Err("tls handshake stalled".to_string());
+        }
+    }
+    Ok(())
+}
+
+/// Register an established stream and return its id.
+fn register_stream(stream: TlsStream) -> i64 {
+    let id = next_id();
+    tls_registry()
+        .lock()
+        .unwrap()
+        .insert(id, Arc::new(Mutex::new(stream)));
+    id
+}
+
 #[no_mangle]
 pub extern "C" fn raven_tls_connect(
     addr: *const object::String,
@@ -216,28 +261,10 @@ pub extern "C" fn raven_tls_connect(
             return 0;
         }
     };
-    let spec = if cfg == 0 {
-        TlsConfigSpec::default()
-    } else {
-        match cfg_registry().lock().unwrap().get(&cfg) {
-            Some(s) => s.clone(),
-            None => {
-                set_error("unknown tls config id".to_string());
-                return 0;
-            }
-        }
-    };
-    let config = match build_client_config(&spec) {
-        Ok(c) => c,
+    let (config, server) = match prepare(&sni, cfg) {
+        Ok(v) => v,
         Err(e) => {
             set_error(e);
-            return 0;
-        }
-    };
-    let server = match ServerName::try_from(sni.clone()) {
-        Ok(s) => s,
-        Err(_) => {
-            set_error(format!("invalid server name: {sni}"));
             return 0;
         }
     };
@@ -245,24 +272,67 @@ pub extern "C" fn raven_tls_connect(
     let result = crate::gc::blocking(|| -> Result<TlsStream, std::string::String> {
         let mut conn = ClientConnection::new(config, server).map_err(|e| e.to_string())?;
         let mut tcp = TcpStream::connect(&addr).map_err(|e| e.to_string())?;
-        while conn.is_handshaking() {
-            let (rd, wr) = conn.complete_io(&mut tcp).map_err(|e| e.to_string())?;
-            if rd == 0 && wr == 0 && conn.is_handshaking() {
-                return Err("tls handshake stalled".to_string());
-            }
-        }
+        drive_handshake(&mut conn, &mut tcp)?;
         Ok(StreamOwned::new(conn, tcp))
     });
 
     match result {
         Ok(stream) => {
-            let id = next_id();
-            tls_registry()
-                .lock()
-                .unwrap()
-                .insert(id, Arc::new(Mutex::new(stream)));
             clear_error();
-            id
+            register_stream(stream)
+        }
+        Err(e) => {
+            set_error(e);
+            0
+        }
+    }
+}
+
+/// Upgrade an already-connected `std/net` TCP stream to TLS in place, for
+/// protocols that negotiate in plaintext first and then start TLS on the same
+/// socket (Postgres SSLRequest, MySQL, SMTP STARTTLS). The net stream id is
+/// consumed: on success its socket moves into the returned TLS stream, and on
+/// failure the connection is closed. Config and SNI are validated before the
+/// socket is taken, so a bad config leaves the net stream usable.
+#[no_mangle]
+pub extern "C" fn raven_tls_upgrade(
+    net_stream_id: i64,
+    server_name: *const object::String,
+    cfg: i64,
+) -> i64 {
+    let sni = match read_str(server_name) {
+        Some(s) => s,
+        None => {
+            set_error("server_name is not valid UTF-8".to_string());
+            return 0;
+        }
+    };
+    let (config, server) = match prepare(&sni, cfg) {
+        Ok(v) => v,
+        Err(e) => {
+            set_error(e);
+            return 0;
+        }
+    };
+    let tcp = match crate::net_take_stream(net_stream_id) {
+        Some(t) => t,
+        None => {
+            set_error("not a connected net stream id".to_string());
+            return 0;
+        }
+    };
+
+    let result = crate::gc::blocking(|| -> Result<TlsStream, std::string::String> {
+        let mut conn = ClientConnection::new(config, server).map_err(|e| e.to_string())?;
+        let mut tcp = tcp;
+        drive_handshake(&mut conn, &mut tcp)?;
+        Ok(StreamOwned::new(conn, tcp))
+    });
+
+    match result {
+        Ok(stream) => {
+            clear_error();
+            register_stream(stream)
         }
         Err(e) => {
             set_error(e);
@@ -540,6 +610,13 @@ mod tests {
     fn connect_rejects_unreadable_addr() {
         // A null addr fails before any socket work and leaves the failure id 0.
         let id = raven_tls_connect(std::ptr::null(), std::ptr::null(), 0);
+        assert_eq!(id, 0);
+    }
+
+    #[test]
+    fn upgrade_rejects_unreadable_server_name() {
+        // A null server_name fails before the net stream is taken, id 0.
+        let id = raven_tls_upgrade(999_999, std::ptr::null(), 0);
         assert_eq!(id, 0);
     }
 

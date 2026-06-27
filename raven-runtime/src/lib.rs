@@ -281,6 +281,20 @@ fn net_insert(sock: Socket) -> i64 {
     id
 }
 
+/// Remove a connected TCP stream from the registry and return ownership of the
+/// socket, so another subsystem can take it over (std/tls upgrade for STARTTLS).
+/// Returns None if the id is unknown or names a listener, leaving the registry
+/// unchanged in that case.
+pub(crate) fn net_take_stream(id: i64) -> Option<TcpStream> {
+    let mut reg = net_registry().lock().unwrap();
+    if matches!(reg.get(&id), Some(Socket::Stream(_))) {
+        if let Some(Socket::Stream(stream)) = reg.remove(&id) {
+            return Some(stream);
+        }
+    }
+    None
+}
+
 /// Allocate `size` bytes aligned to `align`.
 ///
 /// Returns null on allocation failure or invalid layout. The current
