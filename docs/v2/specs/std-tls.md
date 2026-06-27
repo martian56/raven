@@ -14,7 +14,7 @@ Postgres, or MySQL over an encrypted socket.
 ## Import
 
 ```rust
-import std/tls { connect, connect_with, config }
+import std/tls { connect, connect_with, upgrade, upgrade_with, config }
 ```
 
 The methods on `TlsStream` and `TlsConfig` come in with the types and need no
