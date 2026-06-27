@@ -12,6 +12,7 @@
 // connect_with. See docs/v2/specs/std-tls.md.
 
 import std/error { error_kind }
+import std/net { TcpStream }
 import std/string
 
 // An established TLS connection. The id keys the runtime's TLS registry.
@@ -33,6 +34,7 @@ extern "C" {
     fun raven_tls_config_insecure_skip_verify(cfg: Int, on: Bool)
     fun raven_tls_config_free(cfg: Int)
     fun raven_tls_connect(addr: String, server_name: String, cfg: Int) -> Int
+    fun raven_tls_upgrade(net_stream_id: Int, server_name: String, cfg: Int) -> Int
     fun raven_tls_read(stream_id: Int, max: Int) -> String
     fun raven_tls_write(stream_id: Int, data: String) -> Int
     fun raven_tls_close(stream_id: Int)
@@ -69,6 +71,39 @@ fun connect_with(addr: String, server_name: String, cfg: TlsConfig) -> Result<Tl
     }
     if raven_tls_last_error().length() > 0 {
         return Err(tls_error("connect"))
+    }
+    return Ok(TlsStream { id })
+}
+
+// Upgrade an already-connected plaintext TCP stream to a verified TLS stream on
+// the same socket, for protocols that negotiate in the clear and then start TLS
+// (Postgres SSLRequest, MySQL, SMTP STARTTLS): connect with std/net, exchange
+// the protocol's start-TLS step, then call this. `server_name` is the host for
+// SNI and verification. The original stream is consumed: do not use it again.
+fun upgrade(stream: TcpStream, server_name: String) -> Result<TlsStream, Error> {
+    let id = raven_tls_upgrade(stream.id, server_name, 0)
+    if id == 0 {
+        return Err(tls_error("upgrade"))
+    }
+    if raven_tls_last_error().length() > 0 {
+        return Err(tls_error("upgrade"))
+    }
+    return Ok(TlsStream { id })
+}
+
+// Upgrade using a custom TlsConfig (private CA, client certificate, or a
+// dev-only skip of verification). See upgrade.
+fun upgrade_with(
+    stream: TcpStream,
+    server_name: String,
+    cfg: TlsConfig,
+) -> Result<TlsStream, Error> {
+    let id = raven_tls_upgrade(stream.id, server_name, cfg.id)
+    if id == 0 {
+        return Err(tls_error("upgrade"))
+    }
+    if raven_tls_last_error().length() > 0 {
+        return Err(tls_error("upgrade"))
     }
     return Ok(TlsStream { id })
 }

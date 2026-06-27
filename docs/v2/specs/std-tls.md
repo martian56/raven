@@ -14,7 +14,7 @@ Postgres, or MySQL over an encrypted socket.
 ## Import
 
 ```rust
-import std/tls { connect, connect_with, config }
+import std/tls { connect, connect_with, upgrade, upgrade_with, config }
 ```
 
 The methods on `TlsStream` and `TlsConfig` come in with the types and need no
@@ -45,6 +45,22 @@ checks that the certificate matches `server_name`, which is also sent as SNI.
 - `insecure_skip_verify()` accepts any certificate. The session is still
   encrypted, but the peer is not authenticated, so this is for local
   development only.
+
+## STARTTLS upgrade
+
+`connect` does its own TCP connect, so it is for TLS from the first byte (HTTPS,
+Redis over TLS). Some protocols instead open a plaintext socket, exchange a
+start-TLS step, and then turn that same socket into TLS: Postgres (SSLRequest),
+MySQL, and SMTP STARTTLS. For those, connect with `std/net`, perform the
+protocol's negotiation, then call `upgrade(stream, server_name)` (or
+`upgrade_with` for a custom config) to run the handshake over the existing
+socket and get back a `TlsStream`.
+
+The `std/net` stream is consumed by an upgrade: on success its socket moves into
+the returned `TlsStream`, and on failure the connection is closed. Do not use
+the original `TcpStream` afterward. The config and SNI are validated before the
+socket is taken, so an upgrade that fails on a bad config leaves the original
+stream usable.
 
 ## Error model
 
@@ -82,6 +98,7 @@ raven_tls_config_client_cert(cfg, cert_path, key_path) -> i64
 raven_tls_config_insecure_skip_verify(cfg, on)
 raven_tls_config_free(cfg)
 raven_tls_connect(addr, server_name, cfg) -> i64
+raven_tls_upgrade(net_stream_id, server_name, cfg) -> i64
 raven_tls_read(stream_id, max) -> String
 raven_tls_write(stream_id, data) -> i64
 raven_tls_close(stream_id)

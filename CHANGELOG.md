@@ -6,7 +6,7 @@ All notable changes to Raven are documented in this file.
 
 ### Added
 
-- `std/tls`: client-side TLS. `connect(addr, server_name)` opens a connection verified against the bundled Mozilla root store, and `TlsStream` reads and writes encrypted bytes with the same `String` buffer and `Result`/`Error` model as `std/net`. A `TlsConfig` builder covers private CAs (`add_ca_file`), mutual TLS client certificates (`client_cert`), and a development-only `insecure_skip_verify`. Backed by rustls with the ring provider in the runtime; no compiler changes. This is the transport layer for upcoming database and cache client libraries (Redis, Postgres, MySQL). Outbound `https://` through the `std/http` client already worked (it is backed by ureq) and is unchanged. See `docs/v2/specs/std-tls.md`. (#828)
+- `std/tls`: client-side TLS. `connect(addr, server_name)` opens a connection verified against the bundled Mozilla root store, and `TlsStream` reads and writes encrypted bytes with the same `String` buffer and `Result`/`Error` model as `std/net`. A `TlsConfig` builder covers private CAs (`add_ca_file`), mutual TLS client certificates (`client_cert`), and a development-only `insecure_skip_verify`. `upgrade(stream, server_name)` turns an already-connected `std/net` TCP stream into TLS on the same socket, for protocols that negotiate in plaintext first and then start TLS (Postgres SSLRequest, MySQL, SMTP STARTTLS). Backed by rustls with the ring provider in the runtime; no compiler changes. This is the transport layer for upcoming database and cache client libraries (Redis, Postgres, MySQL). Outbound `https://` through the `std/http` client already worked (it is backed by ureq) and is unchanged. See `docs/v2/specs/std-tls.md`. (#828)
 
 ## [2.18.225] - 2026-06-26
 
