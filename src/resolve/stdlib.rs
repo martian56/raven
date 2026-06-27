@@ -416,6 +416,12 @@ pub fn expand_with_stdlib_ctx(
         for ext in external_modules {
             let key = external_module_key(&ext.host, &ext.user, &ext.repo, &ext.source_path);
             let mut rename = external_import_rename_map(&ext.file, ctx);
+            // A bare stdlib import (`import std/net`, no selectors) used through a
+            // qualifier inside an external package, the same #831 case as the
+            // local path above.
+            for (alias_key, target_key) in whole_module_stdlib_alias_renames(&ext.file) {
+                rename.insert(alias_key, target_key);
+            }
             // A whole-module alias (`import "github.com/x/b" as dep`) inside an
             // external module is recorded too, so a qualified `dep.fn()` resolves
             // to b's namespaced symbol after the import declaration is stripped.

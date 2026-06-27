@@ -657,7 +657,7 @@ fn walk_type_path(
     // A module-qualified type name (`net.TcpStream`) is not supported: a module
     // alias names no type. Report it here with a pointer to the selector import,
     // instead of accepting the alias and failing later as an opaque type error.
-    if path.segments.len() > 1 && matches!(binding, Binding::ImportAlias(_)) {
+    if path.segments.len() > 1 && matches!(&binding, Binding::ImportAlias(_)) {
         let member = &path.segments[1].name;
         return Err(RavenError::resolve(
             ResolveError::Other(format!(
