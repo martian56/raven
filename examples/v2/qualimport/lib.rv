@@ -1,0 +1,11 @@
+// A library module that reaches a stdlib free function through a bare module
+// import and a qualified call (`fmt.repeat`). Regression for #831: this must
+// resolve when the file is merged in as a library, not only in a main file.
+
+import std/fmt
+import std/string
+
+fun banner(text: String) -> String {
+    let bar = fmt.repeat("=", 3)
+    return bar.concat(text).concat(bar)
+}

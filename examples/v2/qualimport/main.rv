@@ -1,0 +1,6 @@
+import std/io { println }
+import "./lib" { banner }
+
+fun main() {
+    println(banner("hi"))
+}

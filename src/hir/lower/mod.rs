@@ -331,7 +331,10 @@ fn lower_decl(decl: &Decl, cx: &LowerCtx<'_>) -> Result<Option<HirItem>, RavenEr
                 ));
             }
             let scope = GenericScope::new();
-            let ty = resolve_ty_for_decl(&c.ty, cx, &scope)?;
+            let ty = match &c.ty {
+                Some(t) => resolve_ty_for_decl(t, cx, &scope)?,
+                None => cx.ty_at(&c.value.span),
+            };
             let value = expr::lower_expr(&c.value, &ty, cx)?;
             Ok(Some(HirItem {
                 span: decl.span.clone(),

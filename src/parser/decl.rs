@@ -633,8 +633,13 @@ impl Parser {
     fn parse_const_decl(&mut self) -> ParseResult<Decl> {
         let start = self.advance().span; // const
         let (name, _) = self.expect_ident("identifier")?;
-        self.expect(&TokenKind::Colon, "`:`")?;
-        let ty = self.parse_type()?;
+        // The type annotation is optional: an unannotated `const` infers its
+        // type from a literal initializer, like a module-level `let`.
+        let ty = if self.eat(&TokenKind::Colon) {
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
         self.expect(&TokenKind::Eq, "`=`")?;
         self.skip_newlines();
         let value = self.parse_expr()?;

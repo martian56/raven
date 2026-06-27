@@ -161,7 +161,25 @@ pub fn collect_declarations(
             }
             DeclKind::Const(c) => {
                 let scope = GenericScope::new();
-                let ty = resolve_ty(&c.ty, resolved, env, None, &scope)?;
+                let ty = match &c.ty {
+                    Some(t) => resolve_ty(t, resolved, env, None, &scope)?,
+                    // An unannotated `const` infers its type from a literal
+                    // initializer, like a module-level `let`. A `const` requires
+                    // a constant initializer, so a non-literal one is reported
+                    // separately during lowering; ask for an annotation here.
+                    None => match literal_ty_of(&c.value) {
+                        Some(t) => t,
+                        None => {
+                            return Err(RavenError::ty(
+                                TypeError::Custom(format!(
+                                    "cannot infer the type of `const {0}` from this initializer; add a type annotation, for example `const {0}: SomeType = ...`",
+                                    c.name
+                                )),
+                                c.span.clone(),
+                            ));
+                        }
+                    },
+                };
                 env.consts.insert(id, ty);
             }
             DeclKind::Let(l) => {

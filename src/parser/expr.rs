@@ -296,6 +296,25 @@ impl Parser {
                             span,
                         };
                     } else {
+                        // A `{` right after a field access whose receiver is a
+                        // bare name (`net.TcpStream { ... }`) is an attempted
+                        // module-qualified struct literal, which is not
+                        // supported. Diagnose it instead of failing later on the
+                        // unexpected `{`. The `no_struct_literal` guard keeps
+                        // loop/if/match heads (`for x in a.b { }`) from tripping.
+                        if !self.no_struct_literal && matches!(self.peek_kind(), TokenKind::LBrace)
+                        {
+                            if let ExprKind::Ident { name: module, .. } = &expr.kind {
+                                return Err(RavenError::parse(
+                                    ParseError::Custom(format!(
+                                        "module-qualified type names like `{module}.{name}` are \
+                                         not supported; import the type with a selector, for \
+                                         example `import std/<module> {{ {name} }}`"
+                                    )),
+                                    name_span,
+                                ));
+                            }
+                        }
                         let span = merge_spans(&expr.span, &name_span);
                         expr = Expr {
                             kind: ExprKind::Field {

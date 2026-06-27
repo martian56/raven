@@ -81,7 +81,9 @@ fn walk_decl(
             }
         }
         DeclKind::Const(c) => {
-            walk_type(&c.ty, scope, map)?;
+            if let Some(t) = &c.ty {
+                walk_type(t, scope, map)?;
+            }
             walk_expr(&c.value, scope, map)?;
         }
         DeclKind::Let(l) => {
@@ -652,6 +654,20 @@ fn walk_type_path(
         )
     })?;
     let binding = entry.binding.clone();
+    // A module-qualified type name (`net.TcpStream`) is not supported: a module
+    // alias names no type. Report it here with a pointer to the selector import,
+    // instead of accepting the alias and failing later as an opaque type error.
+    if path.segments.len() > 1 && matches!(&binding, Binding::ImportAlias(_)) {
+        let member = &path.segments[1].name;
+        return Err(RavenError::resolve(
+            ResolveError::Other(format!(
+                "module-qualified type names like `{}.{member}` are not supported; \
+                 import the type with a selector, for example `import std/<module> {{ {member} }}`",
+                head.name
+            )),
+            head.span.clone(),
+        ));
+    }
     map.bind_use(&head.span, binding);
     for g in &head.generics {
         walk_type(g, scope, map)?;

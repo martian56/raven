@@ -380,6 +380,14 @@ pub fn expand_with_stdlib_ctx(
         {
             rename.insert(alias_key, target_key);
         }
+        // A bare stdlib import (`import std/net`, no selectors) makes `net.fn()`
+        // usable. Record the implicit alias so the merge rewrites the qualified
+        // call to the stdlib's namespaced symbol. Without this the qualifier
+        // resolves in a main file (whose import declarations are kept) but not in
+        // a merged library file, where the import is stripped (issue #831).
+        for (alias_key, target_key) in whole_module_stdlib_alias_renames(&module_file) {
+            rename.insert(alias_key, target_key);
+        }
         for name in top_level_fn_names(&module_file) {
             rename.insert(name.clone(), mangle_local_fn(&key, &name));
         }
@@ -408,6 +416,12 @@ pub fn expand_with_stdlib_ctx(
         for ext in external_modules {
             let key = external_module_key(&ext.host, &ext.user, &ext.repo, &ext.source_path);
             let mut rename = external_import_rename_map(&ext.file, ctx);
+            // A bare stdlib import (`import std/net`, no selectors) used through a
+            // qualifier inside an external package, the same #831 case as the
+            // local path above.
+            for (alias_key, target_key) in whole_module_stdlib_alias_renames(&ext.file) {
+                rename.insert(alias_key, target_key);
+            }
             // A whole-module alias (`import "github.com/x/b" as dep`) inside an
             // external module is recorded too, so a qualified `dep.fn()` resolves
             // to b's namespaced symbol after the import declaration is stripped.
@@ -595,7 +609,9 @@ fn merge_module_items(
             }
             DeclKind::Const(c) => {
                 rename_decl(&mut c.name, rename);
-                rewrite_type(&mut c.ty, rename);
+                if let Some(t) = &mut c.ty {
+                    rewrite_type(t, rename);
+                }
                 rewrite_expr(&mut c.value, rename);
             }
             DeclKind::Let(l) => {
@@ -803,6 +819,43 @@ fn whole_module_alias_renames(
             let key = local_module_key(&loaded.canonical_path);
             out.push((alias_rename_key(alias), key));
         }
+    }
+    out
+}
+
+/// Collect bare stdlib imports (`import std/net`, no selector list) as
+/// `(alias rename key, "std.<module>" target key)` pairs, so a qualified
+/// `net.fn()` call is rewritten to the stdlib's namespaced symbol
+/// (`mangle_local_fn("std.net", "fn")` equals `mangle_stdlib_fn("net", "fn")`).
+/// The implicit alias is the explicit `as` name or the last path segment,
+/// matching `bind_import`. Mirrors [`whole_module_alias_renames`] for the
+/// stdlib case so qualified access works in a merged library file too.
+fn whole_module_stdlib_alias_renames(file: &File) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for decl in &file.items {
+        let DeclKind::Import(import) = &decl.kind else {
+            continue;
+        };
+        if !import.selectors.is_empty() {
+            continue;
+        }
+        let ImportSource::Std(segments) = &import.source else {
+            continue;
+        };
+        let Some(module) = segments.first() else {
+            continue;
+        };
+        if parse_bundled_module(module).is_err() {
+            continue;
+        }
+        let alias = import.alias.clone().unwrap_or_else(|| {
+            segments
+                .last()
+                .cloned()
+                .unwrap_or_else(|| module.to_string())
+        });
+        let target_key = format!("std{sep}{module}", sep = NAMESPACE_SEP);
+        out.push((alias_rename_key(&alias), target_key));
     }
     out
 }
