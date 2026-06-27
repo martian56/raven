@@ -236,7 +236,9 @@ pub enum ImportSource {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Const {
     pub name: String,
-    pub ty: Type,
+    /// `None` when the type is left to be inferred from the initializer (a
+    /// literal), mirroring a module-level `let`.
+    pub ty: Option<Type>,
     pub value: Expr,
     pub span: Span,
 }

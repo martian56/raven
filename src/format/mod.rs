@@ -670,7 +670,10 @@ impl Printer<'_> {
     }
 
     fn const_decl(&mut self, c: &Const) -> Option<String> {
-        let prefix = format!("const {}: {} = ", c.name, render_type(&c.ty));
+        let prefix = match &c.ty {
+            Some(t) => format!("const {}: {} = ", c.name, render_type(t)),
+            None => format!("const {} = ", c.name),
+        };
         let value = self.render_expr_col(&c.value, prefix.chars().count());
         self.line(&format!("{}{}", prefix, value));
         self.take_trailing_comment(self.line_of(c.span.end))

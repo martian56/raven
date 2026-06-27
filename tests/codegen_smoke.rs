@@ -119,6 +119,19 @@ fn multifile_local_imports_compile_and_run() {
 }
 
 #[test]
+fn library_qualified_stdlib_import_compiles_and_run() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Regression for #831: a library file (`./lib`) reaches a stdlib free
+    // function through a bare module import plus a qualified call
+    // (`import std/fmt` then `fmt.repeat`). The qualifier must resolve when the
+    // file is merged in as a library, which previously failed with "cannot find
+    // `fmt` in scope" (it only worked in a main file). Prints `=== hi ===`.
+    compile_link_run_and_check("qualimport/main.rv", "===hi===\n", &runtime);
+}
+
+#[test]
 fn struct_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

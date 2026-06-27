@@ -896,6 +896,31 @@ fn parses_const_decl() {
         panic!()
     };
     assert_eq!(c.name, "PI");
+    assert!(c.ty.is_some());
+}
+
+#[test]
+fn parses_const_decl_without_type_annotation() {
+    // Regression for #833: a module-level `const` may omit the type and infer
+    // it from the initializer, like a module-level `let`.
+    let f = parse_ok("const HOST = \"127.0.0.1\"\n");
+    let DeclKind::Const(c) = &f.items[0].kind else {
+        panic!()
+    };
+    assert_eq!(c.name, "HOST");
+    assert!(c.ty.is_none());
+}
+
+#[test]
+fn module_qualified_struct_literal_is_a_clear_error() {
+    // Regression for #832: `net.TcpStream { ... }` reports an actionable error
+    // pointing at the selector import, not a bare "expected expression".
+    let err = parse_err("fun main() { let s = net.TcpStream { id: 0 } }\n");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("module-qualified type names") && msg.contains("selector"),
+        "got: {msg}"
+    );
 }
 
 // ----- block expressions and newline handling -----

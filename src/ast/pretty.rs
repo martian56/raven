@@ -229,7 +229,12 @@ fn pretty_decl(buf: &mut String, decl: &Decl, depth: usize) {
             buf.push_str(")\n");
         }
         DeclKind::Const(c) => {
-            writeln!(buf, "(const {}: {} =", quote(&c.name), pretty_type(&c.ty)).unwrap();
+            match &c.ty {
+                Some(t) => {
+                    writeln!(buf, "(const {}: {} =", quote(&c.name), pretty_type(t)).unwrap()
+                }
+                None => writeln!(buf, "(const {} =", quote(&c.name)).unwrap(),
+            }
             pretty_expr(buf, &c.value, depth + 1);
             indent(buf, depth);
             buf.push_str(")\n");

@@ -2,6 +2,14 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.19.1] - 2026-06-27
+
+### Fixed
+
+- Module-level `const` now infers its type from a literal initializer, like a module-level `let`. `const HOST = "127.0.0.1"` previously failed to parse (`expected ':'`) and required an explicit annotation. (#833)
+- A bare stdlib import used through a qualifier (`import std/net` then `net.connect(...)`) now resolves when the file is imported as a library, not only in a main file. The merge pass records the bare-import alias so the qualified call is rewritten to the stdlib's namespaced symbol; previously a library file failed with `cannot find net in scope`. (#831)
+- A module-qualified type name (`net.TcpStream`), which is not supported, now reports an actionable error pointing at the selector import (`import std/net { TcpStream }`) in both annotation and struct-literal position, instead of an opaque `expected expression` or type error. (#832)
+
 ## [2.19.0] - 2026-06-27
 
 ### Added
