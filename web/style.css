@@ -567,6 +567,9 @@ body {
     line-height: 1.6;
     color: var(--white);
     text-align: left;
+    /* Scroll a long command/comment line within the box instead of letting it
+       push the page wider than the viewport on mobile. */
+    overflow-x: auto;
 }
 
 /* Documentation Section */
