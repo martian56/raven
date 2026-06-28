@@ -355,6 +355,9 @@ body {
     font-family: 'Fira Code', 'Monaco', 'Consolas', monospace;
     font-size: var(--font-size-sm);
     line-height: 1.6;
+    /* Keep code left aligned so its indentation survives even when an ancestor
+       (the hero container on mobile) is centered. */
+    text-align: left;
 }
 
 .code-content code {
@@ -479,6 +482,7 @@ body {
     font-size: var(--font-size-sm);
     line-height: 1.6;
     overflow-x: auto;
+    text-align: left;
 }
 
 .code-example code {
@@ -562,6 +566,7 @@ body {
     font-size: var(--font-size-sm);
     line-height: 1.6;
     color: var(--white);
+    text-align: left;
 }
 
 /* Documentation Section */
