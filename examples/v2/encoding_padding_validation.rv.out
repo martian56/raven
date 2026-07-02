@@ -4,4 +4,6 @@ rt32 hello: true
 rt32 abcd: true
 b64 midpad rejected: true
 b32 after-pad rejected: true
+b32 padding-only rejected: true
+b32 one-symbol rejected: true
 b32 partial rejected: true
