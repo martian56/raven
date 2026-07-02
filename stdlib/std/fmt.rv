@@ -253,9 +253,10 @@ fun float_digit_char(d: Float) -> String {
     return "9"
 }
 
-// Format `x` with up to `decimals` digits after the decimal point, rounded
-// half up. `format_float(3.14159, 2)` is "3.14"; `format_float(-2.5, 0)` is
-// "-3". Excessive precision is clamped before the scale would become infinite.
+// Format `x` with exactly `decimals` digits after the decimal point when the
+// requested scale stays finite, rounded half up. `format_float(3.14159, 2)` is
+// "3.14"; `format_float(-2.5, 0)` is "-3". Excessive precision is clamped
+// before the scale or scaled value would become infinite.
 fun format_float(x: Float, decimals: Int) -> String {
     // Non-finite values have no decimal form: NaN compares false everywhere
     // (so the scaling loop would never run and pad to "0.00") and infinity

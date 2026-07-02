@@ -5,6 +5,8 @@
 //   -2.50
 //   255
 //   10
+//   true
+//   true
 import std/fmt { format_float, from_radix, from_hex }
 
 fun main() {
