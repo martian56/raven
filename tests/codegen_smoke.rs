@@ -1397,10 +1397,13 @@ fn http_server_validates_response_headers() {
     };
     // Regression for #742: the response builder drops a header with an invalid
     // field name and strips control bytes from a value, so a handler cannot frame
-    // a malformed response or inject extra headers.
+    // a malformed response or inject extra headers. The final serialization path
+    // repeats that validation for direct `Response.headers` mutations too.
     let expected = "bad-name dropped: true\n\
+                    direct bad-name dropped: true\n\
                     good present: true\n\
-                    control stripped: true\n";
+                    control stripped: true\n\
+                    direct control stripped: true\n";
     compile_link_run_and_check("http_server_header_validation.rv", expected, &runtime);
 }
 
@@ -1794,11 +1797,13 @@ fn json_program_compiles_and_runs() {
     // rendering the whole-number Float 1 as `1`. Object key order follows
     // the hash-bucket layout. A string with a `\n` escape and a `A` unicode escape
     // decodes (the escape becomes the literal A) and re-serializes with the
-    // newline re-escaped. A malformed object takes the Err path. Prints the
-    // compact object, the re-escaped string, then `parse failed`.
+    // newline re-escaped. A malformed object and raw invalid UTF-8 in a string
+    // take the Err path. Prints the compact object, the re-escaped string, then
+    // the two parse-failure markers.
     let expected = "{\"a\":1,\"b\":[true,null,\"hi\"]}\n\
                     \"x\\ny A\"\n\
-                    parse failed\n";
+                    parse failed\n\
+                    invalid utf8 rejected\n";
     compile_link_run_and_check("use_json.rv", expected, &runtime);
 }
 

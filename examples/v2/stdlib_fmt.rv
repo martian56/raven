@@ -5,18 +5,23 @@
 //   -2.50
 //   255
 //   10
+//   true
+//   true
 import std/fmt { format_float, from_radix, from_hex }
 
 fun main() {
-    print(format_float(3.14159, 2))     // 3.14
-    print(format_float(10.0, 2))        // 10.00
-    print(format_float(-2.5, 2))        // -2.50
+    print(format_float(3.14159, 2)) // 3.14
+    print(format_float(10.0, 2)) // 10.00
+    print(format_float(-2.5, 2)) // -2.50
     match from_hex("ff") {
-        Some(n) -> print(n),            // 255
+        Some(n) -> print(n), // 255
         None -> print(-1),
     }
     match from_radix("1010", 2) {
-        Some(n) -> print(n),            // 10
+        Some(n) -> print(n), // 10
         None -> print(-1),
     }
+    let huge = format_float(1.0, 400)
+    print(huge.length() > 0)
+    print(huge.length() < 400)
 }

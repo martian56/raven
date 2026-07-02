@@ -198,6 +198,10 @@ Choose an element of `xs` with probability proportional to the matching entry
 of `weights`. Returns `None` when the lists are empty or the total weight is
 not positive.
 
+Non-positive weights are ignored. Very large positive weights are handled
+without saturating the cumulative range, so later positive items remain
+reachable even when the exact integer total would overflow.
+
 ```rust
 import std/random
 

@@ -61,16 +61,18 @@ Every module implicitly imports the prelude.
 | `std/hash` | non-crypto hashing (FNV, xxHash) backing the `Hash` trait, checksums | Rust hash, Go hash |
 | `std/net` | TCP, UDP, addresses, DNS | Go net, Rust net |
 | `std/http` | HTTP client plus a minimal server | Go net/http |
+| `std/tls` | verified TLS streams, custom trust, STARTTLS upgrade | Rustls, Go crypto/tls |
 | `std/regex` | regular expressions | Go regexp, Python re, Java regex |
 | `std/ffi` | `CStr`, `CInt`, `CPtr<T>`, conversions | C interop |
+| `std/sync` | goroutine channels, sleep, yield, mutex, wait groups | Go sync/channel |
 
-## Deferred to v2.x
+## Future extensions
 
-Concurrency is its own milestone; v2.0 is single-threaded.
+Raven v2 now ships goroutines, channels, and the `std/sync` primitives that
+support them. The remaining concurrency surface can grow in follow-up releases
+without changing the shipped channel API.
 
-- `std/sync` (Mutex, RwLock, Once)
 - `std/thread` (spawn, join)
-- `std/channel` (message passing)
 - `std/atomic` (atomic primitives)
 
 A lazy/async runtime, if added, is also a v2.x discussion.
@@ -79,7 +81,7 @@ A lazy/async runtime, if added, is also a v2.x discussion.
 
 Delivered through rvpm rather than the standard library, because they are security-sensitive, fast-moving, opinionated, or niche:
 
-- Cryptography and TLS signing (sha2, hmac, ed25519, and so on)
+- Cryptography primitives and signing (sha2, hmac, ed25519, and so on)
 - Compression (gzip, zstd, brotli)
 - Serialization beyond JSON (YAML, TOML, msgpack, protobuf)
 - Database drivers
@@ -105,5 +107,5 @@ Implementation proceeds in that dependency order, then the modules above, then t
 1. Compiler foundations: methods on built-ins, capturing closures, core trait prelude, lazy iterators.
 2. Convert the already-shipped `std/io` and `std/string` to the method-first API.
 3. Core modules: collections, math, cmp, fmt, error, test.
-4. System and data modules: time, fs, path, env, process, random, json, encoding, hash, net, http, regex.
-5. v2.x: concurrency.
+4. System, data, and network modules: time, fs, path, env, process, random, json, encoding, hash, net, http, tls, regex.
+5. Concurrency primitives: goroutines plus `std/sync`.

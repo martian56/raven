@@ -116,17 +116,45 @@ fun config() -> TlsConfig {
 
 impl TlsConfig {
     // Trust the PEM certificate(s) in `path` in addition to the bundled roots,
-    // for a server signed by a private CA. Returns self so calls can chain.
+    // for a server signed by a private CA. Returns self so calls can chain;
+    // use add_ca_file_checked when the load failure must be handled.
     fun add_ca_file(self, path: String) -> TlsConfig {
-        let _ = raven_tls_config_add_ca_file(self.id, path)
+        let _ = self.add_ca_file_checked(path)
         return self
     }
 
+    // Checked variant of add_ca_file. Missing, unreadable, or malformed files
+    // return an Error instead of being hidden until a later connect.
+    fun add_ca_file_checked(self, path: String) -> Result<TlsConfig, Error> {
+        let ok = raven_tls_config_add_ca_file(self.id, path)
+        if ok == 0 {
+            return Err(tls_error("add_ca_file"))
+        }
+        if raven_tls_last_error().length() > 0 {
+            return Err(tls_error("add_ca_file"))
+        }
+        return Ok(self)
+    }
+
     // Present a client certificate for mutual TLS. `cert_path` is the PEM
-    // certificate chain, `key_path` the PEM private key. Returns self.
+    // certificate chain, `key_path` the PEM private key. Returns self; use
+    // client_cert_checked when the load failure must be handled.
     fun client_cert(self, cert_path: String, key_path: String) -> TlsConfig {
-        let _ = raven_tls_config_client_cert(self.id, cert_path, key_path)
+        let _ = self.client_cert_checked(cert_path, key_path)
         return self
+    }
+
+    // Checked variant of client_cert. Missing, unreadable, or malformed files
+    // return an Error instead of being hidden until a later connect.
+    fun client_cert_checked(self, cert_path: String, key_path: String) -> Result<TlsConfig, Error> {
+        let ok = raven_tls_config_client_cert(self.id, cert_path, key_path)
+        if ok == 0 {
+            return Err(tls_error("client_cert"))
+        }
+        if raven_tls_last_error().length() > 0 {
+            return Err(tls_error("client_cert"))
+        }
+        return Ok(self)
     }
 
     // Disable certificate verification. For local development only: this makes

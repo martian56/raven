@@ -253,9 +253,10 @@ fun float_digit_char(d: Float) -> String {
     return "9"
 }
 
-// Format `x` with exactly `decimals` digits after the decimal point, rounded
-// half up. `format_float(3.14159, 2)` is "3.14"; `format_float(-2.5, 0)` is
-// "-3".
+// Format `x` with exactly `decimals` digits after the decimal point when the
+// requested scale stays finite, rounded half up. `format_float(3.14159, 2)` is
+// "3.14"; `format_float(-2.5, 0)` is "-3". Excessive precision is clamped
+// before the scale or scaled value would become infinite.
 fun format_float(x: Float, decimals: Int) -> String {
     // Non-finite values have no decimal form: NaN compares false everywhere
     // (so the scaling loop would never run and pad to "0.00") and infinity
@@ -272,11 +273,22 @@ fun format_float(x: Float, decimals: Int) -> String {
     }
     let neg = x < 0.0
     let v = fabs(x)
+    let places = decimals
+    if places < 0 {
+        places = 0
+    }
     let scale = 1.0
     let i = 0
-    while i < decimals {
-        scale = scale * 10.0
-        i = i + 1
+    while i < places {
+        let next = scale * 10.0
+        if next * 0.0 != 0.0 {
+            places = i
+        } else if (v * next) * 0.0 != 0.0 {
+            places = i
+        } else {
+            scale = next
+            i = i + 1
+        }
     }
     let scaled = floor(v * scale + 0.5)
     let digits = ""
@@ -293,15 +305,15 @@ fun format_float(x: Float, decimals: Int) -> String {
             count = count + 1
         }
     }
-    while count <= decimals {
+    while count <= places {
         digits = __str_concat("0", digits)
         count = count + 1
     }
     let result = ""
-    if decimals <= 0 {
+    if places <= 0 {
         result = digits
     } else {
-        let cut = count - decimals
+        let cut = count - places
         let int_part = digits.substring(0, cut)
         let frac_part = digits.substring(cut, count)
         result = __str_concat(__str_concat(int_part, "."), frac_part)

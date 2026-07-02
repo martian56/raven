@@ -182,7 +182,8 @@ fun parse_string(c: Cursor) -> Result<String, Error> {
                 }
                 if cp >= 55296 && cp <= 56319 {
                     // High surrogate: decode an astral code point when a
-                    // low surrogate follows, else emit U+FFFD.
+                    // low surrogate follows. Unpaired surrogates are invalid
+                    // JSON strings for this parser.
                     if c.peek() == 92 {
                         c.advance()
                         if c.peek() == 117 {
@@ -214,7 +215,21 @@ fun parse_string(c: Cursor) -> Result<String, Error> {
             if b < 32 {
                 return Err(json_error("unescaped control character in string"))
             }
-            out = __str_concat(out, __str_from_byte(b))
+            if b < 128 {
+                out = __str_concat(out, __str_from_byte(b))
+            } else {
+                let start = c.pos - 1
+                let len = utf8_seq_len(c.text, start, c.text.length())
+                if len == 0 {
+                    return Err(json_error("invalid UTF-8 in string"))
+                }
+                let j = 0
+                while j < len {
+                    out = __str_concat(out, __str_from_byte(__str_byte_at(c.text, start + j)))
+                    j = j + 1
+                }
+                c.pos = c.pos + (len - 1)
+            }
         }
     }
     return Ok(out)
@@ -461,7 +476,7 @@ fun offset_str(n: Int) -> String {
 // Parse `text` as a single JSON value. Trailing content other than
 // whitespace after the top-level value is rejected.
 fun parse(text: String) -> Result<JsonValue, Error> {
-    let c = Cursor { text: text, pos: 0, depth: 0 }
+    let c = Cursor { text, pos: 0, depth: 0 }
     let v = parse_value(c)?
     c.skip_ws()
     if !c.at_end() {
@@ -535,19 +550,63 @@ fun utf8_seq_len(s: String, i: Int, n: Int) -> Int {
         }
         return 0
     }
-    if b >= 224 && b <= 239 {
+    if b == 224 {
+        if i + 2 < n && utf8_in_range(__str_byte_at(s, i + 1), 160, 191) && is_utf8_cont(
+            __str_byte_at(s, i + 2),
+        ) {
+            return 3
+        }
+        return 0
+    }
+    if b >= 225 && b <= 236 {
         if i + 2 < n && is_utf8_cont(__str_byte_at(s, i + 1)) && is_utf8_cont(__str_byte_at(s, i + 2)) {
             return 3
         }
         return 0
     }
-    if b >= 240 && b <= 244 {
-        if i + 3 < n && is_utf8_cont(__str_byte_at(s, i + 1)) && is_utf8_cont(__str_byte_at(s, i + 2)) && is_utf8_cont(__str_byte_at(s, i + 3)) {
+    if b == 237 {
+        if i + 2 < n && utf8_in_range(__str_byte_at(s, i + 1), 128, 159) && is_utf8_cont(
+            __str_byte_at(s, i + 2),
+        ) {
+            return 3
+        }
+        return 0
+    }
+    if b >= 238 && b <= 239 {
+        if i + 2 < n && is_utf8_cont(__str_byte_at(s, i + 1)) && is_utf8_cont(__str_byte_at(s, i + 2)) {
+            return 3
+        }
+        return 0
+    }
+    if b == 240 {
+        if i + 3 < n && utf8_in_range(__str_byte_at(s, i + 1), 144, 191) && is_utf8_cont(
+            __str_byte_at(s, i + 2),
+        ) && is_utf8_cont(__str_byte_at(s, i + 3)) {
+            return 4
+        }
+        return 0
+    }
+    if b >= 241 && b <= 243 {
+        if i + 3 < n && is_utf8_cont(__str_byte_at(s, i + 1)) && is_utf8_cont(__str_byte_at(s, i + 2)) && is_utf8_cont(
+            __str_byte_at(s, i + 3),
+        ) {
+            return 4
+        }
+        return 0
+    }
+    if b == 244 {
+        if i + 3 < n && utf8_in_range(__str_byte_at(s, i + 1), 128, 143) && is_utf8_cont(
+            __str_byte_at(s, i + 2),
+        ) && is_utf8_cont(__str_byte_at(s, i + 3)) {
             return 4
         }
         return 0
     }
     return 0
+}
+
+fun utf8_in_range(b: Int, lo: Int, hi: Int) -> Bool {
+    return b >= lo && b <= hi
 }
 
 fun is_utf8_cont(b: Int) -> Bool {
@@ -787,7 +846,7 @@ fun value_keys(value: JsonValue) -> List<String> {
         _ -> {
             let empty: List<String> = []
             empty
-        }
+        },
     }
 }
 

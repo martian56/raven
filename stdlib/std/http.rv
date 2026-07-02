@@ -47,7 +47,12 @@ fun http_error(ctx: String) -> Error {
 // failure. The headers argument is `Key: Value` lines joined by `\n`, or
 // "" for none. A non-2xx HTTP status is still Ok: the runtime reports it
 // as a normal response.
-fun request(method: String, url: String, body: String, headers: String) -> Result<HttpResponse, Error> {
+fun request(
+    method: String,
+    url: String,
+    body: String,
+    headers: String,
+) -> Result<HttpResponse, Error> {
     let id = raven_http_request(method, url, body, headers)
     if id == 0 {
         return Err(http_error(method))
@@ -210,7 +215,7 @@ impl Response {
     // A response with an explicit status and body and no headers yet.
     fun with_body(status: Int, body: String) -> Response {
         let h: Map<String, String> = Map.new()
-        return Response { status: status, headers: h, body: body }
+        return Response { status, headers: h, body }
     }
 
     // 200 with `value` serialized to JSON via its `ToJson` impl (a `@derive(
@@ -409,7 +414,7 @@ impl Server {
     // Register `handler` for `method` requests whose path matches `pattern`.
     // Routes are tried in registration order; the first match wins.
     fun route(self, method: Method, pattern: String, handler: fun(Request) -> Response) {
-        self.routes.push(Route { method: method, pattern: pattern, handler: handler })
+        self.routes.push(Route { method, pattern, handler })
     }
 
     // Register a handler for GET `pattern`.
@@ -443,7 +448,11 @@ impl Server {
     // single path segment, so it cannot escape `dir` with a slash. A missing
     // file is a 404 (see `Response.file`).
     fun static(self, prefix: String, dir: String) {
-        self.route(Method.Get, prefix.concat("/:file"), fun(req: Request) -> Response = serve_from(dir, req))
+        self.route(
+            Method.Get,
+            prefix.concat("/:file"),
+            fun(req: Request) -> Response = serve_from(dir, req),
+        )
     }
 
     // Bind `addr` ("host:port") and serve, handling each connection on its own
@@ -472,16 +481,16 @@ impl Server {
                                     inflight.done()
                                 })
                             }
-                        }
-                        Err(_) -> {}
+                        },
+                        Err(_) -> {},
                     }
                 }
                 inflight.wait()
                 // Release the listening socket so the port is free after a
                 // graceful shutdown returns, rather than staying bound.
                 socket.close()
-            }
-            Err(e) -> print("http: cannot bind ".concat(addr).concat(": ").concat(e.message()))
+            },
+            Err(e) -> print("http: cannot bind ".concat(addr).concat(": ").concat(e.message())),
         }
     }
 }
@@ -531,14 +540,14 @@ fun serve_connection(server: Server, stream: TcpStream) {
                         if !keep {
                             open = false
                         }
-                    }
+                    },
                     // A clean close with no request pending: an idle keep-alive
                     // client hung up. Close silently.
                     None -> {
                         open = false
-                    }
+                    },
                 }
-            }
+            },
             Err(_) -> {
                 // A malformed request is answered with 400 whether or not earlier
                 // requests on this keep-alive connection succeeded; only a clean
@@ -548,7 +557,7 @@ fun serve_connection(server: Server, stream: TcpStream) {
                     print("- - 400")
                 }
                 open = false
-            }
+            },
         }
     }
     stream.close()
@@ -625,8 +634,8 @@ fun dispatch(routes: List<Route>, req: Request) -> Response {
                     req.params = params
                     let handler = route.handler
                     return handler(req)
-                }
-                None -> {}
+                },
+                None -> {},
             }
         }
         i += 1
@@ -740,10 +749,10 @@ fun decode_chunked(stream: TcpStream, initial: String) -> Result<ChunkedBody, Er
         match from_radix(size_line, 16) {
             Some(n) -> {
                 size = n
-            }
+            },
             None -> {
                 return Err(error_kind("http", "invalid chunk size"))
-            }
+            },
         }
         if size < 0 {
             return Err(error_kind("http", "negative chunk size"))
@@ -823,13 +832,13 @@ fun read_request(stream: TcpStream, initial: String) -> Result<Option<ReadResult
                 if buf.length() > 65536 {
                     return Err(error_kind("http", "request headers too large"))
                 }
-            }
+            },
             // A read failure while waiting for the next request line (a read
             // timeout on an idle keep-alive connection, or a reset) is not a
             // malformed request, so close quietly rather than answering 400.
             Err(_) -> {
                 return Ok(None)
-            }
+            },
         }
     }
     let head_text = buf.substring(0, split)
@@ -951,12 +960,12 @@ fun read_request(stream: TcpStream, initial: String) -> Result<Option<ReadResult
             match clen.parse_int() {
                 Some(n) -> {
                     want = n
-                }
+                },
                 // A non-numeric Content-Length is a malformed request; answer
                 // 400 rather than silently treating the body as empty.
                 None -> {
                     return Err(error_kind("http", "invalid Content-Length"))
-                }
+                },
             }
         }
         // Reject a negative or oversized declared body before reading it, so a
@@ -992,18 +1001,22 @@ fun read_request(stream: TcpStream, initial: String) -> Result<Option<ReadResult
     }
 
     let params: Map<String, String> = Map.new()
-    return Ok(Some(ReadResult {
-        request: Request {
-            method: method,
-            path: path,
-            version: version,
-            headers: headers,
-            params: params,
-            query: query,
-            body: actual_body,
-        },
-        rest: rest,
-    }))
+    return Ok(
+        Some(
+            ReadResult {
+                request: Request {
+                    method,
+                    path,
+                    version,
+                    headers,
+                    params,
+                    query,
+                    body: actual_body,
+                },
+                rest,
+            },
+        ),
+    )
 }
 
 // Decode `a=1&b=2` query-string pairs into `out`, percent-decoding each key and
@@ -1073,8 +1086,7 @@ fun is_tchar(b: Int) -> Bool {
         return true
     }
     // ! # $ % & ' * + - . ^ _ ` | ~
-    return b == 33 || b == 35 || b == 36 || b == 37 || b == 38 || b == 39 || b == 42 || b == 43
-        || b == 45 || b == 46 || b == 94 || b == 95 || b == 96 || b == 124 || b == 126
+    return b == 33 || b == 35 || b == 36 || b == 37 || b == 38 || b == 39 || b == 42 || b == 43 || b == 45 || b == 46 || b == 94 || b == 95 || b == 96 || b == 124 || b == 126
 }
 
 // Non-empty and every byte an ASCII decimal digit. Used to validate a numeric
@@ -1187,7 +1199,10 @@ fun write_response(stream: TcpStream, resp: Response, keep_alive: Bool, is_head:
     let i = 0
     while i < keys.len() {
         let k = keys[i]
-        block = block.concat(k).concat(": ").concat(resp.headers.get_or(k, "")).concat("\r\n")
+        if is_valid_field_name(k) {
+            let v = sanitize_field_value(resp.headers.get_or(k, ""))
+            block = block.concat(k).concat(": ").concat(v).concat("\r\n")
+        }
         i += 1
     }
     // A response to a HEAD request, or one whose status forbids a body, carries

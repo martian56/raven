@@ -40,8 +40,12 @@ checks that the certificate matches `server_name`, which is also sent as SNI.
 
 - `add_ca_file(path)` trusts the PEM certificate(s) in `path` in addition to the
   bundled roots, for a server signed by a private CA.
+- `add_ca_file_checked(path)` is the fallible form, returning
+  `Result<TlsConfig, Error>` when the CA file cannot be read or loaded.
 - `client_cert(cert_path, key_path)` presents a client certificate chain and
   private key (PEM) for mutual TLS.
+- `client_cert_checked(cert_path, key_path)` is the fallible form, returning
+  `Result<TlsConfig, Error>` when either file cannot be read or loaded.
 - `insecure_skip_verify()` accepts any certificate. The session is still
   encrypted, but the peer is not authenticated, so this is for local
   development only.
@@ -70,7 +74,8 @@ prefix (the operation name) joined to the runtime error text. As in `std/net`,
 no error structs cross the FFI: the runtime keeps a thread-local last-error
 string that a fallible op clears on success and sets on failure, and
 `raven_tls_last_error()` returns it. An id of 0 from a connect, a negative count
-from a write, or a non-empty last error becomes an `Err`.
+from a write, a checked config builder returning 0, or a non-empty last error
+becomes an `Err`.
 
 ## Bytes
 

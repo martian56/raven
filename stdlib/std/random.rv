@@ -150,7 +150,7 @@ impl Rng {
 
     // Choose an element of `xs` with probability proportional to the matching
     // entry of `weights`. Returns `None` when the lists are empty or the total
-    // weight is not positive.
+    // positive weight is zero.
     fun weighted_choice<T>(self, xs: List<T>, weights: List<Int>) -> Option<T> {
         // Only items that have a matching weight can be drawn, so the total
         // must ignore any extra weights past the shorter list. Counting them
@@ -160,44 +160,38 @@ impl Rng {
         if weights.len() < count {
             count = weights.len()
         }
-        // A non-positive weight contributes nothing and is never drawn: counting
-        // a negative weight would shrink the total and the cumulative sum, leaving
-        // a later positive item unreachable. Only positive weights are summed, and
-        // the sum saturates so a set of large weights does not wrap past i64 into
-        // a non-positive total and lose the whole draw.
-        let max = 9223372036854775807
-        let total = 0
+        // A non-positive weight contributes nothing and is never drawn. Sum as
+        // Float so very large positive Int weights do not saturate the cumulative
+        // range and make later positive items unreachable.
+        let total = 0.0
         let i = 0
         while i < count {
             let w = weights.get(i)
             if w > 0 {
-                if total > max - w {
-                    total = max
-                } else {
-                    total = total + w
-                }
+                total = total + raven_int_to_float(w)
             }
             i = i + 1
         }
-        if total <= 0 {
+        if total <= 0.0 {
             return None
         }
-        let r = self.gen_range(0, total)
-        let acc = 0
+        let r = self.next_float() * total
+        let acc = 0.0
+        let fallback = -1
         let j = 0
         while j < count {
             let w = weights.get(j)
             if w > 0 {
-                if acc > max - w {
-                    acc = max
-                } else {
-                    acc = acc + w
-                }
+                fallback = j
+                acc = acc + raven_int_to_float(w)
                 if r < acc {
                     return Some(xs.get(j))
                 }
             }
             j = j + 1
+        }
+        if fallback >= 0 {
+            return Some(xs.get(fallback))
         }
         return None
     }

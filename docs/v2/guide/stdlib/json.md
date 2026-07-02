@@ -95,7 +95,7 @@ offset.
 String escapes decode as in standard JSON: the two-character escapes
 `\" \\ \/ \b \f \n \r \t`, and a `\uXXXX` escape for a code point (UTF-8
 encoded into the result). A high surrogate followed by a low surrogate
-decodes to the astral code point; a lone surrogate decodes to U+FFFD.
+decodes to the astral code point; an unpaired surrogate is a parse error.
 
 ## Navigating a parsed value
 
