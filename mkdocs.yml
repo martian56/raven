@@ -120,6 +120,7 @@ nav:
     - Networking:
       - std/net: v2/guide/stdlib/net.md
       - std/http: v2/guide/stdlib/http.md
+      - std/tls: v2/guide/stdlib/tls.md
       - std/json: v2/guide/stdlib/json.md
     - Concurrency, errors, FFI, testing:
       - std/sync: v2/guide/stdlib/sync.md

@@ -127,6 +127,7 @@ helpers.
 |--------|----------------|
 | [std/net](stdlib/net.md) | TCP sockets |
 | [std/http](stdlib/http.md) | an HTTP client and server |
+| [std/tls](stdlib/tls.md) | verified TLS streams and STARTTLS upgrades |
 | [std/json](stdlib/json.md) | JSON parse and stringify |
 
 ### Concurrency, errors, FFI, testing

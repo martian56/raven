@@ -1,0 +1,18 @@
+import std/tls { config }
+import std/io { println }
+
+fun main() {
+    let c = config()
+    match c.add_ca_file_checked("target/definitely_missing_tls_ca_for_test.pem") {
+        Ok(_) -> println("ca error exposed: false"),
+        Err(_) -> println("ca error exposed: true"),
+    }
+    match c.client_cert_checked(
+        "target/definitely_missing_tls_client_cert_for_test.pem",
+        "target/definitely_missing_tls_client_key_for_test.pem",
+    ) {
+        Ok(_) -> println("client cert error exposed: false"),
+        Err(_) -> println("client cert error exposed: true"),
+    }
+    c.free()
+}

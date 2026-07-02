@@ -207,6 +207,8 @@ fun main() {
 
 `x` rendered with exactly `decimals` digits after the decimal point, rounded
 half up. A `decimals` of `0` or less produces no fractional part and no point.
+Very large precision requests are clamped before the internal scale would
+overflow; the result stays bounded instead of hanging on finite input.
 
 ```rust
 import std/fmt { format_float }

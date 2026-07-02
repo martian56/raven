@@ -2,6 +2,60 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.19.10] - 2026-07-02
+
+### Fixed
+
+- `std/json.parse` now rejects raw invalid UTF-8 bytes inside JSON string literals instead of accepting malformed JSON text as a `JsonValue.Str`. Valid raw UTF-8 and escaped Unicode still decode normally. (#845)
+
+## [2.19.9] - 2026-07-02
+
+### Fixed
+
+- The `std/json` guide and spec now match the parser's surrogate policy: valid high/low surrogate pairs decode to the astral code point, while unpaired high or low surrogates are parse errors rather than documented as U+FFFD replacement. (#844)
+
+## [2.19.8] - 2026-07-02
+
+### Fixed
+
+- The standard-library module charter now reflects the shipped `std/sync` concurrency primitives and bundled `std/tls` transport support instead of describing concurrency and TLS as deferred or package-only. (#843)
+
+## [2.19.7] - 2026-07-02
+
+### Fixed
+
+- HTTP responses now validate field names and sanitize field values again immediately before serialization, so direct mutation of `Response.headers` cannot bypass the checked `Response.header` builder and write malformed header names or raw control bytes to the wire. (#842)
+
+## [2.19.6] - 2026-07-02
+
+### Added
+
+- Added the missing `std/tls` standard-library guide page and navigation entries, covering verified TLS connections, custom trust, client certificates, STARTTLS upgrades, stream methods, and checked configuration builders. (#841)
+
+## [2.19.5] - 2026-07-02
+
+### Fixed
+
+- `std/tls.TlsConfig` now exposes checked `add_ca_file_checked` and `client_cert_checked` builders that return `Result<TlsConfig, Error>` when CA, certificate, or key files cannot be read or loaded. The chaining builders remain available for compatibility. (#840)
+
+## [2.19.4] - 2026-07-02
+
+### Fixed
+
+- `Rng.weighted_choice` no longer saturates huge positive cumulative weights at `Int::MAX`, which made later positive items unreachable. Selection now sums positive weights as `Float` and keeps all positive entries reachable even when the exact integer total would overflow. (#839)
+
+## [2.19.3] - 2026-07-02
+
+### Fixed
+
+- `std/fmt.format_float` now clamps excessive fractional precision before its scaling factor or scaled value becomes infinite, so finite inputs such as `format_float(1.0, 400)` return a bounded string instead of hanging in digit extraction. (#837)
+
+## [2.19.2] - 2026-07-02
+
+### Fixed
+
+- `std/encoding.base32_decode` rejects padding-only and impossible RFC 4648 base32 padding shapes instead of silently decoding them as empty output. (#838)
+
 ## [2.19.1] - 2026-06-27
 
 ### Fixed

@@ -10,10 +10,13 @@ import std/time { sleep_millis }
 import std/io { println }
 
 fun handler(req: Request) -> Response {
-    return Response.text("body")
-        .header("Bad Name", "dropped")
-        .header("X-Ctrl", "a".concat(__str_from_byte(1)).concat("b"))
-        .header("X-Good", "fine")
+    let r = Response.text("body").header("Bad Name", "dropped").header(
+        "X-Ctrl",
+        "a".concat(__str_from_byte(1)).concat("b"),
+    ).header("X-Good", "fine")
+    r.headers.set("Direct Bad", "dropped")
+    r.headers.set("X-Direct-Ctrl", "c".concat(__str_from_byte(1)).concat("d"))
+    return r
 }
 
 fun headers_block(s: String) -> String {
@@ -30,10 +33,10 @@ fun connect_retry(addr: String) -> Result<TcpStream, Error> {
         match connect(addr) {
             Ok(s) -> {
                 return Ok(s)
-            }
+            },
             Err(_) -> {
                 sleep_millis(20)
-            }
+            },
         }
         attempt += 1
     }
@@ -48,12 +51,12 @@ fun send(addr: String, request: String) -> String {
             match s.read_all() {
                 Ok(r) -> {
                     result = r
-                }
-                Err(_) -> {}
+                },
+                Err(_) -> {},
             }
             s.close()
-        }
-        Err(_) -> {}
+        },
+        Err(_) -> {},
     }
     return result
 }
@@ -69,8 +72,10 @@ fun main() {
     let resp = send(addr, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
     let block = headers_block(resp)
     println("bad-name dropped: ${block.index_of("Bad Name") < 0}")
+    println("direct bad-name dropped: ${block.index_of("Direct Bad") < 0}")
     println("good present: ${block.index_of("X-Good: fine") >= 0}")
     println("control stripped: ${block.index_of("X-Ctrl: ab") >= 0}")
+    println("direct control stripped: ${block.index_of("X-Direct-Ctrl: cd") >= 0}")
 
     app.shutdown()
 }

@@ -15,4 +15,9 @@ fun main() {
         Ok(v) -> println("ok"),
         Err(e) -> println("parse failed"),
     }
+    let bad_utf8 = "\"".concat(__str_from_byte(255)).concat("\"")
+    match parse(bad_utf8) {
+        Ok(v) -> println("ok"),
+        Err(e) -> println("invalid utf8 rejected"),
+    }
 }

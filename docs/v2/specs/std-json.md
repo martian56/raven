@@ -79,9 +79,9 @@ bytes in the result.
 A high surrogate (`\uD800` to `\uDBFF`) immediately followed by a low
 surrogate (`\uDC00` to `\uDFFF`) decodes to the astral code point and is
 UTF-8 encoded. A high surrogate not followed by a low surrogate, or a lone
-low surrogate, decodes to U+FFFD (the replacement character). Note that the
-Raven lexer rejects surrogate `\u` escapes inside a source string literal,
-so a surrogate input reaches `parse` only from data read at runtime.
+low surrogate, is a parse error. Note that the Raven lexer rejects surrogate
+`\u` escapes inside a source string literal, so a surrogate input reaches
+`parse` only from data read at runtime.
 
 ### Numbers
 
