@@ -372,8 +372,6 @@ fun base32_encode(s: String) -> String {
     return out
 }
 
-// Decode an RFC 4648 base32 string. Padding and non-alphabet bytes are
-// skipped. The inverse of `base32_encode`.
 // Inverse of base32_encode. Trailing `=` is padding; any other non-alphabet
 // byte is an Err rather than being silently skipped.
 fun base32_decode(s: String) -> Result<String, Error> {
@@ -387,12 +385,14 @@ fun base32_decode(s: String) -> Result<String, Error> {
     let acc = 0
     let bits = 0
     let seen_pad = false
+    let pad_count = 0
     let i = 0
     while i < n {
         let b = __str_byte_at(s, i)
         if b == 61 {
             // `=` padding: no more data bits follow, and nothing may come after.
             seen_pad = true
+            pad_count = pad_count + 1
         } else {
             if seen_pad {
                 return Err(encoding_error("base32 data after padding"))
@@ -410,6 +410,9 @@ fun base32_decode(s: String) -> Result<String, Error> {
             }
         }
         i = i + 1
+    }
+    if pad_count != 0 && pad_count != 1 && pad_count != 3 && pad_count != 4 && pad_count != 6 {
+        return Err(encoding_error("base32 padding is malformed"))
     }
     return Ok(out)
 }
