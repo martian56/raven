@@ -178,6 +178,34 @@ impl PackageContext {
         self.locked_versions.get(&source.to_ascii_lowercase())
     }
 
+    fn package_dir(&self, source: &str) -> Option<PathBuf> {
+        let (canonical, version) = self.locked(source)?;
+        let gh = GithubPath::parse(canonical)?;
+        Some(crate::pkg::cache_dir_in(
+            &self.cache_root,
+            &gh.host,
+            &gh.user,
+            &gh.repo,
+            version,
+        ))
+    }
+
+    fn checked_package_path(&self, source: &str, candidate: PathBuf) -> Option<PathBuf> {
+        if !candidate.exists() {
+            return Some(candidate);
+        }
+
+        let package_dir = self.package_dir(source)?;
+        let cache_root = self.cache_root.canonicalize().ok()?;
+        let package_root = package_dir.canonicalize().ok()?;
+        if !package_root.starts_with(&cache_root) {
+            return None;
+        }
+
+        let resolved = candidate.canonicalize().ok()?;
+        resolved.starts_with(&package_root).then_some(resolved)
+    }
+
     /// Resolve the cached `.rv` source file for a `github.com/<user>/<repo>`
     /// path (the `source` key in the lock) and an import `subpath`.
     ///
@@ -189,10 +217,7 @@ impl PackageContext {
     /// `<cachedir>/util/text.rv`. Returns the resolved file path, or `None`
     /// when the package is not pinned in the lock.
     pub fn external_source_path(&self, source: &str, subpath: &[String]) -> Option<PathBuf> {
-        let (canonical, version) = self.locked(source)?;
-        let gh = GithubPath::parse(canonical)?;
-        let dir = crate::pkg::cache_dir_in(&self.cache_root, &gh.host, &gh.user, &gh.repo, version);
-        let mut file = dir;
+        let mut file = self.package_dir(source)?;
         if subpath.is_empty() {
             file.push("lib.rv");
         } else {
@@ -201,17 +226,29 @@ impl PackageContext {
             }
             file.push(format!("{}.rv", subpath[subpath.len() - 1]));
         }
-        Some(file)
+        self.checked_package_path(source, file)
+    }
+
+    fn external_local_source_path(
+        &self,
+        source: &str,
+        importing: &Path,
+        target: &str,
+    ) -> Option<PathBuf> {
+        let parent = importing.parent().unwrap_or_else(|| Path::new("."));
+        let mut path = parent.join(target);
+        if path.extension().is_none() {
+            path.set_extension("rv");
+        }
+        self.checked_package_path(source, path)
     }
 
     /// The path to a cached package's own `rv.toml`, used to read its
     /// transitive dependencies. Returns `None` when the package is not
     /// pinned in the lock.
     fn package_manifest_path(&self, source: &str) -> Option<PathBuf> {
-        let (canonical, version) = self.locked(source)?;
-        let gh = GithubPath::parse(canonical)?;
-        let dir = crate::pkg::cache_dir_in(&self.cache_root, &gh.host, &gh.user, &gh.repo, version);
-        Some(dir.join("rv.toml"))
+        let path = self.package_dir(source)?.join("rv.toml");
+        self.checked_package_path(source, path)
     }
 }
 
@@ -368,8 +405,11 @@ pub fn expand_with_stdlib_ctx(
         // than left unresolved. `import_rename_map` cannot do this on its own
         // because it has no package context.
         if let Some(ctx) = ctx {
-            for (selector, symbol) in external_import_rename_map(&module_file, ctx) {
+            for (selector, symbol) in external_import_rename_map(&module_file, ctx, None) {
                 rename.insert(selector, symbol);
+            }
+            for (alias_key, target_key) in whole_module_external_alias_renames(&module_file, ctx) {
+                rename.insert(alias_key, target_key);
             }
         }
         // A whole-module alias (`import "./b" as dep`) is recorded so the rewrite
@@ -415,7 +455,7 @@ pub fn expand_with_stdlib_ctx(
     if let Some(ctx) = ctx {
         for ext in external_modules {
             let key = external_module_key(&ext.host, &ext.user, &ext.repo, &ext.source_path);
-            let mut rename = external_import_rename_map(&ext.file, ctx);
+            let mut rename = external_import_rename_map(&ext.file, ctx, Some(&ext.source));
             // A bare stdlib import (`import std/net`, no selectors) used through a
             // qualifier inside an external package, the same #831 case as the
             // local path above.
@@ -426,6 +466,14 @@ pub fn expand_with_stdlib_ctx(
             // external module is recorded too, so a qualified `dep.fn()` resolves
             // to b's namespaced symbol after the import declaration is stripped.
             for (alias_key, target_key) in whole_module_external_alias_renames(&ext.file, ctx) {
+                rename.insert(alias_key, target_key);
+            }
+            // External package files may import sibling files with a local path.
+            // Their import declarations are stripped during merge too, so keep
+            // whole-module aliases for those sibling modules.
+            for (alias_key, target_key) in
+                whole_module_external_local_alias_renames(&ext.file, ctx, &ext.source)
+            {
                 rename.insert(alias_key, target_key);
             }
             for name in top_level_fn_names(&ext.file) {
@@ -787,12 +835,12 @@ fn import_rename_map(
     map
 }
 
-/// Collect the whole-module alias imports of `file` (`import "./b" as dep`, an
-/// alias with no selector list) as `(alias rename key, target module key)`
-/// pairs. A merged module strips its own import declarations, so a qualified
-/// `dep.member` call would otherwise lose the binding the alias stood for; the
-/// merge rewrite uses these to namespace it instead. Only local (`./`, `../`)
-/// imports are handled here.
+/// Collect the whole-module imports of `file` (`import "./b"` or
+/// `import "./b" as dep`, with no selector list) as `(alias rename key, target
+/// module key)` pairs. A merged module strips its own import declarations, so a
+/// qualified `dep.member` or `b.member` call would otherwise lose the binding
+/// the import stood for; the merge rewrite uses these to namespace it instead.
+/// Only local (`./`, `../`) imports are handled here.
 fn whole_module_alias_renames(
     file: &File,
     importing: &Path,
@@ -801,9 +849,6 @@ fn whole_module_alias_renames(
     let mut out = Vec::new();
     for decl in &file.items {
         let DeclKind::Import(import) = &decl.kind else {
-            continue;
-        };
-        let Some(alias) = &import.alias else {
             continue;
         };
         if !import.selectors.is_empty() {
@@ -816,8 +861,16 @@ fn whole_module_alias_renames(
             continue;
         }
         if let Some(loaded) = loader.load(importing, path) {
+            let alias = import.alias.clone().unwrap_or_else(|| {
+                loaded
+                    .canonical_path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(path)
+                    .to_string()
+            });
             let key = local_module_key(&loaded.canonical_path);
-            out.push((alias_rename_key(alias), key));
+            out.push((alias_rename_key(&alias), key));
         }
     }
     out
@@ -861,16 +914,13 @@ fn whole_module_stdlib_alias_renames(file: &File) -> Vec<(String, String)> {
 }
 
 /// Like [`whole_module_alias_renames`] but for a `github.com/...` whole-module
-/// alias inside an external module, mapping the alias to the target package's
+/// import, mapping the alias (explicit or default) to the target package's
 /// `ext.` namespace key. The two share the `key.member` mangling, so the same
 /// rewrite handles a qualified call through either kind of alias.
 fn whole_module_external_alias_renames(file: &File, ctx: &PackageContext) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for decl in &file.items {
         let DeclKind::Import(import) = &decl.kind else {
-            continue;
-        };
-        let Some(alias) = &import.alias else {
             continue;
         };
         if !import.selectors.is_empty() {
@@ -884,8 +934,53 @@ fn whole_module_external_alias_renames(file: &File, ctx: &PackageContext) -> Vec
         };
         let source = format!("github.com/{}/{}", gh.user, gh.repo);
         if let Some(src_path) = ctx.external_source_path(&source, &gh.subpath) {
+            let alias = import.alias.clone().unwrap_or_else(|| {
+                gh.subpath
+                    .last()
+                    .cloned()
+                    .unwrap_or_else(|| gh.repo.clone())
+            });
             let key = external_module_key(&gh.host, &gh.user, &gh.repo, &src_path);
-            out.push((alias_rename_key(alias), key));
+            out.push((alias_rename_key(&alias), key));
+        }
+    }
+    out
+}
+
+fn whole_module_external_local_alias_renames(
+    file: &File,
+    ctx: &PackageContext,
+    source: &str,
+) -> Vec<(String, String)> {
+    let Some(gh) = GithubPath::parse(source) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for decl in &file.items {
+        let DeclKind::Import(import) = &decl.kind else {
+            continue;
+        };
+        if !import.selectors.is_empty() {
+            continue;
+        }
+        let ImportSource::Quoted(path) = &import.source else {
+            continue;
+        };
+        if !(path.starts_with("./") || path.starts_with("../")) {
+            continue;
+        }
+        if let Some(src_path) =
+            ctx.external_local_source_path(source, file.span.file.as_ref().as_path(), path)
+        {
+            let alias = import.alias.clone().unwrap_or_else(|| {
+                src_path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(path)
+                    .to_string()
+            });
+            let key = external_module_key(&gh.host, &gh.user, &gh.repo, &src_path);
+            out.push((alias_rename_key(&alias), key));
         }
     }
     out
@@ -894,6 +989,7 @@ fn whole_module_external_alias_renames(file: &File, ctx: &PackageContext) -> Vec
 /// One loaded external package source file plus the package identity it
 /// belongs to, so the merge can build its `ext.` namespace key.
 struct ExternalModule {
+    source: String,
     host: String,
     user: String,
     repo: String,
@@ -935,17 +1031,23 @@ fn load_external_modules(
     local_modules: &[File],
     ctx: &PackageContext,
 ) -> Result<Vec<ExternalModule>, RavenError> {
-    let mut queue: Vec<(String, Vec<String>)> = external_import_targets(user);
+    let mut queue: Vec<(String, PathBuf)> = Vec::new();
+    for (source, subpath) in external_import_targets(user) {
+        if let Some(path) = ctx.external_source_path(&source, &subpath) {
+            queue.push((source, path));
+        }
+    }
     for m in local_modules {
-        queue.extend(external_import_targets(m));
+        for (source, subpath) in external_import_targets(m) {
+            if let Some(path) = ctx.external_source_path(&source, &subpath) {
+                queue.push((source, path));
+            }
+        }
     }
     let mut loaded_paths: BTreeSet<PathBuf> = BTreeSet::new();
     let mut out: Vec<ExternalModule> = Vec::new();
 
-    while let Some((source, subpath)) = queue.pop() {
-        let Some(path) = ctx.external_source_path(&source, &subpath) else {
-            continue;
-        };
+    while let Some((source, path)) = queue.pop() {
         if !loaded_paths.insert(path.clone()) {
             continue;
         }
@@ -966,7 +1068,17 @@ fn load_external_modules(
         // Follow this file's own external imports (to sibling files in the
         // same package or to other packages).
         for (dep_source, dep_subpath) in external_import_targets(&module_file) {
-            queue.push((dep_source, dep_subpath));
+            if let Some(path) = ctx.external_source_path(&dep_source, &dep_subpath) {
+                queue.push((dep_source, path));
+            }
+        }
+        // Follow local imports declared by a cached package file. They resolve
+        // relative to the importing package source and are checked to stay
+        // inside the package root before any read happens.
+        for (_, dep) in local_import_targets(&module_file) {
+            if let Some(path) = ctx.external_local_source_path(&source, &path, &dep) {
+                queue.push((source.clone(), path));
+            }
         }
         // Read the package's cached manifest and queue each dependency's
         // entry file so a transitively required package merges even when
@@ -974,12 +1086,15 @@ fn load_external_modules(
         if let Some(manifest_path) = ctx.package_manifest_path(&source) {
             if let Ok(manifest) = crate::manifest::Manifest::load(&manifest_path) {
                 for dep in &manifest.dependencies {
-                    queue.push((dep.path.clone(), Vec::new()));
+                    if let Some(path) = ctx.external_source_path(&dep.path, &[]) {
+                        queue.push((dep.path.clone(), path));
+                    }
                 }
             }
         }
 
         out.push(ExternalModule {
+            source,
             host: gh.host,
             user: gh.user,
             repo: gh.repo,
@@ -996,7 +1111,11 @@ fn load_external_modules(
 /// to the sibling's `ext.` namespaced symbol. Mirrors [`import_rename_map`]
 /// for the external case. Selectors that name a type keep their own name
 /// and need no rename.
-fn external_import_rename_map(file: &File, ctx: &PackageContext) -> HashMap<String, String> {
+fn external_import_rename_map(
+    file: &File,
+    ctx: &PackageContext,
+    current_source: Option<&str>,
+) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for decl in &file.items {
         let DeclKind::Import(import) = &decl.kind else {
@@ -1029,11 +1148,28 @@ fn external_import_rename_map(file: &File, ctx: &PackageContext) -> HashMap<Stri
                 }
             }
             ImportSource::Quoted(path) => {
-                let Some(gh) = GithubPath::parse(path) else {
-                    continue;
-                };
-                let source = format!("github.com/{}/{}", gh.user, gh.repo);
-                let Some(src_path) = ctx.external_source_path(&source, &gh.subpath) else {
+                let (gh, src_path) = if let Some(gh) = GithubPath::parse(path) {
+                    let source = format!("github.com/{}/{}", gh.user, gh.repo);
+                    let Some(src_path) = ctx.external_source_path(&source, &gh.subpath) else {
+                        continue;
+                    };
+                    (gh, src_path)
+                } else if path.starts_with("./") || path.starts_with("../") {
+                    let Some(source) = current_source else {
+                        continue;
+                    };
+                    let Some(gh) = GithubPath::parse(source) else {
+                        continue;
+                    };
+                    let Some(src_path) = ctx.external_local_source_path(
+                        source,
+                        file.span.file.as_ref().as_path(),
+                        path,
+                    ) else {
+                        continue;
+                    };
+                    (gh, src_path)
+                } else {
                     continue;
                 };
                 let Ok(text) = std::fs::read_to_string(&src_path) else {
@@ -1045,8 +1181,12 @@ fn external_import_rename_map(file: &File, ctx: &PackageContext) -> HashMap<Stri
                 let key = external_module_key(&gh.host, &gh.user, &gh.repo, &src_path);
                 let fns = top_level_fn_names(&target);
                 let types = top_level_type_names(&target);
+                let globals = top_level_global_names(&target);
                 for sel in &import.selectors {
-                    if fns.contains(&sel.name) || types.contains(&sel.name) {
+                    if fns.contains(&sel.name)
+                        || types.contains(&sel.name)
+                        || globals.contains(&sel.name)
+                    {
                         map.insert(sel.local().to_string(), mangle_external_fn(&key, &sel.name));
                     }
                 }
@@ -2036,6 +2176,83 @@ mod tests {
     }
 
     #[test]
+    fn external_local_source_path_rejects_existing_escape() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let cache = std::env::temp_dir().join(format!(
+            "raven_ext_escape_{}_{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+        let pkg_dir = cache.join("github.com").join("acme").join("pkg@v1.0.0");
+        std::fs::create_dir_all(&pkg_dir).expect("mkdir package");
+        std::fs::write(pkg_dir.join("lib.rv"), "fun inside() -> Int { return 1 }\n")
+            .expect("write lib");
+        let outside = pkg_dir.parent().expect("package parent").join("escape.rv");
+        std::fs::write(&outside, "fun outside() -> Int { return 2 }\n").expect("write escape");
+
+        let lock = crate::lock::LockFile {
+            version: crate::lock::LOCK_VERSION,
+            packages: vec![crate::lock::LockedPackage {
+                source: "github.com/acme/pkg".to_string(),
+                version: "v1.0.0".to_string(),
+                hash: "sha256:abc".to_string(),
+            }],
+        };
+        let ctx = PackageContext::new(cache.clone(), &lock);
+        let lib = ctx
+            .external_source_path("github.com/acme/pkg", &[])
+            .expect("lib path");
+        assert!(
+            ctx.external_local_source_path("github.com/acme/pkg", &lib, "../escape")
+                .is_none(),
+            "an existing local import outside the cached package root must be rejected"
+        );
+
+        std::fs::remove_dir_all(&cache).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn external_source_path_rejects_symlink_escape() {
+        use std::os::unix::fs::symlink;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let cache = std::env::temp_dir().join(format!(
+            "raven_ext_symlink_escape_{}_{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+        let pkg_dir = cache.join("github.com").join("acme").join("pkg@v1.0.0");
+        let outside_dir = cache.join("outside");
+        std::fs::create_dir_all(&pkg_dir).expect("mkdir package");
+        std::fs::create_dir_all(&outside_dir).expect("mkdir outside");
+        std::fs::write(
+            outside_dir.join("util.rv"),
+            "fun outside() -> Int { return 2 }\n",
+        )
+        .expect("write outside");
+        symlink(outside_dir.join("util.rv"), pkg_dir.join("util.rv")).expect("create symlink");
+
+        let lock = crate::lock::LockFile {
+            version: crate::lock::LOCK_VERSION,
+            packages: vec![crate::lock::LockedPackage {
+                source: "github.com/acme/pkg".to_string(),
+                version: "v1.0.0".to_string(),
+                hash: "sha256:abc".to_string(),
+            }],
+        };
+        let ctx = PackageContext::new(cache.clone(), &lock);
+        assert!(
+            ctx.external_source_path("github.com/acme/pkg", &["util".to_string()])
+                .is_none(),
+            "a symlinked source outside the cached package root must be rejected"
+        );
+
+        std::fs::remove_dir_all(&cache).ok();
+    }
+
+    #[test]
     fn external_function_merges_under_ext_namespace() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static N: AtomicUsize = AtomicUsize::new(0);
@@ -2073,7 +2290,10 @@ mod tests {
         );
         let (combined, _sites) = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
 
-        let key = external_module_key("github.com", "acme", "greet", &src_path);
+        let resolved_src = ctx
+            .external_source_path("github.com/acme/greet", &["lib".to_string()])
+            .expect("resolved source path");
+        let key = external_module_key("github.com", "acme", "greet", &resolved_src);
         let mangled = mangle_external_fn(&key, "shout");
         let present = combined
             .items
@@ -2140,8 +2360,11 @@ mod tests {
         );
         let (combined, _sites) = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
 
+        let resolved_src = ctx
+            .external_source_path("github.com/acme/greet", &["lib".to_string()])
+            .expect("resolved source path");
         let ext_shout = mangle_external_fn(
-            &external_module_key("github.com", "acme", "greet", &src_path),
+            &external_module_key("github.com", "acme", "greet", &resolved_src),
             "shout",
         );
         let loc_loud = mangle_local_fn(&local_module_key(&canon), "loud");
@@ -2164,6 +2387,241 @@ mod tests {
     }
 
     #[test]
+    fn external_local_selector_import_is_loaded_and_rewritten() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let cache = std::env::temp_dir().join(format!(
+            "raven_ext_local_selector_{}_{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+        let pkg_dir = cache.join("github.com").join("acme").join("calc@v1.0.0");
+        std::fs::create_dir_all(&pkg_dir).expect("mkdir");
+        std::fs::write(
+            pkg_dir.join("rv.toml"),
+            "[package]\nname = \"calc\"\nversion = \"0.1.0\"\n",
+        )
+        .expect("toml");
+        std::fs::write(
+            pkg_dir.join("lib.rv"),
+            "import \"./util\" { value }\nfun answer() -> Int { return value() }\n",
+        )
+        .expect("lib");
+        std::fs::write(
+            pkg_dir.join("util.rv"),
+            "fun value() -> Int { return 42 }\n",
+        )
+        .expect("util");
+
+        let lock = crate::lock::LockFile {
+            version: crate::lock::LOCK_VERSION,
+            packages: vec![crate::lock::LockedPackage {
+                source: "github.com/acme/calc".to_string(),
+                version: "v1.0.0".to_string(),
+                hash: "sha256:abc".to_string(),
+            }],
+        };
+        let ctx = PackageContext::new(cache.clone(), &lock);
+        let user = parse_src(
+            "import \"github.com/acme/calc\" { answer }\nfun main() { print(answer()) }\n",
+        );
+        let (combined, _sites) = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
+
+        let lib_path = ctx
+            .external_source_path("github.com/acme/calc", &[])
+            .expect("lib path");
+        let util_path = ctx
+            .external_local_source_path("github.com/acme/calc", &lib_path, "./util")
+            .expect("util path");
+        let answer = mangle_external_fn(
+            &external_module_key("github.com", "acme", "calc", &lib_path),
+            "answer",
+        );
+        let value = mangle_external_fn(
+            &external_module_key("github.com", "acme", "calc", &util_path),
+            "value",
+        );
+        let answer_fn = combined
+            .items
+            .iter()
+            .find_map(|d| match &d.kind {
+                DeclKind::Function(f) if f.name == answer => Some(f),
+                _ => None,
+            })
+            .expect("answer merged");
+        let mut idents = Vec::new();
+        collect_fn_body_idents(&answer_fn.body, &mut idents);
+        assert!(
+            idents.iter().any(|n| *n == value),
+            "answer should call {value}, got {idents:?}"
+        );
+
+        std::fs::remove_dir_all(&cache).ok();
+    }
+
+    #[test]
+    fn external_whole_module_default_alias_is_rewritten() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let cache = std::env::temp_dir().join(format!(
+            "raven_ext_whole_alias_{}_{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+        let base = cache.join("github.com").join("acme");
+        let app_dir = base.join("app@v1.0.0");
+        let dep_dir = base.join("dep@v2.0.0");
+        std::fs::create_dir_all(&app_dir).expect("mkdir app");
+        std::fs::create_dir_all(&dep_dir).expect("mkdir dep");
+        std::fs::write(
+            app_dir.join("rv.toml"),
+            "[package]\nname = \"app\"\nversion = \"0.1.0\"\n\
+             [dependencies]\n\"github.com/acme/dep\" = \"v2.0.0\"\n",
+        )
+        .expect("app toml");
+        std::fs::write(
+            dep_dir.join("rv.toml"),
+            "[package]\nname = \"dep\"\nversion = \"0.1.0\"\n",
+        )
+        .expect("dep toml");
+        std::fs::write(
+            app_dir.join("lib.rv"),
+            "import \"github.com/acme/dep\"\nfun answer() -> Int { return dep.value() }\n",
+        )
+        .expect("app lib");
+        std::fs::write(dep_dir.join("lib.rv"), "fun value() -> Int { return 7 }\n")
+            .expect("dep lib");
+
+        let lock = crate::lock::LockFile {
+            version: crate::lock::LOCK_VERSION,
+            packages: vec![
+                crate::lock::LockedPackage {
+                    source: "github.com/acme/app".to_string(),
+                    version: "v1.0.0".to_string(),
+                    hash: "sha256:app".to_string(),
+                },
+                crate::lock::LockedPackage {
+                    source: "github.com/acme/dep".to_string(),
+                    version: "v2.0.0".to_string(),
+                    hash: "sha256:dep".to_string(),
+                },
+            ],
+        };
+        let ctx = PackageContext::new(cache.clone(), &lock);
+        let user = parse_src(
+            "import \"github.com/acme/app\" { answer }\nfun main() { print(answer()) }\n",
+        );
+        let (combined, _sites) = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
+
+        let app_path = ctx
+            .external_source_path("github.com/acme/app", &[])
+            .expect("app path");
+        let dep_path = ctx
+            .external_source_path("github.com/acme/dep", &[])
+            .expect("dep path");
+        let answer = mangle_external_fn(
+            &external_module_key("github.com", "acme", "app", &app_path),
+            "answer",
+        );
+        let value = mangle_external_fn(
+            &external_module_key("github.com", "acme", "dep", &dep_path),
+            "value",
+        );
+        let answer_fn = combined
+            .items
+            .iter()
+            .find_map(|d| match &d.kind {
+                DeclKind::Function(f) if f.name == answer => Some(f),
+                _ => None,
+            })
+            .expect("answer merged");
+        let mut idents = Vec::new();
+        collect_fn_body_idents(&answer_fn.body, &mut idents);
+        assert!(
+            idents.iter().any(|n| *n == value),
+            "answer should call {value}, got {idents:?}"
+        );
+
+        std::fs::remove_dir_all(&cache).ok();
+    }
+
+    #[test]
+    fn local_module_external_whole_module_alias_is_rewritten() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let cache = std::env::temp_dir().join(format!(
+            "raven_local_ext_whole_alias_{}_{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+        let dep_dir = cache.join("github.com").join("acme").join("dep@v1.0.0");
+        std::fs::create_dir_all(&dep_dir).expect("mkdir dep");
+        std::fs::write(
+            dep_dir.join("rv.toml"),
+            "[package]\nname = \"dep\"\nversion = \"0.1.0\"\n",
+        )
+        .expect("dep toml");
+        std::fs::write(dep_dir.join("lib.rv"), "fun value() -> Int { return 9 }\n")
+            .expect("dep lib");
+
+        let lock = crate::lock::LockFile {
+            version: crate::lock::LOCK_VERSION,
+            packages: vec![crate::lock::LockedPackage {
+                source: "github.com/acme/dep".to_string(),
+                version: "v1.0.0".to_string(),
+                hash: "sha256:dep".to_string(),
+            }],
+        };
+        let ctx = PackageContext::new(cache.clone(), &lock);
+
+        let (proj, entry) = write_temp_project(
+            &[
+                (
+                    "helper.rv",
+                    "import \"github.com/acme/dep\"\nfun via() -> Int { return dep.value() }\n",
+                ),
+                (
+                    "main.rv",
+                    "import \"./helper\" { via }\nfun main() { print(via()) }\n",
+                ),
+            ],
+            "main.rv",
+        );
+        let canon = proj.join("helper.rv").canonicalize().expect("canon");
+        let user = parse_at(
+            "import \"./helper\" { via }\nfun main() { print(via()) }\n",
+            &entry,
+        );
+        let (combined, _sites) = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
+
+        let dep_path = ctx
+            .external_source_path("github.com/acme/dep", &[])
+            .expect("dep path");
+        let via = mangle_local_fn(&local_module_key(&canon), "via");
+        let value = mangle_external_fn(
+            &external_module_key("github.com", "acme", "dep", &dep_path),
+            "value",
+        );
+        let via_fn = combined
+            .items
+            .iter()
+            .find_map(|d| match &d.kind {
+                DeclKind::Function(f) if f.name == via => Some(f),
+                _ => None,
+            })
+            .expect("via merged");
+        let mut idents = Vec::new();
+        collect_fn_body_idents(&via_fn.body, &mut idents);
+        assert!(
+            idents.iter().any(|n| *n == value),
+            "via should call {value}, got {idents:?}"
+        );
+
+        std::fs::remove_dir_all(&cache).ok();
+        std::fs::remove_dir_all(&proj).ok();
+    }
+
+    #[test]
     fn external_stdlib_free_function_import_is_renamed() {
         // A dependency that imports a std free function must have its call
         // sites renamed to the std namespace when merged, the same as its
@@ -2178,7 +2636,7 @@ mod tests {
         let file = parse_src(
             "import std/time { now_millis }\nfun stamp() -> Int { return now_millis() }\n",
         );
-        let map = external_import_rename_map(&file, &ctx);
+        let map = external_import_rename_map(&file, &ctx, None);
         assert_eq!(
             map.get("now_millis"),
             Some(&mangle_stdlib_fn("time", "now_millis"))

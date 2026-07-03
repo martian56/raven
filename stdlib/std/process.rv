@@ -14,6 +14,7 @@
 // list is the empty String. See docs/v2/specs/std-process.md.
 
 import std/error
+import std/string
 
 struct Output {
     code: Int,
@@ -54,6 +55,19 @@ fun join_args(args: List<String>) -> String {
     return out
 }
 
+fun validate_args(args: List<String>) -> Result<Bool, Error> {
+    let nul = __str_from_byte(0)
+    let i = 0
+    let n = args.len()
+    while i < n {
+        if args[i].contains(nul) {
+            return Err(Error { kind: "process", message: "process argument contains NUL byte" })
+        }
+        i = i + 1
+    }
+    return Ok(true)
+}
+
 // Pull the finished child `id` into an Output and free the registry entry.
 fun collect(id: Int) -> Output {
     let out = Output {
@@ -70,6 +84,7 @@ fun collect(id: Int) -> Output {
 // exit is still Ok. On a spawn failure returns Err tagged with kind
 // "process".
 fun run(program: String, args: List<String>) -> Result<Output, Error> {
+    validate_args(args)?
     let id = raven_process_run(program, join_args(args), "")
     if id == 0 {
         return Err(Error { kind: "process", message: raven_process_last_error() })
@@ -80,6 +95,7 @@ fun run(program: String, args: List<String>) -> Result<Output, Error> {
 // Like `run`, but feeds `input` to the child's stdin (which is then
 // closed).
 fun run_with_input(program: String, args: List<String>, input: String) -> Result<Output, Error> {
+    validate_args(args)?
     let id = raven_process_run(program, join_args(args), input)
     if id == 0 {
         return Err(Error { kind: "process", message: raven_process_last_error() })

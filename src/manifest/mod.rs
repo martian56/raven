@@ -29,13 +29,23 @@ pub const ACCEPTED_EDITIONS: &[&str] = &["v2", "2026"];
 /// Whether `name` is a valid package name: a non-empty run of ASCII letters,
 /// digits, `-`, and `_` that does not start with `-`. The name is interpolated
 /// into scaffolded source and joined onto the output directory as a binary
-/// name, so a path separator or `..` must be rejected to prevent traversal.
+/// name, so a path separator, `..`, or Windows device filename must be rejected.
 pub fn is_valid_package_name(name: &str) -> bool {
     !name.is_empty()
         && !name.starts_with('-')
+        && !is_windows_reserved_package_name(name)
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+fn is_windows_reserved_package_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    matches!(lower.as_str(), "con" | "prn" | "aux" | "nul")
+        || (lower.len() == 4
+            && (lower.starts_with("com") || lower.starts_with("lpt"))
+            && lower.as_bytes()[3].is_ascii_digit()
+            && lower.as_bytes()[3] != b'0')
 }
 
 /// The default `[fmt].indent_width` when the section or field is absent.
@@ -251,7 +261,7 @@ impl Manifest {
             return Err(ManifestError::InvalidValue {
                 section: "package".to_string(),
                 field: "name".to_string(),
-                message: "must contain only ASCII letters, digits, '-', and '_', and may not start with '-' (the name is used as a file and output binary name)".to_string(),
+                message: "must contain only ASCII letters, digits, '-', and '_', may not start with '-', and may not be a reserved Windows device name (the name is used as a file and output binary name)".to_string(),
             });
         }
         let edition = match raw_pkg.edition {
@@ -371,6 +381,11 @@ mod tests {
         assert!(!is_valid_package_name("-leading"));
         assert!(!is_valid_package_name(""));
         assert!(!is_valid_package_name("has space"));
+        assert!(!is_valid_package_name("con"));
+        assert!(!is_valid_package_name("COM1"));
+        assert!(!is_valid_package_name("lpt9"));
+        assert!(is_valid_package_name("com10"));
+        assert!(is_valid_package_name("console"));
     }
 
     #[test]

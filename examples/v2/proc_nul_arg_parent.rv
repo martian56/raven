@@ -1,0 +1,14 @@
+// golden:skip - std/process NUL argv validation, checked in codegen_smoke.rs.
+// `std/process.run` should reject an argument containing a NUL byte before
+// passing the joined argv buffer to the runtime.
+import std/process { run }
+import std/io { println }
+import std/string
+
+fun main() {
+    let bad = "left".concat(__str_from_byte(0)).concat("right")
+    match run("definitely-not-a-raven-test-program", [bad]) {
+        Ok(_) -> println("unexpected ok"),
+        Err(e) -> println(e.message()),
+    }
+}

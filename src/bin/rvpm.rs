@@ -178,7 +178,7 @@ fn cmd_new(args: &[String]) -> Result<(), String> {
         .unwrap_or(target.as_str());
     if !raven::manifest::is_valid_package_name(name) {
         return Err(format!(
-            "'{}' is not a valid package name; use only ASCII letters, digits, '-', and '_'",
+            "'{}' is not a valid package name; use only ASCII letters, digits, '-', and '_', and avoid reserved Windows device names",
             name
         ));
     }
