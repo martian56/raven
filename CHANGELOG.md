@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- `rvpm dist` packages the built application into distributable artifacts: `tar`, `zip`, `deb`, `rpm`, `msi` (WiX), and `inno` (Inno Setup), configured by an optional `[dist]` manifest section (metadata, extra assets, Linux dependencies, installer icon and upgrade GUID) with `--target` and `--out-dir` overrides. See `docs/v2/specs/rvpm-dist.md`. (#857)
+
 ## [2.19.17] - 2026-07-03
 
 ### Fixed

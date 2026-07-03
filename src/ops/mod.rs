@@ -17,6 +17,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Component, Path, PathBuf};
 
+pub mod dist;
+
 use crate::codegen::linker;
 use crate::driver::{self, DriverError};
 use crate::lock::{self, LockError, LockFile, LOCK_FILE_NAME};
@@ -59,6 +61,12 @@ pub enum OpError {
     MissingEntry(PathBuf),
     /// `run` was asked to execute a library, which produces no binary.
     NotRunnable,
+    /// `dist` was asked to package a library, which produces no binary.
+    NotPackageable,
+    /// A packaging tool `dist` needs is not installed.
+    DistTool { tool: String, hint: String },
+    /// A packaging tool ran and reported failure.
+    DistFailed { tool: String, detail: String },
     /// A `*_test.rv` file could not be lexed or parsed during test discovery.
     TestParse { file: PathBuf, message: String },
     /// Compiling or linking the package failed.
@@ -111,6 +119,14 @@ impl fmt::Display for OpError {
                 f,
                 "this package is a library (lib.rv) with no executable to run; use 'rvpm build' to type-check it"
             ),
+            OpError::NotPackageable => write!(
+                f,
+                "this package is a library (lib.rv) with no executable to package; 'rvpm dist' packages applications (src/main.rv)"
+            ),
+            OpError::DistTool { tool, hint } => {
+                write!(f, "'{}' is not installed; {}", tool, hint)
+            }
+            OpError::DistFailed { tool, detail } => write!(f, "{} failed: {}", tool, detail),
             OpError::TestParse { file, message } => {
                 write!(f, "cannot read test file '{}': {}", file.display(), message)
             }

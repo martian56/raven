@@ -98,6 +98,7 @@ fn dispatch() -> ExitCode {
         Some("install") => run(cmd_install(&args[1..])),
         Some("update") => run(cmd_update(&args[1..])),
         Some("build") => run(cmd_build(&args[1..])),
+        Some("dist") => run(cmd_dist(&args[1..])),
         Some("run") => cmd_run(&args[1..]),
         Some("test") => cmd_test(&args[1..]),
         Some("doc") => run(cmd_doc(&args[1..])),
@@ -572,6 +573,58 @@ fn cmd_build(args: &[String]) -> Result<Vec<String>, String> {
     Ok(report.outcome_lines)
 }
 
+/// Build the application, then package it into distributable artifacts
+/// (archives, deb, rpm, msi, Inno Setup) per the manifest's `[dist]`
+/// section and any command-line overrides.
+fn cmd_dist(args: &[String]) -> Result<Vec<String>, String> {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        return Ok(vec![dist_usage()]);
+    }
+    let mut opts = ops::dist::DistOptions::default();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--target" => {
+                i += 1;
+                let value = args.get(i).ok_or_else(|| {
+                    "--target needs a value, for example --target deb,zip".to_string()
+                })?;
+                for t in value.split(',') {
+                    let t = t.trim();
+                    if t.is_empty() {
+                        continue;
+                    }
+                    if !raven::manifest::DIST_TARGETS.contains(&t) {
+                        return Err(format!(
+                            "'{}' is not a dist target; use any of {}",
+                            t,
+                            raven::manifest::DIST_TARGETS.join(", ")
+                        ));
+                    }
+                    opts.targets.push(t.to_string());
+                }
+            }
+            "--out-dir" => {
+                i += 1;
+                let value = args
+                    .get(i)
+                    .ok_or_else(|| "--out-dir needs a directory".to_string())?;
+                opts.out_dir = Some(value.clone());
+            }
+            other => {
+                return Err(format!(
+                    "unknown argument '{}' for `rvpm dist`; run `rvpm dist --help`",
+                    other
+                ));
+            }
+        }
+        i += 1;
+    }
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let report = with_fetch_progress(|| ops::dist::dist(&cwd, opts)).map_err(|e| e.to_string())?;
+    Ok(report.outcome_lines)
+}
+
 /// Build the package then run the produced binary, forwarding any args
 /// after `run` to the program and exiting with its code.
 fn cmd_run(args: &[String]) -> ExitCode {
@@ -856,6 +909,21 @@ fn build_usage() -> String {
     "Usage: rvpm build".to_string()
 }
 
+fn dist_usage() -> String {
+    [
+        "Usage: rvpm dist [--target <t1,t2>] [--out-dir <dir>]",
+        "",
+        "Build the application, then package it into distributable artifacts",
+        "under target/dist. Targets: tar, zip, deb, rpm, msi, inno.",
+        "",
+        "Without --target, the manifest's [dist].targets applies; without a",
+        "[dist] section, the host default does (zip on Windows, tar elsewhere).",
+        "Metadata, extra files, and installer settings live in the optional",
+        "[dist] section of rv.toml; see docs/v2/specs/rvpm-dist.md.",
+    ]
+    .join("\n")
+}
+
 fn run_usage() -> String {
     "Usage: rvpm run [program arguments]".to_string()
 }
@@ -893,6 +961,7 @@ fn print_usage() {
     println!("  install        Resolve rv.toml against rv.lock and fill the cache");
     println!("  update [pkg]   Re-resolve rv.toml and rewrite rv.lock for one package or all");
     println!("  build          Compile src/main.rv to a binary, or type-check a lib.rv library");
+    println!("  dist           Package the built application (tar, zip, deb, rpm, msi, inno)");
     println!("  run [args]     Build the application then run it, forwarding args");
     println!("  test           Run fun test_*() tests in *_test.rv files");
     println!("  doc            Generate Markdown API docs into target/doc");
