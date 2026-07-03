@@ -2,6 +2,48 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.19.17] - 2026-07-03
+
+### Fixed
+
+- Local modules that import a dependency as a whole module now keep the dependency's default alias after merge, so qualified calls such as `dep.value()` resolve from imported local modules. (#854)
+
+## [2.19.16] - 2026-07-03
+
+### Fixed
+
+- External packages that import another package as a whole module now keep the default package alias after merge, so dependency-qualified calls resolve without requiring an explicit `as` alias. (#853)
+
+## [2.19.15] - 2026-07-03
+
+### Fixed
+
+- External package files now load and rewrite local sibling imports such as `import "./util" { value }`, so cached packages can split code across local modules without unresolved symbols. (#852)
+
+## [2.19.14] - 2026-07-03
+
+### Fixed
+
+- Package names now reject Windows reserved device names such as `con`, `nul`, `com1`, and `lpt9`, preventing scaffolded or built packages from creating unusable output paths. (#851)
+
+## [2.19.13] - 2026-07-03
+
+### Fixed
+
+- `std/process.run` and `run_with_input` now reject arguments containing NUL bytes before joining argv for the runtime, preventing one Raven argument from being split into multiple child-process arguments. (#850)
+
+## [2.19.12] - 2026-07-03
+
+### Fixed
+
+- External package imports now verify existing cached source paths against the canonical package root, blocking relative-path, symlink, and junction escapes from the rvpm cache entry. (#849)
+
+## [2.19.11] - 2026-07-03
+
+### Fixed
+
+- `[ffi].sources` entries are now required to stay inside their package root, including after canonicalizing existing paths, so dependency manifests cannot compile C sources through traversal or links outside the package. (#848)
+
 ## [2.19.10] - 2026-07-02
 
 ### Fixed
@@ -696,15 +738,11 @@ All notable changes to Raven are documented in this file.
 
 ## [2.18.120] - 2026-06-16
 
-Continuing the codex-review fix batch (one patch per issue).
-
 ### Fixed
 
 - The formatter honors `[fmt].wrap_width`: an argument list, collection literal, or function signature whose single-line form would exceed the wrap width is broken onto multiple lines (one element or parameter per line). `rvpm fmt` reads the width from the manifest. Previously `wrap_width` was parsed but ignored (#581).
 
 ## [2.18.119] - 2026-06-16
-
-Continuing the codex-review fix batch (one patch per issue).
 
 ### Fixed
 
@@ -714,8 +752,6 @@ Continuing the codex-review fix batch (one patch per issue).
 
 ## [2.18.116] - 2026-06-16
 
-Continuing the codex-review fix batch (one patch per issue).
-
 ### Fixed
 
 - The doc extractor counts only structural braces when capturing a `struct`/`enum`/`trait` block, skipping braces inside comments, strings, and char literals so a brace in a doc comment no longer truncates the declaration (#577).
@@ -724,8 +760,6 @@ Continuing the codex-review fix batch (one patch per issue).
 - Comment scanning skips `${ ... }` interpolations as a unit, so a string nested in an interpolation no longer ends the outer literal early and mis-scans a following comment (#580).
 
 ## [2.18.112] - 2026-06-15
-
-Continuing the codex-review fix batch (one patch per issue).
 
 ### Fixed
 
@@ -738,8 +772,6 @@ Continuing the codex-review fix batch (one patch per issue).
 
 ## [2.18.106] - 2026-06-15
 
-Continuing the codex-review fix batch (one patch per issue).
-
 ### Fixed
 
 - A positive integer literal above Int's maximum (`9223372036854775808`) is now a parse error instead of silently compiling as `Int::MIN`; `-9223372036854775808` still parses as `Int::MIN` (#543).
@@ -750,8 +782,6 @@ Continuing the codex-review fix batch (one patch per issue).
 
 ## [2.18.101] - 2026-06-15
 
-Continuing the codex-review fix batch (one patch per issue).
-
 ### Fixed
 
 - `std/fs` write/append now write the raw bytes of a Raven String, so binary or non-UTF-8 content is no longer rejected (#561).
@@ -761,8 +791,8 @@ Continuing the codex-review fix batch (one patch per issue).
 
 ## [2.18.94] - 2026-06-15
 
-A batch of fixes from a full-codebase review (codex). The version is bumped one
-patch per issue fixed across this and the two preceding batches.
+A batch of fixes from a full-codebase review. The version is bumped one patch
+per issue fixed across this and the two preceding batches.
 
 ### Fixed
 

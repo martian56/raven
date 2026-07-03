@@ -40,7 +40,7 @@ impl std::fmt::Display for InitError {
             }
             InitError::InvalidName(name) => write!(
                 f,
-                "'{}' is not a valid package name; use only ASCII letters, digits, '-', and '_'",
+                "'{}' is not a valid package name; use only ASCII letters, digits, '-', and '_', and avoid reserved Windows device names",
                 name
             ),
             InitError::Io(e) => write!(f, "{}", e),

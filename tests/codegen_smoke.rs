@@ -1952,6 +1952,18 @@ fn proc_argv_preserves_empty_arg() {
 }
 
 #[test]
+fn proc_argv_rejects_nul_arg() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    compile_link_run_and_check(
+        "proc_nul_arg_parent.rv",
+        "process argument contains NUL byte\n",
+        &runtime,
+    );
+}
+
+#[test]
 fn proc_binary_io_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;

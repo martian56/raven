@@ -15,7 +15,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::codegen::linker;
 use crate::driver::{self, DriverError};
@@ -52,6 +52,8 @@ pub enum OpError {
     Lock(LockError),
     /// `update` named a package that is not a dependency in `rv.toml`.
     UnknownPackage(String),
+    /// An `[ffi].sources` entry would read outside the package root.
+    UnsafeFfiSource { base: PathBuf, source: String },
     /// Neither entry file (`src/main.rv` for an application nor `lib.rv` for a
     /// library) was found.
     MissingEntry(PathBuf),
@@ -85,6 +87,12 @@ impl fmt::Display for OpError {
             OpError::UnknownPackage(p) => {
                 write!(f, "'{}' is not a dependency in rv.toml", p)
             }
+            OpError::UnsafeFfiSource { base, source } => write!(
+                f,
+                "invalid [ffi].sources entry '{}' under '{}': source paths must stay inside the package root",
+                source,
+                base.display()
+            ),
             OpError::MissingEntry(p) => {
                 let root = p.parent().and_then(|s| s.parent());
                 match root {
@@ -250,7 +258,7 @@ fn gather_native_link(
         &mut sources,
         &mut libs,
         &mut link_args,
-    );
+    )?;
 
     // Each dependency's [ffi], resolved against its cache directory, so a
     // package can bundle its own C and a consumer needs nothing installed.
@@ -262,7 +270,7 @@ fn gather_native_link(
         let dep_manifest = dir.join(MANIFEST_FILE_NAME);
         if dep_manifest.exists() {
             if let Ok(dep) = Manifest::load(&dep_manifest) {
-                collect_ffi(&dep.ffi, &dir, &mut sources, &mut libs, &mut link_args);
+                collect_ffi(&dep.ffi, &dir, &mut sources, &mut libs, &mut link_args)?;
             }
         }
     }
@@ -285,12 +293,52 @@ fn collect_ffi(
     sources: &mut Vec<PathBuf>,
     libs: &mut Vec<String>,
     link_args: &mut Vec<String>,
-) {
+) -> Result<(), OpError> {
     for source in &ffi.sources {
-        sources.push(base.join(source));
+        sources.push(checked_ffi_source(base, source)?);
     }
     libs.extend(ffi.libs.iter().cloned());
     link_args.extend(ffi.link_args.iter().cloned());
+    Ok(())
+}
+
+fn checked_ffi_source(base: &Path, source: &str) -> Result<PathBuf, OpError> {
+    let rel = Path::new(source);
+    let escapes_lexically = rel.components().any(|c| {
+        matches!(
+            c,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        )
+    });
+    if rel.is_absolute() || escapes_lexically {
+        return Err(OpError::UnsafeFfiSource {
+            base: base.to_path_buf(),
+            source: source.to_string(),
+        });
+    }
+
+    let candidate = base.join(rel);
+    if candidate.exists() {
+        let base_canon = base.canonicalize().map_err(|source| OpError::Io {
+            action: "canonicalize package root".to_string(),
+            path: base.to_path_buf(),
+            source,
+        })?;
+        let candidate_canon = candidate.canonicalize().map_err(|source| OpError::Io {
+            action: "canonicalize ffi source".to_string(),
+            path: candidate.clone(),
+            source,
+        })?;
+        if !candidate_canon.starts_with(&base_canon) {
+            return Err(OpError::UnsafeFfiSource {
+                base: base.to_path_buf(),
+                source: source.to_string(),
+            });
+        }
+        return Ok(candidate);
+    }
+
+    Ok(candidate)
 }
 
 /// What an install did, for reporting.
@@ -1032,6 +1080,84 @@ mod tests {
 
     const APP_MANIFEST: &str =
         "[package]\nname = \"app\"\nversion = \"0.1.0\"\n\n# keep this comment\n";
+
+    #[test]
+    fn collect_ffi_rejects_parent_dir_source() {
+        let proj = TempProject::new("ffi-parent");
+        let ffi = Ffi {
+            sources: vec!["../outside.c".to_string()],
+            ..Ffi::default()
+        };
+        let mut sources = Vec::new();
+        let mut libs = Vec::new();
+        let mut link_args = Vec::new();
+
+        let err =
+            collect_ffi(&ffi, &proj.root, &mut sources, &mut libs, &mut link_args).unwrap_err();
+
+        assert!(
+            matches!(&err, OpError::UnsafeFfiSource { source, .. } if source == "../outside.c"),
+            "expected an unsafe ffi source error, got {err:?}"
+        );
+        assert!(sources.is_empty());
+    }
+
+    #[test]
+    fn collect_ffi_accepts_existing_in_tree_source() {
+        let proj = TempProject::new("ffi-inside");
+        std::fs::create_dir_all(proj.root.join("c")).expect("mkdir c");
+        std::fs::write(
+            proj.root.join("c/native.c"),
+            "int raven_native(void){return 1;}\n",
+        )
+        .expect("write c source");
+        let ffi = Ffi {
+            sources: vec!["c/native.c".to_string()],
+            libs: vec!["m".to_string()],
+            link_args: vec!["-Wl,--as-needed".to_string()],
+        };
+        let mut sources = Vec::new();
+        let mut libs = Vec::new();
+        let mut link_args = Vec::new();
+
+        collect_ffi(&ffi, &proj.root, &mut sources, &mut libs, &mut link_args)
+            .expect("in-tree source");
+
+        assert_eq!(sources.len(), 1);
+        assert!(sources[0].ends_with("c/native.c") || sources[0].ends_with("c\\native.c"));
+        assert_eq!(libs, vec!["m".to_string()]);
+        assert_eq!(link_args, vec!["-Wl,--as-needed".to_string()]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn collect_ffi_rejects_symlink_escape() {
+        use std::os::unix::fs::symlink;
+        let proj = TempProject::new("ffi-link");
+        let outside = TempProject::new("ffi-outside");
+        std::fs::write(
+            outside.root.join("native.c"),
+            "int outside(void){return 0;}\n",
+        )
+        .expect("write outside source");
+        symlink(outside.root.join("native.c"), proj.root.join("native.c"))
+            .expect("create source symlink");
+        let ffi = Ffi {
+            sources: vec!["native.c".to_string()],
+            ..Ffi::default()
+        };
+        let mut sources = Vec::new();
+        let mut libs = Vec::new();
+        let mut link_args = Vec::new();
+
+        let err =
+            collect_ffi(&ffi, &proj.root, &mut sources, &mut libs, &mut link_args).unwrap_err();
+
+        assert!(
+            matches!(&err, OpError::UnsafeFfiSource { source, .. } if source == "native.c"),
+            "expected a symlink escape error, got {err:?}"
+        );
+    }
 
     #[cfg(unix)]
     #[test]

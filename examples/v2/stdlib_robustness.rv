@@ -1,4 +1,4 @@
-// Regressions for codex-review stdlib robustness fixes: non-finite float
+// Regressions for stdlib robustness fixes: non-finite float
 // formatting (#555), a capped parse_float exponent (#427), and JSON validation
 // of leading zeros and raw control bytes (#558). Prints:
 //   inf
