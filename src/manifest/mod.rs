@@ -264,6 +264,32 @@ fn is_guid(s: &str) -> bool {
     true
 }
 
+/// Reject a control character in a `[dist]` text field. These fields are
+/// written into line-oriented and scripted packaging files, where a newline
+/// or other control byte could inject an extra field or section. A real
+/// value (a name, a description, a dependency) never contains one.
+fn sanitize_dist_text(field: &str, value: String) -> Result<String, ManifestError> {
+    if let Some(bad) = value.chars().find(|c| c.is_control()) {
+        return Err(ManifestError::InvalidValue {
+            section: "dist".to_string(),
+            field: field.to_string(),
+            message: format!(
+                "must not contain control characters (found U+{:04X}); dist metadata is written into generated packaging files",
+                bad as u32
+            ),
+        });
+    }
+    Ok(value)
+}
+
+/// Apply [`sanitize_dist_text`] to each entry of a `[dist]` string list.
+fn sanitize_dist_list(field: &str, values: Vec<String>) -> Result<Vec<String>, ManifestError> {
+    values
+        .into_iter()
+        .map(|v| sanitize_dist_text(field, v))
+        .collect()
+}
+
 /// Validate a raw `[dist]` section against the schema, filling absent
 /// fields from `package`.
 fn validate_dist(raw: RawDist, package: &Package) -> Result<Dist, ManifestError> {
@@ -347,22 +373,41 @@ fn validate_dist(raw: RawDist, package: &Package) -> Result<Dist, ManifestError>
         }
     }
 
+    // Every text field below is written verbatim into a line-oriented or
+    // scripted packaging file (the deb control file, the rpm spec, the Inno
+    // Setup script). A control character, above all a newline, could start a
+    // new field or section there and, for rpm and inno, run commands during
+    // packaging. Reject them at the boundary so no backend has to trust the
+    // metadata. Path and GUID fields are already constrained above.
     let defaults = Dist::with_defaults(package);
-    let maintainer = raw.maintainer.unwrap_or(defaults.maintainer);
+    let maintainer =
+        sanitize_dist_text("maintainer", raw.maintainer.unwrap_or(defaults.maintainer))?;
     Ok(Dist {
         targets: raw.targets,
         out_dir,
-        display_name: raw.display_name.unwrap_or(defaults.display_name),
-        description: raw.description.unwrap_or(defaults.description),
-        license: raw.license.unwrap_or_default(),
-        homepage: raw.homepage.unwrap_or_default(),
-        vendor: raw.vendor.unwrap_or_else(|| maintainer.clone()),
+        display_name: sanitize_dist_text(
+            "display_name",
+            raw.display_name.unwrap_or(defaults.display_name),
+        )?,
+        description: sanitize_dist_text(
+            "description",
+            raw.description.unwrap_or(defaults.description),
+        )?,
+        license: sanitize_dist_text("license", raw.license.unwrap_or_default())?,
+        homepage: sanitize_dist_text("homepage", raw.homepage.unwrap_or_default())?,
+        vendor: sanitize_dist_text("vendor", raw.vendor.unwrap_or_else(|| maintainer.clone()))?,
         maintainer,
         assets,
         linux: DistLinux {
-            depends: linux.depends,
-            section: linux.section.unwrap_or_else(|| "utils".to_string()),
-            priority: linux.priority.unwrap_or_else(|| "optional".to_string()),
+            depends: sanitize_dist_list("linux.depends", linux.depends)?,
+            section: sanitize_dist_text(
+                "linux.section",
+                linux.section.unwrap_or_else(|| "utils".to_string()),
+            )?,
+            priority: sanitize_dist_text(
+                "linux.priority",
+                linux.priority.unwrap_or_else(|| "optional".to_string()),
+            )?,
         },
         windows: DistWindows {
             icon: windows.icon.unwrap_or_default(),
@@ -534,6 +579,20 @@ impl Manifest {
             section: "package".to_string(),
             field: "version".to_string(),
         })?;
+        // The version is copied verbatim into generated packaging text (the rpm
+        // spec `Version:`, the deb control `Version:`, the Inno Setup
+        // `AppVersion=`), where a control character such as a newline could
+        // inject an additional directive. A real version never contains one.
+        if let Some(bad) = version.chars().find(|c| c.is_control()) {
+            return Err(ManifestError::InvalidValue {
+                section: "package".to_string(),
+                field: "version".to_string(),
+                message: format!(
+                    "must not contain control characters (found U+{:04X})",
+                    bad as u32
+                ),
+            });
+        }
         if name.trim().is_empty() {
             return Err(ManifestError::InvalidValue {
                 section: "package".to_string(),
@@ -1026,6 +1085,57 @@ upgrade_code = "9f0c86a1-2b3c-4d5e-8f90-112233445566"
             }
             other => panic!("expected InvalidValue, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn dist_metadata_with_a_newline_is_rejected() {
+        // A newline in a text field could inject an rpm %prep section or an
+        // Inno [Run] section into the generated packaging file. Reject it.
+        let injected = "[package]\nname = \"x\"\nversion = \"0.1.0\"\n[dist]\ndescription = \"ok\\n%prep\\necho pwned\"\n";
+        let err = Manifest::from_toml_str(injected).unwrap_err();
+        match err {
+            ManifestError::InvalidValue { section, field, .. } => {
+                assert_eq!(section, "dist");
+                assert_eq!(field, "description");
+            }
+            other => panic!("expected InvalidValue, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dist_dependency_with_a_newline_is_rejected() {
+        let injected = "[package]\nname = \"x\"\nversion = \"0.1.0\"\n[dist.linux]\ndepends = [\"libc6\", \"z\\nRequires: evil\"]\n";
+        let err = Manifest::from_toml_str(injected).unwrap_err();
+        match err {
+            ManifestError::InvalidValue { section, field, .. } => {
+                assert_eq!(section, "dist");
+                assert_eq!(field, "linux.depends");
+            }
+            other => panic!("expected InvalidValue, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn package_version_with_a_control_char_is_rejected() {
+        let injected = "[package]\nname = \"x\"\nversion = \"1.0\\n%prep\"\n";
+        let err = Manifest::from_toml_str(injected).unwrap_err();
+        match err {
+            ManifestError::InvalidValue { section, field, .. } => {
+                assert_eq!(section, "package");
+                assert_eq!(field, "version");
+            }
+            other => panic!("expected InvalidValue, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn clean_dist_metadata_still_parses() {
+        // Ordinary punctuation and spaces are fine; only control characters
+        // are rejected.
+        let src = "[package]\nname = \"x\"\nversion = \"v1.2.3\"\n[dist]\ndescription = \"A tool: fast, small (and tidy)\"\nmaintainer = \"Ada <ada@example.com>\"\n";
+        let m = Manifest::from_toml_str(src).expect("clean metadata parses");
+        let d = m.dist.expect("dist present");
+        assert_eq!(d.description, "A tool: fast, small (and tidy)");
     }
 
     #[test]
