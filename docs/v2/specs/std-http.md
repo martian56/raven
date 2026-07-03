@@ -98,6 +98,47 @@ The runtime builds the ureq agent with fixed timeouts so a hung server
 cannot wedge a program or a test: 5 seconds to connect, 10 seconds to read,
 and 10 seconds to write.
 
+Endpoints that legitimately take longer (model inference APIs, slow report
+generators) use `request_with_timeout(method, url, body, headers,
+timeout_ms)`: a positive `timeout_ms` is an overall deadline covering the
+connect, the send, and reading the whole body, and a deadline overrun
+surfaces as an `Err` like any other transport failure. `timeout_ms <= 0`
+keeps the defaults, so `request_with_timeout(m, u, b, h, 0)` behaves
+exactly like `request(m, u, b, h)`.
+
+## Streaming
+
+`stream(method, url, body, headers, timeout_ms)` opens a request without
+buffering the body: the returned `HttpStream` carries the `status_code`,
+`status_text`, and `headers` captured at open, and `read_chunk()` pulls the
+body as the server sends it, at most 8 KiB per call, returning `Ok("")`
+when the stream ends. This is how to consume server-sent events, chunked
+transfers, and bodies too large or too slow to hold whole. `close()`
+releases the stream and its connection.
+
+Streaming semantics differ from the buffered path in three ways:
+
+* The timeout is per operation, not overall: a positive `timeout_ms` bounds
+  the connect and each individual read, because a healthy stream may stay
+  open for minutes. A read that outlives it is an `Err` from `read_chunk`.
+* A non-2xx status opens normally (the error body is often worth reading);
+  only a transport failure is an `Err` from `stream`.
+* One read at a time per stream: the runtime hands the reader to the read
+  in flight, and a concurrent `read_chunk` on the same stream observes end
+  of stream rather than blocking.
+
+Chunk boundaries follow socket reads and carry no meaning; a consumer
+reassembles or splits on its own framing (for SSE, blank-line-delimited
+events).
+
+The runtime side registers the open response in a stream registry keyed by
+the same id space as buffered responses (`raven_http_stream_open`,
+`raven_http_stream_read`, `raven_http_stream_status`,
+`raven_http_stream_status_text`, `raven_http_stream_headers`,
+`raven_http_stream_close`). The registry lock is never held across a
+blocking read: the reader is taken out of the entry for the read's
+duration and put back after.
+
 ## FFI path
 
 This module uses `extern "C"` blocks binding raven-runtime symbols

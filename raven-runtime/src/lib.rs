@@ -246,10 +246,31 @@ fn http_registry() -> &'static Mutex<HashMap<i64, HttpResp>> {
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Issue the next HTTP response id.
+/// Issue the next HTTP response id. Shared by the buffered-response and
+/// streaming registries, so an id is unique across both.
 fn http_next_id() -> i64 {
     static NEXT_ID: AtomicI64 = AtomicI64::new(1);
     NEXT_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+/// A live streaming response: the status line and headers captured at open,
+/// the body left unread behind a reader that `raven_http_stream_read` pulls
+/// chunk by chunk. The reader is `take`n out of the entry for the duration
+/// of a read so the registry lock is never held across a blocking read; it
+/// is `None` while a read is in flight, after end of stream, and for a
+/// bodiless (HEAD) response, all of which read as end of stream.
+struct HttpStreamEntry {
+    status: i64,
+    status_text: std::string::String,
+    // Response headers as `Key: Value` lines joined by `\n`.
+    headers: std::string::String,
+    reader: Option<Box<dyn Read + Send + Sync + 'static>>,
+}
+
+/// The process-wide streaming-response registry, ids from `http_next_id`.
+fn http_stream_registry() -> &'static Mutex<HashMap<i64, HttpStreamEntry>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<i64, HttpStreamEntry>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// An entry in the socket registry. A listener or a stream is kept
@@ -1580,17 +1601,19 @@ fn http_reason(code: u16) -> &'static str {
     }
 }
 
-/// Capture a ureq response into an owned `HttpResp`, reading the status,
-/// reason, headers, and body eagerly (reading the body consumes the
-/// response).
-fn http_capture(resp: ureq::Response, head_request: bool) -> Option<HttpResp> {
-    let status = resp.status();
+/// The response's reason phrase, falling back to the standard phrase for
+/// its status code when the server sent none.
+fn http_status_text(resp: &ureq::Response) -> std::string::String {
     let reason = resp.status_text();
-    let status_text = if reason.is_empty() {
-        http_reason(status).to_string()
+    if reason.is_empty() {
+        http_reason(resp.status()).to_string()
     } else {
         reason.to_string()
-    };
+    }
+}
+
+/// The response headers as `Key: Value` lines joined by `\n`.
+fn http_header_lines(resp: &ureq::Response) -> std::string::String {
     let mut header_lines: Vec<std::string::String> = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for name in resp.headers_names() {
@@ -1605,7 +1628,16 @@ fn http_capture(resp: ureq::Response, head_request: bool) -> Option<HttpResp> {
             header_lines.push(format!("{name}: {value}"));
         }
     }
-    let headers = header_lines.join("\n");
+    header_lines.join("\n")
+}
+
+/// Capture a ureq response into an owned `HttpResp`, reading the status,
+/// reason, headers, and body eagerly (reading the body consumes the
+/// response).
+fn http_capture(resp: ureq::Response, head_request: bool) -> Option<HttpResp> {
+    let status = resp.status();
+    let status_text = http_status_text(&resp);
+    let headers = http_header_lines(&resp);
     // A 1xx, 204, or 304 response, and any response to a HEAD request, carries no
     // body even when Content-Length advertises the length the body would have, so
     // an empty body is correct and must not be reported as a truncated transfer.
@@ -1679,6 +1711,35 @@ pub extern "C" fn raven_http_request(
     body: *const object::String,
     headers: *const object::String,
 ) -> i64 {
+    http_request_impl(method, url, body, headers, 0)
+}
+
+/// Like [`raven_http_request`], with an overall deadline. A positive
+/// `timeout_ms` bounds the whole request (connect, send, and reading the
+/// body); `timeout_ms <= 0` keeps the default timeouts.
+///
+/// # Safety
+///
+/// `method`, `url`, `body`, and `headers` must be valid
+/// `raven_string_from_bytes`-built `String`s.
+#[no_mangle]
+pub extern "C" fn raven_http_request_timeout(
+    method: *const object::String,
+    url: *const object::String,
+    body: *const object::String,
+    headers: *const object::String,
+    timeout_ms: i64,
+) -> i64 {
+    http_request_impl(method, url, body, headers, timeout_ms)
+}
+
+fn http_request_impl(
+    method: *const object::String,
+    url: *const object::String,
+    body: *const object::String,
+    headers: *const object::String,
+    timeout_ms: i64,
+) -> i64 {
     let (Some(method), Some(url), Some(headers)) =
         (env_name(method), env_name(url), env_name(headers))
     else {
@@ -1690,21 +1751,24 @@ pub extern "C" fn raven_http_request(
     // The method, URL, and header lines are still text.
     let body = string_bytes(body).to_vec();
 
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_secs(5))
-        .timeout_read(Duration::from_secs(10))
-        .timeout_write(Duration::from_secs(10))
-        .build();
+    // A positive timeout is an overall deadline: ureq's `timeout` covers the
+    // connect, the send, and every body read together, which is the right
+    // bound for "this request may take up to N ms". Without one, the
+    // defaults stand: 5s connect, 10s per read and write.
+    let agent = if timeout_ms > 0 {
+        ureq::AgentBuilder::new()
+            .timeout_connect(Duration::from_secs(5))
+            .timeout(Duration::from_millis(timeout_ms as u64))
+            .build()
+    } else {
+        ureq::AgentBuilder::new()
+            .timeout_connect(Duration::from_secs(5))
+            .timeout_read(Duration::from_secs(10))
+            .timeout_write(Duration::from_secs(10))
+            .build()
+    };
 
-    let mut req = agent.request(method, url);
-    for line in headers.split('\n') {
-        if line.is_empty() {
-            continue;
-        }
-        if let Some((name, value)) = line.split_once(':') {
-            req = req.set(name.trim(), value.trim());
-        }
-    }
+    let req = http_apply_headers(agent.request(method, url), headers);
 
     // The request round-trip and reading the response body block, so run them
     // outside the collector's running set. `http_capture`/`http_store` work
@@ -1736,6 +1800,19 @@ pub extern "C" fn raven_http_request(
             }
         }
     })
+}
+
+/// Apply `Key: Value` header lines (joined by `\n`) to a request.
+fn http_apply_headers(mut req: ureq::Request, headers: &str) -> ureq::Request {
+    for line in headers.split('\n') {
+        if line.is_empty() {
+            continue;
+        }
+        if let Some((name, value)) = line.split_once(':') {
+            req = req.set(name.trim(), value.trim());
+        }
+    }
+    req
 }
 
 /// Status code of the stored response `id`, for example 200 or 404. An
@@ -1833,6 +1910,183 @@ pub extern "C" fn raven_http_headers(id: i64) -> *mut object::String {
 #[no_mangle]
 pub extern "C" fn raven_http_free(id: i64) {
     http_registry().lock().unwrap().remove(&id);
+}
+
+/// Open a streaming HTTP request: send it, capture the status and headers,
+/// and register the unread body behind a reader that
+/// [`raven_http_stream_read`] pulls chunk by chunk. Returns the stream id,
+/// or 0 on a transport failure with the last-error slot set. A non-2xx
+/// status opens normally; the caller reads the status and decides.
+///
+/// A positive `timeout_ms` bounds the connect and each body read
+/// individually (not the whole stream, which may legitimately stay open for
+/// minutes); `timeout_ms <= 0` keeps the defaults (5s connect, 10s reads).
+///
+/// # Safety
+///
+/// `method`, `url`, `body`, and `headers` must be valid
+/// `raven_string_from_bytes`-built `String`s.
+#[no_mangle]
+pub extern "C" fn raven_http_stream_open(
+    method: *const object::String,
+    url: *const object::String,
+    body: *const object::String,
+    headers: *const object::String,
+    timeout_ms: i64,
+) -> i64 {
+    let (Some(method), Some(url), Some(headers)) =
+        (env_name(method), env_name(url), env_name(headers))
+    else {
+        http_set_error("method, url, or headers is not valid UTF-8".to_string());
+        return 0;
+    };
+    let body = string_bytes(body).to_vec();
+
+    // Per-read timeouts, never an overall one: a stream is long-lived by
+    // design, and what must not stall is each individual read.
+    let read_write = if timeout_ms > 0 {
+        Duration::from_millis(timeout_ms as u64)
+    } else {
+        Duration::from_secs(10)
+    };
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(5))
+        .timeout_read(read_write)
+        .timeout_write(read_write)
+        .build();
+
+    let req = http_apply_headers(agent.request(method, url), headers);
+    let head_request = method.eq_ignore_ascii_case("HEAD");
+
+    // The round-trip blocks; registry inserts touch only Rust memory, so the
+    // whole open runs in the blocking region, like `raven_http_request`.
+    crate::gc::blocking(|| {
+        let result = if body.is_empty() {
+            req.call()
+        } else {
+            req.send_bytes(&body)
+        };
+        let resp = match result {
+            Ok(resp) => resp,
+            // A non-2xx status is a response; stream its body like any other.
+            Err(ureq::Error::Status(_, resp)) => resp,
+            Err(ureq::Error::Transport(t)) => {
+                http_set_error(t.to_string());
+                return 0;
+            }
+        };
+        let status = resp.status() as i64;
+        let status_text = http_status_text(&resp);
+        let headers = http_header_lines(&resp);
+        // A HEAD response carries no body whatever Content-Length claims, so
+        // it gets no reader and reads as an immediately ended stream.
+        let reader = if head_request {
+            None
+        } else {
+            Some(resp.into_reader())
+        };
+        let id = http_next_id();
+        http_stream_registry().lock().unwrap().insert(
+            id,
+            HttpStreamEntry {
+                status,
+                status_text,
+                headers,
+                reader,
+            },
+        );
+        http_clear_error();
+        id
+    })
+}
+
+/// Read the next chunk of stream `id`: whatever bytes the next socket read
+/// returns, at most 8 KiB. An empty `String` means the stream ended (the
+/// reader is dropped, releasing the connection) or, when the last-error
+/// slot is set, that the read failed. One read at a time per stream: the
+/// reader is taken out of the registry for the read's duration, so a
+/// concurrent read on the same id observes end of stream.
+#[no_mangle]
+pub extern "C" fn raven_http_stream_read(id: i64) -> *mut object::String {
+    http_clear_error();
+    let taken = {
+        let mut registry = http_stream_registry().lock().unwrap();
+        registry.get_mut(&id).and_then(|entry| entry.reader.take())
+    };
+    let Some(mut reader) = taken else {
+        // Unknown id, an ended or bodiless stream, or a concurrent read.
+        return object::raven_string_from_bytes([].as_ptr(), 0);
+    };
+
+    let mut buf = vec![0u8; 8192];
+    // The read blocks on the socket; the buffer is Rust memory, so the
+    // blocking region is sound. Allocation of the result happens after.
+    let result = crate::gc::blocking(|| reader.read(&mut buf));
+    match result {
+        // End of stream: the reader is dropped; the entry stays so the
+        // status and headers remain readable until close.
+        Ok(0) => object::raven_string_from_bytes(buf.as_ptr(), 0),
+        Ok(n) => {
+            // Put the reader back for the next read. A close that raced this
+            // read removed the entry; the reader is then dropped here.
+            if let Some(entry) = http_stream_registry().lock().unwrap().get_mut(&id) {
+                entry.reader = Some(reader);
+            }
+            object::raven_string_from_bytes(buf.as_ptr(), n)
+        }
+        Err(e) => {
+            http_set_error(e.to_string());
+            object::raven_string_from_bytes(buf.as_ptr(), 0)
+        }
+    }
+}
+
+/// Status code of stream `id`, for example 200. An unknown id yields 0.
+#[no_mangle]
+pub extern "C" fn raven_http_stream_status(id: i64) -> i64 {
+    http_stream_registry()
+        .lock()
+        .unwrap()
+        .get(&id)
+        .map(|e| e.status)
+        .unwrap_or(0)
+}
+
+/// Reason phrase of stream `id`. An unknown id yields an empty `String`.
+#[no_mangle]
+pub extern "C" fn raven_http_stream_status_text(id: i64) -> *mut object::String {
+    // Copy out, then drop the lock before allocating; see
+    // `raven_http_status_text` for why.
+    let text: std::string::String = {
+        let registry = http_stream_registry().lock().unwrap();
+        registry
+            .get(&id)
+            .map(|e| e.status_text.clone())
+            .unwrap_or_default()
+    };
+    object::raven_string_from_bytes(text.as_ptr(), text.len())
+}
+
+/// All response headers of stream `id` as `Key: Value` lines joined by
+/// `\n`. An unknown id yields an empty `String`.
+#[no_mangle]
+pub extern "C" fn raven_http_stream_headers(id: i64) -> *mut object::String {
+    // Copy out, then drop the lock before allocating; see
+    // `raven_http_status_text` for why.
+    let headers: std::string::String = {
+        let registry = http_stream_registry().lock().unwrap();
+        registry
+            .get(&id)
+            .map(|e| e.headers.clone())
+            .unwrap_or_default()
+    };
+    object::raven_string_from_bytes(headers.as_ptr(), headers.len())
+}
+
+/// Drop stream `id`, closing its connection. An unknown id is a no-op.
+#[no_mangle]
+pub extern "C" fn raven_http_stream_close(id: i64) {
+    http_stream_registry().lock().unwrap().remove(&id);
 }
 
 /// The message of the most recent failed regex compile, empty when it
