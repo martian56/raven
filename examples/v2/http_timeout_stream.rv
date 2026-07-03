@@ -1,0 +1,111 @@
+// Exercises request_with_timeout and the streaming client against an
+// in-process std/http server: a short deadline on a slow route times out, a
+// generous one succeeds, and a large body arrives over multiple stream
+// chunks that reassemble exactly.
+// golden:skip (binds a port and depends on timing, so it is not diffed by
+// the golden suite; run it directly to verify the client paths).
+
+import std/http { Server, Request, Response, request_with_timeout, stream }
+import std/io { println }
+import std/string
+import std/time { sleep_millis }
+
+// Six copies of a 16 KiB body, comfortably past the 8 KiB chunk size.
+fun big_text() -> String {
+    let piece = "0123456789abcdef".repeat(1024)
+    return piece.repeat(6)
+}
+
+fun slow(req: Request) -> Response {
+    sleep_millis(600)
+    return Response.text("finally done")
+}
+
+fun big(req: Request) -> Response {
+    return Response.text(big_text())
+}
+
+fun serve() {
+    let app = Server.new()
+    app.get("/slow", slow)
+    app.get("/big", big)
+    app.listen("127.0.0.1:8193")
+}
+
+// The server binds in a goroutine; retry until it answers.
+fun wait_ready() {
+    let tries = 0
+    while tries < 50 {
+        match request_with_timeout("GET", "http://127.0.0.1:8193/big", "", "", 2000) {
+            Ok(r) -> {
+                return
+            },
+            Err(e) -> {
+                sleep_millis(20)
+            },
+        }
+        tries = tries + 1
+    }
+}
+
+fun main() {
+    spawn(fun() -> Unit {
+        serve()
+    })
+    wait_ready()
+
+    // A deadline shorter than the handler's sleep must surface as an Err.
+    match request_with_timeout("GET", "http://127.0.0.1:8193/slow", "", "", 150) {
+        Ok(r) -> {
+            println("short deadline: unexpectedly ok")
+        },
+        Err(e) -> {
+            println("short deadline: timed out as expected")
+        },
+    }
+
+    // A generous deadline outlives the sleep and succeeds.
+    match request_with_timeout("GET", "http://127.0.0.1:8193/slow", "", "", 5000) {
+        Ok(r) -> {
+            println("long deadline: ${r.status_code} ${r.body}")
+        },
+        Err(e) -> {
+            println("long deadline failed: ${e.message}")
+        },
+    }
+
+    // Stream the large body and reassemble it.
+    match stream("GET", "http://127.0.0.1:8193/big", "", "", 5000) {
+        Ok(s) -> {
+            println("stream status: ${s.status_code}")
+            let total = 0
+            let chunks = 0
+            let reading = true
+            let assembled = ""
+            while reading {
+                match s.read_chunk() {
+                    Ok(chunk) -> {
+                        if chunk.length() == 0 {
+                            reading = false
+                        } else {
+                            total = total + chunk.length()
+                            chunks = chunks + 1
+                            assembled = assembled.concat(chunk)
+                        }
+                    },
+                    Err(e) -> {
+                        println("read failed: ${e.message}")
+                        reading = false
+                    },
+                }
+            }
+            s.close()
+            println("chunks: more than one: ${chunks > 1}")
+            println("bytes: ${total}")
+            println("reassembled exactly: ${assembled == big_text()}")
+        },
+        Err(e) -> {
+            println("stream open failed: ${e.message}")
+        },
+    }
+}

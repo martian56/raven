@@ -2,6 +2,13 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.21.0] - 2026-07-03
+
+### Added
+
+- `std/http` gains `request_with_timeout(method, url, body, headers, timeout_ms)`: a positive `timeout_ms` is an overall deadline for the whole request, so slow endpoints such as model inference APIs no longer hit the fixed 10 second read timeout. (#859)
+- `std/http` gains a streaming client: `stream(method, url, body, headers, timeout_ms)` returns an `HttpStream` with the status and headers captured at open and a `read_chunk()` that pulls the body as the server sends it, enabling server-sent events and chunked responses. The timeout applies per read, so long-lived streams stay open. (#860)
+
 ## [2.20.0] - 2026-07-03
 
 ### Added

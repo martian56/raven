@@ -29,12 +29,19 @@ struct HttpResponse {
 extern "C" {
     fun raven_http_last_error() -> String
     fun raven_http_request(method: String, url: String, body: String, headers: String) -> Int
+    fun raven_http_request_timeout(method: String, url: String, body: String, headers: String, timeout_ms: Int) -> Int
     fun raven_http_status(id: Int) -> Int
     fun raven_http_status_text(id: Int) -> String
     fun raven_http_body(id: Int) -> String
     fun raven_http_header(id: Int, name: String) -> String
     fun raven_http_headers(id: Int) -> String
     fun raven_http_free(id: Int)
+    fun raven_http_stream_open(method: String, url: String, body: String, headers: String, timeout_ms: Int) -> Int
+    fun raven_http_stream_read(id: Int) -> String
+    fun raven_http_stream_status(id: Int) -> Int
+    fun raven_http_stream_status_text(id: Int) -> String
+    fun raven_http_stream_headers(id: Int) -> String
+    fun raven_http_stream_close(id: Int)
 }
 
 // An Error tagged with kind "http", its message a context prefix joined to
@@ -53,12 +60,31 @@ fun request(
     body: String,
     headers: String,
 ) -> Result<HttpResponse, Error> {
-    let id = raven_http_request(method, url, body, headers)
+    return _collect(raven_http_request(method, url, body, headers), method)
+}
+
+// Like request, with an overall deadline: a positive timeout_ms bounds the
+// whole request (connect, send, and reading the body), and a timeout
+// surfaces as an Err like any other transport failure. timeout_ms <= 0
+// keeps the default timeouts. Use this for endpoints that take longer than
+// the defaults allow, for example model inference APIs.
+fun request_with_timeout(
+    method: String,
+    url: String,
+    body: String,
+    headers: String,
+    timeout_ms: Int,
+) -> Result<HttpResponse, Error> {
+    return _collect(raven_http_request_timeout(method, url, body, headers, timeout_ms), method)
+}
+
+// Assemble the stored response `id` into an HttpResponse and release it.
+fun _collect(id: Int, ctx: String) -> Result<HttpResponse, Error> {
     if id == 0 {
-        return Err(http_error(method))
+        return Err(http_error(ctx))
     }
     if raven_http_last_error().length() > 0 {
-        return Err(http_error(method))
+        return Err(http_error(ctx))
     }
     let resp = HttpResponse {
         status_code: raven_http_status(id),
@@ -98,6 +124,65 @@ fun patch(url: String, body: String) -> Result<HttpResponse, Error> {
 // HEAD `url` (response carries headers and status but no body).
 fun head(url: String) -> Result<HttpResponse, Error> {
     return request("HEAD", url, "", "")
+}
+
+// A streaming response: the status and headers arrive at open, the body is
+// pulled chunk by chunk with read_chunk. This is how to consume server-sent
+// events, chunked transfers, and any response too large or too slow to
+// buffer whole. Close it when done; an ended stream still holds its status
+// and headers until then.
+struct HttpStream {
+    id: Int,
+    status_code: Int,
+    status_text: String,
+    // Response headers as `Key: Value` lines joined by `\n`.
+    headers: String,
+}
+
+// Open a streaming request. A positive timeout_ms bounds the connect and
+// each body read individually (not the whole stream, which may stay open
+// for as long as the server keeps sending); timeout_ms <= 0 keeps the
+// defaults. A non-2xx status opens normally so the error body is readable;
+// only a transport failure is an Err.
+fun stream(
+    method: String,
+    url: String,
+    body: String,
+    headers: String,
+    timeout_ms: Int,
+) -> Result<HttpStream, Error> {
+    let id = raven_http_stream_open(method, url, body, headers, timeout_ms)
+    if id == 0 {
+        return Err(http_error(method))
+    }
+    if raven_http_last_error().length() > 0 {
+        return Err(http_error(method))
+    }
+    return Ok(HttpStream {
+        id: id,
+        status_code: raven_http_stream_status(id),
+        status_text: raven_http_stream_status_text(id),
+        headers: raven_http_stream_headers(id),
+    })
+}
+
+impl HttpStream {
+    // The next chunk of the body: whatever the next socket read returns, at
+    // most 8 KiB. Ok("") means the stream ended; a failed or timed-out read
+    // is an Err. One read at a time per stream.
+    fun read_chunk(self) -> Result<String, Error> {
+        let chunk = raven_http_stream_read(self.id)
+        if chunk.length() == 0 && raven_http_last_error().length() > 0 {
+            return Err(http_error("stream read"))
+        }
+        return Ok(chunk)
+    }
+
+    // Release the stream and its connection. Reading after close observes
+    // end of stream.
+    fun close(self) {
+        raven_http_stream_close(self.id)
+    }
 }
 
 // ===========================================================================
