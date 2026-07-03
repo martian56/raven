@@ -2,7 +2,7 @@
 
 All notable changes to Raven are documented in this file.
 
-## [Unreleased]
+## [2.21.0] - 2026-07-03
 
 ### Added
 
