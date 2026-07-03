@@ -460,10 +460,9 @@ fn find_first_rpm(dir: &Path) -> Result<Option<PathBuf>, OpError> {
 // msi (WiX)
 // ---------------------------------------------------------------------------
 
-/// `msi`: generate a WiX source and compile it with WiX 3 (candle and
-/// light) or the WiX 4+ CLI, whichever is installed. Returns the artifact
-/// and an advisory note when the upgrade GUID was derived rather than
-/// pinned in the manifest.
+/// `msi`: generate a WiX 3 source and compile it with candle and light.
+/// Returns the artifact and an advisory note when the upgrade GUID was
+/// derived rather than pinned in the manifest.
 fn dist_msi(ctx: &DistContext) -> Result<(PathBuf, Option<String>), OpError> {
     let stage = ctx.work_dir.join("msi");
     stage_tree(ctx, &stage, "", "")?;
@@ -489,18 +488,12 @@ fn dist_msi(ctx: &DistContext) -> Result<(PathBuf, Option<String>), OpError> {
     ));
     remove_if_present(&artifact)?;
 
-    if command_exists("wix") {
-        let mut cmd = Command::new("wix");
-        cmd.arg("build")
-            .arg(&wxs_path)
-            .arg("-arch")
-            .arg("x64")
-            .arg("-o")
-            .arg(&artifact);
-        run_tool(cmd, "wix", WIX_HINT)?;
-        return Ok((artifact, note));
-    }
-
+    // The generated source uses the WiX 3 schema (the 2006 namespace and the
+    // <Product> element), so it is compiled with WiX 3's candle and light.
+    // WiX 4 removed that schema and its `wix build` would reject the source,
+    // so it is deliberately not attempted; WiX 3 is also what the Raven
+    // toolchain's own release build uses. WiX 4 support would mean emitting
+    // the v4 schema and is tracked separately.
     let candle = find_wix3_tool("candle.exe").ok_or_else(|| OpError::DistTool {
         tool: "candle.exe".to_string(),
         hint: WIX_HINT.to_string(),
@@ -712,7 +705,7 @@ const ZIP_HINT: &str =
     "no zip-capable tool found; install zip, or rely on bsdtar (the Windows tar), or use the tar target";
 const DEB_HINT: &str = "install dpkg (for example 'apt install dpkg'); deb packages are normally built on a Debian-family system";
 const RPM_HINT: &str = "install rpmbuild ('apt install rpm' on Debian-family, 'dnf install rpm-build' on Fedora-family)";
-const WIX_HINT: &str = "install the WiX Toolset: 'choco install wixtoolset' (WiX 3, candle and light) or 'dotnet tool install --global wix' (WiX 4+)";
+const WIX_HINT: &str = "install WiX Toolset 3 ('choco install wixtoolset --version 3.14.0'); the generated source uses the WiX 3 schema, so candle.exe and light.exe must be on PATH or found through the WIX environment variable";
 const INNO_HINT: &str = "install Inno Setup 6 and put ISCC.exe on PATH ('choco install innosetup')";
 
 /// Run a packaging tool, mapping a missing executable to an install hint

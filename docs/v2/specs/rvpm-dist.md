@@ -67,7 +67,7 @@ missing tool fails with an install hint.
 | `zip` | bsdtar or zip | `<name>-<version>-<arch>.zip`, flat |
 | `deb` | dpkg-deb | `<name>_<version>_<deb-arch>.deb` |
 | `rpm` | rpmbuild | rpmbuild's own `<name>-<version>-1.<arch>.rpm` naming |
-| `msi` | WiX 3 (candle, light) or the WiX 4+ CLI | `<name>-<version>-<arch>.msi` |
+| `msi` | WiX 3 (candle, light) | `<name>-<version>-<arch>.msi` |
 | `inno` | Inno Setup ISCC | `<name>-<version>-setup.exe` |
 
 Version strings are normalized per format: a leading `v` is dropped
