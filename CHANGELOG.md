@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.23.0] - 2026-07-04
+
+### Added
+
+- `rvpm dist` gains `[dist.windows].add_to_path`: when set, the generated msi appends the install directory to the system PATH, so a command-line tool is callable from a terminal after installing, and the uninstaller removes the entry. Off by default; the other formats are unaffected. (#864)
+
 ## [2.22.0] - 2026-07-04
 
 ### Added
