@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.22.0] - 2026-07-04
+
+### Added
+
+- `std/process` gains `start(program, args)`: spawn a child without waiting and get a `Child` handle. `read_stdout()` and `read_stderr()` drain output as it arrives (each buffer capped at 8 MB, oldest bytes dropped), `poll()` and `running()` report status without blocking, `wait()` blocks with a scheduler-friendly poll loop, `kill()` stops the child, and `free()` releases the handle with reaping guaranteed. Enables watching and stopping long-running children such as dev servers and builds. (#862)
+
 ## [2.21.0] - 2026-07-03
 
 ### Added
