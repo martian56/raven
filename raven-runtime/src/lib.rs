@@ -57,7 +57,7 @@ use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::process;
 use std::slice;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 /// Ignore `SIGPIPE` once, process-wide, on Unix. Writing to a pipe or socket
@@ -208,6 +208,50 @@ fn process_registry() -> &'static Mutex<HashMap<i64, ProcResult>> {
 fn process_next_id() -> i64 {
     static NEXT_ID: AtomicI64 = AtomicI64::new(1);
     NEXT_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+/// A live spawned child. Unlike `ProcResult` (a finished child's capture),
+/// this holds the running process: reader threads append its stdout and
+/// stderr to the shared buffers as they arrive, `raven_process_poll`
+/// try-waits it, and `raven_process_kill` terminates it. `code` caches the
+/// exit status once observed so poll stays cheap after exit.
+struct SpawnEntry {
+    child: process::Child,
+    stdout: Arc<Mutex<Vec<u8>>>,
+    stderr: Arc<Mutex<Vec<u8>>>,
+    code: Option<i64>,
+}
+
+/// The process-wide spawned-child registry. Ids come from `process_next_id`
+/// (shared with the finished-child registry, so an id is unique across
+/// both); 0 stays the spawn-failure sentinel.
+fn spawn_registry() -> &'static Mutex<HashMap<i64, SpawnEntry>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<i64, SpawnEntry>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Drain a spawned child's accumulated output buffer into a fresh Vec.
+fn spawn_drain(buf: &Arc<Mutex<Vec<u8>>>) -> Vec<u8> {
+    let mut guard = buf.lock().unwrap();
+    std::mem::take(&mut *guard)
+}
+
+/// Pump one child pipe into a shared buffer until end of stream. Runs on a
+/// plain OS thread outside the collector: it only touches the Arc'd buffer,
+/// never a GC object.
+fn spawn_pump<R: Read + Send + 'static>(mut pipe: R, buf: Arc<Mutex<Vec<u8>>>) {
+    std::thread::spawn(move || {
+        let mut chunk = [0u8; 8192];
+        loop {
+            match pipe.read(&mut chunk) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    let mut guard = buf.lock().unwrap();
+                    guard.extend_from_slice(&chunk[..n]);
+                }
+            }
+        }
+    });
 }
 
 /// The process-wide compiled-regex registry keyed by an incrementing id.
@@ -2457,6 +2501,154 @@ pub extern "C" fn raven_process_stderr(id: i64) -> *mut object::String {
 #[no_mangle]
 pub extern "C" fn raven_process_free(id: i64) {
     process_registry().lock().unwrap().remove(&id);
+}
+
+/// Spawn `program` with `args_nul_joined` (same encoding as
+/// `raven_process_run`) WITHOUT waiting: the child runs with a null stdin
+/// while reader threads pump its stdout and stderr into buffers that
+/// `raven_process_read_stdout`/`_stderr` drain incrementally. Returns the
+/// spawn id, or 0 on a spawn failure with the last-error slot set.
+///
+/// # Safety
+///
+/// `program` and `args_nul_joined` must be valid
+/// `raven_string_from_bytes`-built `String`s.
+#[no_mangle]
+pub extern "C" fn raven_process_spawn(
+    program: *const object::String,
+    args_nul_joined: *const object::String,
+) -> i64 {
+    ignore_sigpipe();
+    let (Some(program), Some(args_joined)) = (env_name(program), env_name(args_nul_joined)) else {
+        process_set_error("program or args is not valid UTF-8".to_string());
+        return 0;
+    };
+    let args: Vec<&str> = if args_joined.is_empty() {
+        Vec::new()
+    } else {
+        args_joined.split('\0').skip(1).collect()
+    };
+
+    let mut command = process::Command::new(program);
+    command.args(&args);
+    command.stdin(process::Stdio::null());
+    command.stdout(process::Stdio::piped());
+    command.stderr(process::Stdio::piped());
+
+    let mut child = match command.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            process_set_error(e.to_string());
+            return 0;
+        }
+    };
+
+    let stdout = Arc::new(Mutex::new(Vec::new()));
+    let stderr = Arc::new(Mutex::new(Vec::new()));
+    if let Some(pipe) = child.stdout.take() {
+        spawn_pump(pipe, Arc::clone(&stdout));
+    }
+    if let Some(pipe) = child.stderr.take() {
+        spawn_pump(pipe, Arc::clone(&stderr));
+    }
+
+    let id = process_next_id();
+    spawn_registry().lock().unwrap().insert(
+        id,
+        SpawnEntry {
+            child,
+            stdout,
+            stderr,
+            code: None,
+        },
+    );
+    process_clear_error();
+    id
+}
+
+/// Whatever the spawned child `id` wrote to stdout since the last read,
+/// drained. Empty when nothing new arrived or the id is unknown.
+#[no_mangle]
+pub extern "C" fn raven_process_read_stdout(id: i64) -> *mut object::String {
+    // Copy out before allocating; the allocation may collect and must not
+    // happen under a registry lock (see `raven_http_status_text`).
+    let out: Vec<u8> = {
+        let registry = spawn_registry().lock().unwrap();
+        registry
+            .get(&id)
+            .map(|e| spawn_drain(&e.stdout))
+            .unwrap_or_default()
+    };
+    object::raven_string_from_bytes(out.as_ptr(), out.len())
+}
+
+/// Whatever the spawned child `id` wrote to stderr since the last read,
+/// drained. Empty when nothing new arrived or the id is unknown.
+#[no_mangle]
+pub extern "C" fn raven_process_read_stderr(id: i64) -> *mut object::String {
+    let err: Vec<u8> = {
+        let registry = spawn_registry().lock().unwrap();
+        registry
+            .get(&id)
+            .map(|e| spawn_drain(&e.stderr))
+            .unwrap_or_default()
+    };
+    object::raven_string_from_bytes(err.as_ptr(), err.len())
+}
+
+/// Poll the spawned child `id` without blocking: -2 while it is still
+/// running, its exit code once it has exited (a child terminated by a
+/// signal with no code maps to -1), and -1 for an unknown id. The observed
+/// code is cached so polling after exit stays cheap.
+#[no_mangle]
+pub extern "C" fn raven_process_poll(id: i64) -> i64 {
+    let mut registry = spawn_registry().lock().unwrap();
+    let Some(entry) = registry.get_mut(&id) else {
+        return -1;
+    };
+    if let Some(code) = entry.code {
+        return code;
+    }
+    match entry.child.try_wait() {
+        Ok(Some(status)) => {
+            let code = status.code().map(|c| c as i64).unwrap_or(-1);
+            entry.code = Some(code);
+            code
+        }
+        Ok(None) => -2,
+        Err(_) => -1,
+    }
+}
+
+/// Kill the spawned child `id`. Returns 1 when the signal was delivered (or
+/// the child had already exited), 0 for an unknown id or a delivery
+/// failure. The reader threads finish on their own as the pipes close.
+#[no_mangle]
+pub extern "C" fn raven_process_kill(id: i64) -> i64 {
+    let mut registry = spawn_registry().lock().unwrap();
+    let Some(entry) = registry.get_mut(&id) else {
+        return 0;
+    };
+    if entry.code.is_some() {
+        return 1;
+    }
+    match entry.child.kill() {
+        Ok(()) => 1,
+        // On both Unix and Windows killing an already-exited child reports
+        // an error; that is success for the caller's purposes.
+        Err(_) => match entry.child.try_wait() {
+            Ok(Some(_)) => 1,
+            _ => 0,
+        },
+    }
+}
+
+/// Drop the spawned child `id` from the registry. The child is NOT killed:
+/// freeing a running child leaves it running unowned (kill first to stop
+/// it). An unknown id is a no-op.
+#[no_mangle]
+pub extern "C" fn raven_process_spawn_free(id: i64) {
+    spawn_registry().lock().unwrap().remove(&id);
 }
 
 #[cfg(test)]

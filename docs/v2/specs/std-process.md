@@ -1,43 +1,66 @@
 # std/process Spec
 
-Spawn a subprocess, run it to completion, and read its exit code plus
-captured stdout and stderr. Optionally feed data to the child's stdin. The
-primitives bind the raven-runtime C ABI (backed by `std::process::Command`);
-the wrappers add the Result/Error model and the `Output` value type in pure
+Spawn a subprocess and either run it to completion (`run`) or keep it
+running while its output streams in (`start`). The primitives bind the
+raven-runtime C ABI (backed by `std::process::Command`); the wrappers add
+the Result/Error model and the `Output` and `Child` value types in pure
 Raven.
 
 ## Import
 
 ```rust
-import std/process { run, run_with_input }
+import std/process { run, run_with_input, start, Child }
 ```
 
-The `success` method on `Output` comes in with the type and needs no
-separate selector.
+The methods on `Output` and `Child` come in with the types and need no
+separate selectors.
 
 ## Surface
 
 ```rust
 struct Output { code: Int, stdout: String, stderr: String }
+struct Child { id: Int }
 
 fun run(program: String, args: List<String>) -> Result<Output, Error>
 fun run_with_input(program: String, args: List<String>, input: String) -> Result<Output, Error>
+fun start(program: String, args: List<String>) -> Result<Child, Error>
 
 impl Output {
     fun success(self) -> Bool   // code == 0
+}
+
+impl Child {
+    fun read_stdout(self) -> String   // drained since the last read, "" when nothing new
+    fun read_stderr(self) -> String
+    fun poll(self) -> Option<Int>     // None while running, Some(code) once exited
+    fun running(self) -> Bool
+    fun wait(self) -> Int             // block (polling) until exit
+    fun kill(self) -> Bool
+    fun free(self)                    // drop the runtime entry; does not kill
 }
 ```
 
 `run` spawns `program` with `args`, feeds it no stdin, waits for it to
 finish, and returns its captured output. `run_with_input` is the same but
-writes `input` to the child's stdin (which is then closed).
+writes `input` to the child's stdin (which is then closed). `start` spawns
+the child and returns immediately with a handle. (`spawn` is the goroutine
+keyword, hence `start`.)
 
-## Run-to-completion model
+## Two capture models
 
-There is no streaming in v2.0. A run executes the child to completion in a
-single runtime call that captures the whole of stdout and stderr into an
-owned result before returning. A caller that needs incremental output is
-not served by this surface.
+A `run` executes the child to completion in a single runtime call that
+captures the whole of stdout and stderr into an owned result before
+returning.
+
+A `start` leaves the child running: runtime reader threads pump its stdout
+and stderr into growable buffers as they arrive, and each `read_stdout` /
+`read_stderr` call drains what accumulated since the previous read. `poll`
+try-waits without blocking (`running` is its Bool shorthand); `wait` loops
+poll with a short scheduler-friendly sleep so other goroutines proceed.
+`kill` terminates the child (killing an already-exited child reports
+success). `free` drops the registry entry without killing, so a caller that
+wants the child stopped must `kill` first. The child's stdin is null: it
+sees end of input immediately and does not inherit the parent's terminal.
 
 ## Argument encoding (NUL-joined)
 
@@ -56,6 +79,12 @@ registry keyed by an incrementing `i64` id and hands Raven only that id. The
 wrappers read the three fields by id through the extractors, then free the
 entry, so a caller never sees the id. Ids start at 1; an id of 0 is the
 spawn-failure sentinel paired with a set last-error.
+
+Started children live in a second registry sharing the same id sequence
+(so an id is unique across both): the entry holds the live process handle,
+the two output buffers the reader threads fill, and the exit code once
+observed, cached so polling after exit stays cheap. `poll` reports `-2`
+over the FFI while the child runs; the wrapper maps that to `None`.
 
 ## Non-zero exit is not an error
 

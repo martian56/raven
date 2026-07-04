@@ -1964,6 +1964,41 @@ fn proc_argv_rejects_nul_arg() {
 }
 
 #[test]
+fn process_spawn_streams_and_kills() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // The streaming half of std/process end to end. The child
+    // (spawn_child.rv) prints "early", idles, prints "late", exits 3. The
+    // parent (spawn_parent.rv) proves the output streams (it drains "early"
+    // while the child is still running), waits for the code, kills a
+    // long-idling second child, and takes the Err path on a nonexistent
+    // program. See the expected transcript in spawn_parent.rv.
+    let child = build_example_binary("spawn_child.rv", &runtime);
+    let parent = build_example_binary("spawn_parent.rv", &runtime);
+
+    let output = Command::new(&parent.binary)
+        .env("RAVEN_PROC_CHILD", &child.binary)
+        .output()
+        .expect("run spawn_parent binary");
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    cleanup(&child.tmp);
+    cleanup(&parent.tmp);
+    assert!(
+        output.status.success(),
+        "spawn_parent binary exited non zero: status={:?} stderr={}",
+        output.status,
+        stderr
+    );
+    assert_eq!(
+        stdout, "streamed-early\n3\ngot-late\nkilled\nspawn failed\n",
+        "unexpected stdout for spawn_parent: {:?}",
+        stdout
+    );
+}
+
+#[test]
 fn proc_binary_io_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
