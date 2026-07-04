@@ -560,6 +560,17 @@ fn wix_source(ctx: &DistContext, stage: &Path, upgrade_code: &str) -> String {
         ));
         refs.push_str(&format!("      <ComponentRef Id=\"{}\" />\n", id));
     }
+    // Append the install directory to the system PATH so a command-line tool
+    // is on PATH after installing. A registry value under HKLM is the
+    // component key path (an Environment element cannot be one), keyed by the
+    // package name so it is stable across versions.
+    if d.windows.add_to_path {
+        components.push_str(&format!(
+            "        <Component Id=\"PathEntry\" Guid=\"*\">\n          <RegistryValue Root=\"HKLM\" Key=\"Software\\{key}\" Name=\"Installed\" Type=\"integer\" Value=\"1\" KeyPath=\"yes\" />\n          <Environment Id=\"UpdatePath\" Name=\"PATH\" Value=\"[APPDIR]\" Permanent=\"no\" Part=\"last\" Action=\"set\" System=\"yes\" />\n        </Component>\n",
+            key = xml_escape(&ctx.name),
+        ));
+        refs.push_str("      <ComponentRef Id=\"PathEntry\" />\n");
+    }
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
@@ -946,6 +957,42 @@ depends = ["libc6 (>= 2.31)", "zlib1g"]
             wxs.contains("File1"),
             "binary and asset each get a component"
         );
+    }
+
+    #[test]
+    fn wix_source_omits_path_entry_by_default() {
+        let app = FakeApp::new("wix-nopath");
+        let ctx = app.context(WITH_ASSET);
+        let stage = ctx.work_dir.join("msi");
+        stage_tree(&ctx, &stage, "", "").expect("stage");
+        let wxs = wix_source(&ctx, &stage, "9f0c86a1-2b3c-4d5e-8f90-112233445566");
+        assert!(!wxs.contains("<Environment"));
+        assert!(!wxs.contains("PathEntry"));
+    }
+
+    #[test]
+    fn wix_source_adds_path_when_requested() {
+        let manifest = r#"
+[package]
+name = "demo"
+version = "1.2.0"
+authors = ["Ada <ada@example.com>"]
+
+[dist.windows]
+add_to_path = true
+"#;
+        let app = FakeApp::new("wix-path");
+        let ctx = app.context(manifest);
+        let stage = ctx.work_dir.join("msi");
+        stage_tree(&ctx, &stage, "", "").expect("stage");
+        let wxs = wix_source(&ctx, &stage, "9f0c86a1-2b3c-4d5e-8f90-112233445566");
+        assert!(wxs.contains("<Component Id=\"PathEntry\""));
+        assert!(wxs.contains("<ComponentRef Id=\"PathEntry\" />"));
+        assert!(wxs.contains(
+            "<Environment Id=\"UpdatePath\" Name=\"PATH\" Value=\"[APPDIR]\" Permanent=\"no\" Part=\"last\" Action=\"set\" System=\"yes\" />"
+        ));
+        // A registry value is the component key path, keyed by the package name.
+        assert!(wxs.contains("Key=\"Software\\demo\""));
     }
 
     #[test]

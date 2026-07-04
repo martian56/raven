@@ -209,6 +209,9 @@ pub struct DistWindows {
     /// The stable GUID that lets an msi upgrade an installed older version.
     /// Required by the msi backend; generate one once and keep it.
     pub upgrade_code: String,
+    /// When set, the msi appends the install directory to the system PATH, so
+    /// a command-line tool is callable from a terminal after installing.
+    pub add_to_path: bool,
 }
 
 impl Dist {
@@ -412,6 +415,7 @@ fn validate_dist(raw: RawDist, package: &Package) -> Result<Dist, ManifestError>
         windows: DistWindows {
             icon: windows.icon.unwrap_or_default(),
             upgrade_code: windows.upgrade_code.unwrap_or_default(),
+            add_to_path: windows.add_to_path.unwrap_or(false),
         },
     })
 }
@@ -558,6 +562,7 @@ struct RawDistLinux {
 struct RawDistWindows {
     icon: Option<String>,
     upgrade_code: Option<String>,
+    add_to_path: Option<bool>,
 }
 
 impl Manifest {

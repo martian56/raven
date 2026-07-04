@@ -47,6 +47,7 @@ priority = "optional"              # deb
 [dist.windows]
 icon = "assets/rook.ico"           # Inno Setup icon
 upgrade_code = "9f0c86a1-2b3c-4d5e-8f90-112233445566"  # msi upgrade GUID
+add_to_path = true                 # msi appends the install dir to system PATH
 ```
 
 Asset `source` and `dest` must be relative forward-slash paths with no `..`
@@ -79,9 +80,16 @@ install. When `[dist.windows].upgrade_code` is not set, rvpm derives a
 stable GUID from the package name and prints it with a note; pin it in the
 manifest so it never changes by accident.
 
+`[dist.windows].add_to_path = true` makes the msi append the install
+directory to the system PATH, so a command-line tool is callable from a
+terminal after installing (the other installers still leave PATH alone).
+The uninstaller removes the entry.
+
 ## What is out of scope
 
 Packages are not signed (deb signing, rpm signing, Authenticode are all
 post-processing on the produced artifacts). Cross-format scripting hooks
-(postinst and friends) and desktop shortcuts are not modeled yet. The
-installers do not modify PATH.
+(postinst and friends) and desktop shortcuts are not modeled yet. Only the
+msi modifies PATH, and only when `[dist.windows].add_to_path` is set; the
+deb and rpm install to `/usr/bin` (already on PATH) and the archives are
+unpacked wherever the user chooses.
