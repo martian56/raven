@@ -1,0 +1,85 @@
+// golden:skip - std/process spawn parent, checked in codegen_smoke.rs
+// (process_spawn_streams_and_kills). Drives the whole streaming surface
+// against the child in RAVEN_PROC_CHILD (spawn_child.rv):
+//
+// 1. Streaming: start the child, drain stdout until "early" arrives, and
+//    prove the child is still running at that moment ("streamed-early").
+//    Then wait for exit and print the code (3) and whether the full output
+//    also carried "late" ("got-late").
+// 2. Kill: start the child with a 20s idle, kill it while it runs, and
+//    print "killed" when the exit code comes back non-zero.
+// 3. Spawn failure: a nonexistent program takes the Err path.
+//
+// Expected stdout:
+//   streamed-early
+//   3
+//   got-late
+//   killed
+//   spawn failed
+import std/io { println }
+import std/process { Child, start }
+import std/sync { sleep_millis }
+import std/env { get_env }
+
+fun main() {
+    let child_path = get_env("RAVEN_PROC_CHILD")
+
+    // 1. Streaming while the child runs.
+    let none: List<String> = []
+    match start(child_path, none) {
+        Ok(c) -> {
+            let seen = ""
+            let live = false
+            let tries = 0
+            while !seen.contains("early") && tries < 400 {
+                seen = seen.concat(c.read_stdout())
+                if seen.contains("early") && c.running() {
+                    live = true
+                }
+                sleep_millis(10)
+                tries = tries + 1
+            }
+            if live {
+                println("streamed-early")
+            }
+            let code = c.wait()
+            println("${code}")
+            seen = seen.concat(c.read_stdout())
+            if seen.contains("late") {
+                println("got-late")
+            }
+            c.free()
+        },
+        Err(e) -> {
+            println("spawn failed early: ${e.message()}")
+        },
+    }
+
+    // 2. Kill a long-running child (a 20s idle passed as its argument).
+    match start(child_path, ["20000"]) {
+        Ok(c) -> {
+            // Let it start, then stop it.
+            sleep_millis(100)
+            c.kill()
+            let code = c.wait()
+            if code != 0 {
+                println("killed")
+            }
+            c.free()
+        },
+        Err(e) -> {
+            println("spawn failed kill: ${e.message()}")
+        },
+    }
+
+    // 3. The spawn-failure Err path.
+    match start("definitely-not-a-real-program-12345", none) {
+        Ok(c) -> {
+            println("unexpectedly spawned")
+            c.free()
+        },
+        Err(e) -> {
+            println("spawn failed")
+        },
+    }
+}

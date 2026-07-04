@@ -1,0 +1,27 @@
+// golden:skip - the child half of the std/process spawn smoke tests. Prints
+// "early" immediately, idles long enough for the parent to observe it
+// running (and to drain the first line while it still runs), then prints
+// "late" and exits 3. The idle defaults to 600ms; the parent's kill test
+// passes a large one as the first argument to make the child effectively
+// hang until killed.
+import std/io { println }
+import std/string
+import std/sync { sleep_millis }
+import std/env { args, exit }
+
+fun main() {
+    println("early")
+    let idle = 600
+    let a = args()
+    if a.len() > 1 {
+        match a[1].parse_int() {
+            Some(ms) -> {
+                idle = ms
+            },
+            None -> {},
+        }
+    }
+    sleep_millis(idle)
+    println("late")
+    exit(3)
+}

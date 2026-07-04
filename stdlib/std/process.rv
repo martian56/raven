@@ -1,8 +1,16 @@
 // std/process: spawn subprocesses over the raven-runtime C ABI, backed by
-// std::process::Command. A child runs to completion in one runtime call
-// that captures its exit code, stdout, and stderr into a registry entry
-// keyed by an opaque integer id; the wrappers pull those out and free the
-// id. A non-zero exit is NOT an Err: the caller inspects `code`. Only a
+// std::process::Command. Two modes share one registry-id scheme:
+//
+// - `run` waits: the child runs to completion in one runtime call that
+//   captures its exit code, stdout, and stderr; the wrappers pull those out
+//   and free the id.
+// - `start` streams: the child starts without waiting (`spawn` is the
+//   goroutine keyword, so the function is `start`), runtime reader threads
+//   accumulate its output as it arrives, and the Child handle drains it
+//   incrementally (read_stdout/read_stderr), polls or waits for the exit
+//   code, and can kill the child.
+//
+// A non-zero exit is NOT an Err: the caller inspects `code`. Only a
 // spawn failure (for example the program is not found) takes the Err path
 // through the runtime's thread-local last-error slot, tagged with kind
 // "process".
@@ -15,6 +23,7 @@
 
 import std/error
 import std/string
+import std/sync { sleep_millis }
 
 struct Output {
     code: Int,
@@ -29,6 +38,91 @@ extern "C" {
     fun raven_process_stdout(id: Int) -> String
     fun raven_process_stderr(id: Int) -> String
     fun raven_process_free(id: Int)
+    fun raven_process_spawn(program: String, args_nul_joined: String) -> Int
+    fun raven_process_read_stdout(id: Int) -> String
+    fun raven_process_read_stderr(id: Int) -> String
+    fun raven_process_poll(id: Int) -> Int
+    fun raven_process_kill(id: Int) -> Int
+    fun raven_process_spawn_free(id: Int)
+}
+
+// A child started with `start`, still possibly running. Output streams in:
+// read_stdout and read_stderr drain whatever arrived since the last read,
+// poll and running report status without blocking, wait blocks until exit,
+// and kill stops it. Call free when done with the handle; freeing does not
+// kill a running child.
+struct Child {
+    id: Int,
+}
+
+impl Child {
+    // Whatever the child wrote to stdout since the last read, "" when
+    // nothing new has arrived.
+    fun read_stdout(self) -> String {
+        return raven_process_read_stdout(self.id)
+    }
+
+    // Whatever the child wrote to stderr since the last read.
+    fun read_stderr(self) -> String {
+        return raven_process_read_stderr(self.id)
+    }
+
+    // The exit code once the child has exited, None while it runs. A child
+    // terminated by a signal with no code reports -1.
+    fun poll(self) -> Option<Int> {
+        let c = raven_process_poll(self.id)
+        if c == 0 - 2 {
+            return None
+        }
+        return Some(c)
+    }
+
+    fun running(self) -> Bool {
+        return raven_process_poll(self.id) == 0 - 2
+    }
+
+    // Block until the child exits and return its code. Polls with a short
+    // sleep, so other goroutines keep running.
+    fun wait(self) -> Int {
+        let done = false
+        let code = 0 - 1
+        while !done {
+            match self.poll() {
+                Some(c) -> {
+                    code = c
+                    done = true
+                },
+                None -> {
+                    sleep_millis(5)
+                },
+            }
+        }
+        return code
+    }
+
+    // Stop the child. True when the kill was delivered or it had already
+    // exited.
+    fun kill(self) -> Bool {
+        return raven_process_kill(self.id) == 1
+    }
+
+    // Drop the runtime entry for this child. Does not kill a running child;
+    // the runtime still reaps it when it exits.
+    fun free(self) {
+        raven_process_spawn_free(self.id)
+    }
+}
+
+// Start `program` with `args` without waiting for it. Output accumulates as
+// the child runs; drain it incrementally with read_stdout/read_stderr. On a
+// spawn failure returns Err tagged with kind "process".
+fun start(program: String, args: List<String>) -> Result<Child, Error> {
+    validate_args(args)?
+    let id = raven_process_spawn(program, join_args(args))
+    if id == 0 {
+        return Err(Error { kind: "process", message: raven_process_last_error() })
+    }
+    return Ok(Child { id })
 }
 
 impl Output {
