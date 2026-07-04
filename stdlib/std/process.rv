@@ -106,7 +106,8 @@ impl Child {
         return raven_process_kill(self.id) == 1
     }
 
-    // Drop the runtime entry for this child. Does not kill a running child.
+    // Drop the runtime entry for this child. Does not kill a running child;
+    // the runtime still reaps it when it exits.
     fun free(self) {
         raven_process_spawn_free(self.id)
     }

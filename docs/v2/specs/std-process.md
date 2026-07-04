@@ -53,14 +53,19 @@ captures the whole of stdout and stderr into an owned result before
 returning.
 
 A `start` leaves the child running: runtime reader threads pump its stdout
-and stderr into growable buffers as they arrive, and each `read_stdout` /
-`read_stderr` call drains what accumulated since the previous read. `poll`
-try-waits without blocking (`running` is its Bool shorthand); `wait` loops
-poll with a short scheduler-friendly sleep so other goroutines proceed.
-`kill` terminates the child (killing an already-exited child reports
-success). `free` drops the registry entry without killing, so a caller that
-wants the child stopped must `kill` first. The child's stdin is null: it
-sees end of input immediately and does not inherit the parent's terminal.
+and stderr into buffers as they arrive, and each `read_stdout` /
+`read_stderr` call drains what accumulated since the previous read. Each
+buffer is capped at 8 MB: a child that outruns its reader keeps only the
+most recent bytes, so an undrained pipe cannot grow memory without bound
+(keep draining to see everything). `poll` try-waits without blocking
+(`running` is its Bool shorthand); `wait` loops poll with a short
+scheduler-friendly sleep so other goroutines proceed. `kill` terminates the
+child (killing an already-exited child reports success). `free` drops the
+registry entry without killing, so a caller that wants the child stopped
+must `kill` first; reaping is still guaranteed, since a freed child whose
+exit was not yet observed is handed to a background waiter that collects it
+when it exits, never leaving a zombie. The child's stdin is null: it sees
+end of input immediately and does not inherit the parent's terminal.
 
 ## Argument encoding (NUL-joined)
 

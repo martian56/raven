@@ -236,6 +236,22 @@ fn spawn_drain(buf: &Arc<Mutex<Vec<u8>>>) -> Vec<u8> {
     std::mem::take(&mut *guard)
 }
 
+/// Cap on each spawned child's accumulated output buffer. A child that
+/// outruns its reader keeps only the most recent bytes; the oldest are
+/// dropped, so an undrained pipe cannot grow memory without bound.
+const SPAWN_BUFFER_MAX: usize = 8 * 1024 * 1024;
+
+/// Append pumped bytes to a spawned child's buffer, dropping the oldest
+/// bytes past `SPAWN_BUFFER_MAX`.
+fn spawn_append(buf: &Arc<Mutex<Vec<u8>>>, bytes: &[u8]) {
+    let mut guard = buf.lock().unwrap();
+    guard.extend_from_slice(bytes);
+    if guard.len() > SPAWN_BUFFER_MAX {
+        let excess = guard.len() - SPAWN_BUFFER_MAX;
+        guard.drain(..excess);
+    }
+}
+
 /// Pump one child pipe into a shared buffer until end of stream. Runs on a
 /// plain OS thread outside the collector: it only touches the Arc'd buffer,
 /// never a GC object.
@@ -245,10 +261,7 @@ fn spawn_pump<R: Read + Send + 'static>(mut pipe: R, buf: Arc<Mutex<Vec<u8>>>) {
         loop {
             match pipe.read(&mut chunk) {
                 Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    let mut guard = buf.lock().unwrap();
-                    guard.extend_from_slice(&chunk[..n]);
-                }
+                Ok(n) => spawn_append(&buf, &chunk[..n]),
             }
         }
     });
@@ -2644,11 +2657,22 @@ pub extern "C" fn raven_process_kill(id: i64) -> i64 {
 }
 
 /// Drop the spawned child `id` from the registry. The child is NOT killed:
-/// freeing a running child leaves it running unowned (kill first to stop
-/// it). An unknown id is a no-op.
+/// freeing a running child leaves it running detached (kill first to stop
+/// it). Reaping is still guaranteed: a child whose exit was already
+/// observed by poll has been reaped by that try_wait, and any other child
+/// is handed to a background waiter thread that collects it when it exits,
+/// so a freed child never lingers as a zombie. An unknown id is a no-op.
 #[no_mangle]
 pub extern "C" fn raven_process_spawn_free(id: i64) {
-    spawn_registry().lock().unwrap().remove(&id);
+    let entry = spawn_registry().lock().unwrap().remove(&id);
+    if let Some(mut entry) = entry {
+        if entry.code.is_some() {
+            return;
+        }
+        std::thread::spawn(move || {
+            let _ = entry.child.wait();
+        });
+    }
 }
 
 #[cfg(test)]
@@ -2660,6 +2684,20 @@ mod tests {
     #[test]
     fn object_header_is_sixteen_bytes() {
         assert_eq!(size_of::<ObjectHeader>(), 16);
+    }
+
+    #[test]
+    fn spawn_buffer_caps_at_max_keeping_the_tail() {
+        // A child that outruns its reader must not grow memory without
+        // bound: the buffer holds at most SPAWN_BUFFER_MAX bytes and the
+        // oldest are dropped, so the newest output survives.
+        let buf = Arc::new(Mutex::new(Vec::new()));
+        spawn_append(&buf, &vec![1u8; SPAWN_BUFFER_MAX]);
+        spawn_append(&buf, &[2u8; 100]);
+        let drained = spawn_drain(&buf);
+        assert_eq!(drained.len(), SPAWN_BUFFER_MAX);
+        assert!(drained[drained.len() - 100..].iter().all(|&b| b == 2));
+        assert_eq!(drained[0], 1);
     }
 
     #[test]
