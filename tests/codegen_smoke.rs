@@ -1884,6 +1884,40 @@ fn process_program_compiles_and_runs() {
 }
 
 #[test]
+fn process_stdin_streams_to_child() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    // Writing to a long-lived child's stdin (write_stdin) and closing it
+    // (close_stdin) end to end. The child echoes each stdin line as
+    // "got:<line>" and prints "done" at end of input; the parent writes
+    // "hello", drains the echo, writes "world", closes stdin (a later write
+    // then fails), waits, and confirms both echoes plus the EOF marker.
+    let child = build_example_binary("proc_stdin_child.rv", &runtime);
+    let parent = build_example_binary("proc_stdin_parent.rv", &runtime);
+
+    let output = Command::new(&parent.binary)
+        .env("RAVEN_PROC_CHILD", &child.binary)
+        .output()
+        .expect("run proc_stdin_parent binary");
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    cleanup(&child.tmp);
+    cleanup(&parent.tmp);
+    assert!(
+        output.status.success(),
+        "proc_stdin_parent exited non zero: status={:?} stderr={}",
+        output.status,
+        stderr
+    );
+    assert_eq!(
+        stdout, "echo1\nclosed\necho2\ndone\n0\n",
+        "unexpected stdout for proc_stdin_parent: {:?}",
+        stdout
+    );
+}
+
+#[test]
 fn process_stdin_broken_pipe_does_not_kill() {
     let Some(runtime) = supported_runtime() else {
         return;

@@ -1,0 +1,18 @@
+// golden:skip - the child half of the std/process stdin streaming smoke test
+// (codegen_smoke.rs: process_stdin_streams_to_child). Reads a line at a time
+// from its stdin and echoes it back as "got:<line>", until stdin closes (an
+// empty read means end of input), then prints "done" and exits 0. The parent
+// (proc_stdin_parent.rv) feeds it through write_stdin and close_stdin.
+
+import std/io { println, read_line }
+
+fun main() {
+    while true {
+        let line = read_line()
+        if line == "" {
+            println("done")
+            return
+        }
+        println("got:${line}")
+    }
+}

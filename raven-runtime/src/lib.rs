@@ -217,6 +217,7 @@ fn process_next_id() -> i64 {
 /// exit status once observed so poll stays cheap after exit.
 struct SpawnEntry {
     child: process::Child,
+    stdin: Arc<Mutex<Option<process::ChildStdin>>>,
     stdout: Arc<Mutex<Vec<u8>>>,
     stderr: Arc<Mutex<Vec<u8>>>,
     code: Option<i64>,
@@ -2544,7 +2545,10 @@ pub extern "C" fn raven_process_spawn(
 
     let mut command = process::Command::new(program);
     command.args(&args);
-    command.stdin(process::Stdio::null());
+    // stdin is piped and kept open so the caller can stream to a long-lived
+    // child (write_stdin / close_stdin); this is what a persistent protocol
+    // such as MCP over stdio needs.
+    command.stdin(process::Stdio::piped());
     command.stdout(process::Stdio::piped());
     command.stderr(process::Stdio::piped());
 
@@ -2556,6 +2560,7 @@ pub extern "C" fn raven_process_spawn(
         }
     };
 
+    let stdin = Arc::new(Mutex::new(child.stdin.take()));
     let stdout = Arc::new(Mutex::new(Vec::new()));
     let stderr = Arc::new(Mutex::new(Vec::new()));
     if let Some(pipe) = child.stdout.take() {
@@ -2570,6 +2575,7 @@ pub extern "C" fn raven_process_spawn(
         id,
         SpawnEntry {
             child,
+            stdin,
             stdout,
             stderr,
             code: None,
@@ -2577,6 +2583,58 @@ pub extern "C" fn raven_process_spawn(
     );
     process_clear_error();
     id
+}
+
+/// Write `data`'s bytes to the spawned child `id`'s stdin, returning the
+/// number of bytes written, or -1 for an unknown id, an already-closed
+/// stdin, or a write error (for example a broken pipe after the child
+/// exited). Only the child's stdin lock is held during the write, not the
+/// registry, so a slow write does not block reads or polls on other
+/// children. The bytes are flushed before returning.
+#[no_mangle]
+pub extern "C" fn raven_process_write_stdin(id: i64, data: *const object::String) -> i64 {
+    let bytes = {
+        let ptr = object::raven_string_bytes(data);
+        let len = object::raven_string_len(data) as usize;
+        if ptr.is_null() || len == 0 {
+            Vec::new()
+        } else {
+            // SAFETY: a Raven String holds `len` initialized bytes.
+            unsafe { slice::from_raw_parts(ptr, len).to_vec() }
+        }
+    };
+    let handle = {
+        let registry = spawn_registry().lock().unwrap();
+        match registry.get(&id) {
+            Some(entry) => Arc::clone(&entry.stdin),
+            None => return -1,
+        }
+    };
+    let mut guard = handle.lock().unwrap();
+    match guard.as_mut() {
+        Some(pipe) => match pipe.write_all(&bytes).and_then(|_| pipe.flush()) {
+            Ok(()) => bytes.len() as i64,
+            Err(_) => -1,
+        },
+        None => -1,
+    }
+}
+
+/// Close the spawned child `id`'s stdin, sending EOF. Returns 1 when the
+/// pipe was closed (or was already closed), 0 for an unknown id. A later
+/// write_stdin on the same id returns -1.
+#[no_mangle]
+pub extern "C" fn raven_process_close_stdin(id: i64) -> i64 {
+    let handle = {
+        let registry = spawn_registry().lock().unwrap();
+        match registry.get(&id) {
+            Some(entry) => Arc::clone(&entry.stdin),
+            None => return 0,
+        }
+    };
+    // Dropping the ChildStdin closes the pipe.
+    *handle.lock().unwrap() = None;
+    1
 }
 
 /// Whatever the spawned child `id` wrote to stdout since the last read,

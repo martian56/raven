@@ -41,6 +41,8 @@ extern "C" {
     fun raven_process_spawn(program: String, args_nul_joined: String) -> Int
     fun raven_process_read_stdout(id: Int) -> String
     fun raven_process_read_stderr(id: Int) -> String
+    fun raven_process_write_stdin(id: Int, data: String) -> Int
+    fun raven_process_close_stdin(id: Int) -> Int
     fun raven_process_poll(id: Int) -> Int
     fun raven_process_kill(id: Int) -> Int
     fun raven_process_spawn_free(id: Int)
@@ -48,9 +50,9 @@ extern "C" {
 
 // A child started with `start`, still possibly running. Output streams in:
 // read_stdout and read_stderr drain whatever arrived since the last read,
-// poll and running report status without blocking, wait blocks until exit,
-// and kill stops it. Call free when done with the handle; freeing does not
-// kill a running child.
+// write_stdin feeds its stdin and close_stdin sends EOF, poll and running
+// report status without blocking, wait blocks until exit, and kill stops it.
+// Call free when done with the handle; freeing does not kill a running child.
 struct Child {
     id: Int,
 }
@@ -65,6 +67,23 @@ impl Child {
     // Whatever the child wrote to stderr since the last read.
     fun read_stderr(self) -> String {
         return raven_process_read_stderr(self.id)
+    }
+
+    // Write `data` to the child's stdin, returning true when every byte was
+    // written. False means the stdin was already closed, the child had
+    // exited (a broken pipe), or the handle is unknown. The bytes are
+    // flushed, so a line the child is waiting on arrives without delay. A
+    // String is a byte buffer, so binary data passes through unchanged.
+    fun write_stdin(self, data: String) -> Bool {
+        return raven_process_write_stdin(self.id, data) >= 0
+    }
+
+    // Close the child's stdin, sending EOF. A child reading until end of
+    // input (for example `cat`, or a filter) proceeds once stdin closes.
+    // Later write_stdin calls return false.
+    fun close_stdin(self) {
+        let ignored = raven_process_close_stdin(self.id)
+        return
     }
 
     // The exit code once the child has exited, None while it runs. A child
