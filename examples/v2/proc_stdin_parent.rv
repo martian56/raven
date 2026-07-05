@@ -1,0 +1,70 @@
+// golden:skip - std/process stdin streaming parent, checked in codegen_smoke.rs
+// (process_stdin_streams_to_child). Drives write_stdin / close_stdin against
+// the child in RAVEN_PROC_CHILD (proc_stdin_child.rv):
+//
+// 1. Write "hello", drain the echo, and print "echo1" once "got:hello" comes
+//    back, proving stdin reaches a still-running child.
+// 2. Write "world", close stdin, then a write after close returns false, so
+//    print "closed".
+// 3. Wait for exit, then confirm the second echo ("echo2") and the child's
+//    end-of-input "done", then the exit code (0).
+//
+// Expected stdout:
+//   echo1
+//   closed
+//   echo2
+//   done
+//   0
+import std/io { println }
+import std/string
+import std/process { Child, start }
+import std/sync { sleep_millis }
+import std/env { get_env }
+
+fun main() {
+    let child_path = get_env("RAVEN_PROC_CHILD")
+    let none: List<String> = []
+    match start(child_path, none) {
+        Ok(c) -> {
+            // 1. Write a line and drain until its echo streams back.
+            let wrote = c.write_stdin("hello\n")
+            let seen = ""
+            let tries = 0
+            while !seen.contains("got:hello") && tries < 400 {
+                seen = seen.concat(c.read_stdout())
+                sleep_millis(10)
+                tries = tries + 1
+            }
+            if wrote && seen.contains("got:hello") {
+                println("echo1")
+            }
+
+            // 2. Write a second line, close stdin, and prove a later write fails.
+            c.write_stdin("world\n")
+            c.close_stdin()
+            if !c.write_stdin("late\n") {
+                println("closed")
+            }
+
+            // 3. Wait, then confirm the second echo and the child's EOF marker.
+            let code = c.wait()
+            let more = 0
+            while !seen.contains("done") && more < 200 {
+                seen = seen.concat(c.read_stdout())
+                sleep_millis(5)
+                more = more + 1
+            }
+            if seen.contains("got:world") {
+                println("echo2")
+            }
+            if seen.contains("done") {
+                println("done")
+            }
+            println("${code}")
+            c.free()
+        },
+        Err(e) -> {
+            println("spawn failed: ${e.message()}")
+        },
+    }
+}
