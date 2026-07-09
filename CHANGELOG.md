@@ -2,6 +2,18 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.24.1] - 2026-07-09
+
+### Fixed
+
+- `rvpm dist --target msi` now preserves each bundled asset's subfolder and gives files that share a base name in different folders distinct component GUIDs. The MSI generator placed every staged file directly under the application directory, which dropped subfolders and made two files with the same name (for example an `icons/revenue.png` and a `charts/revenue.png`) collide on their WiX auto component GUID, failing the link with `LGHT0369`. (#866)
+
+## [2.24.0] - 2026-07-05
+
+### Added
+
+- `std/process` gains `write_stdin(child, bytes)` and `close_stdin(child)`: write to a spawned child's standard input and then close it, so a program can feed an interactive child and signal end of input. (#865)
+
 ## [2.23.0] - 2026-07-04
 
 ### Added
