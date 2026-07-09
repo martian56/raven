@@ -10,6 +10,7 @@
 //!
 //! See `docs/v2/specs/rvpm-dist.md` for the manifest surface.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -548,18 +549,22 @@ fn derived_upgrade_code(name: &str) -> String {
 /// application folder in Program Files, with a major-upgrade rule.
 fn wix_source(ctx: &DistContext, stage: &Path, upgrade_code: &str) -> String {
     let d = &ctx.dist;
-    let mut components = String::new();
-    let mut refs = String::new();
-    let files = files_under(stage);
-    for (i, file) in files.iter().enumerate() {
-        let id = format!("File{}", i);
-        components.push_str(&format!(
-            "        <Component Id=\"{id}\" Guid=\"*\">\n          <File Id=\"{id}File\" Source=\"{}\" KeyPath=\"yes\" />\n        </Component>\n",
-            xml_escape(&file.display().to_string()),
-            id = id,
-        ));
-        refs.push_str(&format!("      <ComponentRef Id=\"{}\" />\n", id));
+    // Mirror the staged file tree as nested <Directory> elements so assets keep
+    // their subfolders after install, and so files that share a name in
+    // different folders (an icons/revenue.png and a charts/revenue.png) sit in
+    // distinct directories and get distinct auto component GUIDs.
+    let mut tree = WixDir::default();
+    for file in files_under(stage) {
+        let rel = file.strip_prefix(stage).unwrap_or(&file).to_path_buf();
+        let segments: Vec<String> = rel
+            .components()
+            .filter_map(|c| c.as_os_str().to_str().map(str::to_string))
+            .collect();
+        tree.insert(&segments, file);
     }
+    let mut counters = WixCounters::default();
+    let mut refs = String::new();
+    let mut components = tree.emit(8, &mut counters, &mut refs);
     // Append the install directory to the system PATH so a command-line tool
     // is on PATH after installing. A registry value under HKLM is the
     // component key path (an Environment element cannot be one), keyed by the
@@ -601,6 +606,69 @@ fn wix_source(ctx: &DistContext, stage: &Path, upgrade_code: &str) -> String {
         components = components,
         refs = refs,
     )
+}
+
+/// A node in the staged file tree, used to emit nested WiX <Directory> and
+/// <Component> elements that preserve each file's install subfolder.
+#[derive(Default)]
+struct WixDir {
+    dirs: BTreeMap<String, WixDir>,
+    files: BTreeMap<String, PathBuf>,
+}
+
+#[derive(Default)]
+struct WixCounters {
+    file: usize,
+    dir: usize,
+}
+
+impl WixDir {
+    fn insert(&mut self, segments: &[String], source: PathBuf) {
+        match segments {
+            [] => {}
+            [name] => {
+                self.files.insert(name.clone(), source);
+            }
+            [head, rest @ ..] => {
+                self.dirs
+                    .entry(head.clone())
+                    .or_default()
+                    .insert(rest, source);
+            }
+        }
+    }
+
+    /// Emit this directory's files as components and its subdirectories as
+    /// nested <Directory> elements, indented by `indent` spaces, appending a
+    /// <ComponentRef> for each component to `refs`.
+    fn emit(&self, indent: usize, counters: &mut WixCounters, refs: &mut String) -> String {
+        let pad = " ".repeat(indent);
+        let mut out = String::new();
+        for source in self.files.values() {
+            let id = format!("File{}", counters.file);
+            counters.file += 1;
+            out.push_str(&format!(
+                "{pad}<Component Id=\"{id}\" Guid=\"*\">\n{pad}  <File Id=\"{id}File\" Source=\"{src}\" KeyPath=\"yes\" />\n{pad}</Component>\n",
+                pad = pad,
+                id = id,
+                src = xml_escape(&source.display().to_string()),
+            ));
+            refs.push_str(&format!("      <ComponentRef Id=\"{}\" />\n", id));
+        }
+        for (name, node) in &self.dirs {
+            let did = format!("Dir{}", counters.dir);
+            counters.dir += 1;
+            out.push_str(&format!(
+                "{pad}<Directory Id=\"{did}\" Name=\"{name}\">\n",
+                pad = pad,
+                did = did,
+                name = xml_escape(name),
+            ));
+            out.push_str(&node.emit(indent + 2, counters, refs));
+            out.push_str(&format!("{pad}</Directory>\n", pad = pad));
+        }
+        out
+    }
 }
 
 fn xml_escape(s: &str) -> String {
@@ -957,6 +1025,36 @@ depends = ["libc6 (>= 2.31)", "zlib1g"]
             wxs.contains("File1"),
             "binary and asset each get a component"
         );
+    }
+
+    #[test]
+    fn wix_source_nests_dirs_and_separates_same_named_files() {
+        let manifest = r#"
+[package]
+name = "demo"
+version = "1.2.0"
+authors = ["Ada <ada@example.com>"]
+
+[[dist.assets]]
+source = "README.md"
+dest = "assets/icons/dup.png"
+
+[[dist.assets]]
+source = "README.md"
+dest = "assets/charts/dup.png"
+"#;
+        let app = FakeApp::new("wix-nest");
+        let ctx = app.context(manifest);
+        let stage = ctx.work_dir.join("msi");
+        stage_tree(&ctx, &stage, "", "").expect("stage");
+        let wxs = wix_source(&ctx, &stage, "9f0c86a1-2b3c-4d5e-8f90-112233445566");
+        // Subfolders are preserved as nested directories, not flattened.
+        assert!(wxs.contains("Name=\"assets\""));
+        assert!(wxs.contains("Name=\"icons\""));
+        assert!(wxs.contains("Name=\"charts\""));
+        // The binary and each same-named asset get their own component, so no two
+        // components collide on an auto GUID (the LGHT0369 that this fixes).
+        assert_eq!(wxs.matches("<Component ").count(), 3);
     }
 
     #[test]
