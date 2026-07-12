@@ -1742,6 +1742,43 @@ fn lower_method_call(
         }
     }
 
+    // Built-in numeric conversions `Int.to_float()` and `Float.to_int()` have
+    // no definition symbol; lower them to a scalar cast (an `fcvt`), unless a
+    // user `impl` shadows the name, mirroring the `String` built-ins above.
+    // `to_int` truncates toward zero.
+    if recv_ty == MirType::Int
+        && name == "to_float"
+        && !prim_has_user_method(cx, name, &MirType::Int)
+    {
+        let recv = lower_expr(cx, receiver);
+        let dst = cx.builder.fresh_temp("tofloat", MirType::Float);
+        cx.builder.assign(
+            cx.current,
+            dst,
+            MirRvalue::Cast {
+                operand: recv,
+                target: MirType::Float,
+            },
+        );
+        return MirOperand::Copy(dst);
+    }
+    if recv_ty == MirType::Float
+        && name == "to_int"
+        && !prim_has_user_method(cx, name, &MirType::Float)
+    {
+        let recv = lower_expr(cx, receiver);
+        let dst = cx.builder.fresh_temp("toint", MirType::Int);
+        cx.builder.assign(
+            cx.current,
+            dst,
+            MirRvalue::Cast {
+                operand: recv,
+                target: MirType::Int,
+            },
+        );
+        return MirOperand::Copy(dst);
+    }
+
     // Static dispatch: build the per-type method symbol from the receiver
     // type so it matches the impl method's definition symbol. When the
     // method is generic (a method on `impl<T> Box<T>`, whose declared
@@ -1955,11 +1992,16 @@ fn str_len_call(recv: MirOperand) -> MirRvalue {
 /// stdlib `impl String`). Such a method shadows the built-in `len`/`is_empty`
 /// fast path and is reached through static dispatch instead.
 fn str_has_user_method(cx: &LowerCx<'_>, name: &str) -> bool {
-    cx.decls.methods.get(name).is_some_and(|entries| {
-        entries
-            .iter()
-            .any(|e| MirType::from_ty(&e.self_ty) == MirType::Str)
-    })
+    prim_has_user_method(cx, name, &MirType::Str)
+}
+
+/// Whether the program defines an `impl` method `name` whose receiver is the
+/// primitive type `ty`, so a built-in of the same name should defer to it.
+fn prim_has_user_method(cx: &LowerCx<'_>, name: &str, ty: &MirType) -> bool {
+    cx.decls
+        .methods
+        .get(name)
+        .is_some_and(|entries| entries.iter().any(|e| MirType::from_ty(&e.self_ty) == *ty))
 }
 
 fn map_unary(op: HirUnaryOp) -> MirUnOp {

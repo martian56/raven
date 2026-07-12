@@ -1,0 +1,17 @@
+// Converting between Int and Float with the built-in .to_float() and .to_int().
+// There are no implicit numeric coercions, so the conversion is always explicit.
+
+fun main() {
+    let n = 7
+    print(n.to_float())
+
+    let pi = 3.9
+    print(pi.to_int())
+
+    let hits = 3
+    let total = 8
+    print(hits.to_float() / total.to_float())
+
+    let neg = -2.5
+    print(neg.to_int())
+}
