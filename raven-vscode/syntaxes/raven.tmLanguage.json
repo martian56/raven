@@ -24,8 +24,10 @@
     { "include": "#types" },
     { "include": "#functionCalls" },
     { "include": "#members" },
+    { "include": "#parameters" },
     { "include": "#operators" },
-    { "include": "#punctuation" }
+    { "include": "#punctuation" },
+    { "include": "#identifiers" }
   ],
   "repository": {
     "comments": {
@@ -56,21 +58,21 @@
           "endCaptures": {
             "0": { "name": "punctuation.section.block.end.raven" }
           },
-          "patterns": [
-            { "include": "#comments" },
-            {
-              "name": "keyword.control.import.raven",
-              "match": "\\b(as)\\b"
-            },
-            {
-              "name": "variable.other.import.raven",
-              "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
-            },
-            {
-              "name": "punctuation.separator.comma.raven",
-              "match": ","
-            }
-          ]
+          "patterns": [{ "include": "#importNames" }]
+        },
+        {
+          "name": "meta.import.selective.raven",
+          "begin": "\\b(import)\\s+(\"[^\"]*\")\\s*(\\{)",
+          "beginCaptures": {
+            "1": { "name": "keyword.control.import.raven" },
+            "2": { "name": "string.quoted.double.raven" },
+            "3": { "name": "punctuation.section.block.begin.raven" }
+          },
+          "end": "\\}",
+          "endCaptures": {
+            "0": { "name": "punctuation.section.block.end.raven" }
+          },
+          "patterns": [{ "include": "#importNames" }]
         },
         {
           "match": "\\b(import)\\s+([a-zA-Z_][a-zA-Z0-9_]*(?:/[a-zA-Z_][a-zA-Z0-9_]*)*)(?:\\s+(as)\\s+([a-zA-Z_][a-zA-Z0-9_]*))?",
@@ -80,6 +82,32 @@
             "3": { "name": "keyword.control.import.raven" },
             "4": { "name": "variable.other.import.raven" }
           }
+        },
+        {
+          "match": "\\b(import)\\s+(\"[^\"]*\")(?:\\s+(as)\\s+([a-zA-Z_][a-zA-Z0-9_]*))?",
+          "captures": {
+            "1": { "name": "keyword.control.import.raven" },
+            "2": { "name": "string.quoted.double.raven" },
+            "3": { "name": "keyword.control.import.raven" },
+            "4": { "name": "variable.other.import.raven" }
+          }
+        }
+      ]
+    },
+    "importNames": {
+      "patterns": [
+        { "include": "#comments" },
+        {
+          "name": "keyword.control.import.raven",
+          "match": "\\b(as)\\b"
+        },
+        {
+          "name": "variable.other.import.raven",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+        },
+        {
+          "name": "punctuation.separator.comma.raven",
+          "match": ","
         }
       ]
     },
@@ -358,12 +386,14 @@
         { "include": "#strings" },
         { "include": "#numbers" },
         { "include": "#constants" },
+        { "include": "#keywords" },
         { "include": "#selfKeyword" },
         { "include": "#enumPath" },
         { "include": "#types" },
         { "include": "#functionCalls" },
         { "include": "#members" },
         { "include": "#operators" },
+        { "include": "#punctuation" },
         {
           "name": "variable.other.raven",
           "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
@@ -431,15 +461,17 @@
     "members": {
       "patterns": [
         {
-          "match": "\\.([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+          "match": "(\\.)([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
           "captures": {
-            "1": { "name": "entity.name.function.method.raven" }
+            "1": { "name": "punctuation.accessor.raven" },
+            "2": { "name": "entity.name.function.method.raven" }
           }
         },
         {
-          "match": "\\.([a-zA-Z_][a-zA-Z0-9_]*)",
+          "match": "(\\.)([a-zA-Z_][a-zA-Z0-9_]*)",
           "captures": {
-            "1": { "name": "variable.other.member.raven" }
+            "1": { "name": "punctuation.accessor.raven" },
+            "2": { "name": "variable.other.member.raven" }
           }
         }
       ]
@@ -529,6 +561,24 @@
         {
           "name": "punctuation.section.brackets.end.raven",
           "match": "\\]"
+        }
+      ]
+    },
+    "parameters": {
+      "patterns": [
+        {
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=:)",
+          "captures": {
+            "1": { "name": "variable.parameter.raven" }
+          }
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.raven",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
         }
       ]
     }
