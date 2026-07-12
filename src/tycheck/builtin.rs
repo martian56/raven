@@ -141,6 +141,24 @@ pub fn string_methods() -> Vec<BuiltinMethod> {
     ]
 }
 
+/// Methods on the primitive `Int` type.
+pub fn int_methods() -> Vec<BuiltinMethod> {
+    vec![BuiltinMethod {
+        name: "to_float",
+        params: vec![],
+        ret: MethodSlot::Concrete(Ty::Float),
+    }]
+}
+
+/// Methods on the primitive `Float` type.
+pub fn float_methods() -> Vec<BuiltinMethod> {
+    vec![BuiltinMethod {
+        name: "to_int",
+        params: vec![],
+        ret: MethodSlot::Concrete(Ty::Int),
+    }]
+}
+
 /// Look up a method on a built in type. Returns the substituted
 /// parameter list and return type when found.
 pub fn lookup_method(receiver: &Ty, name: &str) -> Option<(Vec<Ty>, Ty)> {
@@ -149,6 +167,8 @@ pub fn lookup_method(receiver: &Ty, name: &str) -> Option<(Vec<Ty>, Ty)> {
         Ty::Result(t, e) => (result_methods(), t.as_ref().clone(), e.as_ref().clone()),
         Ty::List(t) => (list_methods(), t.as_ref().clone(), Ty::Error),
         Ty::Str => (string_methods(), Ty::Error, Ty::Error),
+        Ty::Int => (int_methods(), Ty::Error, Ty::Error),
+        Ty::Float => (float_methods(), Ty::Error, Ty::Error),
         _ => return None,
     };
     table.into_iter().find(|m| m.name == name).map(|m| {
@@ -194,5 +214,18 @@ mod tests {
     fn unknown_method_returns_none() {
         let opt = Ty::Option(Box::new(Ty::Int));
         assert!(lookup_method(&opt, "no_such_method").is_none());
+    }
+
+    #[test]
+    fn numeric_conversions() {
+        let (p, r) = lookup_method(&Ty::Int, "to_float").expect("Int has to_float");
+        assert!(p.is_empty());
+        assert_eq!(r, Ty::Float);
+        let (p2, r2) = lookup_method(&Ty::Float, "to_int").expect("Float has to_int");
+        assert!(p2.is_empty());
+        assert_eq!(r2, Ty::Int);
+        // The conversions are not cross available.
+        assert!(lookup_method(&Ty::Int, "to_int").is_none());
+        assert!(lookup_method(&Ty::Float, "to_float").is_none());
     }
 }
