@@ -98,7 +98,8 @@ let c: Char = 'x'
 ```
 
 Integer literals accept bases: `0xff`, `0b1010`, `0o17`, and underscores
-for grouping such as `1_000_000`.
+for grouping such as `1_000_000`. See [Type conversions](#type-conversions)
+for moving values between these types.
 
 ## Strings and interpolation
 
@@ -128,6 +129,46 @@ line two
 
 A C string literal `c"..."` produces a `CStr` for FFI. It lowers to a
 pointer to a static null terminated buffer (see [FFI](#ffi-and-c-types)).
+
+## Type conversions
+
+There are no implicit numeric coercions and no `as` cast operator. You convert
+with explicit calls, and a conversion that can fail returns an `Option` instead
+of throwing.
+
+Between `Int` and `Float`:
+
+```rust
+let f: Float = n.to_float()   // Int to Float
+let i: Int = x.to_int()       // Float to Int, truncates toward zero
+```
+
+To text, with `to_string` on any type that implements
+[`ToString`](#traits-and-impl), or with interpolation:
+
+```rust
+let s = (42).to_string()      // "42"
+print("n is ${n}")
+```
+
+Text to a number can fail, so it yields an `Option`. The parse methods come
+from `std/string`:
+
+```rust
+import std/string
+
+match "42".parse_int() {
+    Some(n) -> print(n),
+    None -> print("not a number"),
+}
+let pi = "3.14".parse_float()   // Option<Float>
+```
+
+`std/fmt` adds `from_hex(s)` and `from_radix(s, base)` for other bases, each
+returning an `Option<Int>`.
+
+For a value whose type is not known statically, `cast<T>(a)` recovers a concrete
+type from an `Any` as an `Option<T>` (see [Reflection](#reflection)).
 
 ## Operators
 
