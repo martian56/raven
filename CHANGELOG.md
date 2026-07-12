@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.25.0] - 2026-07-10
+
+### Added
+
+- `Int.to_float()` and `Float.to_int()` convert between the two numeric types. There are no implicit numeric coercions, so the conversion is always explicit, and `to_int` truncates toward zero. (#874)
+
 ## [2.24.1] - 2026-07-09
 
 ### Fixed
