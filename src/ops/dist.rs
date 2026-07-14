@@ -227,10 +227,41 @@ fn stage_tree(
         } else {
             root.join(asset_prefix).join(&asset.dest)
         };
+        copy_asset(&source, &dest)?;
+    }
+    Ok(())
+}
+
+/// Copy one configured asset into the staging tree. A file maps directly to
+/// `dest`; a directory maps its contents recursively beneath `dest`, including
+/// empty subdirectories.
+fn copy_asset(source: &Path, dest: &Path) -> Result<(), OpError> {
+    let metadata = std::fs::metadata(source).map_err(|e| io_err("read metadata for", source, e))?;
+    if metadata.is_dir() {
+        copy_asset_dir(source, dest)
+    } else {
         if let Some(parent) = dest.parent() {
             create_dir_all(parent)?;
         }
-        copy_file(&source, &dest)?;
+        copy_file(source, dest)
+    }
+}
+
+fn copy_asset_dir(source: &Path, dest: &Path) -> Result<(), OpError> {
+    create_dir_all(dest)?;
+    let entries = std::fs::read_dir(source).map_err(|e| io_err("read", source, e))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| io_err("read", source, e))?;
+        let from = entry.path();
+        let to = dest.join(entry.file_name());
+        let file_type = entry
+            .file_type()
+            .map_err(|e| io_err("read metadata for", &from, e))?;
+        if file_type.is_dir() {
+            copy_asset_dir(&from, &to)?;
+        } else {
+            copy_file(&from, &to)?;
+        }
     }
     Ok(())
 }
@@ -1129,6 +1160,35 @@ add_to_path = true
             .join(binary_file_name("demo"))
             .is_file());
         assert!(root.join("usr/share/doc/demo/README.md").is_file());
+    }
+
+    #[test]
+    fn stage_tree_copies_directory_assets_recursively() {
+        let app = FakeApp::new("stage-directory-asset");
+        let mut ctx = app.context(BASIC);
+        let assets = ctx.project_dir.join("assets");
+        std::fs::create_dir_all(assets.join("icons/empty")).expect("create asset tree");
+        std::fs::create_dir_all(assets.join("images")).expect("create image directory");
+        std::fs::write(assets.join("icons/app.ico"), b"icon").expect("write icon");
+        std::fs::write(assets.join("images/banner.png"), b"banner").expect("write image");
+        ctx.dist.assets.push(DistAsset {
+            source: "assets".to_string(),
+            dest: "share/demo/assets".to_string(),
+        });
+
+        let root = ctx.work_dir.join("directory-stage");
+        stage_tree(&ctx, &root, "usr/bin", "usr").expect("stage directory asset");
+
+        let staged = root.join("usr/share/demo/assets");
+        assert_eq!(
+            std::fs::read(staged.join("icons/app.ico")).unwrap(),
+            b"icon"
+        );
+        assert_eq!(
+            std::fs::read(staged.join("images/banner.png")).unwrap(),
+            b"banner"
+        );
+        assert!(staged.join("icons/empty").is_dir());
     }
 
     #[test]

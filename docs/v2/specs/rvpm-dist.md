@@ -39,6 +39,10 @@ vendor = "Acme"                    # rpm Vendor, msi Manufacturer; default: main
 source = "README.md"               # read relative to the package root
 dest = "share/doc/rook/README.md"  # forward-slash path under the install prefix
 
+[[dist.assets]]
+source = "assets"                  # directories are copied recursively
+dest = "assets"                    # their structure is kept beneath dest
+
 [dist.linux]
 depends = ["libc6 (>= 2.31)"]      # deb Depends and rpm Requires, verbatim
 section = "utils"                  # deb
@@ -54,7 +58,8 @@ Asset `source` and `dest` must be relative forward-slash paths with no `..`
 components; the same containment rule `[ffi].sources` follows. The install
 prefix per format: `/usr/` for deb and rpm (the binary goes to
 `/usr/bin/<name>`), the archive root for tar and zip, and the application
-folder for msi and inno.
+folder for msi and inno. When `source` is a directory, rvpm copies its entire
+tree beneath `dest`, preserving nested and empty directories.
 
 ## Formats and their tools
 
