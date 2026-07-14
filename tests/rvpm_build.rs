@@ -17,6 +17,101 @@ use std::process::Command;
 
 use raven::codegen::linker;
 
+#[cfg(windows)]
+#[test]
+fn project_build_embeds_the_configured_windows_icon() {
+    if !supported_runtime() {
+        return;
+    }
+
+    let work = workdir();
+    let cache = work.join("cache");
+    let project = work.join("project");
+    std::fs::create_dir_all(project.join("src")).expect("mkdir project");
+    std::fs::write(
+        project.join("rv.toml"),
+        "[package]\nname = \"icon_demo\"\nversion = \"0.1.0\"\n\n[dist.windows]\nicon = \"app.ico\"\n",
+    )
+    .expect("write manifest");
+    std::fs::write(
+        project.join("src/main.rv"),
+        "fun main() { print(\"icon\") }\n",
+    )
+    .expect("write main");
+    std::fs::write(project.join("app.ico"), minimal_ico()).expect("write icon");
+
+    let build = rvpm(&project, &cache, &["build".to_string()]);
+    let binary = project.join("target/raven-out/icon_demo.exe");
+    let has_icon = build.status.success() && executable_has_group_icon(&binary);
+    cleanup(&work);
+
+    assert!(
+        build.status.success(),
+        "rvpm build failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&build.stdout),
+        String::from_utf8_lossy(&build.stderr)
+    );
+    assert!(
+        has_icon,
+        "the built executable should contain an icon resource"
+    );
+}
+
+#[cfg(windows)]
+fn minimal_ico() -> Vec<u8> {
+    let mut icon = Vec::new();
+    icon.extend_from_slice(&[0, 0, 1, 0, 1, 0]); // ICONDIR
+    icon.extend_from_slice(&[1, 1, 0, 0, 1, 0, 32, 0]);
+    icon.extend_from_slice(&48u32.to_le_bytes());
+    icon.extend_from_slice(&22u32.to_le_bytes());
+    icon.extend_from_slice(&40u32.to_le_bytes()); // BITMAPINFOHEADER
+    icon.extend_from_slice(&1i32.to_le_bytes());
+    icon.extend_from_slice(&2i32.to_le_bytes()); // XOR + AND heights
+    icon.extend_from_slice(&1u16.to_le_bytes());
+    icon.extend_from_slice(&32u16.to_le_bytes());
+    icon.extend_from_slice(&0u32.to_le_bytes());
+    icon.extend_from_slice(&4u32.to_le_bytes());
+    icon.extend_from_slice(&[0; 16]);
+    icon.extend_from_slice(&[0x20, 0x60, 0xE0, 0xFF]); // BGRA pixel
+    icon.extend_from_slice(&[0; 4]); // padded AND mask
+    icon
+}
+
+#[cfg(windows)]
+fn executable_has_group_icon(path: &Path) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+
+    type Hmodule = *mut std::ffi::c_void;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn LoadLibraryExW(name: *const u16, file: *mut std::ffi::c_void, flags: u32) -> Hmodule;
+        fn FindResourceW(
+            module: Hmodule,
+            name: *const u16,
+            kind: *const u16,
+        ) -> *mut std::ffi::c_void;
+        fn FreeLibrary(module: Hmodule) -> i32;
+    }
+
+    const LOAD_LIBRARY_AS_DATAFILE: u32 = 0x0000_0002;
+    const RT_GROUP_ICON: *const u16 = 14usize as *const u16;
+    const ICON_ID: *const u16 = 1usize as *const u16;
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    unsafe {
+        let module = LoadLibraryExW(
+            wide.as_ptr(),
+            std::ptr::null_mut(),
+            LOAD_LIBRARY_AS_DATAFILE,
+        );
+        if module.is_null() {
+            return false;
+        }
+        let found = !FindResourceW(module, ICON_ID, RT_GROUP_ICON).is_null();
+        FreeLibrary(module);
+        found
+    }
+}
+
 #[test]
 fn project_with_github_dependency_builds_and_runs() {
     if !supported_runtime() {

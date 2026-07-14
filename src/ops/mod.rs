@@ -254,8 +254,8 @@ pub fn add_in(
     })
 }
 
-/// Collect the native link inputs from a project and its dependencies' `[ffi]`
-/// sections, compiling any bundled C sources into a single static archive.
+/// Collect native link inputs from the project: its Windows icon resource and
+/// the `[ffi]` sections of the project and its dependencies.
 fn gather_native_link(
     project_dir: &Path,
     manifest: &Manifest,
@@ -291,11 +291,24 @@ fn gather_native_link(
         }
     }
 
-    let objects = if sources.is_empty() {
+    let mut objects = if sources.is_empty() {
         Vec::new()
     } else {
         linker::compile_c_sources(&sources, out_dir).map_err(DriverError::from)?
     };
+    if cfg!(windows) {
+        if let Some(icon) = manifest
+            .dist
+            .as_ref()
+            .map(|dist| dist.windows.icon.as_str())
+            .filter(|icon| !icon.is_empty())
+        {
+            objects.push(
+                linker::compile_windows_icon(&project_dir.join(icon), out_dir)
+                    .map_err(DriverError::from)?,
+            );
+        }
+    }
     Ok(linker::NativeLink {
         objects,
         libs,
@@ -628,8 +641,8 @@ pub fn build_in(project_dir: &Path, cache_root: &Path) -> Result<BuildReport, Op
                     source: e,
                 })?;
             }
-            // Gather native code to link from the `[ffi]` of the project and
-            // its dependencies (bundled C sources, libraries, linker args).
+            // Gather native inputs to link: `[ffi]` code from the project and
+            // its dependencies, plus the configured Windows icon resource.
             let ffi_dir = binary
                 .parent()
                 .map(|p| p.join("ffi"))
