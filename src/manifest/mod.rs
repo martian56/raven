@@ -169,10 +169,11 @@ pub struct Dist {
     pub windows: DistWindows,
 }
 
-/// One `[[dist.assets]]` entry. `source` is read relative to the package
-/// root. `dest` is a forward-slash install path relative to the install
-/// prefix: `/usr/` for deb and rpm, the archive root for tar and zip, and
-/// the application folder for msi and inno.
+/// One `[[dist.assets]]` entry. `source` is a file or directory read relative
+/// to the package root. Directories are copied recursively beneath `dest`.
+/// `dest` is a forward-slash install path relative to the install prefix:
+/// `/usr/` for deb and rpm, the archive root for tar and zip, and the
+/// application folder for msi and inno.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DistAsset {
     pub source: String,
