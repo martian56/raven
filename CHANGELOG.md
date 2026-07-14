@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.26.0] - 2026-07-14
+
+### Added
+
+- `rvpm` now supports multi-package workspaces with secure upward discovery, current/default/explicit member selection, workspace-wide builds and tests, and structured manifest commands that compile and run application members without a shell. Application binaries are reused through input fingerprints, with cross-process locking and atomic fingerprint publication protecting concurrent builds. (#886)
+
 ## [2.25.6] - 2026-07-14
 
 ### Added
