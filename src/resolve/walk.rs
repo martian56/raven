@@ -55,7 +55,7 @@ fn walk_decl(
     match &decl.kind {
         DeclKind::Function(f) => {
             scope.push(ScopeKind::Function);
-            push_generics(scope, &f.generics, &decl.span)?;
+            push_generics(scope, &f.generics, &decl.span, map)?;
             for p in &f.params {
                 insert_param(scope, &p.name, p.span.clone())?;
                 walk_type(&p.ty, scope, map)?;
@@ -111,7 +111,7 @@ fn walk_struct(
     map: &mut ResolutionMap,
 ) -> Result<(), RavenError> {
     scope.push(ScopeKind::Function);
-    push_generics(scope, &s.generics, &s.span)?;
+    push_generics(scope, &s.generics, &s.span, map)?;
     for f in &s.fields {
         walk_type(&f.ty, scope, map)?;
     }
@@ -131,10 +131,10 @@ fn walk_trait(
     // `SelfOutsideImpl`.
     scope.push(ScopeKind::Impl);
     let _ = scope.insert("Self", Binding::SelfType, t.span.clone());
-    push_generics(scope, &t.generics, &t.span)?;
+    push_generics(scope, &t.generics, &t.span, map)?;
     for member in &t.members {
         scope.push(ScopeKind::Impl);
-        push_generics(scope, &member.generics, &member.span)?;
+        push_generics(scope, &member.generics, &member.span, map)?;
         for p in &member.params {
             if p.name == "self" {
                 scope.insert_shadowing("self", Binding::SelfValue, p.span.clone());
@@ -155,7 +155,7 @@ fn walk_trait(
 
 fn walk_enum(e: &Enum, scope: &mut ScopeStack, map: &mut ResolutionMap) -> Result<(), RavenError> {
     scope.push(ScopeKind::Function);
-    push_generics(scope, &e.generics, &e.span)?;
+    push_generics(scope, &e.generics, &e.span, map)?;
     for v in &e.variants {
         match &v.payload {
             VariantPayload::Unit => {}
@@ -182,7 +182,7 @@ fn walk_impl(
     map: &mut ResolutionMap,
 ) -> Result<(), RavenError> {
     scope.push(ScopeKind::Impl);
-    push_generics(scope, &i.generics, &i.span)?;
+    push_generics(scope, &i.generics, &i.span, map)?;
     // Bind Self to the implementing type. The "implementing type" is
     // `for_type` if present (trait impl), else `trait_or_type` (inherent
     // impl).
@@ -194,7 +194,7 @@ fn walk_impl(
     }
     for item in &i.items {
         scope.push(ScopeKind::Function);
-        push_generics(scope, &item.generics, &item.span)?;
+        push_generics(scope, &item.generics, &item.span, map)?;
         for p in &item.params {
             if p.name == "self" {
                 scope.insert_shadowing("self", Binding::SelfValue, p.span.clone());
@@ -217,6 +217,7 @@ fn push_generics(
     scope: &mut ScopeStack,
     generics: &[crate::ast::GenericParam],
     owner: &Span,
+    map: &mut ResolutionMap,
 ) -> Result<(), RavenError> {
     for g in generics {
         scope.insert(
@@ -230,7 +231,7 @@ fn push_generics(
         // Trait bounds are themselves type paths and need their leading
         // name resolved against the current scope.
         for bound in &g.bounds {
-            walk_type_path(bound, scope, &mut ResolutionMap::new())?;
+            walk_type_path(bound, scope, map)?;
         }
     }
     Ok(())
