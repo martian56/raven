@@ -9,7 +9,7 @@ Raven.
 ## Import
 
 ```rust
-import std/process { run, run_with_input, start, Child }
+import std/process { run, run_with_input, start }
 ```
 
 The methods on `Output` and `Child` come in with the types and need no
@@ -32,6 +32,8 @@ impl Output {
 impl Child {
     fun read_stdout(self) -> String   // drained since the last read, "" when nothing new
     fun read_stderr(self) -> String
+    fun write_stdin(self, data: String) -> Bool
+    fun close_stdin(self)
     fun poll(self) -> Option<Int>     // None while running, Some(code) once exited
     fun running(self) -> Bool
     fun wait(self) -> Int             // block (polling) until exit
@@ -64,8 +66,9 @@ child (killing an already-exited child reports success). `free` drops the
 registry entry without killing, so a caller that wants the child stopped
 must `kill` first; reaping is still guaranteed, since a freed child whose
 exit was not yet observed is handed to a background waiter that collects it
-when it exits, never leaving a zombie. The child's stdin is null: it sees
-end of input immediately and does not inherit the parent's terminal.
+when it exits, never leaving a zombie. A started child receives a piped stdin:
+`write_stdin` writes and flushes bytes, while `close_stdin` sends EOF. The pipe
+does not inherit the parent's terminal.
 
 ## Argument encoding (NUL-joined)
 
@@ -117,4 +120,7 @@ covers an unknown id.
 child that reads stdin sees end of input at once. `run_with_input` writes
 the given `input` and then closes stdin. A broken pipe (the child exits
 without reading) is ignored: the run still yields the child's captured
-output.
+output. A child returned by `start` keeps stdin open; `write_stdin` returns
+`false` after exit, a broken pipe, an unknown handle, or an explicit `close_stdin`.
+Writes are flushed immediately, and callers should close stdin when the child
+needs EOF to proceed.

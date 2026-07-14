@@ -1,12 +1,19 @@
 # Raven v2 docs
 
-Specs, plans, and design docs for Raven v2.0, the compiled, GC'd, OOP-via-traits rewrite of Raven that lives on the `v2.x` branch until release.
+Specs and design notes for Raven v2, the compiled, GC'd,
+OOP-via-traits language shipped from `main`. User-facing documentation starts
+with [Getting started](./guide/getting-started.md); files under `specs/` include
+current implementation references and clearly labeled historical design
+records.
 
 | Document | Purpose |
 |---|---|
-| [`2026-05-22-v2-roadmap.md`](./2026-05-22-v2-roadmap.md) | The top-level roadmap. Read this first. Covers the language design, compiler pipeline, runtime, rvpm, and 13-phase release plan. |
+| [Getting started](./guide/getting-started.md) | The entry point to the language guide, tutorials, standard library, and rvpm documentation. |
+| `specs/` | Compiler, runtime, standard-library, and tooling implementation specifications. |
+| [`2026-05-22-v2-roadmap.md`](./2026-05-22-v2-roadmap.md) | Historical roadmap for the v2 rewrite. Its phase and branch notes describe the development plan, not current status. |
 
-As each phase begins, its own spec lands in this directory alongside the roadmap.
+New implementation specifications live in `specs/`; completed user-facing
+features must also be reflected in `guide/`.
 
 ## v1 documentation
 

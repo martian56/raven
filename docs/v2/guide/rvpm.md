@@ -46,14 +46,23 @@ link_args = ["-L/opt/lib"]
 [fmt]
 indent_width = 4
 wrap_width = 100
+
+[dist]
+targets = ["zip", "deb"]
+description = "Demo application"
+
+[[dist.assets]]
+source = "assets"
+dest = "assets"
 ```
 
 Sections:
 
 - `[package]` (required): `name` and `version` are required. `authors`
   defaults to empty. `edition` defaults to `v2` (accepted: `v2`, `2026`).
-- `[dependencies]` (optional): keys are `github.com/<user>/<repo>` paths
-  (optionally with a subpath); values are git refs (a tag or branch).
+- `[dependencies]` (optional): keys identify a whole repository and must be
+  bare `github.com/<user>/<repo>` paths. Values are git refs (a tag or branch).
+  Source imports may add a subpath, but manifest keys may not.
 - `[ffi]` (optional): native code linked into a program that uses the
   package. `sources` are bundled C files (relative to the package root)
   that `rvpm build` compiles and links in, `libs` are libraries to link
@@ -65,6 +74,10 @@ Sections:
   `[ffi]` sources do not.
 - `[fmt]` (optional): `indent_width` (default 4) and `wrap_width`
   (default 100) for the formatter.
+- `[dist]` (optional): package formats, output directory, application metadata,
+  extra assets, Linux package dependencies, and Windows installer settings.
+  See [Distributing applications](../specs/rvpm-dist.md) for the complete
+  schema and required platform tools.
 
 Unknown fields are rejected so typos surface early.
 
@@ -162,6 +175,28 @@ Re-resolves and rewrites `rv.lock`. With no path, every entry is
 refreshed. With a path, only that dependency's subgraph is refreshed. To
 bump a dependency, edit its ref in `rv.toml`, then run `update`.
 
+### rvpm fetch
+
+```bash
+rvpm fetch github.com/<user>/<repo>@<version>
+```
+
+Fetches one exact GitHub tag or branch into the shared cache and prints its
+directory. This is a low-level cache operation; normal projects should use
+`add` or `install`, which also maintain `rv.lock` and resolve transitive
+dependencies.
+
+### rvpm lock
+
+```bash
+rvpm lock
+```
+
+Generates `rv.lock` when it is missing or incomplete. If the lock already
+covers the manifest, the command validates every cached package against its
+recorded tree hash. `install` and `build` perform the same lock maintenance
+automatically; `lock` is useful for CI and explicit verification.
+
 ### rvpm build
 
 ```bash
@@ -173,6 +208,27 @@ lock. For an application it compiles `src/main.rv` to
 `target/raven-out/<name>` and reports the binary path. For a library it
 type-checks `lib.rv` (and its modules) without producing a binary, so a
 package author can verify the library compiles before publishing.
+
+On Windows, an `.ico` configured as `[dist.windows].icon` is also embedded
+in the executable. MSVC builds use the Windows SDK resource compiler;
+GNU builds use MinGW-w64 `windres`.
+
+### rvpm dist
+
+```bash
+rvpm dist [--target <t1,t2>] [--out-dir <dir>]
+```
+
+Builds an application and packages it as one or more of `tar`, `zip`, `deb`,
+`rpm`, `msi`, or `inno`. `--target` overrides `[dist].targets`, and
+`--out-dir` overrides `[dist].out_dir`. Without configured targets, the host
+default is `zip` on Windows and `tar` elsewhere. Libraries are rejected
+because they do not produce an application binary.
+
+Assets may be files or directories. Directories are copied recursively while
+preserving nested files and empty directories. See
+[Distributing applications](../specs/rvpm-dist.md) for manifest fields,
+artifact names, and the external packaging tool required by each format.
 
 ### rvpm run
 

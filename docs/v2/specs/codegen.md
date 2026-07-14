@@ -13,9 +13,9 @@ heap value construction: structs, enums (including `Option` and
 returned, passed, and invoked through their value), all with garbage
 collector root frames.
 
-Rich stdlib collection methods (`List` and `Map` operations beyond
-construction) are out of scope here and tracked by the follow up issues
-listed below.
+The back end also lowers collection literals and operations, trait-object
+coercion and dispatch, C FFI calls, reflection, propagation, `defer`, and the
+safepoints required by the parallel runtime.
 
 ## Pipeline position
 
@@ -61,13 +61,14 @@ Primitive Raven values map to fixed Cranelift types:
 | `Bool`   | `types::I8`    | `0` or `1`. Logical operators produce the same width so `if` over a `Bool` compares against zero. |
 | `Int`    | `types::I64`   | Signed 64 bit integers. Overflow is wrap on add, sub, mul (matching Cranelift defaults). Division by zero traps via Cranelift's `sdiv` semantics on supported targets; an explicit zero check is inserted on targets where this is not guaranteed. |
 | `Float`  | `types::F64`   | IEEE 754 doubles. |
-| `Char`   | `types::I32`   | Reserved. The MVP does not exercise `Char` operations; ground work only. |
+| `Char`   | `types::I32`   | A Unicode scalar value used by character literals and operations. |
 | `Str`    | pointer        | A heap object pointer. String literals reaching the `print` intrinsic still pull bytes from the static data table directly; a `Str` flowing through a local is a single traced GC pointer. |
-| `Struct`, `Enum`, `Option`, `Result`, `List`, `Function` | pointer | A single GC pointer to a heap object. Struct and enum construction, field access, and closure allocation are lowered (see the heap value section below). `List` and `Map` rich methods, and trait object dispatch, remain tracked by issues #66 and the stdlib issues. |
+| `Struct`, `Enum`, `Option`, `Result`, `List`, `Map`, `Set`, `Function` | pointer | A single traced GC pointer to a heap object. Construction, field/index access, collection operations, closures, and monomorphized method calls lower through their MIR operations or runtime helpers. A `dyn Trait` value is represented by a traced object plus its dispatch metadata. |
 
 The calling convention is whatever Cranelift picks for the host triple
-(the system V AMD64 ABI on x86_64 Linux and Windows, ARM64 ABI on
-aarch64). The backend never inspects the chosen convention. Parameters
+(the System V AMD64 ABI on x86_64 Linux, the Windows x64 ABI on Windows,
+and the platform AArch64 ABI). The backend never inspects the chosen
+convention. Parameters
 are passed through the standard Cranelift `Signature`; aggregate
 returns are not used in the MVP because every supported return type is
 a single scalar or absent.
@@ -639,29 +640,11 @@ circuits with a successful exit. On a correctly configured host it links
 and runs the program for real and asserts the output. The unit tests
 that only consult MIR lowering do not depend on a linker.
 
-## Out of scope (tracked by follow up issues)
+## Out of scope
 
-* ~~Trait object (`dyn Trait`) dispatch through vtables (issue #66).~~
-  Implemented: a trait object is a boxed fat pointer, vtables are emitted
-  as read-only data, and a `dyn` method call dispatches through the
-  vtable. See `docs/v2/specs/dyn-trait.md`. Static trait method calls are
-  monomorphized by MIR into direct calls.
-* ~~Calling closure values and capturing closures (lambda body lifting and
-  capture analysis).~~ Implemented: capture analysis lifts each lambda
-  body into a standalone function, captures free variables by value, and
-  invokes closure values through an indirect call. See the Closures
-  section above.
-* ~~`defer` ordering and runtime hooks.~~ Implemented: function-scoped
-  defers register a thunk closure on a per-call runtime defer frame and
-  run in LIFO order at every return path before leaving the GC frame. See
-  `docs/v2/specs/defer.md`.
-* String interpolation (issue #69) and C FFI (issue #70).
-* ~~`List<T>` literals, indexing, and the built-in methods (`len`,
-  `is_empty`, `push`, `pop`, `get`).~~ Implemented: see the Lists section
-  above.
-* `Map` and `Set` literals and methods, and richer iterator pipelines
-  built on the collections (issues #71 onwards).
-* Cross platform installer packaging (issue #92).
+* Debug information and debugger integration.
+* Incremental or cross compilation; Raven currently compiles for the host.
+* Async functions, generators, exception unwinding, and drop tracking.
 
 ## Test coverage
 

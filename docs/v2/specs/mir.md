@@ -290,10 +290,6 @@ visible in diffs.
 
 ## Out of scope
 
-* Closure capture analysis. Lambdas lower into `ClosureCreate` with an
-  empty capture list. Full capture rewriting is tracked by issue #62.
-* `dyn Trait` virtual dispatch. Trait method calls are resolved to
-  concrete functions during type checking; `dyn` lowering is issue #66.
 * Async, generators, drop tracking, borrow analysis.
 * Cross-file monomorphization: the v2 pipeline still operates per file.
 

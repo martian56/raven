@@ -52,10 +52,12 @@ Field offsets on 64-bit:
 
 * Alignment: 8.
 * `header.tag = TAG_STRING`.
-* `header.len` is the UTF-8 byte length, not the codepoint count.
+* `header.len` is the byte length, not a codepoint count.
 * `header.cap` is the allocated byte capacity of `bytes`.
-* `bytes` points to an owned buffer of `cap` bytes. The first `len` bytes
-  are valid UTF-8. The remaining `cap - len` bytes are undefined.
+* `bytes` points to an owned buffer of `cap` bytes. The first `len` bytes are
+  the string payload and may contain arbitrary bytes; string literals and
+  text-producing APIs emit UTF-8. The remaining `cap - len` bytes are
+  undefined.
 * When `cap == 0`, `bytes` is null.
 
 ## List

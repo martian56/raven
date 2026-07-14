@@ -297,9 +297,11 @@ Most errors render as `expected X, found Y`. Hints are attached at call sites wh
 ## Deferred to follow up issues
 
 * **Tuples.** `(a, b)` parses but produces `ParseError::UnsupportedTuple`. Pattern tuples are similarly deferred. The grammar is in place for v2.x.
-* **String interpolation splitting.** The lexer preserves `${...}` segments verbatim in `StringLit`. Re tokenizing them into expression fragments is tracked in issue #69.
-* **`::` semantics.** The token is accepted in trial paths but rejected in real ones, except inside `extern` ABIs where it is not used. Resolver level path syntax lands when name resolution does.
-* **Attribute and visibility modifiers.** No `@deriving`, no `pub`, no `mut` keyword in v2.0. The parser does not consume them.
+* **`::` path semantics.** The token is reserved, but Raven source uses module aliases and `.` for qualified access.
+* **Visibility and mutability modifiers.** Raven has no `pub` or `mut`
+  keyword. Bindings introduced with `let` are mutable; names beginning with
+  `_` are treated as internal by `rvpm doc`. Item attributes are supported for
+  `@derive(...)` and `@repr(C)`.
 
 ## Test coverage
 

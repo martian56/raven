@@ -27,7 +27,9 @@ raven build hello.rv -o hello
 - **Concurrency.** Lightweight goroutines with `spawn` and channels for passing values between them.
 - **C FFI.** Declare `extern "C"` functions and call into native libraries, with C numeric types, pointers, callbacks, and small structs by value.
 - **Metaprogramming.** `@derive` for the common traits and JSON, declarative macros, and compile time plus runtime reflection.
-- **Tooling that ships with the language.** One canonical formatter (`rvpm fmt`), GitHub direct packages (`rvpm`), and a VS Code extension.
+- **Tooling that ships with the language.** `rvpm` scaffolds, resolves,
+  builds, runs, tests, documents, formats, and packages applications; a VS
+  Code extension provides editor support.
 
 ## A fuller taste
 
@@ -84,6 +86,8 @@ fun main() {
 - Want the whole surface of the language? See the [Language Reference](v2/guide/language-reference.md).
 - Looking for what the standard library gives you? The [Standard Library](v2/guide/standard-library.md) page walks through every module.
 - Managing dependencies and builds? Read the [rvpm guide](v2/guide/rvpm.md).
+- Shipping an application? See [rvpm dist](v2/specs/rvpm-dist.md) for archives
+  and native Linux and Windows packages.
 
 ## Install
 

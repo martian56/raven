@@ -16,11 +16,11 @@
 
 <p align="center">
   <a href="https://martian56.github.io/raven/">Documentation</a>
-  ·
+  &middot;
   <a href="https://raven.ufazien.com/">Website</a>
-  ·
+  &middot;
   <a href="https://github.com/martian56/raven/releases">Releases</a>
-  ·
+  &middot;
   <a href="https://github.com/martian56/raven/issues">Issues</a>
 </p>
 
@@ -74,6 +74,8 @@ rvpm new my_app
 cd my_app
 rvpm run          # builds and runs src/main.rv
 rvpm fmt          # format the .rv sources
+rvpm test         # run test_* functions in *_test.rv files
+rvpm dist         # package the application for distribution
 ```
 
 ### Build from source
@@ -95,6 +97,7 @@ The `raven` and `rvpm` binaries land in `target/release/`.
 - Getting started: [https://martian56.github.io/raven/v2/guide/getting-started/](https://martian56.github.io/raven/v2/guide/getting-started/)
 - Language reference: [https://martian56.github.io/raven/v2/guide/language-reference/](https://martian56.github.io/raven/v2/guide/language-reference/)
 - Standard library: [https://martian56.github.io/raven/v2/guide/standard-library/](https://martian56.github.io/raven/v2/guide/standard-library/)
+- rvpm: [https://martian56.github.io/raven/v2/guide/rvpm/](https://martian56.github.io/raven/v2/guide/rvpm/)
 
 ## Technologies Used
 

@@ -8,8 +8,10 @@ collector reclaims every heap object the per-kind layouts in
 `Box`) once the running program can no longer reach it.
 
 The design target is correctness and simplicity first: a stop-the-world,
-single-threaded, tracing mark-and-sweep collector with precise roots
-supplied by a shadow stack the code generator maintains. Throughput
+tracing mark-and-sweep collector with precise roots supplied by shadow stacks
+the code generator maintains. Raven goroutines may run in parallel across an
+OS-thread pool; the collector coordinates those mutators at safepoints.
+Throughput
 optimisations (generational nurseries, incremental marking, Cranelift
 stack maps) are out of scope and are listed at the end.
 
@@ -17,33 +19,38 @@ stack maps) are out of scope and are listed at the end.
 
 The collector is a two-phase tracing mark-and-sweep:
 
-1. **Mark.** Starting from every root on the shadow stack, follow each
-   object's internal pointers (per its `tag`) and set a mark bit on
-   every object reached. Because marking traces the live object graph,
+1. **Mark.** Starting from every registered thread and parked-goroutine root,
+   follow each object's internal pointers (per its `tag`) and stamp every
+   object reached with the current collection epoch. Because marking traces
+   the live object graph,
    it reclaims cycles that reference counting would leak: object A
    pointing at B pointing back at A is collected when neither is rooted.
-2. **Sweep.** Walk the list of every allocated object. Any object whose
-   mark bit is clear is unreachable: free its owned buffers, then free
-   the object itself. Any object whose mark bit is set survives; clear
-   its mark bit so the next cycle starts from a clean slate.
+2. **Sweep.** Walk the initiating thread's allocation list. Any object whose
+   stamp differs from the current epoch is unreachable: free its owned
+   buffers, then free the object itself. An object stamped with the current
+   epoch survives. The next collection uses a fresh epoch, so no clear pass is
+   needed.
 
 The collector is **stop the world**: a collection runs to completion
 before the mutator (the compiled program) resumes. There is no
 concurrent or incremental marking.
 
-The collector is **single threaded**. v2.0 compiled programs are single
-threaded, so the global collector state (the all-objects list, the byte
-counters, the shadow stack) is plain global state guarded by that
-assumption rather than a lock. Calling any runtime entry point from more
-than one thread is undefined in v2.0.
+The mark-and-sweep cycle itself is **single threaded**, but Raven mutators are
+not. Each worker thread owns its allocation list, byte counters, and current
+shadow stack. Every live thread registers that stack in a process-wide root
+registry, while parked goroutine roots and buffered channel values are exposed
+through the scheduler. A collector stops all in-Raven threads at allocation or
+loop-back-edge safepoints, scans the complete root set, and sweeps only the
+initiating thread's allocation list. Globally unique mark epochs distinguish
+the current cycle from marks written by another thread's collection.
 
-### Mark bit
+### Mark epoch
 
-The mark bit lives in `ObjectHeader.gc_bits`, the field reserved for
-exactly this purpose in `runtime.md`. Bit 0 (`GC_MARK_BIT = 0x1`) is the
-mark; the remaining bits stay zero, reserved for a future colour scheme.
-Using the existing header field keeps every object exactly the size the
-layout spec already pins; the collector adds no per-object words.
+The current mark epoch lives in `ObjectHeader.gc_bits`, the field reserved for
+collector state in `runtime.md`. Epochs are process-wide, monotonically
+allocated non-zero `u32` values, so two worker collections cannot confuse a
+stale mark for their own. Using the existing header field keeps every object
+exactly the size the layout spec pins; the collector adds no per-object words.
 
 ## Shadow-stack root ABI
 
@@ -176,18 +183,17 @@ rooted slot the same way `mid` is rooted.
 
 ## Object bookkeeping
 
-The sweeper must visit every live object. The collector keeps a global
-**all-objects list**: a `Vec<*mut ObjectHeader>` recording the base
-pointer of every object handed out by `raven_gc_alloc`. The list is a
-side table, not an intrusive header field, so the 16-byte `ObjectHeader`
-keeps the exact shape pinned in `object-layout.md`; no object grows by a
-`next` word.
+The sweeper must visit every object allocated by its worker. Each thread keeps
+an **all-objects list**: a `Vec<*mut ObjectHeader>` recording the base pointer
+of every object it receives from `raven_gc_alloc`. The list is a side table,
+not an intrusive header field, so the 16-byte `ObjectHeader` keeps the exact
+shape pinned in `object-layout.md`; no object grows by a `next` word.
 
-Each allocation appends its base pointer. Sweep walks the vector,
-retaining survivors (and clearing their mark bit) and dropping freed
+Each allocation appends its base pointer. Sweep walks the current thread's
+vector, retaining objects stamped with its collection epoch and dropping freed
 entries; the retained order does not matter.
 
-Two global counters back the trigger and the tests: `bytes_allocated`
+Two per-thread counters back the trigger and the tests: `bytes_allocated`
 tracks live object-body bytes (the bytes handed out by
 `raven_gc_alloc`) and drives the collection threshold, and
 `live_objects` counts live objects so tests can assert bounded liveness
@@ -236,9 +242,9 @@ The back end emits one `raven_struct_register` call per type in the
 program entry shim, before running `main`, so every struct or enum value
 is traceable from its first allocation. Registering the same id twice is
 harmless (the back end always supplies the same or a wider mask for a
-given id; enum types union their variants' masks). The descriptors live
-in a thread-local map alongside the shadow stack, consistent with the
-single-threaded collector model.
+given id; enum types union their variants' masks). The descriptors live in a
+process-wide read-mostly map. Registration completes before goroutines start,
+and every worker collection sees the same masks.
 
 ### Why the layouts carry pointer-kind flags
 
@@ -265,10 +271,10 @@ yet supply them.
 
 ## Sweeping and buffer freeing
 
-Sweep walks the all-objects list once. For each object:
+Sweep walks the initiating thread's all-objects list once. For each object:
 
-* If the mark bit is clear, the object is dead. The sweeper frees the
-  object's **owned buffers** first, then the object body:
+* If the object's stamp differs from the current epoch, it is dead. The
+  sweeper frees the object's **owned buffers** first, then the object body:
   * `String`: free `bytes` (`cap` bytes, align 1).
   * `List`: free `elements` (`cap * element_size` bytes,
     `element_align`).
@@ -281,8 +287,9 @@ Sweep walks the all-objects list once. For each object:
   `BOX_PAYLOAD_OFFSET + header.len`). The collector decrements
   `bytes_allocated` by the body size and `live_objects` by one for each
   freed object.
-* If the mark bit is set, the object survives. Clear the mark bit and
-  retain it in the list.
+* If the object carries the current epoch, it survives and remains in the
+  list. Its stamp is left in place; a later collection compares against a new
+  epoch.
 
 Owned buffers are **plain allocations** owned by their object, not
 separate GC objects. They are never on the all-objects list, never
@@ -349,11 +356,9 @@ register with the collector.
   their whole lifetime. The slot-address shadow stack is forward
   compatible with a future moving collector, but v2.0 never relocates an
   object.
-* **Multiple threads.** Global collector state assumes a single mutator.
-* **Codegen emission of root frames.** This document defines the ABI
-  codegen targets; the prologue and epilogue emission is issue #67. The
-  collector ships with a Rust-side test harness that plays codegen's
-  role.
+* **Parallel marking or sweeping.** Raven mutators run across multiple OS
+  threads, but one thread performs each collection cycle after stopping the
+  world.
 
 ## Test coverage
 
