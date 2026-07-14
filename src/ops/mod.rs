@@ -17,6 +17,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Component, Path, PathBuf};
 
+use sha2::{Digest, Sha256};
+
 pub mod dist;
 
 use crate::codegen::linker;
@@ -641,6 +643,22 @@ pub fn build_in(project_dir: &Path, cache_root: &Path) -> Result<BuildReport, Op
                     source: e,
                 })?;
             }
+            let fingerprint = build_fingerprint(project_dir, &manifest, &lock)?;
+            let fingerprint_path = fingerprint_path(&binary);
+            if binary.is_file()
+                && std::fs::read_to_string(&fingerprint_path)
+                    .map(|saved| saved == fingerprint)
+                    .unwrap_or(false)
+            {
+                return Ok(BuildReport {
+                    outcome_lines: vec![format!(
+                        "Reused {} at {}",
+                        manifest.package.name,
+                        binary.display()
+                    )],
+                    binary: Some(binary),
+                });
+            }
             // Gather native inputs to link: `[ffi]` code from the project and
             // its dependencies, plus the configured Windows icon resource.
             let ffi_dir = binary
@@ -649,6 +667,11 @@ pub fn build_in(project_dir: &Path, cache_root: &Path) -> Result<BuildReport, Op
                 .unwrap_or_else(|| PathBuf::from("ffi"));
             let native = gather_native_link(project_dir, &manifest, &lock, cache_root, &ffi_dir)?;
             driver::build_binary_native(&entry, &binary, Some(&ctx), &native)?;
+            std::fs::write(&fingerprint_path, fingerprint).map_err(|source| OpError::Io {
+                action: "write build fingerprint".to_string(),
+                path: fingerprint_path,
+                source,
+            })?;
             Ok(BuildReport {
                 outcome_lines: vec![format!(
                     "Compiled {} to {}",
@@ -676,6 +699,123 @@ pub fn build_in(project_dir: &Path, cache_root: &Path) -> Result<BuildReport, Op
         }
         None => Err(OpError::MissingEntry(project_dir.join(ENTRY_FILE))),
     }
+}
+
+/// Hash every input that affects a package executable. Locked dependencies are
+/// represented by their content hashes, while local Raven and FFI sources are
+/// hashed directly. The rvpm executable and runtime metadata invalidate cached
+/// output after a compiler or runtime replacement.
+fn build_fingerprint(
+    project_dir: &Path,
+    manifest: &Manifest,
+    lock: &LockFile,
+) -> Result<String, OpError> {
+    let mut digest = Sha256::new();
+    digest.update(b"raven-build-fingerprint-v1\0");
+    digest.update(env!("CARGO_PKG_VERSION").as_bytes());
+    digest.update(std::env::consts::OS.as_bytes());
+    digest.update(std::env::consts::ARCH.as_bytes());
+
+    let mut inputs = Vec::new();
+    collect_package_inputs(project_dir, project_dir, &mut inputs)?;
+    inputs.push(project_dir.join(MANIFEST_FILE_NAME));
+    let lock_path = project_dir.join(LOCK_FILE_NAME);
+    if lock_path.is_file() {
+        inputs.push(lock_path);
+    }
+    for source in &manifest.ffi.sources {
+        inputs.push(checked_ffi_source(project_dir, source)?);
+    }
+    if let Some(icon) = manifest
+        .dist
+        .as_ref()
+        .map(|dist| dist.windows.icon.as_str())
+        .filter(|icon| !icon.is_empty())
+    {
+        inputs.push(project_dir.join(icon));
+    }
+    inputs.sort();
+    inputs.dedup();
+    for path in inputs {
+        let relative = path.strip_prefix(project_dir).unwrap_or(&path);
+        digest.update(relative.to_string_lossy().as_bytes());
+        digest.update([0]);
+        let bytes = std::fs::read(&path).map_err(|source| OpError::Io {
+            action: "read build input".to_string(),
+            path: path.clone(),
+            source,
+        })?;
+        digest.update((bytes.len() as u64).to_le_bytes());
+        digest.update(bytes);
+    }
+    for package in &lock.packages {
+        digest.update(package.source.as_bytes());
+        digest.update([0]);
+        digest.update(package.version.as_bytes());
+        digest.update([0]);
+        digest.update(package.hash.as_bytes());
+        digest.update([0]);
+    }
+    hash_tool_metadata(&mut digest, std::env::current_exe().ok().as_deref());
+    let runtime = driver::locate_runtime_staticlib().ok();
+    hash_tool_metadata(
+        &mut digest,
+        runtime.as_ref().map(|runtime| runtime.path.as_path()),
+    );
+    Ok(format!("sha256:{:x}", digest.finalize()))
+}
+
+fn collect_package_inputs(
+    project_dir: &Path,
+    directory: &Path,
+    inputs: &mut Vec<PathBuf>,
+) -> Result<(), OpError> {
+    let entries = std::fs::read_dir(directory).map_err(|source| OpError::Io {
+        action: "read package directory".to_string(),
+        path: directory.to_path_buf(),
+        source,
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|source| OpError::Io {
+            action: "read package directory".to_string(),
+            path: directory.to_path_buf(),
+            source,
+        })?;
+        if is_link_entry(&entry) {
+            continue;
+        }
+        let path = entry.path();
+        if path.is_dir() {
+            if path == project_dir.join("target") || entry.file_name() == ".git" {
+                continue;
+            }
+            collect_package_inputs(project_dir, &path, inputs)?;
+        } else if path.is_file() {
+            inputs.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn hash_tool_metadata(digest: &mut Sha256, path: Option<&Path>) {
+    let Some(path) = path else {
+        return;
+    };
+    digest.update(path.to_string_lossy().as_bytes());
+    if let Ok(metadata) = path.metadata() {
+        digest.update(metadata.len().to_le_bytes());
+        if let Ok(modified) = metadata.modified() {
+            if let Ok(duration) = modified.duration_since(std::time::UNIX_EPOCH) {
+                digest.update(duration.as_nanos().to_le_bytes());
+            }
+        }
+    }
+}
+
+fn fingerprint_path(binary: &Path) -> PathBuf {
+    let mut name = binary.as_os_str().to_os_string();
+    name.push(".fingerprint");
+    PathBuf::from(name)
 }
 
 /// Build the package then run the produced binary, forwarding `args` to it

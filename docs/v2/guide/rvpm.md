@@ -26,6 +26,56 @@ library. Both also write a `.gitignore` that ignores the generated
 `target/raven-out/<name>` (with a `.exe` extension on Windows); a library
 has no `main`, so it is type-checked rather than compiled to a binary.
 
+## Workspaces
+
+A workspace groups several ordinary packages under one repository. The root
+`rv.toml` may be virtual:
+
+```toml
+[workspace]
+members = ["apps/api", "apps/worker", "tools/schema"]
+default-member = "api"
+
+[commands]
+schema = { package = "schema", args = ["migrate"] }
+```
+
+Each member directory has its own `rv.toml`, `rv.lock`, dependencies, and
+`target/` output. A root manifest may also contain `[package]`; that root
+package is included automatically and must not appear in `members`. A virtual
+root contains only `[workspace]` and optional `[commands]` sections.
+
+Member paths are relative to the root and must remain inside it. rvpm rejects
+missing manifests, duplicate paths, duplicate package names, symlink escapes,
+unknown defaults, and commands that name unknown packages. When invoked from a
+member or one of its nested directories, rvpm discovers the workspace by
+walking upward and selects that member. At the root it selects
+`default-member`, or the sole member when only one exists. Use `-p <name>` to
+select explicitly.
+
+`rvpm build --workspace` and `rvpm test --workspace` process every member.
+`rvpm workspace list` prints the discovered packages and commands.
+
+### Registered commands
+
+A `[commands]` entry is structured data, not a shell command. Its `package`
+must name an application member. rvpm builds that package through the normal
+compiler and dependency pipeline, then executes it. `args` provides arguments
+that are prepended to those supplied at invocation:
+
+```bash
+rvpm run schema up
+# executes the schema package with: migrate up
+```
+
+The executable is stored in the member's normal `target/raven-out` directory.
+rvpm records a fingerprint of local package files, dependency hashes, compiler,
+and runtime. A later
+command reuses the executable when those inputs are unchanged. Arguments and
+the executable's exit code are forwarded unchanged. Use
+`rvpm run -p api -- schema` when `schema` should be an ordinary argument to
+`api` instead of a registered command.
+
 ## The rv.toml manifest
 
 ```toml
@@ -54,6 +104,12 @@ description = "Demo application"
 [[dist.assets]]
 source = "assets"
 dest = "assets"
+
+[workspace]
+members = ["tools/schema"]
+
+[commands]
+schema = { package = "schema", args = [] }
 ```
 
 Sections:
@@ -78,6 +134,11 @@ Sections:
   extra assets, Linux package dependencies, and Windows installer settings.
   See [Distributing applications](../specs/rvpm-dist.md) for the complete
   schema and required platform tools.
+- `[workspace]` (optional): relative package member directories and an optional
+  `default-member` package name. A manifest with this section is a workspace
+  root.
+- `[commands]` (optional): structured executable commands. Each entry selects a
+  workspace application by package name and may provide default `args`.
 
 Unknown fields are rejected so typos surface early.
 
@@ -200,7 +261,7 @@ automatically; `lock` is useful for CI and explicit verification.
 ### rvpm build
 
 ```bash
-rvpm build
+rvpm build [-p <package> | --workspace]
 ```
 
 Ensures dependencies are installed and builds the package context from the
@@ -208,6 +269,9 @@ lock. For an application it compiles `src/main.rv` to
 `target/raven-out/<name>` and reports the binary path. For a library it
 type-checks `lib.rv` (and its modules) without producing a binary, so a
 package author can verify the library compiles before publishing.
+
+Inside a workspace, `-p` builds one named member and `--workspace` builds every
+member. With neither option, the current, default, or sole member is selected.
 
 On Windows, an `.ico` configured as `[dist.windows].icon` is also embedded
 in the executable. MSVC builds use the Windows SDK resource compiler;
@@ -233,7 +297,7 @@ artifact names, and the external packaging tool required by each format.
 ### rvpm run
 
 ```bash
-rvpm run [program arguments]
+rvpm run [-p <package>] [command | program arguments]
 ```
 
 Builds the application (the same path as `build`), then runs the produced
@@ -241,16 +305,23 @@ binary, forwarding any arguments after `run` and exiting with the
 program's exit code. A library has no executable, so `run` reports that
 and exits non-zero; use `build` to type-check a library.
 
+When the first argument matches a workspace `[commands]` entry, rvpm runs that
+command's package instead. `-p` always selects a package directly and disables
+registered-command matching.
+
 ### rvpm test
 
 ```bash
-rvpm test
+rvpm test [-p <package> | --workspace]
 ```
 
 Discovers and runs the package's tests. A test is a zero-argument function
 named `test_*` in a `*_test.rv` file anywhere in the package (commonly
 under `src/` or a `tests/` directory). It asserts with `std/test`; a failed
 assertion panics, which the runner reports as a failure.
+
+Inside a workspace, `-p` tests one named member and `--workspace` tests all
+members, returning failure if any member fails.
 
 ```rust
 // src/math_test.rv
@@ -276,6 +347,15 @@ test result: FAILED. 1 passed; 1 failed
 Test function names must be unique within a file. Libraries are supported:
 a `*_test.rv` at the package root that imports `./lib` works without a
 `src/main.rv`.
+
+### rvpm workspace
+
+```bash
+rvpm workspace [list]
+```
+
+Discovers the workspace root from the current directory and lists its package
+names, paths, and registered commands.
 
 ### rvpm fmt
 

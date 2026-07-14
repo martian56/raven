@@ -35,3 +35,4 @@ pub mod pkg;
 pub mod resolve;
 pub mod span;
 pub mod tycheck;
+pub mod workspace;

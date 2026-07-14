@@ -347,6 +347,56 @@ have an `_in(..., cache_root)` variant that takes an explicit cache root so
 they can be tested against a pre-seeded temporary cache without the global
 `RVPM_CACHE_DIR` override.
 
+## Workspace discovery and validation
+
+An `rv.toml` containing `[workspace]` is a workspace root. The root can also
+contain `[package]`; when it does, that package is an implicit member. Without
+`[package]`, the root is virtual and may contain only `[workspace]` and
+`[commands]`.
+
+```toml
+[workspace]
+members = ["apps/api", "tools/admin"]
+default-member = "api"
+
+[commands]
+admin = { package = "admin", args = ["serve"] }
+```
+
+`members` contains relative directory paths. Loading canonicalizes the root and
+every member, rejects lexical parent or absolute components, verifies that the
+canonical member remains under the root, and requires an `rv.toml` package
+manifest in every member. Canonical paths and package names must be unique.
+`default-member` and every command `package` refer to package names, not member
+paths, and must resolve during workspace loading.
+
+Discovery walks from the current directory toward the filesystem root and
+loads the nearest manifest with `[workspace]`. Selection order is an explicit
+`-p` name, the deepest member containing the current directory, the configured
+default, then the sole member. Multiple members with no applicable selection
+produce an error. Outside a workspace, the nearest ordinary package manifest
+retains the existing single-package behavior.
+
+`build --workspace` and `test --workspace` visit members in manifest order and
+fail if any member operation fails. `workspace list` reports the validated
+members and commands.
+
+## Registered command execution
+
+`[commands].<name>` is a table with a required `package` name and optional
+string-array `args`. It cannot contain a shell string or unknown fields. When
+the first unconsumed argument to `rvpm run` matches a command, rvpm selects its
+application member, prepends the configured arguments, appends invocation
+arguments, builds the member, and starts the resulting executable directly
+without a shell. The child exit code becomes the rvpm exit code. Explicit `-p`
+selection disables command matching.
+
+Successful application builds write `<binary>.fingerprint`. The digest covers
+local package files outside `.git` and `target`, locked dependency content
+hashes, target identity, and compiler and runtime metadata. An existing binary
+with the same digest is reused. A failed rebuild does not replace the saved
+digest, so stale output cannot become current.
+
 ## Entry file and output path conventions
 
 - The package entry file is `src/main.rv`, relative to the project root
@@ -408,7 +458,7 @@ smoke harness unchanged for bundled and local programs.
 ## rvpm build
 
 ```
-rvpm build
+rvpm build [-p <package> | --workspace]
 ```
 
 `build` loads `rv.toml`, ensures dependencies are installed (the install
@@ -421,7 +471,7 @@ the package context, then compiles `src/main.rv` to
 ## rvpm run
 
 ```
-rvpm run [program arguments]
+rvpm run [-p <package>] [command | program arguments]
 ```
 
 `run` builds the package (the same path as `build`), then runs the produced

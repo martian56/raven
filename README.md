@@ -78,6 +78,9 @@ rvpm test         # run test_* functions in *_test.rv files
 rvpm dist         # package the application for distribution
 ```
 
+rvpm also supports multi-package workspaces, explicit package selection, and
+manifest-defined compiled commands. See the [rvpm guide](https://martian56.github.io/raven/v2/guide/rvpm/#workspaces).
+
 ### Build from source
 
 For contributors, or to track the latest commit:

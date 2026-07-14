@@ -15,6 +15,7 @@ use raven::manifest::Manifest;
 use raven::ops;
 use raven::pkg;
 use raven::resolve::GithubPath;
+use raven::workspace::{self, Workspace};
 
 /// `rvpm build`/`run` invoke the compiler, which recurses deeply (derive
 /// expansion, type checking), enough to overflow the default main-thread stack
@@ -103,6 +104,7 @@ fn dispatch() -> ExitCode {
         Some("test") => cmd_test(&args[1..]),
         Some("doc") => run(cmd_doc(&args[1..])),
         Some("fmt") => cmd_fmt(&args[1..]),
+        Some("workspace") => run(cmd_workspace(&args[1..])),
         Some("cache") => match cmd_cache(&args[1..]) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
@@ -567,9 +569,23 @@ fn cmd_build(args: &[String]) -> Result<Vec<String>, String> {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         return Ok(vec![build_usage()]);
     }
-    reject_extra_args(args, "build", &["--help", "-h"], 0)?;
+    let selection = parse_package_selection(args, "build", true)?;
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    let report = with_fetch_progress(|| ops::build(&cwd)).map_err(|e| e.to_string())?;
+    if selection.all {
+        let workspace = Workspace::discover(&cwd)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("no workspace root found from '{}'", cwd.display()))?;
+        let mut lines = Vec::new();
+        for member in workspace.members() {
+            let report = with_fetch_progress(|| ops::build(&member.root))
+                .map_err(|e| format!("package '{}': {}", member.name, e))?;
+            lines.extend(report.outcome_lines);
+        }
+        return Ok(lines);
+    }
+    let project = workspace::resolve_package(&cwd, selection.package.as_deref())
+        .map_err(|e| e.to_string())?;
+    let report = with_fetch_progress(|| ops::build(&project)).map_err(|e| e.to_string())?;
     Ok(report.outcome_lines)
 }
 
@@ -628,26 +644,42 @@ fn cmd_dist(args: &[String]) -> Result<Vec<String>, String> {
 /// Build the package then run the produced binary, forwarding any args
 /// after `run` to the program and exiting with its code.
 fn cmd_run(args: &[String]) -> ExitCode {
-    // Args before a `--` separator are rvpm's; everything after is forwarded to
-    // the program verbatim. With no separator only a leading `--help`/`-h` is
-    // rvpm's, so the program can still receive `--help` (`rvpm run -- --help`,
-    // or `rvpm run somearg --help`).
     let sep = args.iter().position(|a| a == "--");
-    let rvpm_wants_help = match sep {
-        Some(i) => args[..i].iter().any(|a| a == "--help" || a == "-h"),
-        None => args
-            .first()
-            .map(|a| a == "--help" || a == "-h")
-            .unwrap_or(false),
-    };
+    let before = sep.map(|i| &args[..i]).unwrap_or(args);
+    let after = sep.map(|i| &args[i + 1..]);
+    let rvpm_wants_help = before
+        .first()
+        .map(|arg| arg == "--help" || arg == "-h")
+        .unwrap_or(false);
     if rvpm_wants_help {
         println!("{}", run_usage());
         return ExitCode::SUCCESS;
     }
-    let prog_args: Vec<String> = match sep {
-        Some(i) => args[i + 1..].to_vec(),
-        None => args.to_vec(),
-    };
+
+    let mut requested = None;
+    let mut consumed = 0usize;
+    if before.first().map(String::as_str) == Some("-p")
+        || before.first().map(String::as_str) == Some("--package")
+    {
+        let Some(name) = before.get(1) else {
+            eprintln!("rvpm: -p/--package requires a package name");
+            return ExitCode::from(1);
+        };
+        requested = Some(name.clone());
+        consumed = 2;
+    } else if let Some(name) = before
+        .first()
+        .and_then(|arg| arg.strip_prefix("--package="))
+    {
+        if name.is_empty() {
+            eprintln!("rvpm: --package requires a package name");
+            return ExitCode::from(1);
+        }
+        requested = Some(name.to_string());
+        consumed = 1;
+    }
+    let remaining = &before[consumed..];
+
     let cwd = match std::env::current_dir() {
         Ok(d) => d,
         Err(e) => {
@@ -655,7 +687,47 @@ fn cmd_run(args: &[String]) -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    match with_fetch_progress(|| ops::run_package(&cwd, &prog_args)) {
+    let discovered = match Workspace::discover(&cwd) {
+        Ok(workspace) => workspace,
+        Err(e) => {
+            eprintln!("rvpm: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+    let registered = if requested.is_none() {
+        discovered
+            .as_ref()
+            .and_then(|workspace| remaining.first().and_then(|name| workspace.command(name)))
+    } else {
+        None
+    };
+    let (project, prog_args) =
+        if let (Some(workspace), Some(command)) = (discovered.as_ref(), registered) {
+            let member = match workspace.member(&command.package) {
+                Ok(member) => member,
+                Err(e) => {
+                    eprintln!("rvpm: {}", e);
+                    return ExitCode::from(1);
+                }
+            };
+            let mut command_args = command.args.clone();
+            match after {
+                Some(forwarded) => command_args.extend_from_slice(forwarded),
+                None => command_args.extend_from_slice(&remaining[1..]),
+            }
+            (member.root.clone(), command_args)
+        } else {
+            let project = match workspace::resolve_package(&cwd, requested.as_deref()) {
+                Ok(project) => project,
+                Err(e) => {
+                    eprintln!("rvpm: {}", e);
+                    return ExitCode::from(1);
+                }
+            };
+            let program_args = after.unwrap_or(remaining).to_vec();
+            (project, program_args)
+        };
+    match with_fetch_progress(|| ops::run_package(&project, &prog_args)) {
         Ok(code) => {
             let code: u8 = code.try_into().unwrap_or(1);
             ExitCode::from(code)
@@ -674,10 +746,13 @@ fn cmd_test(args: &[String]) -> ExitCode {
         println!("{}", test_usage());
         return ExitCode::SUCCESS;
     }
-    if let Err(e) = reject_extra_args(args, "test", &["--help", "-h"], 0) {
-        eprintln!("rvpm: {}", e);
-        return ExitCode::from(1);
-    }
+    let selection = match parse_package_selection(args, "test", true) {
+        Ok(selection) => selection,
+        Err(e) => {
+            eprintln!("rvpm: {}", e);
+            return ExitCode::from(1);
+        }
+    };
     let cwd = match std::env::current_dir() {
         Ok(d) => d,
         Err(e) => {
@@ -685,7 +760,48 @@ fn cmd_test(args: &[String]) -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    match ops::test(&cwd) {
+    if selection.all {
+        let workspace = match Workspace::discover(&cwd) {
+            Ok(Some(workspace)) => workspace,
+            Ok(None) => {
+                eprintln!("rvpm: no workspace root found from '{}'", cwd.display());
+                return ExitCode::from(1);
+            }
+            Err(e) => {
+                eprintln!("rvpm: {}", e);
+                return ExitCode::from(1);
+            }
+        };
+        let mut failed = 0usize;
+        for member in workspace.members() {
+            println!("package {}", member.name);
+            match ops::test(&member.root) {
+                Ok(report) => {
+                    failed += report.failed;
+                    for line in report.outcome_lines {
+                        println!("{}", line);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("rvpm: package '{}': {}", member.name, e);
+                    failed += 1;
+                }
+            }
+        }
+        return if failed == 0 {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::from(1)
+        };
+    }
+    let project = match workspace::resolve_package(&cwd, selection.package.as_deref()) {
+        Ok(project) => project,
+        Err(e) => {
+            eprintln!("rvpm: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+    match ops::test(&project) {
         Ok(report) => {
             for line in &report.outcome_lines {
                 println!("{}", line);
@@ -701,6 +817,83 @@ fn cmd_test(args: &[String]) -> ExitCode {
             ExitCode::from(1)
         }
     }
+}
+
+#[derive(Debug, Default)]
+struct PackageSelection {
+    package: Option<String>,
+    all: bool,
+}
+
+fn parse_package_selection(
+    args: &[String],
+    command: &str,
+    allow_all: bool,
+) -> Result<PackageSelection, String> {
+    let mut selection = PackageSelection::default();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-p" | "--package" => {
+                i += 1;
+                let name = args
+                    .get(i)
+                    .ok_or_else(|| "-p/--package requires a package name".to_string())?;
+                if selection.package.replace(name.clone()).is_some() {
+                    return Err("a package may be selected only once".to_string());
+                }
+            }
+            "--workspace" if allow_all => selection.all = true,
+            value if value.starts_with("--package=") => {
+                let name = value.trim_start_matches("--package=");
+                if name.is_empty() {
+                    return Err("--package requires a package name".to_string());
+                }
+                if selection.package.replace(name.to_string()).is_some() {
+                    return Err("a package may be selected only once".to_string());
+                }
+            }
+            other => {
+                return Err(format!(
+                    "unknown argument '{}' for `rvpm {}`; run `rvpm {} --help`",
+                    other, command, command
+                ));
+            }
+        }
+        i += 1;
+    }
+    if selection.all && selection.package.is_some() {
+        return Err("--workspace cannot be combined with -p/--package".to_string());
+    }
+    Ok(selection)
+}
+
+fn cmd_workspace(args: &[String]) -> Result<Vec<String>, String> {
+    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
+        return Ok(vec![workspace_usage()]);
+    }
+    let subcommand = args.first().map(String::as_str).unwrap_or("list");
+    if subcommand != "list" || args.len() > 1 {
+        return Err(format!(
+            "unknown workspace subcommand '{}'; run `rvpm workspace --help`",
+            subcommand
+        ));
+    }
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let workspace = Workspace::discover(&cwd)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("no workspace root found from '{}'", cwd.display()))?;
+    let mut lines = vec![format!("Workspace {}", workspace.root().display())];
+    for member in workspace.members() {
+        lines.push(format!("  {}  {}", member.name, member.root.display()));
+    }
+    if !workspace.commands().is_empty() {
+        lines.push("Commands".to_string());
+        for (name, command) in workspace.commands() {
+            lines.push(format!("  {}  package {}", name, command.package));
+        }
+    }
+    Ok(lines)
 }
 
 /// Generate Markdown API docs from the package sources into `target/doc`.
@@ -915,7 +1108,7 @@ fn fmt_usage() -> String {
 }
 
 fn build_usage() -> String {
-    "Usage: rvpm build".to_string()
+    "Usage: rvpm build [-p <package> | --workspace]".to_string()
 }
 
 fn dist_usage() -> String {
@@ -934,11 +1127,15 @@ fn dist_usage() -> String {
 }
 
 fn run_usage() -> String {
-    "Usage: rvpm run [program arguments]".to_string()
+    "Usage: rvpm run [-p <package>] [command | program arguments]".to_string()
 }
 
 fn test_usage() -> String {
-    "Usage: rvpm test".to_string()
+    "Usage: rvpm test [-p <package> | --workspace]".to_string()
+}
+
+fn workspace_usage() -> String {
+    "Usage: rvpm workspace [list]".to_string()
 }
 
 fn doc_usage() -> String {
@@ -978,6 +1175,7 @@ fn print_usage() {
     println!("  fetch <pkg>    Fetch 'github.com/<user>/<repo>@<version>' into the shared cache");
     println!("  lock           Generate or validate rv.lock for the current package");
     println!("  cache <sub>    Inspect or clear the shared package cache (dir/list/clean)");
+    println!("  workspace      List workspace packages and registered commands");
     println!("  help           Print this message");
     println!("  version        Print the rvpm version (also --version, -V)");
     println!();
