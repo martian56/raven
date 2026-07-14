@@ -64,6 +64,37 @@ fn const_local_is_usable() {
 }
 
 #[test]
+fn unit_function_discards_a_trailing_value() {
+    check("fun setup() -> Bool = true\nfun main() {\n    setup()\n}\n").unwrap();
+}
+
+#[test]
+fn if_without_else_discards_its_branch_value() {
+    check(
+        "fun apply(n: Int) -> Bool = n > 0\nfun run(ready: Bool) {\n    if ready {\n        apply(1)\n    }\n}\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn unit_lambda_discards_a_trailing_value() {
+    check(
+        "fun setup() -> Bool = true\nfun main() {\n    let f = fun() -> Unit { setup() }\n    f()\n}\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn non_unit_function_still_requires_its_declared_return_type() {
+    assert!(check("fun value() -> Int { true }").is_err());
+}
+
+#[test]
+fn if_with_else_still_requires_matching_branch_types() {
+    assert!(check("fun run(ready: Bool) { if ready { 1 } else { true } }").is_err());
+}
+
+#[test]
 fn generic_arg_violating_a_bound_is_rejected() {
     // A type written with a generic argument that does not satisfy the
     // declaration's bound is rejected at type-check, not left to surface as an

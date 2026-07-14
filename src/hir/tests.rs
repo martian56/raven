@@ -75,6 +75,38 @@ fn single_expression_body_becomes_block() {
 }
 
 #[test]
+fn unit_function_tail_is_lowered_as_a_discarded_statement() {
+    let p = lower("fun setup() -> Bool = true\nfun main() { setup() }");
+    let body = only_fn(&p, "main").body.as_ref().expect("body");
+    assert!(body.tail.is_none(), "a unit function must return Unit");
+    assert!(matches!(
+        body.stmts.last().map(|stmt| &stmt.kind),
+        Some(HirStmtKind::Expr(_))
+    ));
+}
+
+#[test]
+fn no_else_if_discards_the_then_branch_tail() {
+    let p =
+        lower("fun apply(n: Int) -> Bool = n > 0\nfun run(ready: Bool) { if ready { apply(1) } }");
+    let body = only_fn(&p, "run").body.as_ref().expect("body");
+    let HirStmtKind::Expr(if_expr) = &body.stmts.last().expect("discarded if").kind else {
+        panic!("expected the unit if as an expression statement");
+    };
+    let HirExprKind::If { then_block, .. } = &if_expr.kind else {
+        panic!("expected if expression");
+    };
+    assert!(
+        then_block.tail.is_none(),
+        "the then value must be discarded"
+    );
+    assert!(matches!(
+        then_block.stmts.last().map(|stmt| &stmt.kind),
+        Some(HirStmtKind::Expr(_))
+    ));
+}
+
+#[test]
 fn range_lowers_to_range_new() {
     let p = lower("fun r() -> () { let xs = 0..10; }");
     let f = only_fn(&p, "r");
