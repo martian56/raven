@@ -121,12 +121,12 @@ fn host_triple_string() -> String {
     Triple::host().to_string()
 }
 
-/// Native code to link into the program, gathered from the `[ffi]` sections of
-/// a project and its dependencies: object files compiled from bundled C
-/// sources, system library names (`-l`), and raw linker arguments.
+/// Native inputs to link into the program: object files compiled from bundled
+/// C sources, a Windows resource when configured, system library names (`-l`),
+/// and raw linker arguments.
 #[derive(Debug, Clone, Default)]
 pub struct NativeLink {
-    /// Object files (compiled from bundled C sources) to link in.
+    /// Object and resource files to link in.
     pub objects: Vec<PathBuf>,
     /// System library names to link, passed as `-l<name>` (or `<name>.lib`).
     pub libs: Vec<String>,
@@ -249,6 +249,104 @@ pub fn compile_c_sources(
         objects.push(object);
     }
     Ok(objects)
+}
+
+/// Compile an `.ico` file into a native Windows resource that the linker can
+/// embed in the executable. MSVC targets use the Windows SDK's `rc.exe`;
+/// GNU targets use MinGW-w64's `windres`.
+pub fn compile_windows_icon(icon: &Path, out_dir: &Path) -> Result<PathBuf, CodegenError> {
+    if !icon.is_file() {
+        return Err(CodegenError::Target(format!(
+            "Windows icon '{}' does not exist or is not a file",
+            icon.display()
+        )));
+    }
+    std::fs::create_dir_all(out_dir)
+        .map_err(|e| CodegenError::Target(format!("create native build dir: {}", e)))?;
+
+    // Give the resource script a fixed local filename. This avoids quoting and
+    // escaping an arbitrary absolute Windows path in RC syntax.
+    let local_icon = out_dir.join("raven_app.ico");
+    std::fs::copy(icon, &local_icon)
+        .map_err(|e| CodegenError::Target(format!("copy Windows icon: {}", e)))?;
+    let script = out_dir.join("raven_app.rc");
+    std::fs::write(&script, "1 ICON \"raven_app.ico\"\n")
+        .map_err(|e| CodegenError::Target(format!("write Windows resource script: {}", e)))?;
+
+    let triple = Triple::host();
+    if is_windows_msvc(&triple) {
+        let resource = out_dir.join("raven_app.res");
+        let mut cmd = cc::windows_registry::find_tool(&host_triple_string(), "rc.exe")
+            .ok_or_else(|| {
+                CodegenError::Target(
+                    "cannot embed the Windows icon because rc.exe was not found; install the Windows SDK through the Visual Studio C++ Build Tools"
+                        .to_string(),
+                )
+            })?
+            .to_command();
+        cmd.current_dir(out_dir)
+            .arg("/nologo")
+            .arg("/fo")
+            .arg("raven_app.res")
+            .arg("raven_app.rc");
+        run_resource_compiler(cmd, "rc.exe", &resource)?;
+        Ok(resource)
+    } else if is_windows_gnu(&triple) {
+        let resource = out_dir.join("raven_app.o");
+        let windres = find_on_path(&["windres.exe", "windres"]).ok_or_else(|| {
+            CodegenError::Target(
+                "cannot embed the Windows icon because windres was not found; install a MinGW-w64 toolchain and put windres on PATH"
+                    .to_string(),
+            )
+        })?;
+        let mut cmd = Command::new(windres);
+        cmd.current_dir(out_dir).args([
+            "raven_app.rc",
+            "--output-format=coff",
+            "-o",
+            "raven_app.o",
+        ]);
+        run_resource_compiler(cmd, "windres", &resource)?;
+        Ok(resource)
+    } else {
+        Err(CodegenError::Target(
+            "Windows executable icons can only be compiled for a Windows target".to_string(),
+        ))
+    }
+}
+
+fn run_resource_compiler(mut cmd: Command, name: &str, output: &Path) -> Result<(), CodegenError> {
+    let result = cmd
+        .output()
+        .map_err(|e| CodegenError::Target(format!("{} failed to launch: {}", name, e)))?;
+    if !result.status.success() {
+        return Err(CodegenError::Target(format!(
+            "{} failed while compiling the Windows icon:\n{}",
+            name,
+            String::from_utf8_lossy(&result.stderr).trim()
+        )));
+    }
+    if !output.is_file() {
+        return Err(CodegenError::Target(format!(
+            "{} did not produce '{}'",
+            name,
+            output.display()
+        )));
+    }
+    Ok(())
+}
+
+fn find_on_path(names: &[&str]) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        for name in names {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
 }
 
 /// True when `object` exists and was built from the current contents of

@@ -49,7 +49,7 @@ section = "utils"                  # deb
 priority = "optional"              # deb
 
 [dist.windows]
-icon = "assets/rook.ico"           # Inno Setup icon
+icon = "assets/rook.ico"           # embedded executable and Inno Setup icon
 upgrade_code = "9f0c86a1-2b3c-4d5e-8f90-112233445566"  # msi upgrade GUID
 add_to_path = true                 # msi appends the install dir to system PATH
 ```
@@ -89,6 +89,11 @@ manifest so it never changes by accident.
 directory to the system PATH, so a command-line tool is callable from a
 terminal after installing (the other installers still leave PATH alone).
 The uninstaller removes the entry.
+
+On Windows, `[dist.windows].icon` is compiled into the executable produced by
+`rvpm build`, so Explorer and the taskbar can display the application icon. The
+same `.ico` is also used as the Inno Setup installer icon. MSVC builds use the
+Windows SDK resource compiler (`rc.exe`); GNU builds use MinGW-w64 `windres`.
 
 ## What is out of scope
 

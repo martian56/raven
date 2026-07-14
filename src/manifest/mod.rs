@@ -205,7 +205,8 @@ impl Default for DistLinux {
 /// The `[dist.windows]` subsection, shared by the msi and inno backends.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DistWindows {
-    /// An .ico file relative to the package root, used by the installers.
+    /// An .ico file relative to the package root, embedded in Windows
+    /// executables and used by the Inno installer.
     pub icon: String,
     /// The stable GUID that lets an msi upgrade an installed older version.
     /// Required by the msi backend; generate one once and keep it.

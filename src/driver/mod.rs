@@ -108,8 +108,8 @@ pub fn build_binary(
 }
 
 /// Compile `input` to a native executable like [`build_binary`], additionally
-/// linking the `native` FFI inputs (compiled C archives, `-l` libraries, and
-/// raw linker arguments) gathered from `[ffi]` sections.
+/// linking the `native` inputs (compiled C objects, Windows resources, `-l`
+/// libraries, and raw linker arguments) gathered by rvpm.
 pub fn build_binary_native(
     input: &Path,
     output: &Path,
