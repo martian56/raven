@@ -3,13 +3,15 @@
 //!
 //! A manifest describes one Raven package: its identity (`[package]`),
 //! its dependencies on other Raven packages (`[dependencies]`), optional
-//! native linker pass-through (`[ffi]`), and optional formatter settings
-//! (`[fmt]`). This module owns the schema and validation only. Fetching
+//! native linker pass-through (`[ffi]`), formatter settings (`[fmt]`), a
+//! workspace (`[workspace]`), and structured commands (`[commands]`). This
+//! module owns the schema and validation only. Fetching
 //! dependencies, resolving version constraints, and wiring `[ffi]` into
 //! the link step are handled by later rvpm work.
 //!
 //! See `docs/v2/specs/rv-toml.md` for the full field reference.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
 
@@ -76,6 +78,36 @@ pub struct Manifest {
     /// already filled from `[package]`. `None` means the section is absent;
     /// `rvpm dist` then acts as if it were `Dist::with_defaults`.
     pub dist: Option<Dist>,
+    /// Workspace configuration when this package is also a workspace root.
+    pub workspace: Option<Workspace>,
+    /// Structured executable commands registered by this manifest.
+    pub commands: BTreeMap<String, RegisteredCommand>,
+}
+
+/// The optional `[workspace]` section on a package or virtual root manifest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Workspace {
+    /// Package directories relative to the workspace root.
+    pub members: Vec<String>,
+    /// Package name selected when a command runs from the workspace root.
+    pub default_member: Option<String>,
+}
+
+/// One `[commands]` entry. Commands select a workspace application by package
+/// name and prepend optional default arguments before invocation arguments.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegisteredCommand {
+    pub package: String,
+    pub args: Vec<String>,
+}
+
+/// The workspace-facing view of an `rv.toml`. Unlike [`Manifest`], this also
+/// represents a virtual workspace root that has no `[package]` section.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceManifest {
+    pub package: Option<Package>,
+    pub workspace: Workspace,
+    pub commands: BTreeMap<String, RegisteredCommand>,
 }
 
 /// The `[package]` section.
@@ -495,6 +527,26 @@ struct RawManifest {
     ffi: Option<RawFfi>,
     fmt: Option<RawFmt>,
     dist: Option<RawDist>,
+    workspace: Option<RawWorkspace>,
+    #[serde(default)]
+    commands: BTreeMap<String, RawRegisteredCommand>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawWorkspace {
+    #[serde(default)]
+    members: Vec<String>,
+    #[serde(rename = "default-member")]
+    default_member: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawRegisteredCommand {
+    package: String,
+    #[serde(default)]
+    args: Vec<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -565,6 +617,84 @@ struct RawDistWindows {
     icon: Option<String>,
     upgrade_code: Option<String>,
     add_to_path: Option<bool>,
+}
+
+fn validate_workspace(raw: RawWorkspace) -> Result<Workspace, ManifestError> {
+    let mut seen = std::collections::BTreeSet::new();
+    for member in &raw.members {
+        if member.trim().is_empty() {
+            return Err(ManifestError::InvalidValue {
+                section: "workspace".to_string(),
+                field: "members".to_string(),
+                message: "member paths must not be empty".to_string(),
+            });
+        }
+        if member.chars().any(char::is_control) {
+            return Err(ManifestError::InvalidValue {
+                section: "workspace".to_string(),
+                field: "members".to_string(),
+                message: format!("member path '{}' contains a control character", member),
+            });
+        }
+        if !seen.insert(member.clone()) {
+            return Err(ManifestError::InvalidValue {
+                section: "workspace".to_string(),
+                field: "members".to_string(),
+                message: format!("member path '{}' is listed more than once", member),
+            });
+        }
+    }
+    if let Some(default) = raw.default_member.as_deref() {
+        if !is_valid_package_name(default) {
+            return Err(ManifestError::InvalidValue {
+                section: "workspace".to_string(),
+                field: "default-member".to_string(),
+                message: format!("'{}' is not a valid package name", default),
+            });
+        }
+    }
+    Ok(Workspace {
+        members: raw.members,
+        default_member: raw.default_member,
+    })
+}
+
+fn validate_commands(
+    raw: BTreeMap<String, RawRegisteredCommand>,
+) -> Result<BTreeMap<String, RegisteredCommand>, ManifestError> {
+    let mut commands = BTreeMap::new();
+    for (name, command) in raw {
+        if !is_valid_package_name(&name) {
+            return Err(ManifestError::InvalidValue {
+                section: "commands".to_string(),
+                field: name,
+                message: "command names use the same portable characters as package names"
+                    .to_string(),
+            });
+        }
+        if !is_valid_package_name(&command.package) {
+            return Err(ManifestError::InvalidValue {
+                section: "commands".to_string(),
+                field: name,
+                message: format!("'{}' is not a valid package name", command.package),
+            });
+        }
+        if command.args.iter().any(|arg| arg.contains('\0')) {
+            return Err(ManifestError::InvalidValue {
+                section: "commands".to_string(),
+                field: name,
+                message: "default arguments must not contain NUL bytes".to_string(),
+            });
+        }
+        commands.insert(
+            name,
+            RegisteredCommand {
+                package: command.package,
+                args: command.args,
+            },
+        );
+    }
+    Ok(commands)
 }
 
 impl Manifest {
@@ -704,12 +834,24 @@ impl Manifest {
             None => None,
         };
 
+        let workspace = raw.workspace.map(validate_workspace).transpose()?;
+        let commands = validate_commands(raw.commands)?;
+        if workspace.is_none() && !commands.is_empty() {
+            return Err(ManifestError::InvalidValue {
+                section: "commands".to_string(),
+                field: commands.keys().next().cloned().unwrap_or_default(),
+                message: "registered commands require a [workspace] section".to_string(),
+            });
+        }
+
         Ok(Manifest {
             package,
             dependencies,
             ffi,
             fmt,
             dist,
+            workspace,
+            commands,
         })
     }
 
@@ -721,6 +863,71 @@ impl Manifest {
             source: e,
         })?;
         Manifest::from_toml_str(&text)
+    }
+}
+
+impl WorkspaceManifest {
+    /// Parse a workspace root manifest. A root may also be a normal package,
+    /// or it may be virtual and contain only `[workspace]` and `[commands]`.
+    pub fn from_toml_str(s: &str) -> Result<WorkspaceManifest, ManifestError> {
+        let raw: RawManifest =
+            toml::from_str(s).map_err(|e| ManifestError::Toml(e.message().to_string()))?;
+        if raw.workspace.is_none() {
+            return Err(ManifestError::MissingField {
+                section: "workspace".to_string(),
+                field: "members".to_string(),
+            });
+        }
+
+        if raw.package.is_some() {
+            let manifest = Manifest::from_toml_str(s)?;
+            return Ok(WorkspaceManifest {
+                package: Some(manifest.package),
+                workspace: manifest.workspace.expect("workspace was present"),
+                commands: manifest.commands,
+            });
+        }
+
+        let root: toml::Value =
+            toml::from_str(s).map_err(|e| ManifestError::Toml(e.message().to_string()))?;
+        if let Some(unexpected) = root.as_table().and_then(|table| {
+            table
+                .keys()
+                .find(|key| key.as_str() != "workspace" && key.as_str() != "commands")
+        }) {
+            return Err(ManifestError::InvalidValue {
+                section: "workspace".to_string(),
+                field: "members".to_string(),
+                message: format!(
+                    "a virtual workspace root cannot contain a [{}] section",
+                    unexpected
+                ),
+            });
+        }
+
+        let workspace = validate_workspace(raw.workspace.expect("checked above"))?;
+        if workspace.members.is_empty() {
+            return Err(ManifestError::InvalidValue {
+                section: "workspace".to_string(),
+                field: "members".to_string(),
+                message: "a virtual workspace must contain at least one member".to_string(),
+            });
+        }
+        Ok(WorkspaceManifest {
+            package: None,
+            workspace,
+            commands: validate_commands(raw.commands)?,
+        })
+    }
+
+    /// Read and parse a workspace root manifest.
+    pub fn load(path: impl AsRef<Path>) -> Result<WorkspaceManifest, ManifestError> {
+        let path = path.as_ref();
+        let text = std::fs::read_to_string(path).map_err(|e| ManifestError::Io {
+            path: path.display().to_string(),
+            source: e,
+        })?;
+        WorkspaceManifest::from_toml_str(&text)
     }
 }
 
@@ -1156,5 +1363,62 @@ upgrade_code = "9f0c86a1-2b3c-4d5e-8f90-112233445566"
         assert!(!is_safe_dist_path("a//b"));
         assert!(!is_safe_dist_path("a\\b"));
         assert!(!is_safe_dist_path("C:/x"));
+    }
+
+    #[test]
+    fn package_workspace_and_commands_parse() {
+        let src = r#"
+[package]
+name = "root"
+version = "0.1.0"
+
+[workspace]
+members = ["apps/api", "tools/schema"]
+default-member = "api"
+
+[commands]
+schema = { package = "schema", args = ["migrate"] }
+"#;
+        let manifest = Manifest::from_toml_str(src).expect("manifest parses");
+        let workspace = manifest.workspace.expect("workspace");
+        assert_eq!(workspace.members, ["apps/api", "tools/schema"]);
+        assert_eq!(workspace.default_member.as_deref(), Some("api"));
+        let command = manifest.commands.get("schema").expect("command");
+        assert_eq!(command.package, "schema");
+        assert_eq!(command.args, ["migrate"]);
+    }
+
+    #[test]
+    fn virtual_workspace_manifest_does_not_require_a_package() {
+        let src = r#"
+[workspace]
+members = ["apps/api"]
+
+[commands]
+serve = { package = "api", args = ["--port", "8080"] }
+"#;
+        let manifest = WorkspaceManifest::from_toml_str(src).expect("workspace parses");
+        assert!(manifest.package.is_none());
+        assert_eq!(manifest.workspace.members, ["apps/api"]);
+        assert_eq!(manifest.commands["serve"].args, ["--port", "8080"]);
+    }
+
+    #[test]
+    fn invalid_workspace_and_command_values_are_rejected() {
+        let duplicate = "[workspace]\nmembers = [\"app\", \"app\"]\n";
+        assert!(WorkspaceManifest::from_toml_str(duplicate).is_err());
+
+        let unknown_field =
+            "[workspace]\nmembers = [\"app\"]\n\n[commands]\nx = { package = \"app\", shell = \"echo x\" }\n";
+        assert!(WorkspaceManifest::from_toml_str(unknown_field).is_err());
+
+        let package_only = "[package]\nname = \"app\"\nversion = \"0.1.0\"\n";
+        assert!(WorkspaceManifest::from_toml_str(package_only).is_err());
+
+        let command_without_workspace = "[package]\nname = \"app\"\nversion = \"0.1.0\"\n\n[commands]\nrun = { package = \"app\" }\n";
+        assert!(Manifest::from_toml_str(command_without_workspace).is_err());
+
+        let virtual_with_package_fields = "[workspace]\nmembers = [\"app\"]\n\n[dependencies]\n";
+        assert!(WorkspaceManifest::from_toml_str(virtual_with_package_fields).is_err());
     }
 }
