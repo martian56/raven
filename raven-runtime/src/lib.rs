@@ -449,13 +449,11 @@ pub extern "C" fn raven_panic(msg_ptr: *const u8, msg_len: usize) -> ! {
     process::exit(101);
 }
 
-/// Write a UTF-8 byte slice to standard output without a trailing
-/// newline.
+/// Write a byte slice to standard output without a trailing newline.
 ///
 /// # Safety
 ///
-/// `ptr` must point to `len` initialized UTF-8 bytes, or `len` must be
-/// zero.
+/// `ptr` must point to `len` initialized bytes, or `len` must be zero.
 #[no_mangle]
 pub extern "C" fn raven_print_str(ptr: *const u8, len: usize) {
     if len == 0 || ptr.is_null() {
@@ -471,13 +469,11 @@ pub extern "C" fn raven_print_str(ptr: *const u8, len: usize) {
     let _ = handle.write_all(bytes);
 }
 
-/// Write a UTF-8 byte slice to standard output followed by a single
-/// `\n`.
+/// Write a byte slice to standard output followed by a single `\n`.
 ///
 /// # Safety
 ///
-/// `ptr` must point to `len` initialized UTF-8 bytes, or `len` must be
-/// zero.
+/// `ptr` must point to `len` initialized bytes, or `len` must be zero.
 #[no_mangle]
 pub extern "C" fn raven_println_str(ptr: *const u8, len: usize) {
     // See `raven_print_str`: ignore SIGPIPE so a closed stdout reader cannot

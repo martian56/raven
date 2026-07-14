@@ -1,5 +1,5 @@
-//! Stop-the-world, single-threaded, tracing mark-and-sweep garbage
-//! collector for compiled Raven v2 programs.
+//! Stop-the-world, tracing mark-and-sweep garbage collector for compiled
+//! Raven v2 programs with parallel mutators.
 //!
 //! The collector finds its roots through a shadow stack the code
 //! generator maintains: a runtime-owned stack of the addresses of the
@@ -7,14 +7,11 @@
 //! a frame's root array on entry and unregisters it on exit. See
 //! `docs/v2/specs/gc.md` for the full design and the ABI contract.
 //!
-//! # Single-threaded assumption
-//!
-//! v2.0 compiled programs are single threaded. The collector state
-//! lives in `thread_local!` cells, so each thread that ever touches the
-//! runtime gets its own independent heap and shadow stack. Sharing GC
-//! objects across threads is undefined in v2.0; the thread-local form
-//! simply keeps the global state sound under Rust's aliasing rules
-//! without a lock.
+//! Each worker owns an allocation list and shadow stack. A process-wide root
+//! registry and stop-the-world coordinator park parallel Raven mutators at
+//! safepoints before a collection scans every thread and parked goroutine.
+//! The initiating thread then sweeps only its own allocation list; globally
+//! unique mark epochs keep cross-thread marking sound.
 
 use crate::object::structval::{STRUCT_FIELDS_OFFSET, STRUCT_FIELD_SLOT};
 use crate::object::{
@@ -727,8 +724,8 @@ fn collect() {
     }
 }
 
-/// Mark phase: starting from every root, set the mark bit on every
-/// reachable object. Tracing uses an explicit work stack so a deep or
+/// Mark phase: starting from every root, stamp every reachable object with the
+/// current collection epoch. Tracing uses an explicit work stack so a deep or
 /// cyclic graph cannot overflow the native stack.
 fn mark() {
     let mut work: Vec<*mut ObjectHeader> = Vec::new();

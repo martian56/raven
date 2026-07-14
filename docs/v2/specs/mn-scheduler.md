@@ -1,5 +1,8 @@
 # M:N scheduler implementation blueprint
 
+> **Status:** Implemented. "Current scheduler" below names the old
+> single-threaded baseline; "target model" describes the runtime that ships.
+
 The final piece of the Go-style multi-core parallelism epic (#212/#237). The GC
 half is complete and merged (registry #351, coordinator #354+#357, epoch #356,
 collector wiring #358, back-end safepoint markers #359); this document is the
@@ -22,11 +25,14 @@ code in the project and must be built deliberately, not improvised.
 
 ## Target model
 
-A fixed pool of worker OS threads (default `available_parallelism`) plus the
-main thread. Goroutines (including ones that migrate) run on whichever worker
-pulls them; `corosensei` coroutines are `Send`, so a coroutine may resume on a
-different thread than it last ran on, as long as only one thread resumes a given
-coroutine at a time (guaranteed by popping it from the ready queue exclusively).
+The steady-state pool has one worker OS thread per available core (up to the
+runtime cap), plus the main thread. When a worker enters a blocking syscall,
+the pool may start a temporary replacement so runnable goroutines do not
+starve; excess workers retire after the blocking burst. Goroutines (including
+ones that migrate) run on whichever worker pulls them; `corosensei` coroutines
+are `Send`, so a coroutine may resume on a different thread than it last ran
+on, as long as only one thread resumes a given coroutine at a time (guaranteed
+by popping it from the ready queue exclusively).
 
 The GC is already correct for this: each OS thread keeps its own heap and sweeps
 only that heap, the registry makes a collection scan every thread's roots, and

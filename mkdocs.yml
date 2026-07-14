@@ -128,7 +128,9 @@ nav:
       - std/option: v2/guide/stdlib/option.md
       - std/ffi: v2/guide/stdlib/ffi.md
       - std/test: v2/guide/stdlib/test.md
-  - rvpm: v2/guide/rvpm.md
+  - rvpm:
+    - Overview and commands: v2/guide/rvpm.md
+    - Distributing applications: v2/specs/rvpm-dist.md
   - GitHub: https://github.com/martian56/raven
   - VS Code Marketplace: https://marketplace.visualstudio.com/items?itemName=martian56.raven-language
 

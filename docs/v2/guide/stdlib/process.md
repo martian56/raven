@@ -1,9 +1,8 @@
 # std/process
 
-Run external programs and read back their output. A run spawns the program,
-waits for it to finish, and hands you the captured exit code, stdout, and
-stderr as an `Output` value. There is no streaming: a child runs to
-completion in a single call.
+Run external programs either to completion or as a live child. `run` waits and
+returns captured output; `start` returns a `Child` that can exchange stdin,
+drain stdout and stderr incrementally, poll or wait for exit, and be killed.
 
 ```rust
 import std/process { run }
@@ -20,11 +19,11 @@ fun main() {
 ## Importing
 
 ```rust
-import std/process { run, run_with_input }
+import std/process { run, run_with_input, start }
 ```
 
-Bring in just the functions you call. The `success` method on `Output` comes
-in with the type and needs no separate selector.
+Bring in just the functions you call. `Output`, `Child`, and their methods
+come in with the module and need no separate selectors.
 
 ## The `Output` type
 
@@ -56,7 +55,109 @@ fun main() {
 }
 ```
 
+## The `Child` type
+
+```rust
+struct Child { id: Int }
+```
+
+`start` returns a handle to a child that may still be running. Its opaque
+`id` is managed by the runtime; use the methods below instead of inspecting
+the field.
+
+### `read_stdout(self) -> String` and `read_stderr(self) -> String`
+
+Drain all bytes accumulated on that stream since the previous read. An empty
+string means nothing new is available. Each stream retains at most 8 MiB; keep
+draining a noisy long-running child if every byte matters.
+
+### `write_stdin(self, data: String) -> Bool`
+
+Write and flush `data` to the child's stdin. It returns `false` if stdin was
+closed, the child exited, the pipe broke, or the handle is no longer valid.
+Raven strings are byte buffers, so binary data is passed through unchanged.
+
+### `close_stdin(self)`
+
+Close stdin and send EOF. Call this after the final write when the child waits
+for end of input before producing output or exiting.
+
+### `poll(self) -> Option<Int>` and `running(self) -> Bool`
+
+`poll` returns `None` while the child runs and `Some(code)` once it exits.
+`running` is the boolean form. A signal termination without an OS exit code is
+reported as `-1`.
+
+### `wait(self) -> Int`
+
+Wait for exit and return the code. Waiting polls with a short scheduler-aware
+sleep, so other Raven goroutines continue to run.
+
+### `kill(self) -> Bool`
+
+Stop the child. It returns `true` when the kill was delivered or the process
+had already exited.
+
+### `free(self)`
+
+Release the handle after collecting the final output and status. `free` does
+not kill a running process, although the runtime still guarantees it will be
+reaped after exit.
+
 ## Running a program
+
+### `start(program: String, args: List<String>) -> Result<Child, Error>`
+
+Start a child without waiting. Runtime reader threads continuously collect
+stdout and stderr so the process does not block on full pipes. Drain the
+buffers while it runs and call `free` when finished.
+
+```rust
+import std/process { start }
+import std/sync { sleep_millis }
+
+fun main() {
+    let args = ["--version"]
+    match start("git", args) {
+        Ok(child) -> {
+            while child.running() {
+                let chunk = child.read_stdout()
+                if chunk.length() > 0 {
+                    print(chunk)
+                }
+                sleep_millis(10)
+            }
+            print(child.read_stdout())       // drain bytes written before exit
+            let code = child.wait()
+            child.free()
+            print("exit ${code}")
+        },
+        Err(e) -> print("could not start git: ${e.message}"),
+    }
+}
+```
+
+For an interactive child, call `write_stdin` as needed and then
+`close_stdin` to send EOF:
+
+```rust
+import std/process { start }
+
+fun main() {
+    let no_args: List<String> = []
+    match start("cat", no_args) {
+        Ok(child) -> {
+            child.write_stdin("hello\n")
+            child.close_stdin()
+            let code = child.wait()
+            print(child.read_stdout())
+            child.free()
+            print("exit ${code}")
+        },
+        Err(e) -> print(e.message),
+    }
+}
+```
 
 ### `run(program: String, args: List<String>) -> Result<Output, Error>`
 
@@ -165,8 +266,8 @@ fun main() {
 
 ## Notes
 
-- A run captures stdout and stderr in full before returning. There is no
-  incremental or streaming output.
+- `run` and `run_with_input` capture stdout and stderr in full before
+  returning. Use `start` for incremental output or interactive stdin.
 - An argument that itself contains a NUL byte (`\0`) is not supported.
 - A child that reads no stdin under `run` sees end of input immediately.
   Under `run_with_input`, a broken pipe (the child exits without reading) is
@@ -175,5 +276,6 @@ fun main() {
 ## See also
 
 - [std/error](error.md) for the `Error` type and the `Result` model used by
-  `run` and `run_with_input`.
+  `run`, `run_with_input`, and `start`.
+- [std/sync](sync.md) for scheduler-aware sleeps while polling a child.
 - [std/string](string.md) for trimming and inspecting captured output.

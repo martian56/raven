@@ -61,6 +61,11 @@ prefix per format: `/usr/` for deb and rpm (the binary goes to
 folder for msi and inno. When `source` is a directory, rvpm copies its entire
 tree beneath `dest`, preserving nested and empty directories.
 
+The package version and every free-form metadata value reject control
+characters before any packaging file is generated. This prevents a manifest
+value from injecting extra Debian control fields, RPM directives, or installer
+script lines.
+
 ## Formats and their tools
 
 rvpm generates each format's packaging text and shells out to the format's

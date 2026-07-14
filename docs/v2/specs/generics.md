@@ -54,7 +54,8 @@ parameter names with the `Binding::GenericParam { owner, name }` variant
 * Associated types and projections (`<T as Iterator>::Item`).
 * Full trait coherence enforcement (orphan rules) beyond the existing
   duplicate-impl check.
-* `dyn Trait`. Tracked separately in issue #66.
+* `dyn Trait`. Specified separately in `dyn-trait.md` and supported by the
+  shipped type checker and back end.
 * Variance.
 
 ## The `Ty` representation

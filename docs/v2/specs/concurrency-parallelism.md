@@ -1,10 +1,16 @@
 # Concurrency: multi-core parallelism
 
+> **Status:** Historical design record. The multi-core epic is implemented,
+> but later refinements superseded some proposed details here. See
+> [gc.md](gc.md) and [mn-scheduler.md](mn-scheduler.md) for the current
+> per-thread heaps, stop-the-world coordination, and elastic worker pool.
+> Sections labeled "current state" describe the pre-implementation baseline.
+
 ## Goal
 
 Run goroutines across several OS threads so independent goroutines execute in
-parallel on multiple cores, replacing the current single-OS-thread cooperative
-model. This is the epic tracked by #212; this document is its design and slice
+parallel on multiple cores, replacing the former single-OS-thread cooperative
+model. This was the epic tracked by #212; this document is its design and slice
 plan. It builds on the shipped cooperative scheduler (see
 `docs/v2/specs/concurrency.md`) and is the prerequisite design for the filed
 follow-ups: M:N scheduler (#237), thread-safe/parallel GC (#238), select
@@ -89,9 +95,10 @@ options are (in increasing complexity):
 
 ## Scheduler: M:N over an OS thread pool (#237)
 
-- A fixed pool of OS worker threads (default: available parallelism), each
+- A baseline pool of OS worker threads (default: available parallelism), each
   running a scheduler loop that pulls a ready goroutine and runs it to its next
-  yield point.
+  yield point. The shipped runtime adds bounded temporary replacements around
+  blocking syscalls and retires excess workers after the burst.
 - A shared ready queue (start) or per-worker queues with work-stealing (perf
   follow-up). Per-OS-thread "current goroutine" state replaces the single
   global current.

@@ -4,7 +4,12 @@
 
 Statically validate a resolved Raven file. Given a `ResolvedFile` (the output of `src/resolve`), the type checker assigns a concrete type to every expression, verifies operator and call sites, checks struct, trait, impl, and enum declarations against their uses, and confirms that every `match` is exhaustive. The output is a `TypedFile` that pairs the resolved AST with a `TypeMap` (expression span to inferred type) and a `TypeEnv` (declaration to signature).
 
-The type checker is total: every malformed program produces a `RavenError::Type(TypeError, Span, Option<String>)` anchored at the offending source range. It does not infer general generic parameters in this release. `Option<T>`, `Result<T, E>`, and `List<T>` are recognized as built in generic types; any other generic declaration in source is rejected with `GenericsNotYetSupported`, leaving the full mechanism for a follow up issue.
+The type checker is total: every malformed program produces a
+`RavenError::Type(TypeError, Span, Option<String>)` anchored at the offending
+source range. It supports local inference, user-declared generic functions and
+types, trait bounds, generic impls, built-in collection types, and `dyn Trait`.
+See `generics.md` and `dyn-trait.md` for the extensions to the foundational
+rules in this document.
 
 ## Pipeline position
 
@@ -19,37 +24,32 @@ The type checker consumes nodes from `src/ast` plus the resolver's `ResolutionMa
 The AST carries a textual `Type` (`src/ast/ty.rs`) that mirrors what the user wrote. The type checker uses its own internal representation, `Ty`, for several reasons:
 
 * Decoupling: the textual form may contain unresolved paths or sugar (`T?` for `Option<T>`). `Ty` stores the resolved form.
-* Hashing: `Ty` is cheap to compare and copy, while `Type` carries spans and nested paths.
-* Future generics: a later PR introduces type variables and substitution; threading those through the AST type would be invasive.
+* Normalization: `Ty` is cheap to compare and clone, while `Type` carries spans and unresolved nested paths.
+* Generics: inference variables and substitutions stay internal to the checker
+  instead of being threaded through the source AST.
 
 ```rust
 pub enum Ty {
-    Unit,
-    Bool,
-    Int,
-    Float,
-    Char,
-    Str,
-    /// A built in or user declared struct. Generic arguments are reserved
-    /// for the built in generic types and produce errors elsewhere.
-    Struct { id: DeclId, args: Vec<Ty> },
-    Enum   { id: DeclId, args: Vec<Ty> },
-    /// `Option<T>` and `Result<T, E>` and `List<T>` use synthetic ids so
-    /// they do not collide with user declarations.
+    Unit, Bool, Int, Float, Char, Str,
+    Struct { id: DeclId, name: String, args: Vec<Ty> },
+    Enum   { id: DeclId, name: String, args: Vec<Ty> },
     Option(Box<Ty>),
     Result(Box<Ty>, Box<Ty>),
     List(Box<Ty>),
-    /// `fun(A, B) -> C` function type. Used for lambdas and function items.
     Function { params: Vec<Ty>, ret: Box<Ty> },
-    /// `Self` inside an `impl` block, bound to the implementing type.
-    SelfTy,
-    /// An unknown placeholder. Produced when an earlier error already
-    /// reported the problem, so cascades do not spam the user.
+    Dyn { name: String, methods: Vec<String> },
+    SelfTy(Box<Ty>),
+    Any,
+    Ffi(FfiTy),
+    Param(ParamId),
+    Var(InferVarId),
     Error,
 }
 ```
 
-There is no `Unknown` inference variable in this release. Lambdas without parameter annotations require a context type or are rejected with `TypeMismatch`.
+Inference variables are created for generic use sites and unannotated values.
+Lambda parameters may infer from a contextual function type; otherwise they
+need annotations.
 
 ## Algorithm
 
@@ -67,7 +67,10 @@ Walk every top level `Decl` once and populate a `TypeEnv`:
 * Each `Const` and module level `Let` records its annotated type (the initializer is checked in pass 2).
 * Built in generic types (`Option`, `Result`, `List`) are pre populated.
 
-Generic parameter lists are checked for emptiness. A non empty `GenericParam` list on any user item raises `GenericsNotYetSupported`. Type paths referenced in field types, return types, and so on are resolved using the resolver's binding for the head segment, then mapped to `Ty`.
+Generic parameter lists are collected with their trait bounds. Type paths
+referenced in field types, return types, and so on are resolved using the
+resolver's binding for the head segment, then mapped to `Ty`; use sites create
+fresh inference variables and verify bounds after unification.
 
 ### Pass 2: body checking
 
@@ -154,7 +157,8 @@ impl Int {
 
 The implementing type is resolved the same way any type path is resolved, so `impl Int`, `impl String`, `impl<T> List<T>`, `impl Bool`, `impl Char`, `impl Float`, `impl<T> Set<T>`, and `impl<K, V> Map<K, V>` all collect into the same method table the type checker uses for user structs. Inside the body, `self` is the built in receiver and `Self` is the built in type. Resolution then matches the receiver against the impl's `self_ty` exactly as for a user type, so `21.doubled()` resolves to the `Int` impl method.
 
-`Set` and `Map` are recognized as built in type names for the purpose of accepting an `impl` head, but their value types are not yet wired through lowering; an `impl<T> Set<T>` collects and resolves but is not exercised end to end until those types land.
+`Set` and `Map` use the same generic impl collection, resolution,
+monomorphization, and lowering paths as other generic types.
 
 ### Precedence vs hard coded inherent methods
 
@@ -183,18 +187,23 @@ The check runs after each arm body has been typed so that pattern binding types 
 
 ## Built in generic types
 
-Three generic shapes are hard coded:
+Five built-in generic shapes receive dedicated literal or constructor handling:
 
 * `Option<T>`. Variants: `None`, `Some(T)`. Constructed by writing `None` or `Some(value)` at a use site whose context type fixes `T`. The resolver already accepts `Option` and `Result` as built in type names; the type checker recognizes the variant identifiers when the contextual type is known.
 * `Result<T, E>`. Variants: `Ok(T)`, `Err(E)`.
 * `List<T>`. The array literal `[a, b, c]` infers `T` as the unified element type. Empty list literals require a context type and are otherwise rejected with `TypeMismatch`.
 * `Set<T>` and `Map<K, V>` (bundled `std/collections` types). The set literal `{a, b}` types as `Set<T>` with `T` unified across the elements; the map literal `["k": v]` (and the empty `[:]`) types as `Map<K, V>` with `K` and `V` unified across the keys and values. The literal binds to the imported `Set`/`Map` declaration, so it requires `import std/collections` in scope and otherwise reports a `TypeError`. `T` and `K` carry the declarations' `Eq` bound. HIR lowers the literals to the `Set.new()`/`Map.new()` constructors plus an `add`/`set` per element or pair.
 
-Member access against these types goes through a small inherent method table. None of these types participate in the general generic mechanism: their `T` and `E` are pattern matched directly by the type checker. When the full generic mechanism lands (issue #59), these special cases collapse into the unified path.
+These built-in literal forms receive dedicated contextual inference. Their
+declared methods, generic parameters, trait bounds, and implementations then
+participate in the normal generic method and trait-resolution paths.
 
 ## The `?` operator
 
-`expr?` (`ExprKind::Try`) is parsed but not fully typed in this release. Encountering it produces a `TypeError::Custom("? operator is not yet supported, defer to HIR lowering")` so the user gets a clear message rather than a panic. End to end handling lives with the HIR lowering issue (#60).
+`expr?` requires an `Option<T>` or `Result<T, E>`. In a function returning the
+matching container, it unwraps `Some`/`Ok` and returns `None`/`Err` early. The
+type checker verifies the container and residual types; HIR lowers the
+operation to the corresponding match and early return.
 
 ## Errors
 
@@ -208,9 +217,12 @@ Member access against these types goes through a small inherent method table. No
 * `NonExhaustiveMatch { missing }`.
 * `RedundantPattern`.
 * `UnknownType(name)`.
-* `GenericsNotYetSupported`. Removed when issue #59 lands.
+* `CannotInferType` and `OccursCheck { var, ty }`.
+* `BoundNotSatisfied { ty, trait_name }`.
+* `GenericArityMismatch { decl, expected, actual }`.
+* `OverlappingImpls { ty, trait_name, candidates }`.
 * `NotCallable(actual)`.
-* `Custom(String)` for one off shapes (missing struct fields, unsupported `?`, etc.).
+* `Custom(String)` for one-off shapes such as missing struct fields.
 
 All variants reach the user via `RavenError::Type(error, span, hint)`. The renderer in `RavenError::display` is extended to handle the new arm.
 
@@ -225,21 +237,10 @@ Recovery uses the `Ty::Error` placeholder (which unifies with anything) to suppr
 
 The collection pass (Pass 1) stays fail-fast: a malformed signature stops it, because later items depend on the collected signatures. `check_file_all` returns `Result<TypedFile, Vec<RavenError>>`; the driver renders each error with the #283 renderer, separated by a blank line. `check_file` remains a thin wrapper returning only the first error, for callers (tests, golden harnesses) that surface one.
 
-## Out of scope
-
-* User defined generic functions, structs, and traits land in
-  `docs/v2/specs/generics.md`. The same document tracks the
-  Hindley-Milner inference flavor and trait-bound verification used by
-  the v2 checker once that feature ships.
-* `dyn Trait` trait objects. Tracked in issue #66.
-* C FFI extern signatures beyond syntactic acceptance. Tracked in issue #70.
-* `defer` semantics. Tracked in issue #68.
-* End to end `?` propagation. Tracked with HIR lowering in issue #60.
-* String interpolation expansion (handled by parser side lowering later).
-* Cross module member resolution against imported modules. The type checker recognizes the import target but defers member lookups against std modules to the HIR lowering pass.
-* Parser-level error recovery (reporting several parse errors in one compile). A syntax error still stops the parser at the first one; the multi-error recovery here is for the type checker's body pass. Parser recovery is a follow-up under issue #284.
-
 ## Tests
 
-* Unit tests inline at `src/tycheck/tests.rs`: cover primitives, arithmetic, comparisons, struct literal and field access, method dispatch, enum variant construction, `match` exhaustiveness on `Option` and `Result`, `if` branch unification, redundant patterns, unknown fields, ambiguous methods, undefined methods, and rejection of unsupported generics.
+* Unit tests inline at `src/tycheck/tests.rs`: cover primitives, arithmetic,
+  comparisons, struct literal and field access, method dispatch, enum variant
+  construction, exhaustive matches, generics and bounds, trait objects,
+  propagation, redundant patterns, and error recovery.
 * Golden snapshot tests at `tests/tycheck_golden.rs` over a corpus at `tests/tycheck_corpus/`. Each `.rv` source has a committed `.rv.types` baseline produced by dumping every expression site and its inferred type. Refresh with `RAVEN_UPDATE_TYCHECK_GOLDEN=1`.

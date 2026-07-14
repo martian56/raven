@@ -56,13 +56,14 @@ fun main() {
 }
 ```
 
-At module level a `const` is a compile-time constant: it requires both a
-type and a value, and its initializer must be a constant expression (a
-literal, or an arithmetic, comparison, bitwise, or boolean combination of
-literals), which is folded and inlined at each use site.
+At module level a `const` is a compile-time constant. A literal initializer
+can infer its type; other constant expressions need an explicit annotation.
+The initializer must be a literal, or an arithmetic, comparison, bitwise, or
+boolean combination of literals. It is folded and inlined at each use site.
 
 ```rust
 const MAX: Int = 100
+const HOST = "127.0.0.1"       // inferred as String
 const SECS_PER_HOUR: Int = 60 * 60
 ```
 
@@ -85,7 +86,7 @@ Type names are PascalCase.
 | `Int`    | 64-bit signed integer |
 | `Float`  | 64-bit floating point |
 | `Bool`   | `true` or `false` |
-| `String` | UTF-8 text, heap allocated |
+| `String` | heap-allocated byte string; literals are UTF-8 |
 | `Char`   | a single Unicode scalar value |
 | `Unit`   | the empty value, written `()` |
 

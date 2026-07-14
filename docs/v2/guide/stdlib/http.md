@@ -22,7 +22,10 @@ fun main() {
 ## Importing
 
 ```rust
-import std/http { get, post, put, delete, patch, head, request }
+import std/http {
+    get, post, put, delete, patch, head,
+    request, request_with_timeout, stream,
+}
 ```
 
 Select the functions you use. The `HttpResponse` type comes in with the
@@ -177,6 +180,90 @@ fun main() {
 `get`, `post`, `put`, and `delete` are thin wrappers: `get` and `delete`
 pass `""` for both body and headers, while `post` and `put` pass your body
 and `""` for headers.
+
+### `request_with_timeout(method, url, body, headers, timeout_ms) -> Result<HttpResponse, Error>`
+
+Like `request`, with an overall deadline for connecting, sending, and reading
+the complete response body. A positive `timeout_ms` replaces the default;
+zero or a negative value keeps the normal client timeouts. A deadline failure
+is an `Err` with error kind `"http"`.
+
+```rust
+import std/http { request_with_timeout }
+
+fun main() {
+    match request_with_timeout(
+        "POST",
+        "https://example.com/infer",
+        "{\"prompt\":\"hello\"}",
+        "Content-Type: application/json",
+        120_000,
+    ) {
+        Ok(resp) -> print(resp.body),
+        Err(e) -> print("request failed: ${e.message}"),
+    }
+}
+```
+
+Use this form for endpoints that legitimately take longer than the default,
+such as model inference. It still buffers the entire response; use `stream`
+when the body should be consumed as it arrives.
+
+## Streaming responses
+
+### `stream(method, url, body, headers, timeout_ms) -> Result<HttpStream, Error>`
+
+Open a request without buffering its complete body. The returned `HttpStream`
+already contains `status_code`, `status_text`, and `headers`. Its timeout is
+per connection/read operation rather than an overall stream deadline, so a
+healthy server-sent-event stream can remain open indefinitely.
+
+```rust
+struct HttpStream {
+    id: Int,
+    status_code: Int,
+    status_text: String,
+    headers: String,
+}
+```
+
+Call `read_chunk()` repeatedly. It returns at most 8 KiB, `Ok("")` at the end
+of the body, or `Err` for a failed or timed-out read. Only one goroutine should
+read a stream at a time. Always call `close()` when finished to release the
+connection and runtime handle.
+
+```rust
+import std/http { stream }
+
+fun main() {
+    match stream("GET", "https://example.com/events", "", "", 30_000) {
+        Ok(body) -> {
+            let done = false
+            while !done {
+                match body.read_chunk() {
+                    Ok(chunk) -> {
+                        if chunk.length() == 0 {
+                            done = true
+                        } else {
+                            print(chunk)
+                        }
+                    },
+                    Err(e) -> {
+                        print("stream failed: ${e.message}")
+                        done = true
+                    },
+                }
+            }
+            body.close()
+        },
+        Err(e) -> print("could not open stream: ${e.message}"),
+    }
+}
+```
+
+A non-2xx response still opens successfully, letting you read its error body.
+Only DNS, connection, TLS, timeout, or malformed-response failures return
+`Err` from `stream` itself.
 
 ## Worked example: fetch and report
 

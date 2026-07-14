@@ -180,6 +180,10 @@ Natural logarithm (the C `log`).
 
 Base-2 logarithm.
 
+### `log10(x: Float) -> Float`
+
+Base-10 logarithm.
+
 ```rust
 import std/math { log2 }
 
@@ -193,9 +197,9 @@ fun main() {
 Round toward minus infinity, toward plus infinity, to the nearest whole
 value, and toward zero. Each returns a whole-valued `Float`.
 
-### `sin(x: Float) -> Float` and `cos(x: Float) -> Float`
+### `sin(x: Float) -> Float`, `cos(x: Float) -> Float`, and `tan(x: Float) -> Float`
 
-Sine and cosine, with the angle in radians.
+Sine, cosine, and tangent, with the angle in radians.
 
 ### `asin(x: Float) -> Float`, `acos(x: Float) -> Float`, `atan(x: Float) -> Float`
 

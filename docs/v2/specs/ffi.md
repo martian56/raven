@@ -151,15 +151,15 @@ already uses for runtime symbols such as `raven_println_str`.
 
 ## Linking boundary
 
-On `x86_64-pc-windows-msvc` the link step already puts the C runtime on
-the link line (`/defaultlib:msvcrt`), so CRT-provided symbols such as
-`strlen`, `abs`, and `printf` resolve without any extra flags. The CRT is
-the only library guaranteed to link in this release.
+On `x86_64-pc-windows-msvc` the link step puts the C runtime on the link line
+(`/defaultlib:msvcrt`), so CRT-provided symbols such as `strlen`, `abs`, and
+`printf` resolve without extra flags.
 
-Symbols from any other library are out of scope here. Per-project link
-flags (an `[ffi]` section in `rv.toml` passing `-l<lib>` or `.lib`
-entries) arrive with `rvpm build`, tracked by issue #81. Until then a
-non-CRT symbol surfaces as an unresolved-symbol error at link time.
+For other symbols, `[ffi]` in `rv.toml` supplies bundled C `sources`, library
+names in `libs`, and raw `link_args`. `rvpm build` collects those settings from
+the root package and every transitive dependency, compiles the sources with a
+host-compatible C compiler, and passes the libraries and arguments to the
+linker. Paths in `sources` must remain within their package root.
 
 ## Variadic C functions
 

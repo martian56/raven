@@ -177,13 +177,7 @@ the GC root frame section of `docs/v2/specs/codegen.md`.
   rejected with a clear error.
 * Associated types in trait objects.
 * Auto-trait bounds (`dyn Trait + Send`).
-* Heterogeneous `List<dyn Trait>` as a runnable showcase. The fat pointer
-  is a single GC pointer, so it fits the existing one-word collection
-  storage, but two pieces are missing: the type checker does not yet push
-  an expected `dyn` element type down to each array element to coerce it,
-  and the `List` element access methods (`get`, `push`) are themselves
-  deferred to the stdlib collection issues. A trait object stored in a
-  list would box correctly today; building and reading such a list end to
-  end lands with those issues.
-```
-
+* A heterogeneous list literal whose elements are different concrete
+  implementors. The array checker unifies concrete element types before
+  applying an expected `dyn Trait` element coercion. `List<dyn Trait>` storage
+  and methods work once values have already been coerced.

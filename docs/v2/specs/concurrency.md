@@ -14,7 +14,8 @@ collector implementation that makes them parallel is specified in
 Raven ships:
 
 * an **M:N scheduler** that multiplexes many green threads (goroutines)
-  onto a pool of worker OS threads (one per core), so goroutines run in
+  onto a baseline pool of worker OS threads (one per core), adding bounded
+  temporary replacements around blocking syscalls, so goroutines run in
   parallel,
 * the `spawn` surface form that starts a goroutine from a closure,
 * unbuffered (rendezvous) and buffered channels with blocking `send` and
