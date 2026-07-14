@@ -711,9 +711,9 @@ fn cmd_run(args: &[String]) -> ExitCode {
                 }
             };
             let mut command_args = command.args.clone();
-            match after {
-                Some(forwarded) => command_args.extend_from_slice(forwarded),
-                None => command_args.extend_from_slice(&remaining[1..]),
+            command_args.extend_from_slice(&remaining[1..]);
+            if let Some(forwarded) = after {
+                command_args.extend_from_slice(forwarded);
             }
             (member.root.clone(), command_args)
         } else {
@@ -724,7 +724,10 @@ fn cmd_run(args: &[String]) -> ExitCode {
                     return ExitCode::from(1);
                 }
             };
-            let program_args = after.unwrap_or(remaining).to_vec();
+            let mut program_args = remaining.to_vec();
+            if let Some(forwarded) = after {
+                program_args.extend_from_slice(forwarded);
+            }
             (project, program_args)
         };
     match with_fetch_progress(|| ops::run_package(&project, &prog_args)) {

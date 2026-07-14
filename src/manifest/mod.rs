@@ -905,19 +905,6 @@ impl WorkspaceManifest {
             });
         }
 
-        if !raw.dependencies.is_empty()
-            || raw.ffi.is_some()
-            || raw.fmt.is_some()
-            || raw.dist.is_some()
-        {
-            return Err(ManifestError::InvalidValue {
-                section: "workspace".to_string(),
-                field: "members".to_string(),
-                message: "a virtual workspace root may contain only [workspace] and [commands]"
-                    .to_string(),
-            });
-        }
-
         let workspace = validate_workspace(raw.workspace.expect("checked above"))?;
         if workspace.members.is_empty() {
             return Err(ManifestError::InvalidValue {

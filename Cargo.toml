@@ -72,6 +72,8 @@ cranelift-object = "0.108"
 # Locates the MSVC `link.exe` toolchain via the Windows registry so the
 # driver can link Cranelift's MSVC-flavor objects on windows-msvc hosts.
 cc = "1.2"
+# Cross-process package build locks for binary and fingerprint publication.
+fs2 = "0.4"
 # Supplies the host target triple to key linker selection.
 target-lexicon = "0.12"
 # rv.toml manifest parsing for the rvpm package manager.

@@ -15,8 +15,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
+use fs2::FileExt;
 use sha2::{Digest, Sha256};
 
 pub mod dist;
@@ -643,6 +645,11 @@ pub fn build_in(project_dir: &Path, cache_root: &Path) -> Result<BuildReport, Op
                     source: e,
                 })?;
             }
+            // Every builder and runner takes the same cross-process lock before
+            // inspecting or replacing the binary/fingerprint pair. Holding it
+            // through publication prevents concurrent builds from pairing one
+            // executable with another build's fingerprint.
+            let _build_lock = PackageBuildLock::acquire(&binary)?;
             let fingerprint = build_fingerprint(project_dir, &manifest, &lock)?;
             let fingerprint_path = fingerprint_path(&binary);
             if binary.is_file()
@@ -667,11 +674,7 @@ pub fn build_in(project_dir: &Path, cache_root: &Path) -> Result<BuildReport, Op
                 .unwrap_or_else(|| PathBuf::from("ffi"));
             let native = gather_native_link(project_dir, &manifest, &lock, cache_root, &ffi_dir)?;
             driver::build_binary_native(&entry, &binary, Some(&ctx), &native)?;
-            std::fs::write(&fingerprint_path, fingerprint).map_err(|source| OpError::Io {
-                action: "write build fingerprint".to_string(),
-                path: fingerprint_path,
-                source,
-            })?;
+            atomic_write(&fingerprint_path, fingerprint.as_bytes())?;
             Ok(BuildReport {
                 outcome_lines: vec![format!(
                     "Compiled {} to {}",
@@ -701,10 +704,37 @@ pub fn build_in(project_dir: &Path, cache_root: &Path) -> Result<BuildReport, Op
     }
 }
 
+struct PackageBuildLock {
+    _file: std::fs::File,
+}
+
+impl PackageBuildLock {
+    fn acquire(binary: &Path) -> Result<PackageBuildLock, OpError> {
+        let path = sidecar_path(binary, ".lock");
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .map_err(|source| OpError::Io {
+                action: "open package build lock".to_string(),
+                path: path.clone(),
+                source,
+            })?;
+        FileExt::lock_exclusive(&file).map_err(|source| OpError::Io {
+            action: "lock package build".to_string(),
+            path,
+            source,
+        })?;
+        Ok(PackageBuildLock { _file: file })
+    }
+}
+
 /// Hash every input that affects a package executable. Locked dependencies are
-/// represented by their content hashes, while local Raven and FFI sources are
-/// hashed directly. The rvpm executable and runtime metadata invalidate cached
-/// output after a compiler or runtime replacement.
+/// represented by their content hashes, while local package files are hashed
+/// directly. The rvpm executable and runtime metadata invalidate cached output
+/// after a compiler or runtime replacement.
 fn build_fingerprint(
     project_dir: &Path,
     manifest: &Manifest,
@@ -813,9 +843,54 @@ fn hash_tool_metadata(digest: &mut Sha256, path: Option<&Path>) {
 }
 
 fn fingerprint_path(binary: &Path) -> PathBuf {
+    sidecar_path(binary, ".fingerprint")
+}
+
+fn sidecar_path(binary: &Path, suffix: &str) -> PathBuf {
     let mut name = binary.as_os_str().to_os_string();
-    name.push(".fingerprint");
+    name.push(suffix);
     PathBuf::from(name)
+}
+
+fn atomic_write(path: &Path, contents: &[u8]) -> Result<(), OpError> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
+
+    let sequence = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+    let mut temp_name = path.as_os_str().to_os_string();
+    temp_name.push(format!(".tmp-{}-{}", std::process::id(), sequence));
+    let temp = PathBuf::from(temp_name);
+    let result = (|| -> Result<(), OpError> {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)
+            .map_err(|source| OpError::Io {
+                action: "create temporary build fingerprint".to_string(),
+                path: temp.clone(),
+                source,
+            })?;
+        file.write_all(contents).map_err(|source| OpError::Io {
+            action: "write temporary build fingerprint".to_string(),
+            path: temp.clone(),
+            source,
+        })?;
+        file.sync_all().map_err(|source| OpError::Io {
+            action: "sync temporary build fingerprint".to_string(),
+            path: temp.clone(),
+            source,
+        })?;
+        std::fs::rename(&temp, path).map_err(|source| OpError::Io {
+            action: "publish build fingerprint".to_string(),
+            path: path.to_path_buf(),
+            source,
+        })?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    result
 }
 
 /// Build the package then run the produced binary, forwarding `args` to it
@@ -1839,6 +1914,40 @@ mod tests {
         } else {
             assert!(p.ends_with("target/raven-out/demo"));
         }
+    }
+
+    #[test]
+    fn package_build_lock_serializes_publishers() {
+        let proj = TempProject::new("build-lock");
+        let binary = output_binary_path(&proj.root, "demo");
+        std::fs::create_dir_all(binary.parent().unwrap()).unwrap();
+        let first = PackageBuildLock::acquire(&binary).expect("first lock");
+        let (tx, rx) = std::sync::mpsc::channel();
+        let second_binary = binary.clone();
+        let waiter = std::thread::spawn(move || {
+            let second = PackageBuildLock::acquire(&second_binary).expect("second lock");
+            tx.send(()).unwrap();
+            drop(second);
+        });
+
+        assert!(
+            rx.recv_timeout(std::time::Duration::from_millis(100))
+                .is_err(),
+            "the second publisher acquired the package lock too early"
+        );
+        drop(first);
+        rx.recv_timeout(std::time::Duration::from_secs(2))
+            .expect("second publisher acquires after release");
+        waiter.join().unwrap();
+    }
+
+    #[test]
+    fn atomic_write_replaces_an_existing_fingerprint() {
+        let proj = TempProject::new("atomic-fingerprint");
+        let path = proj.root.join("demo.fingerprint");
+        atomic_write(&path, b"old").expect("first publication");
+        atomic_write(&path, b"new").expect("replacement publication");
+        assert_eq!(std::fs::read(&path).unwrap(), b"new");
     }
 
     #[test]

@@ -395,7 +395,11 @@ Successful application builds write `<binary>.fingerprint`. The digest covers
 local package files outside `.git` and `target`, locked dependency content
 hashes, target identity, and compiler and runtime metadata. An existing binary
 with the same digest is reused. A failed rebuild does not replace the saved
-digest, so stale output cannot become current.
+digest, so stale output cannot become current. Builders hold a cross-process
+lock scoped to the package binary from the reuse check through compilation and
+fingerprint publication. The fingerprint is written to a temporary sibling and
+renamed into place while the lock is held, preventing concurrent builders from
+publishing a mismatched binary and digest.
 
 ## Entry file and output path conventions
 

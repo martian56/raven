@@ -77,6 +77,20 @@ fn package_selection_and_registered_commands_build_and_run() {
     );
     assert_eq!(String::from_utf8_lossy(&separated.stdout), "base\ntail\n");
 
+    let mixed_command = rvpm(&root, &["run", "show", "extra", "--", "tail"]);
+    assert!(mixed_command.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&mixed_command.stdout),
+        "base\nextra\ntail\n"
+    );
+
+    let mixed_package = rvpm(&root, &["run", "-p", "tool", "extra", "--", "tail"]);
+    assert!(mixed_package.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&mixed_package.stdout),
+        "extra\ntail\n"
+    );
+
     let failed = rvpm(&root, &["run", "fail"]);
     cleanup(&root);
     assert_eq!(failed.status.code(), Some(7));
