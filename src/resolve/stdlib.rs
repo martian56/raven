@@ -819,8 +819,12 @@ fn import_rename_map(
                         let key = local_module_key(&loaded.canonical_path);
                         let fns = top_level_fn_names(&target);
                         let types = top_level_type_names(&target);
+                        let globals = top_level_global_names(&target);
                         for sel in &import.selectors {
-                            if fns.contains(&sel.name) || types.contains(&sel.name) {
+                            if fns.contains(&sel.name)
+                                || types.contains(&sel.name)
+                                || globals.contains(&sel.name)
+                            {
                                 map.insert(
                                     sel.local().to_string(),
                                     mangle_local_fn(&key, &sel.name),
@@ -2701,6 +2705,60 @@ mod tests {
             .iter()
             .any(|d| matches!(&d.kind, DeclKind::Function(f) if f.name == mangled));
         assert!(present, "local function should merge under {mangled}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn selectively_imported_local_const_resolves() {
+        let main_src = "import \"./limits\" { MAX_WIDTH }\nfun main() {\n    print(MAX_WIDTH)\n}\n";
+        let (dir, entry) = write_temp_project(
+            &[
+                ("limits.rv", "const MAX_WIDTH: Int = 120\n"),
+                ("main.rv", main_src),
+            ],
+            "main.rv",
+        );
+        let user = parse_at(main_src, &entry);
+        let combined = expand_with_stdlib(&user).expect("expand");
+        let mut loader = FsLoader;
+        let resolved = super::super::resolve_file(&combined, &mut loader)
+            .expect("imported const should resolve");
+        assert!(
+            resolved
+                .map
+                .uses
+                .values()
+                .any(|binding| matches!(binding, super::super::Binding::Const(_))),
+            "MAX_WIDTH should bind to the merged const declaration"
+        );
+        let typed =
+            crate::tycheck::check_file(&resolved).expect("imported const should type check");
+        crate::hir::lower_file(&typed).expect("imported const should lower");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn local_module_can_import_const_from_another_local_module() {
+        let main_src = "import \"./width\" { width }\nfun main() { print(width()) }\n";
+        let (dir, entry) = write_temp_project(
+            &[
+                ("limits.rv", "const MAX_WIDTH: Int = 120\n"),
+                (
+                    "width.rv",
+                    "import \"./limits\" { MAX_WIDTH }\nfun width() -> Int = MAX_WIDTH\n",
+                ),
+                ("main.rv", main_src),
+            ],
+            "main.rv",
+        );
+        let user = parse_at(main_src, &entry);
+        let combined = expand_with_stdlib(&user).expect("expand");
+        let mut loader = FsLoader;
+        let resolved = super::super::resolve_file(&combined, &mut loader)
+            .expect("const import inside a merged module should resolve");
+        let typed =
+            crate::tycheck::check_file(&resolved).expect("imported const should type check");
+        crate::hir::lower_file(&typed).expect("imported const should lower");
         std::fs::remove_dir_all(&dir).ok();
     }
 
