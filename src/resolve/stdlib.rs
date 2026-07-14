@@ -1708,7 +1708,24 @@ fn rewrite_expr(expr: &mut Expr, rename: &HashMap<String, String>) {
                 None => rewrite_block(body, rename),
             }
         }
-        ExprKind::Lambda { params, body, .. } => {
+        ExprKind::Lambda {
+            params, ret, body, ..
+        } => {
+            // Parameter and return type annotations name types in the
+            // enclosing module scope, so rewrite them with the full map,
+            // exactly as `rewrite_fn` does for a named function. Without
+            // this, a merged package's mangled type names leave the bare
+            // annotation unresolved ("cannot find `T` in scope"). Value
+            // parameters shadow only globals in the body, never a type name,
+            // so the annotations use `rename`, not the shadowed map.
+            for p in params.iter_mut() {
+                if let Some(t) = &mut p.ty {
+                    rewrite_type(t, rename);
+                }
+            }
+            if let Some(r) = ret {
+                rewrite_type(r, rename);
+            }
             // Lambda parameters shadow a global of the same name in the body.
             let bound: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
             let inner = rename_without_shadowed(rename, &bound);
@@ -2759,6 +2776,37 @@ mod tests {
         let typed =
             crate::tycheck::check_file(&resolved).expect("imported const should type check");
         crate::hir::lower_file(&typed).expect("imported const should lower");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn lambda_parameter_type_from_merged_module_resolves() {
+        // A lambda whose parameter and return type name a type from another
+        // module must have those annotations rewritten to the mangled name by
+        // the rename pass. Without that, resolution fails with
+        // "cannot find `T` in scope" for the lambda signature even though the
+        // same type resolves fine as a plain parameter, return, or let type.
+        let main_src = "import \"./widget\" { Widget, make }\n\
+             fun apply(w: Widget, f: fun(Widget) -> Widget) -> Widget { return f(w) }\n\
+             fun main() {\n    let id = fun(x: Widget) -> Widget = x\n    print(apply(make(), id).n)\n}\n";
+        let (dir, entry) = write_temp_project(
+            &[
+                (
+                    "widget.rv",
+                    "struct Widget { n: Int }\nfun make() -> Widget { return Widget { n: 7 } }\n",
+                ),
+                ("main.rv", main_src),
+            ],
+            "main.rv",
+        );
+        let user = parse_at(main_src, &entry);
+        let combined = expand_with_stdlib(&user).expect("expand");
+        let mut loader = FsLoader;
+        let resolved = super::super::resolve_file(&combined, &mut loader)
+            .expect("lambda parameter type from a merged module should resolve");
+        let typed =
+            crate::tycheck::check_file(&resolved).expect("lambda parameter type should type check");
+        crate::hir::lower_file(&typed).expect("lambda parameter type should lower");
         std::fs::remove_dir_all(&dir).ok();
     }
 
