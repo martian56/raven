@@ -2,6 +2,20 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.25.6] - 2026-07-14
+
+### Added
+
+- `rvpm dist` asset sources may now be directories. Their files, nested structure, and empty directories are copied recursively beneath the configured destination for every package format. (#871)
+- `[dist.windows].icon` is now compiled into executables produced by `rvpm build`, using the Windows SDK resource compiler on MSVC or MinGW-w64 `windres` on GNU. The same icon remains available to the Inno installer. (#872)
+
+### Fixed
+
+- `rvpm fmt --check` now accepts canonically formatted files with CRLF line endings without rewriting them; write mode continues to normalize formatted output to LF. (#868)
+- Values in `Unit` contexts are now discarded after preserving their side effects, so unit-returning functions, block lambdas, and no-else `if` expressions can contain unused value-producing expressions. (#869)
+- Selective local-module imports now carry module-level `const` and `let` declarations through merged and transitive modules instead of leaving their names unresolved. (#870)
+- Generic trait bounds now retain the resolver identity of imported traits, allowing an implementation declared in another module to satisfy the bound and provide its methods. (#856)
+
 ## [2.25.0] - 2026-07-10
 
 ### Added
