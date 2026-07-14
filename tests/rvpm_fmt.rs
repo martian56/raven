@@ -63,6 +63,23 @@ fn check_passes_on_canonical_file() {
 }
 
 #[test]
+fn check_passes_on_canonical_file_with_crlf_line_endings() {
+    let dir = workdir();
+    let file = dir.join("clean.rv");
+    let crlf = CANONICAL.replace('\n', "\r\n");
+    std::fs::write(&file, &crlf).unwrap();
+
+    let out = rvpm(&dir, &["fmt", "--check", "clean.rv"]);
+
+    assert!(
+        out.status.success(),
+        "canonical CRLF file should pass --check: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), crlf);
+}
+
+#[test]
 fn fmt_with_no_paths_formats_src_dir() {
     let dir = workdir();
     let src = dir.join("src");

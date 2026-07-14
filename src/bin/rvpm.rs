@@ -788,7 +788,16 @@ fn cmd_fmt(args: &[String]) -> ExitCode {
                 continue;
             }
         };
-        if formatted == src {
+        // The formatter emits canonical LF newlines. In check-only mode,
+        // accept an otherwise canonical CRLF working copy so Windows checkout
+        // settings do not make every Raven source appear unformatted. Writing
+        // mode still canonicalizes the file to LF as before.
+        let is_formatted = if check {
+            formatted == src.replace("\r\n", "\n")
+        } else {
+            formatted == src
+        };
+        if is_formatted {
             continue;
         }
         if check {
