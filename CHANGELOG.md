@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.26.1] - 2026-07-14
+
+### Fixed
+
+- The module merge pass now rewrites the parameter and return type annotations of a lambda, not just its body. A closure whose parameter or return type named a type from another module previously failed to resolve when built through `rvpm` (package mode) with "cannot find `T` in scope", even though the same type resolved as a plain parameter, return, or `let` annotation. Because closure parameters must be annotated, this had blocked every higher-order library API expressed over a named type. (#889)
+
 ## [2.26.0] - 2026-07-14
 
 ### Added
