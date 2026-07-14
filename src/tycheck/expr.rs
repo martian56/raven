@@ -251,7 +251,7 @@ fn check_function(
     match &f.body {
         FunctionBody::Block(b) => {
             let body_ty = cx.check_block(b).unwrap_or(Ty::Error);
-            if b.trailing.is_some() {
+            if b.trailing.is_some() && !matches!(ret_ty.strip_self(), Ty::Unit | Ty::Error) {
                 cx.unify_recover(&ret_ty, &body_ty, &b.span);
             } else if !matches!(ret_ty, Ty::Unit | Ty::Error) {
                 // No trailing expression and a non unit return type.
@@ -3043,7 +3043,10 @@ impl<'a, 'b> Checker<'a, 'b> {
         self.unify(&Ty::Bool, &c, &cond.span)?;
         let t = self.check_block(then_branch)?;
         let e = match else_branch {
-            None => Ty::Unit,
+            // An `if` without `else` cannot produce a value on every path, so
+            // it is a unit expression. The then branch is still checked and
+            // evaluated for side effects, but its trailing value is discarded.
+            None => return Ok(Ty::Unit),
             Some(ElseBranch::If(expr)) => self.check_expr(expr)?,
             Some(ElseBranch::Block(b)) => self.check_block(b)?,
         };
@@ -3172,14 +3175,18 @@ impl<'a, 'b> Checker<'a, 'b> {
         let body_ty = body_ty?;
         let final_ret = match declared_ret {
             Some(d) => {
-                self.unify(
-                    &d,
-                    &body_ty,
-                    match body {
-                        LambdaBody::Block(b) => &b.span,
-                        LambdaBody::Expr(e) => &e.span,
-                    },
-                )?;
+                let discards_block_tail =
+                    matches!(body, LambdaBody::Block(_)) && matches!(d.strip_self(), Ty::Unit);
+                if !discards_block_tail {
+                    self.unify(
+                        &d,
+                        &body_ty,
+                        match body {
+                            LambdaBody::Block(b) => &b.span,
+                            LambdaBody::Expr(e) => &e.span,
+                        },
+                    )?;
+                }
                 d
             }
             None => body_ty,

@@ -29,6 +29,18 @@ pub(crate) fn lower_block_to_block(
         stmts.extend(lower_stmt(s, cx)?);
     }
     let (tail, ty) = match &block.trailing {
+        // A block in unit context evaluates its trailing expression for side
+        // effects and discards the produced value. Represent it as an ordinary
+        // expression statement so MIR returns Unit from the block instead of
+        // handing a scalar/heap operand to a unit function or branch.
+        Some(e) if matches!(expected_ty.strip_self(), Ty::Unit) => {
+            let lowered = lower_expr(e, &Ty::Error, cx)?;
+            stmts.push(HirStmt {
+                kind: HirStmtKind::Expr(lowered),
+                span: e.span.clone(),
+            });
+            (None, Ty::Unit)
+        }
         Some(e) => {
             let lowered = lower_expr(e, expected_ty, cx)?;
             let ty = lowered.ty.clone();
