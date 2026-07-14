@@ -201,7 +201,7 @@ fn check_function(
     // function's own generics.
     let fn_generics = super::collect::scope_from_params(extra_generics);
     // Layer the function's own generics on top.
-    let f_params = super::collect::collect_generic_params_for_owner(&f.generics, &f.span);
+    let f_params = super::collect::collect_generic_params_for_owner(&f.generics, &f.span, resolved);
     let mut full_scope = fn_generics;
     super::collect::push_into_scope(&mut full_scope, &f_params);
 

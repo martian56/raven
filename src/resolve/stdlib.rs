@@ -2791,6 +2791,29 @@ mod tests {
     }
 
     #[test]
+    fn imported_trait_impl_satisfies_a_generic_bound() {
+        let main_src = "import \"./t_def\" { Speak, Dog }\n\nfun call<T: Speak>(x: T) -> Int {\n    return x.sound()\n}\n\nfun main() {\n    print(call(Dog {}))\n}\n";
+        let (dir, entry) = write_temp_project(
+            &[
+                (
+                    "t_def.rv",
+                    "trait Speak {\n    fun sound(self) -> Int\n}\n\nstruct Dog {}\n\nimpl Speak for Dog {\n    fun sound(self) -> Int {\n        return 1\n    }\n}\n",
+                ),
+                ("t_main.rv", main_src),
+            ],
+            "t_main.rv",
+        );
+        let user = parse_at(main_src, &entry);
+        let combined = expand_with_stdlib(&user).expect("expand");
+        let mut loader = FsLoader;
+        let resolved = super::super::resolve_file(&combined, &mut loader)
+            .expect("imported trait and type should resolve");
+        crate::tycheck::check_file(&resolved)
+            .expect("the imported impl should satisfy the generic bound");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn json_derive_helpers_emitted_once_across_modules() {
         // Two local modules each derive a JSON trait. The shared helper free
         // functions are global and fixed-named, so they must be declared

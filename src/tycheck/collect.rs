@@ -74,7 +74,7 @@ pub fn collect_declarations(
         let id = DeclId(idx);
         match &decl.kind {
             DeclKind::Struct(s) => {
-                let generics = collect_generic_params(&s.generics, &decl.span);
+                let generics = collect_generic_params(&s.generics, &decl.span, resolved);
                 env.structs.insert(
                     id,
                     StructSig {
@@ -87,7 +87,7 @@ pub fn collect_declarations(
                 );
             }
             DeclKind::Enum(e) => {
-                let generics = collect_generic_params(&e.generics, &decl.span);
+                let generics = collect_generic_params(&e.generics, &decl.span, resolved);
                 env.enums.insert(
                     id,
                     EnumSig {
@@ -99,7 +99,7 @@ pub fn collect_declarations(
                 );
             }
             DeclKind::Trait(t) => {
-                let generics = collect_generic_params(&t.generics, &decl.span);
+                let generics = collect_generic_params(&t.generics, &decl.span, resolved);
                 env.traits.insert(
                     id,
                     TraitSig {
@@ -123,7 +123,7 @@ pub fn collect_declarations(
             DeclKind::Function(f) => {
                 let mut scope = GenericScope::new();
                 scope.push();
-                let generics = collect_generic_params(&f.generics, &decl.span);
+                let generics = collect_generic_params(&f.generics, &decl.span, resolved);
                 push_generics_into_scope(&mut scope, &generics);
                 let sig = collect_fn_sig(f, resolved, env, None, &scope, generics)?;
                 scope.pop();
@@ -254,7 +254,11 @@ fn literal_ty_of(e: &Expr) -> Option<Ty> {
 /// Build a list of [`GenericParamSig`] from a parsed generic parameter
 /// list. The trait bounds are captured by name (the resolver already
 /// validated that they point at trait declarations).
-fn collect_generic_params(params: &[GenericParam], owner: &Span) -> Vec<GenericParamSig> {
+fn collect_generic_params(
+    params: &[GenericParam],
+    owner: &Span,
+    resolved: &ResolvedFile<'_>,
+) -> Vec<GenericParamSig> {
     let mut sigs: Vec<GenericParamSig> = params
         .iter()
         .enumerate()
@@ -262,13 +266,7 @@ fn collect_generic_params(params: &[GenericParam], owner: &Span) -> Vec<GenericP
             let bounds = p
                 .bounds
                 .iter()
-                .map(|b| {
-                    // The head segment name is the trait's short name.
-                    b.segments
-                        .last()
-                        .map(|s| s.name.clone())
-                        .unwrap_or_default()
-                })
+                .map(|b| canonical_trait_name(b, resolved))
                 .collect();
             GenericParamSig {
                 id: ParamId::new(owner, i, p.name.clone()),
@@ -306,6 +304,23 @@ fn collect_generic_params(params: &[GenericParam], owner: &Span) -> Vec<GenericP
         sigs[i].bound_args = per_bound;
     }
     sigs
+}
+
+/// Return the declaration name for a trait path. Imported declarations are
+/// merged under module-qualified names, while their use sites retain the
+/// source spelling, so the resolver binding is the authoritative identity.
+fn canonical_trait_name(path: &TypePath, resolved: &ResolvedFile<'_>) -> String {
+    let fallback = || type_path_name(path);
+    let Some(head) = path.segments.first() else {
+        return fallback();
+    };
+    let Some(Binding::Trait(id)) = resolved.map.lookup(&head.span) else {
+        return fallback();
+    };
+    match resolved.file.items.get(id.0).map(|decl| &decl.kind) {
+        Some(DeclKind::Trait(t)) => t.name.clone(),
+        _ => fallback(),
+    }
 }
 
 /// Resolve one type argument of a trait bound to a [`Ty`] using only the
@@ -542,7 +557,7 @@ fn fill_trait(
     let mut method_order = Vec::with_capacity(t.members.len());
     for member in &t.members {
         scope.push();
-        let m_generics = collect_generic_params(&member.generics, &member.span);
+        let m_generics = collect_generic_params(&member.generics, &member.span, resolved);
         push_generics_into_scope(&mut scope, &m_generics);
         let sig = collect_fn_sig(member, resolved, env, Some(&trait_self), &scope, m_generics)?;
         scope.pop();
@@ -619,14 +634,14 @@ fn ty_mentions_self(ty: &Ty) -> bool {
 fn fill_impl(i: &Impl, resolved: &ResolvedFile<'_>, env: &mut TypeEnv) -> Result<(), RavenError> {
     let mut scope = GenericScope::new();
     scope.push();
-    let impl_generics = collect_generic_params(&i.generics, &i.span);
+    let impl_generics = collect_generic_params(&i.generics, &i.span, resolved);
     push_generics_into_scope(&mut scope, &impl_generics);
 
     // The implementing type is `for_type` for trait impls; otherwise
     // `trait_or_type` itself.
     let (impl_path, trait_name) = match &i.for_type {
         Some(target) => {
-            let trait_name = type_path_name(&i.trait_or_type);
+            let trait_name = canonical_trait_name(&i.trait_or_type, resolved);
             (target, Some(trait_name))
         }
         None => (&i.trait_or_type, None),
@@ -636,7 +651,7 @@ fn fill_impl(i: &Impl, resolved: &ResolvedFile<'_>, env: &mut TypeEnv) -> Result
     let mut methods = HashMap::new();
     for f in &i.items {
         scope.push();
-        let m_generics = collect_generic_params(&f.generics, &f.span);
+        let m_generics = collect_generic_params(&f.generics, &f.span, resolved);
         push_generics_into_scope(&mut scope, &m_generics);
         let sig = collect_fn_sig(f, resolved, env, Some(&self_ty), &scope, m_generics)?;
         scope.pop();
@@ -1096,8 +1111,9 @@ pub fn push_into_scope(scope: &mut GenericScope, params: &[GenericParamSig]) {
 pub fn collect_generic_params_for_owner(
     params: &[GenericParam],
     owner: &Span,
+    resolved: &ResolvedFile<'_>,
 ) -> Vec<GenericParamSig> {
-    collect_generic_params(params, owner)
+    collect_generic_params(params, owner, resolved)
 }
 
 #[cfg(test)]

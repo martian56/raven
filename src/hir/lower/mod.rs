@@ -209,7 +209,7 @@ fn lower_decl(decl: &Decl, cx: &LowerCtx<'_>) -> Result<Option<HirItem>, RavenEr
             }))
         }
         DeclKind::Struct(s) => {
-            let params = collect_generic_params_for_owner(&s.generics, &s.span);
+            let params = collect_generic_params_for_owner(&s.generics, &s.span, cx.resolved);
             let scope = scope_from_params(&params);
             let mut fields = Vec::with_capacity(s.fields.len());
             for f in &s.fields {
@@ -227,7 +227,7 @@ fn lower_decl(decl: &Decl, cx: &LowerCtx<'_>) -> Result<Option<HirItem>, RavenEr
             }))
         }
         DeclKind::Enum(e) => {
-            let params = collect_generic_params_for_owner(&e.generics, &e.span);
+            let params = collect_generic_params_for_owner(&e.generics, &e.span, cx.resolved);
             let scope = scope_from_params(&params);
             let mut variants = Vec::with_capacity(e.variants.len());
             for v in &e.variants {
@@ -432,9 +432,17 @@ fn lower_function(
         // distinct `T` per method and break monomorphization's
         // substitution.
         let owner = extra_owner.unwrap_or(&f.span);
-        sigs.extend(collect_generic_params_for_owner(extra_generics, owner));
+        sigs.extend(collect_generic_params_for_owner(
+            extra_generics,
+            owner,
+            cx.resolved,
+        ));
     }
-    sigs.extend(collect_generic_params_for_owner(&f.generics, &f.span));
+    sigs.extend(collect_generic_params_for_owner(
+        &f.generics,
+        &f.span,
+        cx.resolved,
+    ));
     let scope = scope_from_params(&sigs);
 
     let mut params = Vec::with_capacity(f.params.len());
@@ -492,7 +500,7 @@ fn impl_self_ty(i: &Impl, cx: &LowerCtx<'_>) -> Result<(Ty, String), RavenError>
         Some(t) => t,
         None => &i.trait_or_type,
     };
-    let params = collect_generic_params_for_owner(&i.generics, &i.span);
+    let params = collect_generic_params_for_owner(&i.generics, &i.span, cx.resolved);
     let scope = scope_from_params(&params);
     let ast_ty = AstType {
         kind: crate::ast::TypeKind::Path(path.clone()),
