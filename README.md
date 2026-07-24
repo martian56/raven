@@ -115,9 +115,9 @@ The `raven` and `rvpm` binaries land in `target/release/`.
 
 <a href="https://www.star-history.com/?repos=martian56%2Fraven&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=martian56/raven&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=martian56/raven&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=martian56/raven&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=martian56/raven&type=date&theme=dark&legend=top-left&sealed_token=Crj5o_2OEA2-wcrzi-7xRap-VRqtbtuU5Gf3nU_ctCQNqy53dr25fH5VPH5hETwBGb0lTI4iq8lc0JjIgC73ePV-DRpnvJoT2WnVZDUIIZAMReYXXCZKVg" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=martian56/raven&type=date&legend=top-left&sealed_token=Crj5o_2OEA2-wcrzi-7xRap-VRqtbtuU5Gf3nU_ctCQNqy53dr25fH5VPH5hETwBGb0lTI4iq8lc0JjIgC73ePV-DRpnvJoT2WnVZDUIIZAMReYXXCZKVg" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=martian56/raven&type=date&legend=top-left&sealed_token=Crj5o_2OEA2-wcrzi-7xRap-VRqtbtuU5Gf3nU_ctCQNqy53dr25fH5VPH5hETwBGb0lTI4iq8lc0JjIgC73ePV-DRpnvJoT2WnVZDUIIZAMReYXXCZKVg" />
  </picture>
 </a>
 
@@ -139,6 +139,3 @@ The `raven` and `rvpm` binaries land in `target/release/`.
 ## License
 
 MIT License. See [LICENSE](./LICENSE).
-<!-- GitAds-Verify: Q5CON76MHBAPN78Y87F3Q18WQ1W4L13Z -->
-## GitAds Sponsored
-[![Sponsored by GitAds](https://gitads.dev/v1/ad-serve?source=martian56/raven@github)](https://gitads.dev/v1/ad-track?source=martian56/raven@github)
