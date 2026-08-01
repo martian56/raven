@@ -31,7 +31,9 @@ gaps and would otherwise read as a verdict on the whole project.
   variants.
 - 211 golden end-to-end examples plus golden corpora at every IR stage
   (parser, HIR, MIR, tycheck, resolver, fmt). This is a real
-  regression net.
+  regression net. `cargo test --workspace` is fully green: **968 tests,
+  0 failures**, including a 100-test concurrency soak and a 130-test
+  FFI ABI suite.
 - Formatter, doc generator, workspaces, lock file with content hashing,
   reproducible-ish builds, `.deb`/`.rpm`/`.msi` packaging, signed
   release pipeline. The *project* engineering is more mature than the
@@ -475,6 +477,27 @@ property-based/fuzz testing, and any coverage integration.
 Running one process per test also means the whole program links once and
 then forks per test, which will not scale to thousands of tests.
 
+Two structural weaknesses in the compiler's own suite, which is
+otherwise the project's strongest asset (968 tests, all passing):
+
+- **The golden suites are one `#[test]` each.** All 211 end-to-end
+  examples run inside `v2_examples_match_golden_baselines`
+  (`tests/golden.rs:31`); the parser, HIR, MIR, and resolver corpora do
+  the same. So a regression reports as a single failed test, the run
+  stops at the first bad example rather than showing every affected
+  one, and there is no per-example granularity in CI output. A
+  data-driven test per corpus entry (or `libtest-mimic`) would turn
+  "golden failed" into "these 3 examples failed".
+- **The golden suite silently self-skips to green.**
+  `supported_runtime()` (`tests/golden.rs:203`) returns `None` and the
+  test `return`s early if no linker is found or `libraven_runtime.a`
+  isn't built — printing to stderr, which cargo hides by default, and
+  reporting `ok`. CI happens to build the runtime via
+  `cargo build --workspace` first, so this is latent rather than
+  active, but the project's main safety net can no-op and still show a
+  green check. It should fail loudly, or be gated behind an explicit
+  `#[ignore]`/feature so a skip is visible.
+
 **And the standard library has zero tests written in Raven** —
 `find stdlib -name "*_test.rv"` returns nothing, for a stdlib that
 includes a 44-function JSON module, a 38-function HTTP module, TLS, and
@@ -659,6 +682,8 @@ Ordered by value delivered per unit of effort.
 13. Tuples (§2.2).
 14. Cryptographic hashing and a CSPRNG (§5.1, §5.2).
 15. Stdlib test suite (§3.8) — the largest untested surface today.
+    While there, split the golden suites into per-example tests and make
+    a missing runtime fail rather than silently skip.
 
 **Tier 4 — maturity**
 
