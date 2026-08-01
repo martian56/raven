@@ -3016,7 +3016,23 @@ impl<'a, 'b> Checker<'a, 'b> {
         let recv_resolved = self.infer.resolve(&recv);
         match recv_resolved.strip_self() {
             Ty::List(t) => Ok(*t.clone()),
-            Ty::Str => Ok(Ty::Char),
+            // A `String` is a byte string, so `s[i]` has no well defined
+            // element type: `length()` counts bytes and `char_at` is a byte
+            // offset, but `Char` is a Unicode scalar, and one byte of a
+            // multi-byte encoding is not one. Indexing used to type check as
+            // `Char` here while the back end had no `String` case, so the
+            // index lowered through the list layout and read the string
+            // header as a list header, segfaulting at run time. Point at the
+            // byte-oriented accessors, which are unambiguous.
+            Ty::Str => Err(RavenError::ty(
+                TypeError::Custom("cannot index into a `String`".to_string()),
+                span.clone(),
+            )
+            .with_hint(
+                "a String is a byte string: use `char_at(i)` for the one-byte \
+                 substring at byte offset `i`, or `byte_at(i)` for that byte \
+                 as an `Int`; both come from `std/string`",
+            )),
             Ty::Error => Ok(Ty::Error),
             Ty::Var(_) => {
                 // Unify the receiver with a list of fresh element type.

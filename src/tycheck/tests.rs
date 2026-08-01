@@ -132,6 +132,45 @@ fn unary_address_of_is_rejected() {
 }
 
 #[test]
+fn indexing_a_string_is_rejected() {
+    // `s[i]` used to type check as `Char` while the back end had no `String`
+    // case for index access, so the index lowered through the list layout and
+    // read the string header as a list header, segfaulting at run time
+    // (issue #894). It is a type error now, pointing at the byte accessors.
+    let err = check("fun main() {\n    let t = \"abc\"\n    let c = t[0]\n}\n").unwrap_err();
+    match err {
+        RavenError::Type(b, _, _) => assert!(
+            matches!(*b, TypeError::Custom(ref m) if m.contains("cannot index into a `String`")),
+            "got: {:?}",
+            b
+        ),
+        other => panic!("expected a type error, got {:?}", other),
+    }
+}
+
+#[test]
+fn assigning_through_a_string_index_is_rejected() {
+    // The assignment target goes through the same check, so the write side of
+    // the crash in issue #894 is rejected too.
+    let err = check("fun main() {\n    let t = \"abc\"\n    t[0] = 'z'\n}\n").unwrap_err();
+    match err {
+        RavenError::Type(b, _, _) => assert!(
+            matches!(*b, TypeError::Custom(ref m) if m.contains("cannot index into a `String`")),
+            "got: {:?}",
+            b
+        ),
+        other => panic!("expected a type error, got {:?}", other),
+    }
+}
+
+#[test]
+fn indexing_a_list_is_still_allowed() {
+    // The guard above is specific to `String`; list indexing keeps working and
+    // still yields the element type.
+    check("fun main() {\n    let xs = [1, 2, 3]\n    let n: Int = xs[1]\n}\n").unwrap();
+}
+
+#[test]
 fn inferred_type_violating_a_bound_is_rejected() {
     // A call that infers a type argument violating the bound is rejected the
     // moment the inference variable resolves to a concrete type, not deferred

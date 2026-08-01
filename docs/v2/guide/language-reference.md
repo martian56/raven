@@ -118,6 +118,24 @@ fun main() {
 }
 ```
 
+A `String` is a byte string, and it is not indexable: `s[i]` is a
+compile error. `length()` counts bytes, so reach for the byte-oriented
+accessors in [`std/string`](standard-library.md#stdstring) instead —
+`char_at(i)` returns the one-byte substring at byte offset `i`, and
+`byte_at(i)` returns that byte as an `Int`. Both take a byte offset, so
+for a multi-byte character they address one byte of its encoding rather
+than the whole character.
+
+```rust
+import std/string
+
+fun main() {
+    let s = "abc"
+    print(s.char_at(0))     // a
+    print(s.byte_at(0))     // 97
+}
+```
+
 A block string uses triple quotes and is raw: no escapes are processed
 and newlines are preserved exactly.
 
