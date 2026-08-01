@@ -203,6 +203,24 @@ pub enum TypeError {
         candidates: Vec<String>,
     },
     NotCallable(String),
+    /// A binary operator applied to operand types it is not defined for.
+    ///
+    /// Kept apart from [`TypeError::TypeMismatch`] because the two have
+    /// different remedies. A mismatch means one side is the wrong type and a
+    /// conversion fixes it; this means the operator has no meaning for these
+    /// types at all, and Raven has no operator overloading, so no conversion
+    /// helps. Reusing `TypeMismatch` here also rendered the expected and
+    /// actual halves identically when both operands shared a type.
+    BinaryOpUnsupported {
+        /// The operator as written, e.g. `+`.
+        op: String,
+        /// The left operand's type.
+        left: String,
+        /// The right operand's type.
+        right: String,
+        /// What the operator does accept, for the `note:` line.
+        accepts: String,
+    },
     Custom(String),
 }
 
@@ -292,6 +310,15 @@ impl fmt::Display for TypeError {
             ),
             TypeError::NotCallable(actual) => {
                 write!(f, "values of type `{}` are not callable", actual)
+            }
+            TypeError::BinaryOpUnsupported {
+                op, left, right, ..
+            } => {
+                if left == right {
+                    write!(f, "`{}` is not defined for `{}`", op, left)
+                } else {
+                    write!(f, "`{}` is not defined for `{}` and `{}`", op, left, right)
+                }
             }
             TypeError::Custom(msg) => f.write_str(msg),
         }
@@ -582,6 +609,33 @@ fn type_diagnostic(te: &TypeError) -> (String, Option<String>, Vec<String>) {
             Some("not callable".into()),
             Vec::new(),
         ),
+        TypeError::BinaryOpUnsupported {
+            op,
+            left,
+            right,
+            accepts,
+        } => {
+            // Naming one type reads better than repeating it when both
+            // operands agree, which is the common case for a user-defined
+            // type: `V + V` should say "not defined for `V`", not
+            // "not defined for `V` and `V`".
+            let (headline, label) = if left == right {
+                (
+                    format!("`{}` is not defined for `{}`", op, left),
+                    format!("both operands are `{}`", left),
+                )
+            } else {
+                (
+                    format!("`{}` is not defined for `{}` and `{}`", op, left, right),
+                    format!("`{}` and `{}`", left, right),
+                )
+            };
+            (
+                headline,
+                Some(label),
+                vec![format!("`{}` works on {}", op, accepts)],
+            )
+        }
         other => (format!("{}", other), None, Vec::new()),
     }
 }

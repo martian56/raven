@@ -171,6 +171,101 @@ fn indexing_a_list_is_still_allowed() {
 }
 
 #[test]
+fn binary_op_on_one_user_type_names_it_once() {
+    // `V + V` used to render "this should be `V and V`, but it's `V and V`":
+    // `check_binary` built the expected half from the left operand twice, so
+    // both halves were identical whenever the operands shared a type
+    // (issue #895). The message now says what is actually wrong.
+    let src = "struct V { x: Int }\nfun main() {\n    let a = V { x: 1 }\n    let b = V { x: 2 }\n    let c = a + b\n}\n";
+    let err = check(src).unwrap_err();
+    let rendered = err.render(src, false);
+    assert!(
+        rendered.contains("`+` is not defined for `V`"),
+        "got: {}",
+        rendered
+    );
+    // The degenerate "X and X" phrasing is gone from both halves.
+    assert!(!rendered.contains("V and V"), "got: {}", rendered);
+    // And the misleading conversion note does not apply here.
+    assert!(
+        !rendered.contains("no implicit conversions"),
+        "got: {}",
+        rendered
+    );
+    // Raven has no operator overloading, so the help points at a method.
+    assert!(
+        rendered.contains("no operator overloading"),
+        "got: {}",
+        rendered
+    );
+}
+
+#[test]
+fn binary_op_on_mixed_types_names_both_sides() {
+    // When the operands differ, both types appear and the help names the
+    // conversion that fixes it.
+    let src = "fun main() {\n    let c = 1 + 2.0\n}\n";
+    let err = check(src).unwrap_err();
+    let rendered = err.render(src, false);
+    assert!(
+        rendered.contains("`+` is not defined for `Int` and `Float`"),
+        "got: {}",
+        rendered
+    );
+    assert!(rendered.contains("to_float()"), "got: {}", rendered);
+}
+
+#[test]
+fn ordering_a_user_type_points_at_derive_ord() {
+    // `Ord` is derivable and supplies `compare`, so the ordering operators
+    // point there rather than at a hand-written arithmetic-style method.
+    let src = "struct V { x: Int }\nfun main() {\n    let c = V { x: 1 } < V { x: 2 }\n}\n";
+    let err = check(src).unwrap_err();
+    let rendered = err.render(src, false);
+    assert!(
+        rendered.contains("`<` is not defined for `V`"),
+        "got: {}",
+        rendered
+    );
+    assert!(rendered.contains("@derive(Ord)"), "got: {}", rendered);
+    assert!(rendered.contains("compare"), "got: {}", rendered);
+}
+
+#[test]
+fn logical_and_bitwise_ops_report_their_own_domain() {
+    // The logical and bitwise arms carry the operator's own accepted types
+    // rather than a generic mismatch.
+    let src = "fun main() {\n    let c = 1 && 2\n}\n";
+    let rendered = check(src).unwrap_err().render(src, false);
+    assert!(
+        rendered.contains("`&&` is not defined for `Int`"),
+        "got: {}",
+        rendered
+    );
+    assert!(rendered.contains("`&&` works on Bool"), "got: {}", rendered);
+
+    let src = "fun main() {\n    let c = 1.5 & 2.5\n}\n";
+    let rendered = check(src).unwrap_err().render(src, false);
+    assert!(
+        rendered.contains("`&` is not defined for `Float`"),
+        "got: {}",
+        rendered
+    );
+    assert!(rendered.contains("`&` works on Int"), "got: {}", rendered);
+}
+
+#[test]
+fn supported_operators_still_type_check() {
+    // The new error path must not narrow what the operators accept.
+    check("fun main() {\n    let a = 1 + 2\n    let b = 1.5 * 2.0\n    let c = 7 % 3\n}\n")
+        .unwrap();
+    check("fun main() {\n    let a = 1 < 2\n    let b = \"a\" < \"b\"\n    let c = 'a' < 'b'\n}\n")
+        .unwrap();
+    check("fun main() {\n    let a = true && false\n    let b = 6 & 3\n    let c = 1 << 4\n}\n")
+        .unwrap();
+}
+
+#[test]
 fn inferred_type_violating_a_bound_is_rejected() {
     // A call that infers a type argument violating the bound is rejected the
     // moment the inference variable resolves to a concrete type, not deferred
@@ -317,10 +412,17 @@ fn reassigning_a_let_local_is_allowed() {
 
 #[test]
 fn mixed_int_float_arithmetic_is_rejected() {
+    // Still rejected; the diagnostic moved from `TypeMismatch` to the
+    // operator-specific variant in issue #895, since the operator, not just
+    // one operand's type, is what the message needs to name.
     let err = check("fun f() -> Float = 1 + 2.0\n").unwrap_err();
     match err {
-        RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::TypeMismatch { .. })),
-        other => panic!("expected TypeMismatch, got {:?}", other),
+        RavenError::Type(b, _, _) => assert!(
+            matches!(*b, TypeError::BinaryOpUnsupported { ref op, .. } if op == "+"),
+            "got: {:?}",
+            b
+        ),
+        other => panic!("expected BinaryOpUnsupported, got {:?}", other),
     }
 }
 

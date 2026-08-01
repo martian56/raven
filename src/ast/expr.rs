@@ -5,6 +5,8 @@
 //! lambdas, struct literals. The variants below mirror the grammar in
 //! `docs/v2/specs/parser.md` closely.
 
+use std::fmt;
+
 use crate::lexer::Token;
 use crate::span::Span;
 
@@ -220,6 +222,42 @@ pub enum BinaryOp {
     BitXor,
     Shl,
     Shr,
+}
+
+impl BinaryOp {
+    /// The operator as it is written in source.
+    ///
+    /// This is the one definition of the spelling. The pretty printer, the
+    /// formatter, and the type checker's diagnostics all render through it,
+    /// so a new operator cannot pick up a different spelling in one of them.
+    pub fn symbol(self) -> &'static str {
+        match self {
+            BinaryOp::Add => "+",
+            BinaryOp::Sub => "-",
+            BinaryOp::Mul => "*",
+            BinaryOp::Div => "/",
+            BinaryOp::Mod => "%",
+            BinaryOp::Eq => "==",
+            BinaryOp::Ne => "!=",
+            BinaryOp::Lt => "<",
+            BinaryOp::Le => "<=",
+            BinaryOp::Gt => ">",
+            BinaryOp::Ge => ">=",
+            BinaryOp::And => "&&",
+            BinaryOp::Or => "||",
+            BinaryOp::BitAnd => "&",
+            BinaryOp::BitOr => "|",
+            BinaryOp::BitXor => "^",
+            BinaryOp::Shl => "<<",
+            BinaryOp::Shr => ">>",
+        }
+    }
+}
+
+impl fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.symbol())
+    }
 }
 
 /// One initializer in a struct literal. Shorthand form `{ name }` is
