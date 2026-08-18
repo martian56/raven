@@ -45,7 +45,7 @@ TraitMember = "fun" , Identifier , [ GenericParams ] , "(" , [ ParamList ] , ")"
 
 Impl = "impl" , [ GenericParams ] , TypePath , [ "for" , TypePath ] , "{" , { Function , { NewlineOrSemi } } , "}" ;
 
-Enum = "enum" , Identifier , [ GenericParams ] , "{" , { EnumVariant , FieldSep } , "}" ;
+Enum = "enum" , Identifier , [ GenericParams ] , "{" , [ EnumVariant , { FieldSep , EnumVariant } , [ FieldSep ] ] , "}" ;
 
 EnumVariant = Identifier , [ "(" , VariantPayload , ")" ] ;
 
@@ -58,7 +58,10 @@ TypeList = Type , { "," , Type } , [ "," ] ;
 
 Extern = "extern" , StringLit , "{" , { ExternItem , { NewlineOrSemi } } , "}" ;
 
-ExternItem = "fun" , Identifier , "(" , [ Param , { "," , Param } ] , [ "," ] , [ "..." ] , ")" , [ "->" , Type ] ;
+ExternItem = "fun" , Identifier , "(" , [ ExternParams ] , ")" , [ "->" , Type ] ;
+
+ExternParams = "..."
+             | Param , { "," , Param } , [ "," , "..." ] ;
 
 Import = "import" , ImportSource , [ "as" , Identifier ] , [ "{" , ImportSelectors , "}" ] ;
 
@@ -199,7 +202,7 @@ FieldInit = Identifier , [ ":" , Expr ] ;
 
 IfExpr = "if" , Expr , Block , { "else" , "if" , Expr , Block } , [ "else" , Block ] ;
 
-MatchExpr = "match" , Expr , "{" , { MatchArm , FieldSep } , "}" ;
+MatchExpr = "match" , Expr , "{" , [ MatchArm , { FieldSep , MatchArm } , [ FieldSep ] ] , "}" ;
 
 MatchArm = Pattern , [ "if" , Expr ] , "->" , Expr ;
 
@@ -210,7 +213,7 @@ WhileExpr = "while" , Expr , Block ;
 ForExpr = "for" , Pattern , "in" , Expr , Block ;
 
 Lambda = "fun" , "(" , [ LambdaParams ] , ")" , [ "->" , Type ] , FunctionBody
-       | "{" , Identifier , { "," , Identifier } , "->" , { NewlineOrSemi } , { Stmt , { NewlineOrSemi } } , "}" ;
+       | "{" , [ Identifier , { "," , Identifier } , [ "," ] ] , "->" , { NewlineOrSemi } , { Stmt , { NewlineOrSemi } } , "}" ;
 
 LambdaParams = LambdaParam , { "," , LambdaParam } , [ "," ] ;
 
@@ -224,7 +227,8 @@ Pattern = "_"
 
 RangePat = IntLit , ( ".." | "..=" ) , IntLit ;
 
-LiteralPat = IntLit | FloatLit | StringLit | CharLit | "true" | "false" ;
+LiteralPat = [ "-" ] , ( IntLit | FloatLit )
+           | StringLit | CharLit | "true" | "false" ;
 
 PatternList = Pattern , { "," , Pattern } , [ "," ] ;
 
