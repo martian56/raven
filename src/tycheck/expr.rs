@@ -3456,12 +3456,12 @@ pub fn check_binary(l: &Ty, r: &Ty, op: BinaryOp, span: &Span) -> Result<Ty, Rav
             // width). This lets an FFI callback such as a `qsort`
             // comparator compute `load<CInt>(a) - load<CInt>(b)` directly.
             (a, b) if is_int_ffi(a) && a == b => Ok(a.clone()),
-            _ => Err(RavenError::ty(
-                TypeError::TypeMismatch {
-                    expected: format!("{} and {}", ls, ls),
-                    actual: format!("{} and {}", ls, rs),
-                },
-                span.clone(),
+            _ => Err(binary_op_error(
+                op,
+                ls,
+                rs,
+                "Int, Float, and two matching C integer types",
+                span,
             )),
         },
         Eq | Ne => {
@@ -3482,34 +3482,101 @@ pub fn check_binary(l: &Ty, r: &Ty, op: BinaryOp, span: &Span) -> Result<Ty, Rav
             | (Ty::Float, Ty::Float)
             | (Ty::Char, Ty::Char)
             | (Ty::Str, Ty::Str) => Ok(Ty::Bool),
-            _ => Err(RavenError::ty(
-                TypeError::TypeMismatch {
-                    expected: "orderable types".into(),
-                    actual: format!("{} and {}", ls, rs),
-                },
-                span.clone(),
+            _ => Err(binary_op_error(
+                op,
+                ls,
+                rs,
+                "Int, Float, Char, and String",
+                span,
             )),
         },
         And | Or => match (ls, rs) {
             (Ty::Bool, Ty::Bool) => Ok(Ty::Bool),
-            _ => Err(RavenError::ty(
-                TypeError::TypeMismatch {
-                    expected: "Bool and Bool".into(),
-                    actual: format!("{} and {}", ls, rs),
-                },
-                span.clone(),
-            )),
+            _ => Err(binary_op_error(op, ls, rs, "Bool", span)),
         },
         BitAnd | BitOr | BitXor | Shl | Shr => match (ls, rs) {
             (Ty::Int, Ty::Int) => Ok(Ty::Int),
-            _ => Err(RavenError::ty(
-                TypeError::TypeMismatch {
-                    expected: "Int and Int".into(),
-                    actual: format!("{} and {}", ls, rs),
-                },
-                span.clone(),
-            )),
+            _ => Err(binary_op_error(op, ls, rs, "Int", span)),
         },
+    }
+}
+
+/// Build the diagnostic for a binary operator applied to operand types it
+/// does not accept. `accepts` describes the operator's domain, for the
+/// `note:` line.
+///
+/// This is deliberately not a [`TypeError::TypeMismatch`]: that variant
+/// renders "this should be X, but it's Y" plus a note about implicit
+/// conversions, which is the wrong advice when the operator does not exist
+/// for the type at all. Building `expected` from the left operand twice also
+/// made the two halves identical whenever both operands shared a type, so
+/// `V + V` reported "this should be `V and V`, but it's `V and V`".
+fn binary_op_error(op: BinaryOp, ls: &Ty, rs: &Ty, accepts: &str, span: &Span) -> RavenError {
+    use BinaryOp::*;
+    let err = RavenError::ty(
+        TypeError::BinaryOpUnsupported {
+            op: op.symbol().to_string(),
+            left: format!("{}", ls),
+            right: format!("{}", rs),
+            accepts: accepts.to_string(),
+        },
+        span.clone(),
+    );
+    match (ls, rs) {
+        // Mixing the two numeric types is the common slip. Point at the
+        // conversion that fits the operator's domain: `.to_float()` where the
+        // operator accepts `Float`, `.to_int()` for the bitwise family. The
+        // logical operators want `Bool`, so no numeric conversion helps there.
+        (Ty::Int, Ty::Float) | (Ty::Float, Ty::Int) => match op {
+            Add | Sub | Mul | Div | Mod | Lt | Le | Gt | Ge => {
+                err.with_hint("convert the `Int` with `.to_float()` so both sides are `Float`")
+            }
+            BitAnd | BitOr | BitXor | Shl | Shr => {
+                err.with_hint("convert the `Float` with `.to_int()` so both sides are `Int`")
+            }
+            _ => err,
+        },
+        // Two values of the same user-declared type. There is no operator to
+        // overload, so the way through is a named method.
+        (a, b) if a == b && matches!(a, Ty::Struct { .. } | Ty::Enum { .. }) => {
+            err.with_hint(user_type_operator_hint(op, a))
+        }
+        _ => err,
+    }
+}
+
+/// Advice for an operator applied to two values of the same user-declared
+/// type. Raven has no operator overloading, so each case names the method
+/// that does the job instead of the operator.
+fn user_type_operator_hint(op: BinaryOp, ty: &Ty) -> String {
+    use BinaryOp::*;
+    match op {
+        // `Ord` already models comparison and is derivable, so point at it
+        // rather than asking for a hand-written method.
+        Lt | Le | Gt | Ge => format!(
+            "Raven has no operator overloading; `@derive(Ord)` on `{}` synthesizes \
+             `compare(self, other) -> Int`, so write `a.compare(b) {} 0`",
+            ty,
+            op.symbol()
+        ),
+        Add | Sub | Mul | Div | Mod => {
+            let method = match op {
+                Add => "add",
+                Sub => "sub",
+                Mul => "mul",
+                Div => "div",
+                _ => "rem",
+            };
+            format!(
+                "Raven has no operator overloading; give `{}` a method such as \
+                 `fun {}(self, other: {}) -> {}` and call it",
+                ty, method, ty, ty
+            )
+        }
+        _ => format!(
+            "Raven has no operator overloading; give `{}` a named method and call it",
+            ty
+        ),
     }
 }
 
