@@ -1,0 +1,304 @@
+File = { NewlineOrSemi } , { Item , { NewlineOrSemi } } ;
+
+Item = Function
+     | { Attribute } , Struct
+     | { Attribute } , Enum
+     | Trait
+     | Impl
+     | Extern
+     | Import
+     | Const
+     | ModuleLet
+     | MacroDef ;
+
+Attribute = "@" , "derive" , "(" , Identifier , { "," , Identifier } , [ "," ] , ")"
+          | "@" , "repr" , "(" , "C" , ")" ;
+
+Function = "fun" , Identifier , [ GenericParams ] , "(" , [ ParamList ] , ")" , [ "->" , Type ] , FunctionBody ;
+
+FunctionBody = Block
+             | "=" , Expr ;
+
+ParamList = SelfParam , { "," , Param } , [ "," ]
+          | Param , { "," , Param } , [ "," ] ;
+
+SelfParam = "self" , [ ":" , Type ] ;
+
+Param = Identifier , ":" , Type ;
+
+GenericParams = "<" , GenericParam , { "," , GenericParam } , [ "," ] , ">" ;
+
+GenericParam = Identifier , [ ":" , TypePath , { "+" , TypePath } ] ;
+
+Struct = "struct" , Identifier , [ GenericParams ] , "{" , [ FieldList ] , "}" ;
+
+FieldList = Field , { FieldSep , Field } , [ FieldSep ] ;
+
+Field = Identifier , ":" , Type ;
+
+FieldSep = "," , [ Newline ]
+         | Newline ;
+
+Trait = "trait" , Identifier , [ GenericParams ] , "{" , { TraitMember , { NewlineOrSemi } } , "}" ;
+
+TraitMember = "fun" , Identifier , [ GenericParams ] , "(" , [ ParamList ] , ")" , [ "->" , Type ] , [ FunctionBody ] ;
+
+Impl = "impl" , [ GenericParams ] , TypePath , [ "for" , TypePath ] , "{" , { Function , { NewlineOrSemi } } , "}" ;
+
+Enum = "enum" , Identifier , [ GenericParams ] , "{" , [ EnumVariant , { FieldSep , EnumVariant } , [ FieldSep ] ] , "}" ;
+
+EnumVariant = Identifier , [ "(" , VariantPayload , ")" ] ;
+
+VariantPayload = NamedFields
+               | TypeList ;
+
+NamedFields = Field , { "," , Field } , [ "," ] ;
+
+TypeList = Type , { "," , Type } , [ "," ] ;
+
+Extern = "extern" , StringLit , "{" , { ExternItem , { NewlineOrSemi } } , "}" ;
+
+ExternItem = "fun" , Identifier , "(" , [ ExternParams ] , ")" , [ "->" , Type ] ;
+
+ExternParams = "..."
+             | Param , { "," , Param } , [ "," , "..." ] ;
+
+Import = "import" , ImportSource , [ "as" , Identifier ] , [ "{" , ImportSelectors , "}" ] ;
+
+ImportSource = StdPath
+             | StringLit ;
+
+StdPath = "std" , "/" , Identifier , { "/" , Identifier } ;
+
+ImportSelectors = ImportSelector , { "," , ImportSelector } , [ "," ] ;
+
+ImportSelector = Identifier , [ "as" , Identifier ] ;
+
+Const = "const" , Identifier , [ ":" , Type ] , "=" , Expr ;
+
+ModuleLet = "let" , Identifier , ( ":" , Type , [ "=" , Expr ] | "=" , Expr ) ;
+
+MacroDef = "macro" , Identifier , "{" , MacroRule , { MacroRuleSep , MacroRule } , [ MacroRuleSep ] , "}" ;
+
+MacroRuleSep = Newline | ";" | "," ;
+
+MacroRule = "(" , { MacroPattern } , ")" , "=>" , "{" , { MacroTemplateElement } , "}" ;
+
+MacroPattern = MetaVariable
+             | MacroRepetition
+             | ? any token, with parentheses, brackets, and braces balanced ? ;
+
+MetaVariable = "$" , Identifier , ":" , FragmentKind ;
+
+FragmentKind = "expr" | "ty" | "pat" | "literal" | "block" | "ident" ;
+
+MacroRepetition = "$" , "(" , { MacroPattern } , ")" , [ ? any single separator token ? ] , ( "*" | "+" ) ;
+
+MacroTemplateElement = "$" , Identifier
+                     | "$" , "(" , { MacroTemplateElement } , ")" , [ ? any single separator token ? ] , ( "*" | "+" )
+                     | ? any token, with parentheses, brackets, and braces balanced ? ;
+
+MacroCall = Identifier , "!" , ( "(" , MacroArgs , ")" | "[" , MacroArgs , "]" | "{" , MacroArgs , "}" ) ;
+
+MacroArgs = ? any tokens, with parentheses, brackets, and braces balanced ? ;
+
+Type = PrimaryType , [ "?" ] ;
+
+PrimaryType = TypePath
+            | "dyn" , TypePath
+            | "(" , ")"
+            | "fun" , "(" , [ TypeList ] , ")" , "->" , Type ;
+
+TypePath = TypePathSegment , { "." , TypePathSegment } ;
+
+TypePathSegment = Identifier , [ "<" , TypeArgs , ">" ] ;
+
+TypeArgs = Type , { "," , Type } , [ "," ] ;
+
+Block = "{" , { NewlineOrSemi } , { Stmt , { NewlineOrSemi } } , "}" ;
+
+Stmt = LetStmt
+     | "return" , [ Expr ]
+     | "break" , [ Expr ]
+     | "continue"
+     | "defer" , Expr
+     | "spawn" , Expr
+     | Assignment
+     | Expr ;
+
+LetStmt = ( "let" | "const" ) , Identifier , [ ":" , Type ] , "=" , Expr ;
+
+Assignment = LValue , AssignOp , Expr ;
+
+AssignOp = "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>=" ;
+
+LValue = Identifier , { "." , Identifier | "[" , Expr , "]" } ;
+
+Expr = LogicalOr ;
+
+LogicalOr = LogicalAnd , { "||" , LogicalAnd } ;
+
+LogicalAnd = Comparison , { "&&" , Comparison } ;
+
+Comparison = BitOr , [ ( "==" | "!=" | "<" | "<=" | ">" | ">=" ) , BitOr ] ;
+
+BitOr = BitXor , { "|" , BitXor } ;
+
+BitXor = BitAnd , { "^" , BitAnd } ;
+
+BitAnd = Shift , { "&" , Shift } ;
+
+Shift = RangeExpr , { ( "<<" | ">>" ) , RangeExpr } ;
+
+RangeExpr = Additive , [ ( ".." | "..=" ) , Additive ] ;
+
+Additive = Multiplicative , { ( "+" | "-" ) , Multiplicative } ;
+
+Multiplicative = Unary , { ( "*" | "/" | "%" ) , Unary } ;
+
+Unary = { "-" | "!" | "&" } , Postfix ;
+
+Postfix = Primary , { Suffix } ;
+
+Suffix = "." , Identifier , [ "<" , TypeArgs , ">" ] , [ "(" , [ ArgList ] , ")" ]
+       | "(" , [ ArgList ] , ")"
+       | "[" , Expr , "]"
+       | "?" ;
+
+ArgList = Expr , { "," , Expr } , [ "," ] ;
+
+Primary = Literal
+        | MacroCall
+        | Identifier , [ "<" , TypeArgs , ">" ] , [ StructLit ]
+        | "self"
+        | "Self" , [ StructLit ]
+        | "(" , Expr , ")"
+        | TupleExpr
+        | ListLit
+        | MapLit
+        | SetLit
+        | Block
+        | IfExpr
+        | MatchExpr
+        | LoopExpr
+        | WhileExpr
+        | ForExpr
+        | Lambda ;
+
+TupleExpr = "(" , Expr , "," , Expr , { "," , Expr } , [ "," ] , ")" ;
+
+ListLit = "[" , [ Expr , { "," , Expr } , [ "," ] ] , "]" ;
+
+MapLit = "[" , MapEntry , { "," , MapEntry } , [ "," ] , "]"
+       | "[" , ":" , "]" ;
+
+MapEntry = Expr , ":" , Expr ;
+
+SetLit = "{" , Expr , "," , [ Expr , { "," , Expr } , [ "," ] ] , "}" ;
+
+StructLit = "{" , [ FieldInit , { FieldSep , FieldInit } , [ FieldSep ] ] , "}" ;
+
+FieldInit = Identifier , [ ":" , Expr ] ;
+
+IfExpr = "if" , Expr , Block , { "else" , "if" , Expr , Block } , [ "else" , Block ] ;
+
+MatchExpr = "match" , Expr , "{" , [ MatchArm , { FieldSep , MatchArm } , [ FieldSep ] ] , "}" ;
+
+MatchArm = Pattern , [ "if" , Expr ] , "->" , Expr ;
+
+LoopExpr = "loop" , Block ;
+
+WhileExpr = "while" , Expr , Block ;
+
+ForExpr = "for" , Pattern , "in" , Expr , Block ;
+
+Lambda = "fun" , "(" , [ LambdaParams ] , ")" , [ "->" , Type ] , FunctionBody
+       | "{" , [ Identifier , { "," , Identifier } , [ "," ] ] , "->" , { NewlineOrSemi } , { Stmt , { NewlineOrSemi } } , "}" ;
+
+LambdaParams = LambdaParam , { "," , LambdaParam } , [ "," ] ;
+
+LambdaParam = Identifier , [ ":" , Type ] ;
+
+Pattern = "_"
+        | RangePat
+        | LiteralPat
+        | Identifier , [ "(" , PatternList , ")" | "{" , FieldPatList , "}" ]
+        | "(" , PatternList , ")" ;
+
+RangePat = IntLit , ( ".." | "..=" ) , IntLit ;
+
+LiteralPat = [ "-" ] , ( IntLit | FloatLit )
+           | StringLit | CharLit | "true" | "false" ;
+
+PatternList = Pattern , { "," , Pattern } , [ "," ] ;
+
+FieldPatList = FieldPat , { "," , FieldPat } , [ "," ] ;
+
+FieldPat = Identifier , [ ":" , Pattern ] ;
+
+NewlineOrSemi = Newline | ";" ;
+
+Newline = ? end of line ? ;
+
+Identifier = ( IdentStart , { IdentContinue } ) - Keyword ;
+
+IdentStart = "_" | Letter ;
+
+IdentContinue = "_" | Letter | Digit ;
+
+Letter = ? ASCII letter ? ;
+
+Digit = ? ASCII digit ? ;
+
+Keyword = "let" | "const" | "fun" | "return" | "if" | "else" | "while" | "for"
+        | "loop" | "in" | "break" | "continue" | "match" | "struct" | "trait"
+        | "impl" | "enum" | "import" | "as" | "extern" | "defer" | "spawn"
+        | "true" | "false" | "self" | "Self" ;
+
+ContextualKeyword = "dyn" | "macro" ;
+
+Literal = IntLit | FloatLit | "true" | "false" | StringLit | BlockStringLit | CharLit | CStringLit ;
+
+IntLit = DecDigits
+       | ( "0x" | "0X" ) , HexDigits
+       | ( "0b" | "0B" ) , BinDigits
+       | ( "0o" | "0O" ) , OctDigits ;
+
+DecDigits = Digit , { Digit | "_" } ;
+
+HexDigits = HexDigit , { HexDigit | "_" } ;
+
+BinDigits = ( "0" | "1" ) , { "0" | "1" | "_" } ;
+
+OctDigits = OctDigit , { OctDigit | "_" } ;
+
+HexDigit = ? ASCII hexadecimal digit ? ;
+
+OctDigit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" ;
+
+FloatLit = DecDigits , "." , DecDigits , [ Exponent ]
+         | DecDigits , Exponent ;
+
+Exponent = ( "e" | "E" ) , [ "+" | "-" ] , DecDigits ;
+
+StringLit = '"' , { StringElement } , '"' ;
+
+StringElement = Interpolation
+              | EscapeSequence
+              | ? any character except '"' and "\" ? ;
+
+Interpolation = "${" , Expr , "}" ;
+
+BlockStringLit = '"""' , ? any characters up to the first '"""' ? , '"""' ;
+
+CharLit = "'" , ( EscapeSequence | ? any character except "'" and "\" ? ) , "'" ;
+
+CStringLit = "c" , '"' , { EscapeSequence | ? any character except '"' and "\" ? } , '"' ;
+
+EscapeSequence = "\" , ( "n" | "t" | "r" | "\" | '"' | "'" | "$" | "0" )
+               | "\x" , HexDigit , HexDigit
+               | "\u{" , ? one to six hexadecimal digits ? , "}" ;
+
+LineComment = "//" , ? any characters up to end of line ? ;
+
+BlockComment = "/*" , ? any characters up to the first "*/" ? , "*/" ;
