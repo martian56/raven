@@ -3512,6 +3512,7 @@ pub fn check_binary(l: &Ty, r: &Ty, op: BinaryOp, span: &Span) -> Result<Ty, Rav
 /// made the two halves identical whenever both operands shared a type, so
 /// `V + V` reported "this should be `V and V`, but it's `V and V`".
 fn binary_op_error(op: BinaryOp, ls: &Ty, rs: &Ty, accepts: &str, span: &Span) -> RavenError {
+    use BinaryOp::*;
     let err = RavenError::ty(
         TypeError::BinaryOpUnsupported {
             op: op.symbol().to_string(),
@@ -3522,11 +3523,19 @@ fn binary_op_error(op: BinaryOp, ls: &Ty, rs: &Ty, accepts: &str, span: &Span) -
         span.clone(),
     );
     match (ls, rs) {
-        // Mixing the two numeric types is the common slip, and a conversion
-        // genuinely is the fix here, so name the call to make.
-        (Ty::Int, Ty::Float) | (Ty::Float, Ty::Int) => {
-            err.with_hint("convert the `Int` with `.to_float()` so both sides are `Float`")
-        }
+        // Mixing the two numeric types is the common slip. Point at the
+        // conversion that fits the operator's domain: `.to_float()` where the
+        // operator accepts `Float`, `.to_int()` for the bitwise family. The
+        // logical operators want `Bool`, so no numeric conversion helps there.
+        (Ty::Int, Ty::Float) | (Ty::Float, Ty::Int) => match op {
+            Add | Sub | Mul | Div | Mod | Lt | Le | Gt | Ge => {
+                err.with_hint("convert the `Int` with `.to_float()` so both sides are `Float`")
+            }
+            BitAnd | BitOr | BitXor | Shl | Shr => {
+                err.with_hint("convert the `Float` with `.to_int()` so both sides are `Int`")
+            }
+            _ => err,
+        },
         // Two values of the same user-declared type. There is no operator to
         // overload, so the way through is a named method.
         (a, b) if a == b && matches!(a, Ty::Struct { .. } | Ty::Enum { .. }) => {

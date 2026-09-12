@@ -255,6 +255,33 @@ fn logical_and_bitwise_ops_report_their_own_domain() {
 }
 
 #[test]
+fn mixed_numeric_hint_matches_the_operator_domain() {
+    // A logical operator wants Bool, so a mixed Int/Float pair must not be
+    // told to convert to Float; that expression would still be rejected.
+    let src = "fun main() {\n    let c = 1 && 2.0\n}\n";
+    let rendered = check(src).unwrap_err().render(src, false);
+    assert!(
+        rendered.contains("`&&` is not defined for `Int` and `Float`"),
+        "got: {}",
+        rendered
+    );
+    assert!(!rendered.contains("to_float()"), "got: {}", rendered);
+    assert!(!rendered.contains("to_int()"), "got: {}", rendered);
+
+    // A bitwise operator wants Int on both sides, so the Float is the operand
+    // to convert.
+    let src = "fun main() {\n    let c = 1 & 2.0\n}\n";
+    let rendered = check(src).unwrap_err().render(src, false);
+    assert!(
+        rendered.contains("`&` is not defined for `Int` and `Float`"),
+        "got: {}",
+        rendered
+    );
+    assert!(rendered.contains("to_int()"), "got: {}", rendered);
+    assert!(!rendered.contains("to_float()"), "got: {}", rendered);
+}
+
+#[test]
 fn supported_operators_still_type_check() {
     // The new error path must not narrow what the operators accept.
     check("fun main() {\n    let a = 1 + 2\n    let b = 1.5 * 2.0\n    let c = 7 % 3\n}\n")
