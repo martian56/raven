@@ -2,6 +2,13 @@
 
 All notable changes to Raven are documented in this file.
 
+## [2.26.2] - 2026-09-12
+
+### Fixed
+
+- Indexing a `String` is a type error instead of a segfault. `s[i]` used to type check as `Char` while the back end had no `String` case for index access, so the index lowered through the list layout and read the string header as a list header, crashing at run time. Reads and index assignments are both rejected now, with the error pointing at the byte accessors. (#894, #896)
+- Binary operator errors are their own diagnostic. Applying an operator to types it does not accept used to render as a generic mismatch that could degenerate into "this should be `V and V`, but it's `V and V`". The message now says the operator is not defined for the operand types, names the operator's accepted types, and carries operator-aware hints: `.to_float()` for mixed numerics under arithmetic and ordering, `.to_int()` under the bitwise family, `@derive(Ord)` with `compare` for ordering user types, and a named method for arithmetic on user types. (#895, #897)
+
 ## [2.26.1] - 2026-07-14
 
 ### Fixed
