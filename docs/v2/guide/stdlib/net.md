@@ -6,15 +6,15 @@ address is reachable. The handle types (`TcpStream`, `TcpListener`) and the
 free functions all return values through the `Result<T, Error>` model.
 
 ```rust
-import std/net { connect }
+from std.net import connect
 
 fun main() {
     match connect("example.com:80") {
-        Ok(stream) -> {
+        case Ok(stream) {
             stream.close()
             print("connected")
         }
-        Err(e) -> print(e.message),
+        case Err(e) { print(e.message) }
     }
 }
 ```
@@ -22,7 +22,7 @@ fun main() {
 ## Importing
 
 ```rust
-import std/net { connect, listen, dns_lookup, reachable }
+from std.net import connect, listen, dns_lookup, reachable
 ```
 
 Select the free functions you use. The methods on `TcpStream` and
@@ -34,8 +34,12 @@ and `TcpListener` are thin structs wrapping that id; every method looks the
 socket up by id and acts on it.
 
 ```rust
-struct TcpStream { id: Int }
-struct TcpListener { id: Int }
+class TcpStream {
+    id: int
+}
+class TcpListener {
+    id: int
+}
 ```
 
 You rarely touch `id` directly. Build the handles with `connect`, `listen`,
@@ -49,12 +53,12 @@ context prefix (the operation name) joined to the OS error text. Match on the
 `Result`, or use the [std/error](error.md) combinators to thread it.
 
 ```rust
-import std/net { connect }
+from std.net import connect
 
 fun main() {
     match connect("127.0.0.1:9999") {
-        Ok(stream) -> stream.close(),
-        Err(e) -> print(e.message),     // e.g. connect: ...
+        case Ok(stream) { stream.close() }
+        case Err(e) { print(e.message) } // e.g. connect: ...
     }
 }
 ```
@@ -70,15 +74,15 @@ Open a TCP stream to `addr` in `"host:port"` form. On success you get an open
 `TcpStream`; on failure an `Err` carrying the OS message.
 
 ```rust
-import std/net { connect }
+from std.net import connect
 
 fun main() {
     match connect("example.com:80") {
-        Ok(stream) -> {
+        case Ok(stream) {
             print("connected")
             stream.close()
         }
-        Err(e) -> print(e.message),
+        case Err(e) { print(e.message) }
     }
 }
 ```
@@ -102,19 +106,19 @@ in 4 KiB chunks and stops at a clean EOF. Like `read`, the payload is a byte
 buffer carried in a `String`, not guaranteed text.
 
 ```rust
-import std/net { connect }
+from std.net import connect
 
 fun main() {
     match connect("example.com:80") {
-        Ok(stream) -> {
+        case Ok(stream) {
             stream.write("GET / HTTP/1.0\r\nHost: example.com\r\n\r\n")
             match stream.read_all() {
-                Ok(body) -> print(body),
-                Err(e) -> print(e.message),
+                case Ok(body) { print(body) }
+                case Err(e) { print(e.message) }
             }
             stream.close()
         }
-        Err(e) -> print(e.message),
+        case Err(e) { print(e.message) }
     }
 }
 ```
@@ -141,23 +145,23 @@ Close the stream, releasing the runtime-side socket. It does not return a
 `Result`.
 
 ```rust
-import std/net { connect }
+from std.net import connect
 
 fun main() {
     match connect("example.com:80") {
-        Ok(stream) -> {
+        case Ok(stream) {
             stream.set_read_timeout_ms(2000)
             match stream.write("GET / HTTP/1.0\r\n\r\n") {
-                Ok(n) -> print("sent ${n} bytes"),
-                Err(e) -> print(e.message),
+                case Ok(n) { print("sent ${n} bytes") }
+                case Err(e) { print(e.message) }
             }
             match stream.read(1024) {
-                Ok(reply) -> print(reply),
-                Err(e) -> print(e.message),
+                case Ok(reply) { print(reply) }
+                case Err(e) { print(e.message) }
             }
             stream.close()
         }
-        Err(e) -> print(e.message),
+        case Err(e) { print(e.message) }
     }
 }
 ```
@@ -179,27 +183,25 @@ serve each accepted stream before accepting the next, or `spawn` a goroutine
 per stream to serve connections concurrently.
 
 ```rust
-import std/net { listen }
+from std.net import listen
 
 fun serve() {
     match listen("127.0.0.1:7878") {
-        Ok(server) -> {
+        case Ok(server) {
             while true {
                 match server.accept() {
-                    Ok(client) -> {
+                    case Ok(client) {
                         match client.read(1024) {
-                            Ok(req) -> {
-                                client.write("hello\n")
-                            }
-                            Err(e) -> print(e.message),
+                            case Ok(req) { client.write("hello\n") }
+                            case Err(e) { print(e.message) }
                         }
                         client.close()
                     }
-                    Err(e) -> print(e.message),
+                    case Err(e) { print(e.message) }
                 }
             }
         }
-        Err(e) -> print(e.message),
+        case Err(e) { print(e.message) }
     }
 }
 ```
@@ -222,18 +224,18 @@ Resolve `host` to its IP addresses as a `List<String>`. An empty result is an
 empty list, not a one-element list of `""`.
 
 ```rust
-import std/net { dns_lookup }
+from std.net import dns_lookup
 
 fun main() {
     match dns_lookup("example.com") {
-        Ok(addrs) -> {
-            let i = 0
+        case Ok(addrs) {
+            var i = 0
             while i < addrs.len() {
                 print(addrs[i])
                 i = i + 1
             }
         }
-        Err(e) -> print(e.message),
+        case Err(e) { print(e.message) }
     }
 }
 ```
@@ -245,14 +247,10 @@ short timeout. This is a non-failing check: it returns a plain `Bool` and
 never sets an error.
 
 ```rust
-import std/net { reachable }
+from std.net import reachable
 
 fun main() {
-    if reachable("127.0.0.1:7878") {
-        print("up")
-    } else {
-        print("down")
-    }
+    print("up") if reachable("127.0.0.1:7878") else print("down")
 }
 ```
 
@@ -262,9 +260,9 @@ Connect, send a request, read the reply, and close, handling the `Result` at
 each step.
 
 ```rust
-import std/net { connect }
+from std.net import connect
 
-fun fetch(addr: String, request: String) -> Result<String, Error> {
+fun fetch(addr: str, request: str) -> Result[str, Error] {
     let stream = connect(addr)?
     stream.set_read_timeout_ms(3000)
     stream.write(request)?
@@ -275,8 +273,8 @@ fun fetch(addr: String, request: String) -> Result<String, Error> {
 
 fun main() {
     match fetch("example.com:80", "GET / HTTP/1.0\r\n\r\n") {
-        Ok(body) -> print(body),
-        Err(e) -> print(e.message),
+        case Ok(body) { print(body) }
+        case Err(e) { print(e.message) }
     }
 }
 ```

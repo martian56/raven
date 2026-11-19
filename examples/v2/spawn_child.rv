@@ -4,21 +4,21 @@
 // "late" and exits 3. The idle defaults to 600ms; the parent's kill test
 // passes a large one as the first argument to make the child effectively
 // hang until killed.
-import std/io { println }
-import std/string
-import std/sync { sleep_millis }
-import std/env { args, exit }
+from std.io import println
+import std.string
+from std.sync import sleep_millis
+from std.env import args, exit
 
 fun main() {
     println("early")
-    let idle = 600
+    var idle = 600
     let a = args()
     if a.len() > 1 {
         match a[1].parse_int() {
-            Some(ms) -> {
+            case Some(ms) {
                 idle = ms
-            },
-            None -> {},
+            }
+            case None {}
         }
     }
     sleep_millis(idle)

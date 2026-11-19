@@ -1,14 +1,17 @@
 // A closure, defer, or spawn body inside a method can refer to `self`. It is
 // captured from the method like any other local; before, the lifted body had no
 // `self` and the build failed.
-import std/io { println }
+from std.io import println
 
-struct Counter { value: Int }
+class Counter {
+    value: int
+}
 
 impl Counter {
-    fun getter(self) -> fun() -> Int {
-        return fun() -> Int = self.value
+    fun getter(self) -> fun() -> int {
+        return () -> int => self.value
     }
+
     fun announce(self) {
         defer println("done with ${self.value.to_string()}")
         println("working on ${self.value.to_string()}")
@@ -16,7 +19,7 @@ impl Counter {
 }
 
 fun main() {
-    let c = Counter { value: 42 }
+    let c = Counter(value: 42)
     let g = c.getter()
     println(g().to_string())
     c.announce()

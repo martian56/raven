@@ -6,47 +6,47 @@
 // started with the `spawn` keyword. See docs/v2/specs/concurrency.md.
 
 extern "C" {
-    fun raven_channel_new() -> Int
-    fun raven_channel_new_buffered(cap: Int) -> Int
-    fun raven_channel_send(id: Int, value: Int)
-    fun raven_channel_recv(id: Int) -> Int
+    fun raven_channel_new() -> int
+    fun raven_channel_new_buffered(cap: int) -> int
+    fun raven_channel_send(id: int, value: int)
+    fun raven_channel_recv(id: int) -> int
     fun raven_go_yield()
-    fun raven_waitgroup_new() -> Int
-    fun raven_waitgroup_add(id: Int, delta: Int)
-    fun raven_waitgroup_wait(id: Int)
-    fun raven_sleep_millis(ms: Int)
-    fun raven_select_new() -> Int
-    fun raven_select_add(set_id: Int, chan_id: Int)
-    fun raven_select_recv(set_id: Int) -> Int
-    fun raven_select_value() -> Int
-    fun raven_select_free(set_id: Int)
-    fun raven_channel_free(id: Int)
-    fun raven_waitgroup_free(id: Int)
+    fun raven_waitgroup_new() -> int
+    fun raven_waitgroup_add(id: int, delta: int)
+    fun raven_waitgroup_wait(id: int)
+    fun raven_sleep_millis(ms: int)
+    fun raven_select_new() -> int
+    fun raven_select_add(set_id: int, chan_id: int)
+    fun raven_select_recv(set_id: int) -> int
+    fun raven_select_value() -> int
+    fun raven_select_free(set_id: int)
+    fun raven_channel_free(id: int)
+    fun raven_waitgroup_free(id: int)
 }
 
 // A channel of Int values. The id keys the runtime's channel registry.
-struct Channel {
-    id: Int,
+class Channel {
+    id: int
 }
 
 // Create an unbuffered (rendezvous) channel.
 fun channel() -> Channel {
-    return Channel { id: raven_channel_new() }
+    return Channel(id: raven_channel_new())
 }
 
 // Create a buffered channel of capacity `cap`.
-fun channel_buffered(cap: Int) -> Channel {
-    return Channel { id: raven_channel_new_buffered(cap) }
+fun channel_buffered(cap: int) -> Channel {
+    return Channel(id: raven_channel_new_buffered(cap))
 }
 
 impl Channel {
     // Send `value`, blocking until the channel can accept it.
-    fun send(self, value: Int) {
+    fun send(self, value: int) {
         raven_channel_send(self.id, value)
     }
 
     // Receive a value, blocking until one is available.
-    fun recv(self) -> Int {
+    fun recv(self) -> int {
         return raven_channel_recv(self.id)
     }
 
@@ -64,20 +64,20 @@ fun yield_now() {
 }
 
 // Sleep the current goroutine for `ms` milliseconds.
-fun sleep_millis(ms: Int) {
+fun sleep_millis(ms: int) {
     raven_sleep_millis(ms)
 }
 
 // A mutual-exclusion lock built on a one-slot channel that holds a single
 // token: the token present means unlocked, taken means locked. `lock` takes
 // the token (blocking until it is returned), `unlock` returns it.
-struct Mutex {
-    ch: Channel,
+class Mutex {
+    ch: Channel
 }
 
 // Create an unlocked mutex.
 fun mutex() -> Mutex {
-    let m = Mutex { ch: channel_buffered(1) }
+    let m = Mutex(ch: channel_buffered(1))
     m.ch.send(0)
     return m
 }
@@ -97,18 +97,18 @@ impl Mutex {
 // A wait group: wait for a set of goroutines to finish. `add` raises the
 // outstanding count before spawning work, `done` lowers it as each finishes,
 // and `wait` blocks until the count returns to zero.
-struct WaitGroup {
-    id: Int,
+class WaitGroup {
+    id: int
 }
 
 // Create a wait group with a zero count.
 fun wait_group() -> WaitGroup {
-    return WaitGroup { id: raven_waitgroup_new() }
+    return WaitGroup(id: raven_waitgroup_new())
 }
 
 impl WaitGroup {
     // Add `n` to the outstanding count (call before spawning the work).
-    fun add(self, n: Int) {
+    fun add(self, n: int) {
         raven_waitgroup_add(self.id, n)
     }
 
@@ -132,14 +132,14 @@ impl WaitGroup {
 // The outcome of a `select_recv`: `index` is the position in the channel list
 // of the channel that produced a value (or -1 if the list was empty), and
 // `value` is that value.
-struct SelectResult {
-    index: Int,
-    value: Int,
+class SelectResult {
+    index: int
+    value: int
 }
 
 // Block until one of `channels` has a value to receive, then return its index
 // in the list and the value. When several are ready the lowest index wins.
-fun select_recv(channels: List<Channel>) -> SelectResult {
+fun select_recv(channels: list[Channel]) -> SelectResult {
     let set = raven_select_new()
     for ch in channels {
         raven_select_add(set, ch.id)
@@ -147,5 +147,5 @@ fun select_recv(channels: List<Channel>) -> SelectResult {
     let index = raven_select_recv(set)
     let value = raven_select_value()
     raven_select_free(set)
-    return SelectResult { index: index, value: value }
+    return SelectResult(index: index, value: value)
 }

@@ -13,7 +13,7 @@ use cranelift_codegen::ir::{
     Type as CType, Value,
 };
 use cranelift_codegen::isa::CallConv;
-use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
+use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::Module;
 
 use crate::mir::{
@@ -77,8 +77,11 @@ pub fn cranelift_ty(ty: &MirType, ptr: CType) -> Option<CType> {
 /// Per local lowering record.
 #[derive(Clone, Copy)]
 struct LocalSlot {
-    /// Cranelift stack slot, `None` for `Unit` locals.
+    /// Stack slot of a GC pointer local, which the collector reads through
+    /// the root frame.
     slot: Option<StackSlot>,
+    /// SSA variable of a scalar local.
+    var: Option<Variable>,
     /// Cranelift type, `None` for `Unit` locals.
     ty: Option<CType>,
 }
@@ -136,16 +139,22 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
         let mut gc_locals: Vec<MirLocal> = Vec::new();
         for (i, decl) in self.func.locals.iter().enumerate() {
             let ty = cranelift_ty(&decl.ty, ptr);
-            let slot = ty.map(|t| {
+            let gc = layout::is_gc_pointer(&decl.ty);
+            let slot = ty.filter(|_| gc).map(|t| {
                 builder.create_sized_stack_slot(StackSlotData::new(
                     StackSlotKind::ExplicitSlot,
                     t.bytes(),
                 ))
             });
-            if layout::is_gc_pointer(&decl.ty) && slot.is_some() {
+            let var = ty.filter(|_| !gc).map(|t| {
+                let v = Variable::from_u32(i as u32);
+                builder.declare_var(v, t);
+                v
+            });
+            if slot.is_some() {
                 gc_locals.push(MirLocal(i as u32));
             }
-            slots.push(LocalSlot { slot, ty });
+            slots.push(LocalSlot { slot, var, ty });
         }
 
         // Allocate the root array slot once when the function holds any
@@ -191,8 +200,20 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
             // the allocator). A single atomic load when no collection is pending.
             if mir_block.is_loop_header {
                 if let Some(sp) = self.cx.runtime_id(intrinsics::RUNTIME_GC_SAFEPOINT) {
+                    let flag = self.cx.gc_stop_flag()?;
+                    let ptr = self.cx.pointer_type();
+                    let gv = self.cx.module().declare_data_in_func(flag, builder.func);
+                    let addr = builder.ins().symbol_value(ptr, gv);
+                    let pending = builder.ins().load(types::I8, MemFlags::trusted(), addr, 0);
+                    let park = builder.create_block();
+                    let cont = builder.create_block();
+                    builder.ins().brif(pending, park, &[], cont, &[]);
+                    builder.set_cold_block(park);
+                    builder.switch_to_block(park);
                     let sp_ref = self.cx.module().declare_func_in_func(sp, builder.func);
                     builder.ins().call(sp_ref, &[]);
+                    builder.ins().jump(cont, &[]);
+                    builder.switch_to_block(cont);
                 }
             }
             lower_block(
@@ -224,15 +245,36 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
         let mut iter = entry_params.into_iter();
         for (i, param_local) in func.params.iter().enumerate() {
             let slot_info = slots[param_local.0 as usize];
-            if let (Some(slot), Some(_)) = (slot_info.slot, slot_info.ty) {
-                let v = iter.next().unwrap_or_else(|| {
-                    unreachable!(
-                        "parameter count and block param count differ at index {}",
-                        i
-                    )
-                });
-                builder.ins().stack_store(v, slot, 0);
+            if slot_info.ty.is_none() {
+                continue;
             }
+            let v = iter.next().unwrap_or_else(|| {
+                unreachable!(
+                    "parameter count and block param count differ at index {}",
+                    i
+                )
+            });
+            if let Some(slot) = slot_info.slot {
+                builder.ins().stack_store(v, slot, 0);
+            } else if let Some(var) = slot_info.var {
+                builder.def_var(var, v);
+            }
+        }
+        for (i, info) in slots.iter().enumerate() {
+            let (Some(var), Some(ty)) = (info.var, info.ty) else {
+                continue;
+            };
+            if func.local_decl(MirLocal(i as u32)).is_param {
+                continue;
+            }
+            let zero = if ty == types::F64 {
+                builder.ins().f64const(0.0)
+            } else if ty == types::F32 {
+                builder.ins().f32const(0.0)
+            } else {
+                builder.ins().iconst(ty, 0)
+            };
+            builder.def_var(var, zero);
         }
     }
 
@@ -950,6 +992,9 @@ fn lower_constant(
 
 fn load_local(builder: &mut FunctionBuilder<'_>, slots: &[LocalSlot], local: MirLocal) -> RValue {
     let info = slots[local.0 as usize];
+    if let Some(var) = info.var {
+        return Some(builder.use_var(var));
+    }
     let (slot, ty) = match (info.slot, info.ty) {
         (Some(s), Some(t)) => (s, t),
         _ => return None,
@@ -964,13 +1009,16 @@ fn store_local(
     value: RValue,
 ) {
     let info = slots[local.0 as usize];
-    let (slot, want) = match (info.slot, info.ty) {
-        (Some(s), Some(t)) => (s, t),
-        _ => return,
+    let (Some(want), Some(v)) = (info.ty, value) else {
+        return;
     };
-    let v = match value {
-        Some(v) => v,
-        None => return,
+    if let Some(var) = info.var {
+        let v = narrow_from_slot(builder, v, want);
+        builder.def_var(var, v);
+        return;
+    }
+    let Some(slot) = info.slot else {
+        return;
     };
     // Reconcile the produced value's type with the slot's declared type.
     // A field read hands back a pointer-width slot value; storing it into
@@ -1538,6 +1586,32 @@ fn lower_list_method(
                 "list push value",
             )?;
             let value = widen_to_slot(builder, Some(value), ptr);
+            let len = builder
+                .ins()
+                .load(types::I32, MemFlags::trusted(), list, LIST_LEN_OFFSET);
+            let cap = builder
+                .ins()
+                .load(types::I32, MemFlags::trusted(), list, LIST_CAP_OFFSET);
+            let has_room = builder.ins().icmp(IntCC::UnsignedLessThan, len, cap);
+            let fast = builder.create_block();
+            let slow = builder.create_block();
+            let done = builder.create_block();
+            builder.ins().brif(has_room, fast, &[], slow, &[]);
+
+            builder.switch_to_block(fast);
+            let elements = call_list_elements(cx, builder, list);
+            let wide_len = builder.ins().uextend(ptr, len);
+            let offset = builder.ins().imul_imm(wide_len, ELEMENT_SLOT);
+            let addr = builder.ins().iadd(elements, offset);
+            builder.ins().store(MemFlags::trusted(), value, addr, 0);
+            let next = builder.ins().iadd_imm(len, 1);
+            builder
+                .ins()
+                .store(MemFlags::trusted(), next, list, LIST_LEN_OFFSET);
+            builder.ins().jump(done, &[]);
+
+            builder.switch_to_block(slow);
+            builder.set_cold_block(slow);
             let scratch = builder.create_sized_stack_slot(StackSlotData::new(
                 StackSlotKind::ExplicitSlot,
                 ELEMENT_SLOT as u32,
@@ -1549,6 +1623,9 @@ fn lower_list_method(
                 .expect("list push declared at module init");
             let push_ref = cx.module().declare_func_in_func(push_id, builder.func);
             builder.ins().call(push_ref, &[list, scratch_addr]);
+            builder.ins().jump(done, &[]);
+
+            builder.switch_to_block(done);
             Ok(None)
         }
         ListMethodOp::Pop => {
@@ -1625,23 +1702,24 @@ fn call_list_len(
     list: Value,
     ptr: CType,
 ) -> Value {
-    let len_id = cx
-        .runtime_id(intrinsics::RUNTIME_LIST_LEN)
-        .expect("list len declared at module init");
-    let len_ref = cx.module().declare_func_in_func(len_id, builder.func);
-    let inst = builder.ins().call(len_ref, &[list]);
-    let len_u32 = builder.inst_results(inst)[0];
+    let _ = cx;
+    let len_u32 = builder
+        .ins()
+        .load(types::I32, MemFlags::trusted(), list, LIST_LEN_OFFSET);
     builder.ins().uextend(ptr, len_u32)
 }
 
+// Field offsets of the runtime `List` object (raven-runtime/src/object/list.rs).
+const LIST_LEN_OFFSET: i32 = 8;
+const LIST_CAP_OFFSET: i32 = 12;
+const LIST_ELEMENTS_OFFSET: i32 = 32;
+
 /// Emit `raven_list_elements(list) -> ptr` and return the buffer base.
 fn call_list_elements(cx: &mut ModuleCx, builder: &mut FunctionBuilder<'_>, list: Value) -> Value {
-    let id = cx
-        .runtime_id(intrinsics::RUNTIME_LIST_ELEMENTS)
-        .expect("list elements declared at module init");
-    let fref = cx.module().declare_func_in_func(id, builder.func);
-    let inst = builder.ins().call(fref, &[list]);
-    builder.inst_results(inst)[0]
+    let ptr = cx.pointer_type();
+    builder
+        .ins()
+        .load(ptr, MemFlags::trusted(), list, LIST_ELEMENTS_OFFSET)
 }
 
 /// Branch on an unsigned `index < len` check, calling `raven_panic` with
@@ -2730,7 +2808,7 @@ fn lower_intrinsic(
             builder.ins().call(local_ref, &[ptr_val, len_val]);
             Ok(None)
         }
-        intrinsics::PANIC_FN => {
+        intrinsics::PANIC_FN | intrinsics::PANIC_USER => {
             if args.len() != 1 {
                 return Err(CodegenError::Unsupported(format!(
                     "__panic intrinsic expects 1 arg, got {}",

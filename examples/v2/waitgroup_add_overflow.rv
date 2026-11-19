@@ -3,8 +3,8 @@
 // group. A normal add/done/wait still completes. Prints:
 //   no abort on overflow
 //   normal wait completed
-import std/sync { wait_group }
-import std/io { println }
+from std.sync import wait_group
+from std.io import println
 
 fun main() {
     let wg = wait_group()

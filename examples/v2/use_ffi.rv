@@ -4,8 +4,8 @@
 // strings and a nonzero value otherwise. from_cstr round-trips a CStr
 // back to a Raven String. The C integer results print through `print`,
 // which widens the FFI integer types to Int and renders the digits.
-import std/ffi { to_cstr, from_cstr }
-import std/io { println }
+from std.ffi import to_cstr, from_cstr
+from std.io import println
 
 extern "C" {
     fun strlen(s: CStr) -> CSize

@@ -1,6 +1,6 @@
 // golden:skip
-import std/string
-import std/io { println }
+import std.string
+from std.io import println
 
 fun main() {
     println("hello".to_upper())

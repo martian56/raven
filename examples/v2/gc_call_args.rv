@@ -12,15 +12,15 @@
 //   joined ab
 //   pick omega
 
-import std/string
+import std.string
 
-fun first(a: String, b: String) -> String {
+fun first(a: str, b: str) -> str {
     return a
 }
 
-fun churn(n: Int) -> Int {
-    let acc = 0
-    let i = 0
+fun churn(n: int) -> int {
+    var acc = 0
+    var i = 0
     while i < n {
         let junk = first("scratch", "discard")
         if junk == "scratch" {
@@ -31,8 +31,8 @@ fun churn(n: Int) -> Int {
     return acc
 }
 
-fun pick(a: String, b: String) -> String {
-    let r = b
+fun pick(a: str, b: str) -> str {
+    var r = b
     if a == "key" {
         r = a
     }

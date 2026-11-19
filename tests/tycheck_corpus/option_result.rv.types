@@ -9,21 +9,23 @@
   106..108 "xs" -> List<Int>
   106..115 "xs.get(0)" -> Int
   113..114 "0" -> Int
-  170..255 "{\n    if b == 0 {\n        return Err(\"division by zero\")\n    }\n    return Ok(a / b)\n}" -> ()
-  176..232 "if b == 0 {\n        return Err(\"division by zero\")\n    }" -> ()
-  179..180 "b" -> Int
-  179..185 "b == 0" -> Bool
-  184..185 "0" -> Int
-  186..232 "{\n        return Err(\"division by zero\")\n    }" -> ()
-  203..226 "Err(\"division by zero\")" -> Result<<error>, String>
-  207..225 "\"division by zero\"" -> String
-  244..253 "Ok(a / b)" -> Result<Int, <error>>
-  247..248 "a" -> Int
-  247..252 "a / b" -> Int
-  251..252 "b" -> Int
-  289..360 "{\n    return match x {\n        None -> 0,\n        Some(n) -> n,\n    }\n}" -> ()
-  302..358 "match x {\n        None -> 0,\n        Some(n) -> n,\n    }" -> Int
-  308..309 "x" -> Option<Int>
-  328..329 "0" -> Int
-  350..351 "n" -> Int
+  167..252 "{\n    if b == 0 {\n        return Err(\"division by zero\")\n    }\n    return Ok(a / b)\n}" -> ()
+  173..229 "if b == 0 {\n        return Err(\"division by zero\")\n    }" -> ()
+  176..177 "b" -> Int
+  176..182 "b == 0" -> Bool
+  181..182 "0" -> Int
+  183..229 "{\n        return Err(\"division by zero\")\n    }" -> ()
+  200..223 "Err(\"division by zero\")" -> Result<Int, String>
+  204..222 "\"division by zero\"" -> String
+  241..250 "Ok(a / b)" -> Result<Int, String>
+  244..245 "a" -> Int
+  244..249 "a / b" -> Int
+  248..249 "b" -> Int
+  286..367 "{\n    return match x {\n        case None { 0 }\n        case Some(n) { n }\n    }\n}" -> ()
+  299..365 "match x {\n        case None { 0 }\n        case Some(n) { n }\n    }" -> Int
+  305..306 "x" -> Option<Int>
+  327..332 "{ 0 }" -> Int
+  329..330 "0" -> Int
+  354..359 "{ n }" -> Int
+  356..357 "n" -> Int
 )

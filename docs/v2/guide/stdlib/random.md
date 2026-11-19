@@ -5,18 +5,18 @@ the generator state; its methods draw the next value and mutate that state in
 place.
 
 ```rust
-import std/random
+import std.random
 
 fun main() {
     let rng = Rng.new(42)
-    print(rng.gen_range(1, 7))      // a dice roll in [1, 7)
+    print(rng.gen_range(1, 7)) // a dice roll in [1, 7)
 }
 ```
 
 ## Importing
 
 ```rust
-import std/random
+import std.random
 ```
 
 `std/random` adds a `struct Rng` and its `impl Rng` block, so a bare import
@@ -37,12 +37,12 @@ timestamp mixed with the process id), so its stream is not reproducible across
 runs. Reach for it when you want a fresh, unpredictable sequence.
 
 ```rust
-import std/random
+import std.random
 
 fun main() {
     let a = Rng.new(7)
     let b = Rng.new(7)
-    print(a.next_int() == b.next_int())     // true: same seed, same draw
+    print(a.next_int() == b.next_int()) // true: same seed, same draw
 }
 ```
 
@@ -65,12 +65,12 @@ runs.
 The next raw 64-bit draw. Values span the full `Int` range and may be negative.
 
 ```rust
-import std/random
+import std.random
 
 fun main() {
     let rng = Rng.new(1)
-    print(rng.next_int())       // some i64 value
-    print(rng.next_int())       // the next one in the sequence
+    print(rng.next_int()) // some i64 value
+    print(rng.next_int()) // the next one in the sequence
 }
 ```
 
@@ -79,11 +79,11 @@ fun main() {
 A value in the half-open interval `[lo, hi)`: `lo` is possible, `hi` is not.
 
 ```rust
-import std/random
+import std.random
 
 fun main() {
     let rng = Rng.new(99)
-    print(rng.gen_range(0, 6))      // one of 0, 1, 2, 3, 4, 5
+    print(rng.gen_range(0, 6)) // one of 0, 1, 2, 3, 4, 5
 }
 ```
 
@@ -99,11 +99,11 @@ A `Float` in `[0.0, 1.0)`. It takes the top 53 bits of a draw and scales by
 in the interval is reachable.
 
 ```rust
-import std/random
+import std.random
 
 fun main() {
     let rng = Rng.new(3)
-    print(rng.next_float())     // e.g. 0.234...
+    print(rng.next_float()) // e.g. 0.234...
 }
 ```
 
@@ -113,11 +113,11 @@ A `Float` in the half-open interval `[lo, hi)`. Built from `next_float`
 scaled into the range.
 
 ```rust
-import std/random
+import std.random
 
 fun main() {
     let rng = Rng.new(42)
-    print(rng.gen_range_float(0.0, 10.0))     // e.g. 7.41...
+    print(rng.gen_range_float(0.0, 10.0)) // e.g. 7.41...
 }
 ```
 
@@ -126,11 +126,11 @@ fun main() {
 `true` or `false` from the low bit of a draw, a fair coin flip.
 
 ```rust
-import std/random
+import std.random
 
 fun main() {
     let rng = Rng.new(5)
-    print(rng.next_bool())      // true or false
+    print(rng.next_bool()) // true or false
 }
 ```
 
@@ -143,15 +143,15 @@ is an `Option<T>`, unwrap it with a `match` (or your preferred `Option` helper)
 before use.
 
 ```rust
-import std/random
+import std.random
 
 fun main() {
     let rng = Rng.new(12)
     let colors = ["red", "green", "blue"]
 
     match rng.choice(colors) {
-        Some(c) -> print(c),
-        None -> print("empty"),
+        case Some(c) { print(c) }
+        case None { print("empty") }
     }
 }
 ```
@@ -162,14 +162,14 @@ Shuffles `xs` in place using Fisher-Yates. It returns nothing; the list passed
 in is reordered.
 
 ```rust
-import std/random
+import std.random
 
 fun main() {
     let rng = Rng.new(2024)
     let deck = [1, 2, 3, 4, 5]
     rng.shuffle(deck)
     for card in deck {
-        print(card)     // some permutation of 1, 2, 3, 4, 5
+        print(card) // some permutation of 1, 2, 3, 4, 5
     }
 }
 ```
@@ -181,13 +181,13 @@ exceeds the list length, every element is returned (shuffled). The source
 list is left unchanged.
 
 ```rust
-import std/random
+import std.random
 
 fun main() {
     let rng = Rng.new(42)
     let xs = ["a", "b", "c", "d", "e"]
     for p in rng.sample(xs, 3) {
-        print(p)     // three distinct elements, random order
+        print(p) // three distinct elements, random order
     }
 }
 ```
@@ -203,7 +203,7 @@ without saturating the cumulative range, so later positive items remain
 reachable even when the exact integer total would overflow.
 
 ```rust
-import std/random
+import std.random
 
 fun main() {
     let rng = Rng.new(42)
@@ -211,8 +211,8 @@ fun main() {
     let weights = [1, 1, 8]
 
     match rng.weighted_choice(items, weights) {
-        Some(c) -> print(c),       // "blue" most of the time
-        None -> print("empty"),
+        case Some(c) { print(c) } // "blue" most of the time
+        case None { print("empty") }
     }
 }
 ```
@@ -223,18 +223,18 @@ A seeded generator makes a test deterministic: pick the same seed and the
 output never drifts between runs.
 
 ```rust
-import std/random
+import std.random
 
 fun main() {
     let rng = Rng.new(7)
     let words = ["alpha", "beta", "gamma", "delta"]
 
     // Draw three random words.
-    let i = 0
+    var i = 0
     while i < 3 {
         match rng.choice(words) {
-            Some(w) -> print(w),
-            None -> print("(none)"),
+            case Some(w) { print(w) }
+            case None { print("(none)") }
         }
         i = i + 1
     }

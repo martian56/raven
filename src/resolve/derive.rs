@@ -241,7 +241,7 @@ fn struct_ord_body(s: &Struct, self_ty: &str) -> String {
     }
     let mut body = format!("    fun compare(self, other: {self_ty}) -> Int {{\n");
     for (i, f) in s.fields.iter().enumerate() {
-        let decl = if i == 0 { "let c" } else { "c" };
+        let decl = if i == 0 { "var c" } else { "c" };
         body.push_str(&format!(
             "        {decl} = self.{0}.compare(other.{0})\n        if c != 0 {{ return c }}\n",
             f.name
@@ -252,7 +252,7 @@ fn struct_ord_body(s: &Struct, self_ty: &str) -> String {
 }
 
 fn struct_hash_body(s: &Struct) -> String {
-    let mut body = String::from("    fun hash(self) -> Int {\n        let h = 17\n");
+    let mut body = String::from("    fun hash(self) -> Int {\n        var h = 17\n");
     for f in &s.fields {
         body.push_str(&format!("        h = h * 31 + self.{}.hash()\n", f.name));
     }
@@ -393,7 +393,7 @@ fn enum_ord_body(e: &Enum, self_ty: &str) -> String {
             } else {
                 let mut blk = String::from("{\n");
                 for k in 0..n {
-                    let decl = if k == 0 { "let c" } else { "c" };
+                    let decl = if k == 0 { "var c" } else { "c" };
                     blk.push_str(&format!(
                         "                    {decl} = a{k}.compare(b{k})\n                    if c != 0 {{ return c }}\n"
                     ));
@@ -792,15 +792,11 @@ mod tests {
     }
 
     #[test]
-    fn struct_variant_enum_is_rejected() {
+    fn named_variant_enum_derives() {
         let file = parse_src("@derive(Eq)\nenum E { V(a: Int) }\n");
         let mut out = Vec::new();
-        let err = expand_derives(&file.items, &mut out, "<derive>")
-            .expect_err("struct variant not supported");
-        assert!(
-            format!("{err}").contains("struct-style variant"),
-            "got: {err}"
-        );
+        expand_derives(&file.items, &mut out, "<derive>").expect("derive");
+        assert_eq!(out.len(), 1);
     }
 
     #[test]
@@ -890,14 +886,132 @@ mod tests {
     }
 
     #[test]
-    fn json_derive_rejects_struct_variant_enum() {
+    fn json_derive_accepts_named_variant_enum() {
         let file = parse_src("@derive(ToJson)\nenum E { V(a: Int) }\n");
         let mut out = Vec::new();
-        let err = expand_derives(&file.items, &mut out, "<derive>")
-            .expect_err("struct variant not supported");
-        assert!(
-            format!("{err}").contains("struct-style variant"),
-            "got: {err}"
-        );
+        expand_derives(&file.items, &mut out, "<derive>").expect("derive");
+        assert_eq!(out.len(), 1);
+    }
+}
+
+/// Derive `Eq`, `Hash`, and `ToString` for every type whose fields support them.
+pub fn add_implicit_derives(items: &mut [Decl]) {
+    for trait_name in ["Eq", "Hash", "ToString"] {
+        add_implicit(items, trait_name);
+    }
+}
+
+fn add_implicit(items: &mut [Decl], trait_name: &str) {
+    use std::collections::{HashMap, HashSet};
+    let mut has: HashSet<String> = HashSet::new();
+    for d in items.iter() {
+        if let DeclKind::Impl(i) = &d.kind {
+            let is_trait = i
+                .trait_or_type
+                .segments
+                .last()
+                .is_some_and(|s| s.name == trait_name);
+            if let (true, Some(target)) = (is_trait, &i.for_type) {
+                if let Some(seg) = target.segments.last() {
+                    has.insert(seg.name.clone());
+                }
+            }
+        }
+    }
+    let mut fields: HashMap<String, (Vec<String>, Vec<Type>)> = HashMap::new();
+    for d in items.iter() {
+        match &d.kind {
+            DeclKind::Struct(s) => {
+                if s.derives.iter().any(|t| t == trait_name) {
+                    has.insert(s.name.clone());
+                } else if !s.repr_c {
+                    let gens = s.generics.iter().map(|g| g.name.clone()).collect();
+                    let tys = s.fields.iter().map(|f| f.ty.clone()).collect();
+                    fields.insert(s.name.clone(), (gens, tys));
+                }
+            }
+            DeclKind::Enum(e) => {
+                if e.derives.iter().any(|t| t == trait_name) {
+                    has.insert(e.name.clone());
+                    continue;
+                }
+                let mut tys = Vec::new();
+                let mut ok = true;
+                for v in &e.variants {
+                    match &v.payload {
+                        VariantPayload::Unit => {}
+                        VariantPayload::Tuple(ts) => tys.extend(ts.iter().cloned()),
+                        VariantPayload::Struct(_) => ok = false,
+                    }
+                }
+                if ok {
+                    let gens = e.generics.iter().map(|g| g.name.clone()).collect();
+                    fields.insert(e.name.clone(), (gens, tys));
+                }
+            }
+            _ => {}
+        }
+    }
+    for name in &has {
+        fields.remove(name);
+    }
+    let mut eligible: HashSet<String> = fields.keys().cloned().collect();
+    loop {
+        let before = eligible.len();
+        let snapshot = eligible.clone();
+        eligible.retain(|name| {
+            let (gens, tys) = &fields[name];
+            tys.iter()
+                .all(|t| type_supports(t, trait_name, gens, &snapshot, &has))
+        });
+        if eligible.len() == before {
+            break;
+        }
+    }
+    for d in items.iter_mut() {
+        match &mut d.kind {
+            DeclKind::Struct(s) if eligible.contains(&s.name) => s.derives.push(trait_name.into()),
+            DeclKind::Enum(e) if eligible.contains(&e.name) => e.derives.push(trait_name.into()),
+            _ => {}
+        }
+    }
+}
+
+fn type_supports(
+    t: &Type,
+    trait_name: &str,
+    gens: &[String],
+    eligible: &std::collections::HashSet<String>,
+    has: &std::collections::HashSet<String>,
+) -> bool {
+    match &t.kind {
+        TypeKind::Optional(inner) => {
+            trait_name != "Hash" && type_supports(inner, trait_name, gens, eligible, has)
+        }
+        TypeKind::Path(p) if p.segments.len() == 1 => {
+            let seg = &p.segments[0];
+            let args_ok = || {
+                seg.generics
+                    .iter()
+                    .all(|g| type_supports(g, trait_name, gens, eligible, has))
+            };
+            let builtin: &[&str] = match trait_name {
+                "Hash" => &["Int", "Bool", "Char", "String"],
+                _ => &["Int", "Float", "Bool", "Char", "String"],
+            };
+            let containers: &[&str] = match trait_name {
+                "Hash" => &[],
+                "ToString" => &["List", "Option", "Result"],
+                _ => &["List", "Option", "Result", "Map", "Set"],
+            };
+            match seg.name.as_str() {
+                n if builtin.contains(&n) => true,
+                n if containers.contains(&n) => args_ok(),
+                n if gens.iter().any(|g| g == n) => true,
+                n if eligible.contains(n) || has.contains(n) => args_ok(),
+                _ => false,
+            }
+        }
+        _ => false,
     }
 }

@@ -840,3 +840,33 @@ mod tests {
         );
     }
 }
+
+/// Closest candidate by edit distance, for "did you mean" hints.
+pub fn closest_match<'a, I>(name: &str, candidates: I) -> Option<&'a str>
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let limit = name.chars().count().div_ceil(3).max(1);
+    let lower = name.to_lowercase();
+    candidates
+        .into_iter()
+        .filter(|c| *c != name)
+        .map(|c| (edit_distance(&lower, &c.to_lowercase()), c))
+        .filter(|(d, _)| *d <= limit)
+        .min_by_key(|(d, _)| *d)
+        .map(|(_, c)| c)
+}
+
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut cur = vec![i + 1; b.len() + 1];
+        for (j, cb) in b.iter().enumerate() {
+            let cost = usize::from(ca != *cb);
+            cur[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(cur[j] + 1);
+        }
+        prev = cur;
+    }
+    prev[b.len()]
+}

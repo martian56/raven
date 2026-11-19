@@ -6,19 +6,23 @@
 //   trimmed
 //   level
 //   3
-import std/string
+import std.string
 
 fun main() {
-    print("a,b,c".split(",").len())             // 3
+    print("a,b,c".split(",").len()) // 3
     match "100".parse_int() {
-        Some(n) -> print(n * 2),                // 200
-        None -> print(0),
+        case Some(n) {
+            print(n * 2) // 200
+        }
+        case None { print(0) }
     }
     match "3.5".parse_float() {
-        Some(f) -> print(f),                    // 3.5
-        None -> print(0.0),
+        case Some(f) {
+            print(f) // 3.5
+        }
+        case None { print(0.0) }
     }
-    print("  trimmed  ".trim_start().trim_end())    // trimmed
-    print("level".reverse())                        // level
-    print("a.b.c.d".count("."))                     // 3
+    print("  trimmed  ".trim_start().trim_end()) // trimmed
+    print("level".reverse()) // level
+    print("a.b.c.d".count(".")) // 3
 }

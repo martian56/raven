@@ -4,18 +4,18 @@ Numeric constants and functions. Everything in `std/math` is a free
 function, so you bring names into scope with a selective import:
 
 ```rust
-import std/math { sqrt, pow_int }
+from std.math import sqrt, pow_int
 
 fun main() {
-    print(sqrt(2.0))        // 1.4142135623730951
-    print(pow_int(2, 10))   // 1024
+    print(sqrt(2.0)) // 1.4142135623730951
+    print(pow_int(2, 10)) // 1024
 }
 ```
 
 ## Importing
 
 ```rust
-import std/math { sqrt, pow, abs_int, pi }
+from std.math import sqrt, pow, abs_int, pi
 ```
 
 List exactly the names you use inside the `{ ... }`. The transcendental and
@@ -57,14 +57,14 @@ integer; a result that would overflow aborts with `pow_int overflow` rather
 than wrapping.
 
 ```rust
-import std/math { abs_int, min_int, max_int, clamp_int, pow_int }
+from std.math import abs_int, min_int, max_int, clamp_int, pow_int
 
 fun main() {
-    print(abs_int(0 - 7))           // 7
-    print(min_int(3, 9))            // 3
-    print(max_int(3, 9))            // 9
-    print(clamp_int(15, 0, 10))     // 10
-    print(pow_int(2, 8))            // 256
+    print(abs_int(0 - 7)) // 7
+    print(min_int(3, 9)) // 3
+    print(max_int(3, 9)) // 9
+    print(clamp_int(15, 0, 10)) // 10
+    print(pow_int(2, 8)) // 256
 }
 ```
 
@@ -78,11 +78,11 @@ Greatest common divisor of `a` and `b`, always non-negative. `gcd(0, 0)` is
 Least common multiple of `a` and `b`. Zero when either argument is zero.
 
 ```rust
-import std/math { gcd, lcm }
+from std.math import gcd, lcm
 
 fun main() {
-    print(gcd(12, 18))      // 6
-    print(lcm(4, 6))        // 12
+    print(gcd(12, 18)) // 6
+    print(lcm(4, 6)) // 12
 }
 ```
 
@@ -91,12 +91,12 @@ fun main() {
 The sign of an integer: `1` when positive, `-1` when negative, `0` for zero.
 
 ```rust
-import std/math { sign_int }
+from std.math import sign_int
 
 fun main() {
-    print(sign_int(5))          // 1
-    print(sign_int(0 - 5))      // -1
-    print(sign_int(0))          // 0
+    print(sign_int(5)) // 1
+    print(sign_int(0 - 5)) // -1
+    print(sign_int(0)) // 0
 }
 ```
 
@@ -130,10 +130,10 @@ Floating-point remainder of `a / b`, with the sign of `a`. The `%` operator
 does not work on `Float`, so this is the way to take a float remainder.
 
 ```rust
-import std/math { fmod }
+from std.math import fmod
 
 fun main() {
-    print(fmod(7.5, 2.0))       // 1.5
+    print(fmod(7.5, 2.0)) // 1.5
 }
 ```
 
@@ -146,11 +146,11 @@ Cube root.
 `sqrt(a*a + b*b)`, computed without intermediate overflow.
 
 ```rust
-import std/math { cbrt, hypot }
+from std.math import cbrt, hypot
 
 fun main() {
-    print(cbrt(27.0))           // 3.0
-    print(hypot(3.0, 4.0))      // 5.0
+    print(cbrt(27.0)) // 3.0
+    print(hypot(3.0, 4.0)) // 5.0
 }
 ```
 
@@ -160,11 +160,11 @@ The sign of a float: `1.0` when positive, `-1.0` when negative, `0.0` for
 zero.
 
 ```rust
-import std/math { sign }
+from std.math import sign
 
 fun main() {
-    print(sign(0.0 - 3.0))      // -1.0
-    print(sign(2.5))            // 1.0
+    print(sign(0.0 - 3.0)) // -1.0
+    print(sign(2.5)) // 1.0
 }
 ```
 
@@ -185,10 +185,10 @@ Base-2 logarithm.
 Base-10 logarithm.
 
 ```rust
-import std/math { log2 }
+from std.math import log2
 
 fun main() {
-    print(log2(8.0))        // 3.0
+    print(log2(8.0)) // 3.0
 }
 ```
 
@@ -211,13 +211,13 @@ The angle in radians of the point `(x, y)` from the positive x-axis, using the
 signs of both arguments to land in the correct quadrant.
 
 ```rust
-import std/math { asin, acos, atan, atan2 }
+from std.math import asin, acos, atan, atan2
 
 fun main() {
-    print(asin(1.0))            // 1.5707963267948966
-    print(acos(1.0))            // 0
-    print(atan(1.0))            // 0.7853981633974483
-    print(atan2(1.0, 1.0))      // 0.7853981633974483
+    print(asin(1.0)) // 1.5707963267948966
+    print(acos(1.0)) // 0
+    print(atan(1.0)) // 0.7853981633974483
+    print(atan2(1.0, 1.0)) // 0.7853981633974483
 }
 ```
 
@@ -226,12 +226,12 @@ fun main() {
 Hyperbolic sine, cosine, and tangent.
 
 ```rust
-import std/math { sinh, cosh, tanh }
+from std.math import sinh, cosh, tanh
 
 fun main() {
-    print(sinh(0.0))        // 0
-    print(cosh(0.0))        // 1
-    print(tanh(0.0))        // 0
+    print(sinh(0.0)) // 0
+    print(cosh(0.0)) // 1
+    print(tanh(0.0)) // 0
 }
 ```
 
@@ -240,27 +240,27 @@ fun main() {
 Convert between degrees and radians.
 
 ```rust
-import std/math { to_radians, to_degrees }
+from std.math import to_radians, to_degrees
 
 fun main() {
-    print(to_radians(180.0))                // 3.141592653589793
-    print(to_degrees(3.141592653589793))    // 180
+    print(to_radians(180.0)) // 3.141592653589793
+    print(to_degrees(3.141592653589793)) // 180
 }
 ```
 
 ```rust
-import std/math { sqrt, pow, exp, ln, abs, min, max, clamp, floor, ceil, round, trunc, sin, cos }
+from std.math import sqrt, pow, exp, ln, abs, min, max, clamp, floor, ceil, round, trunc, sin, cos
 
 fun main() {
-    print(sqrt(2.0))            // 1.4142135623730951
-    print(pow(2.0, 10.0))       // 1024.0
-    print(abs(0.0 - 3.5))       // 3.5
-    print(min(2.5, 1.5))        // 1.5
+    print(sqrt(2.0)) // 1.4142135623730951
+    print(pow(2.0, 10.0)) // 1024.0
+    print(abs(0.0 - 3.5)) // 3.5
+    print(min(2.5, 1.5)) // 1.5
     print(clamp(9.0, 0.0, 1.0)) // 1.0
-    print(floor(2.7))           // 2.0
-    print(ceil(2.1))            // 3.0
-    print(round(2.5))           // 3.0
-    print(trunc(0.0 - 2.7))     // -2.0
+    print(floor(2.7)) // 2.0
+    print(ceil(2.1)) // 3.0
+    print(round(2.5)) // 3.0
+    print(trunc(0.0 - 2.7)) // -2.0
 }
 ```
 
@@ -280,12 +280,12 @@ not detect it; use this.
 True when `x` is positive or negative infinity.
 
 ```rust
-import std/math { infinity, nan, is_nan, is_inf }
+from std.math import infinity, nan, is_nan, is_inf
 
 fun main() {
-    print(is_nan(nan()))            // true
-    print(is_inf(infinity()))       // true
-    print(is_nan(1.0))              // false
+    print(is_nan(nan())) // true
+    print(is_inf(infinity())) // true
+    print(is_nan(1.0)) // false
 }
 ```
 
@@ -307,12 +307,12 @@ zero-argument functions returning `Float`. Call them with `()`.
 6.283185307179586 (a full turn, `2 * pi`).
 
 ```rust
-import std/math { pi, e, tau, sin }
+from std.math import pi, e, tau, sin
 
 fun main() {
-    print(pi())             // 3.141592653589793
-    print(tau())            // 6.283185307179586
-    print(sin(pi()))        // ~0 (libm rounding)
+    print(pi()) // 3.141592653589793
+    print(tau()) // 6.283185307179586
+    print(sin(pi())) // ~0 (libm rounding)
 }
 ```
 
@@ -321,16 +321,16 @@ fun main() {
 `sqrt` plus `pow` gives the Euclidean distance between two points.
 
 ```rust
-import std/math { sqrt, pow }
+from std.math import sqrt, pow
 
-fun distance(x1: Float, y1: Float, x2: Float, y2: Float) -> Float {
+fun distance(x1: float, y1: float, x2: float, y2: float) -> float {
     let dx = x2 - x1
     let dy = y2 - y1
     return sqrt(pow(dx, 2.0) + pow(dy, 2.0))
 }
 
 fun main() {
-    print(distance(0.0, 0.0, 3.0, 4.0))     // 5.0
+    print(distance(0.0, 0.0, 3.0, 4.0)) // 5.0
 }
 ```
 

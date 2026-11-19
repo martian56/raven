@@ -5,15 +5,15 @@ for a match, find the first match or every match, pull out capture groups,
 replace matches, and split on a pattern.
 
 ```rust
-import std/regex { compile }
+from std.regex import compile
 
 fun main() {
     match compile("[0-9]+") {
-        Ok(re) -> {
-            print(re.is_match("order 42"))      // true
+        case Ok(re) {
+            print(re.is_match("order 42")) // true
             re.free()
         }
-        Err(e) -> print(e.message),
+        case Err(e) { print(e.message) }
     }
 }
 ```
@@ -21,7 +21,7 @@ fun main() {
 ## Importing
 
 ```rust
-import std/regex { compile }
+from std.regex import compile
 ```
 
 `compile` is the entry point. The methods on `Regex` arrive with the type, so
@@ -40,13 +40,13 @@ Compile `pattern` into a reusable `Regex`. On success the result is
 tagged with kind `"regex"`, its message the underlying syntax error.
 
 ```rust
-import std/regex { compile }
+from std.regex import compile
 
 fun main() {
-    let result = compile("(")       // unbalanced group
+    let result = compile("(") // unbalanced group
     match result {
-        Ok(re) -> re.free(),
-        Err(e) -> print(e.message),     // a regex syntax error
+        case Ok(re) { re.free() }
+        case Err(e) { print(e.message) } // a regex syntax error
     }
 }
 ```
@@ -75,16 +75,16 @@ method on the handle afterward.
 True when the pattern matches anywhere in `text`.
 
 ```rust
-import std/regex { compile }
+from std.regex import compile
 
 fun main() {
     match compile("^[a-z]+$") {
-        Ok(re) -> {
-            print(re.is_match("raven"))     // true
-            print(re.is_match("R2D2"))      // false
+        case Ok(re) {
+            print(re.is_match("raven")) // true
+            print(re.is_match("R2D2")) // false
             re.free()
         }
-        Err(e) -> print(e.message),
+        case Err(e) { print(e.message) }
     }
 }
 ```
@@ -95,18 +95,18 @@ The first match in `text`, or `None` when there is no match. A matched empty
 string is `Some("")`, distinct from `None`.
 
 ```rust
-import std/regex { compile }
+from std.regex import compile
 
 fun main() {
     match compile("[0-9]+") {
-        Ok(re) -> {
+        case Ok(re) {
             match re.find("room 237, floor 4") {
-                Some(s) -> print(s),        // 237
-                None -> print("no digits"),
+                case Some(s) { print(s) } // 237
+                case None { print("no digits") }
             }
             re.free()
         }
-        Err(e) -> print(e.message),
+        case Err(e) { print(e.message) }
     }
 }
 ```
@@ -117,17 +117,17 @@ Every non-overlapping match in `text`, in order. No matches yields an empty
 list.
 
 ```rust
-import std/regex { compile }
+from std.regex import compile
 
 fun main() {
     match compile("[0-9]+") {
-        Ok(re) -> {
+        case Ok(re) {
             for n in re.find_all("a1 b22 c333") {
-                print(n)        // 1, then 22, then 333
+                print(n) // 1, then 22, then 333
             }
             re.free()
         }
-        Err(e) -> print(e.message),
+        case Err(e) { print(e.message) }
     }
 }
 ```
@@ -141,18 +141,18 @@ groups 1, 2, and so on. An unmatched optional group is an empty string. No
 match yields an empty list.
 
 ```rust
-import std/regex { compile }
+from std.regex import compile
 
 fun main() {
     match compile("([0-9]+)-([0-9]+)") {
-        Ok(re) -> {
+        case Ok(re) {
             let groups = re.captures("range 10-20 here")
-            print(groups[0])        // 10-20  (whole match)
-            print(groups[1])        // 10
-            print(groups[2])        // 20
+            print(groups[0]) // 10-20  (whole match)
+            print(groups[1]) // 10
+            print(groups[2]) // 20
             re.free()
         }
-        Err(e) -> print(e.message),
+        case Err(e) { print(e.message) }
     }
 }
 ```
@@ -166,16 +166,16 @@ Replace every non-overlapping match in `text` with `repl`. Group references in
 groups.
 
 ```rust
-import std/regex { compile }
+from std.regex import compile
 
 fun main() {
     match compile("([a-z]+)@([a-z]+)") {
-        Ok(re) -> {
+        case Ok(re) {
             let masked = re.replace_all("ada@host bob@host", "$1@***")
-            print(masked)       // ada@*** bob@***
+            print(masked) // ada@*** bob@***
             re.free()
         }
-        Err(e) -> print(e.message),
+        case Err(e) { print(e.message) }
     }
 }
 ```
@@ -187,19 +187,21 @@ fun main() {
 Split `text` on the pattern, returning the pieces in order.
 
 ```rust
-import std/regex { compile }
+from std.regex import compile
 
 fun main() {
-    match compile("[, ]+") {     // commas and spaces, run together
-        Ok(re) -> {
+    match compile("[, ]+") {
+        case Ok(re) {
             for part in re.split("a, b,  c   d") {
-                print(part)     // a, b, c, d
+                print(part)
             }
             re.free()
         }
-        Err(e) -> print(e.message),
+        case Err(e) { print(e.message) }
     }
 }
+// commas and spaces, run together
+// a, b, c, d
 ```
 
 ## Supported syntax
@@ -220,23 +222,23 @@ unaffected.
 ## Worked example: parsing key=value lines
 
 ```rust
-import std/regex { compile }
+from std.regex import compile
 
 fun main() {
     let lines = ["host=localhost", "port=8080", "debug=true"]
 
     // Match the value that follows `=` on each line.
     match compile("=([a-z0-9]+)") {
-        Ok(re) -> {
+        case Ok(re) {
             for line in lines {
                 match re.find(line) {
-                    Some(hit) -> print("${line} -> ${hit}"),    // ... -> =localhost, ...
-                    None -> print("skip: ${line}"),
+                    case Some(hit) { print("${line} -> ${hit}") } // ... -> =localhost, ...
+                    case None { print("skip: ${line}") }
                 }
             }
             re.free()
         }
-        Err(e) -> print("bad pattern: ${e.message}"),
+        case Err(e) { print("bad pattern: ${e.message}") }
     }
 }
 ```

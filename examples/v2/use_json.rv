@@ -1,23 +1,23 @@
 // golden:skip
-import std/json { parse, stringify }
-import std/io { println }
+from std.json import parse, stringify
+from std.io import println
 
 fun main() {
     match parse("{\"a\": 1, \"b\": [true, null, \"hi\"]}") {
-        Ok(v) -> println(stringify(v)),
-        Err(e) -> println("parse failed"),
+        case Ok(v) { println(stringify(v)) }
+        case Err(e) { println("parse failed") }
     }
     match parse("\"x\\ny \\u0041\"") {
-        Ok(v) -> println(stringify(v)),
-        Err(e) -> println("parse failed"),
+        case Ok(v) { println(stringify(v)) }
+        case Err(e) { println("parse failed") }
     }
     match parse("{ bad ]") {
-        Ok(v) -> println("ok"),
-        Err(e) -> println("parse failed"),
+        case Ok(v) { println("ok") }
+        case Err(e) { println("parse failed") }
     }
     let bad_utf8 = "\"".concat(__str_from_byte(255)).concat("\"")
     match parse(bad_utf8) {
-        Ok(v) -> println("ok"),
-        Err(e) -> println("invalid utf8 rejected"),
+        case Ok(v) { println("ok") }
+        case Err(e) { println("invalid utf8 rejected") }
     }
 }

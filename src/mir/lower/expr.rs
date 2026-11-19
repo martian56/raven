@@ -122,6 +122,21 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             }
             let l = lower_expr(cx, lhs);
             let r = lower_expr(cx, rhs);
+            if matches!(op, HirBinaryOp::Add) && mir_ty(&lhs.ty, cx.subst) == MirType::Str {
+                let dst = cx.builder.fresh_temp("concat", MirType::Str);
+                cx.builder.assign(
+                    cx.current,
+                    dst,
+                    MirRvalue::Call {
+                        callee: MirFnRef {
+                            mangled: super::super::intrinsics::STR_CONCAT.into(),
+                            origin: None,
+                        },
+                        args: vec![l, r],
+                    },
+                );
+                return MirOperand::Copy(dst);
+            }
             let dst = cx.builder.fresh_temp("bin", ty);
             cx.builder
                 .assign(cx.current, dst, MirRvalue::BinaryOp(map_binary(*op), l, r));

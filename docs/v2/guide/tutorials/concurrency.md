@@ -21,14 +21,14 @@ A couple of facts to keep in mind as you go:
 the surrounding scope:
 
 ```rust
-import std/sync { channel }
+from std.sync import channel
 
 fun main() {
     let ch = channel()
-    spawn(fun() -> Unit {
+    spawn {
         ch.send(42)
-    })
-    print(ch.recv())        // 42
+    }
+    print(ch.recv()) // 42
 }
 ```
 
@@ -45,25 +45,25 @@ consuming them. The producer sends `1` through `5`; `main` receives five values
 and sums them:
 
 ```rust
-import std/sync { channel }
+from std.sync import channel
 
 fun main() {
     let ch = channel()
-    spawn(fun() -> Unit {
-        let i = 1
+    spawn {
+        var i = 1
         while i <= 5 {
             ch.send(i)
             i = i + 1
         }
-    })
+    }
 
-    let sum = 0
-    let n = 0
+    var sum = 0
+    var n = 0
     while n < 5 {
         sum = sum + ch.recv()
         n = n + 1
     }
-    print(sum)              // 15
+    print(sum) // 15
 }
 ```
 
@@ -79,27 +79,27 @@ and one receiver collects the results. Order is not guaranteed, so design the
 result to be order-independent (a sum, a count, a set):
 
 ```rust
-import std/sync { channel }
+from std.sync import channel
 
 fun main() {
     let fan = channel()
-    spawn(fun() -> Unit {
+    spawn {
         fan.send(3)
-    })
-    spawn(fun() -> Unit {
+    }
+    spawn {
         fan.send(5)
-    })
-    spawn(fun() -> Unit {
+    }
+    spawn {
         fan.send(7)
-    })
+    }
 
-    let total = 0
-    let k = 0
+    var total = 0
+    var k = 0
     while k < 3 {
         total = total + fan.recv()
         k = k + 1
     }
-    print(total)            // 15
+    print(total) // 15
 }
 ```
 
@@ -113,30 +113,30 @@ channel holds up to a fixed number of values, so a sender can get ahead of the
 receiver:
 
 ```rust
-import std/sync { channel_buffered, yield_now }
+from std.sync import channel_buffered, yield_now
 
 fun main() {
     let ch = channel_buffered(8)
-    spawn(fun() -> Unit {
+    spawn {
         ch.send(0)
         yield_now()
         ch.send(2)
         yield_now()
         ch.send(4)
-    })
+    }
     ch.send(1)
     yield_now()
     ch.send(3)
     yield_now()
     ch.send(5)
 
-    let acc = 0
-    let m = 0
+    var acc = 0
+    var m = 0
     while m < 6 {
         acc = acc + ch.recv()
         m = m + 1
     }
-    print(acc)              // 15
+    print(acc) // 15
 }
 ```
 
@@ -153,25 +153,25 @@ and the `index` of the channel it came from (its position in the list you
 passed):
 
 ```rust
-import std/sync { channel, select_recv }
+from std.sync import channel, select_recv
 
 fun main() {
     let a = channel()
     let b = channel()
 
-    spawn(fun() -> Unit {
+    spawn {
         a.send(10)
         a.send(20)
-    })
-    spawn(fun() -> Unit {
+    }
+    spawn {
         b.send(30)
         b.send(40)
-    })
+    }
 
-    let total = 0
-    let from_a = 0
-    let from_b = 0
-    let received = 0
+    var total = 0
+    var from_a = 0
+    var from_b = 0
+    var received = 0
     while received < 4 {
         let r = select_recv([a, b])
         total = total + r.value
@@ -184,9 +184,9 @@ fun main() {
         received = received + 1
     }
 
-    print(total)            // 100
-    print(from_a)           // 2
-    print(from_b)           // 2
+    print(total) // 100
+    print(from_a) // 2
+    print(from_b) // 2
 }
 ```
 
@@ -201,22 +201,22 @@ shared state and a way to wait for them all to finish. `std/sync` provides a
 `wait_group` to join a set of goroutines and a `mutex` to guard a shared value:
 
 ```rust
-import std/sync { wait_group, mutex }
+from std.sync import wait_group, mutex
 
-struct Counter {
-    value: Int,
+class Counter {
+    value: int
 }
 
 fun main() {
     let wg = wait_group()
     let m = mutex()
-    let counter = Counter { value: 0 }
+    let counter = Counter(value: 0)
 
     wg.add(8)
-    let spawned = 0
+    var spawned = 0
     while spawned < 8 {
-        spawn(fun() -> Unit {
-            let i = 0
+        spawn {
+            var i = 0
             while i < 1000 {
                 m.lock()
                 counter.value = counter.value + 1
@@ -224,12 +224,12 @@ fun main() {
                 i = i + 1
             }
             wg.done()
-        })
+        }
         spawned = spawned + 1
     }
 
     wg.wait()
-    print(counter.value)    // 8000
+    print(counter.value) // 8000
 }
 ```
 
@@ -247,11 +247,11 @@ allocates as it runs, this also exercises the garbage collector concurrently,
 yet the answer stays exact:
 
 ```rust
-import std/sync { Channel, channel }
+from std.sync import Channel, channel
 
-fun worker(out: Channel, n: Int) -> Unit {
-    let acc = 0
-    let i = 0
+fun worker(out: Channel, n: int) -> Unit {
+    var acc = 0
+    var i = 0
     while i < n {
         let items = [i, i + 1, i + 2]
         acc = acc + items.len()
@@ -262,21 +262,21 @@ fun worker(out: Channel, n: Int) -> Unit {
 
 fun main() {
     let out = channel()
-    let spawned = 0
+    var spawned = 0
     while spawned < 8 {
-        spawn(fun() -> Unit {
+        spawn {
             worker(out, 2000)
-        })
+        }
         spawned = spawned + 1
     }
 
-    let total = 0
-    let received = 0
+    var total = 0
+    var received = 0
     while received < 8 {
         total = total + out.recv()
         received = received + 1
     }
-    print(total)            // 48000
+    print(total) // 48000
 }
 ```
 

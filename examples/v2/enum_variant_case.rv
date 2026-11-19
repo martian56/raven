@@ -2,22 +2,26 @@
 // names, not by letter case. A lowercase enum variant is a constructor, so
 // leaving one out is a non-exhaustive match; an uppercase name that is not a
 // variant is a binding.
-import std/io { println }
+from std.io import println
 
-enum Sign { pos, zero, neg }
+enum Sign {
+    pos,
+    zero,
+    neg,
+}
 
-fun describe(s: Sign) -> String {
+fun describe(s: Sign) -> str {
     return match s {
-        pos -> "positive",
-        zero -> "zero",
-        neg -> "negative",
+        case pos { "positive" }
+        case zero { "zero" }
+        case neg { "negative" }
     }
 }
 
-fun pick(n: Int) -> Int {
+fun pick(n: int) -> int {
     return match n {
-        0 -> 100,
-        Other -> Other,
+        case 0 { 100 }
+        case Other { Other }
     }
 }
 

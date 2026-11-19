@@ -15,45 +15,45 @@
 // implement `Hash`, so they cannot be keys. `List<T>` is built into the
 // language and needs no import.
 
-struct Set<T: Eq + Hash> {
-    buckets: List<List<T>>,
-    count: Int,
+class Set[T: Eq + Hash] {
+    buckets: list[list[T]]
+    count: int
 }
 
 // Superseded by the set literal `{a, b}` and `Set.new()`. Kept for
 // selective imports.
-fun empty_set<T: Eq + Hash>() -> Set<T> {
+fun empty_set[T: Eq + Hash]() -> set[T] {
     return Set.new()
 }
 
-impl<T: Eq + Hash> Set<T> {
-    fun new() -> Set<T> {
-        let buckets: List<List<T>> = []
-        let i = 0
+impl[T: Eq + Hash] set[T] {
+    fun new() -> set[T] {
+        let buckets: list[list[T]] = []
+        var i = 0
         while i < 8 {
-            let b: List<T> = []
+            let b: list[T] = []
             buckets.push(b)
             i = i + 1
         }
-        return Set { buckets: buckets, count: 0 }
+        return Set(buckets: buckets, count: 0)
     }
 
-    fun len(self) -> Int {
+    fun len(self) -> int {
         return self.count
     }
 
-    fun is_empty(self) -> Bool {
+    fun is_empty(self) -> bool {
         return self.count == 0
     }
 
     // Every element of the set as a list, in no particular order. This is the
     // way to enumerate a set's contents.
-    fun to_list(self) -> List<T> {
-        let out: List<T> = []
-        let i = 0
+    fun to_list(self) -> list[T] {
+        var out: list[T] = []
+        var i = 0
         while i < self.buckets.len() {
             let bucket = self.buckets[i]
-            let j = 0
+            var j = 0
             while j < bucket.len() {
                 out.push(bucket[j])
                 j = j + 1
@@ -64,16 +64,16 @@ impl<T: Eq + Hash> Set<T> {
     }
 
     // A new set with every element of either set.
-    fun union(self, other: Set<T>) -> Set<T> {
-        let out: Set<T> = Set.new()
+    fun union(self, other: set[T]) -> set[T] {
+        var out: set[T] = Set.new()
         let a = self.to_list()
-        let i = 0
+        var i = 0
         while i < a.len() {
             out.add(a[i])
             i = i + 1
         }
         let b = other.to_list()
-        let j = 0
+        var j = 0
         while j < b.len() {
             out.add(b[j])
             j = j + 1
@@ -82,10 +82,10 @@ impl<T: Eq + Hash> Set<T> {
     }
 
     // A new set with the elements present in both sets.
-    fun intersection(self, other: Set<T>) -> Set<T> {
-        let out: Set<T> = Set.new()
+    fun intersection(self, other: set[T]) -> set[T] {
+        var out: set[T] = Set.new()
         let a = self.to_list()
-        let i = 0
+        var i = 0
         while i < a.len() {
             if other.contains(a[i]) {
                 out.add(a[i])
@@ -96,10 +96,10 @@ impl<T: Eq + Hash> Set<T> {
     }
 
     // A new set with the elements in this set but not in `other`.
-    fun difference(self, other: Set<T>) -> Set<T> {
-        let out: Set<T> = Set.new()
+    fun difference(self, other: set[T]) -> set[T] {
+        var out: set[T] = Set.new()
         let a = self.to_list()
-        let i = 0
+        var i = 0
         while i < a.len() {
             if other.contains(a[i]) == false {
                 out.add(a[i])
@@ -110,9 +110,9 @@ impl<T: Eq + Hash> Set<T> {
     }
 
     // True when every element of this set is also in `other`.
-    fun is_subset(self, other: Set<T>) -> Bool {
+    fun is_subset(self, other: set[T]) -> bool {
         let a = self.to_list()
-        let i = 0
+        var i = 0
         while i < a.len() {
             if other.contains(a[i]) == false {
                 return false
@@ -122,15 +122,15 @@ impl<T: Eq + Hash> Set<T> {
         return true
     }
 
-    fun bucket_index(self, x: T) -> Int {
+    fun bucket_index(self, x: T) -> int {
         let n = self.buckets.len()
         let h = x.hash() % n
         return (h + n) % n
     }
 
-    fun contains(self, x: T) -> Bool {
+    fun contains(self, x: T) -> bool {
         let bucket = self.buckets[self.bucket_index(x)]
-        let i = 0
+        var i = 0
         let n = bucket.len()
         while i < n {
             if bucket[i].equals(x) {
@@ -144,7 +144,7 @@ impl<T: Eq + Hash> Set<T> {
     // Add `x` if it is not already present.
     fun add(self, x: T) {
         let bucket = self.buckets[self.bucket_index(x)]
-        let i = 0
+        var i = 0
         let n = bucket.len()
         while i < n {
             if bucket[i].equals(x) {
@@ -161,9 +161,9 @@ impl<T: Eq + Hash> Set<T> {
 
     // Remove `x` if present, returning whether it was. Order within a
     // bucket is not preserved: the last entry fills the removed slot.
-    fun remove(self, x: T) -> Bool {
+    fun remove(self, x: T) -> bool {
         let bucket = self.buckets[self.bucket_index(x)]
-        let i = 0
+        var i = 0
         let n = bucket.len()
         while i < n {
             if bucket[i].equals(x) {
@@ -180,18 +180,18 @@ impl<T: Eq + Hash> Set<T> {
 
     fun grow(self) {
         let new_count = self.buckets.len() * 2
-        let fresh: List<List<T>> = []
-        let i = 0
+        let fresh: list[list[T]] = []
+        var i = 0
         while i < new_count {
-            let b: List<T> = []
+            let b: list[T] = []
             fresh.push(b)
             i = i + 1
         }
-        let bi = 0
+        var bi = 0
         let nb = self.buckets.len()
         while bi < nb {
             let bucket = self.buckets[bi]
-            let j = 0
+            var j = 0
             let m = bucket.len()
             while j < m {
                 let x = bucket[j]
@@ -206,57 +206,57 @@ impl<T: Eq + Hash> Set<T> {
     }
 }
 
-struct Entry<K, V> {
-    key: K,
-    value: V,
+class Entry[K, V] {
+    key: K
+    value: V
 }
 
-struct Map<K: Eq + Hash, V> {
-    buckets: List<List<Entry<K, V>>>,
-    count: Int,
+class Map[K: Eq + Hash, V] {
+    buckets: list[list[Entry[K, V]]]
+    count: int
 }
 
 // Superseded by the map literal `["a": 1]` (and `[:]`) and `Map.new()`.
 // Kept for selective imports.
-fun empty_map<K: Eq + Hash, V>() -> Map<K, V> {
+fun empty_map[K: Eq + Hash, V]() -> dict[K, V] {
     return Map.new()
 }
 
-impl<K: Eq + Hash, V> Map<K, V> {
-    fun new() -> Map<K, V> {
-        let buckets: List<List<Entry<K, V>>> = []
-        let i = 0
+impl[K: Eq + Hash, V] dict[K, V] {
+    fun new() -> dict[K, V] {
+        let buckets: list[list[Entry[K, V]]] = []
+        var i = 0
         while i < 8 {
-            let b: List<Entry<K, V>> = []
+            let b: list[Entry[K, V]] = []
             buckets.push(b)
             i = i + 1
         }
-        return Map { buckets: buckets, count: 0 }
+        return Map(buckets: buckets, count: 0)
     }
 
-    fun len(self) -> Int {
+    fun len(self) -> int {
         return self.count
     }
 
-    fun is_empty(self) -> Bool {
+    fun is_empty(self) -> bool {
         return self.count == 0
     }
 
     // The value for `k`, or `default` when the key is absent.
     fun get_or(self, k: K, default: V) -> V {
         return match self.get(k) {
-            Some(v) -> v,
-            None -> default,
+            case Some(v) { v }
+            case None { default }
         }
     }
 
     // Every key/value pair as a list of `Entry`, in no particular order.
-    fun entries(self) -> List<Entry<K, V>> {
-        let out: List<Entry<K, V>> = []
-        let i = 0
+    fun entries(self) -> list[Entry[K, V]] {
+        var out: list[Entry[K, V]] = []
+        var i = 0
         while i < self.buckets.len() {
             let bucket = self.buckets[i]
-            let j = 0
+            var j = 0
             while j < bucket.len() {
                 out.push(bucket[j])
                 j = j + 1
@@ -268,10 +268,10 @@ impl<K: Eq + Hash, V> Map<K, V> {
 
     // Remove every entry, leaving an empty map.
     fun clear(self) {
-        let buckets: List<List<Entry<K, V>>> = []
-        let i = 0
+        let buckets: list[list[Entry[K, V]]] = []
+        var i = 0
         while i < 8 {
-            let b: List<Entry<K, V>> = []
+            let b: list[Entry[K, V]] = []
             buckets.push(b)
             i = i + 1
         }
@@ -279,15 +279,15 @@ impl<K: Eq + Hash, V> Map<K, V> {
         self.count = 0
     }
 
-    fun bucket_index(self, k: K) -> Int {
+    fun bucket_index(self, k: K) -> int {
         let n = self.buckets.len()
         let h = k.hash() % n
         return (h + n) % n
     }
 
-    fun has(self, k: K) -> Bool {
+    fun has(self, k: K) -> bool {
         let bucket = self.buckets[self.bucket_index(k)]
-        let i = 0
+        var i = 0
         let n = bucket.len()
         while i < n {
             if bucket[i].key.equals(k) {
@@ -298,9 +298,9 @@ impl<K: Eq + Hash, V> Map<K, V> {
         return false
     }
 
-    fun get(self, k: K) -> Option<V> {
+    fun get(self, k: K) -> Option[V] {
         let bucket = self.buckets[self.bucket_index(k)]
-        let i = 0
+        var i = 0
         let n = bucket.len()
         while i < n {
             if bucket[i].key.equals(k) {
@@ -314,7 +314,7 @@ impl<K: Eq + Hash, V> Map<K, V> {
     // Insert `k` with `v`, or overwrite the value if `k` is present.
     fun set(self, k: K, v: V) {
         let bucket = self.buckets[self.bucket_index(k)]
-        let i = 0
+        var i = 0
         let n = bucket.len()
         while i < n {
             if bucket[i].key.equals(k) {
@@ -323,7 +323,7 @@ impl<K: Eq + Hash, V> Map<K, V> {
             }
             i = i + 1
         }
-        bucket.push(Entry { key: k, value: v })
+        bucket.push(Entry(key: k, value: v))
         self.count = self.count + 1
         if self.count * 4 > self.buckets.len() * 3 {
             self.grow()
@@ -331,13 +331,13 @@ impl<K: Eq + Hash, V> Map<K, V> {
     }
 
     // All keys across every bucket, in unspecified order.
-    fun keys(self) -> List<K> {
-        let out: List<K> = []
-        let bi = 0
+    fun keys(self) -> list[K] {
+        var out: list[K] = []
+        var bi = 0
         let nb = self.buckets.len()
         while bi < nb {
             let bucket = self.buckets[bi]
-            let j = 0
+            var j = 0
             let m = bucket.len()
             while j < m {
                 out.push(bucket[j].key)
@@ -349,13 +349,13 @@ impl<K: Eq + Hash, V> Map<K, V> {
     }
 
     // All values across every bucket, in the same order as `keys()`.
-    fun values(self) -> List<V> {
-        let out: List<V> = []
-        let bi = 0
+    fun values(self) -> list[V] {
+        var out: list[V] = []
+        var bi = 0
         let nb = self.buckets.len()
         while bi < nb {
             let bucket = self.buckets[bi]
-            let j = 0
+            var j = 0
             let m = bucket.len()
             while j < m {
                 out.push(bucket[j].value)
@@ -368,9 +368,9 @@ impl<K: Eq + Hash, V> Map<K, V> {
 
     // Remove `k` if present, returning whether it was. Order within a
     // bucket is not preserved.
-    fun remove(self, k: K) -> Bool {
+    fun remove(self, k: K) -> bool {
         let bucket = self.buckets[self.bucket_index(k)]
-        let i = 0
+        var i = 0
         let n = bucket.len()
         while i < n {
             if bucket[i].key.equals(k) {
@@ -387,18 +387,18 @@ impl<K: Eq + Hash, V> Map<K, V> {
 
     fun grow(self) {
         let new_count = self.buckets.len() * 2
-        let fresh: List<List<Entry<K, V>>> = []
-        let i = 0
+        let fresh: list[list[Entry[K, V]]] = []
+        var i = 0
         while i < new_count {
-            let b: List<Entry<K, V>> = []
+            let b: list[Entry[K, V]] = []
             fresh.push(b)
             i = i + 1
         }
-        let bi = 0
+        var bi = 0
         let nb = self.buckets.len()
         while bi < nb {
             let bucket = self.buckets[bi]
-            let j = 0
+            var j = 0
             let m = bucket.len()
             while j < m {
                 let e = bucket[j]
@@ -415,26 +415,58 @@ impl<K: Eq + Hash, V> Map<K, V> {
 
 // ----- Eq: `==`/`!=` compare by value -----
 
-impl<T: Eq + Hash> Eq for Set<T> {
-    fun equals(self, other: Set<T>) -> Bool {
-        return self.len() == other.len() && self.is_subset(other)
+impl[T: Eq + Hash] Eq for set[T] {
+    fun equals(self, other: set[T]) -> bool {
+        return self.len() == other.len() and self.is_subset(other)
     }
 }
 
-impl<K: Eq + Hash, V: Eq> Eq for Map<K, V> {
-    fun equals(self, other: Map<K, V>) -> Bool {
+impl[K: Eq + Hash, V: Eq] Eq for dict[K, V] {
+    fun equals(self, other: dict[K, V]) -> bool {
         if self.len() != other.len() {
             return false
         }
         let ks = self.keys()
-        let i = 0
+        var i = 0
         while i < ks.len() {
             let k = ks.get(i)
-            if !self.get(k).equals(other.get(k)) {
+            if not self.get(k).equals(other.get(k)) {
                 return false
             }
             i = i + 1
         }
         return true
+    }
+}
+
+// ----- ToString -----
+
+impl[K: Eq + Hash + ToString, V: ToString] ToString for dict[K, V] {
+    fun to_string(self) -> str {
+        var out = "{"
+        var first = true
+        for e in self.entries() {
+            if not first {
+                out = out + ", "
+            }
+            first = false
+            out = out + e.key.to_string() + ": " + e.value.to_string()
+        }
+        return out + "}"
+    }
+}
+
+impl[T: Eq + Hash + ToString] ToString for set[T] {
+    fun to_string(self) -> str {
+        var out = "{"
+        var first = true
+        for x in self.to_list() {
+            if not first {
+                out = out + ", "
+            }
+            first = false
+            out = out + x.to_string()
+        }
+        return out + "}"
     }
 }

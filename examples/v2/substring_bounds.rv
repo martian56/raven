@@ -3,8 +3,8 @@
 //   hel
 //   (empty line)
 //   hello
-import std/string
-import std/io { println }
+import std.string
+from std.io import println
 
 fun main() {
     let s = "hello"

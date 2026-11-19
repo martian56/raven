@@ -2,10 +2,10 @@
 // global symbol, so `g += v` works from any function. Prints:
 //   20
 //   140
-import std/io { println }
+from std.io import println
 
-let counter: Int = 10
-let total: Int = 100
+var counter: int = 10
+var total: int = 100
 
 fun bump() {
     counter += 5

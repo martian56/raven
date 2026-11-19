@@ -25,6 +25,7 @@ pub const IO_READ_LINE: &str = "__io_read_line";
 /// assertion; it lowers to the runtime's `raven_panic` symbol. The
 /// leading `__` marks it internal (a user calls `std/test`'s assertions).
 pub const PANIC_FN: &str = "__panic";
+pub const PANIC_USER: &str = "panic";
 
 /// Internal stdlib string intrinsics. The bundled `std/string` source
 /// calls these byte-level primitives to build the higher-level utilities
@@ -253,6 +254,7 @@ pub fn is_intrinsic(mangled: &str) -> bool {
             | IO_PRINTLN_STR
             | IO_READ_LINE
             | PANIC_FN
+            | PANIC_USER
             | STR_LEN
             | STR_BYTE_AT
             | STR_SUBSTRING

@@ -5,34 +5,40 @@
 //   23
 //   Ann adult 30
 //   Bo minor 12
-import std/io { println }
+from std.io import println
 
-struct Point { x: Int, y: Int }
+class Point {
+    x: int
+    y: int
+}
 
-struct Person { name: String, age: Int }
+class Person {
+    name: str
+    age: int
+}
 
-fun combine(p: Point) -> Int {
+fun combine(p: Point) -> int {
     return match p {
-        Point { x, y } -> x * 10 + y,
+        case Point { x, y } { x * 10 + y }
     }
 }
 
-fun combine_reordered(p: Point) -> Int {
+fun combine_reordered(p: Point) -> int {
     return match p {
-        Point { y, x } -> x * 10 + y,
+        case Point { y, x } { x * 10 + y }
     }
 }
 
-fun describe(p: Person) -> String {
+fun describe(p: Person) -> str {
     return match p {
-        Person { name: n, age: a } if a >= 18 -> "${n} adult ${a}",
-        Person { name: n, age: a } -> "${n} minor ${a}",
+        case Person { name: n, age: a } if a >= 18 { "${n} adult ${a}" }
+        case Person { name: n, age: a } { "${n} minor ${a}" }
     }
 }
 
 fun main() {
-    println(combine(Point { x: 2, y: 3 }).to_string())
-    println(combine_reordered(Point { x: 2, y: 3 }).to_string())
-    println(describe(Person { name: "Ann", age: 30 }))
-    println(describe(Person { name: "Bo", age: 12 }))
+    println(combine(Point(x: 2, y: 3)).to_string())
+    println(combine_reordered(Point(x: 2, y: 3)).to_string())
+    println(describe(Person(name: "Ann", age: 30)))
+    println(describe(Person(name: "Bo", age: 12)))
 }

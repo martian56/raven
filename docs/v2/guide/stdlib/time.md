@@ -6,10 +6,10 @@ whole seconds, except `now_millis`, which is milliseconds. The functions are
 brought into scope with a selective import.
 
 ```rust
-import std/time { now, format_timestamp }
+from std.time import now, format_timestamp
 
 fun main() {
-    print(format_timestamp(now(), "%Y-%m-%d"))      // today's UTC date
+    print(format_timestamp(now(), "%Y-%m-%d")) // today's UTC date
 }
 ```
 
@@ -18,7 +18,7 @@ fun main() {
 Pull in the functions you use with a selective `{ ... }` list:
 
 ```rust
-import std/time { now, now_millis, from_timestamp, weekday, format_timestamp, parse_timestamp, sleep_millis }
+from std.time import now, now_millis, from_timestamp, weekday, format_timestamp, parse_timestamp, sleep_millis
 ```
 
 ## Timestamp unit
@@ -35,9 +35,20 @@ value by 1000 before passing it to the seconds-based functions.
 `from_timestamp` returns a `DateTime`, which nests a `Date` and a `Time`:
 
 ```rust
-struct Date { year: Int, month: Int, day: Int }
-struct Time { hour: Int, minute: Int, second: Int }
-struct DateTime { date: Date, time: Time }
+class Date {
+    year: int
+    month: int
+    day: int
+}
+class Time {
+    hour: int
+    minute: int
+    second: int
+}
+class DateTime {
+    date: Date
+    time: Time
+}
 ```
 
 `month` is 1 through 12, `day` is 1 through 31, `hour` is 0 through 23, and
@@ -49,13 +60,13 @@ as `1970-01-01` (year zero-padded to four digits, month and day to two), a
 `1970-01-01 00:00:00`.
 
 ```rust
-import std/time { from_timestamp }
+from std.time import from_timestamp
 
 fun main() {
     let dt = from_timestamp(0)
-    print(dt.to_string())           // 1970-01-01 00:00:00
-    print(dt.date.year)             // 1970
-    print(dt.time.hour)             // 0
+    print(dt.to_string()) // 1970-01-01 00:00:00
+    print(dt.date.year) // 1970
+    print(dt.time.hour) // 0
 }
 ```
 
@@ -70,12 +81,12 @@ The current Unix timestamp in whole seconds (UTC).
 The current Unix time in milliseconds (UTC).
 
 ```rust
-import std/time { now, now_millis }
+from std.time import now, now_millis
 
 fun main() {
     let secs = now()
     let millis = now_millis()
-    print(millis / 1000 - secs)     // 0 (same instant, different units)
+    print(millis / 1000 - secs) // 0 (same instant, different units)
 }
 ```
 
@@ -91,12 +102,12 @@ outside chrono's representable range falls back to the epoch.
 The weekday of `ts` (UTC) as `0` for Sunday through `6` for Saturday.
 
 ```rust
-import std/time { from_timestamp, weekday }
+from std.time import from_timestamp, weekday
 
 fun main() {
     let dt = from_timestamp(1700000000)
-    print(dt.to_string())           // 2023-11-14 22:13:20
-    print(weekday(1700000000))      // 2 (Tuesday)
+    print(dt.to_string()) // 2023-11-14 22:13:20
+    print(weekday(1700000000)) // 2 (Tuesday)
 }
 ```
 
@@ -119,11 +130,11 @@ Render the UTC datetime of `ts` with the given chrono strftime pattern, for
 example `"%Y-%m-%d %H:%M:%S"`.
 
 ```rust
-import std/time { format_timestamp }
+from std.time import format_timestamp
 
 fun main() {
-    print(format_timestamp(1700000000, "%Y-%m-%d %H:%M:%S"))    // 2023-11-14 22:13:20
-    print(format_timestamp(1700000000, "%Y/%m/%d"))             // 2023/11/14
+    print(format_timestamp(1700000000, "%Y-%m-%d %H:%M:%S")) // 2023-11-14 22:13:20
+    print(format_timestamp(1700000000, "%Y/%m/%d")) // 2023/11/14
 }
 ```
 
@@ -135,19 +146,19 @@ holding a `std/error` `Error` tagged with kind `"time"`. Handle the `Result`
 with a `match` or the `?` operator.
 
 ```rust
-import std/time { parse_timestamp }
+from std.time import parse_timestamp
 
 fun main() {
     let parsed = parse_timestamp("2023-11-14 22:13:20", "%Y-%m-%d %H:%M:%S")
     match parsed {
-        Ok(ts) -> print(ts),                    // 1700000000
-        Err(e) -> print(e.to_string()),
+        case Ok(ts) { print(ts) } // 1700000000
+        case Err(e) { print(e.to_string()) }
     }
 
     let bad = parse_timestamp("not a date", "%Y-%m-%d")
     match bad {
-        Ok(ts) -> print(ts),
-        Err(e) -> print(e.kind()),              // time
+        case Ok(ts) { print(ts) }
+        case Err(e) { print(e.kind()) } // time
     }
 }
 ```
@@ -160,10 +171,10 @@ Sleep the current thread for `ms` milliseconds. A negative value is treated
 as zero.
 
 ```rust
-import std/time { sleep_millis }
+from std.time import sleep_millis
 
 fun main() {
-    sleep_millis(100)       // pause for 100 ms
+    sleep_millis(100) // pause for 100 ms
 }
 ```
 
@@ -172,21 +183,21 @@ fun main() {
 Format the current time, then parse the formatted text back to a timestamp:
 
 ```rust
-import std/time { now, format_timestamp, parse_timestamp, from_timestamp, weekday }
+from std.time import now, format_timestamp, parse_timestamp, from_timestamp, weekday
 
 fun main() {
     let ts = now()
     let pattern = "%Y-%m-%d %H:%M:%S"
     let text = format_timestamp(ts, pattern)
-    print(text)                             // for example 2026-06-05 09:41:00
+    print(text) // for example 2026-06-05 09:41:00
 
     let dt = from_timestamp(ts)
-    print(dt.date.year)                     // 2026
-    print(weekday(ts))                      // 0 (Sunday) through 6 (Saturday)
+    print(dt.date.year) // 2026
+    print(weekday(ts)) // 0 (Sunday) through 6 (Saturday)
 
     match parse_timestamp(text, pattern) {
-        Ok(round_tripped) -> print(round_tripped == ts),   // true
-        Err(e) -> print(e.to_string()),
+        case Ok(round_tripped) { print(round_tripped == ts) } // true
+        case Err(e) { print(e.to_string()) }
     }
 }
 ```

@@ -9,14 +9,12 @@
   )
   (fn "double" params=("x":Int) ret=Int
     (body
-      (let-stmt "f"
-        (lambda inferred=true params=("y")
-          (body
-            (trailing
-              (binary *
-                (ident "y")
-                (int 2)
-              )
+      (const-stmt "f"
+        (lambda inferred=false params=("y")
+          (body-expr
+            (binary *
+              (ident "y")
+              (int 2)
             )
           )
         )
@@ -32,7 +30,7 @@
   )
   (fn "verbose" params=() ret=Int
     (body
-      (let-stmt "g"
+      (const-stmt "g"
         (lambda inferred=false params=("x":Int) ret=Int
           (body-expr
             (binary +

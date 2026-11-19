@@ -1,15 +1,15 @@
 // golden:skip
 // Helper module imported by import_aliasing.rv.
-import std/string
+import std.string
 
-fun parse(s: String) -> String {
+fun parse(s: str) -> str {
     return "parsed:".concat(s)
 }
 
-fun shout(s: String) -> String {
+fun shout(s: str) -> str {
     return s.concat("!")
 }
 
-struct Wrapper {
-    value: Int,
+class Wrapper {
+    value: int
 }

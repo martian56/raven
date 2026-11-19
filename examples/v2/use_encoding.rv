@@ -1,6 +1,6 @@
 // golden:skip
-import std/encoding { hex_encode, hex_decode, base64_encode, base64_decode }
-import std/io { println }
+from std.encoding import hex_encode, hex_decode, base64_encode, base64_decode
+from std.io import println
 
 fun main() {
     println(hex_encode("abc"))
@@ -9,15 +9,15 @@ fun main() {
     println(base64_encode("Ma"))
     println(base64_encode("M"))
     match hex_decode("616263") {
-        Ok(d) -> println((d == "abc").to_string()),
-        Err(e) -> println("err"),
+        case Ok(d) { println((d == "abc").to_string()) }
+        case Err(e) { println("err") }
     }
     match base64_decode("YWJj") {
-        Ok(d) -> println((d == "abc").to_string()),
-        Err(e) -> println("err"),
+        case Ok(d) { println((d == "abc").to_string()) }
+        case Err(e) { println("err") }
     }
     match base64_decode(base64_encode("hello, world")) {
-        Ok(d) -> println((d == "hello, world").to_string()),
-        Err(e) -> println("err"),
+        case Ok(d) { println((d == "hello, world").to_string()) }
+        case Err(e) { println("err") }
     }
 }

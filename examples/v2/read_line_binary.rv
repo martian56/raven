@@ -8,14 +8,14 @@
 //   65
 //   255
 //   66
-import std/io { read_line }
-import std/string
-import std/io { println }
+from std.io import read_line
+import std.string
+from std.io import println
 
 fun main() {
     let line = read_line()
     println("${line.length()}")
-    let i = 0
+    var i = 0
     while i < line.length() {
         println("${__str_byte_at(line, i)}")
         i = i + 1

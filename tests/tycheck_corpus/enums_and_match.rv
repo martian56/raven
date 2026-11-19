@@ -4,17 +4,17 @@ enum Color {
     Blue,
 }
 
-fun name(c: Color) -> Int {
+fun name(c: Color) -> int {
     return match c {
-        Red -> 0,
-        Green -> 1,
-        Blue -> 2,
+        case Red { 0 }
+        case Green { 1 }
+        case Blue { 2 }
     }
 }
 
-fun is_red(c: Color) -> Bool {
+fun is_red(c: Color) -> bool {
     return match c {
-        Red -> true,
-        _ -> false,
+        case Red { true }
+        case _ { false }
     }
 }

@@ -26,6 +26,7 @@
 
 ## Why Raven
 
+- Reads like Python with braces: classes, named and default arguments, `x => x * 2` lambdas, inferred types.
 - Compiled to native machine code through Cranelift, into a single static binary.
 - Static typing with generics, traits, and sum types checked by an exhaustive `match`.
 - A tracing garbage collector and `Result`/`Option` instead of `null`.
@@ -35,17 +36,17 @@
 ## Quick Example
 
 ```rust
-struct User {
-    name: String,
-    age: Int,
+class User {
+    name: str
+    age: int
 }
 
-fun greet(user: User) -> String {
+fun greet(user: User) -> str {
     return "Hello ${user.name}, you are ${user.age}"
 }
 
 fun main() {
-    let u = User { name: "Raven", age: 2 }
+    let u = User(name: "Raven", age: 2)
     print(greet(u))
 }
 ```

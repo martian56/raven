@@ -19,8 +19,10 @@ pub mod decl;
 pub mod expr;
 pub mod pattern;
 pub mod pretty;
+pub mod respan;
 pub mod stmt;
 pub mod ty;
+pub mod visit;
 
 pub use decl::*;
 pub use expr::*;

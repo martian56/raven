@@ -5,10 +5,10 @@ of a `String` or mix an `Int`. They are fast, well-known mixing functions meant
 for hash tables, checksums, and folding several values into one composite hash.
 
 ```rust
-import std/hash { fnv1a }
+from std.hash import fnv1a
 
 fun main() {
-    print(fnv1a("abc"))     // a 64-bit FNV-1a hash, may be negative
+    print(fnv1a("abc")) // a 64-bit FNV-1a hash, may be negative
 }
 ```
 
@@ -29,7 +29,7 @@ Every entry is a free function, so bring in the ones you need with a selective
 import:
 
 ```rust
-import std/hash { fnv1a, djb2, crc32, hash_int, combine, checksum }
+from std.hash import fnv1a, djb2, crc32, hash_int, combine, checksum
 ```
 
 ## A note on integers
@@ -68,11 +68,11 @@ hash with strong avalanche behavior for short keys. Prefer this when you want
 one string hash and are unsure which to pick.
 
 ```rust
-import std/hash { fnv1a }
+from std.hash import fnv1a
 
 fun main() {
-    print(fnv1a("abc"))     // 0xe71fa2190541574b as a signed i64
-    print(fnv1a(""))        // the offset basis, for the empty string
+    print(fnv1a("abc")) // 0xe71fa2190541574b as a signed i64
+    print(fnv1a("")) // the offset basis, for the empty string
 }
 ```
 
@@ -82,7 +82,7 @@ The classic djb2 hash: start at `5381`, then `hash = hash * 33 + byte` for each
 byte. Simple and fast; included as a well-known alternative to `fnv1a`.
 
 ```rust
-import std/hash { djb2 }
+from std.hash import djb2
 
 fun main() {
     print(djb2("raven"))
@@ -96,10 +96,10 @@ the result is always in `[0, 2^32)` and never negative. A checksum for change
 detection, not for security.
 
 ```rust
-import std/hash { crc32 }
+from std.hash import crc32
 
 fun main() {
-    print(crc32("123456789"))   // 3421780262
+    print(crc32("123456789")) // 3421780262
 }
 ```
 
@@ -110,10 +110,10 @@ weaker than the hashes above, so use it only for quick change detection (did
 this string change?), not for distributing keys across buckets.
 
 ```rust
-import std/hash { checksum }
+from std.hash import checksum
 
 fun main() {
-    print(checksum("abc"))      // 97 + 98 + 99 = 294
+    print(checksum("abc")) // 97 + 98 + 99 = 294
 }
 ```
 
@@ -126,11 +126,11 @@ scattered, well-spread values, which is what you want before using them as
 table indices.
 
 ```rust
-import std/hash { hash_int }
+from std.hash import hash_int
 
 fun main() {
     print(hash_int(0))
-    print(hash_int(1))      // far from hash_int(0)
+    print(hash_int(1)) // far from hash_int(0)
 }
 ```
 
@@ -141,13 +141,13 @@ recipe, using the 32-bit golden ratio constant). Chain it to hash a sequence of
 values into a single hash:
 
 ```rust
-import std/hash { hash_int, combine }
+from std.hash import hash_int, combine
 
 fun main() {
-    let h = hash_int(1)
+    var h = hash_int(1)
     h = combine(h, hash_int(2))
     h = combine(h, hash_int(3))
-    print(h)        // one hash that depends on all three values, in order
+    print(h) // one hash that depends on all three values, in order
 }
 ```
 
@@ -163,12 +163,15 @@ a user's own `Hash` impl can call: hash each field, then fold the results with
 `combine`.
 
 ```rust
-import std/hash { hash_int, combine }
+from std.hash import hash_int, combine
 
-struct Point { x: Int, y: Int }
+class Point {
+    x: int
+    y: int
+}
 
 impl Hash for Point {
-    fun hash(self) -> Int {
+    fun hash(self) -> int {
         let h = hash_int(self.x)
         combine(h, hash_int(self.y))
     }
@@ -181,21 +184,24 @@ Hash a small struct by mixing a string field and an integer field into one
 value, suitable for use as a key.
 
 ```rust
-import std/hash { fnv1a, hash_int, combine }
+from std.hash import fnv1a, hash_int, combine
 
-struct User { name: String, id: Int }
+class User {
+    name: str
+    id: int
+}
 
-fun hash_user(u: User) -> Int {
+fun hash_user(u: User) -> int {
     let h = fnv1a(u.name)
     return combine(h, hash_int(u.id))
 }
 
 fun main() {
-    let a = User { name: "ada", id: 1 }
-    let b = User { name: "ada", id: 2 }
+    let a = User(name: "ada", id: 1)
+    let b = User(name: "ada", id: 2)
 
-    print(hash_user(a) == hash_user(a))     // true, hashing is deterministic
-    print(hash_user(a) == hash_user(b))     // false, the id differs
+    print(hash_user(a) == hash_user(a)) // true, hashing is deterministic
+    print(hash_user(a) == hash_user(b)) // false, the id differs
 }
 ```
 

@@ -1,28 +1,28 @@
 // The JSON parser bounds nesting depth so untrusted input cannot overflow the
 // stack. Genuinely nested data still parses, and a flat collection of many
 // siblings is fine because depth is only counted while descending.
-import std/io { println }
-import std/json { parse, stringify }
+from std.io import println
+from std.json import parse, stringify
 
 fun main() {
     match parse("{\"a\": {\"b\": {\"c\": [1, 2, 3]}}}") {
-        Ok(v) -> println("nested ok: ${stringify(v)}"),
-        Err(e) -> println("nested err: ${e.message()}"),
+        case Ok(v) { println("nested ok: ${stringify(v)}") }
+        case Err(e) { println("nested err: ${e.message()}") }
     }
 
-    let deep = ""
-    let i = 0
+    var deep = ""
+    var i = 0
     while i < 1000 {
         deep = deep.concat("[")
         i = i + 1
     }
     match parse(deep) {
-        Ok(v) -> println("deep ok (unexpected)"),
-        Err(e) -> println("deep rejected: ${e.message()}"),
+        case Ok(v) { println("deep ok (unexpected)") }
+        case Err(e) { println("deep rejected: ${e.message()}") }
     }
 
-    let flat = "["
-    let j = 0
+    var flat = "["
+    var j = 0
     while j < 500 {
         if j > 0 {
             flat = flat.concat(",")
@@ -32,7 +32,7 @@ fun main() {
     }
     flat = flat.concat("]")
     match parse(flat) {
-        Ok(v) -> println("flat ok (500 objects)"),
-        Err(e) -> println("flat err: ${e.message()}"),
+        case Ok(v) { println("flat ok (500 objects)") }
+        case Err(e) { println("flat err: ${e.message()}") }
     }
 }

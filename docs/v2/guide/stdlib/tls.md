@@ -8,7 +8,7 @@ MySQL, or SMTP after STARTTLS negotiation. For ordinary HTTPS requests, use
 ## Importing
 
 ```rust
-import std/tls { connect, connect_with, upgrade, upgrade_with, config }
+from std.tls import connect, connect_with, upgrade, upgrade_with, config
 ```
 
 `TlsStream` and `TlsConfig` methods come in with their types.
@@ -22,16 +22,16 @@ Open a TCP connection to `addr` (`"host:port"`), start TLS immediately, send
 store.
 
 ```rust
-import std/tls { connect }
+from std.tls import connect
 
 fun main() {
     match connect("example.com:443", "example.com") {
-        Ok(stream) -> {
+        case Ok(stream) {
             let _ = stream.write("GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
             print(stream.read_all()?)
             stream.close()
-        },
-        Err(e) -> print(e.message()),
+        }
+        case Err(e) { print(e.message()) }
     }
 }
 ```
@@ -73,16 +73,16 @@ Disable certificate verification. The connection is encrypted but the peer is
 not authenticated, so this is only for local development.
 
 ```rust
-import std/tls { config, connect_with }
+from std.tls import config, connect_with
 
 fun main() {
     let cfg = config().add_ca_file_checked("dev-ca.pem")?
     match connect_with("db.internal:5432", "db.internal", cfg) {
-        Ok(stream) -> {
+        case Ok(stream) {
             // speak the protocol
             stream.close()
-        },
-        Err(e) -> print(e.message()),
+        }
+        case Err(e) { print(e.message()) }
     }
     cfg.free()
 }

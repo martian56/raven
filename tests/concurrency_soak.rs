@@ -36,14 +36,14 @@ import std/sync { Channel, channel }
 fun main() {
     let done = channel()
     spawn(fun() -> Unit {
-        let i = 0
+        var i = 0
         while i < 5000000 {
             i = i + 1
         }
         done.send(i / 1000000)
     })
     spawn(fun() -> Unit {
-        let k = 0
+        var k = 0
         while k < 20000 {
             let items = [k, k + 1]
             k = k + items.len()

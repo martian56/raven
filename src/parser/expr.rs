@@ -16,7 +16,145 @@ use super::{merge_spans, ParseResult, Parser};
 impl Parser {
     /// Parse a full expression at the lowest precedence.
     pub(crate) fn parse_expr(&mut self) -> ParseResult<Expr> {
-        self.parse_logical_or()
+        if let Some(lambda) = self.try_parse_arrow_lambda()? {
+            return Ok(lambda);
+        }
+        let value = self.parse_logical_or()?;
+        if !matches!(self.peek_kind(), TokenKind::If) {
+            return Ok(value);
+        }
+        // `a if cond else b`
+        self.advance();
+        let cond = self.parse_logical_or()?;
+        self.skip_newlines();
+        self.expect(&TokenKind::Else, "`else` in `a if cond else b`")?;
+        self.skip_newlines();
+        let other = self.parse_expr()?;
+        let span = merge_spans(&value.span, &other.span);
+        let arm = |e: Expr| Block {
+            span: e.span.clone(),
+            stmts: Vec::new(),
+            trailing: Some(Box::new(e)),
+        };
+        let else_block = arm(other);
+        Ok(Expr {
+            kind: ExprKind::If {
+                cond: Box::new(cond),
+                then_branch: arm(value),
+                else_branch: Some(Box::new(ElseBranch::Block(else_block))),
+            },
+            span,
+        })
+    }
+
+    /// A `{ ... }` block as an expression, or any other expression.
+    pub(crate) fn parse_block_or_expr(&mut self) -> ParseResult<Expr> {
+        if !matches!(self.peek_kind(), TokenKind::LBrace) {
+            return self.parse_expr();
+        }
+        let block = self.parse_block()?;
+        let span = block.span.clone();
+        Ok(Expr {
+            kind: ExprKind::Block(block),
+            span,
+        })
+    }
+
+    pub(crate) fn peek_word(&self, word: &str) -> bool {
+        matches!(self.peek_kind(), TokenKind::Identifier(w) if w == word)
+    }
+
+    /// `x => e`, `(a, b: int) => e`, `() -> int => { ... }`.
+    fn try_parse_arrow_lambda(&mut self) -> ParseResult<Option<Expr>> {
+        let start = self.peek().span.clone();
+        let mut params = Vec::new();
+        match self.peek_kind() {
+            TokenKind::Identifier(name) if matches!(self.peek_kind_at(1), TokenKind::FatArrow) => {
+                let name = name.clone();
+                let tok = self.advance();
+                params.push(LambdaParam {
+                    name,
+                    ty: None,
+                    span: tok.span,
+                });
+            }
+            TokenKind::LParen => {
+                let mut depth = 0usize;
+                let mut i = 0usize;
+                loop {
+                    match self.peek_kind_at(i) {
+                        TokenKind::LParen | TokenKind::LBracket | TokenKind::LBrace => depth += 1,
+                        TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                            depth -= 1;
+                            if depth == 0 {
+                                break;
+                            }
+                        }
+                        TokenKind::Eof => return Ok(None),
+                        _ => {}
+                    }
+                    i += 1;
+                }
+                if !matches!(
+                    self.peek_kind_at(i + 1),
+                    TokenKind::FatArrow | TokenKind::Arrow
+                ) {
+                    return Ok(None);
+                }
+                self.advance();
+                self.skip_newlines();
+                while !matches!(self.peek_kind(), TokenKind::RParen) {
+                    let (name, name_span) = self.expect_ident("lambda parameter")?;
+                    if self.eat(&TokenKind::Colon) {
+                        let ty = self.parse_type()?;
+                        let span = merge_spans(&name_span, &ty.span);
+                        params.push(LambdaParam {
+                            name,
+                            ty: Some(ty),
+                            span,
+                        });
+                    } else {
+                        params.push(LambdaParam {
+                            name,
+                            ty: None,
+                            span: name_span,
+                        });
+                    }
+                    self.skip_newlines();
+                    if !self.eat(&TokenKind::Comma) {
+                        break;
+                    }
+                    self.skip_newlines();
+                }
+                self.expect(&TokenKind::RParen, "`)`")?;
+            }
+            _ => return Ok(None),
+        }
+        let ret = if self.eat(&TokenKind::Arrow) {
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+        self.expect(&TokenKind::FatArrow, "`=>`")?;
+        self.skip_newlines();
+        let (body, end) = if matches!(self.peek_kind(), TokenKind::LBrace) {
+            let b = self.parse_block()?;
+            let sp = b.span.clone();
+            (LambdaBody::Block(b), sp)
+        } else {
+            let e = self.parse_expr()?;
+            let sp = e.span.clone();
+            (LambdaBody::Expr(Box::new(e)), sp)
+        };
+        Ok(Some(Expr {
+            kind: ExprKind::Lambda {
+                params,
+                ret,
+                body,
+                params_inferred: false,
+            },
+            span: merge_spans(&start, &end),
+        }))
     }
 
     /// Parse an expression with struct literals temporarily disabled.
@@ -36,7 +174,7 @@ impl Parser {
         let mut lhs = self.parse_logical_and()?;
         loop {
             self.skip_newlines_at_continuation();
-            if matches!(self.peek_kind(), TokenKind::OrOr) {
+            if matches!(self.peek_kind(), TokenKind::OrOr) || self.peek_word("or") {
                 self.advance();
                 self.skip_newlines();
                 let rhs = self.parse_logical_and()?;
@@ -60,7 +198,7 @@ impl Parser {
         let mut lhs = self.parse_comparison()?;
         loop {
             self.skip_newlines_at_continuation();
-            if matches!(self.peek_kind(), TokenKind::AndAnd) {
+            if matches!(self.peek_kind(), TokenKind::AndAnd) || self.peek_word("and") {
                 self.advance();
                 self.skip_newlines();
                 let rhs = self.parse_comparison()?;
@@ -221,7 +359,20 @@ impl Parser {
 
     fn parse_unary(&mut self) -> ParseResult<Expr> {
         let start = self.peek().span.clone();
+        let word_not = self.peek_word("not")
+            && matches!(
+                self.peek_kind_at(1),
+                TokenKind::Identifier(_)
+                    | TokenKind::LParen
+                    | TokenKind::Bang
+                    | TokenKind::Minus
+                    | TokenKind::True
+                    | TokenKind::False
+                    | TokenKind::SelfLower
+                    | TokenKind::IntLit(_)
+            );
         let op = match self.peek_kind() {
+            _ if word_not => Some(UnaryOp::Not),
             TokenKind::Minus => Some(UnaryOp::Neg),
             TokenKind::Bang => Some(UnaryOp::Not),
             TokenKind::Amp => Some(UnaryOp::Ref),
@@ -276,7 +427,7 @@ impl Parser {
                     let (name, name_span) = self.expect_ident("field or method name")?;
                     // Optional explicit generics: `.name<T>`.
                     let mut generics = Vec::new();
-                    if matches!(self.peek_kind(), TokenKind::Lt) {
+                    if matches!(self.peek_kind(), TokenKind::Lt) || self.bracket_opens_type_args() {
                         if let Some(args) = self.try_parse_type_args_for_call() {
                             generics = args;
                         }
@@ -386,7 +537,35 @@ impl Parser {
         if !matches!(self.peek_kind(), TokenKind::RParen) {
             loop {
                 self.skip_newlines();
-                args.push(self.parse_expr()?);
+                if matches!(self.peek_kind(), TokenKind::DotDot) {
+                    let start = self.advance().span;
+                    let value = self.parse_expr()?;
+                    let span = merge_spans(&start, &value.span);
+                    args.push(Expr {
+                        kind: ExprKind::NamedArg {
+                            name: "..".into(),
+                            value: Box::new(value),
+                        },
+                        span,
+                    });
+                } else if matches!(self.peek_kind(), TokenKind::Identifier(_))
+                    && matches!(self.peek_kind_at(1), TokenKind::Colon)
+                {
+                    let (name, start) = self.expect_ident("argument name")?;
+                    self.advance();
+                    self.skip_newlines();
+                    let value = self.parse_expr()?;
+                    let span = merge_spans(&start, &value.span);
+                    args.push(Expr {
+                        kind: ExprKind::NamedArg {
+                            name,
+                            value: Box::new(value),
+                        },
+                        span,
+                    });
+                } else {
+                    args.push(self.parse_expr()?);
+                }
                 self.skip_newlines();
                 if !self.eat(&TokenKind::Comma) {
                     break;
@@ -670,6 +849,9 @@ impl Parser {
         if self.is_shorthand_lambda() {
             return self.parse_lambda_shorthand();
         }
+        if let Some(lit) = self.try_parse_dict_or_single_set()? {
+            return Ok(lit);
+        }
         if self.is_set_literal() {
             return self.parse_set_lit();
         }
@@ -679,6 +861,79 @@ impl Parser {
             kind: ExprKind::Block(block),
             span,
         })
+    }
+
+    /// `{}` (empty dict), `{k: v, ...}` (dict), or `{x}` (one-element set).
+    /// Returns `None` for anything that reads as a block.
+    fn try_parse_dict_or_single_set(&mut self) -> ParseResult<Option<Expr>> {
+        let saved = self.checkpoint();
+        let lb = self.advance();
+        self.skip_newlines();
+        if matches!(self.peek_kind(), TokenKind::RBrace) {
+            let rb = self.advance();
+            return Ok(Some(Expr {
+                kind: ExprKind::MapLit(Vec::new()),
+                span: merge_spans(&lb.span, &rb.span),
+            }));
+        }
+        let starts_statement = matches!(
+            self.peek_kind(),
+            TokenKind::Let
+                | TokenKind::Const
+                | TokenKind::Return
+                | TokenKind::Break
+                | TokenKind::Continue
+                | TokenKind::If
+                | TokenKind::While
+                | TokenKind::For
+                | TokenKind::Match
+                | TokenKind::Loop
+                | TokenKind::Defer
+                | TokenKind::Spawn
+                | TokenKind::LBrace
+        ) || self.peek_word("var");
+        if starts_statement {
+            self.rewind(saved);
+            return Ok(None);
+        }
+        let Ok(first) = self.parse_expr() else {
+            self.rewind(saved);
+            return Ok(None);
+        };
+        self.skip_newlines();
+        if self.eat(&TokenKind::Colon) {
+            self.skip_newlines();
+            let value = self.parse_expr()?;
+            let mut pairs = vec![(first, value)];
+            self.skip_newlines();
+            while self.eat(&TokenKind::Comma) {
+                self.skip_newlines();
+                if matches!(self.peek_kind(), TokenKind::RBrace) {
+                    break;
+                }
+                let k = self.parse_expr()?;
+                self.skip_newlines();
+                self.expect(&TokenKind::Colon, "`:` in a dict literal")?;
+                self.skip_newlines();
+                let v = self.parse_expr()?;
+                pairs.push((k, v));
+                self.skip_newlines();
+            }
+            let rb = self.expect(&TokenKind::RBrace, "`}`")?;
+            return Ok(Some(Expr {
+                kind: ExprKind::MapLit(pairs),
+                span: merge_spans(&lb.span, &rb.span),
+            }));
+        }
+        if matches!(self.peek_kind(), TokenKind::RBrace) {
+            let rb = self.advance();
+            return Ok(Some(Expr {
+                kind: ExprKind::SetLit(vec![first]),
+                span: merge_spans(&lb.span, &rb.span),
+            }));
+        }
+        self.rewind(saved);
+        Ok(None)
     }
 
     /// Heuristic for a set literal `{ e1, e2, ... }`. The cursor is at the
@@ -855,14 +1110,21 @@ impl Parser {
             loop {
                 self.skip_newlines();
                 let (name, name_span) = self.expect_ident("parameter name")?;
-                self.expect(&TokenKind::Colon, "`:`")?;
-                let ty = self.parse_type()?;
-                let span = merge_spans(&name_span, &ty.span);
-                params.push(LambdaParam {
-                    name,
-                    ty: Some(ty),
-                    span,
-                });
+                if self.eat(&TokenKind::Colon) {
+                    let ty = self.parse_type()?;
+                    let span = merge_spans(&name_span, &ty.span);
+                    params.push(LambdaParam {
+                        name,
+                        ty: Some(ty),
+                        span,
+                    });
+                } else {
+                    params.push(LambdaParam {
+                        name,
+                        ty: None,
+                        span: name_span,
+                    });
+                }
                 self.skip_newlines();
                 if !self.eat(&TokenKind::Comma) {
                     break;
@@ -958,6 +1220,24 @@ impl Parser {
     }
 
     fn parse_ident_primary(&mut self) -> ParseResult<Expr> {
+        if let TokenKind::Identifier(n) = self.peek_kind() {
+            if (n == "dict" || n == "set")
+                && matches!(self.peek_kind_at(1), TokenKind::LParen)
+                && matches!(self.peek_kind_at(2), TokenKind::RParen)
+            {
+                let is_dict = n == "dict";
+                let start = self.advance().span;
+                self.advance();
+                let end = self.advance().span;
+                let span = merge_spans(&start, &end);
+                let kind = if is_dict {
+                    ExprKind::MapLit(Vec::new())
+                } else {
+                    ExprKind::SetLit(Vec::new())
+                };
+                return Ok(Expr { kind, span });
+            }
+        }
         let (name, name_span) = self.expect_ident("identifier")?;
         // Macro invocation `name!(...)`. The compile pipeline expands macros
         // before parsing, so this is reached only by the formatter parsing
@@ -967,7 +1247,7 @@ impl Parser {
         }
         // Optional generics, only when the trial succeeds.
         let mut generics = Vec::new();
-        if matches!(self.peek_kind(), TokenKind::Lt) {
+        if matches!(self.peek_kind(), TokenKind::Lt) || self.bracket_opens_type_args() {
             if let Some(args) = self.try_parse_type_args_for_call() {
                 generics = args;
             }
@@ -1064,6 +1344,18 @@ impl Parser {
     /// all), rewinds and returns `None`.
     pub(crate) fn try_parse_type_args_for_call(&mut self) -> Option<Vec<Type>> {
         let saved = self.checkpoint();
+        if self.bracket_opens_type_args() {
+            if let Ok((args, _)) = self.parse_bracket_type_args() {
+                if matches!(
+                    self.peek_kind(),
+                    TokenKind::LParen | TokenKind::Dot | TokenKind::LBrace
+                ) {
+                    return Some(args);
+                }
+            }
+            self.rewind(saved);
+            return None;
+        }
         // Quick reject: if the token after `<` is one that can never
         // start a type, bail out.
         match self.peek_kind_at(1) {
@@ -1103,6 +1395,9 @@ impl Parser {
     // ----- control flow -----
 
     fn parse_if(&mut self) -> ParseResult<Expr> {
+        if matches!(self.peek_kind_at(1), TokenKind::Let) {
+            return self.parse_if_let();
+        }
         let if_tok = self.advance();
         let cond = self.parse_expr_no_struct()?;
         let then_branch = self.parse_block()?;
@@ -1131,6 +1426,40 @@ impl Parser {
         })
     }
 
+    /// `if let P = e { a } else { b }`
+    fn parse_if_let(&mut self) -> ParseResult<Expr> {
+        let if_tok = self.advance();
+        self.advance();
+        let pattern = self.parse_pattern()?;
+        self.expect(&TokenKind::Eq, "`=`")?;
+        let scrutinee = self.parse_expr_no_struct()?;
+        let then_branch = self.parse_block()?;
+        let mut span = merge_spans(&if_tok.span, &then_branch.span);
+        let else_branch = if self.eat_else() {
+            self.skip_newlines();
+            if matches!(self.peek_kind(), TokenKind::If) {
+                let nested = self.parse_if()?;
+                span = merge_spans(&span, &nested.span);
+                Some(Box::new(ElseBranch::If(nested)))
+            } else {
+                let block = self.parse_block()?;
+                span = merge_spans(&span, &block.span);
+                Some(Box::new(ElseBranch::Block(block)))
+            }
+        } else {
+            None
+        };
+        Ok(Expr {
+            kind: ExprKind::IfLet {
+                pattern,
+                scrutinee: Box::new(scrutinee),
+                then_branch,
+                else_branch,
+            },
+            span,
+        })
+    }
+
     /// Consume an `else` even if separated from the previous block by
     /// newlines.
     fn eat_else(&mut self) -> bool {
@@ -1150,6 +1479,33 @@ impl Parser {
         self.expect(&TokenKind::LBrace, "`{`")?;
         self.skip_separators();
         let mut arms = Vec::new();
+        while self.peek_word("case")
+            && !matches!(self.peek_kind_at(1), TokenKind::Arrow | TokenKind::Comma)
+        {
+            self.advance();
+            self.in_case_pattern = true;
+            let pattern = self.parse_pattern();
+            self.in_case_pattern = false;
+            let pattern = pattern?;
+            let guard = if self.eat(&TokenKind::If) {
+                Some(self.parse_expr_no_struct()?)
+            } else {
+                None
+            };
+            let block = self.parse_block()?;
+            let body = Expr {
+                span: block.span.clone(),
+                kind: ExprKind::Block(block),
+            };
+            let span = merge_spans(&pattern.span, &body.span);
+            arms.push(MatchArm {
+                pattern,
+                guard,
+                body,
+                span,
+            });
+            self.skip_separators();
+        }
         while !matches!(self.peek_kind(), TokenKind::RBrace) {
             let pattern = self.parse_pattern()?;
             let guard = if self.eat(&TokenKind::If) {
@@ -1159,7 +1515,7 @@ impl Parser {
             };
             self.expect(&TokenKind::Arrow, "`->`")?;
             self.skip_newlines();
-            let body = self.parse_expr()?;
+            let body = self.parse_block_or_expr()?;
             let span_start = pattern.span.clone();
             let span_end = body.span.clone();
             let span = merge_spans(&span_start, &span_end);
@@ -1197,6 +1553,9 @@ impl Parser {
     }
 
     fn parse_while(&mut self) -> ParseResult<Expr> {
+        if matches!(self.peek_kind_at(1), TokenKind::Let) {
+            return self.parse_while_let();
+        }
         let w = self.advance();
         let cond = self.parse_expr_no_struct()?;
         let body = self.parse_block()?;
@@ -1204,6 +1563,25 @@ impl Parser {
         Ok(Expr {
             kind: ExprKind::While {
                 cond: Box::new(cond),
+                body,
+            },
+            span,
+        })
+    }
+
+    /// `while let P = e { body }`
+    fn parse_while_let(&mut self) -> ParseResult<Expr> {
+        let w = self.advance();
+        self.advance();
+        let pattern = self.parse_pattern()?;
+        self.expect(&TokenKind::Eq, "`=`")?;
+        let scrutinee = self.parse_expr_no_struct()?;
+        let body = self.parse_block()?;
+        let span = merge_spans(&w.span, &body.span);
+        Ok(Expr {
+            kind: ExprKind::WhileLet {
+                pattern,
+                scrutinee: Box::new(scrutinee),
                 body,
             },
             span,

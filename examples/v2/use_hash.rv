@@ -1,5 +1,5 @@
 // golden:skip
-import std/hash { fnv1a, djb2, hash_int, combine }
+from std.hash import fnv1a, djb2, hash_int, combine
 
 fun main() {
     print(fnv1a("") == fnv1a(""))

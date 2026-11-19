@@ -6,11 +6,19 @@
           (ident "b" ty=Bool)
           (arm
             (pat true)
-            (int 1 ty=Int)
+                        (block ty=Int
+              (tail
+                (int 1 ty=Int)
+              )
+            )
           )
           (arm
             (pat false)
-            (int 0 ty=Int)
+                        (block ty=Int
+              (tail
+                (int 0 ty=Int)
+              )
+            )
           )
         )
       )

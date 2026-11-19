@@ -1,7 +1,7 @@
 (types
   23..24 "x" -> T
-  44..83 "{\n    let a: Int = id(1)\n    return a\n}" -> ()
-  50..68 "let a: Int = id(1)" -> Int
+  44..83 "{\n    let a: int = id(1)\n    return a\n}" -> ()
+  50..68 "let a: int = id(1)" -> Int
   63..65 "id" -> fun(Int) -> Int
   63..68 "id(1)" -> Int
   66..67 "1" -> Int

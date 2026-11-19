@@ -43,7 +43,7 @@ pub struct InferCtx {
     /// pairs, so a pending bound can be verified the moment its variable
     /// resolves to a simple concrete type (for example a `Map` key inferred to
     /// a struct that has no `Hash` impl).
-    trait_impls: Vec<(String, Ty)>,
+    trait_impls: std::rc::Rc<Vec<(String, Ty)>>,
 }
 
 /// A deferred link from an iterator-typed variable to its element
@@ -92,7 +92,7 @@ impl InferCtx {
 
     /// Record the trait impls in scope so a pending bound can be checked
     /// against a concrete type as soon as its variable resolves.
-    pub fn set_trait_impls(&mut self, impls: Vec<(String, Ty)>) {
+    pub fn set_trait_impls(&mut self, impls: std::rc::Rc<Vec<(String, Ty)>>) {
         self.trait_impls = impls;
     }
 

@@ -1,13 +1,10 @@
-// std/list: utility functions over the built-in `List<T>`.
-//
-// `List` ships with `len`, `get`, `push`, and `pop` as built-in methods; this
-// module adds the common operations on top of them as generic free functions.
-// Functions that build a new list return a fresh `List`; they never mutate
-// their input.
+// std/list: free-function forms of common `list[T]` operations. Most are
+// also available as methods with no import (`xs.contains(x)`). Functions that
+// build a new list return a fresh one; they never mutate their input.
 
 // True when `xs` contains a value equal to `x`.
-fun contains<T: Eq>(xs: List<T>, x: T) -> Bool {
-    let i = 0
+fun contains[T: Eq](xs: list[T], x: T) -> bool {
+    var i = 0
     while i < xs.len() {
         if xs.get(i).equals(x) {
             return true
@@ -18,8 +15,8 @@ fun contains<T: Eq>(xs: List<T>, x: T) -> Bool {
 }
 
 // The index of the first element equal to `x`, or -1 when absent.
-fun index_of<T: Eq>(xs: List<T>, x: T) -> Int {
-    let i = 0
+fun index_of[T: Eq](xs: list[T], x: T) -> int {
+    var i = 0
     while i < xs.len() {
         if xs.get(i).equals(x) {
             return i
@@ -30,9 +27,9 @@ fun index_of<T: Eq>(xs: List<T>, x: T) -> Int {
 }
 
 // A new list with the elements of `xs` in reverse order.
-fun reverse<T>(xs: List<T>) -> List<T> {
-    let out: List<T> = []
-    let i = xs.len() - 1
+fun reverse[T](xs: list[T]) -> list[T] {
+    let out: list[T] = []
+    var i = xs.len() - 1
     while i >= 0 {
         out.push(xs.get(i))
         i = i - 1
@@ -42,18 +39,18 @@ fun reverse<T>(xs: List<T>) -> List<T> {
 
 // The half-open range `[start, end)` of `xs` as a new list, clamped to the
 // list bounds.
-fun slice<T>(xs: List<T>, start: Int, end: Int) -> List<T> {
+fun slice[T](xs: list[T], start: int, end: int) -> list[T] {
     let n = xs.len()
-    let lo = start
+    var lo = start
     if lo < 0 {
         lo = 0
     }
-    let hi = end
+    var hi = end
     if hi > n {
         hi = n
     }
-    let out: List<T> = []
-    let i = lo
+    let out: list[T] = []
+    var i = lo
     while i < hi {
         out.push(xs.get(i))
         i = i + 1
@@ -62,14 +59,14 @@ fun slice<T>(xs: List<T>, start: Int, end: Int) -> List<T> {
 }
 
 // The elements of `a` followed by the elements of `b`, as a new list.
-fun concat<T>(a: List<T>, b: List<T>) -> List<T> {
-    let out: List<T> = []
-    let i = 0
+fun concat[T](a: list[T], b: list[T]) -> list[T] {
+    let out: list[T] = []
+    var i = 0
     while i < a.len() {
         out.push(a.get(i))
         i = i + 1
     }
-    let j = 0
+    var j = 0
     while j < b.len() {
         out.push(b.get(j))
         j = j + 1
@@ -78,12 +75,12 @@ fun concat<T>(a: List<T>, b: List<T>) -> List<T> {
 }
 
 // Flatten a list of lists into a single list, preserving order.
-fun flatten<T>(xss: List<List<T>>) -> List<T> {
-    let out: List<T> = []
-    let i = 0
+fun flatten[T](xss: list[list[T]]) -> list[T] {
+    let out: list[T] = []
+    var i = 0
     while i < xss.len() {
         let inner = xss.get(i)
-        let j = 0
+        var j = 0
         while j < inner.len() {
             out.push(inner.get(j))
             j = j + 1
@@ -94,7 +91,7 @@ fun flatten<T>(xss: List<List<T>>) -> List<T> {
 }
 
 // The first element, or `None` for an empty list.
-fun first<T>(xs: List<T>) -> Option<T> {
+fun first[T](xs: list[T]) -> Option[T] {
     if xs.len() == 0 {
         return None
     }
@@ -102,7 +99,7 @@ fun first<T>(xs: List<T>) -> Option<T> {
 }
 
 // The last element, or `None` for an empty list.
-fun last<T>(xs: List<T>) -> Option<T> {
+fun last[T](xs: list[T]) -> Option[T] {
     let n = xs.len()
     if n == 0 {
         return None
@@ -111,17 +108,17 @@ fun last<T>(xs: List<T>) -> Option<T> {
 }
 
 // A new list with `x` inserted at index `i` (clamped to `[0, len]`).
-fun insert<T>(xs: List<T>, i: Int, x: T) -> List<T> {
+fun insert[T](xs: list[T], i: int, x: T) -> list[T] {
     let n = xs.len()
-    let at = i
+    var at = i
     if at < 0 {
         at = 0
     }
     if at > n {
         at = n
     }
-    let out: List<T> = []
-    let k = 0
+    let out: list[T] = []
+    var k = 0
     while k < n {
         if k == at {
             out.push(x)
@@ -137,9 +134,9 @@ fun insert<T>(xs: List<T>, i: Int, x: T) -> List<T> {
 
 // A new list with the element at index `i` removed. An out-of-range index
 // leaves the list unchanged.
-fun remove_at<T>(xs: List<T>, i: Int) -> List<T> {
-    let out: List<T> = []
-    let k = 0
+fun remove_at[T](xs: list[T], i: int) -> list[T] {
+    let out: list[T] = []
+    var k = 0
     while k < xs.len() {
         if k != i {
             out.push(xs.get(k))
@@ -150,9 +147,9 @@ fun remove_at<T>(xs: List<T>, i: Int) -> List<T> {
 }
 
 // A list containing `x` repeated `n` times (empty for a non-positive `n`).
-fun repeat<T>(x: T, n: Int) -> List<T> {
-    let out: List<T> = []
-    let i = 0
+fun repeat[T](x: T, n: int) -> list[T] {
+    let out: list[T] = []
+    var i = 0
     while i < n {
         out.push(x)
         i = i + 1
@@ -161,9 +158,9 @@ fun repeat<T>(x: T, n: Int) -> List<T> {
 }
 
 // The integers `[start, end)` as a list. Empty when `start >= end`.
-fun range(start: Int, end: Int) -> List<Int> {
-    let out: List<Int> = []
-    let i = start
+fun range(start: int, end: int) -> list[int] {
+    let out: list[int] = []
+    var i = start
     while i < end {
         out.push(i)
         i = i + 1

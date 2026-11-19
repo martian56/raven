@@ -1,0 +1,28 @@
+enum Tree {
+    Leaf,
+    Node(Tree, Tree),
+}
+
+fun make(d: int) -> Tree {
+    if d == 0 {
+        return Tree.Leaf
+    }
+    return Tree.Node(make(d - 1), make(d - 1))
+}
+
+fun check(t: Tree) -> int {
+    return match t {
+        case Leaf { 1 }
+        case Node(l, r) { 1 + check(l) + check(r) }
+    }
+}
+
+fun main() {
+    var total = 0
+    var i = 0
+    while i < 40 {
+        total += check(make(16))
+        i += 1
+    }
+    print(total)
+}

@@ -6,7 +6,7 @@ Bridges for the C foreign-function interface. `std/ffi` converts a Raven
 `extern "C"` block to call C functions with runtime values.
 
 ```rust
-import std/ffi { to_cstr, from_cstr }
+from std.ffi import to_cstr, from_cstr
 
 extern "C" {
     fun strlen(s: CStr) -> CSize
@@ -14,7 +14,7 @@ extern "C" {
 
 fun main() {
     let s = "hello"
-    print(strlen(to_cstr(s)))     // 5
+    print(strlen(to_cstr(s))) // 5
 }
 ```
 
@@ -28,8 +28,8 @@ at runtime, which has no compile-time form.
 Bring in just the helpers you use:
 
 ```rust
-import std/ffi { to_cstr, from_cstr }
-import std/ffi { alloc, free, load, store, offset, is_null, null_ptr }
+from std.ffi import to_cstr, from_cstr
+from std.ffi import alloc, free, load, store, offset, is_null, null_ptr
 ```
 
 ## Memory lives outside the GC
@@ -76,10 +76,10 @@ ordinary GC-managed Raven `String` (the terminator is dropped). The resulting
 `String` is traced and reclaimed like any other.
 
 ```rust
-import std/ffi { to_cstr, from_cstr }
+from std.ffi import to_cstr, from_cstr
 
 fun main() {
-    print(from_cstr(to_cstr("roundtrip")))    // roundtrip
+    print(from_cstr(to_cstr("roundtrip"))) // roundtrip
 }
 ```
 
@@ -131,29 +131,29 @@ The null `CPtr<T>`.
 ### Example: a buffer of `CInt`
 
 ```rust
-import std/ffi { alloc, free, load, store, offset, is_null, null_ptr }
+from std.ffi import alloc, free, load, store, offset, is_null, null_ptr
 
 fun main() {
     let n = 3
-    let buf = alloc<CInt>(n)
-    if is_null<CInt>(buf) {
+    let buf = alloc[CInt](n)
+    if is_null[CInt](buf) {
         return
     }
 
     // Store 10, 20, 30 at successive offsets.
-    store<CInt>(buf, 10)
-    store<CInt>(offset<CInt>(buf, 1), 20)
-    store<CInt>(offset<CInt>(buf, 2), 30)
+    store[CInt](buf, 10)
+    store[CInt](offset[CInt](buf, 1), 20)
+    store[CInt](offset[CInt](buf, 2), 30)
 
     // Read them back.
-    print(load<CInt>(buf))                    // 10
-    print(load<CInt>(offset<CInt>(buf, 1)))   // 20
-    print(load<CInt>(offset<CInt>(buf, 2)))   // 30
+    print(load[CInt](buf)) // 10
+    print(load[CInt](offset[CInt](buf, 1))) // 20
+    print(load[CInt](offset[CInt](buf, 2))) // 30
 
-    print(is_null<CInt>(null_ptr<CInt>()))    // true
-    print(is_null<CInt>(buf))                 // false
+    print(is_null[CInt](null_ptr[CInt]())) // true
+    print(is_null[CInt](buf)) // false
 
-    free<CInt>(buf)
+    free[CInt](buf)
 }
 ```
 
@@ -163,7 +163,7 @@ Declare the C function in an `extern "C"` block, then pass a `to_cstr`
 conversion of a runtime `String` where the signature expects a `CStr`:
 
 ```rust
-import std/ffi { to_cstr, from_cstr }
+from std.ffi import to_cstr, from_cstr
 
 extern "C" {
     fun strlen(s: CStr) -> CSize
@@ -172,7 +172,7 @@ extern "C" {
 
 fun main() {
     let s = "hello"
-    print(strlen(to_cstr(s)))                     // 5
+    print(strlen(to_cstr(s))) // 5
     print(strcmp(to_cstr("abc"), to_cstr("abc"))) // 0
     print(strcmp(to_cstr("abc"), to_cstr("abd"))) // -1
 }

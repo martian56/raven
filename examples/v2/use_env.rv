@@ -1,10 +1,10 @@
 // golden:skip
-import std/env { get_env_or, has_env, arg_count, os_name }
-import std/io { println }
+from std.env import get_env_or, has_env, arg_count, os_name
+from std.io import println
 
 fun main() {
     let os = os_name()
-    let known = os == "linux" || os == "windows" || os == "macos"
+    let known = os == "linux" or os == "windows" or os == "macos"
     let set = has_env("RAVEN_ENV_TEST")
     let unset = has_env("RAVEN_DEFINITELY_UNSET_XYZ")
     let has_arg = arg_count() >= 1

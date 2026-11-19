@@ -5,18 +5,20 @@
 //   2
 //   3.14
 //   3
-import std/json { parse }
-import std/random
-import std/fmt { format_float }
-import std/math { log2 }
+from std.json import parse
+import std.random
+from std.fmt import format_float
+from std.math import log2
 
 fun main() {
     match parse("[1, 2]") {
-        Ok(v) -> print(v.length()),     // 2
-        Err(e) -> print(-1),
+        case Ok(v) {
+            print(v.length()) // 2
+        }
+        case Err(e) { print(-1) }
     }
     let rng = Rng.new(1)
     let _ignored = rng.next_int()
-    print(format_float(3.14159, 2))      // 3.14
-    print(log2(8.0))                     // 3
+    print(format_float(3.14159, 2)) // 3.14
+    print(log2(8.0)) // 3
 }

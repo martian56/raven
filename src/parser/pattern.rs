@@ -7,6 +7,30 @@ use crate::lexer::{TokenKind, ESCAPED_DOLLAR_SENTINEL};
 use super::{merge_spans, ParseResult, Parser};
 
 impl Parser {
+    /// Whether the `{ ... }` group at the cursor is followed by another `{`,
+    /// as in `case Point { x, y } { body }`.
+    fn brace_group_followed_by_brace(&self) -> bool {
+        let mut depth = 0i32;
+        let mut i = 0usize;
+        loop {
+            match self.peek_kind_at(i) {
+                TokenKind::LBrace => depth += 1,
+                TokenKind::RBrace => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return matches!(
+                            self.peek_kind_at(i + 1),
+                            TokenKind::LBrace | TokenKind::If
+                        );
+                    }
+                }
+                TokenKind::Eof => return false,
+                _ => {}
+            }
+            i += 1;
+        }
+    }
+
     /// Parse one pattern.
     pub(crate) fn parse_pattern(&mut self) -> ParseResult<Pattern> {
         let start = self.peek().span.clone();
@@ -155,7 +179,16 @@ impl Parser {
                 })
             }
             TokenKind::Identifier(_) => {
-                let (name, name_span) = self.expect_ident("pattern name")?;
+                let (mut name, mut name_span) = self.expect_ident("pattern name")?;
+                // `Shape.Circle(r)`: the variant name is what matches.
+                while matches!(self.peek_kind(), TokenKind::Dot)
+                    && matches!(self.peek_kind_at(1), TokenKind::Identifier(_))
+                {
+                    self.advance();
+                    let (n, sp) = self.expect_ident("variant name")?;
+                    name = n;
+                    name_span = sp;
+                }
                 // `Name(...)` enum tuple variant.
                 if matches!(self.peek_kind(), TokenKind::LParen) {
                     self.advance(); // (
@@ -186,7 +219,9 @@ impl Parser {
                     });
                 }
                 // `Name { ... }` struct or struct enum variant.
-                if matches!(self.peek_kind(), TokenKind::LBrace) {
+                if matches!(self.peek_kind(), TokenKind::LBrace)
+                    && (!self.in_case_pattern || self.brace_group_followed_by_brace())
+                {
                     self.advance(); // {
                     let mut fields = Vec::new();
                     self.skip_separators();

@@ -8,27 +8,23 @@
 // fixed pool and take roughly `goroutines / cores` durations: with 48 sleeps of
 // 1s on up to 16 cores that is at least ~3s, well past the 2.5s bound, while the
 // elastic pool finishes in ~1.5s.
-import std/time { sleep_millis, now_millis }
-import std/sync { wait_group }
+from std.time import sleep_millis, now_millis
+from std.sync import wait_group
 
 fun main() {
     let n = 48
     let dur = 1000
     let wg = wait_group()
     let start = now_millis()
-    let i = 0
+    var i = 0
     while i < n {
         wg.add(1)
-        spawn(fun() -> Unit {
+        spawn {
             sleep_millis(dur)
             wg.done()
-        })
+        }
         i = i + 1
     }
     wg.wait()
-    if now_millis() - start < 2500 {
-        print("concurrent")
-    } else {
-        print("batched")
-    }
+    print("concurrent") if now_millis() - start < 2500 else print("batched")
 }

@@ -2,16 +2,16 @@
 // echo route, checking that the server de-chunks the body and the handler
 // receives it (it used to be silently discarded as empty). golden:skip (binds a
 // port and depends on timing; a codegen smoke test runs it and checks output).
-import std/http { Server, Request, Response }
-import std/net { connect, TcpStream }
-import std/time { sleep_millis }
-import std/io { println }
+from std.http import Server, Request, Response
+from std.net import connect, TcpStream
+from std.time import sleep_millis
+from std.io import println
 
 fun echo(req: Request) -> Response {
     return Response.with_body(200, req.body)
 }
 
-fun first_line(s: String) -> String {
+fun first_line(s: str) -> str {
     let idx = s.index_of("\r\n")
     if idx < 0 {
         return s
@@ -19,7 +19,7 @@ fun first_line(s: String) -> String {
     return s.substring(0, idx)
 }
 
-fun body_after_headers(s: String) -> String {
+fun body_after_headers(s: str) -> str {
     let idx = s.index_of("\r\n\r\n")
     if idx < 0 {
         return ""
@@ -27,36 +27,34 @@ fun body_after_headers(s: String) -> String {
     return s.substring(idx + 4, s.length())
 }
 
-fun connect_retry(addr: String) -> Result<TcpStream, Error> {
-    let attempt = 0
+fun connect_retry(addr: str) -> Result[TcpStream, Error] {
+    var attempt = 0
     while attempt < 50 {
         match connect(addr) {
-            Ok(s) -> {
+            case Ok(s) {
                 return Ok(s)
             }
-            Err(_) -> {
-                sleep_millis(20)
-            }
+            case Err(_) { sleep_millis(20) }
         }
         attempt += 1
     }
     return connect(addr)
 }
 
-fun send(addr: String, request: String) -> String {
-    let result = ""
+fun send(addr: str, request: str) -> str {
+    var result = ""
     match connect_retry(addr) {
-        Ok(s) -> {
+        case Ok(s) {
             let _ = s.write(request)
             match s.read_all() {
-                Ok(r) -> {
+                case Ok(r) {
                     result = r
                 }
-                Err(_) -> {}
+                case Err(_) {}
             }
             s.close()
         }
-        Err(_) -> {}
+        case Err(_) {}
     }
     return result
 }
@@ -65,9 +63,9 @@ fun main() {
     let addr = "127.0.0.1:18617"
     let app = Server.new()
     app.post("/echo", echo)
-    spawn(fun() -> Unit {
+    spawn {
         app.listen(addr)
-    })
+    }
 
     // Two chunks "Wiki" (4) and "pedia" (5), then the zero-size terminator.
     let req = "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n"

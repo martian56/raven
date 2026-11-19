@@ -1,8 +1,8 @@
 // A char literal inside a `${...}` interpolation can hold a brace or a quote.
 // Those must not be read as interpolation structure and close it early.
-import std/io { println }
+from std.io import println
 
-fun code(c: Char) -> Int = 1
+fun code(c: char) -> int = 1
 
 fun main() {
     println("close=${code('}')}")

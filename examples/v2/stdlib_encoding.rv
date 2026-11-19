@@ -7,19 +7,19 @@
 //   /a/c/d
 //   report.md
 //   3421780262
-import std/encoding { url_encode, url_decode, base32_encode, base32_decode }
-import std/path { normalize, with_extension }
-import std/hash { crc32 }
+from std.encoding import url_encode, url_decode, base32_encode, base32_decode
+from std.path import normalize, with_extension
+from std.hash import crc32
 
 fun main() {
-    print(url_encode("a b/c"))              // a%20b%2Fc
-    print(url_decode("a%20b%2Fc"))          // a b/c
-    print(base32_encode("foobar"))          // MZXW6YTBOI======
+    print(url_encode("a b/c")) // a%20b%2Fc
+    print(url_decode("a%20b%2Fc")) // a b/c
+    print(base32_encode("foobar")) // MZXW6YTBOI======
     match base32_decode("MZXW6YTBOI======") {
-        Ok(d) -> print(d),
-        Err(e) -> print("err"),
+        case Ok(d) { print(d) }
+        case Err(e) { print("err") }
     }
-    print(normalize("/a/b/../c/./d"))       // /a/c/d
-    print(with_extension("report.txt", "md"))  // report.md
-    print(crc32("123456789"))               // 3421780262
+    print(normalize("/a/b/../c/./d")) // /a/c/d
+    print(with_extension("report.txt", "md")) // report.md
+    print(crc32("123456789")) // 3421780262
 }

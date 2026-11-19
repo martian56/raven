@@ -13,14 +13,14 @@ If you are new to the language, skim the
 A struct groups related fields under one type. A task has an id and a title:
 
 ```rust
-struct Task {
-    id: Int,
-    title: String,
+class Task {
+    id: int
+    title: str
 }
 
 fun main() {
-    let t = Task { id: 1, title: "write docs" }
-    print("#${t.id} ${t.title}")        // #1 write docs
+    let t = Task(id: 1, title: "write docs")
+    print("#${t.id} ${t.title}") // #1 write docs
 }
 ```
 
@@ -40,14 +40,14 @@ enum Status {
     Done,
 }
 
-struct Task {
-    id: Int,
-    title: String,
-    status: Status,
+class Task {
+    id: int
+    title: str
+    status: Status
 }
 
 fun main() {
-    let t = Task { id: 1, title: "write docs", status: Status.Doing }
+    let t = Task(id: 1, title: "write docs", status: Status.Doing)
     print(t.title)
 }
 ```
@@ -56,11 +56,11 @@ You construct a variant with the qualified form `Status.Doing`. To turn a
 status into text, use `match`, which checks that you handle every variant:
 
 ```rust
-fun label(s: Status) -> String {
+fun label(s: Status) -> str {
     return match s {
-        Todo -> "todo",
-        Doing -> "doing",
-        Done -> "done",
+        case Todo { "todo" }
+        case Doing { "doing" }
+        case Done { "done" }
     }
 }
 ```
@@ -80,19 +80,19 @@ enum Status {
     Todo,
     Doing,
     Done,
-    Blocked(String),
+    Blocked(str),
 }
 ```
 
 Now a `match` arm for `Blocked` binds the payload to a name you can use:
 
 ```rust
-fun label(s: Status) -> String {
+fun label(s: Status) -> str {
     return match s {
-        Todo -> "todo",
-        Doing -> "doing",
-        Done -> "done",
-        Blocked(reason) -> "blocked: ${reason}",
+        case Todo { "todo" }
+        case Doing { "doing" }
+        case Done { "done" }
+        case Blocked(reason) { "blocked: ${reason}" }
     }
 }
 ```
@@ -108,12 +108,12 @@ the formatting onto `Task` as a method:
 
 ```rust
 impl Task {
-    fun line(self) -> String {
+    fun line(self) -> str {
         let tag = match self.status {
-            Todo -> "todo",
-            Doing -> "doing",
-            Done -> "done",
-            Blocked(reason) -> "blocked: ${reason}",
+            case Todo { "todo" }
+            case Doing { "doing" }
+            case Done { "done" }
+            case Blocked(reason) { "blocked: ${reason}" }
         }
         return "#${self.id} [${tag}] ${self.title}"
     }
@@ -130,7 +130,7 @@ case. The answer is `Option<T>`: `Some(value)` when there is a result, `None`
 when there is not. A lookup by id:
 
 ```rust
-fun find(tasks: List<Task>, id: Int) -> Option<Task> {
+fun find(tasks: list[Task], id: int) -> Option[Task] {
     for t in tasks {
         if t.id == id {
             return Some(t)
@@ -144,8 +144,8 @@ The caller `match`es on the result and cannot forget the missing case:
 
 ```rust
 match find(tasks, 2) {
-    Some(t) -> print("found: ${t.title}"),
-    None -> print("not found"),
+    case Some(t) { print("found: ${t.title}") }
+    case None { print("not found") }
 }
 ```
 
@@ -158,28 +158,28 @@ enum Status {
     Todo,
     Doing,
     Done,
-    Blocked(String),
+    Blocked(str),
 }
 
-struct Task {
-    id: Int,
-    title: String,
-    status: Status,
+class Task {
+    id: int
+    title: str
+    status: Status
 }
 
 impl Task {
-    fun line(self) -> String {
+    fun line(self) -> str {
         let tag = match self.status {
-            Todo -> "todo",
-            Doing -> "doing",
-            Done -> "done",
-            Blocked(reason) -> "blocked: ${reason}",
+            case Todo { "todo" }
+            case Doing { "doing" }
+            case Done { "done" }
+            case Blocked(reason) { "blocked: ${reason}" }
         }
         return "#${self.id} [${tag}] ${self.title}"
     }
 }
 
-fun find(tasks: List<Task>, id: Int) -> Option<Task> {
+fun find(tasks: list[Task], id: int) -> Option[Task] {
     for t in tasks {
         if t.id == id {
             return Some(t)
@@ -189,10 +189,10 @@ fun find(tasks: List<Task>, id: Int) -> Option<Task> {
 }
 
 fun main() {
-    let tasks: List<Task> = [
-        Task { id: 1, title: "write docs", status: Status.Doing },
-        Task { id: 2, title: "ship release", status: Status.Blocked("waiting on review") },
-        Task { id: 3, title: "fix bug", status: Status.Done },
+    let tasks: list[Task] = [
+        Task(id: 1, title: "write docs", status: Status.Doing),
+        Task(id: 2, title: "ship release", status: Status.Blocked("waiting on review")),
+        Task(id: 3, title: "fix bug", status: Status.Done),
     ]
 
     for t in tasks {
@@ -200,8 +200,8 @@ fun main() {
     }
 
     match find(tasks, 2) {
-        Some(t) -> print("found: ${t.title}"),
-        None -> print("not found"),
+        case Some(t) { print("found: ${t.title}") }
+        case None { print("not found") }
     }
 }
 ```

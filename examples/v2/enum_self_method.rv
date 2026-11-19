@@ -4,33 +4,33 @@
 // projection. Covers a scalar payload and heap payloads (String, List).
 
 enum Bag {
-    Num(Int),
-    Text(String),
-    Items(List<Int>),
+    Num(int),
+    Text(str),
+    Items(list[int]),
 }
 
 impl Bag {
-    fun num(self) -> Int {
+    fun num(self) -> int {
         return match self {
-            Num(n) -> n,
-            Text(s) -> -1,
-            Items(xs) -> -1,
+            case Num(n) { n }
+            case Text(s) { -1 }
+            case Items(xs) { -1 }
         }
     }
 
-    fun text(self) -> String {
+    fun text(self) -> str {
         return match self {
-            Text(s) -> s,
-            Num(n) -> "none",
-            Items(xs) -> "none",
+            case Text(s) { s }
+            case Num(n) { "none" }
+            case Items(xs) { "none" }
         }
     }
 
-    fun count(self) -> Int {
+    fun count(self) -> int {
         return match self {
-            Items(xs) -> xs.len(),
-            Num(n) -> 0,
-            Text(s) -> 0,
+            case Items(xs) { xs.len() }
+            case Num(n) { 0 }
+            case Text(s) { 0 }
         }
     }
 }
@@ -42,7 +42,7 @@ fun main() {
     let b = Bag.Text("hello")
     print(b.text())
 
-    let xs: List<Int> = [1, 2, 3]
+    let xs: list[int] = [1, 2, 3]
     let c = Bag.Items(xs)
     print(c.count())
 }

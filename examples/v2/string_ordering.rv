@@ -4,9 +4,9 @@
 fun main() {
     let a = "apple"
     let b = "banana"
-    print(a < b)        // true
-    print(b < a)        // false
-    print(a <= a)       // true
-    print(b >= a)       // true
-    print(a > b)        // false
+    print(a < b) // true
+    print(b < a) // false
+    print(a <= a) // true
+    print(b >= a) // true
+    print(a > b) // false
 }

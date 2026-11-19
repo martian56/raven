@@ -1,10 +1,13 @@
 // A tour of core language features: variables, conditionals, loops,
 // functions, structs, and arithmetic, all with deterministic output.
-struct Rect { w: Int, h: Int }
+class Rect {
+    w: int
+    h: int
+}
 
-fun area(r: Rect) -> Int = r.w * r.h
+fun area(r: Rect) -> int = r.w * r.h
 
-fun multiply(a: Int, b: Int) -> Int = a * b
+fun multiply(a: int, b: int) -> int = a * b
 
 fun main() {
     let name = "Raven"
@@ -16,7 +19,7 @@ fun main() {
         print("x is less than y")
     }
 
-    let i = 0
+    var i = 0
     while i < 3 {
         print(i)
         i = i + 1
@@ -30,7 +33,7 @@ fun main() {
 
     let active = true
     let access = true
-    if active && access {
+    if active and access {
         print("Access granted")
     }
 
@@ -39,6 +42,6 @@ fun main() {
     print(6 * 7)
     print(100 / 4)
 
-    let r = Rect { w: 4, h: 5 }
+    let r = Rect(w: 4, h: 5)
     print(area(r))
 }

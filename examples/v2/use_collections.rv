@@ -1,6 +1,6 @@
 // golden:skip
-import std/collections
-import std/io { println }
+import std.collections
+from std.io import println
 
 fun main() {
     let s = Set.new()
@@ -18,8 +18,8 @@ fun main() {
     m.set("a", 99)
     print(m.len())
     match m.get("a") {
-        Some(v) -> print(v)
-        None -> print(0)
+        case Some(v) { print(v) }
+        case None { print(0) }
     }
     print(m.has("z"))
 }

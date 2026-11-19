@@ -1,6 +1,6 @@
 // golden:skip
-import std/cmp { sort, max, min, max_of, min_of, clamp }
-import std/io { println }
+from std.cmp import sort, max, min, max_of, min_of, clamp
+from std.io import println
 
 fun main() {
     print(min(3, 7))
@@ -11,11 +11,11 @@ fun main() {
     print(s[0])
     print(s[5])
     match max_of(xs) {
-        Some(v) -> print(v)
-        None -> print(0)
+        case Some(v) { print(v) }
+        case None { print(0) }
     }
     match min_of(xs) {
-        Some(v) -> print(v)
-        None -> print(0)
+        case Some(v) { print(v) }
+        case None { print(0) }
     }
 }

@@ -21,25 +21,25 @@
 //   Branch: Int, Int
 //   Empty
 enum Shape {
-    Circle(radius: Float)
-    Rectangle(width: Float, height: Float)
-    Dot
+    Circle(radius: float),
+    Rectangle(width: float, height: float),
+    Dot,
 }
 
-enum Tree<T> {
-    Leaf(value: T)
-    Branch(left: T, right: T)
-    Empty
+enum Tree[T] {
+    Leaf(value: T),
+    Branch(left: T, right: T),
+    Empty,
 }
 
-fun describe<T>() {
-    let names = variant_names<T>()
-    let payloads = variant_field_types<T>()
-    let i = 0
+fun describe[T]() {
+    let names = variant_names[T]()
+    let payloads = variant_field_types[T]()
+    var i = 0
     while i < names.len() {
         let types = payloads[i]
-        let joined = ""
-        let j = 0
+        var joined = ""
+        var j = 0
         while j < types.len() {
             if j > 0 {
                 joined = "${joined}, "
@@ -57,11 +57,11 @@ fun describe<T>() {
 }
 
 fun main() {
-    for n in variant_names<Shape>() {
+    for n in variant_names[Shape]() {
         print(n)
     }
     print("--")
-    describe<Shape>()
+    describe[Shape]()
     print("== generic ==")
-    describe<Tree<Int>>()
+    describe[Tree[int]]()
 }

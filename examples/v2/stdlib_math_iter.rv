@@ -9,28 +9,34 @@
 //   1
 //   9
 //   2
-import std/math { fmod, gcd, log2, is_inf, infinity }
-import std/iter { sum, product, min, max, position }
+from std.math import fmod, gcd, log2, is_inf, infinity
+from std.iter import sum, product, min, max, position
 
 fun main() {
-    print(fmod(10.0, 3.0))          // 1
-    print(gcd(12, 18))              // 6
-    print(log2(8.0))                // 3
-    print(is_inf(infinity()))       // true
+    print(fmod(10.0, 3.0)) // 1
+    print(gcd(12, 18)) // 6
+    print(log2(8.0)) // 3
+    print(is_inf(infinity())) // true
 
     let xs = [3, 1, 4, 1, 5, 9, 2]
-    print(sum(xs.iter()))           // 25
-    print(product([1, 2, 3, 4].iter()))  // 24
+    print(sum(xs.iter())) // 25
+    print(product([1, 2, 3, 4].iter())) // 24
     match min(xs.iter()) {
-        Some(v) -> print(v),        // 1
-        None -> print(-1),
+        case Some(v) {
+            print(v) // 1
+        }
+        case None { print(-1) }
     }
     match max(xs.iter()) {
-        Some(v) -> print(v),        // 9
-        None -> print(-1),
+        case Some(v) {
+            print(v) // 9
+        }
+        case None { print(-1) }
     }
-    match position(xs.iter(), fun(x: Int) -> Bool = x == 4) {
-        Some(i) -> print(i),        // 2
-        None -> print(-1),
+    match position(xs.iter(), (x: int) -> bool => x == 4) {
+        case Some(i) {
+            print(i) // 2
+        }
+        case None { print(-1) }
     }
 }

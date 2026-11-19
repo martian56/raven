@@ -1,4 +1,4 @@
-fun fizzbuzz(n: Int) {
+fun fizzbuzz(n: int) {
     for i in 1..=n {
         if i % 15 == 0 {
             print("FizzBuzz")
@@ -12,9 +12,9 @@ fun fizzbuzz(n: Int) {
     }
 }
 
-fun count(limit: Int) -> Int {
-    let total = 0
-    let i = 0
+fun count(limit: int) -> int {
+    var total = 0
+    var i = 0
     while i < limit {
         total += 1
         i += 1

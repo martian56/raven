@@ -17,35 +17,35 @@
 //   introspect Point
 //   field x
 //   field y
-struct Point {
-    x: Int,
-    y: Int
+class Point {
+    x: int
+    y: int
 }
 
-fun describe<T>() -> String {
-    return type_name<T>()
+fun describe[T]() -> str {
+    return type_name[T]()
 }
 
-fun introspect<T>() {
-    print("introspect ${type_name<T>()}")
-    let fields = field_names<T>()
+fun introspect[T]() {
+    print("introspect ${type_name[T]()}")
+    let fields = field_names[T]()
     for f in fields {
         print("field ${f}")
     }
 }
 
 fun main() {
-    print(type_name<Int>())       // Int
-    print(type_name<String>())    // String
-    print(type_name<Point>())     // Point
+    print(type_name[int]()) // Int
+    print(type_name[str]()) // String
+    print(type_name[Point]()) // Point
 
-    let names = field_names<Point>()
-    print(names.len())            // 2
-    print(names[0])               // x
-    print(names[1])               // y
+    let names = field_names[Point]()
+    print(names.len()) // 2
+    print(names[0]) // x
+    print(names[1]) // y
 
-    print(describe<Int>())        // Int
-    print(describe<Point>())      // Point
+    print(describe[int]()) // Int
+    print(describe[Point]()) // Point
 
-    introspect<Point>()           // introspect Point, field x, field y
+    introspect[Point]() // introspect Point, field x, field y
 }

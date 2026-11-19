@@ -2,22 +2,28 @@
 // Reaches the network (example.com:443), so it is excluded from the golden
 // output suite. Run it directly: raven build examples/tls_client.rv -o tls_client
 
-import std/io { println }
-import std/tls { connect, connect_with, config }
-import std/string
+from std.io import println
+from std.tls import connect, connect_with, config
+import std.string
 
 // Fetch the first line of a response over a verified TLS connection.
 fun fetch_verified() {
     match connect("example.com:443", "example.com") {
-        Ok(stream) -> {
+        case Ok(stream) {
             let _ = stream.write("GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
             match stream.read(32) {
-                Ok(data) -> println("verified: ${data.trim()}"),
-                Err(e) -> println("read: ${e.message()}"),
+                case Ok(data) {
+                    println("verified: ${data.trim()}")
+                }
+                case Err(e) {
+                    println("read: ${e.message()}")
+                }
             }
             stream.close()
-        },
-        Err(e) -> println("connect: ${e.message()}"),
+        }
+        case Err(e) {
+            println("connect: ${e.message()}")
+        }
     }
 }
 
@@ -27,17 +33,23 @@ fun fetch_verified() {
 fun fetch_with_config() {
     let cfg = config().insecure_skip_verify()
     match connect_with("self-signed.badssl.com:443", "self-signed.badssl.com", cfg) {
-        Ok(stream) -> {
+        case Ok(stream) {
             let _ = stream.write(
                 "GET / HTTP/1.1\r\nHost: self-signed.badssl.com\r\nConnection: close\r\n\r\n",
             )
             match stream.read(32) {
-                Ok(data) -> println("skip-verify: ${data.trim()}"),
-                Err(e) -> println("read: ${e.message()}"),
+                case Ok(data) {
+                    println("skip-verify: ${data.trim()}")
+                }
+                case Err(e) {
+                    println("read: ${e.message()}")
+                }
             }
             stream.close()
-        },
-        Err(e) -> println("connect: ${e.message()}"),
+        }
+        case Err(e) {
+            println("connect: ${e.message()}")
+        }
     }
     cfg.free()
 }

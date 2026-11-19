@@ -1,716 +1,438 @@
 # Language reference (v2)
 
-This page covers every construct in Raven v2. Statements are separated by
-newlines, semicolons, or both. Semicolons are optional and rarely used.
-There is no top level statement execution: a program runs from `fun main()`.
+Raven reads like Python with braces. Statements end at a newline (a `;` is
+allowed but rarely needed), blocks use `{ }`, and types are checked at
+compile time but mostly inferred. A program starts at `fun main()`.
+
+```rust
+from std.math import sqrt
+
+class Point {
+    x: float = 0.0
+    y: float = 0.0
+
+    fun len(self) -> float = sqrt(self.x * self.x + self.y * self.y)
+}
+
+fun main() {
+    let p = Point(x: 3.0, y: 4.0)
+    print("length ${p.len()}")
+}
+```
 
 ## Variables
 
-`let` introduces a binding. Bindings are mutable: you can reassign them
-and mutate their fields and elements.
+`let` introduces a binding that cannot be reassigned. `var` introduces one
+that can.
 
 ```rust
 fun main() {
-    let n = 10
-    n = n + 5
-    print(n)            // 15
+    let name = "raven"
+    var count = 0
+    count += 1
+    print("${name} ${count}")
 }
 ```
 
-A type annotation is optional. When omitted the type is inferred from the
-initializer; annotate when the type cannot be inferred (for example an
-empty list).
+Assigning to a `let` binding is a compile error that suggests `var`.
+`let` freezes the binding, not the value: a `let` list can still be pushed
+to, and a `let` object's fields can still be set.
+
+Types are inferred from the initializer, including from later use: an empty
+list takes its element type from what is pushed into it. Annotate when you
+want to be explicit.
 
 ```rust
-let count: Int = 0
-let names: List<String> = []
+let count: int = 0
+var names = []
+names.push("ann") // names is list[str]
 ```
 
-A `let` at module level (outside any function) is a mutable global: any
-function can read and reassign it. Globals are initialized before `main`
-runs, in declaration order, so a later global may read an earlier one, and
-an initializer may be any expression (including a function call), not only a
-constant. A heap-valued global (a `String`, `List`, struct, and so on) is
-kept alive for the whole program.
+At module level (outside any function), `let` and `var` declare globals,
+initialized before `main` in declaration order. `const` declares a
+compile-time constant whose initializer is a literal or arithmetic over
+literals; it is inlined at each use.
 
 ```rust
-fun seed() -> Int = 10
+const MAX: int = 100
+var counter = 0
 
-let counter: Int = 0        // mutable, shared across functions
-let base: Int = seed() * 3  // initialized by a call, before main
-let names: List<String> = []
-
-fun record(name: String) {
-    names.push(name)
-    counter = counter + 1
+fun record() {
+    counter += 1
 }
 ```
 
-`const` introduces an immutable binding: reassigning it (or compound
-assigning, like `+=`) is a compile error.
+## Built-in types
+
+| Type | Meaning |
+|------|---------|
+| `int` | 64-bit signed integer |
+| `float` | 64-bit floating point |
+| `bool` | `true` or `false` |
+| `str` | heap-allocated byte string; literals are UTF-8 |
+| `char` | a single Unicode scalar value |
+| `list[T]` | growable list |
+| `dict[K, V]` | hash map (`K` must implement `Eq` and `Hash`) |
+| `set[T]` | hash set |
+| `Option[T]` | `Some(value)` or `None` |
+| `Result[T, E]` | `Ok(value)` or `Err(error)` |
+
+`T?` is shorthand for `Option[T]`. Integer literals accept `0xff`, `0b1010`,
+`0o17`, and `_` separators such as `1_000_000`.
+
+There are no implicit numeric conversions. Convert with `n.to_float()` and
+`x.to_int()` (truncates toward zero); parse text with `"42".parse_int()` and
+`"3.5".parse_float()`, which return an `Option`.
+
+## Strings
+
+Strings use double quotes and support escapes (`\n`, `\t`, `\\`, `\"`,
+`\u{1F600}`). `${expr}` interpolates any value that implements `ToString`,
+which includes every built-in type and, automatically, your own classes.
 
 ```rust
-fun main() {
-    const LIMIT = 5
-    LIMIT = 6            // error: cannot assign to `LIMIT`, it is a `const`
-}
+let name = "Raven"
+print("Hello, ${name}! 2 + 2 = ${2 + 2}")
 ```
 
-At module level a `const` is a compile-time constant. A literal initializer
-can infer its type; other constant expressions need an explicit annotation.
-The initializer must be a literal, or an arithmetic, comparison, bitwise, or
-boolean combination of literals. It is folded and inlined at each use site.
-
-```rust
-const MAX: Int = 100
-const HOST = "127.0.0.1"       // inferred as String
-const SECS_PER_HOUR: Int = 60 * 60
-```
-
-Inside a function body a `const` is an immutable local. It has stack
-storage, so its initializer may be any expression (including a function
-call), not only a constant one.
-
-```rust
-fun main() {
-    const DOUBLED = compute()    // runtime value, still immutable
-}
-```
-
-## Primitive types
-
-Type names are PascalCase.
-
-| Type     | Meaning |
-|----------|---------|
-| `Int`    | 64-bit signed integer |
-| `Float`  | 64-bit floating point |
-| `Bool`   | `true` or `false` |
-| `String` | heap-allocated byte string; literals are UTF-8 |
-| `Char`   | a single Unicode scalar value |
-| `Unit`   | the empty value, written `()` |
-
-```rust
-let i: Int = 42
-let f: Float = 3.14
-let b: Bool = true
-let s: String = "raven"
-let c: Char = 'x'
-```
-
-Integer literals accept bases: `0xff`, `0b1010`, `0o17`, and underscores
-for grouping such as `1_000_000`. See [Type conversions](#type-conversions)
-for moving values between these types.
-
-## Strings and interpolation
-
-A regular string uses double quotes and processes escapes (`\n`, `\t`,
-`\\`, `\"`, `\x41`, `\u{1F600}`). String interpolation embeds an
-expression with `${...}`:
-
-```rust
-fun main() {
-    let name = "Raven"
-    let a = 3
-    let b = 4
-    print("Hello, ${name}!")
-    print("sum is ${a + b}")
-}
-```
-
-A `String` is a byte string, and it is not indexable: `s[i]` is a
-compile error. `length()` counts bytes, so reach for the byte-oriented
-accessors in [`std/string`](standard-library.md#stdstring) instead —
-`char_at(i)` returns the one-byte substring at byte offset `i`, and
-`byte_at(i)` returns that byte as an `Int`. Both take a byte offset, so
-for a multi-byte character they address one byte of its encoding rather
-than the whole character.
-
-```rust
-import std/string
-
-fun main() {
-    let s = "abc"
-    print(s.char_at(0))     // a
-    print(s.byte_at(0))     // 97
-}
-```
-
-A block string uses triple quotes and is raw: no escapes are processed
-and newlines are preserved exactly.
-
-```rust
-let text = """
-line one
-line two
-"""
-```
-
-A C string literal `c"..."` produces a `CStr` for FFI. It lowers to a
-pointer to a static null terminated buffer (see [FFI](#ffi-and-c-types)).
-
-## Type conversions
-
-There are no implicit numeric coercions and no `as` cast operator. You convert
-with explicit calls, and a conversion that can fail returns an `Option` instead
-of throwing.
-
-Between `Int` and `Float`:
-
-```rust
-let f: Float = n.to_float()   // Int to Float
-let i: Int = x.to_int()       // Float to Int, truncates toward zero
-```
-
-To text, with `to_string` on any type that implements
-[`ToString`](#traits-and-impl), or with interpolation:
-
-```rust
-let s = (42).to_string()      // "42"
-print("n is ${n}")
-```
-
-Text to a number can fail, so it yields an `Option`. The parse methods come
-from `std/string`:
-
-```rust
-import std/string
-
-match "42".parse_int() {
-    Some(n) -> print(n),
-    None -> print("not a number"),
-}
-let pi = "3.14".parse_float()   // Option<Float>
-```
-
-`std/fmt` adds `from_hex(s)` and `from_radix(s, base)` for other bases, each
-returning an `Option<Int>`.
-
-For a value whose type is not known statically, `cast<T>(a)` recovers a concrete
-type from an `Any` as an `Option<T>` (see [Reflection](#reflection)).
+`+` joins strings and `+=` appends. String methods (`len`, `split`, `trim`,
+`to_upper`, `starts_with`, `index_of`, `substring`, `parse_int`, and more)
+need no import. Triple-quoted strings (`"""..."""`) are raw and keep
+newlines.
 
 ## Operators
 
-Arithmetic: `+`, `-`, `*`, `/`, `%`.
+- Arithmetic: `+ - * / %`
+- Comparison: `== != < <= > >=`. Comparisons do not chain.
+- Logic: `and`, `or`, `not`. The forms `&&`, `||`, `!` are accepted too;
+  the formatter writes the words.
+- Bitwise: `& | ^ << >>`
+- Compound assignment: `+= -= *= /= %= &= |= ^= <<= >>=`
+- Conditional value: `a if cond else b`
+- Ranges: `a..b` (excludes `b`) and `a..=b` (includes `b`)
+- `?` propagates an `Err` or `None` out of the current function
 
-Comparison: `==`, `!=`, `<`, `>`, `<=`, `>=`. Ordering (`<`, `<=`, `>`,
-`>=`) works on `Int`, `Float`, `Char`, and `String` (lexicographic, by
-bytes); `==`/`!=` work on any type. Comparisons do not chain: `a < b < c`
-is an error.
-
-Logical: `&&`, `||`, `!`.
-
-Bitwise: `&`, `|`, `^`, `~`, `<<`, `>>`.
-
-Ranges produce a range value used by `for`. `a..b` is half open (excludes
-`b`); `a..=b` is inclusive.
-
-```rust
-for x in 0..5 {        // 0, 1, 2, 3, 4
-    print(x)
-}
-```
-
-The postfix `?` operator propagates the error case of a `Result` or the
-`None` case of an `Option`, returning early from the enclosing function.
-
-Compound assignment operators apply an operation in place: `+=`, `-=`,
-`*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`.
+`==` compares values. Every class and enum whose fields can be compared gets
+`==` automatically; a type holding a function or trait object needs a
+written `impl Eq` before it can be compared.
 
 ## Functions
 
-A function declares typed parameters and an optional return type. A
-function with no return type returns `Unit`.
-
 ```rust
-fun add(a: Int, b: Int) -> Int {
+fun add(a: int, b: int) -> int {
     return a + b
 }
+
+fun square(x: int) -> int = x * x
 ```
 
-A function may use an expression body with `=`, where the trailing
-expression is the return value:
+Parameters can have default values, and callers can pass arguments by name:
 
 ```rust
-fun square(x: Int) -> Int = x * x
-```
-
-Functions can be generic over type parameters; see [generics](#generics-and-trait-bounds).
-
-## Closures and lambdas
-
-A lambda is written with `fun(params) -> Ret = body` or a block body.
-Closures capture surrounding locals by value. A function type is written
-`fun(ArgTypes) -> Ret`.
-
-```rust
-fun apply(f: fun(Int) -> Int, x: Int) -> Int {
-    return f(x)
+fun greet(name: str, greeting: str = "hello", punct: str = "!") -> str {
+    return greeting + " " + name + punct
 }
 
 fun main() {
-    let factor = 3
-    let triple = fun(x: Int) -> Int = x * factor
-    print(apply(triple, 7))      // 21
+    print(greet("ann"))
+    print(greet("bob", punct: "?"))
 }
 ```
 
-A closure can be returned, carrying its captured values:
+Every path through a function with a return type must return a value.
+`return`, `break`, `continue`, and `panic(msg)` never produce a value, so they
+fit anywhere a value is expected.
+
+## Lambdas
+
+A lambda is `params => body`. Parameter types are inferred from where the
+lambda is used; write them when there is nothing to infer from.
 
 ```rust
-fun make_adder(n: Int) -> fun(Int) -> Int {
-    return fun(x: Int) -> Int = x + n
+let doubled = [1, 2, 3].map(x => x * 2)
+let total = [1, 2, 3].fold(0, (acc, x) => acc + x)
+let clamp = (x: int) => {
+    if x > 100 {
+        return 100
+    }
+    return x
 }
 ```
+
+`return` in a block-bodied lambda leaves the lambda. Lambdas capture the
+values of surrounding locals when they are created. A function type is
+written `fun(int) -> int`.
 
 ## Control flow
 
-`if` / `else if` / `else` chooses a branch. It works as a statement and
-as an expression that yields a value:
-
 ```rust
-let label = if n > 0 { "positive" } else { "non-positive" }
-```
-
-`while` loops while a condition holds:
-
-```rust
-let i = 0
-while i < 10 {
-    i = i + 1
+if n > 0 {
+    print("positive")
+} else if n < 0 {
+    print("negative")
+} else {
+    print("zero")
 }
+
+let label = "big" if n > 100 else "small"
 ```
 
-`loop` is an unconditional loop. It evaluates to the operand of `break`:
+Loops:
 
 ```rust
+for x in [3, 5, 7] {
+    print(x)
+}
+for i in 0..10 {
+    print(i)
+}
+while queue.len() > 0 {
+    queue.pop()
+}
 let first = loop {
     break 42
 }
 ```
 
-`for ... in` iterates a range or a list:
+`for` iterates lists, ranges, and anything with an `iter()`. `loop` yields
+the value its `break` carries.
+
+`if let`, `while let`, and `let ... else` test a value against a pattern:
 
 ```rust
-let xs = [3, 5, 7]
-let total = 0
-for v in xs {
-    total = total + v
+if let Some(user) = find(id) {
+    print(user.name)
+}
+
+while let Some(job) = jobs.pop_next() {
+    run(job)
+}
+
+let port = match text.parse_int() {
+    case Some(port) { port }
+    case _ {
+        return Err(error("bad port"))
+    }
 }
 ```
 
-`break` exits the nearest loop (optionally carrying a value for `loop`),
-`continue` skips to the next iteration, and `return` exits the function.
+The `else` block of a `let ... else` must leave (`return`, `break`,
+`continue`, or `panic`).
 
 ## defer
 
-`defer` schedules an expression to run when the enclosing function
-returns. This is function-scoped, like Go's `defer`, not block-scoped: a
-`defer` written inside a nested block, an `if`, or a loop still runs at
-the function's return, not when the inner block exits. Deferred
-expressions run in reverse order of registration (last in, first out),
-and only those actually reached at runtime run.
+`defer expr` runs `expr` when the function returns, in reverse order of
+registration. A `defer` inside a nested block still runs at the function's
+return. Defers do not run on `panic`.
+
+## Classes
+
+A class has fields and methods. Fields may have default values. Methods take
+`self` explicitly; a function without `self` is static.
 
 ```rust
-fun demo() -> Int {
-    defer print(1)
-    defer print(2)
-    return 0
-}
-// prints 2 then 1
-```
+class Counter {
+    count: int = 0
+    step: int = 1
 
-Because a defer is function-scoped, the order across nested blocks is the
-same LIFO order, measured by when each `defer` statement ran:
-
-```rust
-fun f() -> Int {
-    print(1)
-    if true {
-        defer print(2)
-        print(3)
-    }
-    print(4)
-    return 0
-}
-// prints 1 3 4 2: the nested defer fires at f's return, after 4
-```
-
-On `return e` the return value is computed first, then the deferred
-thunks run, then the function returns. A deferred expression runs for its
-side effects and cannot change the return value. Defers do not run on a
-`panic`, which aborts the process without unwinding.
-
-## Structs
-
-A struct groups named, typed fields. Construct it with a struct literal,
-read fields with `.`, and assign to fields and elements.
-
-```rust
-struct Point { x: Int, y: Int }
-
-fun main() {
-    let p = Point { x: 3, y: 4 }
-    print(p.x + p.y)        // 7
-    p.x = 10
-}
-```
-
-Methods are declared in an `impl` block. A method takes `self` as its
-first parameter. A function in an `impl` block without `self` is an
-associated function, the idiomatic constructor, called as `Type.func()`.
-
-```rust
-struct Counter { n: Int }
-
-impl Counter {
-    fun new() -> Counter {
-        return Counter { n: 0 }
-    }
+    fun origin() -> Counter = Counter()
 
     fun bump(self) {
-        self.n = self.n + 1
+        self.count += self.step
     }
 }
 
 fun main() {
-    let c = Counter.new()
+    let c = Counter(step: 5)
     c.bump()
-    print(c.n)              // 1
+    print(c.count) // 5
+    print(Counter.origin().count)
 }
 ```
 
-Methods can also be declared on built in types:
+Construct with positional arguments in field order, with named arguments, or
+both. Omitted fields take their defaults. `..base` copies the remaining
+fields from another value:
 
 ```rust
-impl Int {
-    fun doubled(self) -> Int = self * 2
+let p = Point(1.0, 2.0)
+let q = Point(x: 1.0)
+let r = Point(..p, y: 9.0)
+```
+
+A class value is a reference: assigning it shares the object. Classes print
+and compare by value automatically when their fields allow it.
+
+`impl Name { ... }` adds methods to any type, including built-in ones:
+
+```rust
+impl int {
+    fun doubled(self) -> int = self * 2
 }
 ```
 
-## Enums
-
-An enum defines a set of variants. A variant can be a unit variant, a
-tuple variant with positional payloads, or a struct variant with named
-fields. Construct a variant with `EnumName.Variant` (or
-`EnumName.Variant(args)` for a payload). Match with the bare variant name.
+## Enums and match
 
 ```rust
-enum Color {
-    Red,
-    Green,
-    Blue,
-}
-
 enum Shape {
-    Circle(Float),
-    Square(Float),
+    Circle(r: float),
+    Rect(w: float, h: float),
+    Dot,
 }
 
-fun area(s: Shape) -> Float {
-    return match s {
-        Circle(r) -> r * r * 3.0,
-        Square(w) -> w * w,
-    }
-}
-
-fun main() {
-    let c = Color.Green
-    print(area(Shape.Circle(2.0)))
-}
-```
-
-You construct a variant only through the qualified form. A bare `Green` or
-`Circle(2.0)` in expression position is not a constructor yet; it is read
-as a name and fails to resolve. The bare names appear only as match
-patterns.
-
-## match
-
-`match` tests a value against patterns top to bottom and yields the
-selected arm. Match is exhaustive: every case must be covered. Patterns
-include literals, ranges, the wildcard `_`, enum variants binding their
-payload, and struct fields. An arm may carry a guard with `if`.
-
-```rust
-fun classify(n: Int) -> String {
-    return match n {
-        0 -> "zero",
-        x if x < 0 -> "negative",
-        _ -> "positive",
+fun area(s: Shape) -> float {
+    match s {
+        case Circle(r) {
+            return 3.14159 * r * r
+        }
+        case Rect(w, h) {
+            return w * h
+        }
+        case Dot {
+            return 0.0
+        }
     }
 }
 ```
 
-A range pattern matches any value the range covers. As with `for`, `a..b`
-excludes `b` and `a..=b` includes it:
+Variants are constructed with their enum name: `Shape.Circle(2.0)`. Patterns
+may name the variant with or without the enum. `match` must cover every case,
+and a capitalized name in a pattern must be a variant, so a typo is an error
+instead of a silent catch-all.
+
+Patterns: literals, ranges (`1..=9`), `_`, bindings, variants with payloads,
+class fields (`case Point { x, y } { ... }`), and guards
+(`case n if n > 0 { ... }`). A `match` can also produce a value when every
+case block ends in one.
+
+## Collections
 
 ```rust
-fun grade(score: Int) -> String {
-    return match score {
-        90..=100 -> "A",
-        80..=89 -> "B",
-        70..=79 -> "C",
-        _ -> "F",
-    }
-}
+let xs = [1, 2, 3]
+let ages = {"ann": 31, "bob": 27}
+let tags = {"a", "b"}
+let empty_dict = {}
+let empty_set = set()
 ```
 
-## List, set, and map literals
-
-A list literal is comma-separated values in brackets, `[1, 2, 3]`, and an
-empty list is `[]`. Lists are built in: they index, grow with `push`, and
-report `len()`.
-
-A set literal is comma-separated values in braces, `{1, 2, 3}`. A map
-literal is comma-separated `key: value` pairs in brackets, `["a": 1,
-"b": 2]`. Both come from `std/collections`, so the literals need
-`import std/collections` in scope (see the [standard library](standard-library.md#stdcollections)).
-
-```rust
-import std/collections
-
-fun main() {
-    let s = {1, 2, 2, 3}        // Set<Int>, dedups to {1, 2, 3}
-    let m = ["a": 1, "b": 2]    // Map<String, Int>
-    print(s.len())              // 3
-    print(m.len())              // 2
-}
-```
-
-The brace and bracket forms overlap with blocks and lists, so a few rules
-disambiguate them:
-
-- A set literal needs at least one comma, so a single-element set is
-  written with a trailing comma, `{x,}`. A bare `{ x }` is a block whose
-  tail expression is `x`, and `{}` is an empty block. An empty set is
-  `Set.new()`.
-- The empty map is the distinct `[:]` form, since a bare `[]` is an empty
-  list. A bracket whose first element has a top-level `:` is a map; one
-  without is a list.
-
-A set's element type and a map's key type must implement `Eq + Hash`,
-the same bound the collection types carry.
-
-## Traits and impl
-
-A trait declares methods that a type can implement. Implement it with
-`impl Trait for Type`. A trait method may have a default body.
-
-```rust
-trait Speak {
-    fun sound(self) -> Int
-}
-
-struct Dog {}
-
-impl Speak for Dog {
-    fun sound(self) -> Int = 1
-}
-```
-
-`impl Type { ... }` adds inherent methods and associated functions;
-`impl Trait for Type { ... }` provides a trait implementation.
-
-## Generics and trait bounds
-
-Functions, structs, enums, and impl blocks can take type parameters in
-angle brackets. A bound `T: Trait` constrains a parameter to types that
-implement the trait. Use `+` to require several bounds.
-
-```rust
-fun show<T: ToString>(label: String, x: T) -> String {
-    return "${label}=${x}"
-}
-
-struct Box<T> {
-    value: T
-}
-
-impl<T> Box<T> {
-    fun unwrap(self) -> T = self.value
-}
-```
-
-Generic code is monomorphized: a distinct machine specialization is
-emitted for each concrete type the program uses. A method can introduce
-its own type parameters separate from the type's:
-
-```rust
-impl<T> Box<T> {
-    fun mapped<U>(self, f: fun(T) -> U) -> U = f(self.value)
-}
-```
+Lists carry `push`, `pop`, `len`, `map`, `filter`, `fold`, `each`, `any`,
+`all`, `find`, `position`, `count`, `first`, `last`, `slice`, `take`,
+`skip`, `reversed`, `extend`, `concat`, `sorted_by`, plus `contains` and
+`index_of` (elements with `Eq`), `sorted`, `sort`, `min`, `max` (elements
+with `Ord`), `sum`, and `join` on `list[str]`. Dicts carry `get` (an
+`Option`), `get_or`, `set`, `has`, `remove`, `keys`, `values`, `entries`, and
+`len`. None of these need an import.
 
 ## Option and Result
 
-`Option<T>` is `Some(T)` or `None`. `Result<T, E>` is `Ok(T)` or
-`Err(E)`. Both are matched with their variant names and built with the
-bare constructors `Some`, `None`, `Ok`, and `Err`. The type `T?` is sugar
-for `Option<T>`.
+`Option[T]` is `Some(value)` or `None`. `Result[T, E]` is `Ok(value)` or
+`Err(error)`. Both have methods with no import: `is_some`/`is_none`,
+`is_ok`/`is_err`, `unwrap`, `expect(msg)`, `unwrap_or`, `unwrap_or_else`,
+`map`, `and_then`, `or_else`, `ok_or` (Option), `map_err`, `ok`, `err`
+(Result). `unwrap` and `expect` panic on the empty case.
 
 ```rust
-fun divide(a: Int, b: Int) -> Result<Int, Error> {
-    if b == 0 {
-        return Err(error("divide by zero"))
-    }
-    return Ok(a / b)
-}
-
-fun unwrap_or(x: Option<Int>, fallback: Int) -> Int {
-    return match x {
-        None -> fallback,
-        Some(n) -> n,
-    }
+fun port(text: str) -> Result[int, Error] {
+    let n = text.parse_int().ok_or(error("not a number"))?
+    return Ok(n)
 }
 ```
 
-The `?` operator unwraps `Ok`/`Some` or returns the `Err`/`None` early,
-which keeps error handling flat. `error` and the `Result` helpers live in
-[`std/error`](standard-library.md#stderror).
+## Traits
 
-## dyn Trait
-
-`dyn Trait` is a trait object: a value of any type that implements the
-trait, dispatched at runtime through a vtable. Passing a concrete value
-where `dyn Trait` is expected boxes it as a fat pointer.
+A trait declares methods; a method can have a default body. A class lists
+the traits it implements after `:`.
 
 ```rust
-trait Speak {
-    fun sound(self) -> Int
+trait Shape {
+    fun area(self) -> float
+
+    fun describe(self) -> str = "shape with area ${self.area()}"
 }
 
-fun describe(s: dyn Speak) -> Int = s.sound()
+class Circle: Shape {
+    r: float
+
+    fun area(self) -> float = 3.14159 * self.r * self.r
+}
 ```
 
-Use generics with a bound when the concrete type is known at the call
-site (no indirection), and `dyn Trait` when you need a single type that
-holds different implementers.
+An implementation must provide every method without a default, may not add
+methods the trait does not declare, and must match each signature. To
+implement a trait for a type declared elsewhere, write
+`impl Trait for Type { ... }`.
+
+`dyn Trait` is a value of any type implementing the trait, dispatched at
+run time:
+
+```rust
+fun total(shapes: list[dyn Shape]) -> float {
+    return shapes.map(s => s.area()).sum()
+}
+```
+
+## Generics
+
+Type parameters go in square brackets, with bounds after `:`:
+
+```rust
+fun largest[T: Ord](xs: list[T]) -> Option[T] = xs.max()
+
+class Box[T] {
+    value: T
+
+    fun map[U](self, f: fun(T) -> U) -> Box[U] = Box(f(self.value))
+}
+```
+
+Type arguments are inferred at call sites; write them when needed, as in
+`decode[User](text)`. Generic code is compiled once per concrete type.
 
 ## Concurrency
 
-`spawn` starts a goroutine: a lightweight green thread that runs a
-`fun() -> Unit` closure. Goroutines run on an M:N scheduler that
-multiplexes them onto a pool of worker OS threads, one per available core,
-so goroutines run in parallel. Scheduling within a worker is cooperative: a
-goroutine runs until it reaches a yield point (a channel operation, an
-explicit `yield_now()`, or its body finishing), then the worker resumes
-another ready goroutine.
+`spawn { ... }` starts a goroutine. Goroutines run in parallel across all
+cores on an M:N scheduler and communicate through channels from `std.sync`.
 
 ```rust
-spawn(fun() -> Unit {
-    // goroutine body
-})
-```
-
-Goroutines communicate over channels from `std/sync`. `channel()` makes
-an unbuffered (rendezvous) channel, and `channel_buffered(cap)` makes a
-buffered one. `ch.send(v)` sends a value and `ch.recv()` receives one.
-A send on a full channel and a recv on an empty one block the goroutine,
-yielding to the scheduler until the counterpart operation runs.
-`yield_now()` yields explicitly. Channels carry `Int` values in this
-release.
-
-```rust
-import std/sync { channel }
+from std.sync import channel
 
 fun main() {
     let ch = channel()
-    spawn(fun() -> Unit {
-        let i = 1
-        while i <= 5 {
+    spawn {
+        for i in 1..=5 {
             ch.send(i)
-            i = i + 1
         }
-    })
-    let sum = 0
-    let n = 0
-    while n < 5 {
-        sum = sum + ch.recv()
-        n = n + 1
     }
-    print(sum)              // 15
+    var sum = 0
+    for _ in 0..5 {
+        sum += ch.recv()
+    }
+    print(sum) // 15
 }
 ```
 
-When `main` returns the program exits, and any goroutines still alive are
-abandoned. If every goroutine is blocked with none ready, the scheduler
-reports a deadlock and exits.
-
-Goroutines run in parallel across the worker pool, so the runtime uses
-every core. A goroutine that blocks in a runtime IO call (a net read, a
-file read, an http request) does so without stalling the other workers: the
-blocking call runs outside the scheduler's running set, so other goroutines
-keep running on the remaining workers. Beyond channels, `std/sync` provides
-`select_recv` to wait on the first ready of several channels, a mutex, a
-wait group, and `sleep_millis`.
+A send on a full channel and a receive on an empty one block only the
+goroutine. When `main` returns, the program exits. `std.sync` also provides
+`select_recv`, a mutex, a wait group, and `sleep_millis`.
 
 ## Modules and imports
 
-`import` brings in a module. Standard library modules use the `std/...`
-path. A selective import binds named items; a bare import merges the
-module (used for modules that add methods or constructors).
-
 ```rust
-import std/io { println }
-import std/collections
-import "./helpers"
+import std.fs
+from std.json import parse, stringify
+from "./models" import User, Order as PurchaseOrder
 import "github.com/martian56/raven-http" as http
 ```
 
-Forms:
+- `import std.fs` makes the module's functions reachable as `fs.read(...)`.
+- `from M import a, b as c` binds names directly; `as` renames one.
+- A quoted path is a local file (`"./models"`) or a package
+  (`"github.com/user/repo"`, resolved through rvpm; see the
+  [rvpm guide](rvpm.md)).
+- The core prelude (traits, `Option`/`Result`/`list`/`str` methods, `dict` and
+  `set`) is always available.
 
-- `import std/io { println }` binds the named items directly.
-- `import std/string` merges the module's `impl String` block so String
-  methods resolve by receiver type.
-- `import std/collections` is a whole module import; `Map` and `Set` are
-  reached as `Map.new()` and `Set.new()` rather than through a selector.
-- `import "./helpers"` loads a local module relative to the current file.
-- `import "github.com/<user>/<repo>"` resolves a dependency through the
-  rvpm cache (see the [rvpm guide](rvpm.md)).
-
-### Renaming an import
-
-A selector can be renamed with `as`, binding it under a different local
-name. This is how you pull in two items that would otherwise share a name.
-If two packages both export a `parse` function, rename one or both and the
-clash goes away:
-
-```rust
-import "github.com/martian56/raven-toml" { parse as parse_toml }
-import "github.com/martian56/raven-ini"  { parse as parse_ini }
-
-let cfg = parse_toml(toml_text)
-let ini = parse_ini(ini_text)
-```
-
-### Calling through a module alias
-
-A whole stdlib import already allows module-qualified calls: after
-`import std/fs`, `fs.write(path, data)` is the same function a selector
-would bind as a bare `write`. The `as name` alias extends that to local and
-package imports, so you can reach a package's functions namespace-style
-without listing each one:
-
-```rust
-import "github.com/martian56/raven-color" as color
-
-print(color.red("error"))     // same as importing { red } and calling red(...)
-```
-
-### Two packages, same type name
-
-Types from different packages are namespaced, so two packages can both
-export a type called `Table` without colliding. To use both in one file,
-rename one on the way in:
-
-```rust
-import "github.com/martian56/raven-table" { Table }
-import "github.com/martian56/raven-csv"   { Table as CsvTable }
-```
-
-The core traits (`ToString`, `Eq`, `Ord`, `Hash`, `Iterator`) are always
-in scope without an import.
+Names starting with `_` are private to their module by convention.
 
 ## FFI and C types
 
@@ -724,8 +446,8 @@ extern "C" {
 }
 
 fun main() {
-    print(abs(-7))               // 7
-    print(strlen(c"hello"))      // 5
+    print(abs(-7)) // 7
+    print(strlen(c"hello")) // 5
 }
 ```
 
@@ -739,14 +461,14 @@ C types map to C as follows:
 | `CStr`  | `const char *` | pointer width |
 | `CFloat` | `float`       | 32-bit |
 | `CDouble` | `double`     | 64-bit |
-| `CPtr<T>` | `T *`        | pointer width |
+| `CPtr[T]` | `T *`        | pointer width |
 | `CFnPtr` | function pointer | pointer width |
 
-A native `Int` is accepted where an integer C type is expected, and a
-`c"..."` literal where a `CStr` is expected. A native `Float` is accepted
+A native `int` is accepted where an integer C type is expected, and a
+`c"..."` literal where a `CStr` is expected. A native `float` is accepted
 where a `CFloat` or `CDouble` is expected; for `CFloat` the value is
 narrowed to f32 at the call and a `CFloat` return is widened back to a
-`Float`. The integer and float C return types satisfy `ToString`, so a
+`float`. The integer and float C return types satisfy `ToString`, so a
 `CInt` or `CDouble` result prints and interpolates directly.
 
 ```rust
@@ -755,51 +477,51 @@ extern "C" {
 }
 
 fun main() {
-    print(sqrtf(16.0))           // 4
+    print(sqrtf(16.0)) // 4
 }
 ```
 
 ### Strings across the boundary
 
-To pass a runtime `String` to C, convert it with
-[`std/ffi`](standard-library.md#stdffi)'s `to_cstr`; a native `String` is
+To pass a runtime `str` to C, convert it with
+[`std.ffi`](standard-library.md#stdffi)'s `to_cstr`; a native `str` is
 not itself a valid `const char *`. `from_cstr` reads a `CStr` back into a
-`String`. `to_cstr` copies into a buffer outside the GC and does not free
+`str`. `to_cstr` copies into a buffer outside the GC and does not free
 it, so it leaks one buffer per call; hoist the conversion out of a hot
 loop.
 
 ```rust
-import std/ffi { to_cstr, from_cstr }
+from std.ffi import to_cstr, from_cstr
 
 extern "C" {
     fun strlen(s: CStr) -> CSize
 }
 
 fun main() {
-    print(strlen(to_cstr("hello")))          // 5
-    print(from_cstr(to_cstr("roundtrip")))   // roundtrip
+    print(strlen(to_cstr("hello"))) // 5
+    print(from_cstr(to_cstr("roundtrip"))) // roundtrip
 }
 ```
 
 ### Raw pointers
 
-`CPtr<T>` is a usable raw pointer. `std/ffi` reads and writes C memory
-through it: `alloc<T>(count)` reserves a buffer, `free<T>(p)` releases it,
-`load<T>(p)` and `store<T>(p, v)` read and write the element at `p`,
-`offset<T>(p, i)` advances by `i` elements (scaled by `sizeof(T)`),
-`null_ptr<T>()` is the null pointer, and `is_null<T>(p)` tests it.
+`CPtr[T]` is a usable raw pointer. `std.ffi` reads and writes C memory
+through it: `alloc[T](count)` reserves a buffer, `free[T](p)` releases it,
+`load[T](p)` and `store[T](p, v)` read and write the element at `p`,
+`offset[T](p, i)` advances by `i` elements (scaled by `sizeof(T)`),
+`null_ptr[T]()` is the null pointer, and `is_null[T](p)` tests it.
 
 ```rust
-import std/ffi { alloc, free, load, store, offset, is_null, null_ptr }
+from std.ffi import alloc, free, load, store, offset, is_null, null_ptr
 
 fun main() {
-    let buf = alloc<CInt>(4)
-    store<CInt>(buf, 10)
-    store<CInt>(offset<CInt>(buf, 1), 20)
-    print(load<CInt>(buf))                   // 10
-    print(load<CInt>(offset<CInt>(buf, 1)))  // 20
-    print(is_null<CInt>(null_ptr<CInt>()))   // true
-    free<CInt>(buf)
+    let buf = alloc[CInt](4)
+    store[CInt](buf, 10)
+    store[CInt](offset[CInt](buf, 1), 20)
+    print(load[CInt](buf)) // 10
+    print(load[CInt](offset[CInt](buf, 1))) // 20
+    print(is_null[CInt](null_ptr[CInt]())) // true
+    free[CInt](buf)
 }
 ```
 
@@ -808,7 +530,7 @@ reclaimed automatically, so the caller owns it and must `free` it. There
 are no bounds, null, or use-after-free checks: an out-of-range `offset`
 or a `load` through a freed pointer is undefined behavior, exactly as in
 C. `T` must be a C scalar (`CInt`, `CLong`, `CSize`, `CFloat`, `CDouble`,
-`CStr`) or a native `Int`/`Float`.
+`CStr`) or a native `int`/`float`.
 
 ### Callbacks
 
@@ -827,24 +549,24 @@ traces the suspended Raven stack through the call, so a closure that
 allocates mid-callback is safe.
 
 ```rust
-import std/ffi { alloc, free, load, store, offset }
+from std.ffi import alloc, free, load, store, offset
 
 extern "C" {
-    fun raven_ffi_qsort_i32(p: CPtr<CInt>, n: CSize, cmp: CFnPtr)
+    fun raven_ffi_qsort_i32(p: CPtr[CInt], n: CSize, cmp: CFnPtr)
 }
 
-fun compare(a: CPtr<CInt>, b: CPtr<CInt>) -> CInt {
-    return load<CInt>(a) - load<CInt>(b)
+fun compare(a: CPtr[CInt], b: CPtr[CInt]) -> CInt {
+    return load[CInt](a) - load[CInt](b)
 }
 
 fun main() {
-    let buf = alloc<CInt>(3)
-    store<CInt>(buf, 30)
-    store<CInt>(offset<CInt>(buf, 1), 10)
-    store<CInt>(offset<CInt>(buf, 2), 20)
+    let buf = alloc[CInt](3)
+    store[CInt](buf, 30)
+    store[CInt](offset[CInt](buf, 1), 10)
+    store[CInt](offset[CInt](buf, 2), 20)
     raven_ffi_qsort_i32(buf, 3, compare)
-    print(load<CInt>(buf))                   // 10
-    free<CInt>(buf)
+    print(load[CInt](buf)) // 10
+    free[CInt](buf)
 }
 ```
 
@@ -856,12 +578,12 @@ responsibility, as in C.
 
 A C struct can cross the boundary by value. Mark the matching Raven struct
 `@repr(C)` to give it C memory layout. Its fields may be any C scalars,
-integer-class (`CInt`, `CLong`, `CSize`, `CStr`, `CPtr<T>`, `CFnPtr`) or
+integer-class (`CInt`, `CLong`, `CSize`, `CStr`, `CPtr[T]`, `CFnPtr`) or
 floating-point (`CFloat`, `CDouble`), and a field may itself be a `@repr(C)`
 struct. The back end classifies the struct for the platform C ABI, so a
 struct larger than one register, or one with float fields, is passed
 correctly (in registers, on the stack, or by reference as the ABI requires)
-rather than rejected. You can still pass a `CPtr<...>` to a struct when you
+rather than rejected. You can still pass a `CPtr[...]` to a struct when you
 need to share or mutate it by address.
 
 ```rust
@@ -877,11 +599,11 @@ extern "C" {
 }
 
 fun main() {
-    let p = Point { x: 3, y: 4 }
-    print(raven_ffi_point_sum(p))            // 7
-    let q = raven_ffi_translate(p, 1, 2)     // {4, 6}
-    print(q.x)                               // 4
-    print(q.y)                               // 6
+    let p = Point(x: 3, y: 4)
+    print(raven_ffi_point_sum(p)) // 7
+    let q = raven_ffi_translate(p, 1, 2) // {4, 6}
+    print(q.x) // 4
+    print(q.y) // 6
 }
 ```
 
@@ -903,57 +625,64 @@ synthesizes trait impls from the type definition, so you do not hand write
 type must itself implement the trait being derived.
 
 ```rust
-import std/collections { Map, Set }
+from std.collections import Map, Set
 
 @derive(Eq, Hash, ToString, Debug)
-struct Point { x: Int, y: Int }
+class Point {
+    x: int
+    y: int
+}
 
 fun main() {
-    let p = Point { x: 1, y: 2 }
-    let q = Point { x: 1, y: 2 }
-    print(p.equals(q))          // true
-    print(p.to_string())        // Point { x: 1, y: 2 }
+    let p = Point(x: 1, y: 2)
+    let q = Point(x: 1, y: 2)
+    print(p.equals(q)) // true
+    print(p.to_string()) // Point { x: 1, y: 2 }
 
     // Derived Eq + Hash let the struct key a Map or join a Set.
-    let m: Map<Point, Int> = Map.new()
+    let m: dict[Point, int] = Map.new()
     m.set(p, 100)
-    print(m.has(q))             // true
-    let s: Set<Point> = Set.new()
+    print(m.has(q)) // true
+    let s: set[Point] = Set.new()
     s.add(p)
-    print(s.contains(q))        // true
+    print(s.contains(q)) // true
 }
 ```
 
-`@derive(ToJson, FromJson)` adds JSON serialization built on `std/json`.
+`@derive(ToJson, FromJson)` adds JSON serialization built on `std.json`.
 `to_json` produces a `JsonValue`, and `from_json` is an associated
 function that decodes one back, returning a `Result`. Combine `to_json`
 with `stringify`, and `parse` with `from_json`, for a round trip.
 
 ```rust
-import std/json { JsonValue, stringify, parse }
+from std.json import JsonValue, stringify, parse
 
 @derive(ToJson, FromJson, Eq)
-struct User { id: Int, name: String }
+class User {
+    id: int
+    name: str
+}
 
 fun main() {
-    let u = User { id: 7, name: "ada" }
+    let u = User(id: 7, name: "ada")
     let text = stringify(u.to_json())
-    print(text)                          // {"id":7,"name":"ada"} (key order is the map layout)
+    print(text) // {"id":7,"name":"ada"} (key order is the map layout)
     match parse(text) {
-        Ok(v) -> {
+        case Ok(v) {
             match User.from_json(v) {
-                Ok(u2) -> print(u.equals(u2)),   // true
-                Err(e) -> print("decode error"),
+                case Ok(u2) { print(u.equals(u2)) } // true
+                case Err(e) { print("decode error") }
             }
-        },
-        Err(e) -> print("parse error"),
+        }
+        case Err(e) { print("parse error") }
     }
 }
 ```
 
 Object key order follows the map hash-bucket layout, not source order.
 Enum variants with named-field payloads are not derivable yet; unit and
-tuple variants are. `Ord` is not derivable yet.
+tuple variants are. `Ord` derives a `compare` that orders field by field
+(struct) or by variant then payload (enum).
 
 ### Declarative macros
 
@@ -971,7 +700,7 @@ macro twice { ($x:expr) => { ($x) + ($x) } }
 
 fun main() {
     let n = 3
-    print(twice!(n + 1))        // 8
+    print(twice!(n + 1)) // 8
 }
 ```
 
@@ -981,12 +710,12 @@ the closing `)` and the marker. In the template it expands once per
 capture.
 
 ```rust
-macro sum_all { ($($x:expr),*) => { (0 $(+ ($x))*) } }
+macro sum_all { ($($x:expr), *) => { (0 $(+ ($x)) *) } }
 
 fun main() {
-    print(sum_all!(1, 2, 3))    // 6
-    print(sum_all!())           // 0
-    print(sum_all!(10))         // 10
+    print(sum_all!(1, 2, 3)) // 6
+    print(sum_all!()) // 0
+    print(sum_all!(10)) // 10
 }
 ```
 
@@ -997,9 +726,9 @@ capture a caller's variable of the same spelling.
 ### Reflection
 
 Compile-time reflection reads type information resolved while the program
-compiles. `type_name<T>()` returns the rendered name of a type,
-`field_names<T>()` returns a struct's field names in declaration order, and
-`field_types<T>()` returns the matching field type names by position. Inside
+compiles. `type_name[T]()` returns the rendered name of a type,
+`field_names[T]()` returns a struct's field names in declaration order, and
+`field_types[T]()` returns the matching field type names by position. Inside
 a generic function each resolves to the concrete type bound to `T` at that
 instantiation.
 
@@ -1010,64 +739,3 @@ fun introspect<T>() {
     print("type ${type_name<T>()}")
     let names = field_names<T>()
     let types = field_types<T>()
-    let i = 0
-    while i < names.len() {
-        print("field ${names[i]}: ${types[i]}")
-        i += 1
-    }
-}
-
-fun main() {
-    print(type_name<Int>())     // Int
-    introspect<Point>()         // type Point, field x: Int, field y: Int
-}
-```
-
-For enums, `variant_names<T>()` lists the variant names in declaration order
-and `variant_field_types<T>()` gives each variant's payload type names as an
-inner list (empty for a unit variant), so the inner length is the variant's
-payload arity.
-
-```rust
-enum Shape { Circle(radius: Float) Rectangle(w: Float, h: Float) Dot }
-
-variant_names<Shape>()        // ["Circle", "Rectangle", "Dot"]
-variant_field_types<Shape>()  // [["Float"], ["Float", "Float"], []]
-```
-
-Runtime reflection works over a value whose type is not known statically.
-`to_any<T>(v)` boxes a value into an `Any`. Over an `Any`,
-`type_name_of(a)` reads its runtime type name, `field_names_of(a)` lists
-its struct fields, `get_field(a, name)` reads one field back as an
-`Option<Any>`, and `cast<T>(a)` recovers a concrete value as an
-`Option<T>` (`None` for the wrong `T`).
-
-```rust
-struct User { id: Int, name: String }
-
-fun describe(a: Any) {
-    print("type: ${type_name_of(a)}")
-    for f in field_names_of(a) {
-        match get_field(a, f) {
-            Some(v) -> {
-                match cast<Int>(v) {
-                    Some(n) -> print("field ${f} = ${n}"),
-                    None -> {
-                        match cast<String>(v) {
-                            Some(s) -> print("field ${f} = ${s}"),
-                            None -> print("field ${f} = ?"),
-                        }
-                    },
-                }
-            },
-            None -> print("field ${f}: missing"),
-        }
-    }
-}
-
-fun main() {
-    let u = User { id: 7, name: "ada" }
-    describe(to_any<User>(u))
-    // type: User, field id = 7, field name = ada
-}
-```

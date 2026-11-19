@@ -5,25 +5,25 @@
 // (two from each) are deterministic regardless of the order the channels become
 // ready. See docs/v2/specs/concurrency.md.
 
-import std/sync { channel, select_recv }
+from std.sync import channel, select_recv
 
 fun main() {
     let a = channel()
     let b = channel()
 
-    spawn(fun() -> Unit {
+    spawn {
         a.send(10)
         a.send(20)
-    })
-    spawn(fun() -> Unit {
+    }
+    spawn {
         b.send(30)
         b.send(40)
-    })
+    }
 
-    let total = 0
-    let from_a = 0
-    let from_b = 0
-    let received = 0
+    var total = 0
+    var from_a = 0
+    var from_b = 0
+    var received = 0
     while received < 4 {
         let r = select_recv([a, b])
         total = total + r.value

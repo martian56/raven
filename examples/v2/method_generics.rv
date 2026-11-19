@@ -6,18 +6,18 @@
 // not collide (`Box_Int$mapped$Int` and `Box_Int$mapped$Bool`). The
 // substitution for each body binds both the impl's `T` and the method's
 // own `U`. Prints 42 then true.
-struct Box<T> {
+class Box[T] {
     value: T
 }
 
-impl<T> Box<T> {
-    fun mapped<U>(self, f: fun(T) -> U) -> U = f(self.value)
+impl[T] Box[T] {
+    fun mapped[U](self, f: fun(T) -> U) -> U = f(self.value)
 }
 
 fun main() {
-    let b = Box { value: 21 }
-    let doubled = b.mapped(fun(x: Int) -> Int = x * 2)
-    let is_big = b.mapped(fun(x: Int) -> Bool = x > 10)
+    let b = Box(value: 21)
+    let doubled = b.mapped((x: int) -> int => x * 2)
+    let is_big = b.mapped((x: int) -> bool => x > 10)
     print(doubled)
     print(is_big)
 }

@@ -1,6 +1,8 @@
 // Field and index assignment end to end.
 // Compiling and running this prints 7 then 99 on their own lines.
-struct Counter { n: Int }
+class Counter {
+    n: int
+}
 
 impl Counter {
     fun bump(self) {
@@ -9,13 +11,13 @@ impl Counter {
 }
 
 fun main() {
-    let c = Counter { n: 0 }
+    let c = Counter(n: 0)
     c.bump()
     c.bump()
     c.n = c.n + 5
-    print(c.n)            // 7
+    print(c.n) // 7
 
     let xs = [10, 20, 30]
     xs[1] = 99
-    print(xs[1])          // 99
+    print(xs[1]) // 99
 }

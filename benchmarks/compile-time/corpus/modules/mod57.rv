@@ -1,27 +1,37 @@
-import std/string
+import std.string
 
-struct Vec2_57 { x: Int, y: Int }
+class Vec2_57 {
+    x: int
+    y: int
+}
 
 impl Vec2_57 {
     fun add(self, o: Vec2_57) -> Vec2_57 {
-        return Vec2_57 { x: self.x + o.x, y: self.y + o.y }
+        return Vec2_57(x: self.x + o.x, y: self.y + o.y)
     }
-    fun scale(self, k: Int) -> Vec2_57 {
-        return Vec2_57 { x: self.x * k, y: self.y * k }
+
+    fun scale(self, k: int) -> Vec2_57 {
+        return Vec2_57(x: self.x * k, y: self.y * k)
     }
-    fun magnitude_sq(self) -> Int {
+
+    fun magnitude_sq(self) -> int {
         return self.x * self.x + self.y * self.y
     }
 }
 
-struct Node_57 { id: Int, weight: Int, label: String }
+class Node_57 {
+    id: int
+    weight: int
+    label: str
+}
 
 impl Node_57 {
-    fun heavier(self, other: Node_57) -> Bool {
+    fun heavier(self, other: Node_57) -> bool {
         return self.weight > other.weight
     }
-    fun retag(self, n: String) -> Node_57 {
-        return Node_57 { id: self.id, weight: self.weight, label: n }
+
+    fun retag(self, n: str) -> Node_57 {
+        return Node_57(id: self.id, weight: self.weight, label: n)
     }
 }
 
@@ -32,12 +42,12 @@ enum Shape_57 {
     Hexagon,
 }
 
-fun classify_57(s: Shape_57) -> Int {
+fun classify_57(s: Shape_57) -> int {
     return match s {
-        Circle -> 9,
-        Square -> 9 * 2,
-        Triangle -> 9 * 3,
-        Hexagon -> 9 * 6,
+        case Circle { 9 }
+        case Square { 9 * 2 }
+        case Triangle { 9 * 3 }
+        case Hexagon { 9 * 6 }
     }
 }
 
@@ -47,7 +57,7 @@ enum Outcome_57 {
     Skip,
 }
 
-fun grade_57(score: Int) -> Outcome_57 {
+fun grade_57(score: int) -> Outcome_57 {
     if score >= 60 {
         return Outcome_57.Pass
     }
@@ -57,61 +67,68 @@ fun grade_57(score: Int) -> Outcome_57 {
     return Outcome_57.Fail
 }
 
-fun grade_points_57(o: Outcome_57) -> Int {
+fun grade_points_57(o: Outcome_57) -> int {
     return match o {
-        Pass -> 100,
-        Fail -> 0,
-        Skip -> 50,
+        case Pass { 100 }
+        case Fail { 0 }
+        case Skip { 50 }
     }
 }
 
-struct Pair_57<T> { first: T, second: T }
+class Pair_57[T] {
+    first: T
+    second: T
+}
 
-impl<T> Pair_57<T> {
+impl[T] Pair_57[T] {
     fun left(self) -> T = self.first
+
     fun right(self) -> T = self.second
 }
 
-struct Wrap_57<T> { inner: T }
+class Wrap_57[T] {
+    inner: T
+}
 
-impl<T> Wrap_57<T> {
+impl[T] Wrap_57[T] {
     fun get(self) -> T = self.inner
-    fun mapped<U>(self, f: fun(T) -> U) -> U = f(self.inner)
+
+    fun mapped[U](self, f: fun(T) -> U) -> U = f(self.inner)
 }
 
 trait Score_57 {
-    fun score(self) -> Int
+    fun score(self) -> int
 }
 
 impl Score_57 for Node_57 {
-    fun score(self) -> Int = self.id * 10 + self.weight
+    fun score(self) -> int = self.id * 10 + self.weight
 }
 
 impl Score_57 for Vec2_57 {
-    fun score(self) -> Int = self.magnitude_sq()
+    fun score(self) -> int = self.magnitude_sq()
 }
 
-fun ranked_57<T: Score_57>(x: T) -> Int = x.score()
+fun ranked_57[T: Score_57](x: T) -> int = x.score()
 
-fun identity_57<T>(x: T) -> T = x
+fun identity_57[T](x: T) -> T = x
 
-fun maybe_57(n: Int) -> Option<Int> {
+fun maybe_57(n: int) -> Option[int] {
     if n > 9 {
         return Some(n * 2)
     }
     return None
 }
 
-fun unwrap_or_57(x: Option<Int>, fallback: Int) -> Int {
+fun unwrap_or_57(x: Option[int], fallback: int) -> int {
     return match x {
-        None -> fallback,
-        Some(v) -> v,
+        case None { fallback }
+        case Some(v) { v }
     }
 }
 
-fun accumulate_57(limit: Int) -> Int {
-    let total = 0
-    let i = 0
+fun accumulate_57(limit: int) -> int {
+    var total = 0
+    var i = 0
     while i < limit {
         if i % 2 == 0 {
             total = total + i
@@ -123,37 +140,36 @@ fun accumulate_57(limit: Int) -> Int {
     return total
 }
 
-fun sweep_57(limit: Int) -> Int {
-    let total = 0
+fun sweep_57(limit: int) -> int {
+    var total = 0
     for k in 0..limit {
         total = total + classify_57(Shape_57.Triangle) + k
     }
     return total
 }
 
-fun fib_57(n: Int) -> Int {
+fun fib_57(n: int) -> int {
     if n < 2 {
         return n
     }
     return fib_57(n - 1) + fib_57(n - 2)
 }
 
-fun compute_57(seed: Int) -> Int {
-    let v = Vec2_57 { x: seed, y: seed + 9 }
-    let w = v.add(Vec2_57 { x: 2, y: 3 }).scale(2)
-    let node = Node_57 { id: seed, weight: 9, label: "n" }
+fun compute_57(seed: int) -> int {
+    let v = Vec2_57(x: seed, y: seed + 9)
+    let w = v.add(Vec2_57(x: 2, y: 3)).scale(2)
+    let node = Node_57(id: seed, weight: 9, label: "n")
     let tagged = node.retag("tagged")
-    let p = Pair_57 { first: w.x, second: w.y }
-    let q = Pair_57 { first: tagged.label, second: "z" }
-    let boxed = Wrap_57 { inner: seed }
-    let doubled = boxed.mapped(fun(x: Int) -> Int = x * 2)
-    let big = boxed.mapped(fun(x: Int) -> Bool = x > 9)
+    let p = Pair_57(first: w.x, second: w.y)
+    let q = Pair_57(first: tagged.label, second: "z")
+    let boxed = Wrap_57(inner: seed)
+    let doubled = boxed.mapped((x: int) -> int => x * 2)
+    let big = boxed.mapped((x: int) -> bool => x > 9)
     let m = unwrap_or_57(maybe_57(seed), 0)
     let g = grade_points_57(grade_57(seed))
     let r = ranked_57(tagged) + ranked_57(v)
-    let extra = if big { 1 } else { 0 }
-    return p.left() + p.right() + w.magnitude_sq() + identity_57(doubled) +
-        m + g + r + accumulate_57(9) + sweep_57(9) +
-        fib_57(8) + classify_57(Shape_57.Hexagon) + extra +
-        q.left().length()
+    let extra = 1 if big else 0
+    return p.left() + p.right() + w.magnitude_sq() + identity_57(doubled) + m + g + r + accumulate_57(
+        9,
+    ) + sweep_57(9) + fib_57(8) + classify_57(Shape_57.Hexagon) + extra + q.left().length()
 }

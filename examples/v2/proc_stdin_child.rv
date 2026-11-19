@@ -4,7 +4,7 @@
 // empty read means end of input), then prints "done" and exits 0. The parent
 // (proc_stdin_parent.rv) feeds it through write_stdin and close_stdin.
 
-import std/io { println, read_line }
+from std.io import println, read_line
 
 fun main() {
     while true {

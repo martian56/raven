@@ -3,10 +3,10 @@
 // buffer holds, so a reader that exits after one line leaves the rest of the
 // writes hitting a broken pipe; the runtime must ignore SIGPIPE so the program
 // runs to completion instead of being killed.
-import std/io { println }
+from std.io import println
 
 fun main() {
-    let i = 0
+    var i = 0
     while i < 100000 {
         println("line")
         i = i + 1

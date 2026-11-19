@@ -2,20 +2,22 @@
 // negating by multiplying by -1 keeps -0.0, where subtracting from 0 would
 // collapse it to +0.0. 1.0 / -0.0 is -inf, so a negative reciprocal proves
 // the sign survived.
-import std/json { parse, JsonValue }
-fun pf(s: String) -> Bool {
+from std.json import parse, JsonValue
+fun pf(s: str) -> bool {
     return match s.parse_float() {
-        Some(x) -> 1.0 / x < 0.0,
-        None -> false,
+        case Some(x) { 1.0 / x < 0.0 }
+        case None { false }
     }
 }
-fun jn(s: String) -> Bool {
+fun jn(s: str) -> bool {
     return match parse(s) {
-        Ok(v) -> match v {
-            Number(x) -> 1.0 / x < 0.0,
-            _ -> false,
-        },
-        Err(_) -> false,
+        case Ok(v) {
+            match v {
+                case Number(x) { 1.0 / x < 0.0 }
+                case _ { false }
+            }
+        }
+        case Err(_) { false }
     }
 }
 fun main() {

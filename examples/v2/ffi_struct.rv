@@ -16,7 +16,7 @@ extern "C" {
 }
 
 fun main() {
-    let p = Point { x: 3, y: 4 }
+    let p = Point(x: 3, y: 4)
 
     // By-value struct argument returning a scalar: 3 + 4 = 7.
     print(raven_ffi_point_sum(p))

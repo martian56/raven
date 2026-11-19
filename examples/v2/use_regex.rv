@@ -1,17 +1,17 @@
 // golden:skip
-import std/regex { compile }
+from std.regex import compile
 
 fun main() {
     match compile("a+") {
-        Ok(re) -> {
+        case Ok(re) {
             print(re.is_match("xaaay"))
             match re.find("xaaay") {
-                Some(m) -> print(m),
-                None -> print("none"),
+                case Some(m) { print(m) }
+                case None { print("none") }
             }
             match re.find("zzz") {
-                Some(m) -> print(m),
-                None -> print("none"),
+                case Some(m) { print(m) }
+                case None { print("none") }
             }
             let parts = re.split("xaaayaz")
             print(parts.len())
@@ -19,11 +19,11 @@ fun main() {
             print(parts[1])
             print(parts[2])
             re.free()
-        },
-        Err(e) -> print("compile failed"),
+        }
+        case Err(e) { print("compile failed") }
     }
     match compile("(\\d+)-(\\d+)") {
-        Ok(re) -> {
+        case Ok(re) {
             let all = re.find_all("12-345 and 67-8")
             print(all.len())
             print(all[0])
@@ -35,11 +35,11 @@ fun main() {
             print(caps[2])
             print(re.replace_all("a 12-345 b", "$2-$1"))
             re.free()
-        },
-        Err(e) -> print("compile failed"),
+        }
+        case Err(e) { print("compile failed") }
     }
     match compile("(") {
-        Ok(re) -> print("ok"),
-        Err(e) -> print("compile failed"),
+        case Ok(re) { print("ok") }
+        case Err(e) { print("compile failed") }
     }
 }

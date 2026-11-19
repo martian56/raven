@@ -1,0 +1,13 @@
+fun main() {
+    let parts: list[str] = []
+    var i = 0
+    while i < 200000 {
+        parts.push("item ${i}")
+        i += 1
+    }
+    var total = 0
+    for p in parts {
+        total += p.len()
+    }
+    print(total)
+}

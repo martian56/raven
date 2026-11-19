@@ -3,11 +3,11 @@
 // outer string early. Prints:
 //   hello WORLD
 //   a-b
-import std/string
+import std.string
 
-fun shout(s: String) -> String = s.to_upper()
+fun shout(s: str) -> str = s.to_upper()
 
-fun join(a: String, b: String) -> String = a.concat("-").concat(b)
+fun join(a: str, b: str) -> str = a.concat("-").concat(b)
 
 fun main() {
     print("hello ${shout("world")}")

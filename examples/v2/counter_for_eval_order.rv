@@ -5,12 +5,12 @@
 //   end
 //   0
 //   1
-fun lo() -> Int {
+fun lo() -> int {
     print("start")
     return 0
 }
 
-fun hi() -> Int {
+fun hi() -> int {
     print("end")
     return 2
 }

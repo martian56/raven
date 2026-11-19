@@ -9,12 +9,12 @@ server (`Server`, `Request`, `Response`, `Method`) lets you route requests to
 handler functions; jump to [Server](#server) below.
 
 ```rust
-import std/http { get }
+from std.http import get
 
 fun main() {
     match get("https://example.com") {
-        Ok(resp) -> print(resp.status_code),    // 200
-        Err(e) -> print("request failed"),
+        case Ok(resp) { print(resp.status_code) } // 200
+        case Err(e) { print("request failed") }
     }
 }
 ```
@@ -22,10 +22,7 @@ fun main() {
 ## Importing
 
 ```rust
-import std/http {
-    get, post, put, delete, patch, head,
-    request, request_with_timeout, stream,
-}
+from std.http import get, post, put, delete, patch, head, request, request_with_timeout, stream
 ```
 
 Select the functions you use. The `HttpResponse` type comes in with the
@@ -36,11 +33,11 @@ module and needs no separate selector.
 ### `struct HttpResponse`
 
 ```rust
-struct HttpResponse {
-    status_code: Int,
-    status_text: String,
-    headers: String,
-    body: String,
+class HttpResponse {
+    status_code: int
+    status_text: str
+    headers: str
+    body: str
 }
 ```
 
@@ -63,18 +60,12 @@ response) take the `Err` path. Inspect `status_code` yourself to tell a 200
 from a 404:
 
 ```rust
-import std/http { get }
+from std.http import get
 
 fun main() {
     match get("https://example.com/missing") {
-        Ok(resp) -> {
-            if resp.status_code == 200 {
-                print(resp.body)
-            } else {
-                print("server returned ${resp.status_code}")
-            }
-        },
-        Err(e) -> print("could not reach server"),
+        case Ok(resp) { print(resp.body) if resp.status_code == 200 else print("server returned ${resp.status_code}") }
+        case Err(e) { print("could not reach server") }
     }
 }
 ```
@@ -86,15 +77,15 @@ fun main() {
 Send a `GET` to `url`. No request body.
 
 ```rust
-import std/http { get }
+from std.http import get
 
 fun main() {
     match get("https://example.com") {
-        Ok(resp) -> {
-            print(resp.status_code)     // 200
+        case Ok(resp) {
+            print(resp.status_code) // 200
             print(resp.body)
-        },
-        Err(e) -> print("request failed"),
+        }
+        case Err(e) { print("request failed") }
     }
 }
 ```
@@ -104,12 +95,12 @@ fun main() {
 Send `body` to `url` with a `POST`.
 
 ```rust
-import std/http { post }
+from std.http import post
 
 fun main() {
     match post("https://example.com/items", "{\"name\":\"raven\"}") {
-        Ok(resp) -> print(resp.status_code),
-        Err(e) -> print("request failed"),
+        case Ok(resp) { print(resp.status_code) }
+        case Err(e) { print("request failed") }
     }
 }
 ```
@@ -127,12 +118,12 @@ Send a `DELETE` to `url`. No request body.
 Send `body` to `url` with a `PATCH`, for a partial update.
 
 ```rust
-import std/http { patch }
+from std.http import patch
 
 fun main() {
     match patch("https://example.com/items/1", "{\"name\":\"raven\"}") {
-        Ok(resp) -> print(resp.status_code),
-        Err(e) -> print("request failed"),
+        case Ok(resp) { print(resp.status_code) }
+        case Err(e) { print("request failed") }
     }
 }
 ```
@@ -144,15 +135,15 @@ body, so `resp.body` is empty. Use it to check status or read headers without
 transferring the payload.
 
 ```rust
-import std/http { head }
+from std.http import head
 
 fun main() {
     match head("https://example.com") {
-        Ok(resp) -> {
-            print(resp.status_code)     // 200
+        case Ok(resp) {
+            print(resp.status_code) // 200
             print(resp.headers)
-        },
-        Err(e) -> print("request failed"),
+        }
+        case Err(e) { print("request failed") }
     }
 }
 ```
@@ -166,13 +157,13 @@ none), and `headers` is a String of `Key: Value` lines separated by `\n`
 request headers.
 
 ```rust
-import std/http { request }
+from std.http import request
 
 fun main() {
     let headers = "Accept: application/json\nX-Token: secret"
     match request("GET", "https://example.com/api", "", headers) {
-        Ok(resp) -> print(resp.body),
-        Err(e) -> print("request failed"),
+        case Ok(resp) { print(resp.body) }
+        case Err(e) { print("request failed") }
     }
 }
 ```
@@ -189,7 +180,7 @@ zero or a negative value keeps the normal client timeouts. A deadline failure
 is an `Err` with error kind `"http"`.
 
 ```rust
-import std/http { request_with_timeout }
+from std.http import request_with_timeout
 
 fun main() {
     match request_with_timeout(
@@ -197,10 +188,10 @@ fun main() {
         "https://example.com/infer",
         "{\"prompt\":\"hello\"}",
         "Content-Type: application/json",
-        120_000,
+        120000,
     ) {
-        Ok(resp) -> print(resp.body),
-        Err(e) -> print("request failed: ${e.message}"),
+        case Ok(resp) { print(resp.body) }
+        case Err(e) { print("request failed: ${e.message}") }
     }
 }
 ```
@@ -219,11 +210,11 @@ per connection/read operation rather than an overall stream deadline, so a
 healthy server-sent-event stream can remain open indefinitely.
 
 ```rust
-struct HttpStream {
-    id: Int,
-    status_code: Int,
-    status_text: String,
-    headers: String,
+class HttpStream {
+    id: int
+    status_code: int
+    status_text: str
+    headers: str
 }
 ```
 
@@ -233,30 +224,30 @@ read a stream at a time. Always call `close()` when finished to release the
 connection and runtime handle.
 
 ```rust
-import std/http { stream }
+from std.http import stream
 
 fun main() {
-    match stream("GET", "https://example.com/events", "", "", 30_000) {
-        Ok(body) -> {
-            let done = false
-            while !done {
+    match stream("GET", "https://example.com/events", "", "", 30000) {
+        case Ok(body) {
+            var done = false
+            while not done {
                 match body.read_chunk() {
-                    Ok(chunk) -> {
+                    case Ok(chunk) {
                         if chunk.length() == 0 {
                             done = true
                         } else {
                             print(chunk)
                         }
-                    },
-                    Err(e) -> {
+                    }
+                    case Err(e) {
                         print("stream failed: ${e.message}")
                         done = true
-                    },
+                    }
                 }
             }
             body.close()
-        },
-        Err(e) -> print("could not open stream: ${e.message}"),
+        }
+        case Err(e) { print("could not open stream: ${e.message}") }
     }
 }
 ```
@@ -270,17 +261,17 @@ Only DNS, connection, TLS, timeout, or malformed-response failures return
 This GETs a URL, reports the status, and prints the body only on a 200.
 
 ```rust
-import std/http { get }
+from std.http import get
 
-fun fetch(url: String) {
+fun fetch(url: str) {
     match get(url) {
-        Ok(resp) -> {
+        case Ok(resp) {
             print("status: ${resp.status_code} ${resp.status_text}")
             if resp.status_code == 200 {
                 print(resp.body)
             }
-        },
-        Err(e) -> print("error reaching ${url}"),
+        }
+        case Err(e) { print("error reaching ${url}") }
     }
 }
 
@@ -296,7 +287,7 @@ table on a `Server`, then `listen`. A handler is a function from a `Request` to
 a `Response`.
 
 ```rust
-import std/http { Server, Request, Response }
+from std.http import Server, Request, Response
 
 fun hello(req: Request) -> Response {
     return Response.text("Hello, ${req.param("name")}!")
@@ -304,9 +295,9 @@ fun hello(req: Request) -> Response {
 
 fun main() {
     let app = Server.new()
-    app.get("/", fun(req: Request) -> Response = Response.html("<h1>Raven</h1>"))
+    app.get("/", (req: Request) -> Response => Response.html("<h1>Raven</h1>"))
     app.get("/hello/:name", hello)
-    app.post("/echo", fun(req: Request) -> Response = Response.json_raw(req.body))
+    app.post("/echo", (req: Request) -> Response => Response.json_raw(req.body))
     app.listen("127.0.0.1:8080")
 }
 ```
@@ -323,7 +314,7 @@ path, and status code:
 ```rust
 fun main() {
     let app = Server.new().with_access_log()
-    app.get("/", fun(req: Request) -> Response = Response.text("ok"))
+    app.get("/", (req: Request) -> Response => Response.text("ok"))
     app.listen("127.0.0.1:8080")
 }
 ```
@@ -343,12 +334,13 @@ trickling client cannot pin a goroutine open indefinitely. Read and write
 timeouts both default to **30 seconds** and are set in seconds:
 
 ```rust
-let app = Server.new()
-    .with_timeout(15)         // both read and write -> 15s
+let app = Server.new().with_timeout(15) // both read and write -> 15s
 // or set them separately:
-let app2 = Server.new()
-    .with_read_timeout(10)    // waiting for the request
-    .with_write_timeout(30)   // sending the response
+let app2 = Server.new().with_read_timeout(10).with_write_timeout(
+    30,
+)
+// waiting for the request
+// sending the response
 ```
 
 `0` disables a timeout (the connection may then block forever on a slow
@@ -375,19 +367,19 @@ the requests already in flight finish, and then `listen` returns. Because
 `listen` blocks, call `shutdown` from another goroutine:
 
 ```rust
-import std/http { Server, Request, Response }
-import std/sync { sleep_millis }
+from std.http import Server, Request, Response
+from std.sync import sleep_millis
 
 fun main() {
     let app = Server.new()
-    app.get("/", fun(req: Request) -> Response = Response.text("ok"))
+    app.get("/", (req: Request) -> Response => Response.text("ok"))
     // Stop cleanly from another goroutine (here after a delay; in a real
     // program on some condition):
-    spawn(fun() -> Unit {
+    spawn {
         sleep_millis(5000)
         app.shutdown()
-    })
-    app.listen("127.0.0.1:8080")       // returns once in-flight requests drain
+    }
+    app.listen("127.0.0.1:8080") // returns once in-flight requests drain
     print("stopped")
 }
 ```
@@ -409,7 +401,7 @@ A path segment written `:name` is a **capture**: it matches any single segment
 and binds it under that name, read in the handler with `req.param("name")`.
 
 ```rust
-app.get("/users/:id", show_user)        // /users/42  -> param("id") == "42"
+app.get("/users/:id", show_user) // /users/42  -> param("id") == "42"
 app.get("/users/:id/posts/:slug", show) // two captures
 ```
 
@@ -432,14 +424,14 @@ app.get("/ping", fun(req: Request) -> Response = Response.text("pong"))
 ### `struct Request`
 
 ```rust
-struct Request {
-    method: Method,
-    path: String,
-    version: String,
-    headers: Map<String, String>,   // keys lowercased
-    params: Map<String, String>,    // captured :name segments
-    query: Map<String, String>,     // decoded query string
-    body: String,
+class Request {
+    method: Method
+    path: str
+    version: str
+    headers: dict[str, str] // keys lowercased
+    params: dict[str, str] // captured :name segments
+    query: dict[str, str] // decoded query string
+    body: str
 }
 ```
 
@@ -454,7 +446,7 @@ unwrapping an `Option`:
 
 ```rust
 fun search(req: Request) -> Response {
-    let q = req.query_value("q")       // /search?q=birds -> "birds"
+    let q = req.query_value("q") // /search?q=birds -> "birds"
     let auth = req.header("authorization")
     return Response.text("query: ${q}")
 }
@@ -465,10 +457,10 @@ fun search(req: Request) -> Response {
 Build a response with a constructor, then refine it with chaining builders.
 
 ```rust
-struct Response {
-    status: Int,
-    headers: Map<String, String>,
-    body: String,
+class Response {
+    status: int
+    headers: dict[str, str]
+    body: str
 }
 ```
 
@@ -491,8 +483,7 @@ The builders return the response, so they chain:
 
 ```rust
 fun create(req: Request) -> Response {
-    return Response.created(req.body)
-        .header("X-Created-By", "raven")
+    return Response.created(req.body).header("X-Created-By", "raven")
 }
 ```
 
@@ -514,10 +505,13 @@ escaping:
 
 ```rust
 @derive(ToJson, FromJson)
-struct User { name: String, age: Int }
+class User {
+    name: str
+    age: int
+}
 
 fun show_user(req: Request) -> Response {
-    return Response.json(User { name: "Ada", age: 36 })   // {"name":"Ada","age":36}
+    return Response.json(User(name: "Ada", age: 36)) // {"name":"Ada","age":36}
 }
 ```
 
@@ -527,9 +521,9 @@ missing or mistyped field) come back as an `Error`:
 
 ```rust
 fun create_user(req: Request) -> Response {
-    return match req.json<User>() {
-        Ok(user) -> Response.json(user).status_code(201),
-        Err(e) -> Response.bad_request(e.message()),
+    return match req.json[User]() {
+        case Ok(user) { Response.json(user).status_code(201) }
+        case Err(e) { Response.bad_request(e.message()) }
     }
 }
 ```
@@ -552,8 +546,8 @@ segment, so a request cannot escape `dir` with a slash.
 ```rust
 fun main() {
     let app = Server.new()
-    app.static("/static", "public")     // GET /static/style.css -> public/style.css
-    app.get("/", fun(req: Request) -> Response = Response.file("public/index.html"))
+    app.static("/static", "public") // GET /static/style.css -> public/style.css
+    app.get("/", (req: Request) -> Response => Response.file("public/index.html"))
     app.listen("127.0.0.1:8080")
 }
 ```
@@ -563,7 +557,16 @@ Paths are relative to the process's working directory.
 ### `enum Method`
 
 ```rust
-enum Method { Get, Post, Put, Delete, Patch, Head, Options, Unknown }
+enum Method {
+    Get,
+    Post,
+    Put,
+    Delete,
+    Patch,
+    Head,
+    Options,
+    Unknown,
+}
 ```
 
 `req.method` is one of these. `Unknown` stands for any verb the server does not

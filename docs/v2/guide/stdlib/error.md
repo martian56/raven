@@ -8,9 +8,9 @@ small set of free functions for the cases where matching a `Result` by hand
 gets verbose.
 
 ```rust
-import std/error { error, error_kind, is_ok, is_err, unwrap_or, ok, err }
+from std.error import error, error_kind, is_ok, is_err, unwrap_or, ok, err
 
-fun divide(a: Int, b: Int) -> Result<Int, Error> {
+fun divide(a: int, b: int) -> Result[int, Error] {
     if b == 0 {
         return Err(error("divide by zero"))
     }
@@ -18,8 +18,8 @@ fun divide(a: Int, b: Int) -> Result<Int, Error> {
 }
 
 fun main() {
-    print(unwrap_or(divide(10, 2), -1))   // 5
-    print(is_ok(divide(1, 0)))            // false
+    print(unwrap_or(divide(10, 2), -1)) // 5
+    print(is_ok(divide(1, 0))) // false
 }
 ```
 
@@ -28,7 +28,7 @@ fun main() {
 Import the free functions you use by name:
 
 ```rust
-import std/error { error, error_kind, is_ok, is_err, unwrap_or, ok, err }
+from std.error import error, error_kind, is_ok, is_err, unwrap_or, ok, err
 ```
 
 `error`, `error_kind`, and the Result helpers (`is_ok`, `is_err`, `unwrap_or`,
@@ -57,17 +57,17 @@ whose return type matches (a `Result` for `?` on a `Result`, an `Option` for
 A function that uses `?` to chain failing steps:
 
 ```rust
-import std/error { error, error_kind, is_ok, is_err, unwrap_or, ok, err }
+from std.error import error, error_kind, is_ok, is_err, unwrap_or, ok, err
 
-fun positive(n: Int) -> Result<Int, Error> {
+fun positive(n: int) -> Result[int, Error] {
     if n <= 0 {
         return Err(error("must be positive"))
     }
     return Ok(n)
 }
 
-fun add_positive(a: Int, b: Int) -> Result<Int, Error> {
-    let x = positive(a)?    // returns Err early if `a` is not positive
+fun add_positive(a: int, b: int) -> Result[int, Error] {
+    let x = positive(a)? // returns Err early if `a` is not positive
     let y = positive(b)?
     return Ok(x + y)
 }
@@ -79,9 +79,9 @@ Each `?` keeps the happy path flat: if `positive` returns an `Err`,
 A caller handles the result with `match`:
 
 ```rust
-import std/error { error, error_kind, is_ok, is_err, unwrap_or, ok, err }
+from std.error import error, error_kind, is_ok, is_err, unwrap_or, ok, err
 
-fun positive(n: Int) -> Result<Int, Error> {
+fun positive(n: int) -> Result[int, Error] {
     if n <= 0 {
         return Err(error("must be positive"))
     }
@@ -90,8 +90,8 @@ fun positive(n: Int) -> Result<Int, Error> {
 
 fun main() {
     match positive(5) {
-        Ok(n) -> print("ok: ${n}"),         // ok: 5
-        Err(e) -> print("failed: ${e.to_string()}"),
+        case Ok(n) { print("ok: ${n}") } // ok: 5
+        case Err(e) { print("failed: ${e.to_string()}") }
     }
 }
 ```
@@ -113,9 +113,9 @@ Build an `Error` with the given message and an empty kind. This is the usual
 constructor for an ad hoc failure.
 
 ```rust
-import std/error { error, error_kind, is_ok, is_err, unwrap_or, ok, err }
+from std.error import error, error_kind, is_ok, is_err, unwrap_or, ok, err
 
-fun check_age(age: Int) -> Result<Int, Error> {
+fun check_age(age: int) -> Result[int, Error] {
     if age < 0 {
         return Err(error("age cannot be negative"))
     }
@@ -129,9 +129,9 @@ Build an `Error` tagged with a kind, for example `"io"` or `"parse"`. The kind
 is a free-form `String`; callers can branch on it with `e.kind()`.
 
 ```rust
-import std/error { error, error_kind, is_ok, is_err, unwrap_or, ok, err }
+from std.error import error, error_kind, is_ok, is_err, unwrap_or, ok, err
 
-fun open_config(path: String) -> Result<String, Error> {
+fun open_config(path: str) -> Result[str, Error] {
     return Err(error_kind("io", "no such file: ${path}"))
 }
 ```
@@ -150,12 +150,12 @@ The message text.
 The kind tag, or `""` when the error was built with `error`.
 
 ```rust
-import std/error { error, error_kind, is_ok, is_err, unwrap_or, ok, err }
+from std.error import error, error_kind, is_ok, is_err, unwrap_or, ok, err
 
 fun main() {
     let e = error_kind("parse", "unexpected token")
-    print(e.kind())       // parse
-    print(e.message())    // unexpected token
+    print(e.kind()) // parse
+    print(e.message()) // unexpected token
 }
 ```
 
@@ -166,12 +166,12 @@ it to add a higher-level explanation to a lower-level failure as it propagates.
 It returns a new `Error` and does not mutate the receiver.
 
 ```rust
-import std/error { error, error_kind, is_ok, is_err, unwrap_or, ok, err }
+from std.error import error, error_kind, is_ok, is_err, unwrap_or, ok, err
 
-fun load_settings(path: String) -> Result<String, Error> {
+fun load_settings(path: str) -> Result[str, Error] {
     return match read_raw(path) {
-        Ok(text) -> Ok(text),
-        Err(e) -> Err(e.with_context("load settings")),
+        case Ok(text) { Ok(text) }
+        case Err(e) { Err(e.with_context("load settings")) }
     }
 }
 ```
@@ -186,10 +186,10 @@ The display form: the bare `message` when the kind is empty, otherwise
 uses it too.
 
 ```rust
-import std/error { error, error_kind, is_ok, is_err, unwrap_or, ok, err }
+from std.error import error, error_kind, is_ok, is_err, unwrap_or, ok, err
 
 fun main() {
-    print(error("disk full").to_string())            // disk full
+    print(error("disk full").to_string()) // disk full
     print(error_kind("io", "disk full").to_string()) // io: disk full
 }
 ```
@@ -213,9 +213,9 @@ True when `r` is `Err`.
 The `Ok` value, or `default` when `r` is an `Err`.
 
 ```rust
-import std/error { error, unwrap_or, is_err }
+from std.error import error, unwrap_or, is_err
 
-fun divide(a: Int, b: Int) -> Result<Int, Error> {
+fun divide(a: int, b: int) -> Result[int, Error] {
     if b == 0 {
         return Err(error("divide by zero"))
     }
@@ -223,9 +223,9 @@ fun divide(a: Int, b: Int) -> Result<Int, Error> {
 }
 
 fun main() {
-    print(unwrap_or(divide(10, 2), -1))   // 5
-    print(unwrap_or(divide(1, 0), -1))    // -1
-    print(is_err(divide(1, 0)))           // true
+    print(unwrap_or(divide(10, 2), -1)) // 5
+    print(unwrap_or(divide(1, 0), -1)) // -1
+    print(is_err(divide(1, 0))) // true
 }
 ```
 
@@ -239,9 +239,9 @@ you care whether a value is present but not why it failed.
 Keep the error: map `Err(e)` to `Some(e)` and `Ok(v)` to `None`.
 
 ```rust
-import std/error { error, ok }
+from std.error import error, ok
 
-fun divide(a: Int, b: Int) -> Result<Int, Error> {
+fun divide(a: int, b: int) -> Result[int, Error] {
     if b == 0 {
         return Err(error("divide by zero"))
     }
@@ -250,8 +250,8 @@ fun divide(a: Int, b: Int) -> Result<Int, Error> {
 
 fun main() {
     match ok(divide(10, 2)) {
-        Some(n) -> print("got ${n}"),    // got 5
-        None -> print("no value"),
+        case Some(n) { print("got ${n}") } // got 5
+        case None { print("no value") }
     }
 }
 ```
@@ -262,9 +262,9 @@ Transform the `Ok` value with `f`, passing an `Err` through unchanged. `f` is
 a lambda.
 
 ```rust
-import std/error { error, map_ok }
+from std.error import error, map_ok
 
-fun parse(s: String) -> Result<Int, Error> {
+fun parse(s: str) -> Result[int, Error] {
     if s == "1" {
         return Ok(1)
     }
@@ -272,9 +272,9 @@ fun parse(s: String) -> Result<Int, Error> {
 }
 
 fun main() {
-    match map_ok(parse("1"), fun(x: Int) -> Int = x + 10) {
-        Ok(n) -> print(n),              // 11
-        Err(e) -> print(e.message()),
+    match map_ok(parse("1"), (x: int) -> int => x + 10) {
+        case Ok(n) { print(n) } // 11
+        case Err(e) { print(e.message()) }
     }
 }
 ```
@@ -284,9 +284,9 @@ fun main() {
 Transform the `Err` value with `f`, passing an `Ok` through unchanged.
 
 ```rust
-import std/error { error, map_err }
+from std.error import error, map_err
 
-fun parse(s: String) -> Result<Int, Error> {
+fun parse(s: str) -> Result[int, Error] {
     if s == "1" {
         return Ok(1)
     }
@@ -294,9 +294,9 @@ fun parse(s: String) -> Result<Int, Error> {
 }
 
 fun main() {
-    match map_err(parse("z"), fun(e: Error) -> String = e.message()) {
-        Ok(n) -> print(n),
-        Err(msg) -> print(msg),         // bad
+    match map_err(parse("z"), (e: Error) -> str => e.message()) {
+        case Ok(n) { print(n) }
+        case Err(msg) { print(msg) } // bad
     }
 }
 ```
@@ -308,9 +308,9 @@ counterpart to `unwrap_or`, for when the fallback depends on the error or is
 expensive to build.
 
 ```rust
-import std/error { error, unwrap_or_else }
+from std.error import error, unwrap_or_else
 
-fun parse(s: String) -> Result<Int, Error> {
+fun parse(s: str) -> Result[int, Error] {
     if s == "1" {
         return Ok(1)
     }
@@ -318,8 +318,8 @@ fun parse(s: String) -> Result<Int, Error> {
 }
 
 fun main() {
-    print(unwrap_or_else(parse("1"), fun(e: Error) -> Int = 0))      // 1
-    print(unwrap_or_else(parse("z"), fun(e: Error) -> Int = 0 - 1))  // -1
+    print(unwrap_or_else(parse("1"), (e: Error) -> int => 0)) // 1
+    print(unwrap_or_else(parse("z"), (e: Error) -> int => 0 - 1)) // -1
 }
 ```
 
@@ -330,34 +330,34 @@ propagates failures, `with_context` annotates them as they rise, and the caller
 recovers with `unwrap_or`.
 
 ```rust
-import std/error { error, error_kind, is_ok, is_err, unwrap_or, ok, err }
+from std.error import error, error_kind, is_ok, is_err, unwrap_or, ok, err
 
-fun check_port(port: Int) -> Result<Int, Error> {
+fun check_port(port: int) -> Result[int, Error] {
     if port < 1 {
         return Err(error_kind("config", "port must be positive"))
     }
     return Ok(port)
 }
 
-fun read_port(port: Int) -> Result<Int, Error> {
+fun read_port(port: int) -> Result[int, Error] {
     let checked = check_port(port)?
     return Ok(checked)
 }
 
-fun with_label(port: Int) -> Result<Int, Error> {
+fun with_label(port: int) -> Result[int, Error] {
     return match read_port(port) {
-        Ok(p) -> Ok(p),
-        Err(e) -> Err(e.with_context("read port")),
+        case Ok(p) { Ok(p) }
+        case Err(e) { Err(e.with_context("read port")) }
     }
 }
 
 fun main() {
-    print(unwrap_or(with_label(8080), 80))    // 8080
-    print(unwrap_or(with_label(0), 80))       // 80
+    print(unwrap_or(with_label(8080), 80)) // 8080
+    print(unwrap_or(with_label(0), 80)) // 80
 
     match with_label(-1) {
-        Ok(p) -> print("port ${p}"),
-        Err(e) -> print(e.to_string()),       // read port: port must be positive
+        case Ok(p) { print("port ${p}") }
+        case Err(e) { print(e.to_string()) } // read port: port must be positive
     }
 }
 ```

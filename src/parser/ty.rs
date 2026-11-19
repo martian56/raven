@@ -109,7 +109,7 @@ impl Parser {
         let (name, name_span) = match tok.kind {
             TokenKind::Identifier(n) => {
                 self.advance();
-                (n, tok.span)
+                (canonical_type_name(&n).unwrap_or(&n).to_string(), tok.span)
             }
             TokenKind::SelfUpper => {
                 self.advance();
@@ -123,12 +123,54 @@ impl Parser {
             let (args, args_span) = self.parse_type_args_required()?;
             generics = args;
             span = merge_spans(&span, &args_span);
+        } else if matches!(self.peek_kind(), TokenKind::LBracket) {
+            let (args, args_span) = self.parse_bracket_type_args()?;
+            generics = args;
+            span = merge_spans(&span, &args_span);
         }
         Ok(TypePathSegment {
             name,
             generics,
             span,
         })
+    }
+
+    /// Parse `[T, U]`; the caller has seen the `[`.
+    pub(crate) fn parse_bracket_type_args(&mut self) -> ParseResult<(Vec<Type>, Span)> {
+        let start = self.advance().span;
+        let mut args = Vec::new();
+        self.skip_newlines();
+        while !matches!(self.peek_kind(), TokenKind::RBracket) {
+            args.push(self.parse_type()?);
+            self.skip_newlines();
+            if !self.eat(&TokenKind::Comma) {
+                break;
+            }
+            self.skip_newlines();
+        }
+        let close = self.expect(&TokenKind::RBracket, "`]`")?;
+        Ok((args, merge_spans(&start, &close.span)))
+    }
+
+    /// Whether `[` here opens type arguments rather than an index: the first
+    /// bracketed token names a type (PascalCase or a builtin type name).
+    pub(crate) fn bracket_opens_type_args(&self) -> bool {
+        if !matches!(self.peek_kind(), TokenKind::LBracket) {
+            return false;
+        }
+        match self.peek_kind_at(1) {
+            TokenKind::Identifier(n) => {
+                let builtin = matches!(
+                    n.as_str(),
+                    "int" | "float" | "bool" | "str" | "char" | "list" | "dict" | "set"
+                );
+                let pascal = n.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+                    && (n.chars().any(|c| c.is_ascii_lowercase()) || n.len() == 1);
+                builtin || pascal
+            }
+            TokenKind::SelfUpper => true,
+            _ => false,
+        }
     }
 
     /// Parse a required `<T, U, ...>` block. The caller has verified
@@ -196,4 +238,19 @@ impl Parser {
             _ => Err(self.unexpected("`>`")),
         }
     }
+}
+
+/// The canonical name of a lowercase builtin type spelling.
+pub(crate) fn canonical_type_name(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "int" => "Int",
+        "float" => "Float",
+        "bool" => "Bool",
+        "str" => "String",
+        "char" => "Char",
+        "list" => "List",
+        "dict" => "Map",
+        "set" => "Set",
+        _ => return None,
+    })
 }

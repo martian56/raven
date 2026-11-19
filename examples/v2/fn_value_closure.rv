@@ -6,22 +6,24 @@
 //   10
 //   100
 //   6
-import std/option
+import std.option
 
-fun inc(x: Int) -> Int = x + 1
+fun inc(x: int) -> int = x + 1
 
-fun apply(f: fun(Int) -> Int, v: Int) -> Int = f(v)
+fun apply(f: fun(int) -> int, v: int) -> int = f(v)
 
-fun make_inc() -> fun(Int) -> Int = inc
+fun make_inc() -> fun(int) -> int = inc
 
 fun main() {
-    print(apply(inc, 41))               // 42: passed as an argument
+    print(apply(inc, 41)) // 42: passed as an argument
     let g = inc
-    print(g(9))                         // 10: bound to a variable, then called
+    print(g(9)) // 10: bound to a variable, then called
     let h = make_inc()
-    print(h(99))                        // 100: returned from a function
+    print(h(99)) // 100: returned from a function
     match option.map(Some(5), inc) {
-        Some(v) -> print(v),            // 6: passed to a stdlib combinator
-        None -> print(0),
+        case Some(v) {
+            print(v) // 6: passed to a stdlib combinator
+        }
+        case None { print(0) }
     }
 }

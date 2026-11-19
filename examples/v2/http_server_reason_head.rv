@@ -3,16 +3,16 @@
 // blanket "OK"), and a HEAD response carries the headers but no body.
 // golden:skip (binds a port and depends on timing, so it is not diffed by the
 // golden suite; run it directly to verify the server response path).
-import std/http { Server, Response, Request, Method }
-import std/net { connect, TcpStream }
-import std/time { sleep_millis }
-import std/io { println }
+from std.http import Server, Response, Request, Method
+from std.net import connect, TcpStream
+from std.time import sleep_millis
+from std.io import println
 
 fun down(req: Request) -> Response {
     return Response.with_body(503, "unavailable")
 }
 
-fun first_line(s: String) -> String {
+fun first_line(s: str) -> str {
     let idx = s.index_of("\r\n")
     if idx < 0 {
         return s
@@ -20,7 +20,7 @@ fun first_line(s: String) -> String {
     return s.substring(0, idx)
 }
 
-fun body_after_headers(s: String) -> String {
+fun body_after_headers(s: str) -> str {
     let idx = s.index_of("\r\n\r\n")
     if idx < 0 {
         return ""
@@ -29,36 +29,34 @@ fun body_after_headers(s: String) -> String {
 }
 
 // Connect with a few retries so a slow server bind does not race the probe.
-fun connect_retry(addr: String) -> Result<TcpStream, Error> {
-    let attempt = 0
+fun connect_retry(addr: str) -> Result[TcpStream, Error] {
+    var attempt = 0
     while attempt < 50 {
         match connect(addr) {
-            Ok(s) -> {
+            case Ok(s) {
                 return Ok(s)
             }
-            Err(_) -> {
-                sleep_millis(20)
-            }
+            case Err(_) { sleep_millis(20) }
         }
         attempt += 1
     }
     return connect(addr)
 }
 
-fun send(addr: String, request: String) -> String {
-    let result = ""
+fun send(addr: str, request: str) -> str {
+    var result = ""
     match connect_retry(addr) {
-        Ok(s) -> {
+        case Ok(s) {
             let _ = s.write(request)
             match s.read_all() {
-                Ok(r) -> {
+                case Ok(r) {
                     result = r
                 }
-                Err(_) -> {}
+                case Err(_) {}
             }
             s.close()
         }
-        Err(_) -> {}
+        case Err(_) {}
     }
     return result
 }
@@ -68,9 +66,9 @@ fun main() {
     let app = Server.new()
     app.get("/x", down)
     app.route(Method.Head, "/x", down)
-    spawn(fun() -> Unit {
+    spawn {
         app.listen(addr)
-    })
+    }
 
     let get_resp = send(addr, "GET /x HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
     println("GET status: ${first_line(get_resp)}")

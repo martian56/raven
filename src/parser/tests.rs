@@ -208,18 +208,12 @@ fn parses_single_element_set_with_trailing_comma() {
 }
 
 #[test]
-fn single_element_brace_is_a_block_not_a_set() {
-    // `{ x }` stays a block whose tail expression is `x`, preserving the
-    // existing block behavior. A set needs the comma form.
+fn single_element_brace_is_a_set() {
     let f = parse_ok("let a = { 5 }\n");
-    let ExprKind::Block(b) = let_init(&f) else {
-        panic!("expected a block, not a set");
+    let ExprKind::SetLit(items) = let_init(&f) else {
+        panic!("expected a one-element set");
     };
-    assert!(b.stmts.is_empty());
-    assert!(matches!(
-        b.trailing.as_ref().unwrap().kind,
-        ExprKind::Int(5)
-    ));
+    assert_eq!(items.len(), 1);
 }
 
 #[test]
@@ -229,13 +223,21 @@ fn brace_with_statement_is_a_block() {
 }
 
 #[test]
-fn empty_brace_is_a_block() {
+fn empty_brace_is_an_empty_dict() {
     let f = parse_ok("let u = {}\n");
-    let ExprKind::Block(b) = let_init(&f) else {
-        panic!("expected a block");
+    let ExprKind::MapLit(pairs) = let_init(&f) else {
+        panic!("expected an empty dict");
     };
-    assert!(b.stmts.is_empty());
-    assert!(b.trailing.is_none());
+    assert!(pairs.is_empty());
+}
+
+#[test]
+fn brace_dict_literal() {
+    let f = parse_ok("let d = {\"a\": 1, \"b\": 2}\n");
+    let ExprKind::MapLit(pairs) = let_init(&f) else {
+        panic!("expected a dict literal");
+    };
+    assert_eq!(pairs.len(), 2);
 }
 
 #[test]
@@ -448,7 +450,7 @@ fn struct_literal_suppressed_in_if_condition() {
 
 #[test]
 fn parses_assignment_inside_function() {
-    let f = parse_ok("fun f() { let x = 0\n x = 5 }\n");
+    let f = parse_ok("fun f() { var x = 0\n x = 5 }\n");
     let DeclKind::Function(fun) = &f.items[0].kind else {
         panic!()
     };
@@ -460,8 +462,8 @@ fn parses_assignment_inside_function() {
 }
 
 #[test]
-fn parses_const_and_let_stmt_mutability() {
-    let f = parse_ok("fun f() { const K = 5\n let m = 1 }\n");
+fn parses_let_and_var_stmt_mutability() {
+    let f = parse_ok("fun f() { let k = 5\n var m = 1 }\n");
     let DeclKind::Function(fun) = &f.items[0].kind else {
         panic!()
     };
@@ -474,13 +476,13 @@ fn parses_const_and_let_stmt_mutability() {
     let StmtKind::Let { mutable: m_mut, .. } = &b.stmts[1].kind else {
         panic!("expected a let statement")
     };
-    assert!(!*k_mut, "const is immutable");
-    assert!(*m_mut, "let is mutable");
+    assert!(!*k_mut, "let is immutable");
+    assert!(*m_mut, "var is mutable");
 }
 
 #[test]
 fn compound_assignment() {
-    let f = parse_ok("fun f() { let x = 0\n x += 1 }\n");
+    let f = parse_ok("fun f() { var x = 0\n x += 1 }\n");
     let DeclKind::Function(fun) = &f.items[0].kind else {
         panic!()
     };
@@ -717,16 +719,16 @@ fn parses_enum_with_tuple_payload() {
 }
 
 #[test]
-fn parses_enum_with_struct_payload() {
+fn named_variant_payload_lowers_to_positional() {
     let src = "enum Shape { Circle(radius: Int), Square(side: Int) }\n";
     let f = parse_ok(src);
     let DeclKind::Enum(e) = &f.items[0].kind else {
         panic!()
     };
-    let VariantPayload::Struct(fields) = &e.variants[0].payload else {
+    let VariantPayload::Tuple(types) = &e.variants[0].payload else {
         panic!()
     };
-    assert_eq!(fields[0].name, "radius");
+    assert_eq!(types.len(), 1);
 }
 
 #[test]

@@ -6,12 +6,12 @@ fallible operations return `Result<T, Error>`; the queries return a plain
 `Bool`; the path helpers are pure string work with no runtime call.
 
 ```rust
-import std/fs { write, read }
+from std.fs import write, read
 
 fun main() {
     match write("greeting.txt", "hello") {
-        Ok(_) -> print("wrote it"),
-        Err(e) -> print(e.message()),
+        case Ok(_) { print("wrote it") }
+        case Err(e) { print(e.message()) }
     }
 }
 ```
@@ -19,7 +19,7 @@ fun main() {
 ## Importing
 
 ```rust
-import std/fs { read, write, append, read_lines, copy, remove_file, create_dir, create_dir_all, remove_dir, list_dir, walk, size, exists, is_file, is_dir, join, dirname, basename, split }
+from std.fs import read, write, append, read_lines, copy, remove_file, create_dir, create_dir_all, remove_dir, list_dir, walk, size, exists, is_file, is_dir, join, dirname, basename, split
 ```
 
 `std/fs` is a set of free functions, so use a selective import and list the
@@ -27,7 +27,7 @@ names you want. A bare `import std/fs` does not bring the functions into
 scope. Import only what a given file uses:
 
 ```rust
-import std/fs { read, exists }
+from std.fs import read, exists
 ```
 
 ## The error model
@@ -44,12 +44,12 @@ empty string or a `-1`, it comes back as an `Err`. The two ways to consume a
 Handle each arm explicitly with `match`:
 
 ```rust
-import std/fs { read }
+from std.fs import read
 
 fun main() {
     match read("config.txt") {
-        Ok(text) -> print(text),
-        Err(e) -> print(e.message()),
+        case Ok(text) { print(text) }
+        case Err(e) { print(e.message()) }
     }
 }
 ```
@@ -58,9 +58,9 @@ Or propagate the error to the caller with `?`, which unwraps `Ok` and
 returns early on `Err`:
 
 ```rust
-import std/fs { read, write }
+from std.fs import read, write
 
-fun copy(src: String, dst: String) -> Result<Bool, Error> {
+fun copy(src: str, dst: str) -> Result[bool, Error] {
     let text = read(src)?
     return write(dst, text)
 }
@@ -73,12 +73,12 @@ fun copy(src: String, dst: String) -> Result<Bool, Error> {
 Read the whole file at `path` and return it as a single `String`.
 
 ```rust
-import std/fs { read }
+from std.fs import read
 
 fun main() {
     match read("notes.txt") {
-        Ok(text) -> print(text),
-        Err(e) -> print(e.message()),
+        case Ok(text) { print(text) }
+        case Err(e) { print(e.message()) }
     }
 }
 ```
@@ -91,12 +91,12 @@ arm carries a value (the surface uses `Result<Bool, Error>` rather than a
 unit payload).
 
 ```rust
-import std/fs { write }
+from std.fs import write
 
 fun main() {
     match write("out.txt", "first line\n") {
-        Ok(_) -> print("ok"),
-        Err(e) -> print(e.message()),
+        case Ok(_) { print("ok") }
+        case Err(e) { print(e.message()) }
     }
 }
 ```
@@ -107,9 +107,9 @@ Write `contents` to the end of `path`, creating the file when it is absent.
 Returns `Ok(true)` on success.
 
 ```rust
-import std/fs { append }
+from std.fs import append
 
-fun log_line(line: String) -> Result<Bool, Error> {
+fun log_line(line: str) -> Result[bool, Error] {
     return append("app.log", line.concat("\n"))
 }
 ```
@@ -121,16 +121,16 @@ Read the file at `path` and split it into lines, handling both `\n` and
 entry.
 
 ```rust
-import std/fs { read_lines }
+from std.fs import read_lines
 
 fun main() {
     match read_lines("config.txt") {
-        Ok(lines) -> {
+        case Ok(lines) {
             for line in lines {
                 print(line)
             }
         }
-        Err(e) -> print(e.message()),
+        case Err(e) { print(e.message()) }
     }
 }
 ```
@@ -141,12 +141,12 @@ Copy the contents of `src` to `dst`, creating or truncating `dst`. Returns
 `Ok(true)` on success.
 
 ```rust
-import std/fs { copy }
+from std.fs import copy
 
 fun main() {
     match copy("notes.txt", "notes.bak") {
-        Ok(_) -> print("copied"),
-        Err(e) -> print(e.message()),
+        case Ok(_) { print("copied") }
+        case Err(e) { print(e.message()) }
     }
 }
 ```
@@ -163,12 +163,12 @@ Create the directory at `path`, including any missing parent directories, so
 creating a nested path in one call succeeds. Returns `Ok(true)` on success.
 
 ```rust
-import std/fs { create_dir }
+from std.fs import create_dir
 
 fun main() {
     match create_dir("build/cache/tmp") {
-        Ok(_) -> print("created"),
-        Err(e) -> print(e.message()),
+        case Ok(_) { print("created") }
+        case Err(e) { print(e.message()) }
     }
 }
 ```
@@ -180,12 +180,12 @@ Create the directory at `path` along with any missing parents, like
 `Ok(true)` on success.
 
 ```rust
-import std/fs { create_dir_all }
+from std.fs import create_dir_all
 
 fun main() {
     match create_dir_all("build/cache/tmp") {
-        Ok(_) -> print("created"),
-        Err(e) -> print(e.message()),
+        case Ok(_) { print("created") }
+        case Err(e) { print(e.message()) }
     }
 }
 ```
@@ -201,16 +201,16 @@ Return the entry names (not full paths) of the directory at `path`. An empty
 directory yields an empty list, not a one-element list containing `""`.
 
 ```rust
-import std/fs { list_dir }
+from std.fs import list_dir
 
 fun main() {
     match list_dir(".") {
-        Ok(names) -> {
+        case Ok(names) {
             for name in names {
                 print(name)
             }
         }
-        Err(e) -> print(e.message()),
+        case Err(e) { print(e.message()) }
     }
 }
 ```
@@ -222,16 +222,16 @@ path (the directory prefix joined to the name), and subdirectories appear
 before their contents.
 
 ```rust
-import std/fs { walk }
+from std.fs import walk
 
 fun main() {
     match walk("src") {
-        Ok(entries) -> {
+        case Ok(entries) {
             for entry in entries {
                 print(entry)
             }
         }
-        Err(e) -> print(e.message()),
+        case Err(e) { print(e.message()) }
     }
 }
 ```
@@ -241,12 +241,12 @@ fun main() {
 Return the file size at `path` in bytes.
 
 ```rust
-import std/fs { size }
+from std.fs import size
 
 fun main() {
     match size("out.txt") {
-        Ok(n) -> print(n),
-        Err(e) -> print("could not stat the file"),
+        case Ok(n) { print(n) }
+        case Err(e) { print("could not stat the file") }
     }
 }
 ```
@@ -255,9 +255,9 @@ The `?` operator is the shorter form, but it only works inside a function that
 itself returns `Result`, not in `main`:
 
 ```rust
-import std/fs { size }
+from std.fs import size
 
-fun total(a: String, b: String) -> Result<Int, Error> {
+fun total(a: str, b: str) -> Result[int, Error] {
     return Ok(size(a)? + size(b)?)
 }
 ```
@@ -279,13 +279,13 @@ link, without following it, so it stays `true` for a link whose target is
 missing.
 
 ```rust
-import std/fs { exists, is_dir, read }
+from std.fs import exists, is_dir, read
 
 fun main() {
     if exists("config.txt") {
         match read("config.txt") {
-            Ok(text) -> print(text),
-            Err(e) -> print(e.message()),
+            case Ok(text) { print(text) }
+            case Err(e) { print(e.message()) }
         }
     }
     print(is_dir("build"))
@@ -314,11 +314,11 @@ or a leading slash on `b` so the result never doubles the separator. An empty
 segment returns the other unchanged.
 
 ```rust
-import std/fs { join }
+from std.fs import join
 
 fun main() {
-    print(join("build", "out.txt"))     // build/out.txt
-    print(join("build/", "/out.txt"))   // build/out.txt
+    print(join("build", "out.txt")) // build/out.txt
+    print(join("build/", "/out.txt")) // build/out.txt
 }
 ```
 
@@ -328,11 +328,11 @@ The final component of `p` (everything after the last `/`). A path with no
 slash returns unchanged.
 
 ```rust
-import std/fs { basename }
+from std.fs import basename
 
 fun main() {
-    print(basename("a/b/c.txt"))    // c.txt
-    print(basename("c.txt"))        // c.txt
+    print(basename("a/b/c.txt")) // c.txt
+    print(basename("c.txt")) // c.txt
 }
 ```
 
@@ -342,11 +342,11 @@ Everything before the last `/`. A path with no slash returns `"."`; a path
 whose only slash is at the front returns `"/"`.
 
 ```rust
-import std/fs { dirname }
+from std.fs import dirname
 
 fun main() {
-    print(dirname("a/b/c.txt"))     // a/b
-    print(dirname("c.txt"))         // .
+    print(dirname("a/b/c.txt")) // a/b
+    print(dirname("c.txt")) // .
 }
 ```
 
@@ -356,10 +356,10 @@ Split `p` on `/` into its components, dropping empty pieces produced by
 leading, trailing, or repeated separators.
 
 ```rust
-import std/fs { split }
+from std.fs import split
 
 fun main() {
-    let parts = split("/a//b/c/")   // ["a", "b", "c"]
+    let parts = split("/a//b/c/") // ["a", "b", "c"]
     for part in parts {
         print(part)
     }
@@ -372,12 +372,12 @@ Write a file, confirm it exists, then read it back. Each fallible step uses
 `?` to bail out on the first error, and the caller decides what to do with it.
 
 ```rust
-import std/fs { write, read, exists }
-import std/error { error_kind }
+from std.fs import write, read, exists
+from std.error import error_kind
 
-fun round_trip() -> Result<String, Error> {
+fun round_trip() -> Result[str, Error] {
     write("scratch.txt", "saved value")?
-    if !exists("scratch.txt") {
+    if not exists("scratch.txt") {
         return Err(error_kind("io", "file vanished after write"))
     }
     return read("scratch.txt")
@@ -385,8 +385,8 @@ fun round_trip() -> Result<String, Error> {
 
 fun main() {
     match round_trip() {
-        Ok(text) -> print(text),       // saved value
-        Err(e) -> print(e.message()),
+        case Ok(text) { print(text) } // saved value
+        case Err(e) { print(e.message()) }
     }
 }
 ```

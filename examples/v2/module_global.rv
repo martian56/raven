@@ -12,26 +12,26 @@
 //   done
 //   6
 
-fun seed() -> Int = 10
+fun seed() -> int = 10
 
-let counter: Int = 0
-let base: Int = seed() * 3
-let label: String = "start"
-let nums: List<Int> = [1, 2, 3]
+var counter: int = 0
+let base: int = seed() * 3
+var label: str = "start"
+let nums: list[int] = [1, 2, 3]
 
 fun bump() {
     counter = counter + 1
 }
 
 fun main() {
-    print(counter)          // 0
+    print(counter) // 0
     bump()
     bump()
     bump()
-    print(counter)          // 3
-    print(base)             // 30, computed from a function call at startup
+    print(counter) // 3
+    print(base) // 30, computed from a function call at startup
     label = "done"
-    print(label)            // done
+    print(label) // done
     let total = nums.get(0) + nums.get(1) + nums.get(2)
-    print(total)            // 6
+    print(total) // 6
 }

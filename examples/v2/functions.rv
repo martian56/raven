@@ -1,11 +1,11 @@
 // Function definitions, parameters, and return values.
-fun add(a: Int, b: Int) -> Int {
+fun add(a: int, b: int) -> int {
     return a + b
 }
 
-fun square(n: Int) -> Int = n * n
+fun square(n: int) -> int = n * n
 
-fun greet(name: String) -> String = "Hello, ${name}!"
+fun greet(name: str) -> str = "Hello, ${name}!"
 
 fun main() {
     print(add(7, 8))

@@ -1,7 +1,7 @@
 // A method declared on a built-in type via an `impl` block.
 // Compiling and running this prints 42.
-impl Int {
-    fun doubled(self) -> Int = self * 2
+impl int {
+    fun doubled(self) -> int = self * 2
 }
 
 fun main() {

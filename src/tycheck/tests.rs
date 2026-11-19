@@ -419,7 +419,7 @@ fn reassigning_a_const_local_is_rejected() {
     let err = check("fun f() {\n    const K: Int = 5\n    K = 7\n}\n").unwrap_err();
     match err {
         RavenError::Type(b, _, _) => match *b {
-            TypeError::Custom(msg) => assert!(msg.contains("const"), "got: {}", msg),
+            TypeError::Custom(msg) => assert!(msg.contains("cannot assign"), "got: {}", msg),
             other => panic!("expected a const-assignment error, got {:?}", other),
         },
         other => panic!("expected a type error, got {:?}", other),
@@ -434,7 +434,7 @@ fn compound_assigning_a_const_local_is_rejected() {
 
 #[test]
 fn reassigning_a_let_local_is_allowed() {
-    check("fun f() -> Int {\n    let m = 1\n    m = 2\n    return m\n}\n").unwrap();
+    check("fun f() -> Int {\n    var m = 1\n    m = 2\n    return m\n}\n").unwrap();
 }
 
 #[test]
@@ -842,15 +842,28 @@ fn list_push_returns_unit() {
 }
 
 #[test]
-fn empty_array_literal_requires_context_type() {
-    let err = check("fun f() {\n    let xs = []\n}\n").unwrap_err();
-    match err {
-        RavenError::Type(b, _, _) => match *b {
-            TypeError::Custom(m) => assert!(m.contains("empty array")),
-            other => panic!("expected empty array error, got {:?}", other),
-        },
-        other => panic!("expected TypeError, got {:?}", other),
-    }
+fn empty_array_literal_without_any_use_cannot_infer() {
+    let err = check(
+        "fun f() {
+    let xs = []
+}
+",
+    )
+    .unwrap_err();
+    assert!(matches!(err, RavenError::Type(..)), "got {:?}", err);
+}
+
+#[test]
+fn empty_array_literal_infers_from_later_use() {
+    check(
+        "fun f() -> Int {
+    let xs = []
+    xs.push(1)
+    return xs.len()
+}
+",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -946,7 +959,7 @@ fn break_and_continue_outside_a_loop_are_rejected() {
 #[test]
 fn break_and_continue_inside_a_loop_are_ok() {
     check("fun f() { loop { break } }\n").expect("break in a loop");
-    check("fun f() {\n    let i = 0\n    while i < 3 {\n        i = i + 1\n        continue\n    }\n}\n")
+    check("fun f() {\n    var i = 0\n    while i < 3 {\n        i = i + 1\n        continue\n    }\n}\n")
         .expect("continue in a while");
 }
 
@@ -1275,17 +1288,18 @@ fn empty_map_literal_type_checks_with_annotation() {
 }
 
 #[test]
-fn set_literal_requires_collections_import() {
-    // A set literal lowers to the bundled `Set` type; without the
-    // collections module in scope there is no `Set` declaration, so the
-    // literal is a type error.
-    let err = check_with_prelude("fun main() {\n    let s = {1, 2}\n}\n").unwrap_err();
-    assert!(matches!(err, RavenError::Type(_, _, _)), "got: {}", err);
+fn set_literal_needs_no_import() {
+    check_with_prelude("fun main() {\n    let s = {1, 2}\n}\n").unwrap();
 }
 
 #[test]
-fn map_literal_requires_collections_import() {
-    let err = check_with_prelude("fun main() {\n    let m = [\"a\": 1]\n}\n").unwrap_err();
+fn dict_literal_needs_no_import() {
+    check_with_prelude("fun main() {\n    let m = {\"a\": 1}\n}\n").unwrap();
+}
+
+#[test]
+fn reassigning_a_let_binding_is_rejected() {
+    let err = check("fun f() {\n    let x = 1\n    x = 2\n}\n").unwrap_err();
     assert!(matches!(err, RavenError::Type(_, _, _)), "got: {}", err);
 }
 

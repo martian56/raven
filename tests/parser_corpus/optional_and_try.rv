@@ -1,4 +1,4 @@
-fun find(xs: List<Int>, target: Int) -> Int? {
+fun find(xs: list[int], target: int) -> int? {
     for x in xs {
         if x == target {
             return x
@@ -6,6 +6,6 @@ fun find(xs: List<Int>, target: Int) -> Int? {
     }
 }
 
-fun first_or_fail(xs: List<Int>) -> Int {
+fun first_or_fail(xs: list[int]) -> int {
     xs.first()?
 }

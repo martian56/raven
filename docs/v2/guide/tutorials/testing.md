@@ -21,12 +21,12 @@ Edit `src/main.rv` so it exports an `add` function:
 
 ```rust
 // src/main.rv
-fun add(a: Int, b: Int) -> Int {
+fun add(a: int, b: int) -> int {
     return a + b
 }
 
 fun main() {
-    print(add(2, 3))        // 5
+    print(add(2, 3)) // 5
 }
 ```
 
@@ -38,8 +38,8 @@ module. Each check is a `test_*` function that calls assertions from
 
 ```rust
 // src/add_test.rv
-import std/test { assert_eq_int }
-import "./main" { add }
+from std.test import assert_eq_int
+from "./main" import add
 
 fun test_add_basic() {
     assert_eq_int(add(2, 3), 5)
@@ -83,15 +83,15 @@ message, so a failure tells you what it expected. Add a deliberately wrong test:
 
 ```rust
 // src/add_test.rv
-import std/test { assert_eq_int }
-import "./main" { add }
+from std.test import assert_eq_int
+from "./main" import add
 
 fun test_add_basic() {
     assert_eq_int(add(2, 3), 5)
 }
 
 fun test_add_wrong() {
-    assert_eq_int(add(2, 2), 5)     // add(2, 2) is 4, not 5
+    assert_eq_int(add(2, 2), 5) // add(2, 2) is 4, not 5
 }
 ```
 
@@ -112,22 +112,22 @@ values. Fix the expected value (or the code) and the test goes back to `ok`.
 `std/test` has an assertion per common shape. Import the ones you use:
 
 ```rust
-import std/test { assert, assert_msg, assert_true, assert_false, assert_eq_int, assert_eq_str, assert_eq, assert_ne, assert_some, assert_none }
-import std/string
+from std.test import assert, assert_msg, assert_true, assert_false, assert_eq_int, assert_eq_str, assert_eq, assert_ne, assert_some, assert_none
+import std.string
 
 fun test_assertions_tour() {
-    assert(1 + 1 == 2)                          // any Bool condition
-    assert_msg(7 % 2 == 1, "7 should be odd")   // with a custom message
+    assert(1 + 1 == 2) // any Bool condition
+    assert_msg(7 % 2 == 1, "7 should be odd") // with a custom message
     assert_true(10 > 3)
     assert_false(3 > 10)
 
-    assert_eq_int(6 * 7, 42)                     // Int equality
-    assert_eq_str("ab".concat("c"), "abc")       // String equality, by content
-    assert_eq(2 + 2, 4)                          // generic Eq + ToString
+    assert_eq_int(6 * 7, 42) // Int equality
+    assert_eq_str("ab".concat("c"), "abc") // String equality, by content
+    assert_eq(2 + 2, 4) // generic Eq + ToString
     assert_ne("yes", "no")
 
-    assert_some(Some(5))                         // Option is Some
-    let empty: Option<Int> = None
+    assert_some(Some(5)) // Option is Some
+    let empty: Option[int] = None
     assert_none(empty)
 }
 ```
@@ -146,8 +146,8 @@ without a `match`:
 
 ```rust
 // src/parse_test.rv
-import std/test { assert_ok, assert_err }
-import "./main" { parse_count }
+from std.test import assert_ok, assert_err
+from "./main" import parse_count
 
 fun test_parse_accepts_valid() {
     assert_ok(parse_count("3"))
@@ -170,8 +170,8 @@ library module and asserts against it. For a library whose entry is `src/lib.rv`
 
 ```rust
 // src/lib_test.rv
-import std/test { assert_eq_int }
-import "./lib" { factorial }
+from std.test import assert_eq_int
+from "./lib" import factorial
 
 fun test_factorial_base() {
     assert_eq_int(factorial(0), 1)

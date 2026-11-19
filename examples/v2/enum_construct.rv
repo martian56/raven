@@ -9,22 +9,22 @@ enum Color {
 }
 
 enum Shape {
-    Circle(Float),
-    Square(Float),
+    Circle(float),
+    Square(float),
 }
 
-fun name(c: Color) -> String {
+fun name(c: Color) -> str {
     return match c {
-        Red -> "red",
-        Green -> "green",
-        Blue -> "blue",
+        case Red { "red" }
+        case Green { "green" }
+        case Blue { "blue" }
     }
 }
 
-fun area(s: Shape) -> Float {
+fun area(s: Shape) -> float {
     return match s {
-        Circle(r) -> r * r * 3.0,
-        Square(w) -> w * w,
+        case Circle(r) { r * r * 3.0 }
+        case Square(w) { w * w }
     }
 }
 

@@ -1,4 +1,4 @@
-fun shadow() -> Int {
+fun shadow() -> int {
     let x = 1
     let y = {
         let x = 2

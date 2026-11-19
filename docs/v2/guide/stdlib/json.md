@@ -5,12 +5,12 @@ Parse and serialize JSON. `std/json` is a recursive descent parser
 a `JsonValue` enum for the parsed value tree.
 
 ```rust
-import std/json { parse, stringify }
+from std.json import parse, stringify
 
 fun main() {
     match parse("{\"name\": \"Ada\", \"id\": 7}") {
-        Ok(v) -> print(stringify(v)),     // {"name":"Ada","id":7}
-        Err(e) -> print("bad json"),
+        case Ok(v) { print(stringify(v)) } // {"name":"Ada","id":7}
+        case Err(e) { print("bad json") }
     }
 }
 ```
@@ -21,7 +21,7 @@ text `{"name": "Ada"}` is written `"{\"name\": \"Ada\"}"`.
 ## Importing
 
 ```rust
-import std/json { parse, stringify }
+from std.json import parse, stringify
 ```
 
 Bring in just what you use. The accessor methods on `JsonValue` (`is_null`,
@@ -30,7 +30,7 @@ import of `parse` and `stringify` is enough for most code. Import the type
 explicitly when you name it:
 
 ```rust
-import std/json { parse, stringify, JsonValue }
+from std.json import parse, stringify, JsonValue
 ```
 
 ## The value type
@@ -41,11 +41,11 @@ shapes:
 ```rust
 enum JsonValue {
     Null,
-    Bool(Bool),
-    Number(Float),
-    Str(String),
-    Array(List<JsonValue>),
-    Object(Map<String, JsonValue>),
+    Bool(bool),
+    Number(float),
+    Str(str),
+    Array(list[JsonValue]),
+    Object(dict[str, JsonValue]),
 }
 ```
 
@@ -78,12 +78,12 @@ Any non-whitespace content after the top-level value is rejected.
 `parse` returns a `Result`, so handle both arms with `match`:
 
 ```rust
-import std/json { parse }
+from std.json import parse
 
 fun main() {
     match parse("[1, 2, 3]") {
-        Ok(v) -> print("parsed ok"),
-        Err(e) -> print(e.message),
+        case Ok(v) { print("parsed ok") }
+        case Err(e) { print(e.message) }
     }
 }
 ```
@@ -137,22 +137,22 @@ True only for the `Null` variant.
 you want a whole-number field as an `Int` rather than the raw `Float`.
 
 ```rust
-import std/json { parse }
+from std.json import parse
 
 fun main() {
     match parse("{\"port\": 8080}") {
-        Ok(v) -> {
+        case Ok(v) {
             match v.get("port") {
-                Some(field) -> {
+                case Some(field) {
                     match field.as_int() {
-                        Some(i) -> print(i),     // 8080
-                        None -> print("not a number"),
+                        case Some(i) { print(i) } // 8080
+                        case None { print("not a number") }
                     }
                 }
-                None -> print("no port"),
+                case None { print("no port") }
             }
         }
-        Err(e) -> print("bad json"),
+        case Err(e) { print("bad json") }
     }
 }
 ```
@@ -168,12 +168,12 @@ The element count: the number of array elements or object members. `0` for
 any scalar value.
 
 ```rust
-import std/json { parse }
+from std.json import parse
 
 fun main() {
     match parse("[10, 20, 30]") {
-        Ok(v) -> print(v.length()),      // 3
-        Err(e) -> print("bad json"),
+        case Ok(v) { print(v.length()) } // 3
+        case Err(e) { print("bad json") }
     }
 }
 ```
@@ -182,22 +182,22 @@ A typical read chains a container step and then an extractor, handling each
 `Option` with `match`:
 
 ```rust
-import std/json { parse }
+from std.json import parse
 
 fun main() {
     match parse("{\"port\": 8080}") {
-        Ok(v) -> {
+        case Ok(v) {
             match v.get("port") {
-                Some(field) -> {
+                case Some(field) {
                     match field.as_number() {
-                        Some(n) -> print(n),     // 8080
-                        None -> print("port is not a number"),
+                        case Some(n) { print(n) } // 8080
+                        case None { print("port is not a number") }
                     }
                 }
-                None -> print("no port field"),
+                case None { print("no port field") }
             }
         }
-        Err(e) -> print("bad json"),
+        case Err(e) { print("bad json") }
     }
 }
 ```
@@ -220,12 +220,12 @@ A whole-number `Float` renders the way the runtime prints it, so `1.0`
 serializes as `1` and `0.15` serializes as `0.15`.
 
 ```rust
-import std/json { parse, stringify }
+from std.json import parse, stringify
 
 fun main() {
     match parse("{ \"a\" : 1 , \"b\" : [ true , null ] }") {
-        Ok(v) -> print(stringify(v)),     // {"a":1,"b":[true,null]}
-        Err(e) -> print("bad json"),
+        case Ok(v) { print(stringify(v)) } // {"a":1,"b":[true,null]}
+        case Err(e) { print("bad json") }
     }
 }
 ```
@@ -238,12 +238,12 @@ objects stay on one line as `[]` and `{}`. Members are emitted in the Map's
 key order, as with `stringify`.
 
 ```rust
-import std/json { parse, stringify_pretty }
+from std.json import parse, stringify_pretty
 
 fun main() {
     match parse("{\"a\":1,\"b\":[true,null]}") {
-        Ok(v) -> print(stringify_pretty(v, 2)),
-        Err(e) -> print("bad json"),
+        case Ok(v) { print(stringify_pretty(v, 2)) }
+        case Err(e) { print("bad json") }
     }
 }
 ```
@@ -255,7 +255,7 @@ parsing text. Select them from the module, and import `std/collections` when
 you need a `Map` for `json_object`.
 
 ```rust
-import std/json { json_null, json_bool, json_number, json_int, json_string, json_array, json_object }
+from std.json import json_null, json_bool, json_number, json_int, json_string, json_array, json_object
 ```
 
 ### `json_null() -> JsonValue`
@@ -288,13 +288,13 @@ An `Object` wrapping a `std/collections` `Map`. A map literal `["k": v]`
 serves as the argument.
 
 ```rust
-import std/collections
-import std/json { json_object, json_int, json_string, stringify_pretty }
+import std.collections
+from std.json import json_object, json_int, json_string, stringify_pretty
 
 fun main() {
-    let doc = json_object(["n": json_int(7), "name": json_string("ok")])
+    let doc = json_object({"n": json_int(7), "name": json_string("ok")})
     print(stringify_pretty(doc, 2))
-    print(doc.length())     // 2
+    print(doc.length()) // 2
 }
 ```
 
@@ -309,7 +309,7 @@ trait ToJson {
 }
 
 trait FromJson {
-    fun from_json(j: JsonValue) -> Result<Self, Error>
+    fun from_json(j: JsonValue) -> Result[Self, Error]
 }
 ```
 
@@ -328,31 +328,31 @@ the full encoding and the helper functions the derive emits.
 ## Worked example: read a config field
 
 ```rust
-import std/json { parse }
+from std.json import parse
 
 // Pull the "name" string out of a JSON object, with a fallback for any
 // shape that does not match.
-fun config_name(text: String) -> String {
+fun config_name(text: str) -> str {
     return match parse(text) {
-        Ok(v) -> {
+        case Ok(v) {
             match v.get("name") {
-                Some(field) -> {
+                case Some(field) {
                     match field.as_string() {
-                        Some(name) -> name,
-                        None -> "unnamed",
+                        case Some(name) { name }
+                        case None { "unnamed" }
                     }
                 }
-                None -> "unnamed",
+                case None { "unnamed" }
             }
         }
-        Err(e) -> "invalid",
+        case Err(e) { "invalid" }
     }
 }
 
 fun main() {
-    print(config_name("{\"name\": \"raven\", \"version\": 2}"))   // raven
-    print(config_name("{\"version\": 2}"))                        // unnamed
-    print(config_name("not json"))                                // invalid
+    print(config_name("{\"name\": \"raven\", \"version\": 2}")) // raven
+    print(config_name("{\"version\": 2}")) // unnamed
+    print(config_name("not json")) // invalid
 }
 ```
 

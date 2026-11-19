@@ -1,7 +1,7 @@
 // std/math integer helpers report overflow with a panic instead of returning a
 // silently wrong value. These ordinary inputs stay well within range.
-import std/io { println }
-import std/math { abs_int, pow_int, gcd, lcm }
+from std.io import println
+from std.math import abs_int, pow_int, gcd, lcm
 
 fun main() {
     println(abs_int(0 - 5).to_string())

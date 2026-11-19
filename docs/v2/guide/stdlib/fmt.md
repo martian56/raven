@@ -5,12 +5,12 @@ that compose with string interpolation: pad and align fields, repeat and join
 strings, render integers in a base, and produce quoted debug output.
 
 ```rust
-import std/fmt { pad_left, to_hex }
-import std/io { println }
+from std.fmt import pad_left, to_hex
+from std.io import println
 
 fun main() {
-    println(pad_left("7", 3, "0"))      // 007
-    println(to_hex(255))                // ff
+    println(pad_left("7", 3, "0")) // 007
+    println(to_hex(255)) // ff
 }
 ```
 
@@ -26,7 +26,7 @@ it, not a printf replacement.
 The formatting helpers are free functions, bound with a selective import:
 
 ```rust
-import std/fmt { repeat, pad_left, pad_right, center, join, to_radix, to_binary, to_octal, to_hex, pad_int }
+from std.fmt import repeat, pad_left, pad_right, center, join, to_radix, to_binary, to_octal, to_hex, pad_int
 ```
 
 The `Debug` trait is brought in by the same `import std/fmt` (its impls merge
@@ -35,11 +35,11 @@ into scope like `std/string`'s methods). Once the module is imported, the
 selector:
 
 ```rust
-import std/fmt
+import std.fmt
 
 fun main() {
-    print("hi".debug())     // "hi"
-    print(true.debug())     // true
+    print("hi".debug()) // "hi"
+    print(true.debug()) // true
 }
 ```
 
@@ -59,11 +59,11 @@ to its length minus one. See [std/string](string.md) for the same byte model.
 `s` concatenated `n` times. A non-positive `n` yields the empty string.
 
 ```rust
-import std/fmt { repeat }
+from std.fmt import repeat
 
 fun main() {
-    print(repeat("ab", 3))      // ababab
-    print(repeat("x", 0))       // (empty)
+    print(repeat("ab", 3)) // ababab
+    print(repeat("x", 0)) // (empty)
 }
 ```
 
@@ -77,11 +77,11 @@ that does not exceed the current length returns `s` unchanged.
 Right-pad `s` with `fill` until its byte length is at least `width`.
 
 ```rust
-import std/fmt { pad_left, pad_right }
+from std.fmt import pad_left, pad_right
 
 fun main() {
-    print(pad_left("42", 5, "0"))       // 00042
-    print(pad_right("id", 5, "."))      // id...
+    print(pad_left("42", 5, "0")) // 00042
+    print(pad_right("id", 5, ".")) // id...
 }
 ```
 
@@ -91,11 +91,11 @@ Center `s` in a field of byte width `width`, padding with `fill`. An odd
 amount of padding puts the extra byte on the right.
 
 ```rust
-import std/fmt { center }
+from std.fmt import center
 
 fun main() {
-    print(center("hi", 6, "-"))     // --hi--
-    print(center("hi", 7, "-"))     // --hi---
+    print(center("hi", 6, "-")) // --hi--
+    print(center("hi", 7, "-")) // --hi---
 }
 ```
 
@@ -104,10 +104,10 @@ fun main() {
 Join `parts` with `sep` between adjacent elements.
 
 ```rust
-import std/fmt { join }
+from std.fmt import join
 
 fun main() {
-    print(join(["a", "b", "c"], ", "))      // a, b, c
+    print(join(["a", "b", "c"], ", ")) // a, b, c
 }
 ```
 
@@ -122,12 +122,12 @@ in the negative domain (accumulating the negative magnitude), so the most
 negative i64 has no overflowing negation.
 
 ```rust
-import std/fmt { to_radix }
+from std.fmt import to_radix
 
 fun main() {
-    print(to_radix(255, 16))    // ff
-    print(to_radix(-42, 16))    // -2a
-    print(to_radix(5, 2))       // 101
+    print(to_radix(255, 16)) // ff
+    print(to_radix(-42, 16)) // -2a
+    print(to_radix(5, 2)) // 101
 }
 ```
 
@@ -136,12 +136,12 @@ fun main() {
 Thin wrappers over `to_radix` for base 2, 8, and 16.
 
 ```rust
-import std/fmt { to_binary, to_octal, to_hex }
+from std.fmt import to_binary, to_octal, to_hex
 
 fun main() {
-    print(to_binary(6))     // 110
-    print(to_octal(64))     // 100
-    print(to_hex(3735928559))   // deadbeef
+    print(to_binary(6)) // 110
+    print(to_octal(64)) // 100
+    print(to_hex(3735928559)) // deadbeef
 }
 ```
 
@@ -152,21 +152,27 @@ Parse `s` as an integer in `base`, the inverse of `to_radix`. `base` must be in
 empty string, a digit out of range for the base, or a `base` outside `2..=16`.
 
 ```rust
-import std/fmt { from_radix }
+from std.fmt import from_radix
 
 fun main() {
-    print(match from_radix("101", 2) {
-        Some(n) -> n,
-        None -> -1,
-    })      // 5
-    print(match from_radix("ff", 16) {
-        Some(n) -> n,
-        None -> -1,
-    })      // 255
-    print(match from_radix("zz", 16) {
-        Some(n) -> n,
-        None -> -1,
-    })      // -1 (None: bad digit)
+    print(
+        match from_radix("101", 2) {
+            case Some(n) { n }
+            case None { -1 }
+        }, // 5
+    )
+    print(
+        match from_radix("ff", 16) {
+            case Some(n) { n }
+            case None { -1 }
+        }, // 255
+    )
+    print(
+        match from_radix("zz", 16) {
+            case Some(n) { n }
+            case None { -1 }
+        }, // -1 (None: bad digit)
+    )
 }
 ```
 
@@ -176,13 +182,15 @@ Parse a hexadecimal string, the inverse of `to_hex`. A thin wrapper over
 `from_radix(s, 16)`.
 
 ```rust
-import std/fmt { from_hex }
+from std.fmt import from_hex
 
 fun main() {
-    print(match from_hex("deadbeef") {
-        Some(n) -> n,
-        None -> -1,
-    })      // 3735928559
+    print(
+        match from_hex("deadbeef") {
+            case Some(n) { n }
+            case None { -1 }
+        }, // 3735928559
+    )
 }
 ```
 
@@ -194,12 +202,12 @@ stays leftmost and the zero fill goes between the sign and the digits, so
 length returns the value unchanged.
 
 ```rust
-import std/fmt { pad_int }
+from std.fmt import pad_int
 
 fun main() {
-    print(pad_int(7, 4))        // 0007
-    print(pad_int(-7, 4))       // -007
-    print(pad_int(12345, 3))    // 12345 (already wider than width)
+    print(pad_int(7, 4)) // 0007
+    print(pad_int(-7, 4)) // -007
+    print(pad_int(12345, 3)) // 12345 (already wider than width)
 }
 ```
 
@@ -211,12 +219,12 @@ Very large precision requests are clamped before the internal scale would
 overflow; the result stays bounded instead of hanging on finite input.
 
 ```rust
-import std/fmt { format_float }
+from std.fmt import format_float
 
 fun main() {
-    print(format_float(3.14159, 2))     // 3.14
-    print(format_float(1.0, 3))         // 1.000
-    print(format_float(2.5, 0))         // 3
+    print(format_float(3.14159, 2)) // 3.14
+    print(format_float(1.0, 3)) // 1.000
+    print(format_float(2.5, 0)) // 3
 }
 ```
 
@@ -224,7 +232,7 @@ fun main() {
 
 ```rust
 trait Debug {
-    fun debug(self) -> String
+    fun debug(self) -> str
 }
 ```
 
@@ -244,34 +252,30 @@ Char and String quoting does not escape inner quotes: a String containing a
 the 4-character string `"hi"`.
 
 ```rust
-import std/fmt
+import std.fmt
 
 fun main() {
-    print(42.debug())       // 42
-    print(true.debug())     // true
-    print('x'.debug())      // 'x'
-    print("hi".debug())     // "hi"
+    print(42.debug()) // 42
+    print(true.debug()) // true
+    print('x'.debug()) // 'x'
+    print("hi".debug()) // "hi"
 }
 ```
 
 ## Worked example: a fixed-width table row
 
 ```rust
-import std/fmt { pad_right, pad_int, join, to_hex }
-import std/io { println }
+from std.fmt import pad_right, pad_int, join, to_hex
+from std.io import println
 
-fun row(name: String, count: Int, color: Int) -> String {
-    let cells = [
-        pad_right(name, 8, " "),
-        pad_int(count, 4),
-        to_hex(color),
-    ]
+fun row(name: str, count: int, color: int) -> str {
+    let cells = [pad_right(name, 8, " "), pad_int(count, 4), to_hex(color)]
     return join(cells, " | ")
 }
 
 fun main() {
-    println(row("red", 7, 16711680))        // red      | 0007 | ff0000
-    println(row("green", 128, 65280))       // green    | 0128 | ff00
+    println(row("red", 7, 16711680)) // red      | 0007 | ff0000
+    println(row("green", 128, 65280)) // green    | 0128 | ff00
 }
 ```
 

@@ -7,13 +7,13 @@ resolves a real path. For anything that talks to the filesystem, reach for
 [std/fs](fs.md) instead.
 
 ```rust
-import std/path { join, basename, dirname, extension, stem, is_absolute }
+from std.path import join, basename, dirname, extension, stem, is_absolute
 
 fun main() {
-    let p = join("src", "main.rv")      // src/main.rv
-    print(dirname(p))                   // src
-    print(basename(p))                  // main.rv
-    print(extension(p))                 // rv
+    let p = join("src", "main.rv") // src/main.rv
+    print(dirname(p)) // src
+    print(basename(p)) // main.rv
+    print(extension(p)) // rv
 }
 ```
 
@@ -23,7 +23,7 @@ The functions have no natural single receiver, so they are free functions
 brought in by a selective import:
 
 ```rust
-import std/path { join, basename, dirname, extension, stem, is_absolute }
+from std.path import join, basename, dirname, extension, stem, is_absolute
 ```
 
 Pull in only the names you use. The module is built on `std/string`'s
@@ -65,15 +65,15 @@ separator: it stays one `/` whether `a` ends with a slash, `b` begins with
 one, or both. If either operand is empty, the other is returned unchanged.
 
 ```rust
-import std/path { join }
+from std.path import join
 
 fun main() {
-    print(join("src", "main.rv"))       // src/main.rv
-    print(join("src/", "main.rv"))      // src/main.rv
-    print(join("src", "/main.rv"))      // src/main.rv
-    print(join("src/", "/main.rv"))     // src/main.rv
-    print(join("", "main.rv"))          // main.rv
-    print(join("src", ""))              // src
+    print(join("src", "main.rv")) // src/main.rv
+    print(join("src/", "main.rv")) // src/main.rv
+    print(join("src", "/main.rv")) // src/main.rv
+    print(join("src/", "/main.rv")) // src/main.rv
+    print(join("", "main.rv")) // main.rv
+    print(join("src", "")) // src
 }
 ```
 
@@ -85,12 +85,12 @@ The final component, everything after the last `/`. When `p` contains no
 `/`, the whole string is the basename.
 
 ```rust
-import std/path { basename }
+from std.path import basename
 
 fun main() {
-    print(basename("src/lib/main.rv"))  // main.rv
-    print(basename("main.rv"))          // main.rv (no slash)
-    print(basename("/etc/hosts"))       // hosts
+    print(basename("src/lib/main.rv")) // main.rv
+    print(basename("main.rv")) // main.rv (no slash)
+    print(basename("/etc/hosts")) // hosts
 }
 ```
 
@@ -102,12 +102,12 @@ Everything up to the last `/`. Two edge cases are worth remembering:
 - When the only `/` is at index 0, it returns `"/"` (the root).
 
 ```rust
-import std/path { dirname }
+from std.path import dirname
 
 fun main() {
-    print(dirname("src/lib/main.rv"))   // src/lib
-    print(dirname("main.rv"))           // . (no slash)
-    print(dirname("/hosts"))            // / (slash only at index 0)
+    print(dirname("src/lib/main.rv")) // src/lib
+    print(dirname("main.rv")) // . (no slash)
+    print(dirname("/hosts")) // / (slash only at index 0)
 }
 ```
 
@@ -119,13 +119,13 @@ directory name does not count. A leading dot marks a dotfile, not an
 extension: the extension of `.gitignore` is `""`.
 
 ```rust
-import std/path { extension }
+from std.path import extension
 
 fun main() {
-    print(extension("archive.tar.gz"))  // gz (last dot wins)
-    print(extension("README"))          // "" (no dot)
-    print(extension(".gitignore"))      // "" (leading dot, a dotfile)
-    print(extension("a.b/main"))        // "" (dot is in the directory part)
+    print(extension("archive.tar.gz")) // gz (last dot wins)
+    print(extension("README")) // "" (no dot)
+    print(extension(".gitignore")) // "" (leading dot, a dotfile)
+    print(extension("a.b/main")) // "" (dot is in the directory part)
 }
 ```
 
@@ -136,13 +136,13 @@ behind. For a name without an extension, the whole basename is the stem,
 and a dotfile keeps its leading dot.
 
 ```rust
-import std/path { stem }
+from std.path import stem
 
 fun main() {
-    print(stem("src/main.rv"))          // main
-    print(stem("archive.tar.gz"))       // archive.tar (only the last dot)
-    print(stem("README"))               // README (no extension)
-    print(stem(".gitignore"))           // .gitignore (dotfile, no extension)
+    print(stem("src/main.rv")) // main
+    print(stem("archive.tar.gz")) // archive.tar (only the last dot)
+    print(stem("README")) // README (no extension)
+    print(stem(".gitignore")) // .gitignore (dotfile, no extension)
 }
 ```
 
@@ -151,12 +151,12 @@ fun main() {
 True when `p` starts with `/`. The empty string is relative.
 
 ```rust
-import std/path { is_absolute }
+from std.path import is_absolute
 
 fun main() {
-    print(is_absolute("/usr/bin"))      // true
-    print(is_absolute("usr/bin"))       // false
-    print(is_absolute(""))              // false
+    print(is_absolute("/usr/bin")) // true
+    print(is_absolute("usr/bin")) // false
+    print(is_absolute("")) // false
 }
 ```
 
@@ -166,12 +166,12 @@ True when `p` does not start with `/`. The exact complement of
 `is_absolute`, so the empty string is relative.
 
 ```rust
-import std/path { is_relative }
+from std.path import is_relative
 
 fun main() {
-    print(is_relative("usr/bin"))       // true
-    print(is_relative("/usr/bin"))      // false
-    print(is_relative(""))              // true
+    print(is_relative("usr/bin")) // true
+    print(is_relative("/usr/bin")) // false
+    print(is_relative("")) // true
 }
 ```
 
@@ -182,10 +182,10 @@ repeated separators produce no empty entries, so a root path and a bare name
 both reduce to their real parts.
 
 ```rust
-import std/path { components }
+from std.path import components
 
 fun main() {
-    let parts = components("/a/b/c")    // ["a", "b", "c"]
+    let parts = components("/a/b/c") // ["a", "b", "c"]
     for part in parts {
         print(part)
     }
@@ -201,11 +201,11 @@ redundant slashes. A leading `/` is preserved. The result is pure string work:
 no `..` is resolved against the real filesystem.
 
 ```rust
-import std/path { normalize }
+from std.path import normalize
 
 fun main() {
-    print(normalize("/a/b/../c/./d"))   // /a/c/d
-    print(normalize("a//b/"))           // a/b
+    print(normalize("/a/b/../c/./d")) // /a/c/d
+    print(normalize("a//b/")) // a/b
 }
 ```
 
@@ -215,12 +215,12 @@ Replace the extension of `p` with `ext` (no leading dot). When `p` has no
 extension, `ext` is appended. An empty `ext` removes the extension.
 
 ```rust
-import std/path { with_extension }
+from std.path import with_extension
 
 fun main() {
-    print(with_extension("report.txt", "md"))  // report.md
-    print(with_extension("report", "md"))       // report.md
-    print(with_extension("report.txt", ""))      // report
+    print(with_extension("report.txt", "md")) // report.md
+    print(with_extension("report", "md")) // report.md
+    print(with_extension("report.txt", "")) // report
 }
 ```
 
@@ -230,9 +230,9 @@ This walks a path apart, swaps its extension, and joins it back together
 using only documented functions.
 
 ```rust
-import std/path { join, dirname, stem, is_absolute }
+from std.path import join, dirname, stem, is_absolute
 
-fun with_extension(p: String, ext: String) -> String {
+fun with_extension(p: str, ext: str) -> str {
     let dir = dirname(p)
     let name = stem(p).concat(".").concat(ext)
     if dir == "." {
@@ -242,9 +242,9 @@ fun with_extension(p: String, ext: String) -> String {
 }
 
 fun main() {
-    print(with_extension("src/report.txt", "md"))   // src/report.md
-    print(with_extension("notes.txt", "md"))         // notes.md
-    print(is_absolute("/tmp/a"))                      // true
+    print(with_extension("src/report.txt", "md")) // src/report.md
+    print(with_extension("notes.txt", "md")) // notes.md
+    print(is_absolute("/tmp/a")) // true
 }
 ```
 

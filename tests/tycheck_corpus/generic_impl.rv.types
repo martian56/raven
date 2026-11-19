@@ -1,6 +1,6 @@
 (types
-  75..79 "self" -> Self/* = Box<T> */
-  75..85 "self.value" -> T
-  120..121 "b" -> Box<Int>
-  120..127 "b.get()" -> Int
+  73..77 "self" -> Self/* = Box<T> */
+  73..83 "self.value" -> T
+  118..119 "b" -> Box<Int>
+  118..125 "b.get()" -> Int
 )

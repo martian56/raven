@@ -6,8 +6,8 @@ program runs to completion and exits zero; if one fails, it panics with a
 message and aborts with a nonzero exit code.
 
 ```rust
-import std/test { assert, assert_eq_int }
-import std/io { println }
+from std.test import assert, assert_eq_int
+from std.io import println
 
 fun main() {
     assert(1 + 1 == 2)
@@ -22,7 +22,7 @@ The assertions are free functions, so import the ones you use with a
 selective list:
 
 ```rust
-import std/test { assert, assert_msg, assert_true, assert_false, assert_eq_int, assert_eq_str }
+from std.test import assert, assert_msg, assert_true, assert_false, assert_eq_int, assert_eq_str
 ```
 
 ## The test model
@@ -47,7 +47,7 @@ fixed message and exits nonzero.
 Fails when `cond` is false. Panic message: `assertion failed`.
 
 ```rust
-import std/test { assert }
+from std.test import assert
 
 fun main() {
     assert(2 > 1)
@@ -61,7 +61,7 @@ Fails when `cond` is false, panicking with the caller-supplied `msg`. Use
 this when you want the failure to explain itself.
 
 ```rust
-import std/test { assert_msg }
+from std.test import assert_msg
 
 fun main() {
     let n = 7
@@ -78,8 +78,8 @@ Fails when `cond` is false. Panic message: `assertion failed: expected true`.
 Fails when `cond` is true. Panic message: `assertion failed: expected false`.
 
 ```rust
-import std/test { assert_true, assert_false }
-import std/string
+from std.test import assert_true, assert_false
+import std.string
 
 fun main() {
     assert_true("report.csv".ends_with(".csv"))
@@ -94,9 +94,9 @@ Fails when `a != b`. The panic message interpolates both operands
 values.
 
 ```rust
-import std/test { assert_eq_int }
+from std.test import assert_eq_int
 
-fun double(x: Int) -> Int {
+fun double(x: int) -> int {
     return x * 2
 }
 
@@ -111,8 +111,8 @@ Fails when `a != b`, compared by content. The panic message interpolates
 both operands (`assertion failed: ${a} != ${b}`).
 
 ```rust
-import std/test { assert_eq_str }
-import std/string
+from std.test import assert_eq_str
+import std.string
 
 fun main() {
     assert_eq_str("Hello".to_upper(), "HELLO")
@@ -126,7 +126,7 @@ fails when `a != b`, `assert_ne` fails when `a == b`. Both interpolate the two
 values into the failure message.
 
 ```rust
-import std/test { assert_eq, assert_ne }
+from std.test import assert_eq, assert_ne
 
 fun main() {
     assert_eq(2 + 2, 4)
@@ -140,7 +140,7 @@ Fails when `a` and `b` differ by more than `eps`. This is the right way to
 compare floats: exact `==` is unreliable for computed results.
 
 ```rust
-import std/test { assert_eq_float }
+from std.test import assert_eq_float
 
 fun main() {
     assert_eq_float(0.1 + 0.2, 0.3, 0.0001)
@@ -152,11 +152,11 @@ fun main() {
 `assert_some` fails on `None`, `assert_none` fails on `Some`.
 
 ```rust
-import std/test { assert_some, assert_none }
+from std.test import assert_some, assert_none
 
 fun main() {
     assert_some(Some(5))
-    let empty: Option<Int> = None
+    let empty: Option[int] = None
     assert_none(empty)
 }
 ```
@@ -166,16 +166,16 @@ fun main() {
 `assert_ok` fails on `Err`, `assert_err` fails on `Ok`.
 
 ```rust
-import std/test { assert_ok, assert_err }
-import std/error { Error, error }
+from std.test import assert_ok, assert_err
+from std.error import Error, error
 
-fun parse(s: String) -> Result<Int, Error> {
+fun parse(s: str) -> Result[int, Error] {
     return Ok(7)
 }
 
 fun main() {
     assert_ok(parse("7"))
-    let bad: Result<Int, Error> = Err(error("bad input"))
+    let bad: Result[int, Error] = Err(error("bad input"))
     assert_err(bad)
 }
 ```
@@ -187,15 +187,15 @@ program below exercises a couple of helpers and exits zero only if every
 check passes:
 
 ```rust
-import std/test { assert, assert_eq_int, assert_eq_str }
-import std/string
-import std/io { println }
+from std.test import assert, assert_eq_int, assert_eq_str
+import std.string
+from std.io import println
 
-fun add(a: Int, b: Int) -> Int {
+fun add(a: int, b: int) -> int {
     return a + b
 }
 
-fun shout(s: String) -> String {
+fun shout(s: str) -> str {
     return s.trim().to_upper()
 }
 

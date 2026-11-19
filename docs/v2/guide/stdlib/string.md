@@ -5,18 +5,18 @@ a bare `import std/string` brings every method below into scope as a method
 on any `String` value.
 
 ```rust
-import std/string
+import std.string
 
 fun main() {
     let name = "  Ada Lovelace  "
-    print(name.trim().to_upper())     // ADA LOVELACE
+    print(name.trim().to_upper()) // ADA LOVELACE
 }
 ```
 
 ## Importing
 
 ```rust
-import std/string
+import std.string
 ```
 
 Import the whole module (not a selective `{ ... }` list): the methods are
@@ -47,11 +47,11 @@ unchanged.
 The number of UTF-8 bytes in the string. `len` is a built-in alias.
 
 ```rust
-import std/string
+import std.string
 
 fun main() {
-    print("raven".length())     // 5
-    print("raven".len())        // 5 (built in, no import needed)
+    print("raven".length()) // 5
+    print("raven".len()) // 5 (built in, no import needed)
 }
 ```
 
@@ -65,11 +65,11 @@ True when the string is empty or contains only ASCII whitespace (space, tab,
 newline, carriage return, vertical tab, form feed).
 
 ```rust
-import std/string
+import std.string
 
 fun main() {
-    print("   \t\n".is_blank())     // true
-    print(" x ".is_blank())         // false
+    print("   \t\n".is_blank()) // true
+    print(" x ".is_blank()) // false
 }
 ```
 
@@ -87,11 +87,11 @@ The raw byte value (0..255) at index `i`, or `-1` when `i` is out of range.
 Where `char_at` gives a one-byte string, `byte_at` gives the numeric byte.
 
 ```rust
-import std/string
+import std.string
 
 fun main() {
-    print("raven".byte_at(0))       // 114
-    print("raven".byte_at(9))       // -1
+    print("raven".byte_at(0)) // 114
+    print("raven".byte_at(9)) // -1
 }
 ```
 
@@ -101,11 +101,11 @@ The half-open byte range `[start, end)`, clamped to `0..length`. A `start`
 at or past `end` yields the empty string.
 
 ```rust
-import std/string
+import std.string
 
 fun main() {
-    print("raven".substring(1, 4))      // ave
-    print("raven".char_at(0))           // r
+    print("raven".substring(1, 4)) // ave
+    print("raven".char_at(0)) // r
 }
 ```
 
@@ -121,11 +121,11 @@ is left as is.
 Remove leading and trailing ASCII whitespace. Interior whitespace is kept.
 
 ```rust
-import std/string
+import std.string
 
 fun main() {
-    print("Hello".to_upper())           // HELLO
-    print("  hi  ".trim())              // hi
+    print("Hello".to_upper()) // HELLO
+    print("  hi  ".trim()) // hi
 }
 ```
 
@@ -135,10 +135,10 @@ The string concatenated `n` times. A non-positive `n` yields the empty
 string.
 
 ```rust
-import std/string
+import std.string
 
 fun main() {
-    print("ab".repeat(3))       // ababab
+    print("ab".repeat(3)) // ababab
 }
 ```
 
@@ -148,11 +148,11 @@ Remove leading (`trim_start`) or trailing (`trim_end`) ASCII whitespace only,
 leaving the other end untouched.
 
 ```rust
-import std/string
+import std.string
 
 fun main() {
-    print("  hi  ".trim_start())     // "hi  "
-    print("  hi  ".trim_end())       // "  hi"
+    print("  hi  ".trim_start()) // "hi  "
+    print("  hi  ".trim_end()) // "  hi"
 }
 ```
 
@@ -162,10 +162,10 @@ The string with its bytes reversed. For ASCII this reverses characters; a
 multi-byte character's encoding is reversed byte-wise.
 
 ```rust
-import std/string
+import std.string
 
 fun main() {
-    print("raven".reverse())        // nevar
+    print("raven".reverse()) // nevar
 }
 ```
 
@@ -187,11 +187,11 @@ The number of non-overlapping occurrences of `needle`, scanning left to right.
 An empty needle counts as `0`.
 
 ```rust
-import std/string
+import std.string
 
 fun main() {
-    print("a-b-a".last_index_of("a"))   // 4
-    print("a-b-a".count("a"))           // 2
+    print("a-b-a".last_index_of("a")) // 4
+    print("a-b-a".count("a")) // 2
 }
 ```
 
@@ -210,13 +210,13 @@ building block the other search methods use; handy for hand-written
 scanning.
 
 ```rust
-import std/string
+import std.string
 
 fun main() {
     let path = "report.csv"
-    print(path.ends_with(".csv"))       // true
-    print(path.index_of("."))           // 6
-    print(path.contains("port"))        // true
+    print(path.ends_with(".csv")) // true
+    print(path.index_of(".")) // 6
+    print(path.contains("port")) // true
 }
 ```
 
@@ -233,11 +233,11 @@ Replace every non-overlapping occurrence of `from` with `to`, scanning left
 to right. An empty `from` returns the input unchanged.
 
 ```rust
-import std/string
+import std.string
 
 fun main() {
-    print("a-b-c".replace("-", "+"))        // a+b+c
-    print("one".concat(" ").concat("two"))  // one two
+    print("a-b-c".replace("-", "+")) // a+b+c
+    print("one".concat(" ").concat("two")) // one two
 }
 ```
 
@@ -250,11 +250,11 @@ separators produce empty pieces. An empty `sep` returns the whole string as a
 single element.
 
 ```rust
-import std/string
+import std.string
 
 fun main() {
     for p in "a,b,c".split(",") {
-        print(p)        // a, then b, c
+        print(p) // a, then b, c
     }
 }
 ```
@@ -265,11 +265,11 @@ Split on runs of ASCII whitespace, discarding empty pieces. Leading and
 trailing whitespace produce no empty elements.
 
 ```rust
-import std/string
+import std.string
 
 fun main() {
     for w in "  one   two  ".split_whitespace() {
-        print(w)        // one, then two
+        print(w) // one, then two
     }
 }
 ```
@@ -281,11 +281,11 @@ Unix and Windows endings work. A trailing newline does not produce a final
 empty line.
 
 ```rust
-import std/string
+import std.string
 
 fun main() {
     for l in "x\r\ny".lines() {
-        print(l)        // x, then y
+        print(l) // x, then y
     }
 }
 ```
@@ -299,16 +299,16 @@ trimmed first. Returns `None` when it is empty or holds any non-digit
 character.
 
 ```rust
-import std/string
+import std.string
 
 fun main() {
     match "  -42 ".parse_int() {
-        Some(n) -> print(n),        // -42
-        None -> print("no int"),
+        case Some(n) { print(n) } // -42
+        case None { print("no int") }
     }
     match "12x".parse_int() {
-        Some(n) -> print(n),
-        None -> print("no int"),    // no int
+        case Some(n) { print(n) }
+        case None { print("no int") } // no int
     }
 }
 ```
@@ -320,12 +320,12 @@ Parse a floating point number: an optional sign, an integer part, an optional
 Returns `None` on any trailing or invalid character.
 
 ```rust
-import std/string
+import std.string
 
 fun main() {
     match "3.5e2".parse_float() {
-        Some(f) -> print(f),        // 350
-        None -> print("no float"),
+        case Some(f) { print(f) } // 350
+        case None { print("no float") }
     }
 }
 ```
@@ -337,11 +337,11 @@ fun main() {
 compared by content:
 
 ```rust
-fun classify(word: String) -> Int {
+fun classify(word: str) -> int {
     return match word {
-        "yes" -> 1,
-        "no" -> 0,
-        _ -> -1,
+        case "yes" { 1 }
+        case "no" { 0 }
+        case _ { -1 }
     }
 }
 ```
@@ -349,14 +349,14 @@ fun classify(word: String) -> Int {
 ## Worked example: a tiny slug builder
 
 ```rust
-import std/string
+import std.string
 
-fun slug(title: String) -> String {
+fun slug(title: str) -> str {
     return title.trim().to_lower().replace(" ", "-")
 }
 
 fun main() {
-    print(slug("  Hello World  "))      // hello-world
+    print(slug("  Hello World  ")) // hello-world
 }
 ```
 

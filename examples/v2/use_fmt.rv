@@ -1,6 +1,6 @@
 // golden:skip
-import std/fmt { repeat, pad_left, pad_right, center, join, to_radix, to_binary, to_octal, to_hex, pad_int }
-import std/io { println }
+from std.fmt import repeat, pad_left, pad_right, center, join, to_radix, to_binary, to_octal, to_hex, pad_int
+from std.io import println
 
 fun main() {
     println(repeat("ab", 3))

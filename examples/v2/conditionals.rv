@@ -1,5 +1,5 @@
 // Branching with else if chains.
-fun classify(age: Int) -> String {
+fun classify(age: int) -> str {
     if age < 18 {
         "Too young"
     } else if age < 30 {
@@ -9,7 +9,7 @@ fun classify(age: Int) -> String {
     }
 }
 
-fun grade(score: Int) -> String {
+fun grade(score: int) -> str {
     if score >= 90 {
         "Grade: A"
     } else if score >= 80 {

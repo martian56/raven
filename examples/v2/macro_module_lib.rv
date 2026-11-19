@@ -4,6 +4,6 @@
 // imported, not the entry point.
 macro double { ($x:expr) => { ($x) + ($x) } }
 
-fun compute() -> Int {
+fun compute() -> int {
     return double!(21)
 }

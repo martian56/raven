@@ -4,25 +4,25 @@
 // codegen_smoke.rs (process_stdin_broken_pipe_does_not_kill). Prints:
 //   ok
 //   survived
-import std/process { run_with_input }
-import std/env { get_env }
-import std/io { println }
-import std/string
+from std.process import run_with_input
+from std.env import get_env
+from std.io import println
+import std.string
 
 fun main() {
     let child = get_env("RAVEN_PROC_CHILD")
     // ~160 KB, well over a typical 64 KB pipe buffer, so the write blocks and
     // then breaks when the child exits.
-    let big = "0123456789"
-    let i = 0
+    var big = "0123456789"
+    var i = 0
     while i < 14 {
         big = big.concat(big)
         i = i + 1
     }
-    let no_args: List<String> = []
+    let no_args: list[str] = []
     match run_with_input(child, no_args, big) {
-        Ok(out) -> println("ok"),
-        Err(e) -> println("err"),
+        case Ok(out) { println("ok") }
+        case Err(e) { println("err") }
     }
     println("survived")
 }

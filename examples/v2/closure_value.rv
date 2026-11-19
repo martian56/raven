@@ -4,6 +4,6 @@
 // program only builds the closure value and prints a sentinel to show
 // the allocation and GC root frame run without crashing.
 fun main() {
-    let f = fun(x: Int) -> Int = x + 1
+    let f = (x: int) -> int => x + 1
     print(42)
 }

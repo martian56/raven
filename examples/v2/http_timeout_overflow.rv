@@ -3,8 +3,8 @@
 // conversion now saturates, so a large timeout stays a large positive bound and
 // a normal value is exact. golden:skip (kept as a focused demo; a codegen smoke
 // test runs it and checks the output).
-import std/http { Server }
-import std/io { println }
+from std.http import Server
+from std.io import println
 
 fun main() {
     let huge = Server.new().with_timeout(9999999999999999)

@@ -4,11 +4,11 @@
 //   affirmative
 //   negative
 //   unknown
-fun classify(s: String) -> String {
+fun classify(s: str) -> str {
     return match s {
-        "yes" -> "affirmative",
-        "no" -> "negative",
-        _ -> "unknown",
+        case "yes" { "affirmative" }
+        case "no" { "negative" }
+        case _ { "unknown" }
     }
 }
 

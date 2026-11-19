@@ -10,14 +10,14 @@ running until it hits a yield point (a blocking channel operation or an explicit
 `yield_now()`), at which the worker resumes another ready goroutine.
 
 ```rust
-import std/sync { channel, channel_buffered, yield_now }
+from std.sync import channel, channel_buffered, yield_now
 
 fun main() {
     let ch = channel()
-    spawn(fun() -> Unit {
+    spawn {
         ch.send(42)
-    })
-    print(ch.recv())        // 42
+    }
+    print(ch.recv()) // 42
 }
 ```
 
@@ -26,7 +26,7 @@ Channels in this slice carry `Int` values.
 ## Importing
 
 ```rust
-import std/sync { channel, channel_buffered, yield_now }
+from std.sync import channel, channel_buffered, yield_now
 ```
 
 `channel`, `channel_buffered`, and `yield_now` are free functions, so import
@@ -45,14 +45,14 @@ ready to take the value, and a `recv` blocks until a sender hands one over. The
 two sides meet: nothing is stored in between.
 
 ```rust
-import std/sync { channel, channel_buffered, yield_now }
+from std.sync import channel, channel_buffered, yield_now
 
 fun main() {
     let ch = channel()
-    spawn(fun() -> Unit {
-        ch.send(7)          // blocks until main receives
-    })
-    print(ch.recv())        // 7
+    spawn {
+        ch.send(7) // blocks until main receives
+    }
+    print(ch.recv()) // 7
 }
 ```
 
@@ -63,14 +63,14 @@ there is room in the buffer, and only blocks once the buffer is full. A `recv`
 takes the oldest buffered value, and blocks only when the buffer is empty.
 
 ```rust
-import std/sync { channel, channel_buffered, yield_now }
+from std.sync import channel, channel_buffered, yield_now
 
 fun main() {
     let ch = channel_buffered(2)
-    ch.send(1)              // room: returns at once
-    ch.send(2)              // room: returns at once
-    print(ch.recv())        // 1
-    print(ch.recv())        // 2
+    ch.send(1) // room: returns at once
+    ch.send(2) // room: returns at once
+    print(ch.recv()) // 1
+    print(ch.recv()) // 2
 }
 ```
 
@@ -89,16 +89,16 @@ Receive a value, blocking until one is available. On an empty channel the
 goroutine yields to the scheduler and resumes when a sender delivers a value.
 
 ```rust
-import std/sync { channel, channel_buffered, yield_now }
+from std.sync import channel, channel_buffered, yield_now
 
 fun main() {
     let ch = channel()
-    spawn(fun() -> Unit {
+    spawn {
         ch.send(10)
         ch.send(20)
-    })
-    print(ch.recv())        // 10
-    print(ch.recv())        // 20
+    }
+    print(ch.recv()) // 10
+    print(ch.recv()) // 20
 }
 ```
 
@@ -113,14 +113,14 @@ yield when they block, but it is useful for handing off in a tight loop that
 otherwise never reaches a blocking operation.
 
 ```rust
-import std/sync { channel, channel_buffered, yield_now }
+from std.sync import channel, channel_buffered, yield_now
 
 fun main() {
-    spawn(fun() -> Unit {
+    spawn {
         print(1)
         yield_now()
         print(3)
-    })
+    }
     print(2)
 }
 ```
@@ -132,18 +132,18 @@ capture channels from the surrounding scope and use them to communicate with
 `main` (which is itself goroutine 0) or with other goroutines.
 
 ```rust
-import std/sync { channel, channel_buffered, yield_now }
+from std.sync import channel, channel_buffered, yield_now
 
 fun main() {
     let ch = channel()
 
     // Producer goroutine: send three values, then a sentinel.
-    spawn(fun() -> Unit {
+    spawn {
         ch.send(100)
         ch.send(200)
         ch.send(300)
         ch.send(-1)
-    })
+    }
 
     // Main consumes until the sentinel.
     loop {
@@ -151,7 +151,7 @@ fun main() {
         if v == -1 {
             break
         }
-        print(v)            // 100, 200, 300
+        print(v) // 100, 200, 300
     }
 }
 ```
@@ -166,24 +166,24 @@ A buffered channel decouples the producer from the consumer so the producer can
 get ahead while the consumer catches up.
 
 ```rust
-import std/sync { channel_buffered, yield_now }
+from std.sync import channel_buffered, yield_now
 
 fun main() {
     let jobs = channel_buffered(4)
 
     // Worker: read each job and print its square.
-    spawn(fun() -> Unit {
+    spawn {
         loop {
             let n = jobs.recv()
             if n == 0 {
                 break
             }
-            print(n * n)        // 1, 4, 9, 16
+            print(n * n) // 1, 4, 9, 16
         }
-    })
+    }
 
     // Feed work, then a 0 to signal done.
-    let k = 1
+    var k = 1
     while k <= 4 {
         jobs.send(k)
         k = k + 1
@@ -211,15 +211,15 @@ Block the current goroutine for `ms` milliseconds, yielding so other goroutines
 run in the meantime.
 
 ```rust
-import std/sync { sleep_millis }
+from std.sync import sleep_millis
 
 fun main() {
-    spawn(fun() -> Unit {
+    spawn {
         sleep_millis(50)
         print(2)
-    })
+    }
     print(1)
-    sleep_millis(100)           // give the goroutine time to finish
+    sleep_millis(100) // give the goroutine time to finish
 }
 ```
 
@@ -231,7 +231,7 @@ which matters now that goroutines run in parallel across worker threads.
 ### `mutex() -> Mutex`, `lock(self)`, `unlock(self)`
 
 ```rust
-import std/sync { mutex }
+from std.sync import mutex
 
 fun main() {
     let m = mutex()
@@ -257,20 +257,20 @@ Create a wait group with a zero counter.
 until the counter reaches zero, and `free()` releases the wait group.
 
 ```rust
-import std/sync { wait_group, sleep_millis }
+from std.sync import wait_group, sleep_millis
 
 fun main() {
     let wg = wait_group()
     wg.add(2)
-    spawn(fun() -> Unit {
+    spawn {
         sleep_millis(20)
         wg.done()
-    })
-    spawn(fun() -> Unit {
+    }
+    spawn {
         sleep_millis(20)
         wg.done()
-    })
-    wg.wait()                   // both goroutines have finished
+    }
+    wg.wait() // both goroutines have finished
     wg.free()
 }
 ```
@@ -285,15 +285,15 @@ produced the value, or `-1` when the list is empty) and `value` (that value).
 When several channels are ready, the lowest index wins.
 
 ```rust
-import std/sync { channel_buffered, select_recv }
+from std.sync import channel_buffered, select_recv
 
 fun main() {
     let a = channel_buffered(1)
     let b = channel_buffered(1)
     b.send(22)
     let chosen = select_recv([a, b])
-    print(chosen.index)         // 1
-    print(chosen.value)         // 22
+    print(chosen.index) // 1
+    print(chosen.value) // 22
 }
 ```
 

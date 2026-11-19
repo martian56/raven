@@ -4,11 +4,9 @@
 //   2
 //   3
 //   2
-import std/list
+import std.list
 
-macro rows {
-    ( $( [ $( $x:expr ),* ] );* ) => { [ $( [ $( $x ),* ] ),* ] }
-}
+macro rows { ($([$($x:expr), *]); *) => { [$([$($x), *]), *] } }
 
 fun main() {
     let xs = rows!([1, 2, 3]; [4, 5])

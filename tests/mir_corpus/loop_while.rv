@@ -1,9 +1,9 @@
-fun sum_to(n: Int) -> Int {
-    let total = 0;
-    let i = 0;
+fun sum_to(n: int) -> int {
+    var total = 0
+    var i = 0
     while i < n {
-        total = total + i;
-        i = i + 1;
+        total = total + i
+        i = i + 1
     }
     return total
 }

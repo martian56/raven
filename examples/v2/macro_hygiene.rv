@@ -4,16 +4,14 @@
 // though `main` shadows it with a local. Prints:
 //   100
 //   1
-fun helper() -> Int {
+fun helper() -> int {
     return 100
 }
 
-macro use_helper {
-    () => { helper() }
-}
+macro use_helper { () => { helper() } }
 
 fun main() {
-    let helper = fun() -> Int = 1
+    let helper = () -> int => 1
     print(use_helper!()) // 100 (the definition-site function)
     print(helper()) // 1 (the local)
 }

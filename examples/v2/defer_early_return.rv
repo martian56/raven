@@ -5,7 +5,7 @@
 //
 // f(true)  reaches only `defer print(9)`  -> prints 9
 // f(false) reaches both, LIFO at the return    -> prints 8 then 9
-fun f(early: Bool) -> Int {
+fun f(early: bool) -> int {
     defer print(9)
     if early {
         return 1

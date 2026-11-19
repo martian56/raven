@@ -3,14 +3,16 @@
 // RNG: the only item must win, and the near-maximum weight must win. Prints:
 //   Some(only)
 //   Some(first)
-import std/random
-import std/io { println }
+import std.random
+from std.io import println
 
-fun show(picked: Option<String>) {
-    println(match picked {
-        Some(value) -> "Some(${value})",
-        None -> "None",
-    })
+fun show(picked: Option[str]) {
+    println(
+        match picked {
+            case Some(value) { "Some(${value})" }
+            case None { "None" }
+        },
+    )
 }
 
 fun main() {

@@ -1,8 +1,8 @@
-fun parse(s: String) -> Result<Int, String> {
+fun parse(s: str) -> Result[int, str] {
     return Ok(1)
 }
 
-fun caller(s: String) -> Result<Int, String> {
-    let v = parse(s)?;
+fun caller(s: str) -> Result[int, str] {
+    let v = parse(s)?
     return Ok(v + 1)
 }

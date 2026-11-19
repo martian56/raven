@@ -13,9 +13,9 @@
 //   cast id to String: none
 //   gc id = 7
 //   gc name = ada
-struct User {
-    id: Int,
-    name: String
+class User {
+    id: int
+    name: str
 }
 
 fun describe(a: Any) {
@@ -24,86 +24,86 @@ fun describe(a: Any) {
     for f in fields {
         let value = get_field(a, f)
         match value {
-            Some(v) -> {
-                let as_int = cast<Int>(v)
+            case Some(v) {
+                let as_int = cast[int](v)
                 match as_int {
-                    Some(n) -> print("field ${f} = ${n}"),
-                    None -> {
-                        let as_str = cast<String>(v)
+                    case Some(n) { print("field ${f} = ${n}") }
+                    case None {
+                        let as_str = cast[str](v)
                         match as_str {
-                            Some(s) -> print("field ${f} = ${s}"),
-                            None -> print("field ${f} = ?"),
+                            case Some(s) { print("field ${f} = ${s}") }
+                            case None { print("field ${f} = ?") }
                         }
-                    },
+                    }
                 }
-            },
-            None -> print("field ${f}: missing"),
+            }
+            case None { print("field ${f}: missing") }
         }
     }
 }
 
 fun main() {
-    let u = User { id: 7, name: "ada" }
-    let a = to_any<User>(u)
+    let u = User(id: 7, name: "ada")
+    let a = to_any[User](u)
     describe(a)
 
     // cast<T> succeeds for the right T and is None for a wrong T.
     let id_any = get_field(a, "id")
     match id_any {
-        Some(v) -> {
-            match cast<Int>(v) {
-                Some(n) -> print("cast id to Int: ${n}"),
-                None -> print("cast id to Int: none"),
+        case Some(v) {
+            match cast[int](v) {
+                case Some(n) { print("cast id to Int: ${n}") }
+                case None { print("cast id to Int: none") }
             }
-        },
-        None -> print("cast id to Int: missing"),
+        }
+        case None { print("cast id to Int: missing") }
     }
     let name_any = get_field(a, "name")
     match name_any {
-        Some(v) -> {
-            match cast<String>(v) {
-                Some(s) -> print("cast name to String: ${s}"),
-                None -> print("cast name to String: none"),
+        case Some(v) {
+            match cast[str](v) {
+                case Some(s) { print("cast name to String: ${s}") }
+                case None { print("cast name to String: none") }
             }
-        },
-        None -> print("cast name to String: missing"),
+        }
+        case None { print("cast name to String: missing") }
     }
     match id_any {
-        Some(v) -> {
-            match cast<String>(v) {
-                Some(s) -> print("cast id to String: ${s}"),
-                None -> print("cast id to String: none"),
+        case Some(v) {
+            match cast[str](v) {
+                case Some(s) { print("cast id to String: ${s}") }
+                case None { print("cast id to String: none") }
             }
-        },
-        None -> print("cast id to String: missing"),
+        }
+        case None { print("cast id to String: missing") }
     }
 
     // GC soundness: box a freshly allocated struct, drop other references,
     // allocate enough to encourage a collection, then read the fields back
     // through the Any. The Any is the only reference to the payload, so a
     // correct read proves the Any keeps its payload alive across collection.
-    let live = to_any<User>(User { id: 7, name: "ada" })
-    let sink = 0
+    let live = to_any[User](User(id: 7, name: "ada"))
+    var sink = 0
     for i in 0..40000 {
-        let junk = User { id: i, name: "junk" }
+        let junk = User(id: i, name: "junk")
         sink = sink + junk.id
     }
     match get_field(live, "id") {
-        Some(v) -> {
-            match cast<Int>(v) {
-                Some(n) -> print("gc id = ${n}"),
-                None -> print("gc id = ?"),
+        case Some(v) {
+            match cast[int](v) {
+                case Some(n) { print("gc id = ${n}") }
+                case None { print("gc id = ?") }
             }
-        },
-        None -> print("gc id: missing"),
+        }
+        case None { print("gc id: missing") }
     }
     match get_field(live, "name") {
-        Some(v) -> {
-            match cast<String>(v) {
-                Some(s) -> print("gc name = ${s}"),
-                None -> print("gc name = ?"),
+        case Some(v) {
+            match cast[str](v) {
+                case Some(s) { print("gc name = ${s}") }
+                case None { print("gc name = ?") }
             }
-        },
-        None -> print("gc name: missing"),
+        }
+        case None { print("gc name: missing") }
     }
 }

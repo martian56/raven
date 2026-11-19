@@ -7,17 +7,17 @@
 // Prints:
 //   nums=2666
 //   textlen=11634
-import std/list
+import std.list
 
 enum Json {
-    Num(Float)
-    Text(String)
+    Num(float),
+    Text(str),
 }
 
 fun main() {
-    let items: List<Json> = []
-    let i = 0
-    let f = 0.5
+    let items: list[Json] = []
+    var i = 0
+    var f = 0.5
     while i < 4000 {
         if i % 3 == 0 {
             items.push(Json.Text("item-${i}"))
@@ -31,22 +31,22 @@ fun main() {
     // Churn several megabytes of short-lived strings so collections run while
     // the `Num`-bearing enums above stay live and reachable. Each collection
     // traces `items`, which is where the buggy union mask followed a `Float`.
-    let churn = 0
-    let k = 0
+    var churn = 0
+    var k = 0
     while k < 80000 {
         let s = "garbage-${k}-with-some-padding-bytes"
         churn = churn + s.len()
         k = k + 1
     }
 
-    let nums = 0
-    let textlen = 0
+    var nums = 0
+    var textlen = 0
     for v in items {
         match v {
-            Num(_) -> {
+            case Num(_) {
                 nums = nums + 1
             }
-            Text(s) -> {
+            case Text(s) {
                 textlen = textlen + s.len()
             }
         }

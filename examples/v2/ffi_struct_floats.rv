@@ -11,20 +11,20 @@
 //   7.5
 @repr(C)
 struct PointF {
-    x: CFloat,
-    y: CFloat,
+    x: CFloat
+    y: CFloat
 }
 
 @repr(C)
 struct Vec2D {
-    x: CDouble,
-    y: CDouble,
+    x: CDouble
+    y: CDouble
 }
 
 @repr(C)
 struct Mixed {
-    n: CInt,
-    f: CFloat,
+    n: CInt
+    f: CFloat
 }
 
 extern "C" {
@@ -37,19 +37,19 @@ extern "C" {
 
 fun main() {
     // 8-byte two-f32 struct argument (one SSE eightbyte on System V).
-    print(raven_ffi_pointf_sum(PointF { x: 1.5, y: 2.5 })) // 4
+    print(raven_ffi_pointf_sum(PointF(x: 1.5, y: 2.5))) // 4
 
     // 8-byte two-f32 struct returned by value, then passed back.
     let p = raven_ffi_make_pointf(3.0, 4.0)
     print(raven_ffi_pointf_sum(p)) // 7
 
     // 16-byte two-f64 struct argument (two SSE registers / a 2-member HFA).
-    print(raven_ffi_vec2d_sum(Vec2D { x: 1.25, y: 2.75 })) // 4
+    print(raven_ffi_vec2d_sum(Vec2D(x: 1.25, y: 2.75))) // 4
 
     // 16-byte two-f64 struct returned by value.
     let v = raven_ffi_make_vec2d(10.0, 20.0)
     print(raven_ffi_vec2d_sum(v)) // 30
 
     // A struct mixing an int and a float (one integer eightbyte).
-    print(raven_ffi_mixed_sum(Mixed { n: 5, f: 2.5 })) // 7.5
+    print(raven_ffi_mixed_sum(Mixed(n: 5, f: 2.5))) // 7.5
 }

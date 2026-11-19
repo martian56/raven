@@ -6,23 +6,22 @@
 //   wrote 5
 //   read 5
 //   0 255 104 105 254
-import std/fs { read, write, remove_file }
-import std/io { println }
+from std.fs import read, write, remove_file
+from std.io import println
 
 fun main() {
-    let data = __str_from_byte(0)
-        .concat(__str_from_byte(255))
-        .concat("hi")
-        .concat(__str_from_byte(254))
+    let data = __str_from_byte(0).concat(__str_from_byte(255)).concat("hi").concat(
+        __str_from_byte(254),
+    )
     match write("fs_binary_roundtrip.dat", data) {
-        Ok(_) -> println("wrote ${data.length()}"),
-        Err(e) -> println("write err ${e.message()}"),
+        case Ok(_) { println("wrote ${data.length()}") }
+        case Err(e) { println("write err ${e.message()}") }
     }
     match read("fs_binary_roundtrip.dat") {
-        Ok(s) -> {
+        case Ok(s) {
             println("read ${s.length()}")
-            let i = 0
-            let line = ""
+            var i = 0
+            var line = ""
             while i < s.length() {
                 if i > 0 {
                     line = line.concat(" ")
@@ -32,10 +31,10 @@ fun main() {
             }
             println(line)
         }
-        Err(e) -> println("read err ${e.message()}"),
+        case Err(e) { println("read err ${e.message()}") }
     }
     match remove_file("fs_binary_roundtrip.dat") {
-        Ok(_) -> {},
-        Err(_) -> {},
+        case Ok(_) {}
+        case Err(_) {}
     }
 }

@@ -8,26 +8,26 @@
 //   neg err
 //   huge err
 //   alive
-import std/net { connect }
-import std/env { get_env }
-import std/io { println }
+from std.net import connect
+from std.env import get_env
+from std.io import println
 
 fun main() {
     let addr = get_env("RAVEN_NET_ADDR")
     match connect(addr) {
-        Ok(s) -> {
+        case Ok(s) {
             s.set_read_timeout_ms(2000)
             match s.read(0 - 1) {
-                Ok(data) -> println("neg unexpectedly ok"),
-                Err(e) -> println("neg err"),
+                case Ok(data) { println("neg unexpectedly ok") }
+                case Err(e) { println("neg err") }
             }
             match s.read(9000000000000000000) {
-                Ok(data) -> println("huge unexpectedly ok"),
-                Err(e) -> println("huge err"),
+                case Ok(data) { println("huge unexpectedly ok") }
+                case Err(e) { println("huge err") }
             }
             println("alive")
             s.close()
-        },
-        Err(e) -> println("connect failed"),
+        }
+        case Err(e) { println("connect failed") }
     }
 }

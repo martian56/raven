@@ -7,13 +7,13 @@ set of consumers (`collect`, `count`, `fold`, `any`, `all`, `find`,
 `for_each`) that drive a pipeline to completion.
 
 ```rust
-import std/iter { collect }
+from std.iter import collect
 
 fun main() {
     let xs = [1, 2, 3, 4, 5]
-    let doubled = collect(xs.iter().map(fun(x: Int) -> Int = x * 2))
+    let doubled = collect(xs.iter().map((x: int) -> int => x * 2))
     for x in doubled {
-        print(x)        // 2, 4, 6, 8, 10
+        print(x) // 2, 4, 6, 8, 10
     }
 }
 ```
@@ -25,7 +25,7 @@ iterator types, so they are available once you have an iterator. The consumers
 are free functions, so you bring in the ones you use by name:
 
 ```rust
-import std/iter { collect, fold }
+from std.iter import collect, fold
 ```
 
 You can list any of `collect`, `count`, `fold`, `any`, `all`, `find`, and
@@ -41,14 +41,14 @@ closure). Nothing runs until a **consumer** pulls elements through. A consumer
 walks the chain one element at a time, in a single pass.
 
 ```rust
-import std/iter { count }
+from std.iter import count
 
 fun main() {
     let xs = [1, 2, 3, 4]
     // No mapping happens here; this just describes a pipeline.
-    let pipeline = xs.iter().map(fun(x: Int) -> Int = x * 10)
+    let pipeline = xs.iter().map((x: int) -> int => x * 10)
     // The consumer is what actually pulls elements through.
-    print(count(pipeline))      // 4
+    print(count(pipeline)) // 4
 }
 ```
 
@@ -63,12 +63,12 @@ Defined on `List<T>`. Returns a `ListIter<T>` that walks the list by index.
 This is the usual entry point into a pipeline.
 
 ```rust
-import std/iter { collect }
+from std.iter import collect
 
 fun main() {
     let xs = [10, 20, 30]
     for x in collect(xs.iter()) {
-        print(x)                    // 10, 20, 30
+        print(x) // 10, 20, 30
     }
 }
 ```
@@ -95,13 +95,13 @@ Apply a closure to each element, yielding the result. The element type can
 change (`T` to `U`).
 
 ```rust
-import std/iter { collect }
+from std.iter import collect
 
 fun main() {
     let xs = [1, 2, 3]
-    let squares = collect(xs.iter().map(fun(x: Int) -> Int = x * x))
+    let squares = collect(xs.iter().map((x: int) -> int => x * x))
     for s in squares {
-        print(s)    // 1, 4, 9
+        print(s) // 1, 4, 9
     }
 }
 ```
@@ -116,13 +116,13 @@ Keep only the elements for which `pred` returns `true`. `next` pulls from the
 source until the predicate holds or the source is exhausted.
 
 ```rust
-import std/iter { collect }
+from std.iter import collect
 
 fun main() {
     let xs = [1, 2, 3, 4, 5, 6]
-    let evens = collect(xs.iter().filter(fun(x: Int) -> Bool = x % 2 == 0))
+    let evens = collect(xs.iter().filter((x: int) -> bool => x % 2 == 0))
     for e in evens {
-        print(e)        // 2, 4, 6
+        print(e) // 2, 4, 6
     }
 }
 ```
@@ -137,12 +137,12 @@ Yield at most the first `n` elements, then stop. Because the pipeline is lazy,
 later elements are never produced.
 
 ```rust
-import std/iter { collect }
+from std.iter import collect
 
 fun main() {
     let xs = [1, 2, 3, 4, 5]
     for x in collect(xs.iter().take(3)) {
-        print(x)                            // 1, 2, 3
+        print(x) // 1, 2, 3
     }
 }
 ```
@@ -156,12 +156,12 @@ fun skip(self, n: Int) -> Skip<T, Self>
 Discard the first `n` elements, then pass the rest through.
 
 ```rust
-import std/iter { collect }
+from std.iter import collect
 
 fun main() {
     let xs = [1, 2, 3, 4, 5]
     for x in collect(xs.iter().skip(2)) {
-        print(x)                            // 3, 4, 5
+        print(x) // 3, 4, 5
     }
 }
 ```
@@ -177,27 +177,24 @@ yet, so `enumerate` yields an `Indexed<T>` record instead of a `(Int, T)`
 pair:
 
 ```rust
-struct Indexed<T> {
-    index: Int,
-    value: T,
+class Indexed[T] {
+    index: int
+    value: T
 }
 ```
 
 Read `.index` and `.value` off each element:
 
 ```rust
-import std/iter { for_each }
+from std.iter import for_each
 
 fun main() {
     let xs = ["a", "b", "c"]
-    for_each(
-        xs.iter().enumerate(),
-        fun(p: Indexed<String>) -> Unit = print("${p.index}: ${p.value}"),
-    )
-    // 0: a
-    // 1: b
-    // 2: c
+    for_each(xs.iter().enumerate(), (p: Indexed[str]) => print("${p.index}: ${p.value}"))
 }
+// 0: a
+// 1: b
+// 2: c
 ```
 
 `enumerate` is a terminal adapter in the chaining methods: it produces an
@@ -214,12 +211,12 @@ what drives the pipeline, so every pipeline ends in exactly one consumer call.
 Gather every remaining element into a `List<T>`, in order.
 
 ```rust
-import std/iter { collect }
+from std.iter import collect
 
 fun main() {
     let xs = [1, 2, 3]
     let out = collect(xs.iter())
-    print(out.len())                // 3
+    print(out.len()) // 3
 }
 ```
 
@@ -228,12 +225,12 @@ fun main() {
 Count the remaining elements.
 
 ```rust
-import std/iter { count }
+from std.iter import count
 
 fun main() {
     let xs = [1, 2, 3, 4]
-    let odds = count(xs.iter().filter(fun(x: Int) -> Bool = x % 2 == 1))
-    print(odds)     // 2
+    let odds = count(xs.iter().filter((x: int) -> bool => x % 2 == 1))
+    print(odds) // 2
 }
 ```
 
@@ -243,12 +240,12 @@ Left fold: start from `init` and combine the running accumulator with each
 element.
 
 ```rust
-import std/iter { fold }
+from std.iter import fold
 
 fun main() {
     let xs = [1, 2, 3, 4]
-    let sum = fold(xs.iter(), 0, fun(acc: Int, x: Int) -> Int = acc + x)
-    print(sum)      // 10
+    let sum = fold(xs.iter(), 0, (acc: int, x: int) -> int => acc + x)
+    print(sum) // 10
 }
 ```
 
@@ -262,12 +259,12 @@ True when every element satisfies `pred`. Vacuously true for an empty
 iterator.
 
 ```rust
-import std/iter { any, all }
+from std.iter import any, all
 
 fun main() {
     let xs = [2, 4, 6]
-    print(any(xs.iter(), fun(x: Int) -> Bool = x > 5))      // true
-    print(all(xs.iter(), fun(x: Int) -> Bool = x % 2 == 0)) // true
+    print(any(xs.iter(), (x: int) -> bool => x > 5)) // true
+    print(all(xs.iter(), (x: int) -> bool => x % 2 == 0)) // true
 }
 ```
 
@@ -276,15 +273,17 @@ fun main() {
 The first element satisfying `pred`, or `None` when none does.
 
 ```rust
-import std/iter { find }
+from std.iter import find
 
 fun main() {
     let xs = [1, 3, 5, 8, 9]
-    let first_even = find(xs.iter(), fun(x: Int) -> Bool = x % 2 == 0)
-    print(match first_even {
-        Some(v) -> v,
-        None -> -1,
-    })      // 8
+    let first_even = find(xs.iter(), (x: int) -> bool => x % 2 == 0)
+    print(
+        match first_even {
+            case Some(v) { v }
+            case None { -1 }
+        }, // 8
+    )
 }
 ```
 
@@ -293,15 +292,15 @@ fun main() {
 Apply `f` to each element for its side effect.
 
 ```rust
-import std/iter { for_each }
+from std.iter import for_each
 
 fun main() {
     let xs = [1, 2, 3]
-    for_each(xs.iter(), fun(x: Int) -> Unit = print(x))
-    // 1
-    // 2
-    // 3
+    for_each(xs.iter(), (x: int) => print(x))
 }
+// 1
+// 2
+// 3
 ```
 
 ### `sum<S: Iterator<Int>>(it: S) -> Int`
@@ -315,11 +314,11 @@ Product of every remaining element of an `Int` iterator. `1` for an empty
 iterator.
 
 ```rust
-import std/iter { sum, product }
+from std.iter import sum, product
 
 fun main() {
-    print(sum([3, 1, 4, 1, 5, 9].iter()))   // 23
-    print(product([1, 2, 3, 4].iter()))     // 24
+    print(sum([3, 1, 4, 1, 5, 9].iter())) // 23
+    print(product([1, 2, 3, 4].iter())) // 24
 }
 ```
 
@@ -332,18 +331,22 @@ The smallest element by `Ord`, or `None` when the iterator is empty.
 The largest element by `Ord`, or `None` when the iterator is empty.
 
 ```rust
-import std/iter { min, max }
+from std.iter import min, max
 
 fun main() {
     let xs = [3, 1, 4, 1, 5, 9]
-    print(match min(xs.iter()) {
-        Some(v) -> v,
-        None -> -1,
-    })      // 1
-    print(match max(xs.iter()) {
-        Some(v) -> v,
-        None -> -1,
-    })      // 9
+    print(
+        match min(xs.iter()) {
+            case Some(v) { v }
+            case None { -1 }
+        }, // 1
+    )
+    print(
+        match max(xs.iter()) {
+            case Some(v) { v }
+            case None { -1 }
+        }, // 9
+    )
 }
 ```
 
@@ -352,14 +355,16 @@ fun main() {
 The index of the first element satisfying `pred`, or `None` when none does.
 
 ```rust
-import std/iter { position }
+from std.iter import position
 
 fun main() {
     let xs = [3, 1, 4, 1, 5]
-    print(match position(xs.iter(), fun(x: Int) -> Bool = x == 4) {
-        Some(i) -> i,
-        None -> -1,
-    })      // 2
+    print(
+        match position(xs.iter(), (x: int) -> bool => x == 4) {
+            case Some(i) { i }
+            case None { -1 }
+        }, // 2
+    )
 }
 ```
 
@@ -368,14 +373,16 @@ fun main() {
 The element at index `n` (zero-based), or `None` when the iterator is shorter.
 
 ```rust
-import std/iter { nth }
+from std.iter import nth
 
 fun main() {
     let xs = [10, 20, 30, 40]
-    print(match nth(xs.iter(), 2) {
-        Some(v) -> v,
-        None -> -1,
-    })      // 30
+    print(
+        match nth(xs.iter(), 2) {
+            case Some(v) { v }
+            case None { -1 }
+        }, // 30
+    )
 }
 ```
 
@@ -384,14 +391,16 @@ fun main() {
 The final element, or `None` when the iterator is empty.
 
 ```rust
-import std/iter { last }
+from std.iter import last
 
 fun main() {
     let xs = [1, 2, 3]
-    print(match last(xs.iter()) {
-        Some(v) -> v,
-        None -> -1,
-    })      // 3
+    print(
+        match last(xs.iter()) {
+            case Some(v) { v }
+            case None { -1 }
+        }, // 3
+    )
 }
 ```
 
@@ -402,18 +411,18 @@ Here `iter().filter(...).map(...).take(...)` describes the work lazily, and
 `collect` runs it in a single pass:
 
 ```rust
-import std/iter { collect }
+from std.iter import collect
 
 fun main() {
     let xs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
     // filter keeps the even numbers, map scales them, take stops at three.
-    let even = fun(x: Int) -> Bool = x % 2 == 0
-    let scale = fun(x: Int) -> Int = x * 10
+    let even = (x: int) -> bool => x % 2 == 0
+    let scale = (x: int) -> int => x * 10
     let pipeline = xs.iter().filter(even).map(scale).take(3)
 
     for value in collect(pipeline) {
-        print(value)        // 20, 40, 60
+        print(value) // 20, 40, 60
     }
 }
 ```
@@ -425,16 +434,16 @@ You can swap the final consumer to ask a different question of the same
 pipeline. With `fold` instead of `collect`:
 
 ```rust
-import std/iter { fold }
+from std.iter import fold
 
 fun main() {
     let xs = [1, 2, 3, 4, 5, 6]
     let total = fold(
-        xs.iter().filter(fun(x: Int) -> Bool = x % 2 == 0),
+        xs.iter().filter((x: int) -> bool => x % 2 == 0),
         0,
-        fun(acc: Int, x: Int) -> Int = acc + x,
+        (acc: int, x: int) -> int => acc + x,
     )
-    print(total)        // 12
+    print(total) // 12
 }
 ```
 
@@ -446,12 +455,12 @@ directly; an iterator pipeline works the same way, so you can loop over one
 instead of calling a consumer:
 
 ```rust
-import std/iter
+import std.iter
 
 fun main() {
     let xs = [1, 2, 3]
-    for x in xs.iter().map(fun(x: Int) -> Int = x + 100) {
-        print(x)        // 101, 102, 103
+    for x in xs.iter().map((x: int) -> int => x + 100) {
+        print(x) // 101, 102, 103
     }
 }
 ```

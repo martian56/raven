@@ -1,0 +1,23 @@
+fun main() {
+    let n = 20000000
+    let flags: list[bool] = []
+    var i = 0
+    while i <= n {
+        flags.push(true)
+        i += 1
+    }
+    var count = 0
+    var p = 2
+    while p <= n {
+        if flags[p] {
+            count += 1
+            var m = p * p
+            while m <= n {
+                flags[m] = false
+                m += p
+            }
+        }
+        p += 1
+    }
+    print(count)
+}

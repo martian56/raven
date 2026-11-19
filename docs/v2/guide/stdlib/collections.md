@@ -6,23 +6,23 @@ remove are O(1) average. `List<T>` is built into the language (literals,
 indexing, `len`, `push`, `pop`, `get`) and needs no import.
 
 ```rust
-import std/collections
+import std.collections
 
 fun main() {
     let seen = Set.new()
     seen.add("ada")
-    print(seen.contains("ada"))     // true
+    print(seen.contains("ada")) // true
 
     let counts = Map.new()
     counts.set("x", 1)
-    print(counts.len())             // 1
+    print(counts.len()) // 1
 }
 ```
 
 ## Importing
 
 ```rust
-import std/collections
+import std.collections
 ```
 
 Import the whole module (not a selective `{ ... }` list). The idiomatic
@@ -37,11 +37,11 @@ fixes `s` as `Set<Int>`. Where no later use pins them, write the type
 arguments on the call:
 
 ```rust
-import std/collections
+import std.collections
 
 fun main() {
-    let s = Set<Int>.new()
-    let m = Map<String, Int>.new()
+    let s = Set[int].new()
+    let m = Map[str, int].new()
 }
 ```
 
@@ -67,13 +67,13 @@ Set and map values have literal syntax. Both lower to the constructors
 above, so they need the same `import std/collections` in scope.
 
 ```rust
-import std/collections
+import std.collections
 
 fun main() {
-    let s = {1, 2, 2, 3}            // Set<Int>, dedups to {1, 2, 3}
-    let m = ["a": 1, "b": 2]        // Map<String, Int>
-    let flags = ["x": true]         // Map<String, Bool>
-    let empty: Map<String, Int> = [:]
+    let s = {1, 2, 2, 3} // Set<Int>, dedups to {1, 2, 3}
+    let m = {"a": 1, "b": 2} // Map<String, Int>
+    let flags = {"x": true} // Map<String, Bool>
+    let empty: dict[str, int] = {}
 }
 ```
 
@@ -129,19 +129,19 @@ Remove `x` if present, returning whether it was. Order within a bucket is not
 preserved.
 
 ```rust
-import std/collections
+import std.collections
 
 fun main() {
     let s = Set.new()
     s.add("a")
     s.add("b")
-    s.add("a")                  // already present, no-op
+    s.add("a") // already present, no-op
 
-    print(s.len())              // 2
-    print(s.contains("b"))      // true
-    print(s.remove("b"))        // true
-    print(s.remove("z"))        // false
-    print(s.is_empty())         // false
+    print(s.len()) // 2
+    print(s.contains("b")) // true
+    print(s.remove("b")) // true
+    print(s.remove("z")) // false
+    print(s.is_empty()) // false
 }
 ```
 
@@ -151,12 +151,12 @@ Every element as a list, in hash-bucket order (not insertion order). This is
 the way to enumerate a set: iterate the returned list.
 
 ```rust
-import std/collections
+import std.collections
 
 fun main() {
     let s = {1, 2, 3}
     for x in s.to_list() {
-        print(x)        // 1, 2, 3 (bucket order)
+        print(x) // 1, 2, 3 (bucket order)
     }
 }
 ```
@@ -178,16 +178,16 @@ A new set with the elements of `self` that are not in `other`.
 True when every element of `self` is in `other`.
 
 ```rust
-import std/collections
+import std.collections
 
 fun main() {
     let a = {1, 2, 3}
     let b = {2, 3, 4}
 
-    print(a.union(b).len())         // 4
-    print(a.intersection(b).len())  // 2
-    print(a.difference(b).len())    // 1
-    print({2, 3}.is_subset(a))      // true
+    print(a.union(b).len()) // 4
+    print(a.intersection(b).len()) // 2
+    print(a.difference(b).len()) // 1
+    print({2, 3}.is_subset(a)) // true
 }
 ```
 
@@ -217,20 +217,20 @@ True when `k` has an entry in the map.
 `Some(v)` when `k` is present, otherwise `None`. Handle it with `match`:
 
 ```rust
-import std/collections
+import std.collections
 
 fun main() {
     let m = Map.new()
     m.set("ada", 1815)
 
     match m.get("ada") {
-        Some(year) -> print(year),      // 1815
-        None -> print("missing"),
+        case Some(year) { print(year) } // 1815
+        case None { print("missing") }
     }
 
     match m.get("grace") {
-        Some(year) -> print(year),
-        None -> print("missing"),       // missing
+        case Some(year) { print(year) }
+        case None { print("missing") } // missing
     }
 }
 ```
@@ -241,12 +241,12 @@ The value for `k`, or `default` when the key is absent. The non-`Option`
 shortcut for `get` when you have a sensible fallback.
 
 ```rust
-import std/collections
+import std.collections
 
 fun main() {
-    let m = ["a": 1]
-    print(m.get_or("a", 0))     // 1
-    print(m.get_or("z", 0))     // 0
+    let m = {"a": 1}
+    print(m.get_or("a", 0)) // 1
+    print(m.get_or("z", 0)) // 0
 }
 ```
 
@@ -270,12 +270,12 @@ Every key/value pair as a list of `Entry`, in hash-bucket order. Each `Entry`
 has a `.key` and a `.value` field.
 
 ```rust
-import std/collections
+import std.collections
 
 fun main() {
-    let m = ["a": 1, "b": 2]
+    let m = {"a": 1, "b": 2}
     for e in m.entries() {
-        print("${e.key}=${e.value}")    // a=1, then b=2 (bucket order)
+        print("${e.key}=${e.value}") // a=1, then b=2 (bucket order)
     }
 }
 ```
@@ -286,18 +286,18 @@ Remove the entry for `k` if present, returning whether it was. Order within a
 bucket is not preserved.
 
 ```rust
-import std/collections
+import std.collections
 
 fun main() {
     let m = Map.new()
     m.set("a", 1)
     m.set("b", 2)
-    m.set("a", 10)              // overwrites
+    m.set("a", 10) // overwrites
 
-    print(m.len())              // 2
-    print(m.has("a"))           // true
-    print(m.remove("b"))        // true
-    print(m.remove("z"))        // false
+    print(m.len()) // 2
+    print(m.has("a")) // true
+    print(m.remove("b")) // true
+    print(m.remove("z")) // false
 }
 ```
 
@@ -306,12 +306,12 @@ fun main() {
 Remove every entry, leaving an empty map.
 
 ```rust
-import std/collections
+import std.collections
 
 fun main() {
-    let m = ["a": 1, "b": 2]
+    let m = {"a": 1, "b": 2}
     m.clear()
-    print(m.len())              // 0
+    print(m.len()) // 0
 }
 ```
 
@@ -327,30 +327,30 @@ across runs.
 ## Worked example: word frequencies
 
 ```rust
-import std/collections
-import std/string
+import std.collections
+import std.string
 
 fun main() {
     let words = ["red", "blue", "red", "green", "blue", "red"]
 
-    let counts: Map<String, Int> = Map.new()
-    let i = 0
+    let counts: dict[str, int] = Map.new()
+    var i = 0
     while i < words.len() {
         let w = words[i]
         match counts.get(w) {
-            Some(n) -> counts.set(w, n + 1),
-            None -> counts.set(w, 1),
+            case Some(n) { counts.set(w, n + 1) }
+            case None { counts.set(w, 1) }
         }
         i = i + 1
     }
 
     let ks = counts.keys()
-    let j = 0
+    var j = 0
     while j < ks.len() {
         let k = ks[j]
         match counts.get(k) {
-            Some(n) -> print("${k}: ${n}"),
-            None -> print("${k}: 0"),
+            case Some(n) { print("${k}: ${n}") }
+            case None { print("${k}: 0") }
         }
         j = j + 1
     }

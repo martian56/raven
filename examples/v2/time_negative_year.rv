@@ -6,11 +6,11 @@
 //   -2024-01-01
 //   0001-01-01
 //   2024-01-01
-import std/time { Date }
-import std/io { println }
+from std.time import Date
+from std.io import println
 
-fun show(y: Int) {
-    println(Date { year: y, month: 1, day: 1 }.to_string())
+fun show(y: int) {
+    println(Date(year: y, month: 1, day: 1).to_string())
 }
 
 fun main() {

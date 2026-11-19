@@ -5,23 +5,23 @@
 // (without it the parallel increments race and lose updates). See
 // docs/v2/specs/concurrency.md.
 
-import std/sync { wait_group, mutex, sleep_millis }
+from std.sync import wait_group, mutex, sleep_millis
 
-struct Counter {
-    value: Int,
+class Counter {
+    value: int
 }
 
 fun main() {
     let wg = wait_group()
     let m = mutex()
-    let counter = Counter { value: 0 }
+    let counter = Counter(value: 0)
 
     wg.add(8)
-    let spawned = 0
+    var spawned = 0
     while spawned < 8 {
-        spawn(fun() -> Unit {
+        spawn {
             sleep_millis(1)
-            let i = 0
+            var i = 0
             while i < 1000 {
                 m.lock()
                 counter.value = counter.value + 1
@@ -29,7 +29,7 @@ fun main() {
                 i = i + 1
             }
             wg.done()
-        })
+        }
         spawned = spawned + 1
     }
 

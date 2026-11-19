@@ -1,5 +1,5 @@
 // golden:skip
-import std/math { sqrt, pow, exp, ln, abs, floor, ceil, round, trunc, sin, cos, abs_int, min_int, max_int, clamp_int, pow_int, pi, e }
+from std.math import sqrt, pow, exp, ln, abs, floor, ceil, round, trunc, sin, cos, abs_int, min_int, max_int, clamp_int, pow_int, pi, e
 
 fun main() {
     print(abs_int(-5))

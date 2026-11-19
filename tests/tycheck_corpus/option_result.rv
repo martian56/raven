@@ -1,20 +1,20 @@
-fun head(xs: List<Int>) -> Option<Int> {
+fun head(xs: list[int]) -> Option[int] {
     if xs.is_empty() {
         return None
     }
     return Some(xs.get(0))
 }
 
-fun divide(a: Int, b: Int) -> Result<Int, String> {
+fun divide(a: int, b: int) -> Result[int, str] {
     if b == 0 {
         return Err("division by zero")
     }
     return Ok(a / b)
 }
 
-fun read(x: Option<Int>) -> Int {
+fun read(x: Option[int]) -> int {
     return match x {
-        None -> 0,
-        Some(n) -> n,
+        case None { 0 }
+        case Some(n) { n }
     }
 }

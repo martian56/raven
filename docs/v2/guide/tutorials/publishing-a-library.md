@@ -45,46 +45,46 @@ habit that pays off: the easy thing stays a one-liner, and the flexible thing is
 there when you need it.
 
 ```rust
-import std/string
+import std.string
 
 // Turn arbitrary text into a URL slug: lowercased, with runs of
 // non-alphanumeric characters collapsed to a single separator.
 //
 //     slugify("Hello, World!")   // "hello-world"
-fun slugify(text: String) -> String {
+fun slugify(text: str) -> str {
     return Slugger.new().slugify(text)
 }
 
 // A configurable slug builder. Start from Slugger.new(), adjust it, then call
 // slugify(). Each setter returns a new Slugger, so configurations are cheap to
 // reuse and never mutate each other.
-struct Slugger {
-    separator: String,
-    max_len: Int,
+class Slugger {
+    separator: str
+    max_len: int
 }
 
 impl Slugger {
     // A slugger with sensible defaults: "-" between words and no length cap.
     fun new() -> Slugger {
-        return Slugger { separator: "-", max_len: 0 }
+        return Slugger(separator: "-", max_len: 0)
     }
 
     // Join words with `sep` instead of "-".
-    fun separator(self, sep: String) -> Slugger {
-        return Slugger { separator: sep, max_len: self.max_len }
+    fun separator(self, sep: str) -> Slugger {
+        return Slugger(separator: sep, max_len: self.max_len)
     }
 
     // Cap the result at `n` characters. 0 means no limit.
-    fun max_len(self, n: Int) -> Slugger {
-        return Slugger { separator: self.separator, max_len: n }
+    fun max_len(self, n: int) -> Slugger {
+        return Slugger(separator: self.separator, max_len: n)
     }
 
     // Build the slug for `text`.
-    fun slugify(self, text: String) -> String {
+    fun slugify(self, text: str) -> str {
         let lower = text.to_lower()
-        let out = ""
-        let pending = false
-        let i = 0
+        var out = ""
+        var pending = false
+        var i = 0
         while i < lower.length() {
             let b = lower.byte_at(i)
             if _is_alnum(b) {
@@ -98,7 +98,7 @@ impl Slugger {
             }
             i += 1
         }
-        if self.max_len > 0 && out.length() > self.max_len {
+        if self.max_len > 0 and out.length() > self.max_len {
             out = out.substring(0, self.max_len)
         }
         return out
@@ -106,10 +106,10 @@ impl Slugger {
 }
 
 // True when byte `b` is an ASCII lowercase letter or digit.
-fun _is_alnum(b: Int) -> Bool {
-    let digit = b >= 48 && b <= 57
-    let letter = b >= 97 && b <= 122
-    return digit || letter
+fun _is_alnum(b: int) -> bool {
+    let digit = b >= 48 and b <= 57
+    let letter = b >= 97 and b <= 122
+    return digit or letter
 }
 ```
 
@@ -142,8 +142,8 @@ asserts with `std/test`, and a failed assertion panics, which the runner reports
 as a failure. Put the tests right next to the code, in `lib_test.rv`:
 
 ```rust
-import std/test { assert_eq_str }
-import "./lib" { slugify, Slugger }
+from std.test import assert_eq_str
+from "./lib" import slugify, Slugger
 
 fun test_basic() {
     assert_eq_str(slugify("Hello, World!"), "hello-world")
@@ -289,11 +289,11 @@ That records it in `rv.toml`, resolves and pins it in `rv.lock`, and fetches it
 into the shared cache. Now import it like any module:
 
 ```rust
-import std/io { println }
-import "github.com/martian56/raven-slug" { slugify }
+from std.io import println
+from "github.com/martian56/raven-slug" import slugify
 
 fun main() {
-    println(slugify("My First Blog Post!"))   // my-first-blog-post
+    println(slugify("My First Blog Post!")) // my-first-blog-post
 }
 ```
 
@@ -301,8 +301,8 @@ If a name from your package clashes with one from another, rename it on the way
 in. Imports support `as` for both single names and whole modules:
 
 ```rust
-import "github.com/martian56/raven-slug" { slugify as to_slug }
-import "github.com/martian56/raven-slug" as slug   // then slug.slugify(...)
+from "github.com/martian56/raven-slug" import slugify as to_slug
+import "github.com/martian56/raven-slug" as slug // then slug.slugify(...)
 ```
 
 ## Releasing new versions

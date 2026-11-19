@@ -3,7 +3,7 @@
 // String. Prints:
 //   5
 //   roundtrip
-import std/ffi
+import std.ffi
 
 extern "C" {
     fun strlen(s: CStr) -> CSize

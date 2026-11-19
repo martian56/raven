@@ -7,18 +7,22 @@
 //   1.5e3 -> 1500
 //   1e-3 -> 0.001
 //   1e309 -> inf
-import std/json { parse }
-import std/io { println }
-import std/string
+from std.json import parse
+from std.io import println
+import std.string
 
-fun show(label: String, text: String) {
-    println(match parse(text) {
-        Ok(value) -> match value.as_number() {
-            Some(n) -> "${label} -> ${n}",
-            None -> "${label} -> not a number",
+fun show(label: str, text: str) {
+    println(
+        match parse(text) {
+            case Ok(value) {
+                match value.as_number() {
+                    case Some(n) { "${label} -> ${n}" }
+                    case None { "${label} -> not a number" }
+                }
+            }
+            case Err(e) { "${label} -> Err(${e.message})" }
         },
-        Err(e) -> "${label} -> Err(${e.message})",
-    })
+    )
 }
 
 fun main() {

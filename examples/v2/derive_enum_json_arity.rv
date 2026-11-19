@@ -6,24 +6,24 @@
 //   rejected: wrong number of payload values for variant
 //   accepted: Dot
 //   accepted: Circle(5)
-import std/json { JsonValue }
-import std/collections { Map }
+from std.json import JsonValue
+from std.collections import Map
 
 @derive(FromJson, ToString)
 enum Shape {
     Dot,
-    Circle(Int),
+    Circle(int),
 }
 
 fun check(j: JsonValue) {
     match Shape.from_json(j) {
-        Ok(value) -> print("accepted: ".concat(value.to_string())),
-        Err(e) -> print("rejected: ".concat(e.message)),
+        case Ok(value) { print("accepted: ".concat(value.to_string())) }
+        case Err(e) { print("rejected: ".concat(e.message)) }
     }
 }
 
-fun tagged(tag: String, values: List<JsonValue>) -> JsonValue {
-    let m: Map<String, JsonValue> = Map.new()
+fun tagged(tag: str, values: list[JsonValue]) -> JsonValue {
+    let m: dict[str, JsonValue] = Map.new()
     m.set("tag", JsonValue.Str(tag))
     m.set("values", JsonValue.Array(values))
     return JsonValue.Object(m)
@@ -31,7 +31,7 @@ fun tagged(tag: String, values: List<JsonValue>) -> JsonValue {
 
 fun main() {
     // A unit variant with a non-array payload.
-    let wrong_type: Map<String, JsonValue> = Map.new()
+    let wrong_type: dict[str, JsonValue] = Map.new()
     wrong_type.set("tag", JsonValue.Str("Dot"))
     wrong_type.set("values", JsonValue.Bool(false))
     check(JsonValue.Object(wrong_type))
@@ -43,7 +43,7 @@ fun main() {
     check(tagged("Circle", [JsonValue.Number(7.0), JsonValue.Number(8.0)]))
 
     // Well-formed payloads decode.
-    let empty: List<JsonValue> = []
+    let empty: list[JsonValue] = []
     check(tagged("Dot", empty))
     check(tagged("Circle", [JsonValue.Number(5.0)]))
 }

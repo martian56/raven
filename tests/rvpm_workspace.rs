@@ -145,7 +145,7 @@ fun main() {
     if all.len() > 1 && all[1] == "fail" {
         exit(7)
     }
-    let i = 1
+    var i = 1
     while i < all.len() {
         print(all[i])
         i = i + 1

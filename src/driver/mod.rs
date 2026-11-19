@@ -127,8 +127,36 @@ pub fn build_binary_native(
     std::fs::write(&object_path, &object_bytes)
         .map_err(|e| DriverError::Io(format!("write object: {}", e)))?;
 
+    let mut t = PhaseTimer::new();
     linker::link(&object_path, &runtime, native, output).map_err(DriverError::from)?;
+    t.mark("link");
     Ok(())
+}
+
+/// Per-phase timings, printed when `RAVEN_TIMINGS` is set.
+struct PhaseTimer {
+    on: bool,
+    last: std::time::Instant,
+}
+
+impl PhaseTimer {
+    fn new() -> Self {
+        PhaseTimer {
+            on: std::env::var_os("RAVEN_TIMINGS").is_some(),
+            last: std::time::Instant::now(),
+        }
+    }
+
+    fn mark(&mut self, phase: &str) {
+        if self.on {
+            let now = std::time::Instant::now();
+            eprintln!(
+                "{phase:>16}: {:>8.1} ms",
+                (now - self.last).as_secs_f64() * 1000.0
+            );
+            self.last = now;
+        }
+    }
 }
 
 /// Type-check `source` and its modules without producing code. Runs the front
@@ -168,6 +196,7 @@ pub fn compile_to_object(
     input: &Path,
     ctx: Option<&PackageContext>,
 ) -> Result<Vec<u8>, DriverError> {
+    let mut t = PhaseTimer::new();
     let tokens = Lexer::new(source.to_string(), input.to_path_buf())
         .tokenize()
         .map_err(|e| frontend_diag(e, input, source))?;
@@ -180,8 +209,10 @@ pub fn compile_to_object(
         .map_err(|e| frontend_diag(e, input, source))?;
     let (file, interp_def_sites) = parse_with_macros_all(&tokens, macro_table)
         .map_err(|es| frontend_diags(es, input, source))?;
+    t.mark("lex+parse");
     let (file, module_def_sites) =
         expand_with_stdlib_ctx(&file, ctx).map_err(|e| frontend_diag(e, input, source))?;
+    t.mark("expand modules");
     // Merge the entry file's macro def-sites with those a macro expanded inside a
     // `"${...}"` interpolation fragment introduced and those from imported
     // modules' macros, so the resolver treats every macro-introduced free
@@ -192,16 +223,22 @@ pub fn compile_to_object(
     let mut loader = FsLoader;
     let resolved = resolve_file_ctx(&file, &mut loader, ctx, macro_def_sites)
         .map_err(|e| frontend_diag(e, input, source))?;
+    t.mark("resolve");
     let typed = check_file_all(&resolved).map_err(|es| frontend_diags(es, input, source))?;
+    t.mark("typecheck");
     let hir = lower_file(&typed).map_err(|e| frontend_diag(e, input, source))?;
+    t.mark("hir");
     if std::env::var("RAVEN_DUMP_HIR").is_ok() {
         eprintln!("{}", crate::hir::pretty_program(&hir));
     }
     let mir = lower_program(&hir).map_err(|e| frontend_diag(e, input, source))?;
+    t.mark("mir");
     if std::env::var("RAVEN_DUMP_MIR").is_ok() {
         eprintln!("{}", crate::mir::pretty::pretty_program(&mir));
     }
-    codegen::compile_program(&mir).map_err(DriverError::from)
+    let object = codegen::compile_program(&mir).map_err(DriverError::from)?;
+    t.mark("codegen");
+    Ok(object)
 }
 
 /// Locate the `raven-runtime` staticlib next to the compiler binary, in

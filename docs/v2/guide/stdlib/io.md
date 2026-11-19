@@ -5,7 +5,7 @@ standard input. The functions here are free functions, so you import the ones
 you need by name.
 
 ```rust
-import std/io { println, input }
+from std.io import println, input
 
 fun main() {
     let name = input("Your name: ")
@@ -16,7 +16,7 @@ fun main() {
 ## Importing
 
 ```rust
-import std/io { print, println, input, read_line }
+from std.io import print, println, input, read_line
 ```
 
 `std/io` is a set of free functions, so use a selective import and list the
@@ -31,9 +31,9 @@ booleans, and your own types without conversion:
 
 ```rust
 fun main() {
-    print(42)               // 42
-    print(true)             // true
-    print(3.14)             // 3.14
+    print(42) // 42
+    print(true) // true
+    print(3.14) // 3.14
 }
 ```
 
@@ -50,7 +50,7 @@ Write `s` to standard output with no trailing newline. The argument must be a
 you have other values to include.
 
 ```rust
-import std/io { print }
+from std.io import print
 
 fun main() {
     print("no newline here")
@@ -63,7 +63,7 @@ fun main() {
 Write `s` to standard output followed by a newline.
 
 ```rust
-import std/io { println }
+from std.io import println
 
 fun main() {
     println("first line")
@@ -80,7 +80,7 @@ from standard input and return it without its trailing newline. At end of
 input the returned string is empty.
 
 ```rust
-import std/io { input }
+from std.io import input
 
 fun main() {
     let answer = input("Continue? (y/n) ")
@@ -97,8 +97,8 @@ printing no prompt. At end of input the returned string is empty, which is how
 you detect that the stream is exhausted.
 
 ```rust
-import std/io { read_line }
-import std/string
+from std.io import read_line
+import std.string
 
 fun main() {
     let line = read_line()
@@ -112,12 +112,12 @@ Read lines until the input ends, skipping blank ones. The empty string from
 `read_line` at end of input ends the loop.
 
 ```rust
-import std/io { read_line, println }
-import std/string
+from std.io import read_line, println
+import std.string
 
 fun main() {
-    let line = read_line()
-    while !line.is_blank() {
+    var line = read_line()
+    while not line.is_blank() {
         println(line.trim())
         line = read_line()
     }

@@ -246,7 +246,7 @@ fn hir_uses_iterator_intrinsics(p: &HirProgram) -> bool {
 
 #[test]
 fn compound_assign_ident_desugars_to_plain() {
-    let src = "fun f() -> () { let x = 1; x += 2; }";
+    let src = "fun f() -> () { var x = 1; x += 2; }";
     let p = lower(src);
     let f = only_fn(&p, "f");
     let body = f.body.as_ref().expect("body");

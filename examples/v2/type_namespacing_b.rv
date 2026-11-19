@@ -1,14 +1,15 @@
 // golden:skip
 // Helper for type_namespacing.rv: also declares a type named Item.
-struct Item {
-    tag: String,
+class Item {
+    tag: str
 }
 
 impl Item {
-    fun new(t: String) -> Item {
-        return Item { tag: t }
+    fun new(t: str) -> Item {
+        return Item(tag: t)
     }
-    fun show(self) -> String {
+
+    fun show(self) -> str {
         return "B:".concat(self.tag)
     }
 }

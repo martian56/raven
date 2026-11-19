@@ -5,26 +5,26 @@
 //   1   (no args)
 //   2   (one empty arg, plus argv[0])
 //   3   ("a" then "")
-import std/process { run }
-import std/env { get_env }
-import std/io { print }
+from std.process import run
+from std.env import get_env
+from std.io import print
 
 fun main() {
     let child = get_env("RAVEN_PROC_CHILD")
-    let none: List<String> = []
-    let one_empty: List<String> = [""]
-    let a_then_empty: List<String> = ["a", ""]
+    let none: list[str] = []
+    let one_empty: list[str] = [""]
+    let a_then_empty: list[str] = ["a", ""]
 
     match run(child, none) {
-        Ok(out) -> print(out.stdout),
-        Err(e) -> print("fail ${e.message()}"),
+        case Ok(out) { print(out.stdout) }
+        case Err(e) { print("fail ${e.message()}") }
     }
     match run(child, one_empty) {
-        Ok(out) -> print(out.stdout),
-        Err(e) -> print("fail ${e.message()}"),
+        case Ok(out) { print(out.stdout) }
+        case Err(e) { print("fail ${e.message()}") }
     }
     match run(child, a_then_empty) {
-        Ok(out) -> print(out.stdout),
-        Err(e) -> print("fail ${e.message()}"),
+        case Ok(out) { print(out.stdout) }
+        case Err(e) { print("fail ${e.message()}") }
     }
 }

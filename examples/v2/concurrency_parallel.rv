@@ -6,11 +6,11 @@
 // collect concurrently, so a wrong total would expose a lost root, a corrupted
 // channel value, or a scheduler race. See docs/v2/specs/mn-scheduler.md.
 
-import std/sync { Channel, channel }
+from std.sync import Channel, channel
 
-fun worker(out: Channel, n: Int) -> Unit {
-    let acc = 0
-    let i = 0
+fun worker(out: Channel, n: int) -> Unit {
+    var acc = 0
+    var i = 0
     while i < n {
         let items = [i, i + 1, i + 2]
         acc = acc + items.len()
@@ -21,15 +21,15 @@ fun worker(out: Channel, n: Int) -> Unit {
 
 fun main() {
     let out = channel()
-    let spawned = 0
+    var spawned = 0
     while spawned < 8 {
-        spawn(fun() -> Unit {
+        spawn {
             worker(out, 2000)
-        })
+        }
         spawned = spawned + 1
     }
-    let total = 0
-    let received = 0
+    var total = 0
+    var received = 0
     while received < 8 {
         total = total + out.recv()
         received = received + 1

@@ -83,6 +83,10 @@ pub fn host_isa() -> Result<Arc<dyn TargetIsa>, CodegenError> {
     flag_builder
         .set("is_pic", "true")
         .map_err(|e| CodegenError::Target(e.to_string()))?;
+    let opt = std::env::var("RAVEN_OPT").unwrap_or_else(|_| "speed".into());
+    flag_builder
+        .set("opt_level", &opt)
+        .map_err(|e| CodegenError::Target(e.to_string()))?;
     let flags = settings::Flags::new(flag_builder);
     let isa_builder = cranelift_native::builder()
         .map_err(|s| CodegenError::Target(format!("native ISA: {}", s)))?;

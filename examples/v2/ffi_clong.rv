@@ -9,6 +9,6 @@ extern "C" {
 }
 
 fun main() {
-    print(raven_ffi_long_neg(1))        // -1
-    print(raven_ffi_long_neg(0 - 7))    // 7
+    print(raven_ffi_long_neg(1)) // -1
+    print(raven_ffi_long_neg(0 - 7)) // 7
 }

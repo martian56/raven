@@ -16,6 +16,7 @@ use super::LowerCtx;
 /// Lower one statement into one or more HIR statements.
 pub(crate) fn lower_stmt(stmt: &Stmt, cx: &LowerCtx<'_>) -> Result<Vec<HirStmt>, RavenError> {
     match &stmt.kind {
+        StmtKind::LetElse { .. } => unreachable!("surface syntax is desugared after parsing"),
         StmtKind::Let {
             name,
             ty: _,

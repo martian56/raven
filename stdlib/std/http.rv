@@ -8,45 +8,45 @@
 // path through the runtime's thread-local last-error slot, tagged with
 // kind "http". See docs/v2/specs/std-http.md.
 
-import std/error { error_kind }
-import std/net { listen, connect, TcpStream }
-import std/string
-import std/fmt { from_radix }
-import std/collections
-import std/json { JsonValue, ToJson, FromJson, stringify, parse, decode }
-import std/fs { read }
-import std/sync { mutex, wait_group, Mutex }
-import std/encoding { url_decode }
+from std.error import error_kind
+from std.net import listen, connect, TcpStream
+import std.string
+from std.fmt import from_radix
+import std.collections
+from std.json import JsonValue, ToJson, FromJson, stringify, parse, decode
+from std.fs import read
+from std.sync import mutex, wait_group, Mutex
+from std.encoding import url_decode
 
-struct HttpResponse {
-    status_code: Int,
-    status_text: String,
+class HttpResponse {
+    status_code: int
+    status_text: str
     // Response headers as `Key: Value` lines joined by `\n`.
-    headers: String,
-    body: String,
+    headers: str
+    body: str
 }
 
 extern "C" {
-    fun raven_http_last_error() -> String
-    fun raven_http_request(method: String, url: String, body: String, headers: String) -> Int
-    fun raven_http_request_timeout(method: String, url: String, body: String, headers: String, timeout_ms: Int) -> Int
-    fun raven_http_status(id: Int) -> Int
-    fun raven_http_status_text(id: Int) -> String
-    fun raven_http_body(id: Int) -> String
-    fun raven_http_header(id: Int, name: String) -> String
-    fun raven_http_headers(id: Int) -> String
-    fun raven_http_free(id: Int)
-    fun raven_http_stream_open(method: String, url: String, body: String, headers: String, timeout_ms: Int) -> Int
-    fun raven_http_stream_read(id: Int) -> String
-    fun raven_http_stream_status(id: Int) -> Int
-    fun raven_http_stream_status_text(id: Int) -> String
-    fun raven_http_stream_headers(id: Int) -> String
-    fun raven_http_stream_close(id: Int)
+    fun raven_http_last_error() -> str
+    fun raven_http_request(method: str, url: str, body: str, headers: str) -> int
+    fun raven_http_request_timeout(method: str, url: str, body: str, headers: str, timeout_ms: int) -> int
+    fun raven_http_status(id: int) -> int
+    fun raven_http_status_text(id: int) -> str
+    fun raven_http_body(id: int) -> str
+    fun raven_http_header(id: int, name: str) -> str
+    fun raven_http_headers(id: int) -> str
+    fun raven_http_free(id: int)
+    fun raven_http_stream_open(method: str, url: str, body: str, headers: str, timeout_ms: int) -> int
+    fun raven_http_stream_read(id: int) -> str
+    fun raven_http_stream_status(id: int) -> int
+    fun raven_http_stream_status_text(id: int) -> str
+    fun raven_http_stream_headers(id: int) -> str
+    fun raven_http_stream_close(id: int)
 }
 
 // An Error tagged with kind "http", its message a context prefix joined to
 // the runtime's last-error text.
-fun http_error(ctx: String) -> Error {
+fun http_error(ctx: str) -> Error {
     return error_kind("http", ctx.concat(": ").concat(raven_http_last_error()))
 }
 
@@ -54,12 +54,7 @@ fun http_error(ctx: String) -> Error {
 // failure. The headers argument is `Key: Value` lines joined by `\n`, or
 // "" for none. A non-2xx HTTP status is still Ok: the runtime reports it
 // as a normal response.
-fun request(
-    method: String,
-    url: String,
-    body: String,
-    headers: String,
-) -> Result<HttpResponse, Error> {
+fun request(method: str, url: str, body: str, headers: str) -> Result[HttpResponse, Error] {
     return _collect(raven_http_request(method, url, body, headers), method)
 }
 
@@ -69,60 +64,60 @@ fun request(
 // keeps the default timeouts. Use this for endpoints that take longer than
 // the defaults allow, for example model inference APIs.
 fun request_with_timeout(
-    method: String,
-    url: String,
-    body: String,
-    headers: String,
-    timeout_ms: Int,
-) -> Result<HttpResponse, Error> {
+    method: str,
+    url: str,
+    body: str,
+    headers: str,
+    timeout_ms: int,
+) -> Result[HttpResponse, Error] {
     return _collect(raven_http_request_timeout(method, url, body, headers, timeout_ms), method)
 }
 
 // Assemble the stored response `id` into an HttpResponse and release it.
-fun _collect(id: Int, ctx: String) -> Result<HttpResponse, Error> {
+fun _collect(id: int, ctx: str) -> Result[HttpResponse, Error] {
     if id == 0 {
         return Err(http_error(ctx))
     }
     if raven_http_last_error().length() > 0 {
         return Err(http_error(ctx))
     }
-    let resp = HttpResponse {
+    let resp = HttpResponse(
         status_code: raven_http_status(id),
         status_text: raven_http_status_text(id),
         headers: raven_http_headers(id),
         body: raven_http_body(id),
-    }
+    )
     raven_http_free(id)
     return Ok(resp)
 }
 
 // GET `url`.
-fun get(url: String) -> Result<HttpResponse, Error> {
+fun get(url: str) -> Result[HttpResponse, Error] {
     return request("GET", url, "", "")
 }
 
 // POST `body` to `url`.
-fun post(url: String, body: String) -> Result<HttpResponse, Error> {
+fun post(url: str, body: str) -> Result[HttpResponse, Error] {
     return request("POST", url, body, "")
 }
 
 // PUT `body` to `url`.
-fun put(url: String, body: String) -> Result<HttpResponse, Error> {
+fun put(url: str, body: str) -> Result[HttpResponse, Error] {
     return request("PUT", url, body, "")
 }
 
 // DELETE `url`.
-fun delete(url: String) -> Result<HttpResponse, Error> {
+fun delete(url: str) -> Result[HttpResponse, Error] {
     return request("DELETE", url, "", "")
 }
 
 // PATCH `body` to `url`.
-fun patch(url: String, body: String) -> Result<HttpResponse, Error> {
+fun patch(url: str, body: str) -> Result[HttpResponse, Error] {
     return request("PATCH", url, body, "")
 }
 
 // HEAD `url` (response carries headers and status but no body).
-fun head(url: String) -> Result<HttpResponse, Error> {
+fun head(url: str) -> Result[HttpResponse, Error] {
     return request("HEAD", url, "", "")
 }
 
@@ -131,12 +126,12 @@ fun head(url: String) -> Result<HttpResponse, Error> {
 // events, chunked transfers, and any response too large or too slow to
 // buffer whole. Close it when done; an ended stream still holds its status
 // and headers until then.
-struct HttpStream {
-    id: Int,
-    status_code: Int,
-    status_text: String,
+class HttpStream {
+    id: int
+    status_code: int
+    status_text: str
     // Response headers as `Key: Value` lines joined by `\n`.
-    headers: String,
+    headers: str
 }
 
 // Open a streaming request. A positive timeout_ms bounds the connect and
@@ -145,12 +140,12 @@ struct HttpStream {
 // defaults. A non-2xx status opens normally so the error body is readable;
 // only a transport failure is an Err.
 fun stream(
-    method: String,
-    url: String,
-    body: String,
-    headers: String,
-    timeout_ms: Int,
-) -> Result<HttpStream, Error> {
+    method: str,
+    url: str,
+    body: str,
+    headers: str,
+    timeout_ms: int,
+) -> Result[HttpStream, Error] {
     let id = raven_http_stream_open(method, url, body, headers, timeout_ms)
     if id == 0 {
         return Err(http_error(method))
@@ -158,21 +153,23 @@ fun stream(
     if raven_http_last_error().length() > 0 {
         return Err(http_error(method))
     }
-    return Ok(HttpStream {
-        id: id,
-        status_code: raven_http_stream_status(id),
-        status_text: raven_http_stream_status_text(id),
-        headers: raven_http_stream_headers(id),
-    })
+    return Ok(
+        HttpStream(
+            id: id,
+            status_code: raven_http_stream_status(id),
+            status_text: raven_http_stream_status_text(id),
+            headers: raven_http_stream_headers(id),
+        ),
+    )
 }
 
 impl HttpStream {
     // The next chunk of the body: whatever the next socket read returns, at
     // most 8 KiB. Ok("") means the stream ended; a failed or timed-out read
     // is an Err. One read at a time per stream.
-    fun read_chunk(self) -> Result<String, Error> {
+    fun read_chunk(self) -> Result[str, Error] {
         let chunk = raven_http_stream_read(self.id)
-        if chunk.length() == 0 && raven_http_last_error().length() > 0 {
+        if chunk.length() == 0 and raven_http_last_error().length() > 0 {
             return Err(http_error("stream read"))
         }
         return Ok(chunk)
@@ -218,7 +215,7 @@ enum Method {
 }
 
 // Parse a method token (case-insensitive) into a `Method`.
-fun parse_method(s: String) -> Method {
+fun parse_method(s: str) -> Method {
     let u = s.to_upper()
     if u == "GET" {
         return Method.Get
@@ -247,42 +244,42 @@ fun parse_method(s: String) -> Method {
 // One parsed HTTP request. `headers` keys are lowercased; `params` holds the
 // path captures matched from the route pattern; `query` holds the decoded
 // query-string pairs.
-struct Request {
-    method: Method,
-    path: String,
-    version: String,
-    headers: Map<String, String>,
-    params: Map<String, String>,
-    query: Map<String, String>,
-    body: String,
+class Request {
+    method: Method
+    path: str
+    version: str
+    headers: dict[str, str]
+    params: dict[str, str]
+    query: dict[str, str]
+    body: str
 }
 
 impl Request {
     // A request header by name (case-insensitive), or "" if absent.
-    fun header(self, name: String) -> String {
+    fun header(self, name: str) -> str {
         return self.headers.get_or(name.to_lower(), "")
     }
 
     // A path capture (a `:name` segment) by name, or "" if absent.
-    fun param(self, name: String) -> String {
+    fun param(self, name: str) -> str {
         return self.params.get_or(name, "")
     }
 
     // A query-string value by name, or "" if absent.
-    fun query_value(self, name: String) -> String {
+    fun query_value(self, name: str) -> str {
         return self.query.get_or(name, "")
     }
 
     // Decode the request body into a `T` via its `FromJson` impl, for example
     // `req.json<User>()` or `let u: User = req.json()?`. Returns an Err for
     // malformed JSON or a body that does not match `T`.
-    fun json<T: FromJson>(self) -> Result<T, Error> {
+    fun json[T: FromJson](self) -> Result[T, Error] {
         return decode(self.body)
     }
 
     // Parse the request body as JSON to a `JsonValue` for ad-hoc inspection,
     // when a struct is overkill. Returns an Err for malformed JSON.
-    fun json_value(self) -> Result<JsonValue, Error> {
+    fun json_value(self) -> Result[JsonValue, Error] {
         return parse(self.body)
     }
 }
@@ -290,59 +287,59 @@ impl Request {
 // One HTTP response: a status code, response headers, and a body. Build one
 // with a constructor (`Response.json`, `Response.not_found`, ...) and refine it
 // with the chaining builders (`header`, `content_type`, `status_code`).
-struct Response {
-    status: Int,
-    headers: Map<String, String>,
-    body: String,
+class Response {
+    status: int
+    headers: dict[str, str]
+    body: str
 }
 
 impl Response {
     // A response with an explicit status and body and no headers yet.
-    fun with_body(status: Int, body: String) -> Response {
-        let h: Map<String, String> = Map.new()
-        return Response { status, headers: h, body }
+    fun with_body(status: int, body: str) -> Response {
+        let h: dict[str, str] = Map.new()
+        return Response(status: status, headers: h, body: body)
     }
 
     // 200 with `value` serialized to JSON via its `ToJson` impl (a `@derive(
     // ToJson)` struct or enum, a List, an Option, or a scalar), with
     // `Content-Type: application/json`. Chain `.status_code(201)` for Created.
-    fun json<T: ToJson>(value: T) -> Response {
+    fun json[T: ToJson](value: T) -> Response {
         return Response.with_body(200, stringify(value.to_json())).content_type("application/json")
     }
 
     // 200 serving the file at `path` from disk, with a `Content-Type` chosen
     // from its extension. A missing or unreadable file is a 404.
-    fun file(path: String) -> Response {
+    fun file(path: str) -> Response {
         return match read(path) {
-            Ok(body) -> Response.with_body(200, body).content_type(content_type_for(path)),
-            Err(_) -> Response.not_found(),
+            case Ok(body) { Response.with_body(200, body).content_type(content_type_for(path)) }
+            case Err(_) { Response.not_found() }
         }
     }
 
     // 200 with a `text/plain` body.
-    fun text(body: String) -> Response {
+    fun text(body: str) -> Response {
         return Response.with_body(200, body).content_type("text/plain; charset=utf-8")
     }
 
     // 200 with a `text/plain` body (an alias of `text`).
-    fun ok(body: String) -> Response {
+    fun ok(body: str) -> Response {
         return Response.text(body)
     }
 
     // 200 with a `text/html` body.
-    fun html(body: String) -> Response {
+    fun html(body: str) -> Response {
         return Response.with_body(200, body).content_type("text/html; charset=utf-8")
     }
 
     // 200 with `body` (already JSON text) and an `application/json` type. Use
     // `Response.json(value)` instead to serialize a value; this is for a body
     // you have already rendered.
-    fun json_raw(body: String) -> Response {
+    fun json_raw(body: str) -> Response {
         return Response.with_body(200, body).content_type("application/json")
     }
 
     // 201 Created with a `text/plain` body.
-    fun created(body: String) -> Response {
+    fun created(body: str) -> Response {
         return Response.with_body(201, body).content_type("text/plain; charset=utf-8")
     }
 
@@ -357,17 +354,17 @@ impl Response {
     }
 
     // 400 Bad Request with `msg` as the body.
-    fun bad_request(msg: String) -> Response {
+    fun bad_request(msg: str) -> Response {
         return Response.with_body(400, msg).content_type("text/plain; charset=utf-8")
     }
 
     // 500 Internal Server Error with `msg` as the body.
-    fun server_error(msg: String) -> Response {
+    fun server_error(msg: str) -> Response {
         return Response.with_body(500, msg).content_type("text/plain; charset=utf-8")
     }
 
     // 302 Found, redirecting the client to `location`.
-    fun redirect(location: String) -> Response {
+    fun redirect(location: str) -> Response {
         return Response.with_body(302, "").header("Location", location)
     }
 
@@ -376,8 +373,8 @@ impl Response {
     // dropped, and control bytes are stripped from the value (HTAB excepted).
     // Either would otherwise frame a malformed response or inject extra headers,
     // since CR/LF and other controls have meaning in the header block.
-    fun header(self, name: String, value: String) -> Response {
-        if !is_valid_field_name(name) {
+    fun header(self, name: str, value: str) -> Response {
+        if not is_valid_field_name(name) {
             return self
         }
         self.headers.set(name, sanitize_field_value(value))
@@ -385,12 +382,12 @@ impl Response {
     }
 
     // Set the `Content-Type` header, returning self so calls chain.
-    fun content_type(self, value: String) -> Response {
+    fun content_type(self, value: str) -> Response {
         return self.header("Content-Type", value)
     }
 
     // Replace the status code, returning self so calls chain.
-    fun status_code(self, code: Int) -> Response {
+    fun status_code(self, code: int) -> Response {
         self.status = code
         return self
     }
@@ -398,10 +395,10 @@ impl Response {
 
 // One registered route: a method, a path pattern (with optional `:name`
 // captures), and the handler to run on a match.
-struct Route {
-    method: Method,
-    pattern: String,
-    handler: fun(Request) -> Response,
+class Route {
+    method: Method
+    pattern: str
+    handler: fun(Request) -> Response
 }
 
 // An HTTP server: a routing table built with `get`/`post`/... and served with
@@ -410,22 +407,22 @@ struct Route {
 // can hold a connection (0 disables); they default to 30 seconds so an idle or
 // slow client cannot pin a goroutine forever. `lock`/`stopping`/`addr` back
 // graceful shutdown.
-struct Server {
-    routes: List<Route>,
-    access_log: Bool,
-    read_timeout_ms: Int,
-    write_timeout_ms: Int,
-    lock: Mutex,
-    stopping: Bool,
-    addr: String,
+class Server {
+    routes: list[Route]
+    access_log: bool
+    read_timeout_ms: int
+    write_timeout_ms: int
+    lock: Mutex
+    stopping: bool
+    addr: str
 }
 
 impl Server {
     // A new server with an empty routing table, the access log off, and 30
     // second read and write timeouts.
     fun new() -> Server {
-        let r: List<Route> = []
-        return Server {
+        let r: list[Route] = []
+        return Server(
             routes: r,
             access_log: false,
             read_timeout_ms: 30000,
@@ -433,7 +430,7 @@ impl Server {
             lock: mutex(),
             stopping: false,
             addr: "",
-        }
+        )
     }
 
     // Request a graceful shutdown: stop accepting new connections, let the
@@ -448,14 +445,14 @@ impl Server {
         // be cancelled, so nudge it with a throwaway local connection: the
         // accept loop then sees the stopping flag and drops it without serving.
         match connect(wakeup_addr(self.addr)) {
-            Ok(s) -> s.close(),
-            Err(_) -> {},
+            case Ok(s) { s.close() }
+            case Err(_) {}
         }
     }
 
     // Whether a graceful shutdown has been requested. Read under the lock so the
     // accept loop and the goroutine calling `shutdown` agree.
-    fun is_stopping(self) -> Bool {
+    fun is_stopping(self) -> bool {
         self.lock.lock()
         let s = self.stopping
         self.lock.unlock()
@@ -477,7 +474,7 @@ impl Server {
     // then block forever on a slow client). A read timeout bounds how long the
     // server waits for the client to send its request; a write timeout bounds
     // sending the response. The default is 30 seconds.
-    fun with_timeout(self, seconds: Int) -> Server {
+    fun with_timeout(self, seconds: int) -> Server {
         let ms = timeout_ms(seconds)
         self.read_timeout_ms = ms
         self.write_timeout_ms = ms
@@ -485,45 +482,45 @@ impl Server {
     }
 
     // Set only the read timeout, in seconds (`0` disables it). See `with_timeout`.
-    fun with_read_timeout(self, seconds: Int) -> Server {
+    fun with_read_timeout(self, seconds: int) -> Server {
         self.read_timeout_ms = timeout_ms(seconds)
         return self
     }
 
     // Set only the write timeout, in seconds (`0` disables it). See `with_timeout`.
-    fun with_write_timeout(self, seconds: Int) -> Server {
+    fun with_write_timeout(self, seconds: int) -> Server {
         self.write_timeout_ms = timeout_ms(seconds)
         return self
     }
 
     // Register `handler` for `method` requests whose path matches `pattern`.
     // Routes are tried in registration order; the first match wins.
-    fun route(self, method: Method, pattern: String, handler: fun(Request) -> Response) {
-        self.routes.push(Route { method, pattern, handler })
+    fun route(self, method: Method, pattern: str, handler: fun(Request) -> Response) {
+        self.routes.push(Route(method: method, pattern: pattern, handler: handler))
     }
 
     // Register a handler for GET `pattern`.
-    fun get(self, pattern: String, handler: fun(Request) -> Response) {
+    fun get(self, pattern: str, handler: fun(Request) -> Response) {
         self.route(Method.Get, pattern, handler)
     }
 
     // Register a handler for POST `pattern`.
-    fun post(self, pattern: String, handler: fun(Request) -> Response) {
+    fun post(self, pattern: str, handler: fun(Request) -> Response) {
         self.route(Method.Post, pattern, handler)
     }
 
     // Register a handler for PUT `pattern`.
-    fun put(self, pattern: String, handler: fun(Request) -> Response) {
+    fun put(self, pattern: str, handler: fun(Request) -> Response) {
         self.route(Method.Put, pattern, handler)
     }
 
     // Register a handler for DELETE `pattern`.
-    fun delete(self, pattern: String, handler: fun(Request) -> Response) {
+    fun delete(self, pattern: str, handler: fun(Request) -> Response) {
         self.route(Method.Delete, pattern, handler)
     }
 
     // Register a handler for PATCH `pattern`.
-    fun patch(self, pattern: String, handler: fun(Request) -> Response) {
+    fun patch(self, pattern: str, handler: fun(Request) -> Response) {
         self.route(Method.Patch, pattern, handler)
     }
 
@@ -532,11 +529,11 @@ impl Server {
     // serves `GET /static/style.css` from `public/style.css`. The file name is a
     // single path segment, so it cannot escape `dir` with a slash. A missing
     // file is a 404 (see `Response.file`).
-    fun static(self, prefix: String, dir: String) {
+    fun static(self, prefix: str, dir: str) {
         self.route(
             Method.Get,
             prefix.concat("/:file"),
-            fun(req: Request) -> Response = serve_from(dir, req),
+            (req: Request) -> Response => serve_from(dir, req),
         )
     }
 
@@ -544,16 +541,16 @@ impl Server {
     // goroutine so a slow client never blocks the others. Blocks until
     // `shutdown` is called, after which it stops accepting, waits for in-flight
     // requests to finish, and returns. A failed bind is reported and returns.
-    fun listen(self, addr: String) {
+    fun listen(self, addr: str) {
         self.addr = addr
         match listen(addr) {
-            Ok(socket) -> {
+            case Ok(socket) {
                 // Track in-flight connection goroutines so a graceful shutdown
                 // can wait for them to drain before returning.
                 let inflight = wait_group()
-                while !self.is_stopping() {
+                while not self.is_stopping() {
                     match socket.accept() {
-                        Ok(stream) -> {
+                        case Ok(stream) {
                             // A connection accepted after shutdown began (a real
                             // late arrival or the wakeup nudge) is dropped, not
                             // served: only already-accepted requests drain.
@@ -561,21 +558,21 @@ impl Server {
                                 stream.close()
                             } else {
                                 inflight.add(1)
-                                spawn(fun() -> Unit {
+                                spawn {
                                     serve_connection(self, stream)
                                     inflight.done()
-                                })
+                                }
                             }
-                        },
-                        Err(_) -> {},
+                        }
+                        case Err(_) {}
                     }
                 }
                 inflight.wait()
                 // Release the listening socket so the port is free after a
                 // graceful shutdown returns, rather than staying bound.
                 socket.close()
-            },
-            Err(e) -> print("http: cannot bind ".concat(addr).concat(": ").concat(e.message())),
+            }
+            case Err(e) { print("http: cannot bind ".concat(addr).concat(": ").concat(e.message())) }
         }
     }
 }
@@ -594,24 +591,24 @@ fun serve_connection(server: Server, stream: TcpStream) {
     if server.write_timeout_ms > 0 {
         stream.set_write_timeout_ms(server.write_timeout_ms)
     }
-    let open = true
-    let served = 0
-    let carry = ""
+    var open = true
+    var served = 0
+    var carry = ""
     while open {
         match read_request(stream, carry) {
-            Ok(maybe) -> {
+            case Ok(maybe) {
                 match maybe {
-                    Some(parsed) -> {
+                    case Some(parsed) {
                         carry = parsed.rest
                         let req = parsed.request
                         let resp = dispatch(server.routes, req)
-                        let keep = should_keep_alive(req)
+                        var keep = should_keep_alive(req)
                         if server.is_stopping() {
                             keep = false
                         }
                         let is_head = match req.method {
-                            Head -> true,
-                            _ -> false,
+                            case Head { true }
+                            case _ { false }
                         }
                         write_response(stream, resp, keep, is_head)
                         if server.access_log {
@@ -622,18 +619,18 @@ fun serve_connection(server: Server, stream: TcpStream) {
                             print("${method} ${req.path} ${sanitize_status(resp.status)}")
                         }
                         served += 1
-                        if !keep {
+                        if not keep {
                             open = false
                         }
-                    },
+                    }
                     // A clean close with no request pending: an idle keep-alive
                     // client hung up. Close silently.
-                    None -> {
+                    case None {
                         open = false
-                    },
+                    }
                 }
-            },
-            Err(_) -> {
+            }
+            case Err(_) {
                 // A malformed request is answered with 400 whether or not earlier
                 // requests on this keep-alive connection succeeded; only a clean
                 // idle hang-up (Ok(None) above) closes silently.
@@ -642,7 +639,7 @@ fun serve_connection(server: Server, stream: TcpStream) {
                     print("- - 400")
                 }
                 open = false
-            },
+            }
         }
     }
     stream.close()
@@ -652,9 +649,9 @@ fun serve_connection(server: Server, stream: TcpStream) {
 // comma-separated options, compared after trimming each. The whole value cannot
 // be compared directly: `keep-alive, close` lists two options, and a `close`
 // beside another option must still be honored.
-fun connection_has_token(conn: String, token: String) -> Bool {
+fun connection_has_token(conn: str, token: str) -> bool {
     let parts = conn.split(",")
-    let i = 0
+    var i = 0
     while i < parts.len() {
         if parts[i].trim() == token {
             return true
@@ -668,18 +665,18 @@ fun connection_has_token(conn: String, token: String) -> Bool {
 // open unless the client sent a `close` option; HTTP/1.0 closes it unless the
 // client sent a `keep-alive` option. The `Connection` header is a list of
 // tokens, so each is checked individually.
-fun should_keep_alive(req: Request) -> Bool {
+fun should_keep_alive(req: Request) -> bool {
     let conn = req.header("connection").to_lower()
     if req.version == "HTTP/1.0" {
         return connection_has_token(conn, "keep-alive")
     }
-    return !connection_has_token(conn, "close")
+    return not connection_has_token(conn, "close")
 }
 
 // A connectable address for the shutdown wakeup. A server bound to the
 // wildcard `0.0.0.0` (or an empty host) is not reachable by that address, but
 // its port is reachable on loopback; a concrete bound host is reachable as is.
-fun wakeup_addr(addr: String) -> String {
+fun wakeup_addr(addr: str) -> str {
     // An IPv6 address is bracketed (`[host]:port`), and its host part itself
     // contains colons, so the IPv4 split on the first colon does not apply. A
     // wildcard `[::]` (or `[::0]`) is not connectable, so rewrite it to the IPv6
@@ -691,7 +688,7 @@ fun wakeup_addr(addr: String) -> String {
         }
         let host = addr.substring(1, close)
         let port = addr.substring(close + 1, addr.length())
-        if host == "::" || host == "::0" || host == "0:0:0:0:0:0:0:0" {
+        if host == "::" or host == "::0" or host == "0:0:0:0:0:0:0:0" {
             return "[::1]".concat(port)
         }
         return addr
@@ -702,25 +699,25 @@ fun wakeup_addr(addr: String) -> String {
     }
     let host = addr.substring(0, colon)
     let port = addr.substring(colon, addr.length())
-    if host == "0.0.0.0" || host == "" {
+    if host == "0.0.0.0" or host == "" {
         return "127.0.0.1".concat(port)
     }
     return addr
 }
 
 // Find the first route matching `req` and run its handler; 404 if none match.
-fun dispatch(routes: List<Route>, req: Request) -> Response {
-    let i = 0
+fun dispatch(routes: list[Route], req: Request) -> Response {
+    var i = 0
     while i < routes.len() {
         let route = routes[i]
         if route.method == req.method {
             match match_path(route.pattern, req.path) {
-                Some(params) -> {
+                case Some(params) {
                     req.params = params
                     let handler = route.handler
                     return handler(req)
-                },
-                None -> {},
+                }
+                case None {}
             }
         }
         i += 1
@@ -730,14 +727,14 @@ fun dispatch(routes: List<Route>, req: Request) -> Response {
 
 // Match a route `pattern` against a request `path`, returning the captured
 // `:name` segments on success.
-fun match_path(pattern: String, path: String) -> Option<Map<String, String>> {
+fun match_path(pattern: str, path: str) -> Option[dict[str, str]] {
     let pat = path_segments(pattern)
     let got = path_segments(path)
     if pat.len() != got.len() {
         return None
     }
-    let params: Map<String, String> = Map.new()
-    let i = 0
+    let params: dict[str, str] = Map.new()
+    var i = 0
     while i < pat.len() {
         let p = pat[i]
         let g = got[i]
@@ -754,10 +751,10 @@ fun match_path(pattern: String, path: String) -> Option<Map<String, String>> {
 }
 
 // Split a path on "/" into its non-empty segments.
-fun path_segments(path: String) -> List<String> {
+fun path_segments(path: str) -> list[str] {
     let raw = path.split("/")
-    let out: List<String> = []
-    let i = 0
+    var out: list[str] = []
+    var i = 0
     while i < raw.len() {
         if raw[i].length() > 0 {
             out.push(raw[i])
@@ -771,23 +768,23 @@ fun path_segments(path: String) -> List<String> {
 // line, then the body up to the request's Content-Length.
 // One parsed request plus any bytes read past its body, which belong to the
 // next (pipelined) request on a kept-alive connection.
-struct ReadResult {
-    request: Request,
-    rest: String,
+class ReadResult {
+    request: Request
+    rest: str
 }
 
 // A decoded chunked body plus any bytes read past the final chunk (the start of
 // the next pipelined request).
-struct ChunkedBody {
-    body: String,
-    rest: String,
+class ChunkedBody {
+    body: str
+    rest: str
 }
 
 // Decode a `Transfer-Encoding: chunked` body, beginning from `initial` (the
 // bytes already read after the headers) and reading more from `stream` as
 // needed. Each chunk is `<hex-size>[;ext]\r\n<data>\r\n`; a zero-size chunk
 // ends the body, followed by optional trailer lines and a final blank line.
-fun is_chunked_only(te: String) -> Bool {
+fun is_chunked_only(te: str) -> bool {
     let parts = te.split(",")
     if parts.len() != 1 {
         return false
@@ -795,18 +792,18 @@ fun is_chunked_only(te: String) -> Bool {
     return parts[0].trim().to_lower() == "chunked"
 }
 
-fun decode_chunked(stream: TcpStream, initial: String) -> Result<ChunkedBody, Error> {
-    let buf = initial
-    let decoded = ""
-    let total = 0
+fun decode_chunked(stream: TcpStream, initial: str) -> Result[ChunkedBody, Error] {
+    var buf = initial
+    var decoded = ""
+    var total = 0
     let max_body = 10485760
     // A single chunk-size line or the whole trailer block must fit this, so an
     // oversized extension or trailer cannot force unbounded buffering.
     let max_frame = 65536
-    let done = false
-    while !done {
+    var done = false
+    while not done {
         // Read up to the end of the chunk-size line.
-        let nl = buf.index_of("\r\n")
+        var nl = buf.index_of("\r\n")
         while nl < 0 {
             if buf.length() > max_frame {
                 return Err(error_kind("http", "chunk size line too large"))
@@ -818,7 +815,7 @@ fun decode_chunked(stream: TcpStream, initial: String) -> Result<ChunkedBody, Er
             buf = buf.concat(chunk)
             nl = buf.index_of("\r\n")
         }
-        let size_line = buf.substring(0, nl)
+        var size_line = buf.substring(0, nl)
         // A chunk extension follows the size after a `;`; ignore it.
         let semi = size_line.index_of(";")
         if semi >= 0 {
@@ -827,17 +824,17 @@ fun decode_chunked(stream: TcpStream, initial: String) -> Result<ChunkedBody, Er
         // A chunk size is one or more hex digits, nothing else: reject a leading
         // sign or any surrounding whitespace (`+a`, ` a`, `a `) rather than
         // trimming it away and accepting it.
-        if !is_hex_digits(size_line) {
+        if not is_hex_digits(size_line) {
             return Err(error_kind("http", "invalid chunk size"))
         }
-        let size = 0
+        var size = 0
         match from_radix(size_line, 16) {
-            Some(n) -> {
+            case Some(n) {
                 size = n
-            },
-            None -> {
+            }
+            case None {
                 return Err(error_kind("http", "invalid chunk size"))
-            },
+            }
         }
         if size < 0 {
             return Err(error_kind("http", "negative chunk size"))
@@ -846,8 +843,8 @@ fun decode_chunked(stream: TcpStream, initial: String) -> Result<ChunkedBody, Er
         if size == 0 {
             // Final chunk: consume any trailer lines up to the blank line.
             done = true
-            let stop = false
-            while !stop {
+            var stop = false
+            while not stop {
                 let tnl = buf.index_of("\r\n")
                 if tnl == 0 {
                     buf = buf.substring(2, buf.length())
@@ -889,7 +886,7 @@ fun decode_chunked(stream: TcpStream, initial: String) -> Result<ChunkedBody, Er
             buf = buf.substring(size + 2, buf.length())
         }
     }
-    return Ok(ChunkedBody { body: decoded, rest: buf })
+    return Ok(ChunkedBody(body: decoded, rest: buf))
 }
 
 // Parse one request, beginning from `initial` (bytes carried over from a prior
@@ -898,12 +895,12 @@ fun decode_chunked(stream: TcpStream, initial: String) -> Result<ChunkedBody, Er
 // an idle keep-alive client that hung up or sat past the read timeout. A request
 // that arrived but failed to parse is an `Err`, which the caller answers with a
 // 400, so a read timeout is never mistaken for a malformed request.
-fun read_request(stream: TcpStream, initial: String) -> Result<Option<ReadResult>, Error> {
-    let buf = initial
-    let split = buf.index_of("\r\n\r\n")
+fun read_request(stream: TcpStream, initial: str) -> Result[Option[ReadResult], Error] {
+    var buf = initial
+    var split = buf.index_of("\r\n\r\n")
     while split < 0 {
         match stream.read(4096) {
-            Ok(chunk) -> {
+            case Ok(chunk) {
                 if chunk.length() == 0 {
                     // No bytes buffered and the peer closed: an idle keep-alive
                     // hang-up, not a request. With bytes buffered it is truncated.
@@ -917,17 +914,17 @@ fun read_request(stream: TcpStream, initial: String) -> Result<Option<ReadResult
                 if buf.length() > 65536 {
                     return Err(error_kind("http", "request headers too large"))
                 }
-            },
+            }
             // A read failure while waiting for the next request line (a read
             // timeout on an idle keep-alive connection, or a reset) is not a
             // malformed request, so close quietly rather than answering 400.
-            Err(_) -> {
+            case Err(_) {
                 return Ok(None)
-            },
+            }
         }
     }
     let head_text = buf.substring(0, split)
-    let body = buf.substring(split + 4, buf.length())
+    var body = buf.substring(split + 4, buf.length())
 
     let lines = head_text.split("\r\n")
     if lines.len() == 0 {
@@ -949,12 +946,12 @@ fun read_request(stream: TcpStream, initial: String) -> Result<Option<ReadResult
     let method = parse_method(method_token)
     let target = request_line[1]
     let version = request_line[2]
-    if version != "HTTP/1.0" && version != "HTTP/1.1" {
+    if version != "HTTP/1.0" and version != "HTTP/1.1" {
         return Err(error_kind("http", "unsupported HTTP version"))
     }
 
-    let headers: Map<String, String> = Map.new()
-    let i = 1
+    let headers: dict[str, str] = Map.new()
+    var i = 1
     while i < lines.len() {
         let line = lines[i]
         if line.length() == 0 {
@@ -963,7 +960,7 @@ fun read_request(stream: TcpStream, initial: String) -> Result<Option<ReadResult
         }
         // Reject obsolete line folding: a header that begins with whitespace is
         // a continuation of the previous one, which current HTTP forbids.
-        if line.starts_with(" ") || line.starts_with("\t") {
+        if line.starts_with(" ") or line.starts_with("\t") {
             return Err(error_kind("http", "obsolete header line folding"))
         }
         // Every header is `name: value`; a line with no colon is malformed.
@@ -976,21 +973,21 @@ fun read_request(stream: TcpStream, initial: String) -> Result<Option<ReadResult
         // before the name, like `X Foo:` or `Host :`, is malformed). Validate the
         // raw name before lowercasing it for the lookup key.
         let raw_name = line.substring(0, colon)
-        if !is_valid_field_name(raw_name) {
+        if not is_valid_field_name(raw_name) {
             return Err(error_kind("http", "invalid header field name"))
         }
         let key = raw_name.to_lower()
         // HTTP/1.1 allows exactly one Host header; a second is a routing and
         // request-smuggling ambiguity, so reject a duplicate.
-        if key == "host" && headers.has("host") {
+        if key == "host" and headers.has("host") {
             return Err(error_kind("http", "duplicate Host header"))
         }
-        let value = line.substring(colon + 1, line.length()).trim()
+        var value = line.substring(colon + 1, line.length()).trim()
         // Two Content-Length headers with different values are a request
         // smuggling vector; reject the conflict rather than trusting one.
         if key == "content-length" {
             let existing = headers.get_or("content-length", "")
-            if existing.length() > 0 && existing != value {
+            if existing.length() > 0 and existing != value {
                 return Err(error_kind("http", "conflicting Content-Length"))
             }
         }
@@ -999,7 +996,7 @@ fun read_request(stream: TcpStream, initial: String) -> Result<Option<ReadResult
         // `gzip` + `chunked` coding cannot hide a coding the server does not
         // implement, and a `close` on one line beside a `keep-alive` on another
         // is still honored as a close.
-        if key == "transfer-encoding" || key == "connection" {
+        if key == "transfer-encoding" or key == "connection" {
             let existing = headers.get_or(key, "")
             if existing.length() > 0 {
                 value = existing.concat(", ").concat(value)
@@ -1010,18 +1007,18 @@ fun read_request(stream: TcpStream, initial: String) -> Result<Option<ReadResult
     }
 
     // HTTP/1.1 requires a Host header (RFC 7230 5.4); its absence is malformed.
-    if version == "HTTP/1.1" && headers.get_or("host", "").length() == 0 {
+    if version == "HTTP/1.1" and headers.get_or("host", "").length() == 0 {
         return Err(error_kind("http", "missing Host header"))
     }
 
-    let actual_body = ""
-    let rest = ""
+    var actual_body = ""
+    var rest = ""
     let te = headers.get_or("transfer-encoding", "").trim()
     if te.length() > 0 {
         // The server implements only a sole `chunked` coding. Reject any other
         // coding list (`gzip, chunked`, an unknown coding) rather than routing
         // the request with the wrong or an empty body.
-        if !is_chunked_only(te) {
+        if not is_chunked_only(te) {
             return Err(error_kind("http", "unsupported transfer-coding"))
         }
         // RFC 7230 3.3.3: Content-Length together with chunked framing is a
@@ -1029,28 +1026,28 @@ fun read_request(stream: TcpStream, initial: String) -> Result<Option<ReadResult
         if headers.get_or("content-length", "").length() > 0 {
             return Err(error_kind("http", "Content-Length with chunked encoding"))
         }
-        let decoded = decode_chunked(stream, body)?
+        var decoded = decode_chunked(stream, body)?
         actual_body = decoded.body
         rest = decoded.rest
     } else {
-        let want = 0
+        var want = 0
         let clen = headers.get_or("content-length", "")
         if clen.length() > 0 {
             // Content-Length is one or more decimal digits, nothing else: reject a
             // leading sign (`+5`, `-5`) or any surrounding whitespace rather than
             // letting a lenient integer parse accept it.
-            if !is_all_digits(clen) {
+            if not is_all_digits(clen) {
                 return Err(error_kind("http", "invalid Content-Length"))
             }
             match clen.parse_int() {
-                Some(n) -> {
+                case Some(n) {
                     want = n
-                },
+                }
                 // A non-numeric Content-Length is a malformed request; answer
                 // 400 rather than silently treating the body as empty.
-                None -> {
+                case None {
                     return Err(error_kind("http", "invalid Content-Length"))
-                },
+                }
             }
         }
         // Reject a negative or oversized declared body before reading it, so a
@@ -1077,38 +1074,38 @@ fun read_request(stream: TcpStream, initial: String) -> Result<Option<ReadResult
         rest = body.substring(want, body.length())
     }
 
-    let path = target
-    let query: Map<String, String> = Map.new()
+    var path = target
+    let query: dict[str, str] = Map.new()
     let q = target.index_of("?")
     if q >= 0 {
         path = target.substring(0, q)
         parse_query(target.substring(q + 1, target.length()), query)
     }
 
-    let params: Map<String, String> = Map.new()
+    let params: dict[str, str] = Map.new()
     return Ok(
         Some(
-            ReadResult {
-                request: Request {
-                    method,
-                    path,
-                    version,
-                    headers,
-                    params,
-                    query,
+            ReadResult(
+                request: Request(
+                    method: method,
+                    path: path,
+                    version: version,
+                    headers: headers,
+                    params: params,
+                    query: query,
                     body: actual_body,
-                },
-                rest,
-            },
+                ),
+                rest: rest,
+            ),
         ),
     )
 }
 
 // Decode `a=1&b=2` query-string pairs into `out`, percent-decoding each key and
 // value and turning `+` into a space (the form-urlencoded convention).
-fun parse_query(qs: String, out: Map<String, String>) {
+fun parse_query(qs: str, out: dict[str, str]) {
     let pairs = qs.split("&")
-    let i = 0
+    var i = 0
     while i < pairs.len() {
         let pair = pairs[i]
         if pair.length() > 0 {
@@ -1125,23 +1122,23 @@ fun parse_query(qs: String, out: Map<String, String>) {
     }
 }
 
-fun decode_query_part(s: String) -> String {
+fun decode_query_part(s: str) -> str {
     return url_decode(s.replace("+", " "))
 }
 
 // A 1xx, 204, or 304 response must not carry a message body (RFC 7230 3.3.2),
 // regardless of what the handler put in `resp.body`.
-fun status_forbids_body(status: Int) -> Bool {
-    if status >= 100 && status < 200 {
+fun status_forbids_body(status: int) -> bool {
+    if status >= 100 and status < 200 {
         return true
     }
-    return status == 204 || status == 304
+    return status == 204 or status == 304
 }
 
 // A 1xx or 204 response must not carry Content-Length either. A 304 still
 // reports the length the body would have, like a HEAD response.
-fun status_forbids_content_length(status: Int) -> Bool {
-    if status >= 100 && status < 200 {
+fun status_forbids_content_length(status: int) -> bool {
+    if status >= 100 and status < 200 {
         return true
     }
     return status == 204
@@ -1150,8 +1147,8 @@ fun status_forbids_content_length(status: Int) -> Bool {
 // A valid HTTP status code is three digits, 100 through 599. A handler can set
 // any Int through `status_code`, so an out-of-range value (which would frame a
 // malformed status line like `HTTP/1.1 -1 OK`) is replaced with 500.
-fun sanitize_status(status: Int) -> Int {
-    if status < 100 || status > 599 {
+fun sanitize_status(status: int) -> int {
+    if status < 100 or status > 599 {
         return 500
     }
     return status
@@ -1160,30 +1157,30 @@ fun sanitize_status(status: Int) -> Int {
 // True if `b` is an HTTP token character (RFC 7230): a letter, digit, or one of
 // the punctuation marks a field name may contain. A field name is `1*tchar`, so
 // a space, control, or separator byte makes the name invalid.
-fun is_tchar(b: Int) -> Bool {
-    if b >= 65 && b <= 90 {
+fun is_tchar(b: int) -> bool {
+    if b >= 65 and b <= 90 {
         return true
     }
-    if b >= 97 && b <= 122 {
+    if b >= 97 and b <= 122 {
         return true
     }
-    if b >= 48 && b <= 57 {
+    if b >= 48 and b <= 57 {
         return true
     }
     // ! # $ % & ' * + - . ^ _ ` | ~
-    return b == 33 || b == 35 || b == 36 || b == 37 || b == 38 || b == 39 || b == 42 || b == 43 || b == 45 || b == 46 || b == 94 || b == 95 || b == 96 || b == 124 || b == 126
+    return b == 33 or b == 35 or b == 36 or b == 37 or b == 38 or b == 39 or b == 42 or b == 43 or b == 45 or b == 46 or b == 94 or b == 95 or b == 96 or b == 124 or b == 126
 }
 
 // Non-empty and every byte an ASCII decimal digit. Used to validate a numeric
 // header field (Content-Length) strictly, with no sign or whitespace.
-fun is_all_digits(s: String) -> Bool {
+fun is_all_digits(s: str) -> bool {
     if s.length() == 0 {
         return false
     }
-    let i = 0
+    var i = 0
     while i < s.length() {
         let b = __str_byte_at(s, i)
-        if b < 48 || b > 57 {
+        if b < 48 or b > 57 {
             return false
         }
         i += 1
@@ -1193,17 +1190,17 @@ fun is_all_digits(s: String) -> Bool {
 
 // Non-empty and every byte an ASCII hex digit (`0-9`, `a-f`, `A-F`). Used to
 // validate a chunk size strictly, with no sign or surrounding whitespace.
-fun is_hex_digits(s: String) -> Bool {
+fun is_hex_digits(s: str) -> bool {
     if s.length() == 0 {
         return false
     }
-    let i = 0
+    var i = 0
     while i < s.length() {
         let b = __str_byte_at(s, i)
-        let digit = b >= 48 && b <= 57
-        let lower = b >= 97 && b <= 102
-        let upper = b >= 65 && b <= 70
-        if !(digit || lower || upper) {
+        let digit = b >= 48 and b <= 57
+        let lower = b >= 97 and b <= 102
+        let upper = b >= 65 and b <= 70
+        if not (digit or lower or upper) {
             return false
         }
         i += 1
@@ -1212,13 +1209,13 @@ fun is_hex_digits(s: String) -> Bool {
 }
 
 // A field name is valid when it is non-empty and every byte is a token character.
-fun is_valid_field_name(name: String) -> Bool {
+fun is_valid_field_name(name: str) -> bool {
     if name.length() == 0 {
         return false
     }
-    let i = 0
+    var i = 0
     while i < name.length() {
-        if !is_tchar(__str_byte_at(name, i)) {
+        if not is_tchar(__str_byte_at(name, i)) {
             return false
         }
         i += 1
@@ -1229,13 +1226,13 @@ fun is_valid_field_name(name: String) -> Bool {
 // Strip the bytes a field value must not contain: the C0 controls and DEL,
 // except HTAB which is allowed. The visible bytes and obs-text (0x80..0xFF) are
 // kept, so a normal value is unchanged.
-fun sanitize_field_value(value: String) -> String {
-    let out = ""
-    let i = 0
+fun sanitize_field_value(value: str) -> str {
+    var out = ""
+    var i = 0
     while i < value.length() {
         let b = __str_byte_at(value, i)
-        let forbidden = (b < 32 && b != 9) || b == 127
-        if !forbidden {
+        let forbidden = (b < 32 and b != 9) or b == 127
+        if not forbidden {
             out = out.concat(value.substring(i, i + 1))
         }
         i += 1
@@ -1245,9 +1242,9 @@ fun sanitize_field_value(value: String) -> String {
 
 // Remove every header whose name matches `lower_name` (already lowercase),
 // compared case-insensitively since HTTP field names are case-insensitive.
-fun remove_header_ci(headers: Map<String, String>, lower_name: String) {
+fun remove_header_ci(headers: dict[str, str], lower_name: str) {
     let keys = headers.keys()
-    let i = 0
+    var i = 0
     while i < keys.len() {
         if keys[i].to_lower() == lower_name {
             let _ = headers.remove(keys[i])
@@ -1258,7 +1255,7 @@ fun remove_header_ci(headers: Map<String, String>, lower_name: String) {
 
 // Write `resp` to `stream` as an HTTP/1.1 response, framing it with
 // Content-Length and closing the connection after.
-fun write_response(stream: TcpStream, resp: Response, keep_alive: Bool, is_head: Bool) {
+fun write_response(stream: TcpStream, resp: Response, keep_alive: bool, is_head: bool) {
     // Frame the wire status from a sanitized code, so a handler's out-of-range
     // status cannot produce a malformed status line.
     let code = sanitize_status(resp.status)
@@ -1268,7 +1265,7 @@ fun write_response(stream: TcpStream, resp: Response, keep_alive: Bool, is_head:
     // status forbids it (1xx, 204).
     remove_header_ci(resp.headers, "content-length")
     remove_header_ci(resp.headers, "transfer-encoding")
-    if !status_forbids_content_length(code) {
+    if not status_forbids_content_length(code) {
         // Content-Length always reports what a GET would return, even for HEAD.
         resp.headers.set("Content-Length", resp.body.length().to_string())
     }
@@ -1279,9 +1276,9 @@ fun write_response(stream: TcpStream, resp: Response, keep_alive: Bool, is_head:
     }
     let status_line = "HTTP/1.1 ".concat(code.to_string()).concat(" ")
     let line = status_line.concat(reason_phrase(code)).concat("\r\n")
-    let block = ""
+    var block = ""
     let keys = resp.headers.keys()
-    let i = 0
+    var i = 0
     while i < keys.len() {
         let k = keys[i]
         if is_valid_field_name(k) {
@@ -1292,8 +1289,8 @@ fun write_response(stream: TcpStream, resp: Response, keep_alive: Bool, is_head:
     }
     // A response to a HEAD request, or one whose status forbids a body, carries
     // the headers but no body.
-    let out = line.concat(block).concat("\r\n")
-    if !is_head && !status_forbids_body(code) {
+    var out = line.concat(block).concat("\r\n")
+    if not is_head and not status_forbids_body(code) {
         out = out.concat(resp.body)
     }
     let _ = stream.write(out)
@@ -1303,7 +1300,7 @@ fun write_response(stream: TcpStream, resp: Response, keep_alive: Bool, is_head:
 // large that `seconds * 1000` would wrap past the Int range (and read back as a
 // non-positive, "disabled" timeout) is clamped to a very large bound instead. A
 // non-positive `seconds` disables the timeout (0).
-fun timeout_ms(seconds: Int) -> Int {
+fun timeout_ms(seconds: int) -> int {
     if seconds <= 0 {
         return 0
     }
@@ -1318,7 +1315,7 @@ fun timeout_ms(seconds: Int) -> Int {
 // The reason phrase for a status code. Covers the common codes; an unknown
 // code falls back to a phrase for its class (`Server Error` for 5xx, and so on)
 // rather than a misleading `OK`, so a 503 is never labelled `503 OK`.
-fun reason_phrase(status: Int) -> String {
+fun reason_phrase(status: int) -> str {
     if status == 200 {
         return "OK"
     }
@@ -1379,26 +1376,26 @@ fun reason_phrase(status: Int) -> String {
     if status == 504 {
         return "Gateway Timeout"
     }
-    if status >= 100 && status < 200 {
+    if status >= 100 and status < 200 {
         return "Informational"
     }
-    if status >= 200 && status < 300 {
+    if status >= 200 and status < 300 {
         return "Success"
     }
-    if status >= 300 && status < 400 {
+    if status >= 300 and status < 400 {
         return "Redirection"
     }
-    if status >= 400 && status < 500 {
+    if status >= 400 and status < 500 {
         return "Client Error"
     }
-    if status >= 500 && status < 600 {
+    if status >= 500 and status < 600 {
         return "Server Error"
     }
     return "Unknown"
 }
 
 // Serve the `:file` capture of a `Server.static` route from its directory.
-fun serve_from(dir: String, req: Request) -> Response {
+fun serve_from(dir: str, req: Request) -> Response {
     let name = req.param("file")
     // The captured name must be a single, ordinary file name inside `dir`.
     // Reject anything that could climb out: a path separator (note that `\` is
@@ -1423,7 +1420,7 @@ fun serve_from(dir: String, req: Request) -> Response {
 }
 
 // A `Content-Type` for a file path, chosen from its extension.
-fun content_type_for(path: String) -> String {
+fun content_type_for(path: str) -> str {
     if path.ends_with(".html") {
         return "text/html; charset=utf-8"
     }

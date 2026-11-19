@@ -114,6 +114,7 @@ pub struct ModuleCx {
     vtables: HashMap<String, DataId>,
     /// Counter handing out unique vtable data symbol names.
     vtable_counter: u32,
+    gc_stop_flag: Option<DataId>,
     /// Counter handing out unique reflection-metadata data symbol names.
     reflect_counter: u32,
     /// C layouts of `@repr(C)` structs, keyed by mangled struct name. A
@@ -164,6 +165,7 @@ impl ModuleCx {
             next_type_id: 0,
             vtables: HashMap::new(),
             vtable_counter: 0,
+            gc_stop_flag: None,
             reflect_counter: 0,
             repr_c_structs: HashMap::new(),
             globals: HashMap::new(),
@@ -195,6 +197,18 @@ impl ModuleCx {
     }
 
     /// The data slot of a mutable module-level global, by its mangled symbol.
+    /// The runtime's `RAVEN_GC_STOP_PENDING` flag, imported on first use.
+    pub fn gc_stop_flag(&mut self) -> Result<DataId, CodegenError> {
+        if let Some(id) = self.gc_stop_flag {
+            return Ok(id);
+        }
+        let id = self
+            .module
+            .declare_data("RAVEN_GC_STOP_PENDING", Linkage::Import, true, false)?;
+        self.gc_stop_flag = Some(id);
+        Ok(id)
+    }
+
     pub fn global_data(&self, name: &str) -> Option<DataId> {
         self.globals.get(name).copied()
     }

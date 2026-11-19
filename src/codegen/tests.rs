@@ -342,7 +342,7 @@ fn compiles_unit_returning_function() {
 fn compiles_while_loop() {
     let src = r#"
         fun count() -> Int {
-            let i = 0
+            var i = 0
             while i < 10 {
                 i = i + 1
             }

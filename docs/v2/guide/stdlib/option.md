@@ -6,14 +6,14 @@ type itself; this module adds the common combinators, since methods cannot be
 attached to the built-in generic type.
 
 ```rust
-import std/option
+import std.option
 
 fun main() {
-    let a: Option<Int> = Some(5)
-    print(option.unwrap_or(a, 0))       // 5
-    match option.map(a, fun(x: Int) -> Int = x * 2) {
-        Some(v) -> print(v),            // 10
-        None -> print("none"),
+    let a: Option[int] = Some(5)
+    print(option.unwrap_or(a, 0)) // 5
+    match option.map(a, (x: int) -> int => x * 2) {
+        case Some(v) { print(v) } // 10
+        case None { print("none") }
     }
 }
 ```
@@ -21,7 +21,7 @@ fun main() {
 ## Importing
 
 ```rust
-import std/option
+import std.option
 ```
 
 A bare `import std/option` binds the module alias, so the functions are called
@@ -29,7 +29,7 @@ as `option.is_some(...)`. To call them unqualified, list the names in a
 selective import:
 
 ```rust
-import std/option { is_some, map, unwrap_or }
+from std.option import is_some, map, unwrap_or
 ```
 
 `Option<T>`, `Some`, and `None` are built into the language and need no import.
@@ -45,13 +45,13 @@ True when the option holds a value.
 True when the option is empty.
 
 ```rust
-import std/option
+import std.option
 
 fun main() {
-    let a: Option<Int> = Some(5)
-    let n: Option<Int> = None
-    print(option.is_some(a))    // true
-    print(option.is_none(n))    // true
+    let a: Option[int] = Some(5)
+    let n: Option[int] = None
+    print(option.is_some(a)) // true
+    print(option.is_none(n)) // true
 }
 ```
 
@@ -62,13 +62,13 @@ fun main() {
 The contained value, or `default` when the option is `None`.
 
 ```rust
-import std/option
+import std.option
 
 fun main() {
-    let a: Option<Int> = Some(5)
-    let n: Option<Int> = None
-    print(option.unwrap_or(a, 0))   // 5
-    print(option.unwrap_or(n, 0))   // 0
+    let a: Option[int] = Some(5)
+    let n: Option[int] = None
+    print(option.unwrap_or(a, 0)) // 5
+    print(option.unwrap_or(n, 0)) // 0
 }
 ```
 
@@ -84,17 +84,17 @@ Chain an option-returning function: `Some(v)` becomes `f(v)`, `None` stays
 `None`. The flat-map combinator.
 
 ```rust
-import std/option
+import std.option
 
 fun main() {
-    let a: Option<Int> = Some(5)
-    match option.map(a, fun(x: Int) -> Int = x * 2) {
-        Some(v) -> print(v),            // 10
-        None -> print("none"),
+    let a: Option[int] = Some(5)
+    match option.map(a, (x: int) -> int => x * 2) {
+        case Some(v) { print(v) } // 10
+        case None { print("none") }
     }
-    match option.and_then(a, fun(x: Int) -> Option<Int> = Some(x + 1)) {
-        Some(v) -> print(v),            // 6
-        None -> print("none"),
+    match option.and_then(a, (x: int) -> Option[int] => Some(x + 1)) {
+        case Some(v) { print(v) } // 6
+        case None { print("none") }
     }
 }
 ```
@@ -110,18 +110,18 @@ The option itself when it is `Some`, otherwise the result of calling `f()`.
 when needed.
 
 ```rust
-import std/option
+import std.option
 
 fun main() {
-    let a: Option<Int> = Some(5)
-    let n: Option<Int> = None
-    match option.filter(a, fun(x: Int) -> Bool = x > 10) {
-        Some(v) -> print(v),
-        None -> print("filtered"),      // filtered
+    let a: Option[int] = Some(5)
+    let n: Option[int] = None
+    match option.filter(a, (x: int) -> bool => x > 10) {
+        case Some(v) { print(v) }
+        case None { print("filtered") } // filtered
     }
-    match option.or_else(n, fun() -> Option<Int> = Some(99)) {
-        Some(v) -> print(v),            // 99
-        None -> print("none"),
+    match option.or_else(n, () -> Option[int] => Some(99)) {
+        case Some(v) { print(v) } // 99
+        case None { print("none") }
     }
 }
 ```

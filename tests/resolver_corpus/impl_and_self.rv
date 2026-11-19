@@ -1,9 +1,10 @@
-struct Point {
-    x: Int,
-    y: Int,
+class Point {
+    x: int
+    y: int
 }
 
 impl Point {
-    fun origin() -> Self = Point { x: 0, y: 0 }
-    fun get_x(self) -> Int = self.x
+    fun origin() -> Self = Point(x: 0, y: 0)
+
+    fun get_x(self) -> int = self.x
 }

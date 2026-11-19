@@ -5,24 +5,24 @@
 //   7
 //   2
 //   1
-import std/io { println }
+from std.io import println
 
 fun main() {
     let v = 7
     match Some(99) {
-        Some(v) -> println(v.to_string()),
-        None -> {},
+        case Some(v) { println(v.to_string()) }
+        case None {}
     }
     println(v.to_string())
 
     match Some(1) {
-        Some(x) -> {
+        case Some(x) {
             match Some(2) {
-                Some(x) -> println(x.to_string()),
-                None -> {},
+                case Some(x) { println(x.to_string()) }
+                case None {}
             }
             println(x.to_string())
-        },
-        None -> {},
+        }
+        case None {}
     }
 }

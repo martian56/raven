@@ -7,8 +7,8 @@ and there is nothing to import selectively.
 
 ```rust
 fun main() {
-    print(42.to_string())           // 42
-    print(3.compare(7) < 0)         // true (3 sorts before 7)
+    print(42.to_string()) // 42
+    print(3.compare(7) < 0) // true (3 sorts before 7)
 }
 ```
 
@@ -33,7 +33,7 @@ type that implements it, including your own.
 
 ```rust
 trait ToString {
-    fun to_string(self) -> String
+    fun to_string(self) -> str
 }
 ```
 
@@ -47,12 +47,12 @@ string unchanged.
 
 ```rust
 fun main() {
-    print(42.to_string())           // 42
-    print(true.to_string())         // true
-    print(3.14.to_string())         // 3.14
+    print(42.to_string()) // 42
+    print(true.to_string()) // true
+    print(3.14.to_string()) // 3.14
 
     let count = 3
-    print("count = ${count}")       // count = 3 (interpolation uses ToString)
+    print("count = ${count}") // count = 3 (interpolation uses ToString)
 }
 ```
 
@@ -60,7 +60,7 @@ fun main() {
 
 ```rust
 trait Eq {
-    fun equals(self, other: Self) -> Bool
+    fun equals(self, other: Self) -> bool
 }
 ```
 
@@ -69,9 +69,9 @@ Structural equality. Built in for `Int`, `Float`, `Bool`, `Char`, and
 
 ```rust
 fun main() {
-    print(2.equals(2))              // true
-    print("ab".equals("ab"))        // true
-    print("ab".equals("ba"))        // false
+    print(2.equals(2)) // true
+    print("ab".equals("ab")) // true
+    print("ab".equals("ba")) // false
 }
 ```
 
@@ -79,7 +79,7 @@ fun main() {
 
 ```rust
 trait Ord {
-    fun compare(self, other: Self) -> Int
+    fun compare(self, other: Self) -> int
 }
 ```
 
@@ -90,9 +90,9 @@ after. Built in for `Int`, `Float`, `Char`, `Bool` (`false` sorts before
 
 ```rust
 fun main() {
-    print(3.compare(7))             // -1
-    print(7.compare(3))             //  1
-    print(5.compare(5))             //  0
+    print(3.compare(7)) // -1
+    print(7.compare(3)) //  1
+    print(5.compare(5)) //  0
     print("apple".compare("apply")) // -1
 }
 ```
@@ -101,7 +101,7 @@ Use the sign of the result rather than the exact magnitude: only `< 0`,
 `== 0`, and `> 0` are guaranteed.
 
 ```rust
-fun max<T: Ord>(a: T, b: T) -> T {
+fun max[T: Ord](a: T, b: T) -> T {
     if a.compare(b) >= 0 {
         return a
     }
@@ -109,8 +109,8 @@ fun max<T: Ord>(a: T, b: T) -> T {
 }
 
 fun main() {
-    print(max(3, 7))                // 7
-    print(max("cat", "ant"))        // cat
+    print(max(3, 7)) // 7
+    print(max("cat", "ant")) // cat
 }
 ```
 
@@ -118,7 +118,7 @@ fun main() {
 
 ```rust
 trait Hash {
-    fun hash(self) -> Int
+    fun hash(self) -> int
 }
 ```
 
@@ -131,16 +131,16 @@ hashes.
 
 ```rust
 fun main() {
-    print(7.hash())                 // 7
-    print(true.hash())              // 1
+    print(7.hash()) // 7
+    print(true.hash()) // 1
 }
 ```
 
 ## Iterator&lt;T&gt;
 
 ```rust
-trait Iterator<T> {
-    fun next(self) -> Option<T>
+trait Iterator[T] {
+    fun next(self) -> Option[T]
 }
 ```
 
@@ -158,14 +158,14 @@ parameter. Dispatch is resolved statically at each call site, so there is no
 runtime overhead.
 
 ```rust
-fun describe<T: ToString>(x: T) -> String {
+fun describe[T: ToString](x: T) -> str {
     return "value: ${x.to_string()}"
 }
 
 fun main() {
-    print(describe(42))             // value: 42
-    print(describe(true))           // value: true
-    print(describe("hi"))           // value: hi
+    print(describe(42)) // value: 42
+    print(describe(true)) // value: true
+    print(describe("hi")) // value: hi
 }
 ```
 
@@ -173,21 +173,21 @@ A type participates in a bound by implementing the trait. Implement it for your
 own struct or enum and that type becomes usable everywhere the bound appears:
 
 ```rust
-struct Point {
-    x: Int,
-    y: Int,
+class Point {
+    x: int
+    y: int
 }
 
 impl ToString for Point {
-    fun to_string(self) -> String = "(${self.x}, ${self.y})"
+    fun to_string(self) -> str = "(${self.x}, ${self.y})"
 }
 
-fun describe<T: ToString>(x: T) -> String {
+fun describe[T: ToString](x: T) -> str {
     return "value: ${x.to_string()}"
 }
 
 fun main() {
-    print(describe(Point { x: 1, y: 2 }))   // value: (1, 2)
+    print(describe(Point(x: 1, y: 2))) // value: (1, 2)
 }
 ```
 
@@ -198,9 +198,9 @@ or enum generates them from the fields:
 
 ```rust
 @derive(Eq, Hash, ToString, Debug)
-struct User {
-    id: Int,
-    name: String,
+class User {
+    id: int
+    name: str
 }
 ```
 
@@ -212,21 +212,21 @@ being derived. See the `@derive` section of the
 ## Worked example: generic comparison and sorting key
 
 ```rust
-struct Score {
-    name: String,
-    points: Int,
+class Score {
+    name: str
+    points: int
 }
 
 impl Ord for Score {
-    fun compare(self, other: Score) -> Int = self.points.compare(other.points)
+    fun compare(self, other: Score) -> int = self.points.compare(other.points)
 }
 
 impl ToString for Score {
-    fun to_string(self) -> String = "${self.name}: ${self.points}"
+    fun to_string(self) -> str = "${self.name}: ${self.points}"
 }
 
 // Works for Int, String, Score, or anything else that is Ord.
-fun higher<T: Ord + ToString>(a: T, b: T) -> String {
+fun higher[T: Ord + ToString](a: T, b: T) -> str {
     if a.compare(b) >= 0 {
         return a.to_string()
     }
@@ -234,10 +234,10 @@ fun higher<T: Ord + ToString>(a: T, b: T) -> String {
 }
 
 fun main() {
-    let ada = Score { name: "Ada", points: 90 }
-    let bob = Score { name: "Bob", points: 75 }
-    print(higher(ada, bob))         // Ada: 90
-    print(higher(3, 8))             // 8
+    let ada = Score(name: "Ada", points: 90)
+    let bob = Score(name: "Bob", points: 75)
+    print(higher(ada, bob)) // Ada: 90
+    print(higher(3, 8)) // 8
 }
 ```
 

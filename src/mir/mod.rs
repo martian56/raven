@@ -14,6 +14,7 @@ pub mod ir;
 pub mod lower;
 pub mod mono;
 pub mod pretty;
+pub mod shake;
 pub mod ty;
 
 #[cfg(test)]
@@ -33,5 +34,7 @@ use crate::hir::HirProgram;
 /// Lower an entire HIR program to MIR, monomorphizing every reachable
 /// generic function.
 pub fn lower_program(hir: &HirProgram) -> Result<MirProgram, RavenError> {
-    mono::monomorphize(hir)
+    let mut program = mono::monomorphize(hir)?;
+    shake::remove_unreachable(&mut program);
+    Ok(program)
 }

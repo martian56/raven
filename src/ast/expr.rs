@@ -107,6 +107,22 @@ pub enum ExprKind {
     // ----- calls, fields, indexing -----
     /// Function call: `callee(arg1, arg2)`.
     Call { callee: Box<Expr>, args: Vec<Expr> },
+    /// `name: value` inside a call's arguments, or `..base` (name `..`).
+    /// Expansion rewrites calls that carry them; none survive past it.
+    NamedArg { name: String, value: Box<Expr> },
+    /// `if let P = e { .. } else { .. }`; desugared after parsing.
+    IfLet {
+        pattern: Pattern,
+        scrutinee: Box<Expr>,
+        then_branch: Block,
+        else_branch: Option<Box<ElseBranch>>,
+    },
+    /// `while let P = e { .. }`; desugared after parsing.
+    WhileLet {
+        pattern: Pattern,
+        scrutinee: Box<Expr>,
+        body: Block,
+    },
     /// Method call: `receiver.name<G>(arg1, ...)`.
     MethodCall {
         receiver: Box<Expr>,

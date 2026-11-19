@@ -4,16 +4,16 @@
 // final line; before the fix the wakeup address was misparsed and shutdown hung
 // forever. golden:skip (binds a port and depends on timing; a codegen smoke
 // test runs it and checks output).
-import std/http { Server, Response, Request }
-import std/net { connect, TcpStream }
-import std/time { sleep_millis }
-import std/io { println }
+from std.http import Server, Response, Request
+from std.net import connect, TcpStream
+from std.time import sleep_millis
+from std.io import println
 
 fun ok_handler(req: Request) -> Response {
     return Response.with_body(200, "ok")
 }
 
-fun first_line(s: String) -> String {
+fun first_line(s: str) -> str {
     let idx = s.index_of("\r\n")
     if idx < 0 {
         return s
@@ -21,36 +21,34 @@ fun first_line(s: String) -> String {
     return s.substring(0, idx)
 }
 
-fun connect_retry(addr: String) -> Result<TcpStream, Error> {
-    let attempt = 0
+fun connect_retry(addr: str) -> Result[TcpStream, Error] {
+    var attempt = 0
     while attempt < 50 {
         match connect(addr) {
-            Ok(s) -> {
+            case Ok(s) {
                 return Ok(s)
             }
-            Err(_) -> {
-                sleep_millis(20)
-            }
+            case Err(_) { sleep_millis(20) }
         }
         attempt += 1
     }
     return connect(addr)
 }
 
-fun status_of(addr: String, request: String) -> String {
-    let result = ""
+fun status_of(addr: str, request: str) -> str {
+    var result = ""
     match connect_retry(addr) {
-        Ok(s) -> {
+        case Ok(s) {
             let _ = s.write(request)
             match s.read_all() {
-                Ok(r) -> {
+                case Ok(r) {
                     result = r
                 }
-                Err(_) -> {}
+                case Err(_) {}
             }
             s.close()
         }
-        Err(_) -> {}
+        case Err(_) {}
     }
     return first_line(result)
 }
@@ -58,11 +56,11 @@ fun status_of(addr: String, request: String) -> String {
 fun main() {
     let app = Server.new()
     app.get("/x", ok_handler)
-    spawn(fun() -> Unit {
+    spawn {
         let resp = status_of("[::1]:18643", "GET /x HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
         println("served: ${resp}")
         app.shutdown()
-    })
+    }
     app.listen("[::]:18643")
     println("listen returned")
 }

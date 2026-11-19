@@ -16,7 +16,7 @@ A server is a `Server` with a routing table. You register a handler for a path,
 then `listen`. A handler is a function from a `Request` to a `Response`.
 
 ```rust
-import std/http { Server, Request, Response }
+from std.http import Server, Request, Response
 
 fun home(req: Request) -> Response {
     return Response.text("Hello from Raven!")
@@ -71,21 +71,19 @@ name (a different shape) does not reach `greet`.
 `Response` has a constructor per common case, so you say what you mean:
 
 ```rust
-Response.text("plain")          // 200, text/plain
-Response.html("<h1>hi</h1>")    // 200, text/html
-Response.json("{\"ok\":true}")  // 200, application/json
-Response.created("made it")     // 201
-Response.not_found()            // 404
-Response.bad_request("why")     // 400
+Response.text("plain") // 200, text/plain
+Response.html("<h1>hi</h1>") // 200, text/html
+Response.json("{\"ok\":true}") // 200, application/json
+Response.created("made it") // 201
+Response.not_found() // 404
+Response.bad_request("why") // 400
 ```
 
 Builders refine a response and chain, because each returns the response:
 
 ```rust
 fun teapot(req: Request) -> Response {
-    return Response.text("short and stout")
-        .status_code(418)
-        .header("X-Brewing", "true")
+    return Response.text("short and stout").status_code(418).header("X-Brewing", "true")
 }
 ```
 
@@ -121,7 +119,7 @@ is shared by every handler, and a handler can push to it. Seed it with one
 message:
 
 ```rust
-let messages: List<String> = ["Welcome to the guestbook!"]
+let messages: list[str] = ["Welcome to the guestbook!"]
 
 fun add_message(req: Request) -> Response {
     if req.body.length() == 0 {
@@ -142,9 +140,9 @@ entries. (A real service would reach for [std/json](../stdlib/json.md) to
 escape values; here we keep it to string building.)
 
 ```rust
-fun messages_json() -> String {
-    let out = "["
-    let i = 0
+fun messages_json() -> str {
+    var out = "["
+    var i = 0
     while i < messages.len() {
         if i > 0 {
             out = out.concat(",")
@@ -165,8 +163,8 @@ parse it. `parse_int` returns an `Option<Int>`, which a `match` turns into
 either a lookup or a `400`:
 
 ```rust
-fun message_at(i: Int) -> Response {
-    if i >= 0 && i < messages.len() {
+fun message_at(i: int) -> Response {
+    if i >= 0 and i < messages.len() {
         return Response.json("\"".concat(messages[i]).concat("\""))
     }
     return Response.not_found()
@@ -174,8 +172,8 @@ fun message_at(i: Int) -> Response {
 
 fun get_message(req: Request) -> Response {
     return match req.param("id").parse_int() {
-        Some(i) -> message_at(i),
-        None -> Response.bad_request("id must be a number"),
+        case Some(i) { message_at(i) }
+        case None { Response.bad_request("id must be a number") }
     }
 }
 ```
@@ -186,14 +184,14 @@ so there is no early `return` inside the arms.
 ## The whole program
 
 ```rust
-import std/http { Server, Request, Response }
-import std/string
+from std.http import Server, Request, Response
+import std.string
 
-let messages: List<String> = ["Welcome to the guestbook!"]
+let messages: list[str] = ["Welcome to the guestbook!"]
 
-fun messages_json() -> String {
-    let out = "["
-    let i = 0
+fun messages_json() -> str {
+    var out = "["
+    var i = 0
     while i < messages.len() {
         if i > 0 {
             out = out.concat(",")
@@ -205,8 +203,8 @@ fun messages_json() -> String {
 }
 
 fun home(req: Request) -> Response {
-    let body = "<h1>Guestbook</h1><ul>"
-    let i = 0
+    var body = "<h1>Guestbook</h1><ul>"
+    var i = 0
     while i < messages.len() {
         body = body.concat("<li>").concat(messages[i]).concat("</li>")
         i += 1
@@ -226,8 +224,8 @@ fun add_message(req: Request) -> Response {
     return Response.created(req.body).header("Location", "/messages")
 }
 
-fun message_at(i: Int) -> Response {
-    if i >= 0 && i < messages.len() {
+fun message_at(i: int) -> Response {
+    if i >= 0 and i < messages.len() {
         return Response.json("\"".concat(messages[i]).concat("\""))
     }
     return Response.not_found()
@@ -235,8 +233,8 @@ fun message_at(i: Int) -> Response {
 
 fun get_message(req: Request) -> Response {
     return match req.param("id").parse_int() {
-        Some(i) -> message_at(i),
-        None -> Response.bad_request("id must be a number"),
+        case Some(i) { message_at(i) }
+        case None { Response.bad_request("id must be a number") }
     }
 }
 

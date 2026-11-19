@@ -13,9 +13,9 @@ enum Status {
 }
 
 @derive(Eq)
-struct Task {
-    id: Int,
-    status: Status,
+class Task {
+    id: int
+    status: Status
 }
 
 fun main() {
@@ -27,9 +27,9 @@ fun main() {
         print("not done")
     }
 
-    let a = Task { id: 1, status: Status.Doing }
-    let b = Task { id: 1, status: Status.Doing }
-    let c = Task { id: 2, status: Status.Doing }
+    let a = Task(id: 1, status: Status.Doing)
+    let b = Task(id: 1, status: Status.Doing)
+    let c = Task(id: 2, status: Status.Doing)
     if a == b {
         print("same task")
     }

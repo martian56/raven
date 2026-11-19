@@ -105,7 +105,7 @@ fn generate_program(rng: &mut Rng) -> Program {
     let churn = 8 + (rng.next() % 18) as i64;
     let mut checksum: i64 = 0;
     let mut body = String::new();
-    body.push_str("    let total = 0\n");
+    body.push_str("    var total = 0\n");
 
     // A pool of distinct non-trivial String literals, so corruption of one
     // does not accidentally read as another's bytes.
@@ -150,8 +150,8 @@ fn generate_program(rng: &mut Rng) -> Program {
          }}\n\
          \n\
          fun churn(n: Int) -> Int {{\n\
-         \x20   let acc = 0\n\
-         \x20   let i = 0\n\
+         \x20   var acc = 0\n\
+         \x20   var i = 0\n\
          \x20   while i < n {{\n\
          \x20       let junk = Rec {{ id: i, tag: \"scratch\" }}\n\
          \x20       acc = acc + junk.id\n\

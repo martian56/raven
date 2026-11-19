@@ -24,8 +24,8 @@ use std::sync::Arc;
 
 use crate::ast::{
     Block, Decl, DeclKind, ElseBranch, Expr, ExprKind, File, Function, FunctionBody, GenericParam,
-    ImportSource, LambdaBody, MatchArm, Pattern, PatternKind, Stmt, StmtKind, StrFragment, Type,
-    TypeKind, TypePath, VariantPayload,
+    ImportSource, LambdaBody, MatchArm, Pattern, PatternKind, Stmt, StmtKind, StrFragment, Trait,
+    Type, TypeKind, TypePath, VariantPayload,
 };
 use crate::error::{RavenError, ResolveError};
 use crate::lexer::Lexer;
@@ -312,6 +312,9 @@ pub fn expand_with_stdlib_ctx(
     // module order stable and deduplicates against any later import of the
     // same module (so the prelude never merges twice).
     wanted.insert(PRELUDE_MODULE.to_string());
+    wanted.insert("string".to_string());
+    wanted.insert("collections".to_string());
+    wanted.insert("error".to_string());
     collect_std_module_imports(user, &mut wanted);
 
     // `@derive(Debug)` synthesizes an `impl Debug`, whose trait lives in
@@ -498,7 +501,9 @@ pub fn expand_with_stdlib_ctx(
     // fixed, known amount but otherwise keep their relative order. The
     // combined file's span borrows the user's file path for diagnostics
     // that key off the top level file.
-    combined_items.extend(user.items.iter().cloned());
+    let mut user_items = user.items.clone();
+    super::derive::add_implicit_derives(&mut user_items);
+    combined_items.extend(user_items);
 
     // Synthesize trait impls for every `@derive(...)` attribute. The user's
     // own types carry the attributes, so this runs over the full combined
@@ -517,6 +522,9 @@ pub fn expand_with_stdlib_ctx(
     if needs_json_helpers {
         combined_items.extend(super::derive::json_helper_decls()?);
     }
+
+    super::sugar::expand(&mut combined_items)?;
+    inject_default_methods(&mut combined_items);
 
     Ok((
         File {
@@ -583,6 +591,8 @@ fn expand_module_derives(
     mut items: Vec<Decl>,
     source_label: &str,
 ) -> Result<(Vec<Decl>, bool), RavenError> {
+    super::derive::add_implicit_derives(&mut items);
+    super::sugar::expand_calls(&mut items, false)?;
     let mut derived = Vec::new();
     let needs_json = super::derive::expand_derives(&items, &mut derived, source_label)?;
     strip_derives(&mut items);
@@ -1487,6 +1497,7 @@ fn rewrite_block(block: &mut Block, rename: &HashMap<String, String>) {
 
 fn rewrite_stmt(stmt: &mut Stmt, rename: &HashMap<String, String>) {
     match &mut stmt.kind {
+        StmtKind::LetElse { .. } => unreachable!("surface syntax is desugared after parsing"),
         StmtKind::Let { ty, init, .. } => {
             if let Some(t) = ty {
                 rewrite_type(t, rename);
@@ -1588,6 +1599,7 @@ fn rewrite_expr(expr: &mut Expr, rename: &HashMap<String, String>) {
         return;
     }
     match &mut expr.kind {
+        ExprKind::IfLet { .. } | ExprKind::WhileLet { .. } => unreachable!("surface syntax is desugared after parsing"),
         ExprKind::Ident { name, generics } => {
             if let Some(replacement) = rename.get(name) {
                 *name = replacement.clone();
@@ -1629,7 +1641,9 @@ fn rewrite_expr(expr: &mut Expr, rename: &HashMap<String, String>) {
                 rewrite_expr(&mut f.value, rename);
             }
         }
-        ExprKind::Paren(inner) | ExprKind::Try(inner) => rewrite_expr(inner, rename),
+        ExprKind::Paren(inner) | ExprKind::Try(inner) | ExprKind::NamedArg { value: inner, .. } => {
+            rewrite_expr(inner, rename)
+        }
         ExprKind::Block(block) => rewrite_block(block, rename),
         ExprKind::Unary { operand, .. } => rewrite_expr(operand, rename),
         ExprKind::Binary { lhs, rhs, .. } => {
@@ -3096,6 +3110,60 @@ mod tests {
     fn collect_fn_body_idents(body: &FunctionBody, out: &mut Vec<String>) {
         if let FunctionBody::Block(b) = body {
             collect_block_idents(b, out);
+        }
+    }
+}
+
+/// Copy default trait methods into impls that do not override them.
+fn inject_default_methods(items: &mut [Decl]) {
+    use crate::ast::respan::Respan;
+    let mut traits: HashMap<String, Option<Trait>> = HashMap::new();
+    for decl in items.iter() {
+        if let DeclKind::Trait(t) = &decl.kind {
+            if !t
+                .members
+                .iter()
+                .any(|m| !matches!(m.body, FunctionBody::None))
+            {
+                continue;
+            }
+            traits
+                .entry(t.name.clone())
+                .and_modify(|e| *e = None)
+                .or_insert_with(|| Some(t.clone()));
+        }
+    }
+    if traits.is_empty() {
+        return;
+    }
+    let mut copies: usize = 0;
+    for decl in items.iter_mut() {
+        let DeclKind::Impl(imp) = &mut decl.kind else {
+            continue;
+        };
+        if imp.for_type.is_none() {
+            continue;
+        }
+        let Some(seg) = imp.trait_or_type.segments.last() else {
+            continue;
+        };
+        let Some(Some(tr)) = traits.get(&seg.name) else {
+            continue;
+        };
+        let mut subst = HashMap::new();
+        for (g, arg) in tr.generics.iter().zip(seg.generics.iter()) {
+            subst.insert(g.name.clone(), arg.clone());
+        }
+        for member in &tr.members {
+            if matches!(member.body, FunctionBody::None)
+                || imp.items.iter().any(|f| f.name == member.name)
+            {
+                continue;
+            }
+            copies += 1;
+            let mut f = member.clone();
+            Respan::new(copies << 40, &subst).function(&mut f);
+            imp.items.push(f);
         }
     }
 }

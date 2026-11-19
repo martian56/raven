@@ -49,14 +49,14 @@ buffer. The buffer lives outside the garbage collector; release it with
 `free_cstr` (or leave it for short-lived programs):
 
 ```rust
-import std/ffi { to_cstr, free_cstr }
+from std.ffi import to_cstr, free_cstr
 
 extern "C" {
     fun puts(s: CStr) -> CInt
 }
 
 fun main() {
-    let msg = "hello, " .concat("world")
+    let msg = "hello, ".concat("world")
     let c = to_cstr(msg)
     let _ = puts(c)
     free_cstr(c)
@@ -71,8 +71,8 @@ as a return value. Its fields must be C scalars (or nested `@repr(C)` structs):
 ```rust
 @repr(C)
 struct Point {
-    x: CDouble,
-    y: CDouble,
+    x: CDouble
+    y: CDouble
 }
 
 extern "C" {
@@ -111,11 +111,11 @@ glibc `qsort_r`):
 
 ```rust
 extern "C" {
-    fun apply_cb(cb: CFnPtr, data: CPtr<Unit>, x: CLong) -> CLong
+    fun apply_cb(cb: CFnPtr, data: CPtr[Unit], x: CLong) -> CLong
 }
 
 fun run(base: CLong) {
-    let add = fun(x: CLong) -> CLong = x + base // captures `base`
+    let add = (x: CLong) -> CLong => x + base // captures `base`
     print(apply_cb(add, add, 5)) // add -> trampoline; add -> userdata
 }
 ```
@@ -151,10 +151,10 @@ C shim.
 API reads or writes. The memory is outside the GC and is yours to `free`:
 
 ```rust
-import std/ffi { alloc, store, load, free }
+from std.ffi import alloc, store, load, free
 
 fun main() {
-    let buf: CPtr<CInt> = alloc<CInt>(3)
+    let buf: CPtr[CInt] = alloc[CInt](3)
     store(buf, 10)
     store(offset(buf, 1), 20)
     print(load(buf)) // 10

@@ -1,10 +1,10 @@
 // A shift count at or beyond the bit width is well defined: a left shift loses
 // every bit (result 0), and an arithmetic right shift collapses to the sign.
 // The hardware would otherwise mask the count and give a surprising answer.
-import std/io { println }
+from std.io import println
 
-fun shl(a: Int, b: Int) -> Int = a << b
-fun shr(a: Int, b: Int) -> Int = a >> b
+fun shl(a: int, b: int) -> int = a << b
+fun shr(a: int, b: int) -> int = a >> b
 
 fun main() {
     println(shl(1, 3).to_string())

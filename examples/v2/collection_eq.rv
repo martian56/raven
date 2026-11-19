@@ -8,17 +8,17 @@
 //   lists differ
 //   sets equal
 //   maps equal
-import std/collections
+import std.collections
 
 fun main() {
-    let a: Int? = Some(1)
-    let b: Int? = Some(1)
+    let a: int? = Some(1)
+    let b: int? = Some(1)
     if a == b {
         print("options equal")
     }
 
-    let r1: Result<Int, String> = Ok(1)
-    let r2: Result<Int, String> = Err("no")
+    let r1: Result[int, str] = Ok(1)
+    let r2: Result[int, str] = Err("no")
     if r1 != r2 {
         print("results differ")
     }
@@ -29,14 +29,14 @@ fun main() {
         print("lists differ")
     }
 
-    let s1: Set<Int> = {1, 2, 3}
-    let s2: Set<Int> = {3, 2, 1}
+    let s1: set[int] = {1, 2, 3}
+    let s2: set[int] = {3, 2, 1}
     if s1 == s2 {
         print("sets equal")
     }
 
-    let m1: Map<String, Int> = ["a": 1, "b": 2]
-    let m2: Map<String, Int> = ["b": 2, "a": 1]
+    let m1: dict[str, int] = {"a": 1, "b": 2}
+    let m2: dict[str, int] = {"b": 2, "a": 1}
     if m1 == m2 {
         print("maps equal")
     }

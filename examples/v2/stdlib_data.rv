@@ -7,35 +7,39 @@
 //   2
 //   1
 //   0
-import std/list
-import std/option
-import std/error
-import std/collections
+import std.list
+import std.option
+import std.error
+import std.collections
 
 fun main() {
     // List utilities (generic free functions).
-    print(list.contains([1, 2, 3], 2))          // true
-    print(list.concat([1, 2], [3]).len() + list.range(0, 3).len())  // 3 + 3 = 6
+    print(list.contains([1, 2, 3], 2)) // true
+    print(list.concat([1, 2], [3]).len() + list.range(0, 3).len()) // 3 + 3 = 6
 
     // Option combinators.
-    let some: Option<Int> = Some(10)
-    match option.map(some, fun(x: Int) -> Int = x * 2) {
-        Some(v) -> print(v),                    // 20
-        None -> print(0),
+    let some: Option[int] = Some(10)
+    match option.map(some, (x: int) -> int => x * 2) {
+        case Some(v) {
+            print(v) // 20
+        }
+        case None { print(0) }
     }
 
     // Result combinators.
-    let r: Result<Int, Error> = Ok(5)
-    match error.map_ok(r, fun(x: Int) -> Int = x + 1) {
-        Ok(v) -> print(v),                      // 6
-        Err(e) -> print(-1),
+    let r: Result[int, Error] = Ok(5)
+    match error.map_ok(r, (x: int) -> int => x + 1) {
+        case Ok(v) {
+            print(v) // 6
+        }
+        case Err(e) { print(-1) }
     }
 
     // Set algebra and Map.get_or.
     let a = {1, 2, 3}
     let b = {2, 3, 4}
-    print(a.intersection(b).len())              // 2
-    print(a.difference(b).len())                // 1
-    let m = ["x": 10]
-    print(m.get_or("missing", 0))               // 0
+    print(a.intersection(b).len()) // 2
+    print(a.difference(b).len()) // 1
+    let m = {"x": 10}
+    print(m.get_or("missing", 0)) // 0
 }

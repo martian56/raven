@@ -3,45 +3,45 @@
 // `extern "C"`; the rest is pure Raven.
 
 extern "C" {
-    fun sqrt(x: Float) -> Float
-    fun pow(base: Float, exp: Float) -> Float
-    fun exp(x: Float) -> Float
-    fun log10(x: Float) -> Float
-    fun sin(x: Float) -> Float
-    fun cos(x: Float) -> Float
-    fun tan(x: Float) -> Float
-    fun floor(x: Float) -> Float
-    fun ceil(x: Float) -> Float
-    fun trunc(x: Float) -> Float
-    fun round(x: Float) -> Float
-    fun log(x: Float) -> Float
-    fun fabs(x: Float) -> Float
-    fun atan2(y: Float, x: Float) -> Float
-    fun asin(x: Float) -> Float
-    fun acos(x: Float) -> Float
-    fun atan(x: Float) -> Float
-    fun log2(x: Float) -> Float
-    fun cbrt(x: Float) -> Float
-    fun hypot(a: Float, b: Float) -> Float
-    fun sinh(x: Float) -> Float
-    fun cosh(x: Float) -> Float
-    fun tanh(x: Float) -> Float
-    fun fmod(a: Float, b: Float) -> Float
+    fun sqrt(x: float) -> float
+    fun pow(base: float, exp: float) -> float
+    fun exp(x: float) -> float
+    fun log10(x: float) -> float
+    fun sin(x: float) -> float
+    fun cos(x: float) -> float
+    fun tan(x: float) -> float
+    fun floor(x: float) -> float
+    fun ceil(x: float) -> float
+    fun trunc(x: float) -> float
+    fun round(x: float) -> float
+    fun log(x: float) -> float
+    fun fabs(x: float) -> float
+    fun atan2(y: float, x: float) -> float
+    fun asin(x: float) -> float
+    fun acos(x: float) -> float
+    fun atan(x: float) -> float
+    fun log2(x: float) -> float
+    fun cbrt(x: float) -> float
+    fun hypot(a: float, b: float) -> float
+    fun sinh(x: float) -> float
+    fun cosh(x: float) -> float
+    fun tanh(x: float) -> float
+    fun fmod(a: float, b: float) -> float
 }
 
-fun pi() -> Float {
+fun pi() -> float {
     return 3.141592653589793
 }
 
-fun e() -> Float {
+fun e() -> float {
     return 2.718281828459045
 }
 
-fun tau() -> Float {
+fun tau() -> float {
     return 6.283185307179586
 }
 
-fun abs_int(x: Int) -> Int {
+fun abs_int(x: int) -> int {
     if x < 0 {
         // i64::MIN has no positive counterpart in i64, so negating it would
         // wrap back to a negative value. Report it rather than return a wrong,
@@ -55,21 +55,21 @@ fun abs_int(x: Int) -> Int {
     return x
 }
 
-fun min_int(a: Int, b: Int) -> Int {
+fun min_int(a: int, b: int) -> int {
     if a < b {
         return a
     }
     return b
 }
 
-fun max_int(a: Int, b: Int) -> Int {
+fun max_int(a: int, b: int) -> int {
     if a > b {
         return a
     }
     return b
 }
 
-fun clamp_int(x: Int, lo: Int, hi: Int) -> Int {
+fun clamp_int(x: int, lo: int, hi: int) -> int {
     if x < lo {
         return lo
     }
@@ -80,30 +80,30 @@ fun clamp_int(x: Int, lo: Int, hi: Int) -> Int {
 }
 
 // Natural logarithm. C names this `log`; `ln` is the conventional spelling.
-fun ln(x: Float) -> Float {
+fun ln(x: float) -> float {
     return log(x)
 }
 
 // Float absolute value. C names this `fabs`.
-fun abs(x: Float) -> Float {
+fun abs(x: float) -> float {
     return fabs(x)
 }
 
-fun min(a: Float, b: Float) -> Float {
+fun min(a: float, b: float) -> float {
     if a < b {
         return a
     }
     return b
 }
 
-fun max(a: Float, b: Float) -> Float {
+fun max(a: float, b: float) -> float {
     if a > b {
         return a
     }
     return b
 }
 
-fun clamp(x: Float, lo: Float, hi: Float) -> Float {
+fun clamp(x: float, lo: float, hi: float) -> float {
     if x < lo {
         return lo
     }
@@ -115,13 +115,13 @@ fun clamp(x: Float, lo: Float, hi: Float) -> Float {
 
 // Integer power by squaring. A negative exponent has no integer result
 // and returns 0.
-fun pow_int(base: Int, exp: Int) -> Int {
+fun pow_int(base: int, exp: int) -> int {
     if exp < 0 {
         return 0
     }
-    let result = 1
-    let b = base
-    let n = exp
+    var result = 1
+    var b = base
+    var n = exp
     while n > 0 {
         if n % 2 == 1 {
             let p = result * b
@@ -151,9 +151,9 @@ fun pow_int(base: Int, exp: Int) -> Int {
 }
 
 // Greatest common divisor of `a` and `b` (always non-negative).
-fun gcd(a: Int, b: Int) -> Int {
-    let x = abs_int(a)
-    let y = abs_int(b)
+fun gcd(a: int, b: int) -> int {
+    var x = abs_int(a)
+    var y = abs_int(b)
     while y != 0 {
         let t = y
         y = x % y
@@ -163,7 +163,7 @@ fun gcd(a: Int, b: Int) -> Int {
 }
 
 // Least common multiple of `a` and `b`. Zero when either is zero.
-fun lcm(a: Int, b: Int) -> Int {
+fun lcm(a: int, b: int) -> int {
     if a == 0 {
         return 0
     }
@@ -181,7 +181,7 @@ fun lcm(a: Int, b: Int) -> Int {
 }
 
 // The sign of a float: 1.0 for positive, -1.0 for negative, 0.0 for zero.
-fun sign(x: Float) -> Float {
+fun sign(x: float) -> float {
     if x > 0.0 {
         return 1.0
     }
@@ -192,7 +192,7 @@ fun sign(x: Float) -> Float {
 }
 
 // The sign of an integer: 1, -1, or 0.
-fun sign_int(n: Int) -> Int {
+fun sign_int(n: int) -> int {
     if n > 0 {
         return 1
     }
@@ -203,23 +203,23 @@ fun sign_int(n: Int) -> Int {
 }
 
 // Positive infinity.
-fun infinity() -> Float {
+fun infinity() -> float {
     return pow(10.0, 400.0)
 }
 
 // A NaN value (not a number).
-fun nan() -> Float {
+fun nan() -> float {
     let inf = infinity()
     return inf - inf
 }
 
 // True when `x` is NaN (relies on NaN never being equal to itself).
-fun is_nan(x: Float) -> Bool {
+fun is_nan(x: float) -> bool {
     return x != x
 }
 
 // True when `x` is positive or negative infinity.
-fun is_inf(x: Float) -> Bool {
+fun is_inf(x: float) -> bool {
     let inf = infinity()
     if x == inf {
         return true
@@ -231,11 +231,11 @@ fun is_inf(x: Float) -> Bool {
 }
 
 // Convert degrees to radians.
-fun to_radians(deg: Float) -> Float {
+fun to_radians(deg: float) -> float {
     return deg * pi() / 180.0
 }
 
 // Convert radians to degrees.
-fun to_degrees(rad: Float) -> Float {
+fun to_degrees(rad: float) -> float {
     return rad * 180.0 / pi()
 }

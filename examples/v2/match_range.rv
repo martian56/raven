@@ -6,13 +6,13 @@
 //   C
 //   D
 //   F
-fun grade(score: Int) -> String {
+fun grade(score: int) -> str {
     return match score {
-        90..=100 -> "A",
-        80..=89 -> "B",
-        70..=79 -> "C",
-        60..=69 -> "D",
-        _ -> "F",
+        case 90..=100 { "A" }
+        case 80..=89 { "B" }
+        case 70..=79 { "C" }
+        case 60..=69 { "D" }
+        case _ { "F" }
     }
 }
 

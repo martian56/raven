@@ -53,6 +53,13 @@ pub enum StmtKind {
     /// A bare expression evaluated for its side effects (or returned as
     /// the trailing value of a block).
     Expr(Expr),
+    /// `let P = e else { .. }`; desugared after parsing.
+    LetElse {
+        pattern: super::pattern::Pattern,
+        init: Expr,
+        else_block: super::expr::Block,
+        mutable: bool,
+    },
 }
 
 /// Compound assignment operators. The plain `=` form is also represented

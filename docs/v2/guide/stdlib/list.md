@@ -6,12 +6,12 @@ common operations on top of them. Functions that build a new list return a
 fresh `List` and never mutate their input.
 
 ```rust
-import std/list
+import std.list
 
 fun main() {
-    print(list.contains([1, 2, 3], 2))      // true
+    print(list.contains([1, 2, 3], 2)) // true
     for x in list.reverse([1, 2, 3]) {
-        print(x)                            // 3, then 2, 1
+        print(x) // 3, then 2, 1
     }
 }
 ```
@@ -19,7 +19,7 @@ fun main() {
 ## Importing
 
 ```rust
-import std/list
+import std.list
 ```
 
 A bare `import std/list` binds the module alias, so the functions are called
@@ -27,7 +27,7 @@ as `list.contains(...)`. To call them unqualified, list the names in a
 selective import:
 
 ```rust
-import std/list { contains, reverse, range }
+from std.list import contains, reverse, range
 ```
 
 `List<T>` itself is built into the language and needs no import for literals,
@@ -44,13 +44,13 @@ True when `xs` holds a value equal to `x`. Bound by `T: Eq`.
 The index of the first element equal to `x`, or `-1` when absent.
 
 ```rust
-import std/list
+import std.list
 
 fun main() {
     let xs = [10, 20, 30]
-    print(list.contains(xs, 20))    // true
-    print(list.index_of(xs, 30))    // 2
-    print(list.index_of(xs, 99))    // -1
+    print(list.contains(xs, 20)) // true
+    print(list.index_of(xs, 30)) // 2
+    print(list.index_of(xs, 99)) // -1
 }
 ```
 
@@ -65,15 +65,15 @@ A new list with the elements of `xs` in reverse order.
 The half-open range `[start, end)` as a new list, clamped to the list bounds.
 
 ```rust
-import std/list
+import std.list
 
 fun main() {
     let xs = [10, 20, 30, 40]
     for x in list.reverse(xs) {
-        print(x)        // 40, 30, 20, 10
+        print(x) // 40, 30, 20, 10
     }
     for x in list.slice(xs, 1, 3) {
-        print(x)        // 20, 30
+        print(x) // 20, 30
     }
 }
 ```
@@ -87,14 +87,14 @@ The elements of `a` followed by the elements of `b`, as a new list.
 Flatten a list of lists into a single list, preserving order.
 
 ```rust
-import std/list
+import std.list
 
 fun main() {
     for x in list.concat([1, 2], [3, 4]) {
-        print(x)        // 1, 2, 3, 4
+        print(x) // 1, 2, 3, 4
     }
     for x in list.flatten([[1, 2], [3], [4, 5]]) {
-        print(x)        // 1, 2, 3, 4, 5
+        print(x) // 1, 2, 3, 4, 5
     }
 }
 ```
@@ -110,17 +110,17 @@ The first element, or `None` for an empty list.
 The last element, or `None` for an empty list.
 
 ```rust
-import std/list
+import std.list
 
 fun main() {
     let xs = [10, 20, 30]
     match list.first(xs) {
-        Some(v) -> print(v),        // 10
-        None -> print("empty"),
+        case Some(v) { print(v) } // 10
+        case None { print("empty") }
     }
     match list.last(xs) {
-        Some(v) -> print(v),        // 30
-        None -> print("empty"),
+        case Some(v) { print(v) } // 30
+        case None { print("empty") }
     }
 }
 ```
@@ -139,15 +139,15 @@ A new list with the element at index `i` removed. An out-of-range index leaves
 the list unchanged.
 
 ```rust
-import std/list
+import std.list
 
 fun main() {
     let xs = [10, 20, 30]
     for x in list.insert(xs, 1, 15) {
-        print(x)        // 10, 15, 20, 30
+        print(x) // 10, 15, 20, 30
     }
     for x in list.remove_at(xs, 0) {
-        print(x)        // 20, 30
+        print(x) // 20, 30
     }
 }
 ```
@@ -161,14 +161,14 @@ A list containing `x` repeated `n` times. Empty for a non-positive `n`.
 The integers `[start, end)` as a list. Empty when `start >= end`.
 
 ```rust
-import std/list
+import std.list
 
 fun main() {
     for x in list.repeat(7, 3) {
-        print(x)        // 7, 7, 7
+        print(x) // 7, 7, 7
     }
     for x in list.range(0, 4) {
-        print(x)        // 0, 1, 2, 3
+        print(x) // 0, 1, 2, 3
     }
 }
 ```

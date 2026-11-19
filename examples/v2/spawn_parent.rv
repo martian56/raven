@@ -16,24 +16,24 @@
 //   got-late
 //   killed
 //   spawn failed
-import std/io { println }
-import std/process { Child, start }
-import std/sync { sleep_millis }
-import std/env { get_env }
+from std.io import println
+from std.process import Child, start
+from std.sync import sleep_millis
+from std.env import get_env
 
 fun main() {
     let child_path = get_env("RAVEN_PROC_CHILD")
 
     // 1. Streaming while the child runs.
-    let none: List<String> = []
+    let none: list[str] = []
     match start(child_path, none) {
-        Ok(c) -> {
-            let seen = ""
-            let live = false
-            let tries = 0
-            while !seen.contains("early") && tries < 400 {
+        case Ok(c) {
+            var seen = ""
+            var live = false
+            var tries = 0
+            while not seen.contains("early") and tries < 400 {
                 seen = seen.concat(c.read_stdout())
-                if seen.contains("early") && c.running() {
+                if seen.contains("early") and c.running() {
                     live = true
                 }
                 sleep_millis(10)
@@ -49,15 +49,13 @@ fun main() {
                 println("got-late")
             }
             c.free()
-        },
-        Err(e) -> {
-            println("spawn failed early: ${e.message()}")
-        },
+        }
+        case Err(e) { println("spawn failed early: ${e.message()}") }
     }
 
     // 2. Kill a long-running child (a 20s idle passed as its argument).
     match start(child_path, ["20000"]) {
-        Ok(c) -> {
+        case Ok(c) {
             // Let it start, then stop it.
             sleep_millis(100)
             c.kill()
@@ -66,20 +64,16 @@ fun main() {
                 println("killed")
             }
             c.free()
-        },
-        Err(e) -> {
-            println("spawn failed kill: ${e.message()}")
-        },
+        }
+        case Err(e) { println("spawn failed kill: ${e.message()}") }
     }
 
     // 3. The spawn-failure Err path.
     match start("definitely-not-a-real-program-12345", none) {
-        Ok(c) -> {
+        case Ok(c) {
             println("unexpectedly spawned")
             c.free()
-        },
-        Err(e) -> {
-            println("spawn failed")
-        },
+        }
+        case Err(e) { println("spawn failed") }
     }
 }

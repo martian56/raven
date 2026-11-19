@@ -167,7 +167,7 @@ git ref. In source, import it by its path:
 
 ```rust
 import "github.com/martian56/raven-http" as http
-import "github.com/martian56/raven-http" { get }
+from "github.com/martian56/raven-http" import get
 ```
 
 A bare `github.com/<user>/<repo>` resolves to `lib.rv` at the package
@@ -325,8 +325,8 @@ members, returning failure if any member fails.
 
 ```rust
 // src/math_test.rv
-import std/test { assert_eq_int }
-import "./main" { add }
+from std.test import assert_eq_int
+from "./main" import add
 
 fun test_add() {
     assert_eq_int(add(2, 3), 5)
@@ -388,9 +388,9 @@ treated as internal and omitted.
 ```rust
 // A semantic version, ordered by major then minor.
 @derive(Ord)
-struct Version {
-    major: Int,
-    minor: Int,
+class Version {
+    major: int
+    minor: int
 }
 ```
 

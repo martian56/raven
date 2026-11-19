@@ -34,20 +34,20 @@ pattern `[a-z]+` matches one or more lowercase letters, and `find_all`
 returns every match as a `List<String>`.
 
 ```rust
-import std/regex { compile }
-import std/string
+from std.regex import compile
+import std.string
 
 fun main() {
     let text = "the cat sat on the mat the cat ran"
 
     match compile("[a-z]+") {
-        Ok(re) -> {
+        case Ok(re) {
             for word in re.find_all(text.to_lower()) {
                 print(word)
             }
             re.free()
         }
-        Err(e) -> print("bad pattern"),
+        case Err(e) { print("bad pattern") }
     }
 }
 ```
@@ -72,23 +72,23 @@ if not, start it at one. [std/collections](../stdlib/collections.md) provides
 the map.
 
 ```rust
-import std/regex { compile }
-import std/collections
-import std/string
+from std.regex import compile
+import std.collections
+import std.string
 
-fun tally(text: String) -> Map<String, Int> {
-    let counts: Map<String, Int> = Map.new()
+fun tally(text: str) -> dict[str, int] {
+    let counts: dict[str, int] = Map.new()
     match compile("[a-z]+") {
-        Ok(re) -> {
+        case Ok(re) {
             for word in re.find_all(text.to_lower()) {
                 match counts.get(word) {
-                    Some(n) -> counts.set(word, n + 1),
-                    None -> counts.set(word, 1),
+                    case Some(n) { counts.set(word, n + 1) }
+                    case None { counts.set(word, 1) }
                 }
             }
             re.free()
         }
-        Err(e) -> print("bad pattern"),
+        case Err(e) { print("bad pattern") }
     }
     return counts
 }
@@ -97,8 +97,8 @@ fun main() {
     let counts = tally("the cat sat on the mat the cat ran")
     for key in counts.keys() {
         match counts.get(key) {
-            Some(n) -> print("${key}: ${n}"),
-            None -> {},
+            case Some(n) { print("${key}: ${n}") }
+            case None {}
         }
     }
 }
@@ -120,44 +120,44 @@ Model a pair as a small struct, then sort with a comparator from
 [std/cmp](../stdlib/cmp.md):
 
 ```rust
-import std/regex { compile }
-import std/collections
-import std/string
-import std/cmp { sorted_by }
+from std.regex import compile
+import std.collections
+import std.string
+from std.cmp import sorted_by
 
-struct WordCount {
-    word: String,
-    count: Int,
+class WordCount {
+    word: str
+    count: int
 }
 
-fun tally(text: String) -> Map<String, Int> {
-    let counts: Map<String, Int> = Map.new()
+fun tally(text: str) -> dict[str, int] {
+    let counts: dict[str, int] = Map.new()
     match compile("[a-z]+") {
-        Ok(re) -> {
+        case Ok(re) {
             for word in re.find_all(text.to_lower()) {
                 match counts.get(word) {
-                    Some(n) -> counts.set(word, n + 1),
-                    None -> counts.set(word, 1),
+                    case Some(n) { counts.set(word, n + 1) }
+                    case None { counts.set(word, 1) }
                 }
             }
             re.free()
         }
-        Err(e) -> print("bad pattern"),
+        case Err(e) { print("bad pattern") }
     }
     return counts
 }
 
-fun ranked(counts: Map<String, Int>) -> List<WordCount> {
-    let pairs: List<WordCount> = []
+fun ranked(counts: dict[str, int]) -> list[WordCount] {
+    let pairs: list[WordCount] = []
     for key in counts.keys() {
         match counts.get(key) {
-            Some(n) -> pairs.push(WordCount { word: key, count: n }),
-            None -> {},
+            case Some(n) { pairs.push(WordCount(word: key, count: n)) }
+            case None {}
         }
     }
     // A comparator returns a negative number when `a` should come first. Using
     // `b.count - a.count` orders by count, highest first.
-    return sorted_by(pairs, fun(a: WordCount, b: WordCount) -> Int = b.count - a.count)
+    return sorted_by(pairs, (a: WordCount, b: WordCount) -> int => b.count - a.count)
 }
 
 fun main() {
@@ -194,53 +194,53 @@ bad regex was: with a `match`. Here is the complete program, reading from
 `input.txt`:
 
 ```rust
-import std/fs { read }
-import std/regex { compile }
-import std/collections
-import std/string
-import std/cmp { sorted_by }
+from std.fs import read
+from std.regex import compile
+import std.collections
+import std.string
+from std.cmp import sorted_by
 
-struct WordCount {
-    word: String,
-    count: Int,
+class WordCount {
+    word: str
+    count: int
 }
 
-fun tally(text: String) -> Map<String, Int> {
-    let counts: Map<String, Int> = Map.new()
+fun tally(text: str) -> dict[str, int] {
+    let counts: dict[str, int] = Map.new()
     match compile("[a-z]+") {
-        Ok(re) -> {
+        case Ok(re) {
             for word in re.find_all(text.to_lower()) {
                 match counts.get(word) {
-                    Some(n) -> counts.set(word, n + 1),
-                    None -> counts.set(word, 1),
+                    case Some(n) { counts.set(word, n + 1) }
+                    case None { counts.set(word, 1) }
                 }
             }
             re.free()
         }
-        Err(e) -> print("bad pattern"),
+        case Err(e) { print("bad pattern") }
     }
     return counts
 }
 
-fun ranked(counts: Map<String, Int>) -> List<WordCount> {
-    let pairs: List<WordCount> = []
+fun ranked(counts: dict[str, int]) -> list[WordCount] {
+    let pairs: list[WordCount] = []
     for key in counts.keys() {
         match counts.get(key) {
-            Some(n) -> pairs.push(WordCount { word: key, count: n }),
-            None -> {},
+            case Some(n) { pairs.push(WordCount(word: key, count: n)) }
+            case None {}
         }
     }
-    return sorted_by(pairs, fun(a: WordCount, b: WordCount) -> Int = b.count - a.count)
+    return sorted_by(pairs, (a: WordCount, b: WordCount) -> int => b.count - a.count)
 }
 
 fun main() {
     match read("input.txt") {
-        Ok(text) -> {
+        case Ok(text) {
             for wc in ranked(tally(text)) {
                 print("${wc.word}: ${wc.count}")
             }
         }
-        Err(e) -> print("could not read input.txt"),
+        case Err(e) { print("could not read input.txt") }
     }
 }
 ```

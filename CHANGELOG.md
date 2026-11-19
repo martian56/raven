@@ -2,6 +2,57 @@
 
 All notable changes to Raven are documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- New surface syntax ("Python with braces"). `raven fmt --write file.rv` (or `rvpm fmt`) rewrites existing code into it; the old forms still parse during the transition.
+  - `let` bindings are immutable; `var` declares a reassignable one.
+  - Built-in type names are lowercase: `int`, `float`, `bool`, `str`, `char`, `list[T]`, `dict[K, V]`, `set[T]`.
+  - Generic parameters and arguments use square brackets: `fun first[T](xs: list[T]) -> Option[T]`.
+  - `class Name: Trait { field: T = default  fun method(self) { .. } }` declares fields, defaults, methods, and implemented traits in one place.
+  - Values are built with call syntax and named arguments: `Point(1.0, 2.0)`, `Point(x: 1.0)`, `Point(..p, y: 2.0)`.
+  - Functions take default parameter values and named arguments.
+  - Lambdas are written `x => x * 2`, `(a, b) => a + b`, `() => { .. }`.
+  - `match` cases are `case Pattern { .. }`, and variants may be written qualified: `case Shape.Circle(r) { .. }`.
+  - `and`, `or`, and `not` (the symbol forms are still accepted); `a if cond else b` for a conditional value.
+  - Python-style imports: `import std.fs`, `from std.json import parse, stringify`, `from "./models" import User`.
+  - Collection literals: `{"a": 1}` dict, `{1, 2}` set, `{}` empty dict, `set()` empty set.
+  - `spawn { .. }` starts a goroutine without a wrapping closure.
+  - `std/string`, `std/collections`, and `std/error` are part of the prelude.
+
+### Added
+
+- `raven run file.rv`, `raven check file.rv`, and `raven fmt file.rv [--write]`.
+- `RAVEN_TIMINGS=1` prints how long each compiler phase took.
+
+- `if let`, `while let`, and `let ... else` pattern forms.
+- `panic(msg)` aborts with a message. It, `return`, `break`, and `continue` diverge, so they fit anywhere a value is expected: a `match` arm that returns, an `if` branch that returns, or `None -> panic(...)` all type check now.
+- `loop` evaluates to the value its `break` carries.
+- `Option` and `Result` methods in the prelude: `unwrap`, `expect`, `unwrap_or`, `unwrap_or_else`, `map`, `and_then`, `or_else`, `map_err`, `ok_or`, `ok`, `err`, and the `is_*` tests.
+- `List` methods in the prelude: `map`, `filter`, `fold`, `each`, `any`, `all`, `find`, `position`, `count`, `first`, `last`, `slice`, `take`, `skip`, `reversed`, `extend`, `concat`, `sorted_by`, `contains`, `index_of`, `sorted`, `sort`, `min`, `max`, `sum`, and `join`.
+- `+` and `+=` join strings.
+- Lambda parameter types are inferred from the function or method the lambda is passed to: `xs.map(fun(x) = x * 2)`.
+- An empty `[]` infers its element type from later use.
+- Structs and enums whose fields can be compared get `==` by value automatically.
+- Default trait methods work: an impl that does not define a method inherits the trait's body, through direct calls, generic bounds, and `dyn`.
+- Unused functions are dropped before code generation, so a program only compiles the library code it calls.
+
+### Performance
+
+- Cranelift's optimizer is enabled (`RAVEN_OPT=none` turns it off).
+- Scalar locals live in registers instead of stack slots.
+- List indexing, length, and `push` are inlined instead of calling into the runtime, and the GC safepoint poll in loops is a single flag load.
+
+### Fixed
+
+- Trait impls are checked against the trait. A missing method, an extra method, or a parameter or return type that differs from the trait is a compile error; before, a mismatched return type could segfault at run time.
+- A block-bodied lambda's `return` leaves the lambda instead of being checked against the enclosing function.
+- A function that can reach its end without returning a value is a compile error instead of a code generation failure.
+- A misspelled variant in a pattern, or a payload variant written without its payload, is an error instead of a silent catch-all binding. Unknown variant errors suggest the closest name.
+- `==` on a struct or enum that cannot be compared is a compile error instead of comparing object identity.
+- `Ok(x)` and `Err(e)` infer the other half of the `Result` instead of leaving it unchecked.
+
 ## [2.26.2] - 2026-09-12
 
 ### Fixed

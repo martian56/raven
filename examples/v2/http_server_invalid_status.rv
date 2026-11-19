@@ -3,10 +3,10 @@
 // status line: an invalid code is replaced with 500.
 // golden:skip (binds a port and depends on timing, so it is not diffed by the
 // golden suite; run it directly to verify the server response path).
-import std/http { Server, Response, Request }
-import std/net { connect, TcpStream }
-import std/time { sleep_millis }
-import std/io { println }
+from std.http import Server, Response, Request
+from std.net import connect, TcpStream
+from std.time import sleep_millis
+from std.io import println
 
 fun negative(req: Request) -> Response {
     return Response.text("body").status_code(0 - 1)
@@ -16,7 +16,7 @@ fun huge(req: Request) -> Response {
     return Response.text("body").status_code(99999)
 }
 
-fun first_line(s: String) -> String {
+fun first_line(s: str) -> str {
     let idx = s.index_of("\r\n")
     if idx < 0 {
         return s
@@ -24,36 +24,34 @@ fun first_line(s: String) -> String {
     return s.substring(0, idx)
 }
 
-fun connect_retry(addr: String) -> Result<TcpStream, Error> {
-    let attempt = 0
+fun connect_retry(addr: str) -> Result[TcpStream, Error] {
+    var attempt = 0
     while attempt < 50 {
         match connect(addr) {
-            Ok(s) -> {
+            case Ok(s) {
                 return Ok(s)
             }
-            Err(_) -> {
-                sleep_millis(20)
-            }
+            case Err(_) { sleep_millis(20) }
         }
         attempt += 1
     }
     return connect(addr)
 }
 
-fun send(addr: String, request: String) -> String {
-    let result = ""
+fun send(addr: str, request: str) -> str {
+    var result = ""
     match connect_retry(addr) {
-        Ok(s) -> {
+        case Ok(s) {
             let _ = s.write(request)
             match s.read_all() {
-                Ok(r) -> {
+                case Ok(r) {
                     result = r
                 }
-                Err(_) -> {}
+                case Err(_) {}
             }
             s.close()
         }
-        Err(_) -> {}
+        case Err(_) {}
     }
     return result
 }
@@ -63,9 +61,9 @@ fun main() {
     let app = Server.new()
     app.get("/neg", negative)
     app.get("/big", huge)
-    spawn(fun() -> Unit {
+    spawn {
         app.listen(addr)
-    })
+    }
 
     let neg = send(addr, "GET /neg HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
     println("negative: ${first_line(neg)}")

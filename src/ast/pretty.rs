@@ -274,6 +274,7 @@ fn pretty_block(buf: &mut String, block: &Block, depth: usize, label: &str) {
 fn pretty_stmt(buf: &mut String, stmt: &Stmt, depth: usize) {
     indent(buf, depth);
     match &stmt.kind {
+        StmtKind::LetElse { .. } => writeln!(buf, "(let-else)").unwrap(),
         StmtKind::Let {
             name,
             ty,
@@ -342,7 +343,17 @@ fn pretty_stmt(buf: &mut String, stmt: &Stmt, depth: usize) {
 fn pretty_expr(buf: &mut String, expr: &Expr, depth: usize) {
     indent(buf, depth);
     match &expr.kind {
+        ExprKind::IfLet { .. } | ExprKind::WhileLet { .. } => writeln!(buf, "(sugar)").unwrap(),
         ExprKind::MacroCall(m) => writeln!(buf, "(macro-call {})", quote(&m.name)).unwrap(),
+        ExprKind::NamedArg { name, value } => {
+            writeln!(buf, "(named-arg {}", quote(name)).unwrap();
+            pretty_expr(buf, value, depth + 1);
+            indent(buf, depth);
+            buf.push_str(
+                ")
+",
+            );
+        }
         ExprKind::Int(n) => writeln!(buf, "(int {})", n).unwrap(),
         ExprKind::Float(v) => writeln!(buf, "(float {})", v).unwrap(),
         ExprKind::Bool(b) => writeln!(buf, "(bool {})", b).unwrap(),

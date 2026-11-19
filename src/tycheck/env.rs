@@ -138,6 +138,8 @@ pub struct ImplSig {
     pub self_ty: Ty,
     /// The trait this impl satisfies, if any. `None` for inherent impls.
     pub trait_name: Option<String>,
+    /// Type arguments written on the trait in `impl Trait<A> for T`.
+    pub trait_args: Vec<Ty>,
     /// Methods provided by the impl, keyed by name.
     pub methods: HashMap<String, FnSig>,
     pub span: Span,
@@ -162,9 +164,27 @@ pub struct TypeEnv {
     pub statics: HashMap<DeclId, Ty>,
     /// Extern declarations keyed by `(DeclId, item_index)`.
     pub externs: HashMap<(DeclId, usize), FnSig>,
+    pub trait_impl_pairs: std::cell::OnceCell<std::rc::Rc<Vec<(String, Ty)>>>,
 }
 
 impl TypeEnv {
+    pub fn trait_impl_pairs(&self) -> std::rc::Rc<Vec<(String, Ty)>> {
+        self.trait_impl_pairs
+            .get_or_init(|| {
+                std::rc::Rc::new(
+                    self.impls
+                        .iter()
+                        .filter_map(|i| {
+                            i.trait_name
+                                .as_ref()
+                                .map(|t| (t.clone(), i.self_ty.clone()))
+                        })
+                        .collect(),
+                )
+            })
+            .clone()
+    }
+
     /// Construct an empty environment.
     pub fn new() -> Self {
         Self::default()
@@ -288,6 +308,7 @@ mod tests {
                 args: Vec::new(),
             },
             trait_name: None,
+            trait_args: Vec::new(),
             methods,
             span: span(),
         });

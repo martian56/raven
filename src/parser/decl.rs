@@ -30,6 +30,29 @@ impl Parser {
         {
             return self.parse_macro_def();
         }
+        if self.peek_word("pub")
+            && !matches!(self.peek_kind_at(1), TokenKind::LParen | TokenKind::Eq)
+        {
+            self.advance();
+        }
+        if self.peek_word("class") && matches!(self.peek_kind_at(1), TokenKind::Identifier(_)) {
+            return self.parse_class_decl(derives, false);
+        }
+        if matches!(self.peek_kind(), TokenKind::Struct | TokenKind::Enum)
+            && matches!(self.peek_kind_at(2), TokenKind::LBracket | TokenKind::Colon)
+            || matches!(self.peek_kind(), TokenKind::Struct) && self.struct_body_has_methods()
+        {
+            let is_enum = matches!(self.peek_kind(), TokenKind::Enum);
+            if !is_enum {
+                return self.parse_class_decl(derives, false);
+            }
+        }
+        if self.peek_word("from") {
+            return self.parse_from_import();
+        }
+        if self.peek_word("var") && matches!(self.peek_kind_at(1), TokenKind::Identifier(_)) {
+            return self.parse_let_decl();
+        }
         match self.peek_kind() {
             TokenKind::Struct => self.parse_struct_decl(derives, repr_c),
             TokenKind::Enum if !repr_c => self.parse_enum_decl(derives),
@@ -169,7 +192,40 @@ impl Parser {
         })
     }
 
+    /// `[T, U: Eq + Hash]`
+    fn parse_bracket_generic_params(&mut self) -> ParseResult<Vec<GenericParam>> {
+        self.advance();
+        let mut params = Vec::new();
+        self.skip_newlines();
+        while !matches!(self.peek_kind(), TokenKind::RBracket) {
+            let (name, name_span) = self.expect_ident("generic parameter name")?;
+            let mut bounds = Vec::new();
+            let mut span = name_span;
+            if self.eat(&TokenKind::Colon) {
+                loop {
+                    let path = self.parse_type_path()?;
+                    span = merge_spans(&span, &path.span);
+                    bounds.push(path);
+                    if !self.eat(&TokenKind::Plus) {
+                        break;
+                    }
+                }
+            }
+            params.push(GenericParam { name, bounds, span });
+            self.skip_newlines();
+            if !self.eat(&TokenKind::Comma) {
+                break;
+            }
+            self.skip_newlines();
+        }
+        self.expect(&TokenKind::RBracket, "`]`")?;
+        Ok(params)
+    }
+
     fn parse_generic_params_opt(&mut self) -> ParseResult<Vec<GenericParam>> {
+        if matches!(self.peek_kind(), TokenKind::LBracket) {
+            return self.parse_bracket_generic_params();
+        }
         if !matches!(self.peek_kind(), TokenKind::Lt) {
             return Ok(Vec::new());
         }
@@ -256,6 +312,7 @@ impl Parser {
             params.push(Param {
                 name: "self".to_string(),
                 ty: self_ty,
+                default: None,
                 span,
             });
             self.skip_newlines();
@@ -269,7 +326,17 @@ impl Parser {
             self.expect(&TokenKind::Colon, "`:`")?;
             let ty = self.parse_type()?;
             let span = merge_spans(&name_span, &ty.span);
-            params.push(Param { name, ty, span });
+            let default = if self.eat(&TokenKind::Eq) {
+                Some(self.parse_expr()?)
+            } else {
+                None
+            };
+            params.push(Param {
+                name,
+                ty,
+                default,
+                span,
+            });
             self.skip_newlines();
             if !self.eat(&TokenKind::Comma) {
                 break;
@@ -284,7 +351,7 @@ impl Parser {
 
     fn parse_struct_decl(&mut self, derives: Vec<String>, repr_c: bool) -> ParseResult<Decl> {
         let start = self.advance().span; // struct
-        let (name, _) = self.expect_ident("struct name")?;
+        let (name, name_span) = self.expect_ident("struct name")?;
         let generics = self.parse_generic_params_opt()?;
         self.expect(&TokenKind::LBrace, "`{`")?;
         self.skip_separators();
@@ -300,6 +367,7 @@ impl Parser {
             fields.push(StructField {
                 name: fname,
                 ty,
+                default: None,
                 span,
             });
             // Separator: `,`, newline, or both.
@@ -317,6 +385,10 @@ impl Parser {
                 fields,
                 derives,
                 repr_c,
+                is_class: false,
+                methods: Vec::new(),
+                implements: Vec::new(),
+                name_span,
                 span: span.clone(),
             }),
             span,
@@ -380,6 +452,7 @@ impl Parser {
                 trait_or_type,
                 for_type,
                 items,
+                from_class: false,
                 span: span.clone(),
             }),
             span,
@@ -417,6 +490,7 @@ impl Parser {
                             ));
                         }
                         fields.push(StructField {
+                            default: None,
                             name: fname,
                             ty,
                             span: s,
@@ -517,6 +591,7 @@ impl Parser {
                     let ty = self.parse_type()?;
                     let span = merge_spans(&name_span, &ty.span);
                     params.push(Param {
+                        default: None,
                         name: pname,
                         ty,
                         span,
@@ -615,8 +690,8 @@ impl Parser {
                 let mut span = self.peek().span.clone();
                 self.advance(); // std
                 let mut parts: Vec<String> = Vec::new();
-                while matches!(self.peek_kind(), TokenKind::Slash) {
-                    self.advance(); // /
+                while matches!(self.peek_kind(), TokenKind::Slash | TokenKind::Dot) {
+                    self.advance(); // / or .
                     let (name, sp) = self.expect_ident("identifier")?;
                     parts.push(name);
                     span = merge_spans(&span, &sp);
@@ -628,6 +703,142 @@ impl Parser {
             }
             _ => Err(self.unexpected("import path")),
         }
+    }
+
+    /// Whether the `struct` at the cursor declares a method in its body.
+    fn struct_body_has_methods(&self) -> bool {
+        let mut i = 0;
+        while !matches!(self.peek_kind_at(i), TokenKind::LBrace | TokenKind::Eof) {
+            i += 1;
+        }
+        let mut depth = 0i32;
+        loop {
+            match self.peek_kind_at(i) {
+                TokenKind::LBrace | TokenKind::LParen | TokenKind::LBracket => depth += 1,
+                TokenKind::RBrace | TokenKind::RParen | TokenKind::RBracket => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return false;
+                    }
+                }
+                TokenKind::Fun if depth == 1 => return true,
+                TokenKind::Eof => return false,
+                _ => {}
+            }
+            i += 1;
+        }
+    }
+
+    /// `class Name[T]: Trait, Other { field: T = default  fun method(self) {..} }`.
+    /// Emits the struct, one inherent impl holding every method, and an empty
+    /// impl per listed trait; expansion moves each trait's methods over.
+    fn parse_class_decl(&mut self, derives: Vec<String>, _repr_c: bool) -> ParseResult<Decl> {
+        let is_class = self.peek_word("class");
+        let start = self.advance().span;
+        let (name, name_span) = self.expect_ident("class name")?;
+        let generics = self.parse_generic_params_opt()?;
+        let mut traits = Vec::new();
+        if self.eat(&TokenKind::Colon) {
+            loop {
+                traits.push(self.parse_type_path()?);
+                if !self.eat(&TokenKind::Comma) {
+                    break;
+                }
+            }
+        }
+        self.expect(&TokenKind::LBrace, "`{`")?;
+        self.skip_separators();
+        let mut fields: Vec<StructField> = Vec::new();
+        let mut methods = Vec::new();
+        while !matches!(self.peek_kind(), TokenKind::RBrace) {
+            if self.peek_word("pub") {
+                self.advance();
+            }
+            if matches!(self.peek_kind(), TokenKind::Fun) {
+                methods.push(self.parse_function(false)?);
+            } else {
+                let (fname, fspan) = self.expect_ident("field name or `fun`")?;
+                self.expect(&TokenKind::Colon, "`:`")?;
+                let ty = self.parse_type()?;
+                let default = if self.eat(&TokenKind::Eq) {
+                    self.skip_newlines();
+                    Some(self.parse_expr()?)
+                } else {
+                    None
+                };
+                if fields.iter().any(|f| f.name == fname) {
+                    return Err(RavenError::parse(ParseError::DuplicateField(fname), fspan));
+                }
+                let span = merge_spans(&fspan, &ty.span);
+                fields.push(StructField {
+                    name: fname,
+                    ty,
+                    default,
+                    span,
+                });
+                self.eat(&TokenKind::Comma);
+            }
+            self.skip_separators();
+        }
+        let rb = self.expect(&TokenKind::RBrace, "`}`")?;
+        let span = merge_spans(&start, &rb.span);
+        Ok(Decl {
+            kind: DeclKind::Struct(Struct {
+                name,
+                generics,
+                fields,
+                derives,
+                repr_c: false,
+                is_class,
+                methods,
+                implements: traits,
+                name_span,
+                span: span.clone(),
+            }),
+            span,
+        })
+    }
+
+    /// `from std.json import parse, stringify as s` and
+    /// `from "./models" import User`.
+    fn parse_from_import(&mut self) -> ParseResult<Decl> {
+        let start = self.advance().span;
+        let (source, mut span) = self.parse_import_source(&start)?;
+        if !self.peek_word("import") && !matches!(self.peek_kind(), TokenKind::Import) {
+            return Err(self.unexpected("`import`"));
+        }
+        self.advance();
+        let mut selectors = Vec::new();
+        let paren = self.eat(&TokenKind::LParen);
+        loop {
+            self.skip_newlines();
+            let (n, sp) = self.expect_ident("name to import")?;
+            span = merge_spans(&span, &sp);
+            let alias = if self.eat(&TokenKind::As) {
+                let (a, sp) = self.expect_ident("alias name")?;
+                span = merge_spans(&span, &sp);
+                Some(a)
+            } else {
+                None
+            };
+            selectors.push(crate::ast::ImportSelector { name: n, alias });
+            if !self.eat(&TokenKind::Comma) {
+                break;
+            }
+        }
+        if paren {
+            self.skip_newlines();
+            self.expect(&TokenKind::RParen, "`)`")?;
+        }
+        Ok(Decl {
+            kind: DeclKind::Import(Import {
+                source,
+                alias: None,
+                selectors,
+                span: span.clone(),
+            }),
+            span,
+        })
     }
 
     fn parse_const_decl(&mut self) -> ParseResult<Decl> {

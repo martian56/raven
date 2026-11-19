@@ -5,7 +5,7 @@
 fun main() {
     let words = ["raven", "crow"]
     words.push("bird")
-    print(words[0])       // raven
-    print(words[2])       // bird
+    print(words[0]) // raven
+    print(words[2]) // bird
     print(words.len()) // 3
 }

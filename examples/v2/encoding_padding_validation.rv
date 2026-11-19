@@ -1,29 +1,29 @@
 // The base64 and base32 decoders reject malformed padding: padding before the
 // final group, data after padding, impossible base32 final groups, and a
 // partial (non-aligned) group, while valid encodings still round-trip.
-import std/encoding { base64_encode, base64_decode, base32_encode, base32_decode }
-fun rt64(s: String) -> Bool {
+from std.encoding import base64_encode, base64_decode, base32_encode, base32_decode
+fun rt64(s: str) -> bool {
     return match base64_decode(base64_encode(s)) {
-        Ok(d) -> d == s,
-        Err(_) -> false,
+        case Ok(d) { d == s }
+        case Err(_) { false }
     }
 }
-fun rt32(s: String) -> Bool {
+fun rt32(s: str) -> bool {
     return match base32_decode(base32_encode(s)) {
-        Ok(d) -> d == s,
-        Err(_) -> false,
+        case Ok(d) { d == s }
+        case Err(_) { false }
     }
 }
-fun rej64(s: String) -> Bool {
+fun rej64(s: str) -> bool {
     return match base64_decode(s) {
-        Ok(_) -> false,
-        Err(_) -> true,
+        case Ok(_) { false }
+        case Err(_) { true }
     }
 }
-fun rej32(s: String) -> Bool {
+fun rej32(s: str) -> bool {
     return match base32_decode(s) {
-        Ok(_) -> false,
-        Err(_) -> true,
+        case Ok(_) { false }
+        case Err(_) { true }
     }
 }
 fun main() {

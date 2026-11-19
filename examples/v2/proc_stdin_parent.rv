@@ -15,41 +15,41 @@
 //   echo2
 //   done
 //   0
-import std/io { println }
-import std/string
-import std/process { Child, start }
-import std/sync { sleep_millis }
-import std/env { get_env }
+from std.io import println
+import std.string
+from std.process import Child, start
+from std.sync import sleep_millis
+from std.env import get_env
 
 fun main() {
     let child_path = get_env("RAVEN_PROC_CHILD")
-    let none: List<String> = []
+    let none: list[str] = []
     match start(child_path, none) {
-        Ok(c) -> {
+        case Ok(c) {
             // 1. Write a line and drain until its echo streams back.
             let wrote = c.write_stdin("hello\n")
-            let seen = ""
-            let tries = 0
-            while !seen.contains("got:hello") && tries < 400 {
+            var seen = ""
+            var tries = 0
+            while not seen.contains("got:hello") and tries < 400 {
                 seen = seen.concat(c.read_stdout())
                 sleep_millis(10)
                 tries = tries + 1
             }
-            if wrote && seen.contains("got:hello") {
+            if wrote and seen.contains("got:hello") {
                 println("echo1")
             }
 
             // 2. Write a second line, close stdin, and prove a later write fails.
             c.write_stdin("world\n")
             c.close_stdin()
-            if !c.write_stdin("late\n") {
+            if not c.write_stdin("late\n") {
                 println("closed")
             }
 
             // 3. Wait, then confirm the second echo and the child's EOF marker.
             let code = c.wait()
-            let more = 0
-            while !seen.contains("done") && more < 200 {
+            var more = 0
+            while not seen.contains("done") and more < 200 {
                 seen = seen.concat(c.read_stdout())
                 sleep_millis(5)
                 more = more + 1
@@ -62,9 +62,7 @@ fun main() {
             }
             println("${code}")
             c.free()
-        },
-        Err(e) -> {
-            println("spawn failed: ${e.message()}")
-        },
+        }
+        case Err(e) { println("spawn failed: ${e.message()}") }
     }
 }

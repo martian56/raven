@@ -88,6 +88,8 @@ pub struct GenericParam {
 pub struct Param {
     pub name: String,
     pub ty: Type,
+    /// `name: T = value`
+    pub default: Option<Expr>,
     pub span: Span,
 }
 
@@ -105,6 +107,13 @@ pub struct Struct {
     /// memory layout (fields in declaration order, naturally aligned) and
     /// may cross the FFI boundary by value. See `docs/v2/specs/std-ffi.md`.
     pub repr_c: bool,
+    /// Written as `class` rather than `struct`.
+    pub is_class: bool,
+    /// Methods declared in the body; desugared into impls after parsing.
+    pub methods: Vec<Function>,
+    /// Traits listed after `:`; desugared into impls after parsing.
+    pub implements: Vec<TypePath>,
+    pub name_span: Span,
     pub span: Span,
 }
 
@@ -113,6 +122,8 @@ pub struct Struct {
 pub struct StructField {
     pub name: String,
     pub ty: Type,
+    /// `field: T = value`
+    pub default: Option<Expr>,
     pub span: Span,
 }
 
@@ -138,6 +149,9 @@ pub struct Impl {
     /// impls.
     pub for_type: Option<TypePath>,
     pub items: Vec<Function>,
+    /// Generated from the body of a `class`; its methods are distributed to
+    /// the class's trait impls during expansion.
+    pub from_class: bool,
     pub span: Span,
 }
 

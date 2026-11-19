@@ -1,11 +1,11 @@
 // std/path: POSIX-style path manipulation on `/` separators. Built on the
 // `String` methods from std/string. Windows `\` handling is out of scope.
 
-import std/string
+import std.string
 
 // Byte index of the last `/`, or -1 when none.
-fun last_slash(p: String) -> Int {
-    let i = p.length() - 1
+fun last_slash(p: str) -> int {
+    var i = p.length() - 1
     while i >= 0 {
         if p.char_at(i).starts_with("/") {
             return i
@@ -15,7 +15,7 @@ fun last_slash(p: String) -> Int {
     return -1
 }
 
-fun join(a: String, b: String) -> String {
+fun join(a: str, b: str) -> str {
     if a.length() == 0 {
         return b
     }
@@ -36,16 +36,16 @@ fun join(a: String, b: String) -> String {
     return a.concat("/").concat(b)
 }
 
-fun basename(p: String) -> String {
-    let i = last_slash(p)
+fun basename(p: str) -> str {
+    var i = last_slash(p)
     if i < 0 {
         return p
     }
     return p.substring(i + 1, p.length())
 }
 
-fun dirname(p: String) -> String {
-    let i = last_slash(p)
+fun dirname(p: str) -> str {
+    var i = last_slash(p)
     if i < 0 {
         return "."
     }
@@ -57,10 +57,10 @@ fun dirname(p: String) -> String {
 
 // Substring after the last `.` in the basename, or "" when none. A leading
 // dot (a dotfile such as ".gitignore") is not an extension.
-fun extension(p: String) -> String {
+fun extension(p: str) -> str {
     let base = basename(p)
     let n = base.length()
-    let i = n - 1
+    var i = n - 1
     while i > 0 {
         if base.char_at(i).starts_with(".") {
             return base.substring(i + 1, n)
@@ -70,10 +70,10 @@ fun extension(p: String) -> String {
     return ""
 }
 
-fun stem(p: String) -> String {
+fun stem(p: str) -> str {
     let base = basename(p)
     let n = base.length()
-    let i = n - 1
+    var i = n - 1
     while i > 0 {
         if base.char_at(i).starts_with(".") {
             return base.substring(0, i)
@@ -83,18 +83,18 @@ fun stem(p: String) -> String {
     return base
 }
 
-fun is_absolute(p: String) -> Bool {
+fun is_absolute(p: str) -> bool {
     return p.starts_with("/")
 }
 
-fun is_relative(p: String) -> Bool {
+fun is_relative(p: str) -> bool {
     return is_absolute(p) == false
 }
 
 // The non-empty path segments, in order. Leading, trailing, and repeated
 // slashes produce no empty components.
-fun components(p: String) -> List<String> {
-    let out: List<String> = []
+fun components(p: str) -> list[str] {
+    let out: list[str] = []
     for seg in p.split("/") {
         if seg.length() > 0 {
             out.push(seg)
@@ -105,9 +105,9 @@ fun components(p: String) -> List<String> {
 
 // Collapse `.` and `..` segments and redundant slashes. An absolute path
 // keeps its leading `/`; an empty relative result becomes ".".
-fun normalize(p: String) -> String {
+fun normalize(p: str) -> str {
     let abs = is_absolute(p)
-    let stack: List<String> = []
+    let stack: list[str] = []
     for seg in p.split("/") {
         if seg.length() == 0 {
             continue
@@ -115,25 +115,21 @@ fun normalize(p: String) -> String {
         if seg == "." {
             continue
         }
-        if seg == ".." {
-            if stack.len() > 0 {
-                let top = stack.get(stack.len() - 1)
-                if top == ".." {
-                    stack.push(seg)
-                } else {
-                    let _popped = stack.pop()
-                }
+        if stack.len() > 0 {
+            let top = stack.get(stack.len() - 1)
+            if top == ".." {
+                stack.push(seg)
             } else {
-                if abs == false {
-                    stack.push(seg)
-                }
+                let _popped = stack.pop()
             }
         } else {
-            stack.push(seg)
-        }
+            if abs == false {
+                stack.push(seg)
+            }
+        } if seg == ".." else stack.push(seg)
     }
-    let result = ""
-    let i = 0
+    var result = ""
+    var i = 0
     while i < stack.len() {
         if i > 0 {
             result = result.concat("/")
@@ -152,11 +148,11 @@ fun normalize(p: String) -> String {
 
 // Replace the path's extension with `ext` (no leading dot). An empty `ext`
 // removes the extension.
-fun with_extension(p: String, ext: String) -> String {
+fun with_extension(p: str, ext: str) -> str {
     let base = basename(p)
     let n = base.length()
     let prefix = p.length() - n
-    let i = n - 1
+    var i = n - 1
     while i > 0 {
         if base.char_at(i).starts_with(".") {
             let without = p.substring(0, prefix + i)

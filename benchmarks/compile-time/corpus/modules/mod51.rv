@@ -1,27 +1,37 @@
-import std/string
+import std.string
 
-struct Vec2_51 { x: Int, y: Int }
+class Vec2_51 {
+    x: int
+    y: int
+}
 
 impl Vec2_51 {
     fun add(self, o: Vec2_51) -> Vec2_51 {
-        return Vec2_51 { x: self.x + o.x, y: self.y + o.y }
+        return Vec2_51(x: self.x + o.x, y: self.y + o.y)
     }
-    fun scale(self, k: Int) -> Vec2_51 {
-        return Vec2_51 { x: self.x * k, y: self.y * k }
+
+    fun scale(self, k: int) -> Vec2_51 {
+        return Vec2_51(x: self.x * k, y: self.y * k)
     }
-    fun magnitude_sq(self) -> Int {
+
+    fun magnitude_sq(self) -> int {
         return self.x * self.x + self.y * self.y
     }
 }
 
-struct Node_51 { id: Int, weight: Int, label: String }
+class Node_51 {
+    id: int
+    weight: int
+    label: str
+}
 
 impl Node_51 {
-    fun heavier(self, other: Node_51) -> Bool {
+    fun heavier(self, other: Node_51) -> bool {
         return self.weight > other.weight
     }
-    fun retag(self, n: String) -> Node_51 {
-        return Node_51 { id: self.id, weight: self.weight, label: n }
+
+    fun retag(self, n: str) -> Node_51 {
+        return Node_51(id: self.id, weight: self.weight, label: n)
     }
 }
 
@@ -32,12 +42,12 @@ enum Shape_51 {
     Hexagon,
 }
 
-fun classify_51(s: Shape_51) -> Int {
+fun classify_51(s: Shape_51) -> int {
     return match s {
-        Circle -> 13,
-        Square -> 13 * 2,
-        Triangle -> 13 * 3,
-        Hexagon -> 13 * 6,
+        case Circle { 13 }
+        case Square { 13 * 2 }
+        case Triangle { 13 * 3 }
+        case Hexagon { 13 * 6 }
     }
 }
 
@@ -47,7 +57,7 @@ enum Outcome_51 {
     Skip,
 }
 
-fun grade_51(score: Int) -> Outcome_51 {
+fun grade_51(score: int) -> Outcome_51 {
     if score >= 60 {
         return Outcome_51.Pass
     }
@@ -57,61 +67,68 @@ fun grade_51(score: Int) -> Outcome_51 {
     return Outcome_51.Fail
 }
 
-fun grade_points_51(o: Outcome_51) -> Int {
+fun grade_points_51(o: Outcome_51) -> int {
     return match o {
-        Pass -> 100,
-        Fail -> 0,
-        Skip -> 50,
+        case Pass { 100 }
+        case Fail { 0 }
+        case Skip { 50 }
     }
 }
 
-struct Pair_51<T> { first: T, second: T }
+class Pair_51[T] {
+    first: T
+    second: T
+}
 
-impl<T> Pair_51<T> {
+impl[T] Pair_51[T] {
     fun left(self) -> T = self.first
+
     fun right(self) -> T = self.second
 }
 
-struct Wrap_51<T> { inner: T }
+class Wrap_51[T] {
+    inner: T
+}
 
-impl<T> Wrap_51<T> {
+impl[T] Wrap_51[T] {
     fun get(self) -> T = self.inner
-    fun mapped<U>(self, f: fun(T) -> U) -> U = f(self.inner)
+
+    fun mapped[U](self, f: fun(T) -> U) -> U = f(self.inner)
 }
 
 trait Score_51 {
-    fun score(self) -> Int
+    fun score(self) -> int
 }
 
 impl Score_51 for Node_51 {
-    fun score(self) -> Int = self.id * 10 + self.weight
+    fun score(self) -> int = self.id * 10 + self.weight
 }
 
 impl Score_51 for Vec2_51 {
-    fun score(self) -> Int = self.magnitude_sq()
+    fun score(self) -> int = self.magnitude_sq()
 }
 
-fun ranked_51<T: Score_51>(x: T) -> Int = x.score()
+fun ranked_51[T: Score_51](x: T) -> int = x.score()
 
-fun identity_51<T>(x: T) -> T = x
+fun identity_51[T](x: T) -> T = x
 
-fun maybe_51(n: Int) -> Option<Int> {
+fun maybe_51(n: int) -> Option[int] {
     if n > 13 {
         return Some(n * 2)
     }
     return None
 }
 
-fun unwrap_or_51(x: Option<Int>, fallback: Int) -> Int {
+fun unwrap_or_51(x: Option[int], fallback: int) -> int {
     return match x {
-        None -> fallback,
-        Some(v) -> v,
+        case None { fallback }
+        case Some(v) { v }
     }
 }
 
-fun accumulate_51(limit: Int) -> Int {
-    let total = 0
-    let i = 0
+fun accumulate_51(limit: int) -> int {
+    var total = 0
+    var i = 0
     while i < limit {
         if i % 2 == 0 {
             total = total + i
@@ -123,37 +140,36 @@ fun accumulate_51(limit: Int) -> Int {
     return total
 }
 
-fun sweep_51(limit: Int) -> Int {
-    let total = 0
+fun sweep_51(limit: int) -> int {
+    var total = 0
     for k in 0..limit {
         total = total + classify_51(Shape_51.Triangle) + k
     }
     return total
 }
 
-fun fib_51(n: Int) -> Int {
+fun fib_51(n: int) -> int {
     if n < 2 {
         return n
     }
     return fib_51(n - 1) + fib_51(n - 2)
 }
 
-fun compute_51(seed: Int) -> Int {
-    let v = Vec2_51 { x: seed, y: seed + 13 }
-    let w = v.add(Vec2_51 { x: 2, y: 3 }).scale(2)
-    let node = Node_51 { id: seed, weight: 13, label: "n" }
+fun compute_51(seed: int) -> int {
+    let v = Vec2_51(x: seed, y: seed + 13)
+    let w = v.add(Vec2_51(x: 2, y: 3)).scale(2)
+    let node = Node_51(id: seed, weight: 13, label: "n")
     let tagged = node.retag("tagged")
-    let p = Pair_51 { first: w.x, second: w.y }
-    let q = Pair_51 { first: tagged.label, second: "z" }
-    let boxed = Wrap_51 { inner: seed }
-    let doubled = boxed.mapped(fun(x: Int) -> Int = x * 2)
-    let big = boxed.mapped(fun(x: Int) -> Bool = x > 13)
+    let p = Pair_51(first: w.x, second: w.y)
+    let q = Pair_51(first: tagged.label, second: "z")
+    let boxed = Wrap_51(inner: seed)
+    let doubled = boxed.mapped((x: int) -> int => x * 2)
+    let big = boxed.mapped((x: int) -> bool => x > 13)
     let m = unwrap_or_51(maybe_51(seed), 0)
     let g = grade_points_51(grade_51(seed))
     let r = ranked_51(tagged) + ranked_51(v)
-    let extra = if big { 1 } else { 0 }
-    return p.left() + p.right() + w.magnitude_sq() + identity_51(doubled) +
-        m + g + r + accumulate_51(13) + sweep_51(13) +
-        fib_51(8) + classify_51(Shape_51.Hexagon) + extra +
-        q.left().length()
+    let extra = 1 if big else 0
+    return p.left() + p.right() + w.magnitude_sq() + identity_51(doubled) + m + g + r + accumulate_51(
+        13,
+    ) + sweep_51(13) + fib_51(8) + classify_51(Shape_51.Hexagon) + extra + q.left().length()
 }

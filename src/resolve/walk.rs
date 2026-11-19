@@ -271,6 +271,7 @@ fn walk_stmt(
     map: &mut ResolutionMap,
 ) -> Result<(), RavenError> {
     match &stmt.kind {
+        StmtKind::LetElse { .. } => unreachable!("surface syntax is desugared after parsing"),
         StmtKind::Let {
             name,
             ty,
@@ -312,6 +313,7 @@ fn walk_expr(
     map: &mut ResolutionMap,
 ) -> Result<(), RavenError> {
     match &expr.kind {
+        ExprKind::IfLet { .. } | ExprKind::WhileLet { .. } => unreachable!("surface syntax is desugared after parsing"),
         ExprKind::Int(_)
         | ExprKind::Float(_)
         | ExprKind::Bool(_)
@@ -369,6 +371,14 @@ fn walk_expr(
             } else {
                 scope.lookup(name)
             };
+            let resolved = resolved.or_else(|| {
+                PRELUDE_FUNCTIONS
+                    .iter()
+                    .find(|(n, _)| *n == name)
+                    .and_then(|(n, module)| {
+                        scope.lookup_module(&super::stdlib::mangle_stdlib_fn(module, n))
+                    })
+            });
             if let Some(entry) = resolved {
                 let binding = entry.binding.clone();
                 map.bind_use(&expr.span, binding);
@@ -440,6 +450,14 @@ fn walk_expr(
             }
         }
         ExprKind::Paren(e) => walk_expr(e, scope, map)?,
+        ExprKind::NamedArg { .. } => {
+            return Err(RavenError::resolve(
+                crate::error::ResolveError::Other(
+                    "named arguments only work on functions and class constructors".into(),
+                ),
+                expr.span.clone(),
+            ))
+        }
         ExprKind::Block(b) => walk_block(b, scope, map)?,
         ExprKind::Unary { operand, .. } => walk_expr(operand, scope, map)?,
         ExprKind::Binary { lhs, rhs, .. } => {
@@ -723,6 +741,10 @@ fn is_builtin_type_name(name: &str) -> bool {
 /// users do not write them directly (they use the modules' exported
 /// functions). They bypass scope lookup the same way the print builtins
 /// do.
+/// Free functions of prelude modules usable without an import, as
+/// `(name, module)`.
+const PRELUDE_FUNCTIONS: &[(&str, &str)] = &[("error", "error"), ("error_kind", "error")];
+
 fn is_builtin_ctor_name(name: &str) -> bool {
     matches!(
         name,
@@ -753,6 +775,7 @@ fn is_builtin_ctor_name(name: &str) -> bool {
             | "__io_println_str"
             | "__io_read_line"
             | "__panic"
+            | "panic"
             | "__str_len"
             | "__str_byte_at"
             | "__str_substring"

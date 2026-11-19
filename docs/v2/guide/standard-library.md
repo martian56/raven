@@ -13,10 +13,10 @@ use depends on what the module provides.
 **Selective import** brings named free functions into scope:
 
 ```rust
-import std/math { sqrt, pow_int }
+from std.math import sqrt, pow_int
 
 fun main() {
-    print(sqrt(16.0))       // 4
+    print(sqrt(16.0)) // 4
 }
 ```
 
@@ -24,12 +24,12 @@ fun main() {
 type (it merges an `impl` block or registers a type):
 
 ```rust
-import std/string                  // adds methods to String
-import std/collections             // registers Map.new() / Set.new()
+import std.string // adds methods to String
+import std.collections // registers Map.new() / Set.new()
 
 fun main() {
-    print("hi".to_upper())         // HI
-    let m: Map<String, Int> = Map.new()
+    print("hi".to_upper()) // HI
+    let m: dict[str, int] = Map.new()
     m.set("a", 1)
 }
 ```
@@ -50,7 +50,7 @@ Two rules are worth memorizing up front:
 auto-imported, so you never write `import std/core`:
 
 ```rust
-fun describe<T: ToString>(x: T) -> String = x.to_string()
+fun describe[T: ToString](x: T) -> str = x.to_string()
 ```
 
 See [core traits](stdlib/core.md) for the full set.
@@ -63,17 +63,17 @@ absent returns `Option<T>`. There are no exceptions and no `null`. Handle a
 function that itself returns `Result`:
 
 ```rust
-import std/fs { read }
+from std.fs import read
 
-fun load(path: String) -> Result<String, Error> {
-    let text = read(path)?          // returns early on Err
+fun load(path: str) -> Result[str, Error] {
+    let text = read(path)? // returns early on Err
     return Ok(text.trim())
 }
 
 fun main() {
     match load("note.txt") {
-        Ok(s) -> print(s),
-        Err(e) -> print("could not load"),
+        case Ok(s) { print(s) }
+        case Err(e) { print("could not load") }
     }
 }
 ```

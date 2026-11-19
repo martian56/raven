@@ -1,12 +1,15 @@
-struct Point { x: Int, y: Int }
-impl ToString for Point {
-    fun to_string(self) -> String = "(${self.x}, ${self.y})"
+class Point {
+    x: int
+    y: int
 }
-fun show<T: ToString>(label: String, x: T) -> String {
+impl ToString for Point {
+    fun to_string(self) -> str = "(${self.x}, ${self.y})"
+}
+fun show[T: ToString](label: str, x: T) -> str {
     return "${label}=${x}"
 }
 fun main() {
-    print(show("n", 42))                  // n=42
-    print(show("ok", true))               // ok=true
-    print(show("p", Point { x: 3, y: 4 })) // p=(3, 4)
+    print(show("n", 42)) // n=42
+    print(show("ok", true)) // ok=true
+    print(show("p", Point(x: 3, y: 4))) // p=(3, 4)
 }

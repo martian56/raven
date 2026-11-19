@@ -83,6 +83,9 @@ pub(crate) fn lower_expr(
         return Ok(make_expr(HirExprKind::FnTrampoline, ty, span));
     }
     let kind = match &expr.kind {
+        ExprKind::IfLet { .. } | ExprKind::WhileLet { .. } => {
+            unreachable!("surface syntax is desugared after parsing")
+        }
         // A macro call should have been expanded before HIR lowering; reaching
         // here means the token pre-pass was skipped (only the formatter parses
         // un-expanded source, and it never lowers to HIR).
@@ -175,6 +178,7 @@ pub(crate) fn lower_expr(
                 &span,
             ));
         }
+        ExprKind::NamedArg { value, .. } => return lower_expr(value, _hint, cx),
         ExprKind::Paren(inner) => {
             let lowered = lower_expr(inner, &ty, cx)?;
             HirExprKind::Paren(Box::new(lowered))
@@ -190,6 +194,22 @@ pub(crate) fn lower_expr(
         ExprKind::Binary { op, lhs, rhs } => {
             let l = lower_expr(lhs, &Ty::Error, cx)?;
             let r = lower_expr(rhs, &Ty::Error, cx)?;
+            if matches!(op, BinaryOp::Eq | BinaryOp::Ne)
+                && matches!(l.ty.strip_self(), Ty::Struct { .. } | Ty::Enum { .. })
+                && !type_has_equals(cx.env, l.ty.strip_self())
+            {
+                return Err(RavenError::ty(
+                    crate::error::TypeError::Custom(format!(
+                        "`{}` cannot be compared with `{}`: it does not implement `Eq`",
+                        l.ty.strip_self(),
+                        op.symbol()
+                    )),
+                    span.clone(),
+                )
+                .with_hint(
+                    "plain data types get `==` automatically; a type holding a function, trait object, or pointer needs a hand-written `impl Eq`",
+                ));
+            }
             // `==`/`!=` on a struct or enum that implements `Eq` (a derived or
             // hand-written `equals` method) dispatch to that method, so
             // equality is by value rather than object identity. The

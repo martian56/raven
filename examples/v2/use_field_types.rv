@@ -15,20 +15,20 @@
 //   String
 //   --
 //   value: Int
-struct User {
-    id: Int,
-    name: String,
-    active: Bool
+class User {
+    id: int
+    name: str
+    active: bool
 }
 
-struct Box<T> {
+class Box[T] {
     value: T
 }
 
-fun describe<T>() {
-    let names = field_names<T>()
-    let types = field_types<T>()
-    let i = 0
+fun describe[T]() {
+    let names = field_names[T]()
+    let types = field_types[T]()
+    var i = 0
     while i < names.len() {
         print("${names[i]}: ${types[i]}")
         i += 1
@@ -36,17 +36,17 @@ fun describe<T>() {
 }
 
 fun main() {
-    describe<User>()
+    describe[User]()
 
     print("--")
     // A generic struct renders its concrete field type per instantiation.
-    for t in field_types<Box<Int>>() {
+    for t in field_types[Box[int]]() {
         print(t)
     }
-    for t in field_types<Box<String>>() {
+    for t in field_types[Box[str]]() {
         print(t)
     }
 
     print("--")
-    describe<Box<Int>>()
+    describe[Box[int]]()
 }

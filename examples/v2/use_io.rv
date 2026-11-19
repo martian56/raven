@@ -1,5 +1,5 @@
 // golden:skip
-import std/io { println }
+from std.io import println
 
 fun main() {
     println("Hello from std/io!")

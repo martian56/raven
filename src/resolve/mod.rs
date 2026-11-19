@@ -13,6 +13,7 @@ pub mod imports;
 pub mod items;
 pub mod scope;
 pub mod stdlib;
+pub(crate) mod sugar;
 pub mod walk;
 
 #[cfg(test)]

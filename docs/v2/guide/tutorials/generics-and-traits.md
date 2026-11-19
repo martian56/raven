@@ -14,15 +14,15 @@ A type parameter in angle brackets makes a struct hold any type. `Box<T>` wraps
 one value of type `T`:
 
 ```rust
-struct Box<T> {
-    value: T,
+class Box[T] {
+    value: T
 }
 
 fun main() {
-    let n = Box { value: 7 }
-    let s = Box { value: "raven" }
-    print(n.value)          // 7
-    print(s.value)          // raven
+    let n = Box(value: 7)
+    let s = Box(value: "raven")
+    print(n.value) // 7
+    print(s.value) // raven
 }
 ```
 
@@ -38,19 +38,19 @@ An `impl<T>` block adds methods that work for every instantiation. A method's
 body can use `T` as the element type:
 
 ```rust
-struct Box<T> {
-    value: T,
+class Box[T] {
+    value: T
 }
 
-impl<T> Box<T> {
+impl[T] Box[T] {
     fun unwrap(self) -> T = self.value
 }
 
 fun main() {
-    let a = Box { value: 42 }
-    let b = Box { value: "raven" }
-    print(a.unwrap())       // 42     (unwrap specialized at T = Int)
-    print(b.unwrap())       // raven  (unwrap specialized at T = String)
+    let a = Box(value: 42)
+    let b = Box(value: "raven")
+    print(a.unwrap()) // 42     (unwrap specialized at T = Int)
+    print(b.unwrap()) // raven  (unwrap specialized at T = String)
 }
 ```
 
@@ -58,8 +58,8 @@ fun main() {
 methods for a *specific* instantiation with a concrete `impl`:
 
 ```rust
-impl Box<Int> {
-    fun doubled(self) -> Int = self.value * 2
+impl Box[int] {
+    fun doubled(self) -> int = self.value * 2
 }
 ```
 
@@ -73,25 +73,25 @@ A trait names a set of methods a type can provide. Implement it for a type with
 
 ```rust
 trait Speak {
-    fun sound(self) -> Int
+    fun sound(self) -> int
 }
 
-struct Dog {}
-struct Cat {}
+class Dog {}
+class Cat {}
 
 impl Speak for Dog {
-    fun sound(self) -> Int = 1
+    fun sound(self) -> int = 1
 }
 
 impl Speak for Cat {
-    fun sound(self) -> Int = 2
+    fun sound(self) -> int = 2
 }
 
 fun main() {
-    let d = Dog {}
-    let c = Cat {}
-    print(d.sound())        // 1
-    print(c.sound())        // 2
+    let d = Dog()
+    let c = Cat()
+    print(d.sound()) // 1
+    print(c.sound()) // 2
 }
 ```
 
@@ -107,18 +107,18 @@ vtable):
 
 ```rust
 trait Speak {
-    fun sound(self) -> Int
+    fun sound(self) -> int
 }
 
-struct Dog {}
+class Dog {}
 impl Speak for Dog {
-    fun sound(self) -> Int = 1
+    fun sound(self) -> int = 1
 }
 
-fun loudness<T: Speak>(x: T) -> Int = x.sound() * 10
+fun loudness[T: Speak](x: T) -> int = x.sound() * 10
 
 fun main() {
-    print(loudness(Dog {}))     // 10
+    print(loudness(Dog())) // 10
 }
 ```
 
@@ -127,22 +127,22 @@ prelude, with built-in implementations for the primitives, so a bound of
 `<T: ToString>` accepts ints, bools, and any type you implement it for:
 
 ```rust
-struct Point {
-    x: Int,
-    y: Int,
+class Point {
+    x: int
+    y: int
 }
 
 impl ToString for Point {
-    fun to_string(self) -> String = "(${self.x}, ${self.y})"
+    fun to_string(self) -> str = "(${self.x}, ${self.y})"
 }
 
-fun describe<T: ToString>(x: T) -> String = x.to_string()
+fun describe[T: ToString](x: T) -> str = x.to_string()
 
 fun main() {
-    print(describe(42))             // 42
-    print(describe(true))           // true
-    let p = Point { x: 3, y: 4 }
-    print(describe(p))              // (3, 4)
+    print(describe(42)) // 42
+    print(describe(true)) // true
+    let p = Point(x: 3, y: 4)
+    print(describe(p)) // (3, 4)
 }
 ```
 
@@ -159,25 +159,25 @@ vtable), and the call dispatches through the vtable:
 
 ```rust
 trait Speak {
-    fun sound(self) -> Int
+    fun sound(self) -> int
 }
 
-struct Dog {}
-struct Cat {}
+class Dog {}
+class Cat {}
 
 impl Speak for Dog {
-    fun sound(self) -> Int = 1
+    fun sound(self) -> int = 1
 }
 
 impl Speak for Cat {
-    fun sound(self) -> Int = 2
+    fun sound(self) -> int = 2
 }
 
-fun describe(s: dyn Speak) -> Int = s.sound()
+fun describe(s: dyn Speak) -> int = s.sound()
 
 fun main() {
-    print(describe(Dog {}))     // 1
-    print(describe(Cat {}))     // 2
+    print(describe(Dog())) // 1
+    print(describe(Cat())) // 2
 }
 ```
 
@@ -191,20 +191,20 @@ A method can introduce its own type parameter, separate from the type's. Here
 `mapped<U>` transforms a `Box<T>` into a `U` using a function you pass:
 
 ```rust
-struct Box<T> {
-    value: T,
+class Box[T] {
+    value: T
 }
 
-impl<T> Box<T> {
-    fun mapped<U>(self, f: fun(T) -> U) -> U = f(self.value)
+impl[T] Box[T] {
+    fun mapped[U](self, f: fun(T) -> U) -> U = f(self.value)
 }
 
 fun main() {
-    let b = Box { value: 21 }
-    let doubled = b.mapped(fun(x: Int) -> Int = x * 2)
-    let is_big = b.mapped(fun(x: Int) -> Bool = x > 10)
-    print(doubled)          // 42
-    print(is_big)           // true
+    let b = Box(value: 21)
+    let doubled = b.mapped((x: int) -> int => x * 2)
+    let is_big = b.mapped((x: int) -> bool => x > 10)
+    print(doubled) // 42
+    print(is_big) // true
 }
 ```
 
@@ -220,19 +220,19 @@ type used as a `Map` key must satisfy the key bounds `Eq` and `Hash`; deriving
 both makes a generic struct a valid key:
 
 ```rust
-import std/collections
+import std.collections
 
 @derive(Eq, Hash)
-struct Box<T> {
-    value: T,
+class Box[T] {
+    value: T
 }
 
 fun main() {
-    let m: Map<Box<Int>, Int> = Map.new()
-    m.set(Box { value: 7 }, 42)
-    match m.get(Box { value: 7 }) {
-        Some(v) -> print(v),        // 42
-        None -> print(0),
+    let m: dict[Box[int], int] = Map.new()
+    m.set(Box(value: 7), 42)
+    match m.get(Box(value: 7)) {
+        case Some(v) { print(v) } // 42
+        case None { print(0) }
     }
 }
 ```
@@ -249,20 +249,20 @@ and a function that works over both. The snippet below stores any
 `ToString` value and renders it:
 
 ```rust
-struct Labeled<T> {
-    name: String,
-    value: T,
+class Labeled[T] {
+    name: str
+    value: T
 }
 
-impl<T: ToString> Labeled<T> {
-    fun show(self) -> String = "${self.name}=${self.value.to_string()}"
+impl[T: ToString] Labeled[T] {
+    fun show(self) -> str = "${self.name}=${self.value.to_string()}"
 }
 
 fun main() {
-    let a = Labeled { name: "count", value: 42 }
-    let b = Labeled { name: "ready", value: true }
-    print(a.show())         // count=42
-    print(b.show())         // ready=true
+    let a = Labeled(name: "count", value: 42)
+    let b = Labeled(name: "ready", value: true)
+    print(a.show()) // count=42
+    print(b.show()) // ready=true
 }
 ```
 

@@ -138,8 +138,8 @@ fun unwrap_or_${i}(x: Option<Int>, fallback: Int) -> Int {
 }
 
 fun accumulate_${i}(limit: Int) -> Int {
-    let total = 0
-    let i = 0
+    var total = 0
+    var i = 0
     while i < limit {
         if i % 2 == 0 {
             total = total + i
@@ -152,7 +152,7 @@ fun accumulate_${i}(limit: Int) -> Int {
 }
 
 fun sweep_${i}(limit: Int) -> Int {
-    let total = 0
+    var total = 0
     for k in 0..limit {
         total = total + classify_${i}(Shape_${i}.Triangle) + k
     }
@@ -195,7 +195,7 @@ ENTRY="$CORPUS_DIR/main.rv"
     done
     echo ""
     echo "fun main() {"
-    echo "    let total = 0"
+    echo "    var total = 0"
     for ((i = 0; i < COUNT; i++)); do
         echo "    total = total + compute_${i}(${i} + 1)"
     done

@@ -5,13 +5,13 @@ Free generic functions for ordering and sorting. They build on the prelude
 your own structs.
 
 ```rust
-import std/cmp { min, max, sort }
+from std.cmp import min, max, sort
 
 fun main() {
-    print(min(3, 7))            // 3
-    print(max(3, 7))            // 7
+    print(min(3, 7)) // 3
+    print(max(3, 7)) // 7
     for x in sort([5, 2, 8, 1]) {
-        print(x)                // 1, then 2, 5, 8
+        print(x) // 1, then 2, 5, 8
     }
 }
 ```
@@ -22,7 +22,7 @@ These functions have no natural single receiver, so they come in through a
 selective import: list the names you want inside `{ ... }`.
 
 ```rust
-import std/cmp { sort, sorted_by, min, max, clamp, max_of, min_of }
+from std.cmp import sort, sorted_by, min, max, clamp, max_of, min_of
 ```
 
 `List<T>` is built into the language and needs no import.
@@ -56,11 +56,11 @@ The lesser of `a` and `b`. On a tie (`a` and `b` compare equal) it returns
 The greater of `a` and `b`. On a tie it returns `a`.
 
 ```rust
-import std/cmp { min, max }
+from std.cmp import min, max
 
 fun main() {
-    print(min(10, 4))       // 4
-    print(max("apple", "pear"))   // pear
+    print(min(10, 4)) // 4
+    print(max("apple", "pear")) // pear
 }
 ```
 
@@ -70,12 +70,12 @@ Constrain `x` to the range `[lo, hi]`: returns `lo` when `x < lo`, `hi` when
 `x > hi`, and `x` otherwise.
 
 ```rust
-import std/cmp { clamp }
+from std.cmp import clamp
 
 fun main() {
-    print(clamp(15, 0, 10))     // 10
-    print(clamp(-3, 0, 10))     // 0
-    print(clamp(7, 0, 10))      // 7
+    print(clamp(15, 0, 10)) // 10
+    print(clamp(-3, 0, 10)) // 0
+    print(clamp(7, 0, 10)) // 7
 }
 ```
 
@@ -88,14 +88,14 @@ mutated. `sort` delegates to `sorted_by` using `a.compare(b)` as the
 comparator.
 
 ```rust
-import std/cmp { sort }
+from std.cmp import sort
 
 fun main() {
     let xs = [5, 2, 8, 1]
     for x in sort(xs) {
-        print(x)        // 1, 2, 5, 8
+        print(x) // 1, 2, 5, 8
     }
-    print(xs[0])        // 5 (the original list is unchanged)
+    print(xs[0]) // 5 (the original list is unchanged)
 }
 ```
 
@@ -112,13 +112,13 @@ when their order does not matter, and a positive `Int` when `a` should come
 after `b`. To sort descending, flip the comparison.
 
 ```rust
-import std/cmp { sorted_by }
+from std.cmp import sorted_by
 
 fun main() {
     let xs = [5, 2, 8, 1]
-    let desc = sorted_by(xs, fun(a: Int, b: Int) -> Int = b - a)
+    let desc = sorted_by(xs, (a: int, b: int) -> int => b - a)
     for x in desc {
-        print(x)    // 8, 5, 2, 1
+        print(x) // 8, 5, 2, 1
     }
 }
 ```
@@ -143,19 +143,19 @@ Because both return an `Option<T>`, you match on the result to handle the
 empty list:
 
 ```rust
-import std/cmp { max_of, min_of }
+from std.cmp import max_of, min_of
 
 fun main() {
     let scores = [42, 17, 99, 8]
     match max_of(scores) {
-        Some(best) -> print(best),      // 99
-        None -> print("no scores"),
+        case Some(best) { print(best) } // 99
+        case None { print("no scores") }
     }
 
-    let empty: List<Int> = []
+    let empty: list[int] = []
     match min_of(empty) {
-        Some(lo) -> print(lo),
-        None -> print("empty"),         // empty
+        case Some(lo) { print(lo) }
+        case None { print("empty") } // empty
     }
 }
 ```
@@ -163,19 +163,19 @@ fun main() {
 ## Worked example: sort and pick the top
 
 ```rust
-import std/cmp { sort, max_of }
+from std.cmp import sort, max_of
 
 fun main() {
     let scores = [42, 17, 99, 8, 56]
 
     let ranked = sort(scores)
     for s in ranked {
-        print(s)        // 8, 17, 42, 56, 99
+        print(s) // 8, 17, 42, 56, 99
     }
 
     match max_of(scores) {
-        Some(best) -> print("top score: ${best}"),   // top score: 99
-        None -> print("no scores yet"),
+        case Some(best) { print("top score: ${best}") } // top score: 99
+        case None { print("no scores yet") }
     }
 }
 ```

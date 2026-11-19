@@ -5,13 +5,13 @@ returns captured output; `start` returns a `Child` that can exchange stdin,
 drain stdout and stderr incrementally, poll or wait for exit, and be killed.
 
 ```rust
-import std/process { run }
+from std.process import run
 
 fun main() {
     let args = ["--version"]
     match run("git", args) {
-        Ok(out) -> print(out.stdout),
-        Err(e) -> print("could not run git: ${e.message}"),
+        case Ok(out) { print(out.stdout) }
+        case Err(e) { print("could not run git: ${e.message}") }
     }
 }
 ```
@@ -19,7 +19,7 @@ fun main() {
 ## Importing
 
 ```rust
-import std/process { run, run_with_input, start }
+from std.process import run, run_with_input, start
 ```
 
 Bring in just the functions you call. `Output`, `Child`, and their methods
@@ -28,7 +28,11 @@ come in with the module and need no separate selectors.
 ## The `Output` type
 
 ```rust
-struct Output { code: Int, stdout: String, stderr: String }
+class Output {
+    code: int
+    stdout: str
+    stderr: str
+}
 ```
 
 A finished child's captured result.
@@ -44,13 +48,13 @@ A finished child's captured result.
 True when `code` is `0`.
 
 ```rust
-import std/process { run }
+from std.process import run
 
 fun main() {
-    let no_args: List<String> = []
+    let no_args: list[str] = []
     match run("true", no_args) {
-        Ok(out) -> print(out.success()),     // true
-        Err(e) -> print(e.message),
+        case Ok(out) { print(out.success()) } // true
+        case Err(e) { print(e.message) }
     }
 }
 ```
@@ -58,7 +62,9 @@ fun main() {
 ## The `Child` type
 
 ```rust
-struct Child { id: Int }
+class Child {
+    id: int
+}
 ```
 
 `start` returns a handle to a child that may still be running. Its opaque
@@ -113,13 +119,13 @@ stdout and stderr so the process does not block on full pipes. Drain the
 buffers while it runs and call `free` when finished.
 
 ```rust
-import std/process { start }
-import std/sync { sleep_millis }
+from std.process import start
+from std.sync import sleep_millis
 
 fun main() {
     let args = ["--version"]
     match start("git", args) {
-        Ok(child) -> {
+        case Ok(child) {
             while child.running() {
                 let chunk = child.read_stdout()
                 if chunk.length() > 0 {
@@ -127,12 +133,12 @@ fun main() {
                 }
                 sleep_millis(10)
             }
-            print(child.read_stdout())       // drain bytes written before exit
+            print(child.read_stdout()) // drain bytes written before exit
             let code = child.wait()
             child.free()
             print("exit ${code}")
-        },
-        Err(e) -> print("could not start git: ${e.message}"),
+        }
+        case Err(e) { print("could not start git: ${e.message}") }
     }
 }
 ```
@@ -141,20 +147,20 @@ For an interactive child, call `write_stdin` as needed and then
 `close_stdin` to send EOF:
 
 ```rust
-import std/process { start }
+from std.process import start
 
 fun main() {
-    let no_args: List<String> = []
+    let no_args: list[str] = []
     match start("cat", no_args) {
-        Ok(child) -> {
+        case Ok(child) {
             child.write_stdin("hello\n")
             child.close_stdin()
             let code = child.wait()
             print(child.read_stdout())
             child.free()
             print("exit ${code}")
-        },
-        Err(e) -> print(e.message),
+        }
+        case Err(e) { print(e.message) }
     }
 }
 ```
@@ -169,20 +175,20 @@ When a program takes no arguments, pass an explicitly typed empty list so the
 element type is known:
 
 ```rust
-let no_args: List<String> = []
+let no_args: list[str] = []
 ```
 
 A bare `[]` has no element type the checker can infer here, so the annotation
 is required.
 
 ```rust
-import std/process { run }
+from std.process import run
 
 fun main() {
     let args = ["-l", "/tmp"]
     match run("ls", args) {
-        Ok(out) -> print(out.stdout),
-        Err(e) -> print("spawn failed: ${e.message}"),
+        case Ok(out) { print(out.stdout) }
+        case Err(e) { print("spawn failed: ${e.message}") }
     }
 }
 ```
@@ -193,13 +199,13 @@ Like `run`, but writes `input` to the child's stdin and then closes it. Use
 this for programs that read from standard input.
 
 ```rust
-import std/process { run_with_input }
+from std.process import run_with_input
 
 fun main() {
-    let no_args: List<String> = []
+    let no_args: list[str] = []
     match run_with_input("cat", no_args, "hello\n") {
-        Ok(out) -> print(out.stdout),        // hello
-        Err(e) -> print(e.message),
+        case Ok(out) { print(out.stdout) } // hello
+        case Err(e) { print(e.message) }
     }
 }
 ```
@@ -217,12 +223,12 @@ is not found or cannot be executed. The error is
 text. The `Error` type comes from [std/error](error.md).
 
 ```rust
-import std/process { run }
+from std.process import run
 
 fun main() {
     let args = ["status", "--short"]
     match run("git", args) {
-        Ok(out) -> {
+        case Ok(out) {
             if out.success() {
                 print(out.stdout)
             } else {
@@ -230,8 +236,8 @@ fun main() {
                 print("git exited with ${out.code}")
                 print(out.stderr)
             }
-        },
-        Err(e) -> print("could not start git: ${e.message}"),
+        }
+        case Err(e) { print("could not start git: ${e.message}") }
     }
 }
 ```
@@ -242,20 +248,14 @@ Run `git` to print the current branch name, falling back to a label when the
 command is missing or reports a failure.
 
 ```rust
-import std/process { run }
-import std/string
+from std.process import run
+import std.string
 
-fun current_branch() -> String {
+fun current_branch() -> str {
     let args = ["rev-parse", "--abbrev-ref", "HEAD"]
     return match run("git", args) {
-        Ok(out) -> {
-            if out.success() {
-                out.stdout.trim()
-            } else {
-                "unknown"
-            }
-        },
-        Err(_) -> "no git",
+        case Ok(out) { out.stdout.trim() if out.success() else "unknown" }
+        case Err(_) { "no git" }
     }
 }
 
