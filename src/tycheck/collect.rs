@@ -579,7 +579,7 @@ fn fill_struct(
 /// `CFloat`, `CDouble`, `CStr`, `CPtr<T>`, `CFnPtr`) or a nested `@repr(C)`
 /// struct. There is no size limit: up to 16 bytes the struct crosses in
 /// registers, and a larger one in memory (the System V MEMORY class) or by
-/// reference (Windows x64, AArch64). See `docs/v2/specs/ffi-extensions.md`.
+/// reference (Windows x64, AArch64). See `docs/specs/ffi-extensions.md`.
 fn validate_repr_c(id: DeclId, span: &Span, env: &TypeEnv) -> Result<(), RavenError> {
     repr_c_struct_layout(id, span, env, &mut Vec::new())?;
     Ok(())
@@ -1120,13 +1120,9 @@ fn resolve_type_path(
                 args,
             })
         }
-        Binding::Trait(_) => Err(RavenError::ty(
-            TypeError::Custom(format!(
-                "`{}` is a trait; bare trait types are not yet supported (use `dyn Trait` in a future release)",
-                name
-            )),
-            head.span.clone(),
-        )),
+        // A trait used as a type is a trait object, as `dyn Trait`: any
+        // value whose type implements the trait fits.
+        Binding::Trait(_) => resolve_dyn(path, resolved, env),
         Binding::SelfType => self_ty
             .cloned()
             .map(|t| Ty::SelfTy(Box::new(t)))

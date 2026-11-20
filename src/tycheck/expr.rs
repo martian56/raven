@@ -310,7 +310,7 @@ struct Checker<'a, 'b> {
     /// Accumulated diagnostics for this body. Statement and item checking
     /// recover at their boundaries (binding a failed value to `Ty::Error`)
     /// and push the error here instead of returning it, so one compile can
-    /// report many independent errors. See `docs/v2/specs/tycheck.md`.
+    /// report many independent errors. See `docs/specs/tycheck.md`.
     errors: Vec<RavenError>,
     /// Binding keys of `const` locals in this body, used to reject a
     /// reassignment of an immutable local.
@@ -409,7 +409,17 @@ impl<'a, 'b> Checker<'a, 'b> {
                 self.lambda_hint = Some(params);
             }
         }
+        // A list literal passed for `list[Trait]` converts each element.
+        let prev_hint = self.array_hint.take();
+        if let ExprKind::Array(_) = &arg.kind {
+            if let Ty::List(elem) = self.infer.resolve(expected) {
+                if matches!(*elem, Ty::Dyn { .. }) {
+                    self.array_hint = Some(*elem);
+                }
+            }
+        }
         let r = self.check_expr(arg);
+        self.array_hint = prev_hint;
         self.lambda_hint = None;
         r
     }
@@ -1627,6 +1637,15 @@ impl<'a, 'b> Checker<'a, 'b> {
             let v = self.infer.fresh(span.clone());
             return Ok(Ty::List(Box::new(Ty::Var(v))));
         }
+        // Elements of a list of trait objects each convert on their own, so
+        // `[Circle(1.0), Rect(2.0, 3.0)]` fits `list[Shape]`.
+        if let Some(hint @ Ty::Dyn { .. }) = self.array_hint.clone() {
+            for it in items {
+                let t = self.check_expr(it)?;
+                self.unify(&hint, &t, &it.span)?;
+            }
+            return Ok(Ty::List(Box::new(hint)));
+        }
         let first = self.check_expr(&items[0])?;
         for it in &items[1..] {
             let t = self.check_expr(it)?;
@@ -1857,7 +1876,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             // function is passed as its C-ABI address; the signature match
             // is the programmer's responsibility, like C. A captured local
             // (a closure value) or a function with a non-FFI signature is
-            // rejected. See `docs/v2/specs/std-ffi.md`.
+            // rejected. See `docs/specs/std-ffi.md`.
             if matches!(resolved_param.strip_self(), Ty::Ffi(FfiTy::CFnPtr)) {
                 self.check_callback_arg(arg, resolved_arg.strip_self())?;
                 continue;
@@ -1940,7 +1959,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         // a captured closure) lowers to a generated trampoline whose last
         // argument is a `userdata` pointer C threads back to it; the closure
         // itself must be passed to the C function's `userdata` slot (a
-        // `CPtr<Unit>` parameter). See `docs/v2/specs/std-ffi.md`.
+        // `CPtr<Unit>` parameter). See `docs/specs/std-ffi.md`.
         let is_top_level_fn = matches!(&arg.kind, ExprKind::Ident { .. })
             && matches!(
                 self.resolved.map.lookup(&arg.span),
@@ -2140,7 +2159,7 @@ impl<'a, 'b> Checker<'a, 'b> {
     /// arguments. The resolved type argument is recorded under the callee
     /// span so HIR lowering can carry it (a generic parameter `T` resolves
     /// to `Ty::Param`, grounded per monomorphization in MIR). See
-    /// `docs/v2/specs/reflection.md`.
+    /// `docs/specs/reflection.md`.
     fn check_reflection_builtin(
         &mut self,
         name: &str,
@@ -2210,7 +2229,7 @@ impl<'a, 'b> Checker<'a, 'b> {
     /// Both carry the type argument `T` at the callee span so MIR grounds it
     /// per monomorphization (the box site knows the static tag, the cast site
     /// knows the tag to compare). The other three take an `Any` value and no
-    /// type argument. See `docs/v2/specs/runtime-reflection.md`.
+    /// type argument. See `docs/specs/runtime-reflection.md`.
     fn check_runtime_reflection_builtin(
         &mut self,
         name: &str,
