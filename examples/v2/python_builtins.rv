@@ -1,0 +1,53 @@
+class Countdown: Iterator[int] {
+    n: int
+
+    fun next(self) -> Option[int] {
+        if self.n == 0 {
+            return None
+        }
+        self.n -= 1
+        return Some(self.n + 1)
+    }
+}
+
+fun builtins() {
+    let xs = [3, 1, 2]
+    print("${len(xs)} ${sum(xs)} ${min(xs)} ${max(xs)} ${sorted(xs)} ${reversed(xs)}")
+    print("${min(4, 9)} ${max(4, 9)} ${len("héllo")} ${str(42) + "!"}")
+    print("${2 in xs} ${5 in xs} ${5 not in xs}")
+    for (i, x) in enumerate(xs) {
+        print("${i}=${x}")
+    }
+    for (a, b) in zip(xs, ["a", "b", "c"]) {
+        print("${a}${b}")
+    }
+    var total = 0
+    for i in range(5) {
+        total += i
+    }
+    for i in range(2, 4) {
+        total += i
+    }
+    print(total)
+    let ages = {"ada": 36, "alan": 41}
+    for (name, age) in ages {
+        print("${name} ${age}")
+    }
+    print("${"ada" in ages} ${"bob" in ages}")
+    let s = {1, 2, 3}
+    for x in s {
+        print(x)
+    }
+    print(2 in s)
+    for c in "héy" {
+        print(c)
+    }
+    print("ell" in "hello")
+    for k in Countdown(3) {
+        print(k)
+    }
+}
+
+fun main() {
+    builtins()
+}

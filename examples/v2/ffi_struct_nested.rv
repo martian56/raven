@@ -9,13 +9,13 @@
 import std.list
 
 @repr(C)
-struct Inner {
+class Inner {
     a: CInt
     b: CInt
 }
 
 @repr(C)
-struct Outer {
+class Outer {
     inner: Inner
     c: CInt
 }

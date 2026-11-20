@@ -946,14 +946,19 @@ pub struct TestReport {
 }
 
 /// Discover, compile, and run the package's tests under the default cache.
-pub fn test(project_dir: &Path) -> Result<TestReport, OpError> {
-    test_in(project_dir, &pkg::cache_root())
+pub fn test(project_dir: &Path, filter: Option<&str>) -> Result<TestReport, OpError> {
+    test_in(project_dir, &pkg::cache_root(), filter)
 }
 
 /// Run every `fun test_*()` found in the package's `*_test.rv` files. Each test
 /// runs in its own process (a small generated dispatcher selects the test by
 /// name) so a panic from a failed assertion fails only that test, not the run.
-pub fn test_in(project_dir: &Path, cache_root: &Path) -> Result<TestReport, OpError> {
+/// With `filter`, only tests whose name contains it run.
+pub fn test_in(
+    project_dir: &Path,
+    cache_root: &Path,
+    filter: Option<&str>,
+) -> Result<TestReport, OpError> {
     let manifest = Manifest::load(project_dir.join(MANIFEST_FILE_NAME))?;
     let (_outcome, _report) = install_in(project_dir, cache_root)?;
     let lock_path = project_dir.join(LOCK_FILE_NAME);
@@ -970,7 +975,10 @@ pub fn test_in(project_dir: &Path, cache_root: &Path) -> Result<TestReport, OpEr
     // Each suite is (relative import path of the test file, test function names).
     let mut suites: Vec<(String, Vec<String>)> = Vec::new();
     for file in discover_test_files(project_dir)? {
-        let names = test_functions_in(&file)?;
+        let mut names = test_functions_in(&file)?;
+        if let Some(f) = filter {
+            names.retain(|n| n.contains(f));
+        }
         if !names.is_empty() {
             suites.push((test_import_path(project_dir, &file), names));
         }
@@ -1181,9 +1189,9 @@ fn test_import_path(project_dir: &Path, file: &Path) -> String {
 /// Render a runner that imports a test file's functions and calls the one named
 /// by the first process argument. Running it per test name isolates panics.
 fn generate_test_dispatcher(import: &str, names: &[String]) -> String {
-    let mut src = String::from("import std/env { arg_at }\n");
+    let mut src = String::from("from std.env import arg_at\n");
     src.push_str(&format!(
-        "import \"{}\" {{ {} }}\n\n",
+        "from \"{}\" import {}\n\n",
         import,
         names.join(", ")
     ));
@@ -1828,7 +1836,7 @@ mod tests {
         proj.write_manifest("[package]\nname = \"mylib\"\nversion = \"0.1.0\"\n");
         std::fs::write(
             proj.root.join(LIB_ENTRY_FILE),
-            "fun add(a: Int, b: Int) -> Int {\n    return a + b\n}\n",
+            "fun add(a: int, b: int) -> int {\n    return a + b\n}\n",
         )
         .expect("write lib.rv");
         let cache = proj.cache_root();
@@ -1848,7 +1856,7 @@ mod tests {
         proj.write_manifest("[package]\nname = \"mylib\"\nversion = \"0.1.0\"\n");
         std::fs::write(
             proj.root.join(LIB_ENTRY_FILE),
-            "fun add(a: Int, b: Int) -> Int {\n    return a + b\n}\n",
+            "fun add(a: int, b: int) -> int {\n    return a + b\n}\n",
         )
         .expect("write lib.rv");
         let cache = proj.cache_root();
@@ -1876,7 +1884,7 @@ mod tests {
         let f = proj.root.join("a_test.rv");
         std::fs::write(
             &f,
-            "fun test_a() {}\nfun test_b(x: Int) {}\nfun helper() {}\nfun test_c() {}\n",
+            "fun test_a() {}\nfun test_b(x: int) {}\nfun helper() {}\nfun test_c() {}\n",
         )
         .unwrap();
         let names = test_functions_in(&f).unwrap();
@@ -1889,7 +1897,7 @@ mod tests {
             "./src/a_test",
             &["test_a".to_string(), "test_b".to_string()],
         );
-        assert!(src.contains("import \"./src/a_test\" { test_a, test_b }"));
+        assert!(src.contains("from \"./src/a_test\" import test_a, test_b"));
         assert!(src.contains("if name.equals(\"test_a\") {"));
         assert!(src.contains("} else if name.equals(\"test_b\") {"));
         assert!(src.contains("test_a()"));

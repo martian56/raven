@@ -72,7 +72,7 @@ name (a different shape) does not reach `greet`.
 
 ```rust
 Response.text("plain") // 200, text/plain
-Response.html("<h1>hi</h1>") // 200, text/html
+Response.html("<h1>hi[/h1]") // 200, text/html
 Response.json("{\"ok\":true}") // 200, application/json
 Response.created("made it") // 201
 Response.not_found() // 404
@@ -158,8 +158,8 @@ fun list_messages(req: Request) -> Response {
 }
 ```
 
-To fetch one message by its index, the captured `:id` arrives as a `String`, so
-parse it. `parse_int` returns an `Option<Int>`, which a `match` turns into
+To fetch one message by its index, the captured `:id` arrives as a `str`, so
+parse it. `parse_int` returns an `Option[int]`, which a `match` turns into
 either a lookup or a `400`:
 
 ```rust
@@ -203,7 +203,7 @@ fun messages_json() -> str {
 }
 
 fun home(req: Request) -> Response {
-    var body = "<h1>Guestbook</h1><ul>"
+    var body = "<h1>Guestbook[/h1]<ul>"
     var i = 0
     while i < messages.len() {
         body = body.concat("<li>").concat(messages[i]).concat("</li>")

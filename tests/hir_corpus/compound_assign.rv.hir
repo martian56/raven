@@ -1,6 +1,6 @@
 (hir
   (struct "Counter"
-    (field "value" Int)
+    (field "value" int)
   )
   (fn "bump" params=("c":Counter) ret=Counter
     (body ty=()
@@ -14,11 +14,11 @@
         (target-field name="value"
           (ident "__hir_recv_0" ty=Counter)
         )
-        (binary + ty=Int
-          (field-access "value" ty=Int
+        (binary + ty=int
+          (field-access "value" ty=int
             (ident "__hir_recv_0" ty=Counter)
           )
-          (int 1 ty=Int)
+          (int 1 ty=int)
         )
       )
       (stmt-expr
@@ -28,28 +28,28 @@
       )
     )
   )
-  (fn "bump_local" params=() ret=Int
+  (fn "bump_local" params=() ret=int
     (body ty=()
-      (let "x" ty=Int
-        (int 0 ty=Int)
+      (let "x" ty=int
+        (int 0 ty=int)
       )
       (assign
         (target-ident "x")
-        (binary + ty=Int
-          (ident "x" ty=Int)
-          (int 5 ty=Int)
+        (binary + ty=int
+          (ident "x" ty=int)
+          (int 5 ty=int)
         )
       )
       (assign
         (target-ident "x")
-        (binary - ty=Int
-          (ident "x" ty=Int)
-          (int 1 ty=Int)
+        (binary - ty=int
+          (ident "x" ty=int)
+          (int 1 ty=int)
         )
       )
       (stmt-expr
         (return ty=<error>
-          (ident "x" ty=Int)
+          (ident "x" ty=int)
         )
       )
     )

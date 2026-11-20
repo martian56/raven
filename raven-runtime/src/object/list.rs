@@ -144,6 +144,35 @@ pub extern "C" fn raven_list_push(l: *mut List, payload: *const u8) {
     }
 }
 
+/// Make room for at least `additional` more elements without further
+/// growth. No-op when the capacity already suffices or `l` is null.
+#[no_mangle]
+pub extern "C" fn raven_list_reserve(l: *mut List, additional: i64) {
+    if l.is_null() || additional <= 0 {
+        return;
+    }
+    // SAFETY: caller passes a pointer obtained from a constructor.
+    let (len, cap, elem_size, elem_align) = unsafe {
+        (
+            (*l).header.len,
+            (*l).header.cap,
+            (*l).element_size,
+            (*l).element_align,
+        )
+    };
+    let need = (len as i64).saturating_add(additional).min(u32::MAX as i64) as u32;
+    if elem_size == 0 || need <= cap {
+        return;
+    }
+    grow_buffer(
+        l,
+        elem_size,
+        elem_align,
+        cap,
+        need.max(cap.saturating_mul(2)),
+    );
+}
+
 /// Remove and return the last element of the list.
 ///
 /// Copies `element_size` bytes from the slot at index `header.len - 1`
@@ -305,6 +334,14 @@ fn grow_buffer(l: *mut List, elem_size: u32, elem_align: u32, old_cap: u32, new_
     }
     true
 }
+
+// Compiled code reads these fields inline at fixed offsets.
+const _: () = {
+    assert!(std::mem::offset_of!(List, header) == 0);
+    assert!(std::mem::offset_of!(List, elements) == 32);
+    assert!(std::mem::offset_of!(crate::object::ObjectHeader, len) == 8);
+    assert!(std::mem::offset_of!(crate::object::ObjectHeader, cap) == 12);
+};
 
 #[cfg(test)]
 mod tests {

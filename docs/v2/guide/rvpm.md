@@ -122,7 +122,7 @@ Sections:
 - `[ffi]` (optional): native code linked into a program that uses the
   package. `sources` are bundled C files (relative to the package root)
   that `rvpm build` compiles and links in, `libs` are libraries to link
-  (`-l<name>`), and `link_args` are raw linker arguments. The `[ffi]` of
+  (`-l[name]`), and `link_args` are raw linker arguments. The `[ffi]` of
   every dependency is collected, so a package can ship its own C (for
   example a bundled SQLite) and a consumer needs no system library
   preinstalled. Building bundled `sources` does need a **C compiler** on
@@ -312,10 +312,12 @@ registered-command matching.
 ### rvpm test
 
 ```bash
-rvpm test [-p <package> | --workspace]
+rvpm test [NAME] [-p <package> | --workspace]
 ```
 
-Discovers and runs the package's tests. A test is a zero-argument function
+Discovers and runs the package's tests. With `NAME`, only the tests whose
+name contains it run, so `rvpm test parse` runs `test_parse_empty`,
+`test_parse_nested`, and so on. A test is a zero-argument function
 named `test_*` in a `*_test.rv` file anywhere in the package (commonly
 under `src/` or a `tests/` directory). It asserts with `std/test`; a failed
 assertion panics, which the runner reports as a failure.

@@ -9,7 +9,9 @@
       (expr-stmt
         (for
           (pattern ident:"x")
-          (ident "xs")
+          (method-call "__for_iter"
+            (ident "xs")
+          )
           (body
             (trailing
               (method-call "push"

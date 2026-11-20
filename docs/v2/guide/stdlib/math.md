@@ -23,33 +23,33 @@ rounding functions (`sqrt`, `sin`, `floor`, ...) bind to the platform C math
 library, so their accuracy is the host libm's. The integer helpers,
 `pow_int`, and the constants are pure Raven.
 
-## Int and Float are separate
+## int and float are separate
 
-Raven has no implicit `Int` to `Float` conversion, and there is no numeric
+Raven has no implicit `int` to `float` conversion, and there is no numeric
 overloading. Integer math and float math therefore come as two distinct sets
 of functions, named apart (`min_int` vs `min`, `abs_int` vs `abs`). Pass an
-`Int` to the `_int` helpers and a `Float` to the float helpers. The language
+`int` to the `_int` helpers and a `float` to the float helpers. The language
 has no numeric cast yet, so the rounding functions (`floor`, `round`, and
-friends) return a whole-valued `Float`, not an `Int`.
+friends) return a whole-valued `float`, not an `int`.
 
 ## Integer functions
 
-All take and return `Int`.
+All take and return `int`.
 
-### `abs_int(x: Int) -> Int`
+### `abs_int(x: int) -> int`
 
 Absolute value.
 
-### `min_int(a: Int, b: Int) -> Int` and `max_int(a: Int, b: Int) -> Int`
+### `min_int(a: int, b: int) -> int` and `max_int(a: int, b: int) -> int`
 
 The smaller and the larger of two integers.
 
-### `clamp_int(x: Int, lo: Int, hi: Int) -> Int`
+### `clamp_int(x: int, lo: int, hi: int) -> int`
 
 Clamp `x` into the closed range `[lo, hi]`: return `lo` if `x < lo`, `hi` if
 `x > hi`, otherwise `x`.
 
-### `pow_int(base: Int, exp: Int) -> Int`
+### `pow_int(base: int, exp: int) -> int`
 
 `base` raised to `exp`, computed by squaring. A negative `exp` has no integer
 result and returns `0`. The result is exact when it fits in a 64-bit signed
@@ -68,12 +68,12 @@ fun main() {
 }
 ```
 
-### `gcd(a: Int, b: Int) -> Int`
+### `gcd(a: int, b: int) -> int`
 
 Greatest common divisor of `a` and `b`, always non-negative. `gcd(0, 0)` is
 `0`.
 
-### `lcm(a: Int, b: Int) -> Int`
+### `lcm(a: int, b: int) -> int`
 
 Least common multiple of `a` and `b`. Zero when either argument is zero.
 
@@ -86,7 +86,7 @@ fun main() {
 }
 ```
 
-### `sign_int(n: Int) -> Int`
+### `sign_int(n: int) -> int`
 
 The sign of an integer: `1` when positive, `-1` when negative, `0` for zero.
 
@@ -102,32 +102,32 @@ fun main() {
 
 ## Float functions
 
-All take and return `Float`.
+All take and return `float`.
 
-### `abs(x: Float) -> Float`
+### `abs(x: float) -> float`
 
 Absolute value (the C `fabs`).
 
-### `min(a: Float, b: Float) -> Float` and `max(a: Float, b: Float) -> Float`
+### `min(a: float, b: float) -> float` and `max(a: float, b: float) -> float`
 
 The smaller and the larger of two floats.
 
-### `clamp(x: Float, lo: Float, hi: Float) -> Float`
+### `clamp(x: float, lo: float, hi: float) -> float`
 
 Clamp `x` into the closed range `[lo, hi]`.
 
-### `sqrt(x: Float) -> Float`
+### `sqrt(x: float) -> float`
 
 Square root.
 
-### `pow(base: Float, exp: Float) -> Float`
+### `pow(base: float, exp: float) -> float`
 
 `base` raised to `exp`.
 
-### `fmod(a: Float, b: Float) -> Float`
+### `fmod(a: float, b: float) -> float`
 
 Floating-point remainder of `a / b`, with the sign of `a`. The `%` operator
-does not work on `Float`, so this is the way to take a float remainder.
+does not work on `float`, so this is the way to take a float remainder.
 
 ```rust
 from std.math import fmod
@@ -137,11 +137,11 @@ fun main() {
 }
 ```
 
-### `cbrt(x: Float) -> Float`
+### `cbrt(x: float) -> float`
 
 Cube root.
 
-### `hypot(a: Float, b: Float) -> Float`
+### `hypot(a: float, b: float) -> float`
 
 `sqrt(a*a + b*b)`, computed without intermediate overflow.
 
@@ -154,7 +154,7 @@ fun main() {
 }
 ```
 
-### `sign(x: Float) -> Float`
+### `sign(x: float) -> float`
 
 The sign of a float: `1.0` when positive, `-1.0` when negative, `0.0` for
 zero.
@@ -168,19 +168,19 @@ fun main() {
 }
 ```
 
-### `exp(x: Float) -> Float`
+### `exp(x: float) -> float`
 
 `e` raised to `x`.
 
-### `ln(x: Float) -> Float`
+### `ln(x: float) -> float`
 
 Natural logarithm (the C `log`).
 
-### `log2(x: Float) -> Float`
+### `log2(x: float) -> float`
 
 Base-2 logarithm.
 
-### `log10(x: Float) -> Float`
+### `log10(x: float) -> float`
 
 Base-10 logarithm.
 
@@ -192,20 +192,20 @@ fun main() {
 }
 ```
 
-### `floor(x: Float) -> Float`, `ceil(x: Float) -> Float`, `round(x: Float) -> Float`, `trunc(x: Float) -> Float`
+### `floor(x: float) -> float`, `ceil(x: float) -> float`, `round(x: float) -> float`, `trunc(x: float) -> float`
 
 Round toward minus infinity, toward plus infinity, to the nearest whole
-value, and toward zero. Each returns a whole-valued `Float`.
+value, and toward zero. Each returns a whole-valued `float`.
 
-### `sin(x: Float) -> Float`, `cos(x: Float) -> Float`, and `tan(x: Float) -> Float`
+### `sin(x: float) -> float`, `cos(x: float) -> float`, and `tan(x: float) -> float`
 
 Sine, cosine, and tangent, with the angle in radians.
 
-### `asin(x: Float) -> Float`, `acos(x: Float) -> Float`, `atan(x: Float) -> Float`
+### `asin(x: float) -> float`, `acos(x: float) -> float`, `atan(x: float) -> float`
 
 Inverse sine, cosine, and tangent. Results are in radians.
 
-### `atan2(y: Float, x: Float) -> Float`
+### `atan2(y: float, x: float) -> float`
 
 The angle in radians of the point `(x, y)` from the positive x-axis, using the
 signs of both arguments to land in the correct quadrant.
@@ -221,7 +221,7 @@ fun main() {
 }
 ```
 
-### `sinh(x: Float) -> Float`, `cosh(x: Float) -> Float`, `tanh(x: Float) -> Float`
+### `sinh(x: float) -> float`, `cosh(x: float) -> float`, `tanh(x: float) -> float`
 
 Hyperbolic sine, cosine, and tangent.
 
@@ -235,7 +235,7 @@ fun main() {
 }
 ```
 
-### `to_radians(deg: Float) -> Float` and `to_degrees(rad: Float) -> Float`
+### `to_radians(deg: float) -> float` and `to_degrees(rad: float) -> float`
 
 Convert between degrees and radians.
 
@@ -266,16 +266,16 @@ fun main() {
 
 ## Special values
 
-### `infinity() -> Float` and `nan() -> Float`
+### `infinity() -> float` and `nan() -> float`
 
 Positive infinity and a NaN (not-a-number) value.
 
-### `is_nan(x: Float) -> Bool`
+### `is_nan(x: float) -> bool`
 
 True when `x` is NaN. A NaN is never equal to itself, so a plain `==` test does
 not detect it; use this.
 
-### `is_inf(x: Float) -> Bool`
+### `is_inf(x: float) -> bool`
 
 True when `x` is positive or negative infinity.
 
@@ -291,18 +291,18 @@ fun main() {
 
 ## Constants
 
-The language has no `Float` const items yet, so the constants are
-zero-argument functions returning `Float`. Call them with `()`.
+The language has no `float` const items yet, so the constants are
+zero-argument functions returning `float`. Call them with `()`.
 
-### `pi() -> Float`
+### `pi() -> float`
 
 3.141592653589793
 
-### `e() -> Float`
+### `e() -> float`
 
 2.718281828459045
 
-### `tau() -> Float`
+### `tau() -> float`
 
 6.283185307179586 (a full turn, `2 * pi`).
 
@@ -339,5 +339,5 @@ fun main() {
 - [std/cmp](cmp.md) for `min`/`max`/`clamp` over the generic `Ord` trait
   rather than numbers directly.
 - [std/random](random.md) for random number generation.
-- The [language reference](../language-reference.md) for the `Int` and
-  `Float` types and numeric literals.
+- The [language reference](../language-reference.md) for the `int` and
+  `float` types and numeric literals.

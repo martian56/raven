@@ -15,7 +15,7 @@ from std.tls import connect, connect_with, upgrade, upgrade_with, config
 
 ## Connecting
 
-### `connect(addr: String, server_name: String) -> Result<TlsStream, Error>`
+### `connect(addr: str, server_name: str) -> Result[TlsStream, Error]`
 
 Open a TCP connection to `addr` (`"host:port"`), start TLS immediately, send
 `server_name` as SNI, and verify the peer against the bundled Mozilla root
@@ -36,7 +36,7 @@ fun main() {
 }
 ```
 
-### `connect_with(addr, server_name, cfg) -> Result<TlsStream, Error>`
+### `connect_with(addr, server_name, cfg) -> Result[TlsStream, Error]`
 
 Connect with a custom `TlsConfig`, for private CAs, client certificates, or a
 development-only skip of certificate verification.
@@ -47,22 +47,22 @@ development-only skip of certificate verification.
 
 Create a TLS client configuration. It starts with the bundled public roots.
 
-### `add_ca_file(path: String) -> TlsConfig`
+### `add_ca_file(path: str) -> TlsConfig`
 
 Trust PEM certificate(s) from `path` in addition to the bundled roots and return
 the config for chaining.
 
-### `add_ca_file_checked(path: String) -> Result<TlsConfig, Error>`
+### `add_ca_file_checked(path: str) -> Result[TlsConfig, Error]`
 
 The checked form of `add_ca_file`. Missing, unreadable, or malformed CA files
 return an `Err` immediately.
 
-### `client_cert(cert_path: String, key_path: String) -> TlsConfig`
+### `client_cert(cert_path: str, key_path: str) -> TlsConfig`
 
 Configure a client certificate chain and private key for mutual TLS and return
 the config for chaining.
 
-### `client_cert_checked(cert_path: String, key_path: String) -> Result<TlsConfig, Error>`
+### `client_cert_checked(cert_path: str, key_path: str) -> Result[TlsConfig, Error]`
 
 The checked form of `client_cert`. Missing, unreadable, or malformed certificate
 or key files return an `Err` immediately.
@@ -90,31 +90,31 @@ fun main() {
 
 ## STARTTLS
 
-### `upgrade(stream: TcpStream, server_name: String) -> Result<TlsStream, Error>`
+### `upgrade(stream: TcpStream, server_name: str) -> Result[TlsStream, Error]`
 
 Turn an already-connected `std/net` TCP stream into a TLS stream on the same
 socket. This is for protocols that negotiate in plaintext and then switch to
 TLS. On success the original TCP stream is consumed.
 
-### `upgrade_with(stream, server_name, cfg) -> Result<TlsStream, Error>`
+### `upgrade_with(stream, server_name, cfg) -> Result[TlsStream, Error]`
 
 The configured form of `upgrade`.
 
 ## Stream Methods
 
-### `read(max: Int) -> Result<String, Error>`
+### `read(max: int) -> Result[str, Error]`
 
 Read up to `max` decrypted bytes. A clean close returns `Ok("")`.
 
-### `read_all() -> Result<String, Error>`
+### `read_all() -> Result[str, Error]`
 
 Read decrypted bytes until the peer closes the connection.
 
-### `write(data: String) -> Result<Int, Error>`
+### `write(data: str) -> Result[int, Error]`
 
 Encrypt and send all bytes in `data`, returning the count written.
 
-### `set_read_timeout_ms(ms: Int)`, `set_write_timeout_ms(ms: Int)`
+### `set_read_timeout_ms(ms: int)`, `set_write_timeout_ms(ms: int)`
 
 Set per-stream read or write timeouts. `0` disables the timeout.
 

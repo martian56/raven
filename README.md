@@ -26,8 +26,9 @@
 
 ## Why Raven
 
-- Reads like Python with braces: classes, named and default arguments, `x => x * 2` lambdas, inferred types.
-- Compiled to native machine code through Cranelift, into a single static binary.
+- Reads like Python with braces: classes, tuples, comprehensions, `x in xs`, f-string formatting, `len`/`sorted`/`enumerate` and the other builtins, named and default arguments, `x => x * 2` lambdas, inferred types.
+- Runs at native speed: compiled through Cranelift into a single static binary, ahead of Go on four of five benchmarks below and within reach of C and Rust.
+- Compiles a 10,000-line program in about 0.7 seconds.
 - Static typing with generics, traits, and sum types checked by an exhaustive `match`.
 - A tracing garbage collector and `Result`/`Option` instead of `null`.
 - Goroutines and channels that run in parallel across CPU cores (an M:N scheduler over a multi-threaded collector), with mutexes, wait groups, and `select`, and a C FFI for native libraries.
@@ -41,15 +42,27 @@ class User {
     age: int
 }
 
-fun greet(user: User) -> str {
-    return "Hello ${user.name}, you are ${user.age}"
-}
-
 fun main() {
-    let u = User(name: "Raven", age: 2)
-    print(greet(u))
+    let users = [User("ada", 36), User("alan", 41), User("grace", 85)]
+    let names = [u.name for u in users if u.age > 40]
+    let ages = {u.name: u.age for u in users}
+    for (i, name) in enumerate(sorted(names)) {
+        print("${i + 1}. ${name:<6} ${ages[name]:>3}")
+    }
 }
 ```
+
+## Performance
+
+Best of seven runs in milliseconds on Windows x86_64 (`benchmarks/runtime`):
+
+| Benchmark | Raven | C (gcc -O2) | Go | Rust (-O) |
+|-----------|------:|------:|---:|-----:|
+| fib(35), recursion | 104 | 93 | 117 | 85 |
+| 1M dict inserts and lookups | 135 | 132 | 277 | 200 |
+| 20M sieve | 351 | 267 | 319 | 276 |
+| 200k string build | 90 | 101 | 93 | 87 |
+| binary trees, allocation | 215 | 465 | 272 | 437 |
 
 ## Install
 

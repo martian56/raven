@@ -9,7 +9,7 @@
 ## Features
 
 - **Syntax highlighting** for Raven v2 source, including PascalCase types, traits, generics, `match` arms, `${...}` string interpolation, `c"..."` and `"""..."""` strings, ranges, and `extern` blocks
-- **Snippets** for common patterns (bindings, functions, control flow, structs, enums, traits, impls, `match`, closures, `defer`, imports, `main`, printing)
+- **Snippets** for common patterns (bindings, functions, control flow, classes, enums, traits, impls, `match`, comprehensions, lambdas, concurrency, `defer`, imports, `main`, printing)
 - **Comments & brackets**: line comments (`//`), block comments, sensible bracket/indent behavior for `.rv` files
 - **Run Raven File**: opens a terminal and runs the current file with the `raven` CLI (see below)
 - **Hovers & completions** for built-in functions and common keywords
@@ -47,11 +47,13 @@ Type the prefix, then **Tab** to expand:
 
 | Prefix | Use for |
 |--------|---------|
-| `let`, `leti`, `const`, `fun`, `fune`, `fung` | Bindings and functions |
-| `if`, `ifelse`, `elseif`, `match` | Branches and pattern matching |
-| `while`, `loop`, `for`, `foreach` | Loops |
-| `struct`, `structg`, `enum`, `trait`, `impl`, `implfor` | Types, traits, and methods |
-| `import`, `imports`, `extern`, `defer`, `closure` | Modules, FFI, deferral, closures |
+| `let`, `leti`, `var`, `fun`, `fune`, `fung` | Bindings and functions |
+| `if`, `ifelse`, `elseif`, `ifv`, `match` | Branches and pattern matching |
+| `while`, `loop`, `for`, `foreach`, `forenum` | Loops |
+| `comp`, `dcomp`, `lambda` | Comprehensions and lambdas |
+| `class`, `classg`, `enum`, `trait`, `traitm`, `impl`, `implfor` | Types, traits, and methods |
+| `import`, `from`, `extern`, `defer`, `assert` | Modules, FFI, deferral, and checks |
+| `spawn`, `task`, `channel`, `channelb` | Concurrency |
 | `print`, `printi`, `main` | Output and program entry |
 
 ---

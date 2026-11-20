@@ -54,7 +54,7 @@ compile-time constant whose initializer is a literal or arithmetic over
 literals; it is inlined at each use.
 
 ```rust
-const MAX: int = 100
+let MAX: int = 100
 var counter = 0
 
 fun record() {
@@ -76,13 +76,34 @@ fun record() {
 | `set[T]` | hash set |
 | `Option[T]` | `Some(value)` or `None` |
 | `Result[T, E]` | `Ok(value)` or `Err(error)` |
+| `(A, B)` | tuple of up to six values |
 
 `T?` is shorthand for `Option[T]`. Integer literals accept `0xff`, `0b1010`,
 `0o17`, and `_` separators such as `1_000_000`.
 
-There are no implicit numeric conversions. Convert with `n.to_float()` and
-`x.to_int()` (truncates toward zero); parse text with `"42".parse_int()` and
-`"3.5".parse_float()`, which return an `Option`.
+There are no implicit numeric conversions. Convert with `x as float`,
+`x as int` (truncates toward zero), and `x as str`, or with the builtins
+`float(x)`, `int(x)`, and `str(x)`. `int("42")` and `float("3.5")` parse text
+and panic on bad input; `"42".parse_int()` and `"3.5".parse_float()` return an
+`Option` instead. A float always prints with its point: `5.0`.
+
+## Tuples
+
+```rust
+fun divmod(a: int, b: int) -> (int, int) {
+    return (a / b, a % b)
+}
+
+let (q, r) = divmod(17, 5)
+let pair = ("ada", 36)
+print(pair.0, pair.1)
+var a = 1
+var b = 2
+(a, b) = (b, a)
+```
+
+Tuples compare, hash, order, and print by their items, so they work as dict
+keys and sort naturally. `()` is the unit value.
 
 ## Strings
 
@@ -93,19 +114,27 @@ which includes every built-in type and, automatically, your own classes.
 ```rust
 let name = "Raven"
 print("Hello, ${name}! 2 + 2 = ${2 + 2}")
+print("${3.14159:.2} [${name:>8}] [${7:03}]") // 3.14 [   Raven] [007]
 ```
 
-`+` joins strings and `+=` appends. String methods (`len`, `split`, `trim`,
-`to_upper`, `starts_with`, `index_of`, `substring`, `parse_int`, and more)
-need no import. Triple-quoted strings (`"""..."""`) are raw and keep
-newlines.
+A format spec after `:` takes an optional fill and alignment (`<`, `>`, `^`),
+a `0` for zero padding, a width, and a precision: `${x:.2}`, `${s:<10}`,
+`${n:*^9}`.
+
+`+` joins strings, `+=` appends, and `"ab" * 3` repeats. `s[1..4]` slices by
+byte offset, `"ell" in s` tests for a substring, and `for c in s` visits each
+character. String methods (`len`, `split`, `strip`, `upper`, `lower`,
+`replace`, `startswith`, `endswith`, `join`, `index_of`, `parse_int`, and
+more) need no import; `" ".join(parts)` joins a list. Triple-quoted strings
+(`"""..."""`) are raw and keep newlines.
 
 ## Operators
 
 - Arithmetic: `+ - * / %`
 - Comparison: `== != < <= > >=`. Comparisons do not chain.
-- Logic: `and`, `or`, `not`. The forms `&&`, `||`, `!` are accepted too;
-  the formatter writes the words.
+- Logic: `and`, `or`, `not`
+- Membership: `x in xs` and `x not in xs` (lists, sets, dict keys, substrings)
+- Conversion: `x as int`, `x as float`, `x as str`
 - Bitwise: `& | ^ << >>`
 - Compound assignment: `+= -= *= /= %= &= |= ^= <<= >>=`
 - Conditional value: `a if cond else b`
@@ -115,6 +144,24 @@ newlines.
 `==` compares values. Every class and enum whose fields can be compared gets
 `==` automatically; a type holding a function or trait object needs a
 written `impl Eq` before it can be compared.
+
+A class supports an operator by defining its method: `add`, `sub`, `mul`,
+`div`, `mod`, and `neg` for arithmetic, `index` and `set_index` for `x[i]`
+and `x[i] = v`. Implementing `Ord` (its `compare` method) gives `<`, `<=`,
+`>`, and `>=`.
+
+```rust
+class Vec2 {
+    x: float
+    y: float
+
+    fun add(self, o: Vec2) -> Vec2 = Vec2(self.x + o.x, self.y + o.y)
+
+    fun mul(self, k: float) -> Vec2 = Vec2(self.x * k, self.y * k)
+}
+
+let v = Vec2(1.0, 2.0) + Vec2(3.0, 4.0) * 2.0
+```
 
 ## Functions
 
@@ -219,6 +266,25 @@ let port = match text.parse_int() {
 The `else` block of a `let ... else` must leave (`return`, `break`,
 `continue`, or `panic`).
 
+## assert
+
+`assert cond` stops the program when `cond` is false. The failure message is
+the condition as written; a message after a comma replaces it. No import is
+needed.
+
+```rust
+fun mean(xs: list[float]) -> float {
+    assert len(xs) > 0, "mean of an empty list"
+    return sum(xs) / float(len(xs))
+}
+
+fun main() {
+    assert mean([3.0, 4.0, 5.0]) == 4.0
+}
+```
+
+A failed `assert x == 5` prints `raven panic: assertion failed: x == 5`.
+
 ## defer
 
 `defer expr` runs `expr` when the function returns, in reverse order of
@@ -301,9 +367,22 @@ and a capitalized name in a pattern must be a variant, so a typo is an error
 instead of a silent catch-all.
 
 Patterns: literals, ranges (`1..=9`), `_`, bindings, variants with payloads,
-class fields (`case Point { x, y } { ... }`), and guards
-(`case n if n > 0 { ... }`). A `match` can also produce a value when every
-case block ends in one.
+tuples (`case (0, y) { ... }`), class fields (`case Point { x, y } { ... }`),
+and guards (`case n if n > 0 { ... }`). Patterns nest to any depth, and the
+exhaustiveness check looks inside them:
+
+```rust
+fun describe(r: Option[Result[int, str]]) -> str {
+    match r {
+        case Some(Ok(0)) { return "zero" }
+        case Some(Ok(n)) { return "ok ${n}" }
+        case Some(Err(e)) { return "error ${e}" }
+        case None { return "nothing" }
+    }
+}
+```
+
+A `match` can also produce a value when every case block ends in one.
 
 ## Collections
 
@@ -315,13 +394,33 @@ let empty_dict = {}
 let empty_set = set()
 ```
 
+`xs[-1]` is the last item and `xs[1..3]` a slice; `xs + ys` joins two lists
+and `[0] * n` repeats one. `d[k]` reads a dict (and panics on a missing key;
+`d.get(k)` returns an `Option`), and `d[k] = v` and `d[k] += 1` write it.
+`for (k, v) in d` visits a dict's pairs and `for x in s` a set's items, both
+in insertion order.
+
+Comprehensions build a collection from a loop:
+
+```rust
+let squares = [x * x for x in range(10) if x % 2 == 0]
+let lengths = {w: len(w) for w in ["hi", "there"]}
+let firsts = {w[0..1] for w in ["ant", "bee", "ape"]}
+```
+
+Python's builtins work on these types: `len`, `sum`, `min`, `max`, `sorted`,
+`reversed`, `enumerate`, `zip`, `range`, `abs`, `round`, and `print`, which
+takes any number of arguments. Each is an ordinary method underneath
+(`len(x)` is `x.len()`), so a file can still define its own function by one
+of these names.
+
 Lists carry `push`, `pop`, `len`, `map`, `filter`, `fold`, `each`, `any`,
 `all`, `find`, `position`, `count`, `first`, `last`, `slice`, `take`,
-`skip`, `reversed`, `extend`, `concat`, `sorted_by`, plus `contains` and
-`index_of` (elements with `Eq`), `sorted`, `sort`, `min`, `max` (elements
-with `Ord`), `sum`, and `join` on `list[str]`. Dicts carry `get` (an
-`Option`), `get_or`, `set`, `has`, `remove`, `keys`, `values`, `entries`, and
-`len`. None of these need an import.
+`skip`, `reversed`, `extend`, `concat`, `sorted_by`, `enumerate`, `zip`,
+plus `contains` and `index_of` (elements with `Eq`), `sorted`, `sort`, `min`,
+`max` (elements with `Ord`), `sum`, and `join` on `list[str]`. Dicts carry
+`get` (an `Option`), `get_or`, `set`, `has`, `remove`, `keys`, `values`,
+`items`, and `len`. None of these need an import.
 
 ## Option and Result
 
@@ -397,7 +496,7 @@ cores on an M:N scheduler and communicate through channels from `std.sync`.
 from std.sync import channel
 
 fun main() {
-    let ch = channel()
+    let ch: Channel[int] = channel()
     spawn {
         for i in 1..=5 {
             ch.send(i)
@@ -411,8 +510,10 @@ fun main() {
 }
 ```
 
-A send on a full channel and a receive on an empty one block only the
-goroutine. When `main` returns, the program exits. `std.sync` also provides
+A `Channel[T]` carries values of any type: classes, strings, tuples. A send on
+a full channel and a receive on an empty one block only the goroutine.
+`let task = spawn { ... }` keeps a handle, and `task.join()` waits for the
+block to finish. When `main` returns, the program exits. `std.sync` also provides
 `select_recv`, a mutex, a wait group, and `sleep_millis`.
 
 ## Modules and imports
@@ -576,7 +677,7 @@ responsibility, as in C.
 
 ### Structs by value
 
-A C struct can cross the boundary by value. Mark the matching Raven struct
+A C struct can cross the boundary by value. Mark the matching Raven class
 `@repr(C)` to give it C memory layout. Its fields may be any C scalars,
 integer-class (`CInt`, `CLong`, `CSize`, `CStr`, `CPtr[T]`, `CFnPtr`) or
 floating-point (`CFloat`, `CDouble`), and a field may itself be a `@repr(C)`
@@ -588,7 +689,7 @@ need to share or mutate it by address.
 
 ```rust
 @repr(C)
-struct Point {
+class Point {
     x: CInt
     y: CInt
 }
@@ -618,7 +719,7 @@ type information.
 
 ### @derive
 
-`@derive(...)` sits on its own line before a `struct` or `enum` and
+`@derive(...)` sits on its own line before a `class` or `enum` and
 synthesizes trait impls from the type definition, so you do not hand write
 `equals`, `hash`, `to_string`, or `debug`. The derivable traits are `Eq`,
 `Hash`, `ToString`, `Debug`, `ToJson`, and `FromJson`. A field or payload
@@ -637,9 +738,9 @@ fun main() {
     let p = Point(x: 1, y: 2)
     let q = Point(x: 1, y: 2)
     print(p.equals(q)) // true
-    print(p.to_string()) // Point { x: 1, y: 2 }
+    print(p.to_string()) // Point(x: 1, y: 2)
 
-    // Derived Eq + Hash let the struct key a Map or join a Set.
+    // Derived Eq + Hash let the class key a dict or join a set.
     let m: dict[Point, int] = Map.new()
     m.set(p, 100)
     print(m.has(q)) // true
@@ -666,7 +767,7 @@ class User {
 fun main() {
     let u = User(id: 7, name: "ada")
     let text = stringify(u.to_json())
-    print(text) // {"id":7,"name":"ada"} (key order is the map layout)
+    print(text) // {"id":7,"name":"ada"}
     match parse(text) {
         case Ok(v) {
             match User.from_json(v) {
@@ -679,7 +780,7 @@ fun main() {
 }
 ```
 
-Object key order follows the map hash-bucket layout, not source order.
+Object keys keep their insertion order.
 Enum variants with named-field payloads are not derivable yet; unit and
 tuple variants are. `Ord` derives a `compare` that orders field by field
 (struct) or by variant then payload (enum).
@@ -733,9 +834,10 @@ a generic function each resolves to the concrete type bound to `T` at that
 instantiation.
 
 ```rust
-struct Point { x: Int, y: Int }
+class Point { x: int, y: int }
 
-fun introspect<T>() {
-    print("type ${type_name<T>()}")
-    let names = field_names<T>()
-    let types = field_types<T>()
+fun introspect[T]() {
+    print("type ${type_name[T]()}")
+    let names = field_names[T]()
+    let types = field_types[T]()
+```

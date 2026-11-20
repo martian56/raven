@@ -275,6 +275,8 @@ fn pretty_stmt(buf: &mut String, stmt: &Stmt, depth: usize) {
     indent(buf, depth);
     match &stmt.kind {
         StmtKind::LetElse { .. } => writeln!(buf, "(let-else)").unwrap(),
+        StmtKind::Assert { .. } => writeln!(buf, "(assert)").unwrap(),
+        StmtKind::LetTuple { .. } => writeln!(buf, "(let-tuple)").unwrap(),
         StmtKind::Let {
             name,
             ty,
@@ -455,6 +457,19 @@ fn pretty_expr(buf: &mut String, expr: &Expr, depth: usize) {
                 indent(buf, depth + 1);
                 buf.push_str(")\n");
             }
+            indent(buf, depth);
+            buf.push_str(")\n");
+        }
+        ExprKind::Comprehension { value, iter, .. } => {
+            buf.push_str("(comprehension\n");
+            pretty_expr(buf, value, depth + 1);
+            pretty_expr(buf, iter, depth + 1);
+            indent(buf, depth);
+            buf.push_str(")\n");
+        }
+        ExprKind::Cast { value, ty } => {
+            buf.push_str(&format!("(cast {}\n", pretty_type(ty)));
+            pretty_expr(buf, value, depth + 1);
             indent(buf, depth);
             buf.push_str(")\n");
         }

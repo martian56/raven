@@ -14,8 +14,70 @@ fun digit_to_float(d: int) -> float {
     return f
 }
 
+extern "C" {
+    fun raven_float_fixed(x: float, places: int) -> str
+}
+
+// `"${x:.2}"`: `x` with exactly `places` decimals.
+fun __fmt_float(x: float, places: int) -> str = raven_float_fixed(x, places)
+
+// `"${s:>8}"`: `s` padded with `fill` to `width` characters. `align` is
+// "<", ">", or "^". Zero fill keeps a leading minus sign in front.
+fun __fmt_pad(s: str, width: int, align: str, fill: str) -> str {
+    let n = s.iter().len()
+    if n >= width {
+        return s
+    }
+    let pad = width - n
+    if fill == "0" and s.starts_with("-") {
+        return "-" + __fmt_pad(s.substring(1, s.len()), width - 1, align, fill)
+    }
+    var left = 0
+    if align == ">" {
+        left = pad
+    } else if align == "^" {
+        left = pad / 2
+    }
+    var out = ""
+    var i = 0
+    while i < left {
+        out = out + fill
+        i += 1
+    }
+    out = out + s
+    while i < pad {
+        out = out + fill
+        i += 1
+    }
+    return out
+}
+
 impl str {
     fun len(self) -> int = __str_len(self)
+
+    // `s[start..end]`: the bytes in `start..end`, clamped to the string.
+    fun slice(self, start: int, end: int) -> str = __str_substring(self, start, end)
+
+    // Each character as a one-character string, for `for c in s`.
+    fun iter(self) -> list[str] {
+        let out: list[str] = []
+        let n = __str_len(self)
+        var i = 0
+        while i < n {
+            let b = __str_byte_at(self, i)
+            var w = 1
+            if b >= 240 {
+                w = 4
+            } else if b >= 224 {
+                w = 3
+            } else if b >= 192 {
+                w = 2
+            }
+            out.push(__str_substring(self, i, i + w))
+            i += w
+        }
+        return out
+    }
 
     fun length(self) -> int {
         return __str_len(self)
@@ -40,6 +102,39 @@ impl str {
     fun concat(self, other: str) -> str {
         return __str_concat(self, other)
     }
+
+    // `"ab" * 3`.
+    fun mul(self, n: int) -> str = self.repeat(n)
+
+    // `" ".join(parts)`: the parts with this string between them.
+    fun join(self, parts: list[str]) -> str = parts.join(self)
+
+    // `int(s)` and `float(s)`: the number this string spells. Panics when it
+    // is not one; use parse_int or parse_float for an Option.
+    fun as_int(self) -> int {
+        match self.strip().parse_int() {
+            case Some(n) { return n }
+            case None { panic("not an int: \"${self}\"") }
+        }
+    }
+
+    fun as_float(self) -> float {
+        match self.strip().parse_float() {
+            case Some(x) { return x }
+            case None { panic("not a float: \"${self}\"") }
+        }
+    }
+
+    fun startswith(self, prefix: str) -> bool = self.starts_with(prefix)
+
+    fun endswith(self, suffix: str) -> bool = self.ends_with(suffix)
+
+    // Python spellings of to_upper, to_lower, and trim.
+    fun upper(self) -> str = self.to_upper()
+
+    fun lower(self) -> str = self.to_lower()
+
+    fun strip(self) -> str = self.trim()
 
     fun to_upper(self) -> str {
         let n = __str_len(self)

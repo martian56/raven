@@ -109,6 +109,11 @@ struct Printer<'a> {
     assigned: std::collections::HashSet<String>,
 }
 
+/// One expression on one line, as `raven fmt` would print it.
+pub fn expr_text(e: &Expr) -> String {
+    Printer::new("", Vec::new(), "    ".to_string(), usize::MAX).render_expr(e)
+}
+
 impl<'a> Printer<'a> {
     fn new(src: &'a str, comments: Vec<Comment>, indent_unit: String, wrap_width: usize) -> Self {
         Printer {
@@ -233,6 +238,15 @@ impl<'a> Printer<'a> {
         for item in &file.items {
             collect_assigned_decl(item, &mut all);
         }
+        let globals: std::collections::HashSet<String> = file
+            .items
+            .iter()
+            .filter_map(|d| match &d.kind {
+                DeclKind::Let(l) => Some(l.name.clone()),
+                _ => None,
+            })
+            .collect();
+        all.retain(|n| globals.contains(n));
         self.assigned = all;
         for item in &file.items {
             // Emit any own-line comments that precede this item, each with a
@@ -729,8 +743,8 @@ impl Printer<'_> {
 
     fn const_decl(&mut self, c: &Const) -> Option<String> {
         let prefix = match &c.ty {
-            Some(t) => format!("const {}: {} = ", c.name, render_type(t)),
-            None => format!("const {} = ", c.name),
+            Some(t) => format!("let {}: {} = ", c.name, render_type(t)),
+            None => format!("let {} = ", c.name),
         };
         let value = self.render_expr_col(&c.value, prefix.chars().count());
         self.line(&format!("{}{}", prefix, value));
@@ -900,6 +914,21 @@ impl Printer<'_> {
                 };
                 self.emit_multiline(&text);
             }
+            StmtKind::Assert { cond, message, .. } => {
+                let cond = match &cond.kind {
+                    ExprKind::Paren(inner) => inner,
+                    _ => cond,
+                };
+                let c = self.render_expr_col(cond, "assert ".len());
+                let text = match message {
+                    Some(m) => {
+                        let m = self.render_expr_col(m, "assert ".len() + c.len() + 2);
+                        format!("assert {c}, {m}")
+                    }
+                    None => format!("assert {c}"),
+                };
+                self.emit_multiline(&text);
+            }
             StmtKind::LetElse {
                 pattern,
                 init,
@@ -910,6 +939,16 @@ impl Printer<'_> {
                 let init = self.render_expr_col(init, head.len());
                 let b = self.render_block(else_block, 0);
                 self.emit_multiline(&format!("{head}{init} else {b}"));
+            }
+            StmtKind::LetTuple {
+                pattern,
+                init,
+                mutable,
+            } => {
+                let kw = if *mutable { "var" } else { "let" };
+                let head = format!("{kw} {} = ", render_pattern(pattern));
+                let init = self.render_expr_col(init, head.len());
+                self.emit_multiline(&format!("{head}{init}"));
             }
             StmtKind::Assign { target, op, value } => {
                 let target = self.render_expr_col(target, 0);
@@ -1168,6 +1207,39 @@ impl Printer<'_> {
                 let inner = self.expr_at(inner, base, col + 1);
                 format!("({})", inner)
             }
+            ExprKind::Cast { value, ty } => {
+                let v = self.expr_at(value, base, col);
+                format!("{} as {}", v, render_type(ty))
+            }
+            ExprKind::Comprehension {
+                kind,
+                key,
+                value,
+                pattern,
+                iter,
+                cond,
+            } => {
+                let (open, close) = match kind {
+                    crate::ast::CompKind::List => ("[", "]"),
+                    _ => ("{", "}"),
+                };
+                let mut out = String::from(open);
+                if let Some(k) = key {
+                    out.push_str(&self.expr_at(k, base, col));
+                    out.push_str(": ");
+                }
+                out.push_str(&self.expr_at(value, base, col));
+                out.push_str(" for ");
+                out.push_str(&render_pattern(pattern));
+                out.push_str(" in ");
+                out.push_str(&self.expr_at(iter, base, col));
+                if let Some(c) = cond {
+                    out.push_str(" if ");
+                    out.push_str(&self.expr_at(c, base, col));
+                }
+                out.push_str(close);
+                out
+            }
             ExprKind::Block(b) => self.render_block(b, base),
             ExprKind::Unary { op, operand } => {
                 let op_s = unary_op(*op);
@@ -1209,6 +1281,28 @@ impl Printer<'_> {
                 let e = self.expr_at(end, base, ecol);
                 format!("{}{}{}", s, sep, e)
             }
+            ExprKind::Call { callee, args }
+                if matches!(&callee.kind, ExprKind::Ident { name, .. } if name == "__spawn_task")
+                    && matches!(
+                        args.as_slice(),
+                        [Expr {
+                            kind: ExprKind::Lambda {
+                                body: crate::ast::LambdaBody::Block(_),
+                                ..
+                            },
+                            ..
+                        }]
+                    ) =>
+            {
+                let ExprKind::Lambda {
+                    body: crate::ast::LambdaBody::Block(b),
+                    ..
+                } = &args[0].kind
+                else {
+                    unreachable!()
+                };
+                format!("spawn {}", self.render_block(b, base))
+            }
             ExprKind::Call { callee, args } => {
                 let callee = self.expr_at(callee, base, col);
                 // The callee already consumed any comments inside it, so a
@@ -1239,6 +1333,10 @@ impl Printer<'_> {
             }
             ExprKind::Field { receiver, name } => {
                 let r = self.expr_at(receiver, base, col);
+                let name = match name.strip_prefix('_') {
+                    Some(d) if !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()) => d,
+                    _ => name.as_str(),
+                };
                 format!("{}.{}", r, name)
             }
             ExprKind::Index { receiver, index } => {
@@ -1472,7 +1570,7 @@ impl Printer<'_> {
     /// Render a map literal multi-line, weaving interior comments at their
     /// source positions. `close_byte` is the position of the closing `]`.
     fn map_multiline(&mut self, pairs: &[(Expr, Expr)], close_byte: usize, base: usize) -> String {
-        let mut s = String::from("[\n");
+        let mut s = String::from("{\n");
         for (k, v) in pairs {
             self.weave_own_line_comments(&mut s, k.span.start, base + 1);
             self.push_indent(&mut s, base + 1);
@@ -1488,7 +1586,7 @@ impl Printer<'_> {
         }
         self.weave_own_line_comments(&mut s, close_byte, base + 1);
         self.push_indent(&mut s, base);
-        s.push(']');
+        s.push('}');
         s
     }
 
@@ -1529,9 +1627,14 @@ impl Printer<'_> {
             match frag {
                 StrFragment::Literal(text) => s.push_str(&escape_str_body(text)),
                 StrFragment::Expr(e) => {
-                    let inner = self.render_expr(e);
+                    let (value, spec) = split_formatted(e);
+                    let inner = self.render_expr(value);
                     s.push_str("${");
                     s.push_str(&inner);
+                    if let Some(spec) = spec {
+                        s.push(':');
+                        s.push_str(&spec);
+                    }
                     s.push('}');
                 }
             }
@@ -1949,6 +2052,17 @@ fn render_type(ty: &Type) -> String {
 }
 
 fn render_type_path(p: &TypePath) -> String {
+    if let [seg] = p.segments.as_slice() {
+        if seg
+            .name
+            .strip_prefix("Tuple")
+            .and_then(|n| n.parse::<usize>().ok())
+            == Some(seg.generics.len())
+        {
+            let parts: Vec<String> = seg.generics.iter().map(render_type).collect();
+            return format!("({})", parts.join(", "));
+        }
+    }
     let mut out = String::new();
     for (i, seg) in p.segments.iter().enumerate() {
         if i > 0 {
@@ -2132,3 +2246,78 @@ fn assign_op(op: AssignOp) -> &'static str {
 
 #[cfg(test)]
 mod tests;
+
+/// The value and format spec of a `${value:spec}` fragment, which the parser
+/// expands into calls to the prelude formatting helpers.
+fn split_formatted(e: &Expr) -> (&Expr, Option<String>) {
+    fn float(e: &Expr) -> Option<(&Expr, i64)> {
+        let ExprKind::Call { callee, args } = &e.kind else {
+            return None;
+        };
+        let ExprKind::Ident { name, .. } = &callee.kind else {
+            return None;
+        };
+        match (name.as_str(), args.as_slice()) {
+            ("__fmt_float", [value, places]) => match places.kind {
+                ExprKind::Int(p) => Some((value, p)),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    fn helper<'a>(e: &'a Expr, name: &str) -> Option<&'a [Expr]> {
+        match &e.kind {
+            ExprKind::Call { callee, args } => match &callee.kind {
+                ExprKind::Ident { name: n, .. } if n == name => Some(args),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    let int = |e: &Expr| match e.kind {
+        ExprKind::Int(n) => Some(n),
+        _ => None,
+    };
+    let text = |e: &Expr| match &e.kind {
+        ExprKind::Str(s) => s.chars().next(),
+        _ => None,
+    };
+
+    if let Some(args) = helper(e, "__fmt_pad").filter(|a| a.len() == 4) {
+        let (Some(w), Some(align), Some(fill)) = (int(&args[1]), text(&args[2]), text(&args[3]))
+        else {
+            return (e, None);
+        };
+        let (value, precision) = match float(&args[0]) {
+            Some((v, p)) => (v, Some(p)),
+            None => match &args[0].kind {
+                ExprKind::MethodCall {
+                    receiver,
+                    name,
+                    args: a,
+                    ..
+                } if name == "to_string" && a.is_empty() => (&**receiver, None),
+                _ => return (e, None),
+            },
+        };
+        let default_align = if precision.is_some() { '>' } else { '<' };
+        let mut spec = if fill == '0' && align == '>' {
+            "0".to_string()
+        } else if fill == ' ' && align == default_align {
+            String::new()
+        } else if fill == ' ' {
+            align.to_string()
+        } else {
+            format!("{fill}{align}")
+        };
+        spec.push_str(&w.to_string());
+        if let Some(p) = precision {
+            spec.push_str(&format!(".{p}"));
+        }
+        return (value, Some(spec));
+    }
+    if let Some((value, p)) = float(e) {
+        return (value, Some(format!(".{p}")));
+    }
+    (e, None)
+}

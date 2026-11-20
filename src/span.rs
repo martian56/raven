@@ -19,6 +19,10 @@ static NEXT_COPY: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsiz
 const COPY_SHIFT: u32 = 40;
 
 /// A fresh id for a compiler-made copy of source nodes.
+/// Copy id of the `x[i] op v` value that `x[i] op= v` on a class builds. It
+/// is fixed so the type checker and HIR lowering derive the same span.
+pub const COMPOUND_INDEX_COPY: usize = (1 << 23) + 1;
+
 pub fn next_copy_id() -> usize {
     NEXT_COPY.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }

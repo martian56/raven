@@ -128,6 +128,16 @@ impl<'a> Respan<'a> {
                 self.expr(init);
                 self.block(else_block);
             }
+            StmtKind::LetTuple { pattern, init, .. } => {
+                self.pattern(pattern);
+                self.expr(init);
+            }
+            StmtKind::Assert { cond, message, .. } => {
+                self.expr(cond);
+                if let Some(m) = message {
+                    self.expr(m);
+                }
+            }
             StmtKind::Defer(e) | StmtKind::Spawn(e) | StmtKind::Expr(e) => self.expr(e),
             StmtKind::Assign { target, value, .. } => {
                 self.expr(target);
@@ -180,7 +190,7 @@ impl<'a> Respan<'a> {
         }
     }
 
-    fn expr(&self, e: &mut Expr) {
+    pub fn expr(&self, e: &mut Expr) {
         self.span(&mut e.span);
         match &mut e.kind {
             ExprKind::Int(_)
@@ -219,6 +229,28 @@ impl<'a> Respan<'a> {
             }
             ExprKind::Paren(x) | ExprKind::Try(x) | ExprKind::NamedArg { value: x, .. } => {
                 self.expr(x)
+            }
+            ExprKind::Cast { value, ty } => {
+                self.expr(value);
+                self.ty(ty);
+            }
+            ExprKind::Comprehension {
+                key,
+                value,
+                pattern,
+                iter,
+                cond,
+                ..
+            } => {
+                if let Some(k) = key {
+                    self.expr(k);
+                }
+                self.expr(value);
+                self.pattern(pattern);
+                self.expr(iter);
+                if let Some(c) = cond {
+                    self.expr(c);
+                }
             }
             ExprKind::Block(b) | ExprKind::Loop(b) => self.block(b),
             ExprKind::Unary { operand, .. } => self.expr(operand),

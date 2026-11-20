@@ -43,7 +43,7 @@ A finished child's captured result.
 | `stdout` | Everything the child wrote to standard output, captured in full. |
 | `stderr` | Everything the child wrote to standard error, captured in full. |
 
-### `success(self) -> Bool`
+### `success(self) -> bool`
 
 True when `code` is `0`.
 
@@ -71,13 +71,13 @@ class Child {
 `id` is managed by the runtime; use the methods below instead of inspecting
 the field.
 
-### `read_stdout(self) -> String` and `read_stderr(self) -> String`
+### `read_stdout(self) -> str` and `read_stderr(self) -> str`
 
 Drain all bytes accumulated on that stream since the previous read. An empty
 string means nothing new is available. Each stream retains at most 8 MiB; keep
 draining a noisy long-running child if every byte matters.
 
-### `write_stdin(self, data: String) -> Bool`
+### `write_stdin(self, data: str) -> bool`
 
 Write and flush `data` to the child's stdin. It returns `false` if stdin was
 closed, the child exited, the pipe broke, or the handle is no longer valid.
@@ -88,18 +88,18 @@ Raven strings are byte buffers, so binary data is passed through unchanged.
 Close stdin and send EOF. Call this after the final write when the child waits
 for end of input before producing output or exiting.
 
-### `poll(self) -> Option<Int>` and `running(self) -> Bool`
+### `poll(self) -> Option[int]` and `running(self) -> bool`
 
 `poll` returns `None` while the child runs and `Some(code)` once it exits.
 `running` is the boolean form. A signal termination without an OS exit code is
 reported as `-1`.
 
-### `wait(self) -> Int`
+### `wait(self) -> int`
 
 Wait for exit and return the code. Waiting polls with a short scheduler-aware
 sleep, so other Raven goroutines continue to run.
 
-### `kill(self) -> Bool`
+### `kill(self) -> bool`
 
 Stop the child. It returns `true` when the kill was delivered or the process
 had already exited.
@@ -112,7 +112,7 @@ reaped after exit.
 
 ## Running a program
 
-### `start(program: String, args: List<String>) -> Result<Child, Error>`
+### `start(program: str, args: list[str]) -> Result[Child, Error]`
 
 Start a child without waiting. Runtime reader threads continuously collect
 stdout and stderr so the process does not block on full pipes. Drain the
@@ -165,7 +165,7 @@ fun main() {
 }
 ```
 
-### `run(program: String, args: List<String>) -> Result<Output, Error>`
+### `run(program: str, args: list[str]) -> Result[Output, Error]`
 
 Spawn `program` with `args`, feed it no stdin, and wait for it to finish. On
 success returns `Ok(Output)` with the captured code, stdout, and stderr.
@@ -193,7 +193,7 @@ fun main() {
 }
 ```
 
-### `run_with_input(program: String, args: List<String>, input: String) -> Result<Output, Error>`
+### `run_with_input(program: str, args: list[str], input: str) -> Result[Output, Error]`
 
 Like `run`, but writes `input` to the child's stdin and then closes it. Use
 this for programs that read from standard input.

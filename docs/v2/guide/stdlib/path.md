@@ -27,12 +27,12 @@ from std.path import join, basename, dirname, extension, stem, is_absolute
 ```
 
 Pull in only the names you use. The module is built on `std/string`'s
-`String` methods, and the import merges that dependency transitively, so
-you do not need a separate `import std/string`.
+`str` methods, and the import merges that dependency transitively, so
+you do not need a separate `import std.string`.
 
 ## The path model
 
-A path is a `String` whose components are separated by `/`. That is the
+A path is a `str` whose components are separated by `/`. That is the
 only separator this module understands. Windows backslash (`\`) paths,
 drive letters, and UNC paths are out of scope: a `\` is treated as an
 ordinary path byte, not a separator.
@@ -45,20 +45,20 @@ own single-byte ASCII forms.
 
 | Function | Result | Summary |
 |---|---|---|
-| `join(a: String, b: String) -> String` | `String` | join two parts with a single `/` |
-| `basename(p: String) -> String` | `String` | final component after the last `/` |
-| `dirname(p: String) -> String` | `String` | everything up to the last `/` |
-| `extension(p: String) -> String` | `String` | text after the last `.` in the basename |
-| `stem(p: String) -> String` | `String` | basename without its extension |
-| `is_absolute(p: String) -> Bool` | `Bool` | whether `p` starts with `/` |
-| `is_relative(p: String) -> Bool` | `Bool` | whether `p` does not start with `/` |
-| `components(p: String) -> List<String>` | `List<String>` | the non-empty `/`-separated segments |
-| `normalize(p: String) -> String` | `String` | collapse `.`, `..`, and redundant slashes |
-| `with_extension(p: String, ext: String) -> String` | `String` | replace the extension |
+| `join(a: str, b: str) -> str` | `str` | join two parts with a single `/` |
+| `basename(p: str) -> str` | `str` | final component after the last `/` |
+| `dirname(p: str) -> str` | `str` | everything up to the last `/` |
+| `extension(p: str) -> str` | `str` | text after the last `.` in the basename |
+| `stem(p: str) -> str` | `str` | basename without its extension |
+| `is_absolute(p: str) -> bool` | `bool` | whether `p` starts with `/` |
+| `is_relative(p: str) -> bool` | `bool` | whether `p` does not start with `/` |
+| `components(p: str) -> list[str]` | `list[str]` | the non-empty `/`-separated segments |
+| `normalize(p: str) -> str` | `str` | collapse `.`, `..`, and redundant slashes |
+| `with_extension(p: str, ext: str) -> str` | `str` | replace the extension |
 
 ## Building a path
 
-### `join(a: String, b: String) -> String`
+### `join(a: str, b: str) -> str`
 
 Join two path parts with a single `/`. The result never doubles the
 separator: it stays one `/` whether `a` ends with a slash, `b` begins with
@@ -79,7 +79,7 @@ fun main() {
 
 ## Decomposing a path
 
-### `basename(p: String) -> String`
+### `basename(p: str) -> str`
 
 The final component, everything after the last `/`. When `p` contains no
 `/`, the whole string is the basename.
@@ -94,7 +94,7 @@ fun main() {
 }
 ```
 
-### `dirname(p: String) -> String`
+### `dirname(p: str) -> str`
 
 Everything up to the last `/`. Two edge cases are worth remembering:
 
@@ -111,7 +111,7 @@ fun main() {
 }
 ```
 
-### `extension(p: String) -> String`
+### `extension(p: str) -> str`
 
 The substring after the last `.` in the basename, or `""` when there is no
 dot. The dot is inspected on the basename only, so a `.` in a parent
@@ -129,7 +129,7 @@ fun main() {
 }
 ```
 
-### `stem(p: String) -> String`
+### `stem(p: str) -> str`
 
 The basename with its extension removed: the part `extension` leaves
 behind. For a name without an extension, the whole basename is the stem,
@@ -146,7 +146,7 @@ fun main() {
 }
 ```
 
-### `is_absolute(p: String) -> Bool`
+### `is_absolute(p: str) -> bool`
 
 True when `p` starts with `/`. The empty string is relative.
 
@@ -160,7 +160,7 @@ fun main() {
 }
 ```
 
-### `is_relative(p: String) -> Bool`
+### `is_relative(p: str) -> bool`
 
 True when `p` does not start with `/`. The exact complement of
 `is_absolute`, so the empty string is relative.
@@ -175,7 +175,7 @@ fun main() {
 }
 ```
 
-### `components(p: String) -> List<String>`
+### `components(p: str) -> list[str]`
 
 The non-empty segments of `p`, splitting on `/`. Leading, trailing, and
 repeated separators produce no empty entries, so a root path and a bare name
@@ -194,7 +194,7 @@ fun main() {
 
 ## Resolving a path
 
-### `normalize(p: String) -> String`
+### `normalize(p: str) -> str`
 
 Collapse `.` segments, resolve `..` against the preceding segment, and remove
 redundant slashes. A leading `/` is preserved. The result is pure string work:
@@ -209,7 +209,7 @@ fun main() {
 }
 ```
 
-### `with_extension(p: String, ext: String) -> String`
+### `with_extension(p: str, ext: str) -> str`
 
 Replace the extension of `p` with `ext` (no leading dot). When `p` has no
 extension, `ext` is appended. An empty `ext` removes the extension.
@@ -267,4 +267,4 @@ that string to `std/fs` to actually read or write it.
 ## See also
 
 - [std/fs](fs.md) for filesystem access (existence, reading, writing).
-- [std/string](string.md) for the `String` methods this module builds on.
+- [std/string](string.md) for the `str` methods this module builds on.

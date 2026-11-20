@@ -12,13 +12,13 @@
 //   3
 //   2
 @repr(C)
-struct Pair {
+class Pair {
     a: CLong
     b: CLong
 }
 
 @repr(C)
-struct Rect {
+class Rect {
     x: CInt
     y: CInt
     w: CInt
@@ -26,14 +26,14 @@ struct Rect {
 }
 
 @repr(C)
-struct Vec3 {
+class Vec3 {
     x: CInt
     y: CInt
     z: CInt
 }
 
 @repr(C)
-struct LldivT {
+class LldivT {
     quot: CLong
     rem: CLong
 }

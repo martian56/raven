@@ -139,11 +139,9 @@ pub const RUNTIME_STRUCT_REGISTER: &str = "raven_struct_register";
 /// tracing the union of every variant's pointers.
 pub const RUNTIME_ENUM_REGISTER: &str = "raven_enum_register";
 
-/// Runtime C symbol entering a GC root frame.
-pub const RUNTIME_GC_ENTER_FRAME: &str = "raven_gc_enter_frame";
-
-/// Runtime C symbol leaving the most recent GC root frame.
-pub const RUNTIME_GC_LEAVE_FRAME: &str = "raven_gc_leave_frame";
+/// Runtime C symbol registering the program's accessor for its thread-local
+/// root record chain head.
+pub const RUNTIME_GC_SET_CHAIN_ACCESSOR: &str = "raven_gc_set_chain_accessor";
 
 /// Runtime C symbol registering a single root slot. Used to keep a heap
 /// temporary that an rvalue builds across further allocations reachable
@@ -165,6 +163,9 @@ pub const RUNTIME_GC_EXIT_RUNNING: &str = "raven_gc_exit_running";
 /// back-edges. A single atomic load when no collection is pending; otherwise it
 /// parks the thread until the world resumes.
 pub const RUNTIME_GC_SAFEPOINT: &str = "raven_gc_safepoint";
+/// A generated wrapper around [`RUNTIME_GC_SAFEPOINT`] that preserves every
+/// register, which loops call.
+pub const SAFEPOINT_THUNK: &str = "__raven_safepoint";
 
 /// Runtime C symbol opening a per-call defer frame.
 pub const RUNTIME_DEFER_ENTER_FRAME: &str = "raven_defer_enter_frame";
@@ -197,6 +198,8 @@ pub const RUNTIME_LIST_LEN: &str = "raven_list_len";
 pub const RUNTIME_LIST_ELEMENTS: &str = "raven_list_elements";
 /// `raven_list_push(List, payload_ptr)` appends one eight-byte slot.
 pub const RUNTIME_LIST_PUSH: &str = "raven_list_push";
+/// `raven_list_reserve(List, additional: i64)` grows capacity ahead of pushes.
+pub const RUNTIME_LIST_RESERVE: &str = "raven_list_reserve";
 /// `raven_list_pop(List, out_ptr) -> u32` removes the last element into
 /// `out_ptr`, returning `1` on success and `0` when the list is empty.
 pub const RUNTIME_LIST_POP: &str = "raven_list_pop";

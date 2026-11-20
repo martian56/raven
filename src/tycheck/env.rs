@@ -165,9 +165,24 @@ pub struct TypeEnv {
     /// Extern declarations keyed by `(DeclId, item_index)`.
     pub externs: HashMap<(DeclId, usize), FnSig>,
     pub trait_impl_pairs: std::cell::OnceCell<std::rc::Rc<Vec<(String, Ty)>>>,
+    pub method_index: std::cell::OnceCell<HashMap<String, Vec<usize>>>,
 }
 
 impl TypeEnv {
+    /// Indexes into `impls` of the impls that define a method `name`.
+    pub fn impls_with_method(&self, name: &str) -> &[usize] {
+        let index = self.method_index.get_or_init(|| {
+            let mut m: HashMap<String, Vec<usize>> = HashMap::new();
+            for (i, imp) in self.impls.iter().enumerate() {
+                for name in imp.methods.keys() {
+                    m.entry(name.clone()).or_default().push(i);
+                }
+            }
+            m
+        });
+        index.get(name).map(|v| v.as_slice()).unwrap_or(&[])
+    }
+
     pub fn trait_impl_pairs(&self) -> std::rc::Rc<Vec<(String, Ty)>> {
         self.trait_impl_pairs
             .get_or_init(|| {

@@ -2,7 +2,7 @@
 
 The foundational traits every Raven program builds on. `std/core` is the
 prelude: the compiler merges it into every program before name resolution, so
-its traits and impls are always in scope. You never write `import std/core`,
+its traits and impls are always in scope. You never write `import std.core`,
 and there is nothing to import selectively.
 
 ```rust
@@ -13,21 +13,21 @@ fun main() {
 ```
 
 These traits make the rest of the standard library polymorphic. A function
-bounded by one of them, for example `fun f<T: ToString>(x: T)`, works for any
+bounded by one of them, for example `fun f[T: ToString](x: T)`, works for any
 type that implements it, including your own.
 
 ## The traits
 
 | Trait | Method | Purpose |
 |-------|--------|---------|
-| `ToString` | `to_string(self) -> String` | Generic textual rendering. The basis of generic printing and of string interpolation for user types. |
-| `Eq` | `equals(self, other: Self) -> Bool` | Structural equality. Reflexive, symmetric, and transitive for the built-in impls. |
-| `Ord` | `compare(self, other: Self) -> Int` | Total ordering. Negative when `self` sorts first, zero when equal, positive otherwise. |
-| `Hash` | `hash(self) -> Int` | Stable hash for hash maps and sets. A `Hash` type should also be `Eq` so equal values hash equally. |
-| `Iterator<T>` | `next(self) -> Option<T>` | A sequence producing values one at a time. The element type `T` is a parameter on the trait. |
+| `ToString` | `to_string(self) -> str` | Generic textual rendering. The basis of generic printing and of string interpolation for user types. |
+| `Eq` | `equals(self, other: Self) -> bool` | Structural equality. Reflexive, symmetric, and transitive for the built-in impls. |
+| `Ord` | `compare(self, other: Self) -> int` | Total ordering. Negative when `self` sorts first, zero when equal, positive otherwise. |
+| `Hash` | `hash(self) -> int` | Stable hash for hash maps and sets. A `Hash` type should also be `Eq` so equal values hash equally. |
+| `Iterator[T]` | `next(self) -> Option[T]` | A sequence producing values one at a time. The element type `T` is a parameter on the trait. |
 
-`Self` in a signature means the implementing type, so `Eq for Int` reads as
-`equals(self, other: Int) -> Bool`.
+`Self` in a signature means the implementing type, so `Eq for int` reads as
+`equals(self, other: int) -> bool`.
 
 ## ToString
 
@@ -41,8 +41,8 @@ Renders a value as text. `print` and string interpolation both render any
 value whose type implements `ToString`, so implementing it is what lets a type
 print.
 
-Built in for `Int`, `Float`, `Bool`, `Char`, and `String`. The scalar impls
-render through interpolation (`"${self}"`); `ToString for String` returns the
+Built in for `int`, `float`, `bool`, `char`, and `str`. The scalar impls
+render through interpolation (`"${self}"`); `ToString for str` returns the
 string unchanged.
 
 ```rust
@@ -64,8 +64,8 @@ trait Eq {
 }
 ```
 
-Structural equality. Built in for `Int`, `Float`, `Bool`, `Char`, and
-`String`. The scalar impls compare with `==`; `String` compares byte by byte.
+Structural equality. Built in for `int`, `float`, `bool`, `char`, and
+`str`. The scalar impls compare with `==`; `str` compares byte by byte.
 
 ```rust
 fun main() {
@@ -83,10 +83,10 @@ trait Ord {
 }
 ```
 
-Total ordering. `compare` returns a negative `Int` when `self` sorts before
-`other`, zero when they are equal, and a positive `Int` when `self` sorts
-after. Built in for `Int`, `Float`, `Char`, `Bool` (`false` sorts before
-`true`), and `String` (lexicographic over bytes).
+Total ordering. `compare` returns a negative `int` when `self` sorts before
+`other`, zero when they are equal, and a positive `int` when `self` sorts
+after. Built in for `int`, `float`, `char`, `bool` (`false` sorts before
+`true`), and `str` (lexicographic over bytes).
 
 ```rust
 fun main() {
@@ -122,12 +122,12 @@ trait Hash {
 }
 ```
 
-A stable hash for keying hash maps and sets. Built in for `Int` (identity),
-`Bool` (`0` or `1`), and `String` (a multiplier-31 rolling hash over the
+A stable hash for keying hash maps and sets. Built in for `int` (identity),
+`bool` (`0` or `1`), and `str` (a multiplier-31 rolling hash over the
 bytes). A `Hash` type should also be `Eq`, so that equal values produce equal
 hashes.
 
-`Hash for Char` and `Hash for Float` are not provided yet.
+`Hash for char` and `Hash for float` are not provided yet.
 
 ```rust
 fun main() {
@@ -225,7 +225,7 @@ impl ToString for Score {
     fun to_string(self) -> str = "${self.name}: ${self.points}"
 }
 
-// Works for Int, String, Score, or anything else that is Ord.
+// Works for int, str, Score, or anything else that is Ord.
 fun higher[T: Ord + ToString](a: T, b: T) -> str {
     if a.compare(b) >= 0 {
         return a.to_string()
@@ -245,6 +245,6 @@ fun main() {
 
 - [std/cmp](cmp.md) for comparison helpers built on `Ord`.
 - [std/collections](collections.md) for maps and sets that key on `Eq` and `Hash`.
-- [std/iter](iter.md) for the lazy adapter pipeline over `Iterator<T>`.
+- [std/iter](iter.md) for the lazy adapter pipeline over `Iterator[T]`.
 - The [language reference](../language-reference.md) for traits, generics,
   bounds, and `@derive`.

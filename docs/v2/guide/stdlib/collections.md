@@ -1,9 +1,9 @@
 # std/collections
 
-Hash-backed `Set<T>` and `Map<K, V>` over keys that implement the prelude
-`Eq + Hash` traits. Storage is a hash-bucket layout, so lookup, insert, and
-remove are O(1) average. `List<T>` is built into the language (literals,
-indexing, `len`, `push`, `pop`, `get`) and needs no import.
+Hash-backed `set[T]` and `dict[K, V]` over keys that implement the prelude
+`Eq + Hash` traits. Lookup, insert, and remove are O(1) average, and
+iteration follows insertion order. Both are part of the prelude, as is
+`list[T]`.
 
 ```rust
 import std.collections
@@ -27,52 +27,52 @@ import std.collections
 
 Import the whole module (not a selective `{ ... }` list). The idiomatic
 constructor is the associated function `new()` on each type, called as
-`Type.new()`. A bare `import std/collections` merges the `Set` and `Map`
+`Type.new()`. A bare `import std.collections` merges the `Set` and `Map`
 `impl` blocks, so both the constructors and the instance methods resolve by
 type. A selective import would bring in named functions but not the type
 `impl` blocks, so `Set.new()` and the methods below would fail to resolve.
 
 Element and key/value types are inferred from the first use: `s.add(1)`
-fixes `s` as `Set<Int>`. Where no later use pins them, write the type
+fixes `s` as `set[int]`. Where no later use pins them, write the type
 arguments on the call:
 
 ```rust
 import std.collections
 
 fun main() {
-    let s = Set[int].new()
-    let m = Map[str, int].new()
+    let s = set[int].new()
+    let m = dict[str, int].new()
 }
 ```
 
 ## Supported key types
 
-`Hash` is implemented for `Int`, `Bool`, and `String`, and any user type
-that implements both `Eq` and `Hash` works as an element or key. `Char` and
-`Float` do not yet implement `Hash`, so `Set<Char>`, `Set<Float>`, and maps
+`Hash` is implemented for `int`, `bool`, and `str`, and any user type
+that implements both `Eq` and `Hash` works as an element or key. `char` and
+`float` do not yet implement `Hash`, so `set[char]`, `set[float]`, and maps
 keyed on them do not satisfy the bound.
 
-| Key type | Usable as `Set<T>` / `Map<K, _>` |
+| Key type | Usable as `set[T]` / `dict[K, _]` |
 |----------|----------------------------------|
-| `Int` | yes |
-| `Bool` | yes |
-| `String` | yes |
+| `int` | yes |
+| `bool` | yes |
+| `str` | yes |
 | user type with `Eq + Hash` | yes |
-| `Char` | no (not hashable) |
-| `Float` | no (not hashable) |
+| `char` | no (not hashable) |
+| `float` | no (not hashable) |
 
 ## Set and map literals
 
 Set and map values have literal syntax. Both lower to the constructors
-above, so they need the same `import std/collections` in scope.
+above, so they need the same `import std.collections` in scope.
 
 ```rust
 import std.collections
 
 fun main() {
-    let s = {1, 2, 2, 3} // Set<Int>, dedups to {1, 2, 3}
-    let m = {"a": 1, "b": 2} // Map<String, Int>
-    let flags = {"x": true} // Map<String, Bool>
+    let s = {1, 2, 2, 3} // set[int], dedups to {1, 2, 3}
+    let m = {"a": 1, "b": 2} // dict[str, int]
+    let flags = {"x": true} // dict[str, bool]
     let empty: dict[str, int] = {}
 }
 ```
@@ -91,42 +91,42 @@ Grammar and disambiguation:
   makes it a map.
 
 Element, key, and value types are inferred from the literal contents:
-`{1, 2}` is `Set<Int>`, and `["x": true]` is `Map<String, Bool>`. The set's
+`{1, 2}` is `set[int]`, and `["x": true]` is `dict[str, bool]`. The set's
 `T` and the map's `K` must implement `Eq + Hash`, the same bound the types
 carry. `{a, b}` desugars to `Set.new()` then `add(a); add(b)`, and `[k: v]`
 desugars to `Map.new()` then `set(k, v)`.
 
-## Set<T: Eq + Hash>
+## set[T: Eq + Hash]
 
 A set of distinct elements. Construct with a set literal `{1, 2}` or with
 `Set.new()`.
 
-### `new() -> Set<T>`
+### `new() -> set[T]`
 
 A new empty set. Called on the type: `Set.new()`.
 
-### `len(self) -> Int`
+### `len(self) -> int`
 
 The number of elements in the set.
 
-### `is_empty(self) -> Bool`
+### `is_empty(self) -> bool`
 
 True when the set has no elements.
 
-### `contains(self, x: T) -> Bool`
+### `contains(self, x: T) -> bool`
 
-True when `x` is in the set. Hashes `x` to a bucket and scans that bucket
-with `Eq`.
+True when `x` is in the set. Hashes `x` and probes the index table,
+comparing with `Eq`.
 
 ### `add(self, x: T)`
 
 Add `x` to the set. Does nothing if `x` is already present, so the set never
 holds duplicates.
 
-### `remove(self, x: T) -> Bool`
+### `remove(self, x: T) -> bool`
 
-Remove `x` if present, returning whether it was. Order within a bucket is not
-preserved.
+Remove `x` if present, returning whether it was. The most recently added
+item moves into its position.
 
 ```rust
 import std.collections
@@ -145,10 +145,10 @@ fun main() {
 }
 ```
 
-### `to_list(self) -> List<T>`
+### `to_list(self) -> list[T]`
 
-Every element as a list, in hash-bucket order (not insertion order). This is
-the way to enumerate a set: iterate the returned list.
+Every element as a list, in insertion order. This is the way to enumerate
+a set: iterate the returned list.
 
 ```rust
 import std.collections
@@ -156,24 +156,24 @@ import std.collections
 fun main() {
     let s = {1, 2, 3}
     for x in s.to_list() {
-        print(x) // 1, 2, 3 (bucket order)
+        print(x) // 1, 2, 3 (insertion order)
     }
 }
 ```
 
-### `union(self, other: Set<T>) -> Set<T>`
+### `union(self, other: set[T]) -> set[T]`
 
 A new set with every element of `self` or `other`.
 
-### `intersection(self, other: Set<T>) -> Set<T>`
+### `intersection(self, other: set[T]) -> set[T]`
 
 A new set with the elements in both `self` and `other`.
 
-### `difference(self, other: Set<T>) -> Set<T>`
+### `difference(self, other: set[T]) -> set[T]`
 
 A new set with the elements of `self` that are not in `other`.
 
-### `is_subset(self, other: Set<T>) -> Bool`
+### `is_subset(self, other: set[T]) -> bool`
 
 True when every element of `self` is in `other`.
 
@@ -191,28 +191,28 @@ fun main() {
 }
 ```
 
-## Map<K: Eq + Hash, V>
+## dict[K: Eq + Hash, V]
 
 A map from keys to values. Construct with a map literal `["a": 1]` (or `[:]`
 for an empty map) or with `Map.new()`.
 
-### `new() -> Map<K, V>`
+### `new() -> dict[K, V]`
 
 A new empty map. Called on the type: `Map.new()`.
 
-### `len(self) -> Int`
+### `len(self) -> int`
 
 The number of entries in the map.
 
-### `is_empty(self) -> Bool`
+### `is_empty(self) -> bool`
 
 True when the map has no entries.
 
-### `has(self, k: K) -> Bool`
+### `has(self, k: K) -> bool`
 
 True when `k` has an entry in the map.
 
-### `get(self, k: K) -> Option<V>`
+### `get(self, k: K) -> Option[V]`
 
 `Some(v)` when `k` is present, otherwise `None`. Handle it with `match`:
 
@@ -255,18 +255,18 @@ fun main() {
 Insert `k` with value `v`, or overwrite the existing value when `k` is
 already present.
 
-### `keys(self) -> List<K>`
+### `keys(self) -> list[K]`
 
-Every key in the map, in hash-bucket order (not insertion order).
+Every key in the map, in insertion order.
 
-### `values(self) -> List<V>`
+### `values(self) -> list[V]`
 
 Every value in the map, aligned with `keys()`: the value at index `i` in
 `values()` belongs to the key at index `i` in `keys()`.
 
-### `entries(self) -> List<Entry<K, V>>`
+### `entries(self) -> list[Entry[K, V]]`
 
-Every key/value pair as a list of `Entry`, in hash-bucket order. Each `Entry`
+Every key/value pair as a list of `Entry`, in insertion order. Each `Entry`
 has a `.key` and a `.value` field.
 
 ```rust
@@ -275,15 +275,15 @@ import std.collections
 fun main() {
     let m = {"a": 1, "b": 2}
     for e in m.entries() {
-        print("${e.key}=${e.value}") // a=1, then b=2 (bucket order)
+        print("${e.key}=${e.value}") // a=1, then b=2 (insertion order)
     }
 }
 ```
 
-### `remove(self, k: K) -> Bool`
+### `remove(self, k: K) -> bool`
 
-Remove the entry for `k` if present, returning whether it was. Order within a
-bucket is not preserved.
+Remove the entry for `k` if present, returning whether it was. The most
+recently added entry moves into its position.
 
 ```rust
 import std.collections
@@ -317,12 +317,10 @@ fun main() {
 
 ## Iteration order
 
-Both types store entries in an array of buckets. The table starts with 8
-buckets and doubles, rehashing every entry, once the load factor
-(`count / bucket_count`) passes 0.75. Because of this, `keys()` and
-`values()` follow the current bucket layout, not the order entries were
-inserted. Do not rely on iteration order being stable across inserts or
-across runs.
+Both types keep their items in dense lists in insertion order and find them
+through an open-addressed index table, which doubles once it is three quarters
+full. `keys()`, `values()`, `entries()`, and `to_list()` follow insertion
+order. Removing an item moves the most recently inserted one into its place.
 
 ## Worked example: word frequencies
 

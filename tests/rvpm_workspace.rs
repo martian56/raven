@@ -138,11 +138,11 @@ fail = { package = "tool", args = ["fail"] }
     package(
         &root.join("tools/tool"),
         "tool",
-        r#"import std/env { args, exit }
+        r#"from std.env import args, exit
 
 fun main() {
     let all = args()
-    if all.len() > 1 && all[1] == "fail" {
+    if all.len() > 1 and all[1] == "fail" {
         exit(7)
     }
     var i = 1

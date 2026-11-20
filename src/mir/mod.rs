@@ -9,6 +9,8 @@
 //! See `docs/v2/specs/mir.md` for the full design.
 
 pub mod builder;
+pub mod copyprop;
+pub mod inline;
 pub mod intrinsics;
 pub mod ir;
 pub mod lower;
@@ -16,6 +18,7 @@ pub mod mono;
 pub mod pretty;
 pub mod shake;
 pub mod ty;
+pub mod visit;
 
 #[cfg(test)]
 mod tests;

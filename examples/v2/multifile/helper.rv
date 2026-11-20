@@ -1,15 +1,15 @@
-import std/string
+import std.string
 
-fun greet(name: String) -> String {
+fun greet(name: str) -> str {
     return "hi ".concat(name)
 }
 
-struct Counter {
-    value: Int,
+class Counter {
+    value: int
 }
 
 impl Counter {
     fun bumped(self) -> Counter {
-        return Counter { value: self.value + 1 }
+        return Counter(value: self.value + 1)
     }
 }

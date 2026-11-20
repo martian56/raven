@@ -97,6 +97,18 @@ pub enum ExprKind {
         lhs: Box<Expr>,
         rhs: Box<Expr>,
     },
+    /// `[v for p in xs if c]`, `{v for ...}`, or `{k: v for ...}`; desugared
+    /// to a loop that fills a new collection.
+    Comprehension {
+        kind: CompKind,
+        key: Option<Box<Expr>>,
+        value: Box<Expr>,
+        pattern: super::Pattern,
+        iter: Box<Expr>,
+        cond: Option<Box<Expr>>,
+    },
+    /// `value as T`, desugared to a conversion method call.
+    Cast { value: Box<Expr>, ty: super::Type },
     /// Range expression: `start..end` or `start..=end`.
     Range {
         start: Box<Expr>,
@@ -238,9 +250,29 @@ pub enum BinaryOp {
     BitXor,
     Shl,
     Shr,
+    /// `x in xs`, desugared to `xs.contains(x)`.
+    In,
+    /// `x not in xs`.
+    NotIn,
 }
 
 impl BinaryOp {
+    /// The method a class defines to overload this operator.
+    pub fn method_name(self) -> Option<&'static str> {
+        Some(match self {
+            BinaryOp::Add => "add",
+            BinaryOp::Sub => "sub",
+            BinaryOp::Mul => "mul",
+            BinaryOp::Div => "div",
+            BinaryOp::Mod => "mod",
+            BinaryOp::Lt => "lt",
+            BinaryOp::Le => "le",
+            BinaryOp::Gt => "gt",
+            BinaryOp::Ge => "ge",
+            _ => return None,
+        })
+    }
+
     /// The operator as it is written in source.
     ///
     /// This is the one definition of the spelling. The pretty printer, the
@@ -248,6 +280,8 @@ impl BinaryOp {
     /// so a new operator cannot pick up a different spelling in one of them.
     pub fn symbol(self) -> &'static str {
         match self {
+            BinaryOp::In => "in",
+            BinaryOp::NotIn => "not in",
             BinaryOp::Add => "+",
             BinaryOp::Sub => "-",
             BinaryOp::Mul => "*",
@@ -259,8 +293,8 @@ impl BinaryOp {
             BinaryOp::Le => "<=",
             BinaryOp::Gt => ">",
             BinaryOp::Ge => ">=",
-            BinaryOp::And => "&&",
-            BinaryOp::Or => "||",
+            BinaryOp::And => "and",
+            BinaryOp::Or => "or",
             BinaryOp::BitAnd => "&",
             BinaryOp::BitOr => "|",
             BinaryOp::BitXor => "^",
@@ -326,4 +360,12 @@ pub struct LambdaParam {
 pub enum LambdaBody {
     Block(Block),
     Expr(Box<Expr>),
+}
+
+/// The collection a comprehension builds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompKind {
+    List,
+    Set,
+    Dict,
 }

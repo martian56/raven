@@ -25,7 +25,7 @@ selective import: list the names you want inside `{ ... }`.
 from std.cmp import sort, sorted_by, min, max, clamp, max_of, min_of
 ```
 
-`List<T>` is built into the language and needs no import.
+`list[T]` is built into the language and needs no import.
 
 ## The `Ord` bound
 
@@ -33,12 +33,12 @@ Most functions here are bound by `T: Ord`. The prelude `Ord` trait is one
 method:
 
 ```rust
-fun compare(self, other: Self) -> Int
+fun compare(self, other: Self) -> int
 ```
 
-`compare` returns a negative `Int` when `self < other`, zero when they are
-equal, and a positive `Int` when `self > other`. Built-in types like `Int`
-and `String` already satisfy `Ord`, and any struct that implements `compare`
+`compare` returns a negative `int` when `self < other`, zero when they are
+equal, and a positive `int` when `self > other`. Built-in types like `int`
+and `str` already satisfy `Ord`, and any struct that implements `compare`
 becomes usable with every `Ord`-bound function below.
 
 The one exception is `sorted_by`, which takes the comparator as a value
@@ -46,12 +46,12 @@ instead of relying on the bound (see below).
 
 ## Comparing two values
 
-### `min<T: Ord>(a: T, b: T) -> T`
+### `min[T: Ord](a: T, b: T) -> T`
 
 The lesser of `a` and `b`. On a tie (`a` and `b` compare equal) it returns
 `a`.
 
-### `max<T: Ord>(a: T, b: T) -> T`
+### `max[T: Ord](a: T, b: T) -> T`
 
 The greater of `a` and `b`. On a tie it returns `a`.
 
@@ -64,7 +64,7 @@ fun main() {
 }
 ```
 
-### `clamp<T: Ord>(x: T, lo: T, hi: T) -> T`
+### `clamp[T: Ord](x: T, lo: T, hi: T) -> T`
 
 Constrain `x` to the range `[lo, hi]`: returns `lo` when `x < lo`, `hi` when
 `x > hi`, and `x` otherwise.
@@ -81,7 +81,7 @@ fun main() {
 
 ## Sorting
 
-### `sort<T: Ord>(xs: List<T>) -> List<T>`
+### `sort[T: Ord](xs: list[T]) -> list[T]`
 
 A new list with the elements of `xs` in ascending order. The input is not
 mutated. `sort` delegates to `sorted_by` using `a.compare(b)` as the
@@ -99,7 +99,7 @@ fun main() {
 }
 ```
 
-### `sorted_by<T>(xs: List<T>, cmp: fun(T, T) -> Int) -> List<T>`
+### `sorted_by[T](xs: list[T], cmp: fun(T, T) -> int) -> list[T]`
 
 Sort `xs` by an explicit comparator, returning a new list. There is no `Ord`
 bound here: because the comparator is passed in as a value, `sorted_by` can
@@ -107,8 +107,8 @@ order types that have no single natural ordering, or order an `Ord` type in a
 different way.
 
 The comparator follows the same convention as `compare`: given two elements
-`a` and `b`, return a negative `Int` when `a` should come before `b`, zero
-when their order does not matter, and a positive `Int` when `a` should come
+`a` and `b`, return a negative `int` when `a` should come before `b`, zero
+when their order does not matter, and a positive `int` when `a` should come
 after `b`. To sort descending, flip the comparison.
 
 ```rust
@@ -129,17 +129,17 @@ unspecified.
 
 ## Reducing a list
 
-### `max_of<T: Ord>(xs: List<T>) -> Option<T>`
+### `max_of[T: Ord](xs: list[T]) -> Option[T]`
 
 The largest element of `xs`, or `None` when the list is empty. Wrapping the
 result in `Option` is what lets the empty case be represented without a
 sentinel value.
 
-### `min_of<T: Ord>(xs: List<T>) -> Option<T>`
+### `min_of[T: Ord](xs: list[T]) -> Option[T]`
 
 The smallest element of `xs`, or `None` when the list is empty.
 
-Because both return an `Option<T>`, you match on the result to handle the
+Because both return an `Option[T]`, you match on the result to handle the
 empty list:
 
 ```rust
@@ -182,7 +182,7 @@ fun main() {
 
 ## See also
 
-- [std/string](string.md) for text, whose `String` values are `Ord` and so
+- [std/string](string.md) for text, whose `str` values are `Ord` and so
   work with every function here.
 - The [language reference](../language-reference.md) for generics, trait
   bounds, closures, and `Option`.

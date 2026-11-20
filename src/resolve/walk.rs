@@ -271,7 +271,9 @@ fn walk_stmt(
     map: &mut ResolutionMap,
 ) -> Result<(), RavenError> {
     match &stmt.kind {
-        StmtKind::LetElse { .. } => unreachable!("surface syntax is desugared after parsing"),
+        StmtKind::LetElse { .. } | StmtKind::LetTuple { .. } | StmtKind::Assert { .. } => {
+            unreachable!("surface syntax is desugared after parsing")
+        }
         StmtKind::Let {
             name,
             ty,
@@ -449,6 +451,9 @@ fn walk_expr(
                 walk_expr(v, scope, map)?;
             }
         }
+        ExprKind::Cast { .. } | ExprKind::Comprehension { .. } => {
+                unreachable!("surface syntax is desugared after parsing")
+            }
         ExprKind::Paren(e) => walk_expr(e, scope, map)?,
         ExprKind::NamedArg { .. } => {
             return Err(RavenError::resolve(
@@ -743,7 +748,15 @@ fn is_builtin_type_name(name: &str) -> bool {
 /// do.
 /// Free functions of prelude modules usable without an import, as
 /// `(name, module)`.
-const PRELUDE_FUNCTIONS: &[(&str, &str)] = &[("error", "error"), ("error_kind", "error")];
+const PRELUDE_FUNCTIONS: &[(&str, &str)] = &[
+    ("error", "error"),
+    ("error_kind", "error"),
+    ("__min2", "core"),
+    ("__max2", "core"),
+    ("__fmt_float", "string"),
+    ("__fmt_pad", "string"),
+    ("__spawn_task", "core"),
+];
 
 fn is_builtin_ctor_name(name: &str) -> bool {
     matches!(

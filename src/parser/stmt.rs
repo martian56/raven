@@ -13,11 +13,49 @@ impl Parser {
         match self.peek_kind() {
             TokenKind::Let => self.parse_let_stmt(false),
             TokenKind::Identifier(w)
-                if w == "var" && matches!(self.peek_kind_at(1), TokenKind::Identifier(_)) =>
+                if w == "var"
+                    && matches!(
+                        self.peek_kind_at(1),
+                        TokenKind::Identifier(_) | TokenKind::LParen
+                    ) =>
             {
                 self.parse_let_stmt(true)
             }
-            TokenKind::Const => self.parse_let_stmt(false),
+            TokenKind::Const => Err(self.legacy("`const`", "declare it with `let`")),
+            TokenKind::Identifier(w)
+                if w == "assert"
+                    && !matches!(
+                        self.peek_kind_at(1),
+                        TokenKind::Eq
+                            | TokenKind::Dot
+                            | TokenKind::Newline
+                            | TokenKind::Semi
+                            | TokenKind::RBrace
+                            | TokenKind::Eof
+                    ) =>
+            {
+                self.advance();
+                let cond = self.parse_expr()?;
+                let message = if matches!(self.peek_kind(), TokenKind::Comma) {
+                    self.advance();
+                    Some(self.parse_expr()?)
+                } else {
+                    None
+                };
+                let end = message.as_ref().unwrap_or(&cond).span.clone();
+                let text = match &cond.kind {
+                    crate::ast::ExprKind::Paren(inner) => crate::format::expr_text(inner),
+                    _ => crate::format::expr_text(&cond),
+                };
+                Ok(Stmt {
+                    span: merge_spans(&start_span, &end),
+                    kind: StmtKind::Assert {
+                        cond,
+                        message,
+                        text,
+                    },
+                })
+            }
             TokenKind::Return => {
                 self.advance();
                 if matches!(
@@ -149,6 +187,24 @@ impl Parser {
         let pattern = self.parse_pattern()?;
         self.expect(&TokenKind::Eq, "`=`")?;
         self.skip_newlines();
+        if matches!(pattern.kind, PatternKind::Tuple { name: None, .. }) {
+            let init = self.parse_expr()?;
+            if !matches!(self.peek_kind(), TokenKind::Else) {
+                let span = merge_spans(&start, &init.span);
+                return Ok(Stmt {
+                    kind: StmtKind::LetTuple {
+                        pattern,
+                        init,
+                        mutable,
+                    },
+                    span,
+                });
+            }
+            return Err(RavenError::parse(
+                ParseError::Custom("a tuple pattern always matches; drop the `else`".into()),
+                self.peek().span.clone(),
+            ));
+        }
         let init = self.parse_expr_no_struct()?;
         if !self.eat(&TokenKind::Else) {
             return Err(RavenError::parse(
@@ -308,6 +364,7 @@ fn is_valid_lvalue(expr: &Expr) -> bool {
         ExprKind::Field { receiver, .. } => is_valid_lvalue(receiver),
         ExprKind::Index { receiver, .. } => is_valid_lvalue(receiver),
         ExprKind::Paren(inner) => is_valid_lvalue(inner),
+        ExprKind::Tuple(items) => !items.is_empty() && items.iter().all(is_valid_lvalue),
         _ => false,
     }
 }

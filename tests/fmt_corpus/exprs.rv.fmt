@@ -5,7 +5,7 @@ import std.io
 from std.collections import Map, Set
 import "./local" as loc
 
-const LIMIT: int = 100
+let LIMIT: int = 100
 
 fun build() -> Point {
     let p = Point(x: 1, y: 2)

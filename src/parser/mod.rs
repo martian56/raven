@@ -493,8 +493,8 @@ pub fn describe_token(kind: &TokenKind) -> String {
         TokenKind::Gt => "`>`".to_string(),
         TokenKind::LtEq => "`<=`".to_string(),
         TokenKind::GtEq => "`>=`".to_string(),
-        TokenKind::AndAnd => "`&&`".to_string(),
-        TokenKind::OrOr => "`||`".to_string(),
+        TokenKind::AndAnd => "`and`".to_string(),
+        TokenKind::OrOr => "`or`".to_string(),
         TokenKind::Bang => "`!`".to_string(),
         TokenKind::Amp => "`&`".to_string(),
         TokenKind::Pipe => "`|`".to_string(),
@@ -529,5 +529,15 @@ pub fn describe_token(kind: &TokenKind) -> String {
         TokenKind::Dollar => "`$`".to_string(),
         TokenKind::Newline => "newline".to_string(),
         TokenKind::Eof => "end of file".to_string(),
+    }
+}
+
+impl Parser {
+    /// An error for syntax Raven no longer accepts, naming what replaced it.
+    pub(crate) fn legacy(&self, old: &str, new: &str) -> RavenError {
+        RavenError::parse(
+            ParseError::Custom(format!("{old} is not Raven syntax; {new}")),
+            self.peek().span.clone(),
+        )
     }
 }

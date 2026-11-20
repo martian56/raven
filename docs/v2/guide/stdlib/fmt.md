@@ -29,7 +29,7 @@ The formatting helpers are free functions, bound with a selective import:
 from std.fmt import repeat, pad_left, pad_right, center, join, to_radix, to_binary, to_octal, to_hex, pad_int
 ```
 
-The `Debug` trait is brought in by the same `import std/fmt` (its impls merge
+The `Debug` trait is brought in by the same `import std.fmt` (its impls merge
 into scope like `std/string`'s methods). Once the module is imported, the
 `debug` method dispatches on the receiver's type and needs no explicit
 selector:
@@ -45,7 +45,7 @@ fun main() {
 
 ## A note on bytes
 
-A Raven `String` is a byte buffer. Padding widths and `to_radix` digit counts
+A Raven `str` is a byte buffer. Padding widths and `to_radix` digit counts
 are measured in **UTF-8 bytes**, not code points. For ASCII text a byte equals
 a displayed character; for multi-byte text the width is the encoded byte
 length. The `fill` argument to the padding functions is assumed to be a
@@ -54,7 +54,7 @@ to its length minus one. See [std/string](string.md) for the same byte model.
 
 ## String helpers
 
-### `repeat(s: String, n: Int) -> String`
+### `repeat(s: str, n: int) -> str`
 
 `s` concatenated `n` times. A non-positive `n` yields the empty string.
 
@@ -67,12 +67,12 @@ fun main() {
 }
 ```
 
-### `pad_left(s: String, width: Int, fill: String) -> String`
+### `pad_left(s: str, width: int, fill: str) -> str`
 
 Left-pad `s` with `fill` until its byte length is at least `width`. A `width`
 that does not exceed the current length returns `s` unchanged.
 
-### `pad_right(s: String, width: Int, fill: String) -> String`
+### `pad_right(s: str, width: int, fill: str) -> str`
 
 Right-pad `s` with `fill` until its byte length is at least `width`.
 
@@ -85,7 +85,7 @@ fun main() {
 }
 ```
 
-### `center(s: String, width: Int, fill: String) -> String`
+### `center(s: str, width: int, fill: str) -> str`
 
 Center `s` in a field of byte width `width`, padding with `fill`. An odd
 amount of padding puts the extra byte on the right.
@@ -99,7 +99,7 @@ fun main() {
 }
 ```
 
-### `join(parts: List<String>, sep: String) -> String`
+### `join(parts: list[str], sep: str) -> str`
 
 Join `parts` with `sep` between adjacent elements.
 
@@ -113,7 +113,7 @@ fun main() {
 
 ## Number-base formatting
 
-### `to_radix(n: Int, base: Int) -> String`
+### `to_radix(n: int, base: int) -> str`
 
 `n` written in `base`, with a single leading `-` for negatives. `base` must be
 in `2..=16`; a `base` outside that range returns the empty string. Zero
@@ -131,7 +131,7 @@ fun main() {
 }
 ```
 
-### `to_binary(n: Int) -> String`, `to_octal(n: Int) -> String`, `to_hex(n: Int) -> String`
+### `to_binary(n: int) -> str`, `to_octal(n: int) -> str`, `to_hex(n: int) -> str`
 
 Thin wrappers over `to_radix` for base 2, 8, and 16.
 
@@ -145,7 +145,7 @@ fun main() {
 }
 ```
 
-### `from_radix(s: String, base: Int) -> Option<Int>`
+### `from_radix(s: str, base: int) -> Option[int]`
 
 Parse `s` as an integer in `base`, the inverse of `to_radix`. `base` must be in
 `2..=16`. An optional leading `+` or `-` sign is accepted. Returns `None` on an
@@ -176,7 +176,7 @@ fun main() {
 }
 ```
 
-### `from_hex(s: String) -> Option<Int>`
+### `from_hex(s: str) -> Option[int]`
 
 Parse a hexadecimal string, the inverse of `to_hex`. A thin wrapper over
 `from_radix(s, 16)`.
@@ -194,7 +194,7 @@ fun main() {
 }
 ```
 
-### `pad_int(n: Int, width: Int) -> String`
+### `pad_int(n: int, width: int) -> str`
 
 Decimal `n` zero-padded to byte width `width`. For a negative `n` the `-`
 stays leftmost and the zero fill goes between the sign and the digits, so
@@ -211,7 +211,7 @@ fun main() {
 }
 ```
 
-### `format_float(x: Float, decimals: Int) -> String`
+### `format_float(x: float, decimals: int) -> str`
 
 `x` rendered with exactly `decimals` digits after the decimal point, rounded
 half up. A `decimals` of `0` or less produces no fractional part and no point.
@@ -241,11 +241,11 @@ built-in scalar types:
 
 | Receiver | `debug(self)` result |
 |----------|----------------------|
-| `Int` | delegates to `to_string` |
-| `Float` | delegates to `to_string` |
-| `Bool` | delegates to `to_string` |
-| `Char` | the value wrapped in single quotes |
-| `String` | the value wrapped in double quotes |
+| `int` | delegates to `to_string` |
+| `float` | delegates to `to_string` |
+| `bool` | delegates to `to_string` |
+| `char` | the value wrapped in single quotes |
+| `str` | the value wrapped in double quotes |
 
 Char and String quoting does not escape inner quotes: a String containing a
 `"` reproduces it literally inside the surrounding quotes. So `"hi".debug()` is
@@ -281,7 +281,7 @@ fun main() {
 
 ## See also
 
-- [std/string](string.md) for the methods on `String` values and the same
+- [std/string](string.md) for the methods on `str` values and the same
   byte model.
 - [std/io](io.md) for `print` and `println`.
 - The [language reference](../language-reference.md) for string literals and

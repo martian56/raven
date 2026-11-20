@@ -1,6 +1,6 @@
 # std/error
 
-An `Error` value type plus a few helpers over the built-in `Result<T, E>`.
+An `Error` value type plus a few helpers over the built-in `Result[T, E]`.
 The language already gives you `Result`, `Option`, and the `?` operator, so
 this module does not invent an error system. It adds a carryable error with a
 message and an optional kind, context chaining as an error propagates, and a
@@ -39,13 +39,13 @@ import the module.
 
 ## Result, Option, and the `?` operator
 
-`Result<T, E>`, `Option<T>`, and their variants `Ok`, `Err`, `Some`, and `None`
+`Result[T, E]`, `Option[T]`, and their variants `Ok`, `Err`, `Some`, and `None`
 are built into the language. They need no import. The convention this module
 leans on is simple:
 
-- A function that can fail returns `Result<T, Error>`. Success is `Ok(value)`,
+- A function that can fail returns `Result[T, Error]`. Success is `Ok(value)`,
   failure is `Err(error("..."))`.
-- A function that can be absent returns `Option<T>`: `Some(value)` or `None`.
+- A function that can be absent returns `Option[T]`: `Some(value)` or `None`.
 
 The `?` operator is the primary way to propagate failures. When applied to a
 `Result`, `?` unwraps an `Ok` to its value or returns the `Err` from the
@@ -107,7 +107,7 @@ bug has made the program unable to continue.
 
 ## Constructors
 
-### `error(msg: String) -> Error`
+### `error(msg: str) -> Error`
 
 Build an `Error` with the given message and an empty kind. This is the usual
 constructor for an ad hoc failure.
@@ -123,10 +123,10 @@ fun check_age(age: int) -> Result[int, Error] {
 }
 ```
 
-### `error_kind(kind: String, msg: String) -> Error`
+### `error_kind(kind: str, msg: str) -> Error`
 
 Build an `Error` tagged with a kind, for example `"io"` or `"parse"`. The kind
-is a free-form `String`; callers can branch on it with `e.kind()`.
+is a free-form `str`; callers can branch on it with `e.kind()`.
 
 ```rust
 from std.error import error, error_kind, is_ok, is_err, unwrap_or, ok, err
@@ -138,14 +138,14 @@ fun open_config(path: str) -> Result[str, Error] {
 
 ## Error methods
 
-`Error` is a struct holding a `kind` and a `message`, both `String`. These
+`Error` is a struct holding a `kind` and a `message`, both `str`. These
 methods come from the merged `impl` blocks.
 
-### `message(self) -> String`
+### `message(self) -> str`
 
 The message text.
 
-### `kind(self) -> String`
+### `kind(self) -> str`
 
 The kind tag, or `""` when the error was built with `error`.
 
@@ -159,7 +159,7 @@ fun main() {
 }
 ```
 
-### `with_context(self, ctx: String) -> Error`
+### `with_context(self, ctx: str) -> Error`
 
 A new `Error` whose message is `ctx + ": " + message`, preserving the kind. Use
 it to add a higher-level explanation to a lower-level failure as it propagates.
@@ -179,7 +179,7 @@ fun load_settings(path: str) -> Result[str, Error] {
 If the inner error was `no such file`, the caller now sees
 `load settings: no such file`, with the original kind intact.
 
-### `to_string(self) -> String`
+### `to_string(self) -> str`
 
 The display form: the bare `message` when the kind is empty, otherwise
 `kind + ": " + message`. This comes from the `ToString` impl, so `print(e)`
@@ -196,19 +196,19 @@ fun main() {
 
 ## Result helpers
 
-Free functions generic over `Result<T, E>`. They work with any error type in
+Free functions generic over `Result[T, E]`. They work with any error type in
 the `E` slot, not only this module's `Error`. Each one matches the Result
 internally, so you can avoid writing a `match` for the simple cases.
 
-### `is_ok<T, E>(r: Result<T, E>) -> Bool`
+### `is_ok[T, E](r: Result[T, E]) -> bool`
 
 True when `r` is `Ok`.
 
-### `is_err<T, E>(r: Result<T, E>) -> Bool`
+### `is_err[T, E](r: Result[T, E]) -> bool`
 
 True when `r` is `Err`.
 
-### `unwrap_or<T, E>(r: Result<T, E>, default: T) -> T`
+### `unwrap_or[T, E](r: Result[T, E], default: T) -> T`
 
 The `Ok` value, or `default` when `r` is an `Err`.
 
@@ -229,12 +229,12 @@ fun main() {
 }
 ```
 
-### `ok<T, E>(r: Result<T, E>) -> Option<T>`
+### `ok[T, E](r: Result[T, E]) -> Option[T]`
 
 Discard the error: map `Ok(v)` to `Some(v)` and `Err(e)` to `None`. Useful when
 you care whether a value is present but not why it failed.
 
-### `err<T, E>(r: Result<T, E>) -> Option<E>`
+### `err[T, E](r: Result[T, E]) -> Option[E]`
 
 Keep the error: map `Err(e)` to `Some(e)` and `Ok(v)` to `None`.
 
@@ -256,7 +256,7 @@ fun main() {
 }
 ```
 
-### `map_ok<T, U, E>(r: Result<T, E>, f: fun(T) -> U) -> Result<U, E>`
+### `map_ok[T, U, E](r: Result[T, E], f: fun(T) -> U) -> Result[U, E]`
 
 Transform the `Ok` value with `f`, passing an `Err` through unchanged. `f` is
 a lambda.
@@ -279,7 +279,7 @@ fun main() {
 }
 ```
 
-### `map_err<T, E, F>(r: Result<T, E>, f: fun(E) -> F) -> Result<T, F>`
+### `map_err[T, E, F](r: Result[T, E], f: fun(E) -> F) -> Result[T, F]`
 
 Transform the `Err` value with `f`, passing an `Ok` through unchanged.
 
@@ -301,7 +301,7 @@ fun main() {
 }
 ```
 
-### `unwrap_or_else<T, E>(r: Result<T, E>, f: fun(E) -> T) -> T`
+### `unwrap_or_else[T, E](r: Result[T, E], f: fun(E) -> T) -> T`
 
 The `Ok` value, or the result of applying `f` to the error. The lazy
 counterpart to `unwrap_or`, for when the fallback depends on the error or is
@@ -325,7 +325,7 @@ fun main() {
 
 ## Worked example: a small config loader
 
-This ties the pieces together: failing steps return `Result<T, Error>`, `?`
+This ties the pieces together: failing steps return `Result[T, Error]`, `?`
 propagates failures, `with_context` annotates them as they rise, and the caller
 recovers with `unwrap_or`.
 

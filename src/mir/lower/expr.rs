@@ -292,22 +292,68 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             end,
             inclusive,
         } => {
+            // A range used as a value is the list of its integers.
             let s = lower_expr(cx, start);
             let e = lower_expr(cx, end);
-            let inc = MirOperand::Const(MirConstant::Bool(*inclusive));
-            let dst = cx.builder.fresh_temp("range", ty);
+            let list = cx.builder.fresh_temp("range", ty.clone());
             cx.builder.assign(
                 cx.current,
-                dst,
-                MirRvalue::Call {
-                    callee: MirFnRef {
-                        mangled: "__range_new".into(),
-                        origin: None,
-                    },
-                    args: vec![s, e, inc],
+                list,
+                MirRvalue::ArrayLit {
+                    ty,
+                    elements: Vec::new(),
                 },
             );
-            MirOperand::Copy(dst)
+            let i = cx.builder.fresh_temp("range_i", MirType::Int);
+            cx.builder.assign(cx.current, i, MirRvalue::Use(s));
+            let header = cx.builder.new_block();
+            let body = cx.builder.new_block();
+            let exit = cx.builder.new_block();
+            cx.builder.mark_loop_header(header);
+            cx.builder
+                .close_block(cx.current, MirTerminator::Goto(header));
+            let more = cx.builder.fresh_temp("range_more", MirType::Bool);
+            let op = if *inclusive {
+                MirBinOp::Le
+            } else {
+                MirBinOp::Lt
+            };
+            cx.builder.assign(
+                header,
+                more,
+                MirRvalue::BinaryOp(op, MirOperand::Copy(i), e),
+            );
+            cx.builder.close_block(
+                header,
+                MirTerminator::SwitchInt {
+                    discriminant: MirOperand::Copy(more),
+                    targets: vec![(1, body)],
+                    otherwise: exit,
+                },
+            );
+            let unit = cx.builder.fresh_temp("range_push", MirType::Unit);
+            cx.builder.assign(
+                body,
+                unit,
+                MirRvalue::ListMethod {
+                    op: ListMethodOp::Push,
+                    receiver: MirOperand::Copy(list),
+                    arg: Some(MirOperand::Copy(i)),
+                    elem_ty: MirType::Int,
+                },
+            );
+            cx.builder.assign(
+                body,
+                i,
+                MirRvalue::BinaryOp(
+                    MirBinOp::Add,
+                    MirOperand::Copy(i),
+                    MirOperand::Const(MirConstant::Int(1)),
+                ),
+            );
+            cx.builder.close_block(body, MirTerminator::Goto(header));
+            cx.current = exit;
+            MirOperand::Copy(list)
         }
         HirExprKind::IterNew(inner) => {
             let v = lower_expr(cx, inner);
@@ -1986,6 +2032,7 @@ fn list_method_op(name: &str) -> Option<ListMethodOp> {
         "len" => ListMethodOp::Len,
         "is_empty" => ListMethodOp::IsEmpty,
         "push" => ListMethodOp::Push,
+        "reserve" => ListMethodOp::Reserve,
         "pop" => ListMethodOp::Pop,
         "get" => ListMethodOp::Get,
         _ => return None,

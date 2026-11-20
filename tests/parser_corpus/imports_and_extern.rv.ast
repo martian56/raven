@@ -10,7 +10,7 @@
   (const "MAX": Int =
     (int 100)
   )
-  (let "greeting": String
+  (const "greeting": String =
     (str "hi")
   )
 )

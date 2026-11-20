@@ -5,14 +5,14 @@
 // outer scope (scope-aware renaming).
 fun helper() -> int = 99
 
-macro identity { () => { fun (arg: Int) -> Int = arg } }
+macro identity { () => { (arg: int) -> int => arg } }
 
 enum Shape {
     Circle(int),
     Square(int),
 }
 
-macro size { ($s:expr) => { match ($s) { Circle(r) -> r, Square(side) -> side} } }
+macro size { ($s:expr) => { match ($s) { case Circle(r) { r } case Square(side) { side } } } }
 
 class Pair {
     a: int
@@ -21,7 +21,7 @@ class Pair {
 
 // A shorthand struct pattern field is both the field name and the binding, so
 // the binding must keep its spelling and still resolve in the arm body.
-macro first { ($p:expr) => { match ($p) { Pair { a, b} -> a} } }
+macro first { ($p:expr) => { match ($p) { case Pair { a, b } { a } } } }
 
 // The outer `helper()` is a free call; the nested `let helper` is a separate
 // local that must not rename it.

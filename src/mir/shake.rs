@@ -48,7 +48,7 @@ pub fn remove_unreachable(program: &mut MirProgram) {
     });
 }
 
-fn collect_refs(f: &MirFunction, out: &mut Vec<String>) {
+pub(crate) fn collect_refs(f: &MirFunction, out: &mut Vec<String>) {
     for block in &f.blocks {
         for stmt in &block.statements {
             let MirStatement::Assign { rvalue, .. } = stmt else {

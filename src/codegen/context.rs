@@ -11,6 +11,9 @@ use std::collections::HashMap;
 use cranelift_codegen::ir::{types, AbiParam, ArgumentPurpose, InstBuilder, Signature, Type};
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::Context;
+
+/// `TAG_STRING` in the runtime's object header.
+const STATIC_STRING_TAG: u32 = 0x01;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectModule, ObjectProduct};
@@ -87,6 +90,7 @@ pub struct ModuleCx {
     fn_params: HashMap<String, Vec<MirType>>,
     /// Interned string literal data ids keyed by the literal's bytes.
     strings: BTreeMap<Vec<u8>, DataId>,
+    static_strings: BTreeMap<Vec<u8>, DataId>,
     /// Counter for unique data symbol names.
     string_counter: u32,
     /// The C entry shim and the Raven `main` it wraps, recorded during
@@ -115,6 +119,8 @@ pub struct ModuleCx {
     /// Counter handing out unique vtable data symbol names.
     vtable_counter: u32,
     gc_stop_flag: Option<DataId>,
+    frame_chain: Option<DataId>,
+    unit_variants: HashMap<String, DataId>,
     /// Counter handing out unique reflection-metadata data symbol names.
     reflect_counter: u32,
     /// C layouts of `@repr(C)` structs, keyed by mangled struct name. A
@@ -158,6 +164,7 @@ impl ModuleCx {
             variadic_externs: std::collections::HashSet::new(),
             fn_params: HashMap::new(),
             strings: BTreeMap::new(),
+            static_strings: BTreeMap::new(),
             string_counter: 0,
             main_entry: None,
             descriptors: HashMap::new(),
@@ -166,6 +173,8 @@ impl ModuleCx {
             vtables: HashMap::new(),
             vtable_counter: 0,
             gc_stop_flag: None,
+            frame_chain: None,
+            unit_variants: HashMap::new(),
             reflect_counter: 0,
             repr_c_structs: HashMap::new(),
             globals: HashMap::new(),
@@ -187,6 +196,7 @@ impl ModuleCx {
                 .declare_data(&g.name, Linkage::Local, true, false)?;
             let mut desc = DataDescription::new();
             desc.define(vec![0u8; 8].into_boxed_slice());
+            desc.set_align(8);
             self.module.define_data(id, &desc)?;
             self.globals.insert(g.name.clone(), id);
             if crate::codegen::layout::is_gc_pointer(&g.ty) {
@@ -196,7 +206,6 @@ impl ModuleCx {
         Ok(())
     }
 
-    /// The data slot of a mutable module-level global, by its mangled symbol.
     /// The runtime's `RAVEN_GC_STOP_PENDING` flag, imported on first use.
     pub fn gc_stop_flag(&mut self) -> Result<DataId, CodegenError> {
         if let Some(id) = self.gc_stop_flag {
@@ -209,6 +218,111 @@ impl ModuleCx {
         Ok(id)
     }
 
+    /// The rooted slot caching the one shared value of a payload-less enum
+    /// variant, defined on first use.
+    pub fn unit_variant_slot(
+        &mut self,
+        enum_mangle: &str,
+        variant: usize,
+    ) -> Result<DataId, CodegenError> {
+        let key: String = format!("__raven_unit_{enum_mangle}_{variant}")
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+            .collect();
+        if let Some(id) = self.unit_variants.get(&key) {
+            return Ok(*id);
+        }
+        let id = self
+            .module
+            .declare_data(&key, Linkage::Local, true, false)?;
+        let mut desc = DataDescription::new();
+        desc.define(vec![0u8; 8].into_boxed_slice());
+        desc.set_align(8);
+        self.module.define_data(id, &desc)?;
+        self.global_roots.push(id);
+        self.unit_variants.insert(key, id);
+        Ok(id)
+    }
+
+    /// The thread-local head of the GC root record chain, defined on first use.
+    pub fn frame_chain(&mut self) -> Result<DataId, CodegenError> {
+        if let Some(id) = self.frame_chain {
+            return Ok(id);
+        }
+        let id = self
+            .module
+            .declare_data("__raven_frame_chain", Linkage::Local, true, true)?;
+        let mut desc = DataDescription::new();
+        desc.define(vec![0u8; 8].into_boxed_slice());
+        desc.set_align(8);
+        self.module.define_data(id, &desc)?;
+        self.frame_chain = Some(id);
+        Ok(id)
+    }
+
+    /// Define a function returning this thread's address of the chain head,
+    /// which the runtime calls to reach it.
+    fn define_chain_accessor(&mut self) -> Result<FuncId, CodegenError> {
+        let ptr = self.pointer_type();
+        let chain = self.frame_chain()?;
+        let mut sig = Signature::new(self.module.target_config().default_call_conv);
+        sig.returns.push(AbiParam::new(ptr));
+        let id = self
+            .module
+            .declare_function("__raven_frame_chain_addr", Linkage::Local, &sig)?;
+        let mut ctx = Context::new();
+        ctx.func.signature = sig;
+        let gv = self.module.declare_data_in_func(chain, &mut ctx.func);
+        let mut fb = FunctionBuilderContext::new();
+        {
+            let frontend = self.module.isa().frontend_config();
+            let mut builder = FunctionBuilder::new(&mut ctx.func, &mut fb);
+            let block = builder.create_block();
+            builder.switch_to_block(block);
+            builder.seal_block(block);
+            let addr = builder.ins().tls_value(ptr, gv);
+            builder.ins().return_(&[addr]);
+            builder.finalize(frontend);
+        }
+        self.module
+            .define_function(id, &mut ctx)
+            .map_err(|e| CodegenError::Codegen(format!("define chain accessor: {}", e)))?;
+        Ok(id)
+    }
+
+    /// A wrapper around `raven_gc_safepoint` that saves every register it
+    /// touches, so a loop that polls the safepoint keeps its values in
+    /// registers instead of spilling them around the (rarely taken) call.
+    fn define_safepoint_thunk(&mut self) -> Result<(), CodegenError> {
+        let target = self
+            .runtime_id(intrinsics::RUNTIME_GC_SAFEPOINT)
+            .expect("safepoint declared first");
+        let sig = Signature::new(CallConv::PreserveAll);
+        let id = self
+            .module
+            .declare_function(intrinsics::SAFEPOINT_THUNK, Linkage::Local, &sig)?;
+        let mut ctx = Context::new();
+        ctx.func.signature = sig;
+        let callee = self.module.declare_func_in_func(target, &mut ctx.func);
+        let mut fb = FunctionBuilderContext::new();
+        {
+            let frontend = self.module.isa().frontend_config();
+            let mut builder = FunctionBuilder::new(&mut ctx.func, &mut fb);
+            let block = builder.create_block();
+            builder.switch_to_block(block);
+            builder.seal_block(block);
+            builder.ins().call(callee, &[]);
+            builder.ins().return_(&[]);
+            builder.finalize(frontend);
+        }
+        self.module
+            .define_function(id, &mut ctx)
+            .map_err(|e| CodegenError::Codegen(format!("define safepoint thunk: {}", e)))?;
+        self.runtime.insert(intrinsics::SAFEPOINT_THUNK, id);
+        Ok(())
+    }
+
+    /// The data slot of a mutable module-level global, by its mangled symbol.
     pub fn global_data(&self, name: &str) -> Option<DataId> {
         self.globals.get(name).copied()
     }
@@ -454,6 +568,38 @@ impl ModuleCx {
         Ok(id)
     }
 
+    /// A string literal as a prebuilt `String` object in writable data, so
+    /// using it allocates nothing. Strings are immutable, the collector only
+    /// sweeps its own heap pages, and marking just stamps the header, so a
+    /// static object is safe to hand out as an ordinary GC pointer.
+    pub fn intern_static_string(&mut self, bytes: &[u8]) -> Result<DataId, CodegenError> {
+        if let Some(id) = self.static_strings.get(bytes) {
+            return Ok(*id);
+        }
+        let text = self.intern_string(bytes)?;
+        let name = format!("__raven_strobj_{}", self.static_strings.len());
+        let id = self
+            .module
+            .declare_data(&name, Linkage::Local, true, false)?;
+        let len = u32::try_from(bytes.len()).map_err(|_| {
+            CodegenError::Unsupported("string literal longer than 4 GiB".to_string())
+        })?;
+        let mut object = Vec::with_capacity(24);
+        object.extend_from_slice(&STATIC_STRING_TAG.to_le_bytes());
+        object.extend_from_slice(&0u32.to_le_bytes());
+        object.extend_from_slice(&len.to_le_bytes());
+        object.extend_from_slice(&len.to_le_bytes());
+        object.extend_from_slice(&0u64.to_le_bytes());
+        let mut desc = DataDescription::new();
+        desc.define(object.into_boxed_slice());
+        desc.set_align(8);
+        let gv = self.module.declare_data_in_data(text, &mut desc);
+        desc.write_data_addr(16, gv, 0);
+        self.module.define_data(id, &desc)?;
+        self.static_strings.insert(bytes.to_vec(), id);
+        Ok(id)
+    }
+
     /// Intern a C string literal as a static, read-only,
     /// null-terminated byte buffer and return its data id.
     ///
@@ -521,13 +667,9 @@ impl ModuleCx {
         sig = self.make_sig(&[i32t, i32t, i64t], &[]);
         self.declare_runtime(intrinsics::RUNTIME_ENUM_REGISTER, &sig)?;
 
-        // raven_gc_enter_frame(roots: ptr, count: usize)
-        sig = self.make_sig(&[ptr, ptr], &[]);
-        self.declare_runtime(intrinsics::RUNTIME_GC_ENTER_FRAME, &sig)?;
-
-        // raven_gc_leave_frame()
-        sig = self.make_sig(&[], &[]);
-        self.declare_runtime(intrinsics::RUNTIME_GC_LEAVE_FRAME, &sig)?;
+        // raven_gc_set_chain_accessor(f: ptr)
+        sig = self.make_sig(&[ptr], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_GC_SET_CHAIN_ACCESSOR, &sig)?;
 
         // raven_gc_push_root(slot: ptr)
         sig = self.make_sig(&[ptr], &[]);
@@ -542,6 +684,7 @@ impl ModuleCx {
         self.declare_runtime(intrinsics::RUNTIME_GC_ENTER_RUNNING, &sig)?;
         self.declare_runtime(intrinsics::RUNTIME_GC_EXIT_RUNNING, &sig)?;
         self.declare_runtime(intrinsics::RUNTIME_GC_SAFEPOINT, &sig)?;
+        self.define_safepoint_thunk()?;
 
         // raven_defer_enter_frame()
         sig = self.make_sig(&[], &[]);
@@ -575,6 +718,10 @@ impl ModuleCx {
         // raven_list_push(List ptr, payload ptr)
         sig = self.make_sig(&[ptr, ptr], &[]);
         self.declare_runtime(intrinsics::RUNTIME_LIST_PUSH, &sig)?;
+
+        // raven_list_reserve(List ptr, additional: i64)
+        sig = self.make_sig(&[ptr, types::I64], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_LIST_RESERVE, &sig)?;
 
         // raven_list_pop(List ptr, out ptr) -> u32
         sig = self.make_sig(&[ptr, ptr], &[i32t]);
@@ -828,9 +975,7 @@ impl ModuleCx {
     /// by-value struct expands to its register slots' types, a single pointer
     /// (by reference), or a stack-passed aggregate (`StructArgument`, the
     /// System V MEMORY class, parameters only); a scalar uses its C machine
-    /// type. `is_param` selects the parameter vs return form for the MEMORY
-    /// class, which is passed on the stack as an argument but returned through
-    /// the `sret` pointer the return list echoes.
+    /// type. A struct returned through the `sret` pointer adds no return.
     fn push_abi(
         out: &mut Vec<AbiParam>,
         plan: Option<super::function::RegPlan>,
@@ -840,17 +985,14 @@ impl ModuleCx {
     ) {
         use super::function::RegPlan;
         match plan {
+            // A struct returned through the sret pointer has no return value:
+            // Cranelift hands the pointer back itself.
+            Some(RegPlan::ByRef | RegPlan::Memory(_)) if !is_param => {}
             Some(RegPlan::ByRef) => out.push(AbiParam::new(ptr)),
-            Some(RegPlan::Memory(size)) => {
-                if is_param {
-                    out.push(AbiParam::special(
-                        ptr,
-                        ArgumentPurpose::StructArgument(size),
-                    ));
-                } else {
-                    out.push(AbiParam::new(ptr));
-                }
-            }
+            Some(RegPlan::Memory(size)) => out.push(AbiParam::special(
+                ptr,
+                ArgumentPurpose::StructArgument(size),
+            )),
             Some(RegPlan::Regs(slots)) => {
                 for s in slots {
                     out.push(AbiParam::new(s.ty));
@@ -938,8 +1080,64 @@ impl ModuleCx {
 
     /// Lower the body of every declared MIR function.
     pub fn define_functions(&mut self, program: &MirProgram) -> Result<(), CodegenError> {
+        let mut built = Vec::with_capacity(program.functions.len());
         for func in &program.functions {
-            self.define_one(func)?;
+            built.push(self.build_one(func)?);
+        }
+        // Build the IR in order (it declares symbols in the module), compile
+        // the functions on every core, then define them in order.
+        let isa = self.module.isa();
+        let threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .min(built.len().max(1));
+        let chunk = built.len().div_ceil(threads).max(1);
+        let errors: Vec<Option<String>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = built
+                .chunks_mut(chunk)
+                .map(|part| {
+                    scope.spawn(move || {
+                        for (_, ctx, name) in part.iter_mut() {
+                            let mut plane = cranelift_codegen::control::ControlPlane::default();
+                            if let Err(e) = ctx.compile(isa, &mut plane) {
+                                return Some(format!(
+                                    "define {}: Compilation error: {}",
+                                    name, e.inner
+                                ));
+                            }
+                        }
+                        None
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| {
+                    h.join()
+                        .unwrap_or_else(|_| Some("codegen thread panicked".into()))
+                })
+                .collect()
+        });
+        if let Some(msg) = errors.into_iter().flatten().next() {
+            return Err(CodegenError::Codegen(msg));
+        }
+        for (func_id, ctx, name) in &built {
+            let compiled = ctx.compiled_code().expect("compiled above");
+            self.module
+                .define_function_bytes(
+                    *func_id,
+                    compiled.buffer.min_alignment as u64,
+                    compiled.code_buffer(),
+                    &compiled
+                        .buffer
+                        .relocs()
+                        .iter()
+                        .map(|r| {
+                            cranelift_module::ModuleReloc::from_mach_reloc(r, &ctx.func, *func_id)
+                        })
+                        .collect::<Vec<_>>(),
+                )
+                .map_err(|e| CodegenError::Codegen(format!("define {}: {}", name, e)))?;
         }
         if self.main_entry.is_some() {
             self.define_main_shim(program)?;
@@ -978,6 +1176,12 @@ impl ModuleCx {
         };
 
         let callee = self.module.declare_func_in_func(raven_main, &mut ctx.func);
+        let accessor = self.define_chain_accessor()?;
+        let accessor_ref = self.module.declare_func_in_func(accessor, &mut ctx.func);
+        let set_accessor_ref = self
+            .runtime_id(intrinsics::RUNTIME_GC_SET_CHAIN_ACCESSOR)
+            .map(|id| self.module.declare_func_in_func(id, &mut ctx.func));
+        let ptr_ty = self.module.target_config().pointer_type();
         // Collect descriptors and the registration symbol before the
         // builder borrows the function, so the closure below only needs
         // the resolved references.
@@ -1045,10 +1249,15 @@ impl ModuleCx {
             .map(|id| self.module.declare_func_in_func(id, &mut ctx.func));
         let mut builder_ctx = FunctionBuilderContext::new();
         {
+            let frontend = self.module.isa().frontend_config();
             let mut builder = FunctionBuilder::new(&mut ctx.func, &mut builder_ctx);
             let block = builder.create_block();
             builder.switch_to_block(block);
             builder.seal_block(block);
+            if let Some(set) = set_accessor_ref {
+                let f = builder.ins().func_addr(ptr_ty, accessor_ref);
+                builder.ins().call(set, &[f]);
+            }
             // Enter the running set first: the main thread runs compiled Raven,
             // so a parallel collection must wait for it to reach a safepoint.
             if let Some(enter) = enter_running_ref {
@@ -1124,7 +1333,7 @@ impl ModuleCx {
             }
             let zero = builder.ins().iconst(types::I32, 0);
             builder.ins().return_(&[zero]);
-            builder.finalize();
+            builder.finalize(frontend);
         }
 
         self.module
@@ -1133,7 +1342,7 @@ impl ModuleCx {
         Ok(())
     }
 
-    fn define_one(&mut self, func: &MirFunction) -> Result<(), CodegenError> {
+    fn build_one(&mut self, func: &MirFunction) -> Result<(FuncId, Context, String), CodegenError> {
         let func_id = self
             .functions
             .get(&func.name)
@@ -1147,11 +1356,7 @@ impl ModuleCx {
             let mut lowering = FunctionLowering::new(self, &mut ctx.func, func);
             lowering.lower()?;
         }
-
-        self.module
-            .define_function(func_id, &mut ctx)
-            .map_err(|e| CodegenError::Codegen(format!("define {}: {}", func.name, e)))?;
-        Ok(())
+        Ok((func_id, ctx, func.name.clone()))
     }
 
     /// Consume the context and return the Cranelift `ObjectProduct`

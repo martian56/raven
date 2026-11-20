@@ -19,9 +19,9 @@ use crate::object::{
     TAG_CLOSURE, TAG_LIST, TAG_MAP, TAG_SET, TAG_STRUCT,
 };
 use crate::object::{MapEntry, SetEntry, BOX_PAYLOAD_OFFSET};
-use crate::roots::{RootContext, RootRegistry};
+use crate::raven_dealloc;
+use crate::roots::{for_each_chain_slot, FrameRec, RootContext, RootRegistry};
 use crate::stw::StopTheWorld;
-use crate::{raven_alloc, raven_dealloc};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
@@ -171,7 +171,11 @@ struct LocalRoots {
 
 impl LocalRoots {
     fn register() -> Self {
-        let ctx = Box::into_raw(Box::new(RootContext::new()));
+        let mut boxed = Box::new(RootContext::new());
+        if let Some(f) = chain_accessor() {
+            boxed.chain_slot = f();
+        }
+        let ctx = Box::into_raw(boxed);
         ROOT_REGISTRY.register(ctx);
         LocalRoots { ctx }
     }
@@ -235,7 +239,7 @@ pub(crate) type RootSlot = *mut *mut u8;
 /// A saved root chain: the `ROOTS` and `FRAMES` vectors of a goroutine
 /// that is not currently running. The scheduler swaps these in and out of
 /// the thread-local cells on a context switch.
-pub(crate) type SavedRoots = (Vec<RootSlot>, Vec<usize>, Vec<Vec<*mut u8>>);
+pub(crate) type SavedRoots = (Vec<RootSlot>, Vec<usize>, Vec<Vec<*mut u8>>, *mut FrameRec);
 
 /// Hook the scheduler installs so the mark phase can reach the roots of
 /// every parked goroutine and every buffered channel value. It is called
@@ -267,6 +271,7 @@ pub(crate) fn take_root_chain() -> SavedRoots {
             std::mem::take(&mut ctx.roots),
             std::mem::take(&mut ctx.frames),
             std::mem::take(&mut ctx.defer_frames),
+            unsafe { std::mem::replace(&mut *ctx.head_slot(), std::ptr::null_mut()) },
         )
     })
 }
@@ -279,6 +284,7 @@ pub(crate) fn install_root_chain(saved: SavedRoots) {
         ctx.roots = saved.0;
         ctx.frames = saved.1;
         ctx.defer_frames = saved.2;
+        unsafe { *ctx.head_slot() = saved.3 };
     });
 }
 
@@ -289,6 +295,8 @@ pub(crate) fn for_each_slot_in(saved: &SavedRoots, visit: &mut dyn FnMut(RootSlo
     for &slot in &saved.0 {
         visit(slot);
     }
+    // SAFETY: a parked goroutine's records live on its preserved stack.
+    unsafe { for_each_chain_slot(saved.3, visit) };
     // A parked goroutine's deferred closures are roots too.
     for frame in &saved.2 {
         for closure_slot in frame.iter() {
@@ -300,21 +308,13 @@ pub(crate) fn for_each_slot_in(saved: &SavedRoots, visit: &mut dyn FnMut(RootSlo
 thread_local! {
     /// The all-objects list: the base pointer of every object handed
     /// out by `raven_gc_alloc`. The sweeper walks it once per cycle.
-    static HEAP: RefCell<Vec<*mut ObjectHeader>> = const { RefCell::new(Vec::new()) };
-
-    /// Live object-body bytes. Drives the collection threshold.
-    static BYTES_ALLOCATED: Cell<usize> = const { Cell::new(0) };
-
-    /// Live object count. Lets tests assert bounded liveness without
-    /// measuring flaky OS memory.
-    static LIVE_OBJECTS: Cell<usize> = const { Cell::new(0) };
-
-    /// Allocation high-water mark: a collection runs before serving an
-    /// allocation that would carry `bytes_allocated` past this. Reset
-    /// after each collection to a multiple of the surviving live bytes.
-    /// Initialised from `collection_floor()`, which honours the
-    /// `RAVEN_GC_THRESHOLD` override.
-    static THRESHOLD: Cell<usize> = Cell::new(collection_floor());
+    static ALLOC: AllocState = AllocState {
+        heap: RefCell::new(Vec::new()),
+        pages: RefCell::new(SmallHeap::new()),
+        bytes: Cell::new(0),
+        live: Cell::new(0),
+        threshold: Cell::new(collection_floor()),
+    };
 }
 
 /// ABI of a deferred thunk: the runtime calls the closure's lifted body
@@ -410,8 +410,168 @@ pub extern "C" fn raven_defer_run_frame() {
     });
 }
 
-/// Default collection floor in bytes (1 MiB) when no override is set.
-const INITIAL_THRESHOLD: usize = 1024 * 1024;
+/// Default collection floor in bytes (16 MiB) when no override is set.
+const INITIAL_THRESHOLD: usize = 16 * 1024 * 1024;
+
+/// Per-thread allocation bookkeeping, kept in one thread-local so an
+/// allocation touches thread-local storage once.
+struct AllocState {
+    /// Every large object this thread allocated that is not yet freed. Small
+    /// objects live in `pages`.
+    heap: RefCell<Vec<*mut ObjectHeader>>,
+    /// Size-classed pages for objects of at most `SMALL_MAX` bytes.
+    pages: RefCell<SmallHeap>,
+    /// Live object-body bytes. Drives the collection threshold.
+    bytes: Cell<usize>,
+    /// Live object count.
+    live: Cell<usize>,
+    /// A collection runs before an allocation that would carry `bytes` past
+    /// this.
+    threshold: Cell<usize>,
+}
+
+/// Objects of at most this many bytes come from size-classed pages.
+const SMALL_MAX: usize = 256;
+/// Every page slot is aligned to this.
+const SLOT_ALIGN: usize = 16;
+const PAGE_BYTES: usize = 64 * 1024;
+const CLASS_SIZES: [usize; 10] = [16, 32, 48, 64, 80, 96, 128, 160, 192, 256];
+/// Written over the tag of a free slot so the sweeper can skip it.
+const TAG_FREE: u32 = u32::MAX;
+
+fn size_class(size: usize) -> usize {
+    match size {
+        0..=16 => 0,
+        17..=32 => 1,
+        33..=48 => 2,
+        49..=64 => 3,
+        65..=80 => 4,
+        81..=96 => 5,
+        97..=128 => 6,
+        129..=160 => 7,
+        161..=192 => 8,
+        _ => 9,
+    }
+}
+
+/// One size class: its pages, a free list threaded through freed slots
+/// (the link sits after the header's tag and mark words), and the bump range
+/// of the newest page.
+struct SizeClass {
+    pages: Vec<*mut u8>,
+    free: *mut u8,
+    bump: *mut u8,
+    end: *mut u8,
+}
+
+/// A thread's small-object heap. Allocation pops a free slot or bumps into
+/// the newest page; sweeping walks every page and rebuilds the free lists.
+struct SmallHeap {
+    classes: [SizeClass; 10],
+}
+
+impl SmallHeap {
+    const fn new() -> Self {
+        const EMPTY: SizeClass = SizeClass {
+            pages: Vec::new(),
+            free: std::ptr::null_mut(),
+            bump: std::ptr::null_mut(),
+            end: std::ptr::null_mut(),
+        };
+        SmallHeap {
+            classes: [EMPTY; 10],
+        }
+    }
+
+    fn alloc(&mut self, class: usize) -> *mut u8 {
+        let size = CLASS_SIZES[class];
+        let c = &mut self.classes[class];
+        let slot = if !c.free.is_null() {
+            let slot = c.free;
+            // SAFETY: a free-list slot stores the next link at offset 8.
+            c.free = unsafe { *(slot.add(8) as *mut *mut u8) };
+            slot
+        } else {
+            if c.bump.is_null() || (c.end as usize) - (c.bump as usize) < size {
+                let Ok(layout) = std::alloc::Layout::from_size_align(PAGE_BYTES, 4096) else {
+                    return std::ptr::null_mut();
+                };
+                // SAFETY: the layout has a non-zero size.
+                let page = unsafe { std::alloc::alloc(layout) };
+                if page.is_null() {
+                    return page;
+                }
+                c.pages.push(page);
+                c.bump = page;
+                // SAFETY: `PAGE_BYTES / size` whole slots fit in the page.
+                c.end = unsafe { page.add(PAGE_BYTES / size * size) };
+            }
+            let slot = c.bump;
+            // SAFETY: at least one slot remains before `end`.
+            c.bump = unsafe { c.bump.add(size) };
+            slot
+        };
+        // SAFETY: the slot is `size` writable bytes.
+        unsafe { std::ptr::write_bytes(slot, 0, size) };
+        slot
+    }
+
+    #[cfg(test)]
+    fn release(&mut self, slot: *mut u8, class: usize) {
+        let c = &mut self.classes[class];
+        // SAFETY: the slot is a dead object of this class; mark it free and
+        // link it at offset 8.
+        unsafe {
+            *(slot as *mut u32) = TAG_FREE;
+            *(slot.add(8) as *mut *mut u8) = c.free;
+        }
+        c.free = slot;
+    }
+
+    /// Free every slot not marked with `epoch`; returns the bytes and object
+    /// count released.
+    fn sweep(&mut self, epoch: u32) -> (usize, usize) {
+        let mut freed_bytes = 0;
+        let mut freed = 0;
+        for (class, c) in self.classes.iter_mut().enumerate() {
+            let size = CLASS_SIZES[class];
+            c.free = std::ptr::null_mut();
+            let last = c.pages.last().copied();
+            for &page in c.pages.iter().rev() {
+                let limit = if Some(page) == last {
+                    c.bump
+                } else {
+                    // SAFETY: whole slots fit below this bound.
+                    unsafe { page.add(PAGE_BYTES / size * size) }
+                };
+                let mut slot = limit;
+                while slot > page {
+                    // SAFETY: stepping back by whole slots stays in the page.
+                    slot = unsafe { slot.sub(size) };
+                    let header = slot as *mut ObjectHeader;
+                    // SAFETY: every slot below the bump limit holds a header.
+                    let (tag, mark) = unsafe { ((*header).tag, (*header).gc_bits) };
+                    if tag != TAG_FREE && mark == epoch {
+                        continue;
+                    }
+                    if tag != TAG_FREE {
+                        // SAFETY: an unmarked live object; release its buffers.
+                        unsafe { free_object_buffers(header) };
+                        freed_bytes += size;
+                        freed += 1;
+                    }
+                    // SAFETY: the slot is dead; thread it onto the free list.
+                    unsafe {
+                        *(slot as *mut u32) = TAG_FREE;
+                        *(slot.add(8) as *mut *mut u8) = c.free;
+                    }
+                    c.free = slot;
+                }
+            }
+        }
+        (freed_bytes, freed)
+    }
+}
 
 /// The collection floor in bytes: the smallest the threshold is ever set
 /// to. Defaults to `INITIAL_THRESHOLD`, but a test or a stress program may
@@ -481,24 +641,46 @@ pub extern "C" fn raven_gc_pop_roots(n: usize) {
 /// `raven_gc_leave_frame`.
 #[no_mangle]
 pub extern "C" fn raven_gc_enter_frame(roots: *mut *mut u8, count: usize) {
-    shadow_guard_enter();
+    let in_raven = IN_RAVEN.with(|r| r.get());
+    if !in_raven {
+        COORDINATOR.enter_unsafe();
+    }
     with_roots(|ctx| {
         ctx.frames.push(ctx.roots.len());
-        if !roots.is_null() {
-            for i in 0..count {
-                // Each array entry is itself a slot address (the address of
-                // a stack local that holds a GC pointer), so read the entry
-                // to recover the slot address and push that. Pushing the
-                // entry's own address instead would add one extra level of
-                // indirection and make the collector read a stack address
-                // rather than the live GC pointer.
-                // SAFETY: caller guarantees `roots` has `count` entries.
-                let slot = unsafe { *roots.add(i) } as RootSlot;
-                ctx.roots.push(slot);
-            }
+        if !roots.is_null() && count > 0 {
+            // Each entry is the address of a stack local holding a GC pointer.
+            // SAFETY: caller guarantees `roots` has `count` entries.
+            let slots = unsafe { std::slice::from_raw_parts(roots as *const RootSlot, count) };
+            ctx.roots.extend_from_slice(slots);
         }
     });
-    shadow_guard_exit();
+    if !in_raven {
+        COORDINATOR.exit_unsafe();
+    }
+}
+
+/// The compiled program's accessor for its thread-local chain head, or 0.
+static CHAIN_ACCESSOR: AtomicUsize = AtomicUsize::new(0);
+
+type ChainAccessor = extern "C" fn() -> *mut *mut FrameRec;
+
+fn chain_accessor() -> Option<ChainAccessor> {
+    match CHAIN_ACCESSOR.load(Ordering::Acquire) {
+        0 => None,
+        // SAFETY: only `raven_gc_set_chain_accessor` stores a nonzero value,
+        // and it stores a function pointer of this type.
+        f => Some(unsafe { std::mem::transmute::<usize, ChainAccessor>(f) }),
+    }
+}
+
+/// Register the compiled program's accessor for the thread-local head of its
+/// root record chain. Compiled code pushes and pops records (see
+/// [`FrameRec`]) on that head inline; the collector and the scheduler reach
+/// it through each thread's context. Called once at program entry.
+#[no_mangle]
+pub extern "C" fn raven_gc_set_chain_accessor(f: ChainAccessor) {
+    CHAIN_ACCESSOR.store(f as usize, Ordering::Release);
+    with_roots(|ctx| ctx.chain_slot = f());
 }
 
 /// Unregister the most recently registered frame, truncating the shadow
@@ -508,15 +690,19 @@ pub extern "C" fn raven_gc_enter_frame(roots: *mut *mut u8, count: usize) {
 /// A call with no open frame is a no-op.
 #[no_mangle]
 pub extern "C" fn raven_gc_leave_frame() {
-    shadow_guard_enter();
+    let in_raven = IN_RAVEN.with(|r| r.get());
+    if !in_raven {
+        COORDINATOR.enter_unsafe();
+    }
     with_roots(|ctx| {
         if let Some(boundary) = ctx.frames.pop() {
-            // Defensive: never grow past the current length.
             let target = boundary.min(ctx.roots.len());
             ctx.roots.truncate(target);
         }
     });
-    shadow_guard_exit();
+    if !in_raven {
+        COORDINATOR.exit_unsafe();
+    }
 }
 
 /// Register a struct type's GC pointer descriptor.
@@ -637,27 +823,33 @@ pub extern "C" fn raven_gc_alloc(size: usize, align: usize, tag: u32) -> *mut u8
     }
     // Collect before serving an allocation that would cross the
     // threshold, so the heap stays a bounded multiple of the live set.
-    let current = BYTES_ALLOCATED.with(|b| b.get());
-    let threshold = THRESHOLD.with(|t| t.get());
-    if current + size > threshold {
+    let over = ALLOC.with(|a| a.bytes.get() + size > a.threshold.get());
+    if over {
         collect();
     }
-    let ptr = raven_alloc(size, align);
+    if size <= SMALL_MAX && align <= SLOT_ALIGN {
+        let class = size_class(size);
+        let ptr = ALLOC.with(|a| {
+            a.bytes.set(a.bytes.get() + CLASS_SIZES[class]);
+            a.live.set(a.live.get() + 1);
+            a.pages.borrow_mut().alloc(class)
+        });
+        return ptr;
+    }
+    let Ok(layout) = std::alloc::Layout::from_size_align(size.max(1), align) else {
+        return std::ptr::null_mut();
+    };
+    // SAFETY: the layout has a non-zero size.
+    let ptr = unsafe { std::alloc::alloc_zeroed(layout) };
     if ptr.is_null() {
         return std::ptr::null_mut();
     }
-    // SAFETY: `raven_alloc` returned `size` writable bytes.
-    unsafe { std::ptr::write_bytes(ptr, 0, size) };
-    register(ptr as *mut ObjectHeader, size);
+    ALLOC.with(|a| {
+        a.heap.borrow_mut().push(ptr as *mut ObjectHeader);
+        a.bytes.set(a.bytes.get() + size);
+        a.live.set(a.live.get() + 1);
+    });
     ptr
-}
-
-/// Record a freshly allocated object in the all-objects list and bump
-/// the live counters.
-fn register(header: *mut ObjectHeader, size: usize) {
-    HEAP.with(|h| h.borrow_mut().push(header));
-    BYTES_ALLOCATED.with(|b| b.set(b.get() + size));
-    LIVE_OBJECTS.with(|n| n.set(n.get() + 1));
 }
 
 /// Free a single object: its owned buffers, then its body. Decrements
@@ -672,9 +864,11 @@ unsafe fn free_one(header: *mut ObjectHeader) {
     let (size, align) = unsafe { object_body_layout(header) };
     // SAFETY: same guarantee; release owned buffers before the body.
     unsafe { free_object_buffers(header) };
-    raven_dealloc(header as *mut u8, size, align);
-    BYTES_ALLOCATED.with(|b| b.set(b.get().saturating_sub(size)));
-    LIVE_OBJECTS.with(|n| n.set(n.get().saturating_sub(1)));
+    raven_dealloc(header as *mut u8, size.max(1), align);
+    ALLOC.with(|a| {
+        a.bytes.set(a.bytes.get().saturating_sub(size));
+        a.live.set(a.live.get().saturating_sub(1));
+    });
 }
 
 /// Force a full mark-and-sweep collection regardless of the threshold.
@@ -715,9 +909,9 @@ fn collect() {
     // Reset the threshold to twice the surviving live bytes, never
     // below the floor, so a large live set collects less often and a
     // small one keeps a tight ceiling.
-    let live = BYTES_ALLOCATED.with(|b| b.get());
+    let live = ALLOC.with(|a| a.bytes.get());
     let next = collection_floor().max(live.saturating_mul(2));
-    THRESHOLD.with(|t| t.set(next));
+    ALLOC.with(|a| a.threshold.set(next));
     COORDINATOR.resume_the_world();
     if was_running {
         COORDINATOR.enter_running();
@@ -947,8 +1141,13 @@ unsafe fn trace_object(object: *mut ObjectHeader, work: &mut Vec<*mut ObjectHead
 /// are implicitly unmarked then.
 fn sweep() {
     let epoch = CURRENT_EPOCH.with(|e| e.get());
-    HEAP.with(|h| {
-        let mut heap = h.borrow_mut();
+    ALLOC.with(|a| {
+        let (freed_bytes, freed) = a.pages.borrow_mut().sweep(epoch);
+        a.bytes.set(a.bytes.get().saturating_sub(freed_bytes));
+        a.live.set(a.live.get().saturating_sub(freed));
+    });
+    ALLOC.with(|a| {
+        let mut heap = a.heap.borrow_mut();
         let mut write = 0usize;
         for read in 0..heap.len() {
             let object = heap[read];
@@ -989,7 +1188,7 @@ fn for_each_root(mut visit: impl FnMut(*mut ObjectHeader)) {
 /// call it.
 #[no_mangle]
 pub extern "C" fn raven_gc_bytes_allocated() -> usize {
-    BYTES_ALLOCATED.with(|b| b.get())
+    ALLOC.with(|a| a.bytes.get())
 }
 
 /// Number of live objects currently tracked by the collector. A
@@ -997,7 +1196,7 @@ pub extern "C" fn raven_gc_bytes_allocated() -> usize {
 /// without measuring flaky OS memory.
 #[no_mangle]
 pub extern "C" fn raven_gc_live_objects() -> usize {
-    LIVE_OBJECTS.with(|n| n.get())
+    ALLOC.with(|a| a.live.get())
 }
 
 /// Unregister a single object from the all-objects list and free it.
@@ -1013,8 +1212,23 @@ pub(crate) unsafe fn free_for_test(header: *mut ObjectHeader) {
     if header.is_null() {
         return;
     }
-    HEAP.with(|h| {
-        let mut heap = h.borrow_mut();
+    // SAFETY: caller guarantees `header` is a live registered object.
+    let (size, _) = unsafe { object_body_layout(header) };
+    if size <= SMALL_MAX {
+        // SAFETY: as above; the slot came from this thread's pages.
+        unsafe { free_object_buffers(header) };
+        ALLOC.with(|a| {
+            a.pages
+                .borrow_mut()
+                .release(header as *mut u8, size_class(size));
+            a.bytes
+                .set(a.bytes.get().saturating_sub(CLASS_SIZES[size_class(size)]));
+            a.live.set(a.live.get().saturating_sub(1));
+        });
+        return;
+    }
+    ALLOC.with(|a| {
+        let mut heap = a.heap.borrow_mut();
         if let Some(idx) = heap.iter().position(|&p| p == header) {
             heap.swap_remove(idx);
         }
@@ -1512,11 +1726,11 @@ mod collector_tests {
     #[test]
     fn allocation_triggers_collection_at_threshold() {
         isolated(|| {
-            // Each string body is 24 bytes, so 1 MiB of bodies is about
-            // 43.7k objects. Allocating well past that with unrooted
+            // Each string body is 24 bytes, so the 16 MiB floor is about
+            // 700k objects. Allocating well past that with unrooted
             // strings must trigger at least one automatic collection,
             // keeping liveness below the total allocated count.
-            const COUNT: usize = 120_000;
+            const COUNT: usize = 2_000_000;
             for _ in 0..COUNT {
                 let _garbage = raven_string_new(8);
             }

@@ -1,7 +1,7 @@
 # std/collections Spec
 
 Generic `Set<T>` and `Map<K, V>` over keys that implement the prelude
-`Eq + Hash` traits. Storage is a hash-bucket layout, so lookup, insert, and
+`Eq + Hash` traits. Storage keeps insertion order with an open-addressed index, so lookup, insert, and
 remove are O(1) average. `List<T>` is built into the language (literals,
 indexing, `len`, `push`, `pop`, `get`) and needs no import.
 
@@ -78,7 +78,7 @@ hand-written code: `{a, b}` builds `Set.new()` then `add(a); add(b)`, and
 |---|---|---|
 | `len()` | `Int` | element count |
 | `is_empty()` | `Bool` | |
-| `contains(x)` | `Bool` | hash to a bucket, scan it via `Eq` |
+| `contains(x)` | `Bool` | probe the index table, compare via `Eq` |
 | `add(x)` | | adds only if absent |
 | `remove(x)` | `Bool` | whether it was present; order not preserved |
 
@@ -93,39 +93,32 @@ Construct with a set literal `{1, 2}`, `Set.new()`, or `empty_set()`.
 | `has(k)` | `Bool` | |
 | `get(k)` | `Option<V>` | `None` when absent |
 | `set(k, v)` | | inserts or overwrites |
-| `keys()` | `List<K>` | every key, hash-bucket order |
+| `keys()` | `List<K>` | every key, insertion order |
 | `values()` | `List<V>` | every value, aligned with `keys()` |
 | `remove(k)` | `Bool` | whether it was present; order not preserved |
 
 Construct with a map literal `["a": 1]` (or `[:]` for an empty map),
 `Map.new()`, or `empty_map()`.
 
-## Hash-bucket layout
+## Storage layout
 
-Both types store entries in an array of buckets, a `List` of `List`s
-(each `Map` entry is a small `Entry { key, value }`). A key goes in
+Both types keep their items in dense lists in insertion order (`dict` has
+parallel key, value, and hash lists; `set` has item and hash lists) plus an
+index table of positions into those lists. The table size is a power of two;
+a slot holds -1 when empty and -2 after a removal. A key's home slot is a
+mixed form of its `hash()` masked to the table size, and lookup probes
+linearly from there, comparing cached hashes before calling `Eq`.
 
-```
-bucket_index(key) = ((key.hash() % n) + n) % n
-```
-
-where `n` is the bucket count. `hash()` may return a negative `Int` (the
-`Int` hash is the value itself, and the `String` hash can overflow), so the
-double modulo maps it back to a non-negative index rather than relying on
-the sign of `%` on a negative operand. Lookup, insert, and remove hash the
-key, index the one matching bucket, and linearly scan that small bucket
-with `Eq`.
-
-The table starts with 8 buckets (a power of two). When the load factor
-(`count / bucket_count`) passes 0.75 after an insert, the bucket array
-doubles and every entry is rehashed into the larger array. Iteration order
-(`keys()`, `values()`, `Map` stringify in std/json) therefore follows the
-current bucket layout, not insertion order.
+The table starts with 8 slots and doubles once three quarters of its slots
+are used, rebuilding from the dense lists. Removal marks the slot and moves
+the most recently inserted item into the vacated position. Iteration
+(`keys()`, `values()`, `entries()`, `to_list()`, and `Map` stringify in
+std/json) follows insertion order.
 
 ## Complexity
 
-Lookup, insert, and remove are O(1) average: a key hashes directly to its
-bucket, and buckets stay short under the 0.75 load factor. A resize is O(n)
+Lookup, insert, and remove are O(1) average: a key hashes to its home slot,
+and probe runs stay short under the 0.75 load factor. A resize is O(n)
 in the entry count but amortizes to O(1) per insert.
 
 ## Supported key types

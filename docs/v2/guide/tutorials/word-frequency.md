@@ -31,7 +31,7 @@ You should see the line printed back. Now make it do something useful.
 Text is made of words separated by spaces and punctuation. A regular
 expression is the cleanest way to extract just the word-like runs. The
 pattern `[a-z]+` matches one or more lowercase letters, and `find_all`
-returns every match as a `List<String>`.
+returns every match as a `list[str]`.
 
 ```rust
 from std.regex import compile
@@ -54,7 +54,7 @@ fun main() {
 
 A few things to notice:
 
-- `compile` returns a `Result<Regex, Error>`, so you `match` on it. A valid
+- `compile` returns a `Result[Regex, Error]`, so you `match` on it. A valid
   pattern gives `Ok(re)`; a malformed one gives `Err(e)`.
 - `text.to_lower()` (from [std/string](../stdlib/string.md)) folds the text to
   lowercase first, so `The` and `the` count as the same word.
@@ -66,7 +66,7 @@ Running this prints each word on its own line.
 
 ## Step 3: count with a map
 
-To count, keep a `Map<String, Int>` from each word to how many times you have
+To count, keep a `dict[str, int]` from each word to how many times you have
 seen it. For each word, look it up: if it is already there, store one more;
 if not, start it at one. [std/collections](../stdlib/collections.md) provides
 the map.
@@ -104,9 +104,9 @@ fun main() {
 }
 ```
 
-The annotation `let counts: Map<String, Int> = Map.new()` tells the compiler
+The annotation `let counts: dict[str, int] = Map.new()` tells the compiler
 the key and value types, since an empty map has nothing to infer them from.
-`counts.get(word)` returns an `Option<Int>`: `Some(n)` when the word is
+`counts.get(word)` returns an `Option[int]`: `Some(n)` when the word is
 present, `None` when it is not. That is how the language models "might be
 absent" without a `null`.
 
@@ -180,7 +180,7 @@ ran: 1
 ```
 
 `sorted_by` takes the list and a comparator closure. The comparator returns an
-`Int`: negative when the first argument should sort before the second, zero
+`int`: negative when the first argument should sort before the second, zero
 when they tie, positive otherwise. `b.count - a.count` produces a negative
 number when `b` has fewer occurrences than `a`, which puts the larger count
 first.
@@ -189,7 +189,7 @@ first.
 
 The hardcoded string was handy for testing. To count a real file, read it
 with [std/fs](../stdlib/fs.md) and feed its contents to `tally`. `read`
-returns `Result<String, Error>`, so a missing file is handled the same way a
+returns `Result[str, Error]`, so a missing file is handled the same way a
 bad regex was: with a `match`. Here is the complete program, reading from
 `input.txt`:
 
@@ -250,7 +250,7 @@ fun main() {
 - Limit the output to the top ten words by stopping the loop after ten
   iterations.
 - Skip common stop words ("the", "on", "a") by checking each word against a
-  `Set<String>` from [std/collections](../stdlib/collections.md) before
+  `set[str]` from [std/collections](../stdlib/collections.md) before
   counting it.
 - Read the filename from the command line with
   [std/env](../stdlib/env.md)'s `args()` instead of hardcoding `input.txt`.

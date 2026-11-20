@@ -21,6 +21,32 @@ use std::sync::Mutex;
 /// null). The collector reads the slot's current value at collection time.
 pub type RootSlot = *mut *mut u8;
 
+/// A compiled function's root record, laid out on its machine stack:
+/// the previous record, the slot count, then that many GC pointers (or
+/// nulls), which the collector reads in place.
+#[repr(C)]
+pub struct FrameRec {
+    pub prev: *mut FrameRec,
+    pub count: usize,
+    pub slots: [*mut u8; 0],
+}
+
+/// Visit each slot address in the chain of records starting at `rec`.
+///
+/// # Safety
+///
+/// Every record in the chain must be live and well formed.
+pub unsafe fn for_each_chain_slot(mut rec: *mut FrameRec, visit: &mut dyn FnMut(RootSlot)) {
+    while !rec.is_null() {
+        let r = unsafe { &mut *rec };
+        let base = r.slots.as_mut_ptr();
+        for i in 0..r.count {
+            visit(unsafe { base.add(i) });
+        }
+        rec = r.prev;
+    }
+}
+
 /// One thread's shadow stack: the root slots it has registered and the frame
 /// boundaries into them. A thread mutates only its own context, and only the
 /// collector reads other threads' contexts (while they are parked), so no lock
@@ -38,6 +64,13 @@ pub struct RootContext {
     /// migrates worker threads. Held as `*mut u8` to keep this module free of
     /// object-layout types.
     pub defer_frames: Vec<Vec<*mut u8>>,
+    /// The innermost compiled function's root record, used when the program
+    /// has not registered a chain accessor (see `chain_slot`).
+    pub chain: *mut FrameRec,
+    /// Where this thread's chain head lives: the compiled program's
+    /// thread-local, which compiled code links frames into directly. Null
+    /// means `chain`.
+    pub chain_slot: *mut *mut FrameRec,
 }
 
 impl RootContext {
@@ -46,6 +79,30 @@ impl RootContext {
             roots: Vec::new(),
             frames: Vec::new(),
             defer_frames: Vec::new(),
+            chain: std::ptr::null_mut(),
+            chain_slot: std::ptr::null_mut(),
+        }
+    }
+
+    /// The address holding this thread's chain head.
+    pub fn head_slot(&mut self) -> *mut *mut FrameRec {
+        if self.chain_slot.is_null() {
+            &mut self.chain
+        } else {
+            self.chain_slot
+        }
+    }
+
+    /// The innermost root record.
+    ///
+    /// # Safety
+    ///
+    /// `chain_slot`, when set, must point at the owning thread's live head.
+    pub unsafe fn head(&self) -> *mut FrameRec {
+        if self.chain_slot.is_null() {
+            self.chain
+        } else {
+            unsafe { *self.chain_slot }
         }
     }
 }
@@ -107,6 +164,7 @@ impl RootRegistry {
                     visit(slot);
                 }
             }
+            unsafe { for_each_chain_slot(ctx.head(), visit) };
             // Parked deferred closures are roots too: hand the collector the
             // address of each slot holding a closure pointer.
             for frame in &ctx.defer_frames {
@@ -140,11 +198,15 @@ mod tests {
             roots: vec![&mut obj_a as *mut *mut u8],
             frames: vec![],
             defer_frames: vec![],
+            chain: std::ptr::null_mut(),
+            chain_slot: std::ptr::null_mut(),
         };
         let mut ctx_b = RootContext {
             roots: vec![&mut obj_b as *mut *mut u8],
             frames: vec![],
             defer_frames: vec![],
+            chain: std::ptr::null_mut(),
+            chain_slot: std::ptr::null_mut(),
         };
         reg.register(&mut ctx_a);
         reg.register(&mut ctx_b);
@@ -171,6 +233,8 @@ mod tests {
             roots: vec![std::ptr::null_mut(), &mut obj as *mut *mut u8],
             frames: vec![],
             defer_frames: vec![],
+            chain: std::ptr::null_mut(),
+            chain_slot: std::ptr::null_mut(),
         };
         reg.register(&mut ctx);
 
@@ -192,6 +256,8 @@ mod tests {
             roots: vec![&mut obj as *mut *mut u8],
             frames: vec![],
             defer_frames: vec![],
+            chain: std::ptr::null_mut(),
+            chain_slot: std::ptr::null_mut(),
         };
         reg.register(&mut ctx);
         reg.deregister(&mut ctx);

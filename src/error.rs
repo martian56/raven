@@ -559,7 +559,7 @@ fn type_diagnostic(te: &TypeError) -> (String, Option<String>, Vec<String>) {
         TypeError::UnknownType(name) => (
             format!("cannot find the type `{}` in scope", name),
             Some("not a type in scope".into()),
-            vec!["type names are PascalCase: Int, Float, Bool, String, Char".into()],
+            vec!["type names are PascalCase: int, float, bool, str, char".into()],
         ),
         TypeError::UndefinedMethod {
             receiver_ty,
@@ -700,20 +700,20 @@ mod tests {
 
     #[test]
     fn parse_error_renders_with_carets_and_hint() {
-        let src = "fun add(a Int)\n";
+        let src = "fun add(a int)\n";
         // The bad spot is the missing colon between `a` and `Int`.
         let span = Span::new(file(), 10, 13, 1, 11);
         let err = RavenError::parse(
             ParseError::UnexpectedToken {
                 expected: "`:`".into(),
-                found: "`Int`".into(),
+                found: "`int`".into(),
             },
             span,
         )
-        .with_hint("parameters need a type annotation: `a: Int`");
+        .with_hint("parameters need a type annotation: `a: int`");
         let rendered = err.render(src, false);
-        assert!(rendered.contains("expected `:`, found `Int`"));
-        assert!(rendered.contains("fun add(a Int)"));
+        assert!(rendered.contains("expected `:`, found `int`"));
+        assert!(rendered.contains("fun add(a int)"));
         assert!(rendered.contains('^'));
         assert!(rendered.contains("help:"));
         assert!(rendered.contains("type annotation"));
@@ -733,7 +733,7 @@ mod tests {
         // `println` starts at byte 13, col 14.
         let span = Span::new(file(), 13, 20, 1, 14);
         let err = RavenError::resolve(ResolveError::UnresolvedName("println".into()), span)
-            .with_hint("did you mean to `import std/io { println }`?");
+            .with_hint("did you mean to `from std.io import println`?");
         let rendered = err.render(src, false);
         assert!(rendered.contains("cannot find `println` in scope"));
         assert!(rendered.contains("fun main() { println"));
@@ -754,20 +754,20 @@ mod tests {
 
     #[test]
     fn type_error_renders_with_carets_and_hint() {
-        let src = "let x: Int = 1.5\n";
+        let src = "let x: int = 1.5\n";
         // The `1.5` literal sits at byte 13, line 1, col 14.
         let span = Span::new(file(), 13, 16, 1, 14);
         let err = RavenError::ty(
             TypeError::TypeMismatch {
-                expected: "Int".into(),
-                actual: "Float".into(),
+                expected: "int".into(),
+                actual: "float".into(),
             },
             span,
         )
         .with_hint("did you mean to call `.to_int()`?");
         let rendered = err.render(src, false);
-        assert!(rendered.contains("this should be `Int`, but it's `Float`"));
-        assert!(rendered.contains("let x: Int = 1.5"));
+        assert!(rendered.contains("this should be `int`, but it's `float`"));
+        assert!(rendered.contains("let x: int = 1.5"));
         assert!(rendered.contains('^'));
         assert!(rendered.contains("help:"));
     }
@@ -788,22 +788,22 @@ mod tests {
 
     #[test]
     fn rich_format_has_box_pointer_label_and_note() {
-        let src = "    let count: Int = \"42\"\n";
+        let src = "    let count: int = \"42\"\n";
         // `"42"` starts at col 22.
         let span = Span::new(file(), 21, 25, 1, 22);
         let err = RavenError::ty(
             TypeError::TypeMismatch {
-                expected: "Int".into(),
-                actual: "String".into(),
+                expected: "int".into(),
+                actual: "str".into(),
             },
             span,
         );
         let r = err.render(src, false);
-        assert!(r.contains("error: this should be `Int`, but it's `String`"));
+        assert!(r.contains("error: this should be `int`, but it's `str`"));
         assert!(r.contains('\u{250c}')); // box arm ┌
         assert!(r.contains('\u{2502}')); // gutter bar │
         assert!(r.contains("^^^^"));
-        assert!(r.contains("this is `String`")); // inline caret label
+        assert!(r.contains("this is `str`")); // inline caret label
         assert!(r.contains("note: Raven has no implicit conversions"));
         // No ANSI escapes when color is disabled.
         assert!(!r.contains('\u{1b}'));
@@ -823,7 +823,7 @@ mod tests {
     fn carets_do_not_overrun_the_source_line() {
         // A span covering a multi-line construct must not print more carets
         // than the visible part of the first line.
-        let src = "match c {\n  A -> 1,\n}\n";
+        let src = "match c {\n  case A { 1 }\n}\n";
         let span = Span::new(file(), 0, 21, 1, 1);
         let err = RavenError::ty(
             TypeError::NonExhaustiveMatch {

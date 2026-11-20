@@ -1,21 +1,21 @@
 (hir
-  (fn "take_range" params=() ret=Int
+  (fn "take_range" params=() ret=int
     (body ty=()
-      (let "xs" ty=List<Int>
-        (range-new inclusive=false ty=List<Int>
-          (int 0 ty=Int)
-          (int 10 ty=Int)
+      (let "xs" ty=list[int]
+        (range-new inclusive=false ty=list[int]
+          (int 0 ty=int)
+          (int 10 ty=int)
         )
       )
-      (let "ys" ty=List<Int>
-        (range-new inclusive=true ty=List<Int>
-          (int 0 ty=Int)
-          (int 5 ty=Int)
+      (let "ys" ty=list[int]
+        (range-new inclusive=true ty=list[int]
+          (int 0 ty=int)
+          (int 5 ty=int)
         )
       )
       (stmt-expr
         (return ty=<error>
-          (int 0 ty=Int)
+          (int 0 ty=int)
         )
       )
     )

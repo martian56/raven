@@ -6,7 +6,7 @@
 //   6
 //   60
 @repr(C)
-struct Big {
+class Big {
     a: CLong
     b: CLong
     c: CLong

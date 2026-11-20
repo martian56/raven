@@ -3,6 +3,12 @@
 
 trait ToString {
     fun to_string(self) -> str
+
+    // The text shown inside a list, dict, set, tuple, or Option: strings
+    // and chars are quoted there, everything else prints as to_string.
+    fun repr(self) -> str {
+        return self.to_string()
+    }
 }
 
 trait Eq {
@@ -12,6 +18,23 @@ trait Eq {
 trait Ord {
     // Negative when self < other, zero when equal, positive when self > other.
     fun compare(self, other: Self) -> int
+
+    // `<`, `<=`, `>`, and `>=` on classes and tuples.
+    fun lt(self, other: Self) -> bool {
+        return self.compare(other) < 0
+    }
+
+    fun le(self, other: Self) -> bool {
+        return self.compare(other) <= 0
+    }
+
+    fun gt(self, other: Self) -> bool {
+        return self.compare(other) > 0
+    }
+
+    fun ge(self, other: Self) -> bool {
+        return self.compare(other) >= 0
+    }
 }
 
 trait Hash {
@@ -21,6 +44,11 @@ trait Hash {
 trait Iterator[T] {
     fun next(self) -> Option[T]
 }
+
+// `min(a, b)` and `max(a, b)` when no other `min` or `max` is in scope.
+fun __min2[T: Ord](a: T, b: T) -> T = a if a.compare(b) <= 0 else b
+
+fun __max2[T: Ord](a: T, b: T) -> T = a if a.compare(b) >= 0 else b
 
 impl ToString for int {
     fun to_string(self) -> str = "${self}"
@@ -36,11 +64,15 @@ impl ToString for bool {
 
 impl ToString for char {
     fun to_string(self) -> str = "${self}"
+
+    fun repr(self) -> str = "'${self}'"
 }
 
 // `String` is already text: `to_string` is the identity.
 impl ToString for str {
     fun to_string(self) -> str = self
+
+    fun repr(self) -> str = "\"" + self + "\""
 }
 
 // ----- Eq for the built-in scalar types -----
@@ -401,6 +433,74 @@ impl[T, E] Result[T, E] {
 // ----- List methods -----
 
 impl[T] list[T] {
+    // Each item with its position: `for (i, x) in xs.enumerate()`.
+    fun enumerate(self) -> list[(int, T)] {
+        let out: list[(int, T)] = []
+        var i = 0
+        while i < self.len() {
+            out.push((i, self[i]))
+            i += 1
+        }
+        return out
+    }
+
+    // `xs + ys`: a new list of both.
+    fun add(self, other: list[T]) -> list[T] {
+        let out: list[T] = []
+        for x in self {
+            out.push(x)
+        }
+        for x in other {
+            out.push(x)
+        }
+        return out
+    }
+
+    // `xs * n`: the items repeated `n` times.
+    fun mul(self, n: int) -> list[T] {
+        let out: list[T] = []
+        out.reserve(len(self) * n)
+        if len(self) == 1 {
+            let x = self[0]
+            var j = 0
+            while j < n {
+                out.push(x)
+                j += 1
+            }
+            return out
+        }
+        var k = 0
+        while k < n {
+            for x in self {
+                out.push(x)
+            }
+            k += 1
+        }
+        return out
+    }
+
+    // Every `k`th item, starting with the first: `(0..10).step(3)`.
+    fun step(self, k: int) -> list[T] {
+        let out: list[T] = []
+        var i = 0
+        while i < self.len() {
+            out.push(self[i])
+            i += k
+        }
+        return out
+    }
+
+    // Pairs of items at the same position, up to the shorter list.
+    fun zip[U](self, other: list[U]) -> list[(T, U)] {
+        let out: list[(T, U)] = []
+        var i = 0
+        while i < self.len() and i < other.len() {
+            out.push((self[i], other[i]))
+            i += 1
+        }
+        return out
+    }
+
     fun first(self) -> Option[T] = Some(self[0]) if self.len() > 0 else None
 
     fun last(self) -> Option[T] = Some(self[self.len() - 1]) if self.len() > 0 else None
@@ -670,7 +770,7 @@ impl[T: ToString] ToString for list[T] {
             if i > 0 {
                 out = out + ", "
             }
-            out = out + self[i].to_string()
+            out = out + self[i].repr()
             i += 1
         }
         return out + "]"
@@ -679,14 +779,317 @@ impl[T: ToString] ToString for list[T] {
 
 impl[T: ToString] ToString for Option[T] {
     fun to_string(self) -> str = match self {
-        case Some(v) { "Some(" + v.to_string() + ")" }
+        case Some(v) { "Some(" + v.repr() + ")" }
         case None { "None" }
     }
 }
 
 impl[T: ToString, E: ToString] ToString for Result[T, E] {
     fun to_string(self) -> str = match self {
-        case Ok(v) { "Ok(" + v.to_string() + ")" }
-        case Err(e) { "Err(" + e.to_string() + ")" }
+        case Ok(v) { "Ok(" + v.repr() + ")" }
+        case Err(e) { "Err(" + e.repr() + ")" }
     }
+}
+
+// Tuples. `(a, b)` builds a `Tuple2`, `(int, str)` names one, and `t.0`
+// reads its first item.
+class Tuple2[A, B] {
+    _0: A
+    _1: B
+}
+
+impl[A: ToString, B: ToString] ToString for (A, B) {
+    fun to_string(self) -> str {
+        return "(" + self.0.repr() + ", " + self.1.repr() + ")"
+    }
+}
+
+class Tuple3[A, B, C] {
+    _0: A
+    _1: B
+    _2: C
+}
+
+impl[A: ToString, B: ToString, C: ToString] ToString for (A, B, C) {
+    fun to_string(self) -> str {
+        return "(" + self.0.repr() + ", " + self.1.repr() + ", " + self.2.repr() + ")"
+    }
+}
+
+class Tuple4[A, B, C, D] {
+    _0: A
+    _1: B
+    _2: C
+    _3: D
+}
+
+impl[A: ToString, B: ToString, C: ToString, D: ToString] ToString for (A, B, C, D) {
+    fun to_string(self) -> str {
+        return "(" + self.0.repr() + ", " + self.1.repr() + ", " + self.2.repr() + ", " + self.3.repr() + ")"
+    }
+}
+
+class Tuple5[A, B, C, D, E] {
+    _0: A
+    _1: B
+    _2: C
+    _3: D
+    _4: E
+}
+
+impl[A: ToString, B: ToString, C: ToString, D: ToString, E: ToString] ToString for (A, B, C, D, E) {
+    fun to_string(self) -> str {
+        return "(" + self.0.repr() + ", " + self.1.repr() + ", " + self.2.repr() + ", " + self.3.repr() + ", " + self.4.repr() + ")"
+    }
+}
+
+class Tuple6[A, B, C, D, E, F] {
+    _0: A
+    _1: B
+    _2: C
+    _3: D
+    _4: E
+    _5: F
+}
+
+impl[A: ToString, B: ToString, C: ToString, D: ToString, E: ToString, F: ToString] ToString for (A, B, C, D, E, F) {
+    fun to_string(self) -> str {
+        return "(" + self.0.repr() + ", " + self.1.repr() + ", " + self.2.repr() + ", " + self.3.repr() + ", " + self.4.repr() + ", " + self.5.repr() + ")"
+    }
+}
+
+impl[A: Eq, B: Eq] Eq for (A, B) {
+    fun equals(self, other: (A, B)) -> bool {
+        return self.0.equals(other.0) and self.1.equals(other.1)
+    }
+}
+
+impl[A: Hash, B: Hash] Hash for (A, B) {
+    fun hash(self) -> int {
+        var h = self.0.hash()
+        h = h * 31 + self.1.hash()
+        return h
+    }
+}
+
+impl[A: Ord, B: Ord] Ord for (A, B) {
+    fun compare(self, other: (A, B)) -> int {
+        let c0 = self.0.compare(other.0)
+        if c0 != 0 {
+            return c0
+        }
+        return self.1.compare(other.1)
+    }
+}
+
+impl[A: Eq, B: Eq, C: Eq] Eq for (A, B, C) {
+    fun equals(self, other: (A, B, C)) -> bool {
+        return self.0.equals(other.0) and self.1.equals(other.1) and self.2.equals(other.2)
+    }
+}
+
+impl[A: Hash, B: Hash, C: Hash] Hash for (A, B, C) {
+    fun hash(self) -> int {
+        var h = self.0.hash()
+        h = h * 31 + self.1.hash()
+        h = h * 31 + self.2.hash()
+        return h
+    }
+}
+
+impl[A: Ord, B: Ord, C: Ord] Ord for (A, B, C) {
+    fun compare(self, other: (A, B, C)) -> int {
+        let c0 = self.0.compare(other.0)
+        if c0 != 0 {
+            return c0
+        }
+        let c1 = self.1.compare(other.1)
+        if c1 != 0 {
+            return c1
+        }
+        return self.2.compare(other.2)
+    }
+}
+
+impl[A: Eq, B: Eq, C: Eq, D: Eq] Eq for (A, B, C, D) {
+    fun equals(self, other: (A, B, C, D)) -> bool {
+        return self.0.equals(other.0) and self.1.equals(other.1) and self.2.equals(other.2) and self.3.equals(
+            other.3,
+        )
+    }
+}
+
+impl[A: Hash, B: Hash, C: Hash, D: Hash] Hash for (A, B, C, D) {
+    fun hash(self) -> int {
+        var h = self.0.hash()
+        h = h * 31 + self.1.hash()
+        h = h * 31 + self.2.hash()
+        h = h * 31 + self.3.hash()
+        return h
+    }
+}
+
+impl[A: Ord, B: Ord, C: Ord, D: Ord] Ord for (A, B, C, D) {
+    fun compare(self, other: (A, B, C, D)) -> int {
+        let c0 = self.0.compare(other.0)
+        if c0 != 0 {
+            return c0
+        }
+        let c1 = self.1.compare(other.1)
+        if c1 != 0 {
+            return c1
+        }
+        let c2 = self.2.compare(other.2)
+        if c2 != 0 {
+            return c2
+        }
+        return self.3.compare(other.3)
+    }
+}
+
+impl[A: Eq, B: Eq, C: Eq, D: Eq, E: Eq] Eq for (A, B, C, D, E) {
+    fun equals(self, other: (A, B, C, D, E)) -> bool {
+        return self.0.equals(other.0) and self.1.equals(other.1) and self.2.equals(other.2) and self.3.equals(
+            other.3,
+        ) and self.4.equals(other.4)
+    }
+}
+
+impl[A: Hash, B: Hash, C: Hash, D: Hash, E: Hash] Hash for (A, B, C, D, E) {
+    fun hash(self) -> int {
+        var h = self.0.hash()
+        h = h * 31 + self.1.hash()
+        h = h * 31 + self.2.hash()
+        h = h * 31 + self.3.hash()
+        h = h * 31 + self.4.hash()
+        return h
+    }
+}
+
+impl[A: Ord, B: Ord, C: Ord, D: Ord, E: Ord] Ord for (A, B, C, D, E) {
+    fun compare(self, other: (A, B, C, D, E)) -> int {
+        let c0 = self.0.compare(other.0)
+        if c0 != 0 {
+            return c0
+        }
+        let c1 = self.1.compare(other.1)
+        if c1 != 0 {
+            return c1
+        }
+        let c2 = self.2.compare(other.2)
+        if c2 != 0 {
+            return c2
+        }
+        let c3 = self.3.compare(other.3)
+        if c3 != 0 {
+            return c3
+        }
+        return self.4.compare(other.4)
+    }
+}
+
+impl[A: Eq, B: Eq, C: Eq, D: Eq, E: Eq, F: Eq] Eq for (A, B, C, D, E, F) {
+    fun equals(self, other: (A, B, C, D, E, F)) -> bool {
+        return self.0.equals(other.0) and self.1.equals(other.1) and self.2.equals(other.2) and self.3.equals(
+            other.3,
+        ) and self.4.equals(other.4) and self.5.equals(other.5)
+    }
+}
+
+impl[A: Hash, B: Hash, C: Hash, D: Hash, E: Hash, F: Hash] Hash for (A, B, C, D, E, F) {
+    fun hash(self) -> int {
+        var h = self.0.hash()
+        h = h * 31 + self.1.hash()
+        h = h * 31 + self.2.hash()
+        h = h * 31 + self.3.hash()
+        h = h * 31 + self.4.hash()
+        h = h * 31 + self.5.hash()
+        return h
+    }
+}
+
+impl[A: Ord, B: Ord, C: Ord, D: Ord, E: Ord, F: Ord] Ord for (A, B, C, D, E, F) {
+    fun compare(self, other: (A, B, C, D, E, F)) -> int {
+        let c0 = self.0.compare(other.0)
+        if c0 != 0 {
+            return c0
+        }
+        let c1 = self.1.compare(other.1)
+        if c1 != 0 {
+            return c1
+        }
+        let c2 = self.2.compare(other.2)
+        if c2 != 0 {
+            return c2
+        }
+        let c3 = self.3.compare(other.3)
+        if c3 != 0 {
+            return c3
+        }
+        let c4 = self.4.compare(other.4)
+        if c4 != 0 {
+            return c4
+        }
+        return self.5.compare(other.5)
+    }
+}
+
+// `x as int`, `x as float`: numeric conversions. Float to int truncates
+// toward zero; a bool is 1 or 0.
+impl int {
+    fun as_int(self) -> int = self
+
+    fun as_float(self) -> float = self.to_float()
+
+    fun abs(self) -> int = -self if self < 0 else self
+}
+
+impl float {
+    fun as_int(self) -> int = self.to_int()
+
+    fun as_float(self) -> float = self
+
+    fun abs(self) -> float = -self if self < 0.0 else self
+
+    // The nearest int, halves rounding away from zero.
+    fun round(self) -> int = (self + 0.5).to_int() if self >= 0.0 else (self - 0.5).to_int()
+}
+
+impl bool {
+    fun as_int(self) -> int = 1 if self else 0
+}
+
+extern "C" {
+    fun raven_waitgroup_new() -> int
+    fun raven_waitgroup_add(id: int, delta: int)
+    fun raven_waitgroup_wait(id: int)
+    fun raven_waitgroup_free(id: int)
+}
+
+// A running `spawn { ... }` block. `join()` waits for it to finish.
+class Task {
+    wg: int
+    joined: bool
+}
+
+impl Task {
+    fun join(self) {
+        if self.joined {
+            return
+        }
+        raven_waitgroup_wait(self.wg)
+        raven_waitgroup_free(self.wg)
+        self.joined = true
+    }
+}
+
+// `let t = spawn { ... }`.
+fun __spawn_task(f: fun() -> Unit) -> Task {
+    let wg = raven_waitgroup_new()
+    raven_waitgroup_add(wg, 1)
+    spawn {
+        f()
+        raven_waitgroup_add(wg, -1)
+    }
+    return Task(wg: wg, joined: false)
 }

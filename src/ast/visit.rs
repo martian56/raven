@@ -99,6 +99,13 @@ impl Walker<'_> {
                     self.expr(init);
                     self.block(else_block);
                 }
+                StmtKind::LetTuple { init, .. } => self.expr(init),
+                StmtKind::Assert { cond, message, .. } => {
+                    self.expr(cond);
+                    if let Some(m) = message {
+                        self.expr(m);
+                    }
+                }
                 StmtKind::Return(e) | StmtKind::Break(e) => {
                     if let Some(e) = e {
                         self.expr(e);
@@ -150,9 +157,26 @@ impl Walker<'_> {
                     self.expr(v);
                 }
             }
-            ExprKind::Paren(x) | ExprKind::Try(x) | ExprKind::NamedArg { value: x, .. } => {
-                self.expr(x)
+            ExprKind::Comprehension {
+                key,
+                value,
+                iter,
+                cond,
+                ..
+            } => {
+                if let Some(k) = key {
+                    self.expr(k);
+                }
+                self.expr(value);
+                self.expr(iter);
+                if let Some(c) = cond {
+                    self.expr(c);
+                }
             }
+            ExprKind::Paren(x)
+            | ExprKind::Try(x)
+            | ExprKind::NamedArg { value: x, .. }
+            | ExprKind::Cast { value: x, .. } => self.expr(x),
             ExprKind::Block(b) | ExprKind::Loop(b) => self.block(b),
             ExprKind::Unary { operand, .. } => self.expr(operand),
             ExprKind::Binary { lhs, rhs, .. } => {

@@ -120,6 +120,9 @@ pub fn build_binary_native(
         .map_err(|e| DriverError::Io(format!("read {}: {}", input.display(), e)))?;
 
     let object_bytes = compile_to_object(&source, input, ctx)?;
+    if let Some(p) = std::env::var_os("RAVEN_DUMP_OBJ") {
+        let _ = std::fs::write(p, &object_bytes);
+    }
 
     let runtime = locate_runtime_staticlib()?;
     let tmp = TempDir::new()?;
@@ -231,7 +234,14 @@ pub fn compile_to_object(
     if std::env::var("RAVEN_DUMP_HIR").is_ok() {
         eprintln!("{}", crate::hir::pretty_program(&hir));
     }
-    let mir = lower_program(&hir).map_err(|e| frontend_diag(e, input, source))?;
+    let mut mir = lower_program(&hir).map_err(|e| frontend_diag(e, input, source))?;
+    if std::env::var_os("RAVEN_NO_INLINE").is_none() {
+        crate::mir::inline::inline_small_functions(&mut mir);
+        crate::mir::shake::remove_unreachable(&mut mir);
+    }
+    if std::env::var_os("RAVEN_NO_COPYPROP").is_none() {
+        crate::mir::copyprop::propagate_copies(&mut mir);
+    }
     t.mark("mir");
     if std::env::var("RAVEN_DUMP_MIR").is_ok() {
         eprintln!("{}", crate::mir::pretty::pretty_program(&mir));

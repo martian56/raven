@@ -75,7 +75,7 @@
           "patterns": [{ "include": "#importNames" }]
         },
         {
-          "match": "\\b(import)\\s+([a-zA-Z_][a-zA-Z0-9_]*(?:/[a-zA-Z_][a-zA-Z0-9_]*)*)(?:\\s+(as)\\s+([a-zA-Z_][a-zA-Z0-9_]*))?",
+          "match": "\\b(import|from)\\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)*)(?:\\s+(as|import)\\s+([a-zA-Z_][a-zA-Z0-9_]*))?",
           "captures": {
             "1": { "name": "keyword.control.import.raven" },
             "2": { "name": "entity.name.namespace.raven" },
@@ -197,7 +197,7 @@
     "bindings": {
       "patterns": [
         {
-          "match": "\\b(let|const)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\b",
+          "match": "\\b(let|var)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\b",
           "captures": {
             "1": { "name": "storage.type.raven" },
             "2": { "name": "variable.other.readwrite.raven" }
@@ -223,7 +223,7 @@
     "typeDeclarations": {
       "patterns": [
         {
-          "match": "\\b(struct|enum|trait)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(class|enum|trait)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": { "name": "storage.type.raven" },
             "2": { "name": "entity.name.type.raven" }
@@ -234,7 +234,7 @@
     "implDeclarations": {
       "patterns": [
         {
-          "match": "\\b(impl)\\b(?:\\s*<[^>]*>)?\\s+([A-Za-z_][A-Za-z0-9_]*)(?:\\s+(for)\\s+([A-Za-z_][A-Za-z0-9_]*))?",
+          "match": "\\b(impl)\\b(?:\\s*\\[[^\\]]*\\])?\\s+([A-Za-z_][A-Za-z0-9_]*)(?:\\s+(for)\\s+([A-Za-z_][A-Za-z0-9_]*))?",
           "captures": {
             "1": { "name": "storage.type.raven" },
             "2": { "name": "entity.name.type.raven" },
@@ -256,7 +256,7 @@
       "patterns": [
         {
           "name": "keyword.control.raven",
-          "match": "\\b(if|else|while|for|loop|in|break|continue|return|match|defer|spawn)\\b"
+          "match": "\\b(if|else|while|for|loop|in|break|continue|return|match|case|defer|spawn|assert|and|or|not)\\b"
         },
         {
           "name": "keyword.other.macro.raven",
@@ -264,11 +264,11 @@
         },
         {
           "name": "keyword.control.import.raven",
-          "match": "\\b(import)\\b"
+          "match": "\\b(import|from|pub)\\b"
         },
         {
           "name": "storage.type.raven",
-          "match": "\\b(let|const|fun|struct|enum|trait|impl|extern)\\b"
+          "match": "\\b(let|var|fun|class|enum|trait|impl|extern)\\b"
         },
         {
           "name": "storage.modifier.raven",
@@ -304,7 +304,7 @@
       "patterns": [
         {
           "name": "support.type.builtin.raven",
-          "match": "\\b(Int|Float|Bool|String|Char|Unit|Any|Option|Result|List|Map|Set|Channel)\\b"
+          "match": "\\b(int|float|bool|str|char|list|dict|set|Any|Option|Result|Channel|Task)\\b"
         },
         {
           "name": "support.type.ffi.raven",

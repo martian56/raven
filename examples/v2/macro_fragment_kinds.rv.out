@@ -1,4 +1,4 @@
-List<Int>
+list[int]
 42
 true
 false

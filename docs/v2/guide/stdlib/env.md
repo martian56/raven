@@ -24,7 +24,7 @@ Pull in just the functions you use, or list all of them as above.
 
 ## Environment variables
 
-### `get_env(name: String) -> String`
+### `get_env(name: str) -> str`
 
 The value of the environment variable `name`, or `""` when it is unset.
 A variable set to the empty string and a variable that is not set both
@@ -39,12 +39,12 @@ fun main() {
 }
 ```
 
-### `has_env(name: String) -> Bool`
+### `has_env(name: str) -> bool`
 
 True when `name` is set in the environment, regardless of its value
 (including the empty string).
 
-### `get_env_or(name: String, default: String) -> String`
+### `get_env_or(name: str, default: str) -> str`
 
 The value of `name`, or `default` when `name` is unset. This is the usual
 way to read configuration with a fallback.
@@ -60,17 +60,17 @@ fun main() {
 
 ## Command-line arguments
 
-### `arg_count() -> Int`
+### `arg_count() -> int`
 
 The number of process arguments, always at least 1. Index 0 is the program
 path; user-supplied arguments start at index 1.
 
-### `arg_at(i: Int) -> String`
+### `arg_at(i: int) -> str`
 
 The argument at index `i` (index 0 is the program path), or `""` when `i`
 is out of range.
 
-### `args() -> List<String>`
+### `args() -> list[str]`
 
 All process arguments as a list, with index 0 being the program path.
 This is pure Raven: it loops `arg_at` over `0..arg_count()`.
@@ -90,7 +90,7 @@ fun main() {
 
 ## Process exit
 
-### `exit(code: Int)`
+### `exit(code: int)`
 
 Terminate the process with status `code`. It does not return; any code
 after a call to `exit` is unreachable.
@@ -109,11 +109,11 @@ fun main() {
 
 ## Platform info
 
-### `os_name() -> String`
+### `os_name() -> str`
 
 The target operating system: `"windows"`, `"linux"`, or `"macos"`.
 
-### `arch() -> String`
+### `arch() -> str`
 
 The target CPU architecture, for example `"x86_64"` or `"aarch64"`.
 

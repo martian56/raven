@@ -2,8 +2,8 @@
 
 Filesystem access: read and write files, create and remove directories,
 list and size entries, query existence, and manipulate path strings. The
-fallible operations return `Result<T, Error>`; the queries return a plain
-`Bool`; the path helpers are pure string work with no runtime call.
+fallible operations return `Result[T, Error]`; the queries return a plain
+`bool`; the path helpers are pure string work with no runtime call.
 
 ```rust
 from std.fs import write, read
@@ -23,7 +23,7 @@ from std.fs import read, write, append, read_lines, copy, remove_file, create_di
 ```
 
 `std/fs` is a set of free functions, so use a selective import and list the
-names you want. A bare `import std/fs` does not bring the functions into
+names you want. A bare `import std.fs` does not bring the functions into
 scope. Import only what a given file uses:
 
 ```rust
@@ -32,7 +32,7 @@ from std.fs import read, exists
 
 ## The error model
 
-Fallible operations return `Result<T, Error>`. On failure the `Error` is an
+Fallible operations return `Result[T, Error]`. On failure the `Error` is an
 std/error value tagged with kind `"io"`. Its message is a short context
 prefix (the operation name) joined to the operating system error text, for
 example `read: No such file or directory`.
@@ -68,9 +68,9 @@ fun copy(src: str, dst: str) -> Result[bool, Error] {
 
 ## Reading and writing
 
-### `read(path: String) -> Result<String, Error>`
+### `read(path: str) -> Result[str, Error]`
 
-Read the whole file at `path` and return it as a single `String`.
+Read the whole file at `path` and return it as a single `str`.
 
 ```rust
 from std.fs import read
@@ -83,11 +83,11 @@ fun main() {
 }
 ```
 
-### `write(path: String, contents: String) -> Result<Bool, Error>`
+### `write(path: str, contents: str) -> Result[bool, Error]`
 
 Create or truncate `path`, then write `contents`. Returns `Ok(true)` on
-success. The `Bool` payload is always `true`; it exists only so the success
-arm carries a value (the surface uses `Result<Bool, Error>` rather than a
+success. The `bool` payload is always `true`; it exists only so the success
+arm carries a value (the surface uses `Result[bool, Error]` rather than a
 unit payload).
 
 ```rust
@@ -101,7 +101,7 @@ fun main() {
 }
 ```
 
-### `append(path: String, contents: String) -> Result<Bool, Error>`
+### `append(path: str, contents: str) -> Result[bool, Error]`
 
 Write `contents` to the end of `path`, creating the file when it is absent.
 Returns `Ok(true)` on success.
@@ -114,7 +114,7 @@ fun log_line(line: str) -> Result[bool, Error] {
 }
 ```
 
-### `read_lines(path: String) -> Result<List<String>, Error>`
+### `read_lines(path: str) -> Result[list[str], Error]`
 
 Read the file at `path` and split it into lines, handling both `\n` and
 `\r\n` line endings. The trailing newline does not produce an empty final
@@ -135,7 +135,7 @@ fun main() {
 }
 ```
 
-### `copy(src: String, dst: String) -> Result<Bool, Error>`
+### `copy(src: str, dst: str) -> Result[bool, Error]`
 
 Copy the contents of `src` to `dst`, creating or truncating `dst`. Returns
 `Ok(true)` on success.
@@ -153,11 +153,11 @@ fun main() {
 
 ## Directory and file operations
 
-### `remove_file(path: String) -> Result<Bool, Error>`
+### `remove_file(path: str) -> Result[bool, Error]`
 
 Remove the file at `path`. Returns `Ok(true)` on success.
 
-### `create_dir(path: String) -> Result<Bool, Error>`
+### `create_dir(path: str) -> Result[bool, Error]`
 
 Create the directory at `path`, including any missing parent directories, so
 creating a nested path in one call succeeds. Returns `Ok(true)` on success.
@@ -173,7 +173,7 @@ fun main() {
 }
 ```
 
-### `create_dir_all(path: String) -> Result<Bool, Error>`
+### `create_dir_all(path: str) -> Result[bool, Error]`
 
 Create the directory at `path` along with any missing parents, like
 `mkdir -p`. An already existing directory is not an error. Returns
@@ -190,12 +190,12 @@ fun main() {
 }
 ```
 
-### `remove_dir(path: String) -> Result<Bool, Error>`
+### `remove_dir(path: str) -> Result[bool, Error]`
 
 Remove the directory at `path` and all of its contents recursively. Returns
 `Ok(true)` on success.
 
-### `list_dir(path: String) -> Result<List<String>, Error>`
+### `list_dir(path: str) -> Result[list[str], Error]`
 
 Return the entry names (not full paths) of the directory at `path`. An empty
 directory yields an empty list, not a one-element list containing `""`.
@@ -215,7 +215,7 @@ fun main() {
 }
 ```
 
-### `walk(path: String) -> Result<List<String>, Error>`
+### `walk(path: str) -> Result[list[str], Error]`
 
 Recursively list every path under `path`, depth first. Each entry is a full
 path (the directory prefix joined to the name), and subdirectories appear
@@ -236,7 +236,7 @@ fun main() {
 }
 ```
 
-### `size(path: String) -> Result<Int, Error>`
+### `size(path: str) -> Result[int, Error]`
 
 Return the file size at `path` in bytes.
 
@@ -265,13 +265,13 @@ fun total(a: str, b: str) -> Result[int, Error] {
 ## Boolean checks
 
 ```rust
-fun exists(path: String) -> Bool
-fun is_file(path: String) -> Bool
-fun is_dir(path: String) -> Bool
-fun is_symlink(path: String) -> Bool
+fun exists(path: str) -> bool
+fun is_file(path: str) -> bool
+fun is_dir(path: str) -> bool
+fun is_symlink(path: str) -> bool
 ```
 
-These return a plain `Bool`, never a `Result`. A missing path is a normal
+These return a plain `bool`, never a `Result`. A missing path is a normal
 `false`, not an `Err`. `is_file` is `false` for a path that exists but is not
 a regular file (a directory, say), and `is_dir` is `false` for anything that
 is not a directory. `is_symlink` reports whether the path itself is a symbolic
@@ -295,10 +295,10 @@ fun main() {
 ## Path helpers
 
 ```rust
-fun join(a: String, b: String) -> String
-fun basename(p: String) -> String
-fun dirname(p: String) -> String
-fun split(p: String) -> List<String>
+fun join(a: str, b: str) -> str
+fun basename(p: str) -> str
+fun dirname(p: str) -> str
+fun split(p: str) -> list[str]
 ```
 
 These are pure string operations with no runtime call and no `Result`. They
@@ -307,7 +307,7 @@ so the operating system separator is not detected. They overlap with
 [std/path](../../specs/std-path.md); std/fs duplicates them so the module is
 usable without a second import.
 
-### `join(a: String, b: String) -> String`
+### `join(a: str, b: str) -> str`
 
 Join two path segments with a single `/`, collapsing a trailing slash on `a`
 or a leading slash on `b` so the result never doubles the separator. An empty
@@ -322,7 +322,7 @@ fun main() {
 }
 ```
 
-### `basename(p: String) -> String`
+### `basename(p: str) -> str`
 
 The final component of `p` (everything after the last `/`). A path with no
 slash returns unchanged.
@@ -336,7 +336,7 @@ fun main() {
 }
 ```
 
-### `dirname(p: String) -> String`
+### `dirname(p: str) -> str`
 
 Everything before the last `/`. A path with no slash returns `"."`; a path
 whose only slash is at the front returns `"/"`.
@@ -350,7 +350,7 @@ fun main() {
 }
 ```
 
-### `split(p: String) -> List<String>`
+### `split(p: str) -> list[str]`
 
 Split `p` on `/` into its components, dropping empty pieces produced by
 leading, trailing, or repeated separators.

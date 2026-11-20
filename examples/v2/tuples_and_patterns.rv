@@ -1,0 +1,95 @@
+fun divmod(a: int, b: int) -> (int, int) {
+    return (a / b, a % b)
+}
+
+fun tuples() {
+    let (q, r) = divmod(17, 5)
+    print("${q} ${r}")
+    let t = (1, "one", 1.5)
+    print(t)
+    print(t.1)
+    let nested = ((1, 2), "x")
+    print(nested.0.1)
+    let ((a, b), c) = nested
+    print("${a} ${b} ${c}")
+    let pairs = [(1, "a"), (2, "b")]
+    for (n, s) in pairs {
+        print("${n}:${s}")
+    }
+    match divmod(10, 2) {
+        case (q2, 0) { print("even ${q2}") }
+        case (_, rem) { print("rem ${rem}") }
+    }
+    print((1, 2) == (1, 2))
+    var (x, y) = (3, 4)
+    x += 1
+    print(x + y)
+    let u = ()
+    print("unit ok")
+}
+enum Shape {
+    Circle(r: float),
+    Rect(w: float, h: float),
+}
+
+fun describe(o: Option[Result[int, str]]) -> str {
+    match o {
+        case Some(Ok(0)) {
+            return "zero"
+        }
+        case Some(Ok(n)) if n < 0 {
+            return "negative"
+        }
+        case Some(Ok(n)) {
+            return "ok ${n}"
+        }
+        case Some(Err("boom")) {
+            return "boom"
+        }
+        case Some(Err(e)) {
+            return "err ${e}"
+        }
+        case None {
+            return "none"
+        }
+    }
+}
+
+fun kind(s: Shape) -> str {
+    match s {
+        case Circle(0.0) {
+            return "dot"
+        }
+        case Rect(w, 1.0) {
+            return "strip ${w}"
+        }
+        case Circle(r) {
+            return "circle ${r}"
+        }
+        case _ {
+            return "rect"
+        }
+    }
+}
+
+fun patterns() {
+    print(describe(Some(Ok(0))))
+    print(describe(Some(Ok(-3))))
+    print(describe(Some(Ok(7))))
+    print(describe(Some(Err("boom"))))
+    print(describe(Some(Err("x"))))
+    print(describe(None))
+    print(kind(Shape.Circle(0.0)))
+    print(kind(Shape.Rect(4.0, 1.0)))
+    print(kind(Shape.Circle(2.5)))
+    print(kind(Shape.Rect(1.0, 2.0)))
+    let x: Option[int] = Some(5)
+    if let Some(5) = x {
+        print("five")
+    }
+}
+
+fun main() {
+    tuples()
+    patterns()
+}

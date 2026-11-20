@@ -623,7 +623,7 @@ fn repr_c_struct_layout(
             Ty::Ffi(ffi) => ffi.c_scalar_layout().ok_or_else(|| {
                 ty_custom(
                     &format!(
-                        "field `{}` of `@repr(C)` struct `{}` has type `{}`, which cannot cross the FFI by value; use a C scalar (CInt, CLong, CSize, CFloat, CDouble, CStr, CPtr<T>) or a `@repr(C)` struct",
+                        "field `{}` of `@repr(C)` struct `{}` has type `{}`, which cannot cross the FFI by value; use a C scalar (CInt, CLong, CSize, CFloat, CDouble, CStr, CPtr[T]) or a `@repr(C)` struct",
                         f.name, name, f.ty
                     ),
                     &f.span,
@@ -1343,7 +1343,7 @@ mod tests {
 
     #[test]
     fn collects_function_signature() {
-        let env = check_source("fun add(a: Int, b: Int) -> Int = a + b\n").unwrap();
+        let env = check_source("fun add(a: int, b: int) -> int = a + b\n").unwrap();
         let sig = env.functions.values().next().expect("one function");
         assert_eq!(sig.params, vec![Ty::Int, Ty::Int]);
         assert_eq!(sig.ret, Ty::Int);
@@ -1351,7 +1351,7 @@ mod tests {
 
     #[test]
     fn collects_struct_fields() {
-        let env = check_source("struct Point { x: Int, y: Int }\n").unwrap();
+        let env = check_source("class Point { x: int, y: int }\n").unwrap();
         let s = env.structs.values().next().expect("one struct");
         assert_eq!(s.fields.len(), 2);
         assert_eq!(s.fields[0].name, "x");
@@ -1360,7 +1360,7 @@ mod tests {
 
     #[test]
     fn collects_generic_function_signature() {
-        let env = check_source("fun id<T>(x: T) -> T = x\n").unwrap();
+        let env = check_source("fun id[T](x: T) -> T = x\n").unwrap();
         let sig = env.functions.values().next().expect("one function");
         assert_eq!(sig.generics.len(), 1);
         assert_eq!(sig.generics[0].id.name, "T");
@@ -1372,7 +1372,7 @@ mod tests {
 
     #[test]
     fn collects_generic_struct_field_types() {
-        let env = check_source("struct Box<T> { value: T }\n").unwrap();
+        let env = check_source("class Box[T] { value: T }\n").unwrap();
         let s = env.structs.values().next().expect("one struct");
         assert_eq!(s.generics.len(), 1);
         match &s.fields[0].ty {
@@ -1383,14 +1383,14 @@ mod tests {
 
     #[test]
     fn option_type_path_resolves() {
-        let env = check_source("fun takes(x: Option<Int>) -> Int = 0\n").unwrap();
+        let env = check_source("fun takes(x: Option[int]) -> int = 0\n").unwrap();
         let sig = env.functions.values().next().unwrap();
         assert_eq!(sig.params, vec![Ty::Option(Box::new(Ty::Int))]);
     }
 
     #[test]
     fn result_type_path_resolves() {
-        let env = check_source("fun work(x: Result<Int, String>) -> Int = 0\n").unwrap();
+        let env = check_source("fun work(x: Result[int, str]) -> int = 0\n").unwrap();
         let sig = env.functions.values().next().unwrap();
         assert_eq!(
             sig.params,
@@ -1401,7 +1401,7 @@ mod tests {
     #[test]
     fn struct_and_impl_collected() {
         let env = check_source(
-            "struct Point { x: Int }\nimpl Point { fun get_x(self) -> Int = self.x }\n",
+            "class Point { x: int }\nimpl Point { fun get_x(self) -> int = self.x }\n",
         )
         .unwrap();
         assert_eq!(env.structs.len(), 1);
@@ -1413,7 +1413,7 @@ mod tests {
 
     #[test]
     fn enum_variants_collected() {
-        let env = check_source("enum Color { Red, Green, Rgb(Int, Int, Int) }\n").unwrap();
+        let env = check_source("enum Color { Red, Green, Rgb(int, int, int) }\n").unwrap();
         let e = env.enums.values().next().expect("one enum");
         assert_eq!(e.variants.len(), 3);
         assert_eq!(e.variants[0].name, "Red");

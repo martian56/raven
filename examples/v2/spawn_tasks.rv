@@ -1,0 +1,24 @@
+from std.sync import channel
+
+fun main() {
+    let ch: Channel[str] = channel()
+    let t = spawn {
+        ch.send("hi")
+    }
+    print(ch.recv())
+    t.join()
+    var tasks: list[Task] = []
+    var i = 0
+    while i < 3 {
+        tasks.push(
+            spawn {
+                print("worker")
+            },
+        )
+        i += 1
+    }
+    for t2 in tasks {
+        t2.join()
+    }
+    print("done")
+}

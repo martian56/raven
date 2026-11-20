@@ -24,7 +24,7 @@ pub fn bind(
     pat: &Pattern,
     scrut_ty: &Ty,
     env: &TypeEnv,
-    locals: &mut HashMap<BindingKey, Ty>,
+    locals: &mut rustc_hash::FxHashMap<BindingKey, Ty>,
 ) -> Result<(), RavenError> {
     match &pat.kind {
         PatternKind::Wildcard => Ok(()),
@@ -46,7 +46,7 @@ pub fn bind(
                 return Err(RavenError::ty(
                     TypeError::TypeMismatch {
                         expected: format!("{}", scrut_ty),
-                        actual: "Int range".into(),
+                        actual: "int range".into(),
                     },
                     pat.span.clone(),
                 ));
@@ -163,8 +163,14 @@ pub fn bind(
             }
         },
         PatternKind::Struct { name, fields } => {
-            if let Ty::Struct { id, .. } = scrut_ty.strip_self() {
+            if let Ty::Struct { id, args, .. } = scrut_ty.strip_self() {
                 if let Some(sig) = env.structs.get(id) {
+                    let subst: HashMap<ParamId, Ty> = sig
+                        .generics
+                        .iter()
+                        .zip(args.iter())
+                        .map(|(p, a)| (p.id.clone(), a.clone()))
+                        .collect();
                     if sig.name != *name {
                         return Err(RavenError::ty(
                             TypeError::TypeMismatch {
@@ -177,7 +183,7 @@ pub fn bind(
                     for fpat in fields {
                         let field_ty =
                             sig.field(&fpat.name)
-                                .map(|(_, t)| t.clone())
+                                .map(|(_, t)| substitute(t, &subst))
                                 .ok_or_else(|| {
                                     RavenError::ty(
                                         TypeError::UndefinedField {

@@ -1,8 +1,8 @@
-id: Int
-name: String
-active: Bool
+id: int
+name: str
+active: bool
 --
-Int
-String
+int
+str
 --
-value: Int
+value: int

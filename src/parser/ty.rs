@@ -1,7 +1,7 @@
 //! Type expression parsing.
 
 use crate::ast::{Type, TypeKind, TypePath, TypePathSegment};
-use crate::lexer::{Token, TokenKind};
+use crate::lexer::TokenKind;
 use crate::span::Span;
 
 use super::{merge_spans, ParseResult, Parser};
@@ -27,12 +27,39 @@ impl Parser {
         match self.peek_kind() {
             TokenKind::LParen => {
                 self.advance(); // (
+                let mut items = Vec::new();
+                while !matches!(self.peek_kind(), TokenKind::RParen) {
+                    items.push(self.parse_type()?);
+                    if !self.eat(&TokenKind::Comma) {
+                        break;
+                    }
+                }
                 let rparen = self.expect(&TokenKind::RParen, "`)`")?;
                 let span = merge_spans(&start, &rparen.span);
-                Ok(Type {
-                    kind: TypeKind::Unit,
-                    span,
-                })
+                match items.len() {
+                    0 => Ok(Type {
+                        kind: TypeKind::Unit,
+                        span,
+                    }),
+                    1 => Ok(items.remove(0)),
+                    n if n <= 6 => Ok(Type {
+                        kind: TypeKind::Path(crate::ast::TypePath {
+                            segments: vec![crate::ast::TypePathSegment {
+                                name: format!("Tuple{n}"),
+                                generics: items,
+                                span: span.clone(),
+                            }],
+                            span: span.clone(),
+                        }),
+                        span,
+                    }),
+                    _ => Err(crate::error::RavenError::parse(
+                        crate::error::ParseError::Custom(
+                            "a tuple holds at most 6 items; use a class".into(),
+                        ),
+                        span,
+                    )),
+                }
             }
             TokenKind::Identifier(name) if name == "dyn" => {
                 // `dyn` is a contextual keyword: an identifier
@@ -90,6 +117,16 @@ impl Parser {
     /// Parse a dot separated qualified type path with optional generic
     /// arguments at each segment.
     pub(crate) fn parse_type_path(&mut self) -> ParseResult<TypePath> {
+        if matches!(self.peek_kind(), TokenKind::LParen) {
+            let ty = self.parse_type()?;
+            return match ty.kind {
+                TypeKind::Path(p) => Ok(p),
+                _ => Err(crate::error::RavenError::parse(
+                    crate::error::ParseError::Custom("expected a type name or tuple type".into()),
+                    ty.span,
+                )),
+            };
+        }
         let first = self.parse_type_path_segment()?;
         let mut span = first.span.clone();
         let mut segments = vec![first];
@@ -108,6 +145,20 @@ impl Parser {
         let tok = self.peek().clone();
         let (name, name_span) = match tok.kind {
             TokenKind::Identifier(n) => {
+                let new = match n.as_str() {
+                    "Int" => Some("int"),
+                    "Float" => Some("float"),
+                    "Bool" => Some("bool"),
+                    "String" => Some("str"),
+                    "Char" => Some("char"),
+                    "List" => Some("list"),
+                    "Map" => Some("dict"),
+                    "Set" => Some("set"),
+                    _ => None,
+                };
+                if let Some(new) = new {
+                    return Err(self.legacy(&format!("the type `{n}`"), &format!("write `{new}`")));
+                }
                 self.advance();
                 (canonical_type_name(&n).unwrap_or(&n).to_string(), tok.span)
             }
@@ -120,9 +171,7 @@ impl Parser {
         let mut span = name_span;
         let mut generics = Vec::new();
         if matches!(self.peek_kind(), TokenKind::Lt) {
-            let (args, args_span) = self.parse_type_args_required()?;
-            generics = args;
-            span = merge_spans(&span, &args_span);
+            return Err(self.legacy("`Name<T>` type arguments", "write `Name[T]`"));
         } else if matches!(self.peek_kind(), TokenKind::LBracket) {
             let (args, args_span) = self.parse_bracket_type_args()?;
             generics = args;
@@ -170,72 +219,6 @@ impl Parser {
             }
             TokenKind::SelfUpper => true,
             _ => false,
-        }
-    }
-
-    /// Parse a required `<T, U, ...>` block. The caller has verified
-    /// the leading `<` is present.
-    pub(crate) fn parse_type_args_required(&mut self) -> ParseResult<(Vec<Type>, Span)> {
-        let start = self.peek().span.clone();
-        self.advance(); // <
-        let mut args = Vec::new();
-        if !matches!(self.peek_kind(), TokenKind::Gt | TokenKind::Shr) {
-            loop {
-                self.skip_newlines();
-                args.push(self.parse_type()?);
-                self.skip_newlines();
-                if !self.eat(&TokenKind::Comma) {
-                    break;
-                }
-                self.skip_newlines();
-                if matches!(self.peek_kind(), TokenKind::Gt | TokenKind::Shr) {
-                    break;
-                }
-            }
-        }
-        // Close angle: a single `>` is consumed normally; a trailing
-        // `>>` is split into two close angles for nested generics
-        // like `Vec<Vec<Int>>`.
-        let close_span = self.consume_close_angle()?;
-        Ok((args, merge_spans(&start, &close_span)))
-    }
-
-    /// Consume one closing `>`. If the current token is `>>`, split it
-    /// into two `>` tokens, consume the first half, and leave the
-    /// second half in place for the outer call.
-    fn consume_close_angle(&mut self) -> ParseResult<Span> {
-        match self.peek_kind() {
-            TokenKind::Gt => Ok(self.advance().span),
-            TokenKind::Shr => {
-                let tok = self.tokens[self.pos].clone();
-                let first_half = Span::new(
-                    tok.span.file.clone(),
-                    tok.span.start,
-                    tok.span.start + 1,
-                    tok.span.line,
-                    tok.span.col,
-                );
-                let second_half = Span::new(
-                    tok.span.file.clone(),
-                    tok.span.start + 1,
-                    tok.span.end,
-                    tok.span.line,
-                    tok.span.col.saturating_add(1),
-                );
-                // Replace the `>>` token in place with a single `>`
-                // representing the second half. The cursor stays at
-                // the same position so the outer call sees that `>`.
-                // Record the original so `rewind` can restore it: a failed
-                // speculative parse must not leave the `>>` collapsed to `>`.
-                self.token_edits
-                    .push((self.pos, self.tokens[self.pos].clone()));
-                self.tokens[self.pos] = Token {
-                    kind: TokenKind::Gt,
-                    span: second_half,
-                };
-                Ok(first_half)
-            }
-            _ => Err(self.unexpected("`>`")),
         }
     }
 }

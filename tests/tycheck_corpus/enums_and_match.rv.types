@@ -1,18 +1,18 @@
 (types
   72..174 "{\n    return match c {\n        case Red { 0 }\n        case Green { 1 }\n        case Blue { 2 }\n    }\n}" -> ()
-  85..172 "match c {\n        case Red { 0 }\n        case Green { 1 }\n        case Blue { 2 }\n    }" -> Int
+  85..172 "match c {\n        case Red { 0 }\n        case Green { 1 }\n        case Blue { 2 }\n    }" -> int
   91..92 "c" -> Color
-  112..117 "{ 0 }" -> Int
-  114..115 "0" -> Int
-  137..142 "{ 1 }" -> Int
-  139..140 "1" -> Int
-  161..166 "{ 2 }" -> Int
-  163..164 "2" -> Int
+  112..117 "{ 0 }" -> int
+  114..115 "0" -> int
+  137..142 "{ 1 }" -> int
+  139..140 "1" -> int
+  161..166 "{ 2 }" -> int
+  163..164 "2" -> int
   205..286 "{\n    return match c {\n        case Red { true }\n        case _ { false }\n    }\n}" -> ()
-  218..284 "match c {\n        case Red { true }\n        case _ { false }\n    }" -> Bool
+  218..284 "match c {\n        case Red { true }\n        case _ { false }\n    }" -> bool
   224..225 "c" -> Color
-  245..253 "{ true }" -> Bool
-  247..251 "true" -> Bool
-  269..278 "{ false }" -> Bool
-  271..276 "false" -> Bool
+  245..253 "{ true }" -> bool
+  247..251 "true" -> bool
+  269..278 "{ false }" -> bool
+  271..276 "false" -> bool
 )

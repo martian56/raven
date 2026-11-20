@@ -19,7 +19,7 @@ fun main() {
 import std.random
 ```
 
-`std/random` adds a `struct Rng` and its `impl Rng` block, so a bare import
+`std/random` adds a `class Rng`, so a bare import
 brings the constructors (`Rng.new`, `Rng.from_entropy`) and every method below
 into scope. Import the whole module (not a selective `{ ... }` list).
 
@@ -48,7 +48,7 @@ fun main() {
 
 ## Constructing
 
-### `Rng.new(seed: Int) -> Rng`
+### `Rng.new(seed: int) -> Rng`
 
 A generator seeded with `seed`. Deterministic: two generators built from the
 same seed produce identical sequences.
@@ -60,9 +60,9 @@ runs.
 
 ## Drawing numbers
 
-### `next_int(self) -> Int`
+### `next_int(self) -> int`
 
-The next raw 64-bit draw. Values span the full `Int` range and may be negative.
+The next raw 64-bit draw. Values span the full `int` range and may be negative.
 
 ```rust
 import std.random
@@ -74,7 +74,7 @@ fun main() {
 }
 ```
 
-### `gen_range(self, lo: Int, hi: Int) -> Int`
+### `gen_range(self, lo: int, hi: int) -> int`
 
 A value in the half-open interval `[lo, hi)`: `lo` is possible, `hi` is not.
 
@@ -92,9 +92,9 @@ introduces a small bias when the range does not evenly divide the draw space,
 but for typical small ranges the bias is negligible. If `lo >= hi` the function
 returns `lo`.
 
-### `next_float(self) -> Float`
+### `next_float(self) -> float`
 
-A `Float` in `[0.0, 1.0)`. It takes the top 53 bits of a draw and scales by
+A `float` in `[0.0, 1.0)`. It takes the top 53 bits of a draw and scales by
 2^-53 (the full f64 mantissa width), so every representable multiple of 2^-53
 in the interval is reachable.
 
@@ -107,9 +107,9 @@ fun main() {
 }
 ```
 
-### `gen_range_float(self, lo: Float, hi: Float) -> Float`
+### `gen_range_float(self, lo: float, hi: float) -> float`
 
-A `Float` in the half-open interval `[lo, hi)`. Built from `next_float`
+A `float` in the half-open interval `[lo, hi)`. Built from `next_float`
 scaled into the range.
 
 ```rust
@@ -121,7 +121,7 @@ fun main() {
 }
 ```
 
-### `next_bool(self) -> Bool`
+### `next_bool(self) -> bool`
 
 `true` or `false` from the low bit of a draw, a fair coin flip.
 
@@ -136,10 +136,10 @@ fun main() {
 
 ## Working with lists
 
-### `choice<T>(self, xs: List<T>) -> Option<T>`
+### `choice[T](self, xs: list[T]) -> Option[T]`
 
 A random element of `xs`, or `None` when the list is empty. Because the result
-is an `Option<T>`, unwrap it with a `match` (or your preferred `Option` helper)
+is an `Option[T]`, unwrap it with a `match` (or your preferred `Option` helper)
 before use.
 
 ```rust
@@ -156,7 +156,7 @@ fun main() {
 }
 ```
 
-### `shuffle<T>(self, xs: List<T>)`
+### `shuffle[T](self, xs: list[T])`
 
 Shuffles `xs` in place using Fisher-Yates. It returns nothing; the list passed
 in is reordered.
@@ -174,7 +174,7 @@ fun main() {
 }
 ```
 
-### `sample<T>(self, xs: List<T>, n: Int) -> List<T>`
+### `sample[T](self, xs: list[T], n: int) -> list[T]`
 
 Draw `n` elements from `xs` without replacement, in random order. If `n`
 exceeds the list length, every element is returned (shuffled). The source
@@ -192,7 +192,7 @@ fun main() {
 }
 ```
 
-### `weighted_choice<T>(self, xs: List<T>, weights: List<Int>) -> Option<T>`
+### `weighted_choice[T](self, xs: list[T], weights: list[int]) -> Option[T]`
 
 Choose an element of `xs` with probability proportional to the matching entry
 of `weights`. Returns `None` when the lists are empty or the total weight is

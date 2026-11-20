@@ -75,6 +75,9 @@ pub(crate) const fn struct_align() -> usize {
     OBJECT_ALIGN
 }
 
+// Compiled code computes field addresses inline with this offset.
+const _: () = assert!(STRUCT_FIELDS_OFFSET == 16);
+
 #[cfg(test)]
 mod tests {
     use super::*;

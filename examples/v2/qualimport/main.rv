@@ -1,5 +1,5 @@
-import std/io { println }
-import "./lib" { banner }
+from std.io import println
+from "./lib" import banner
 
 fun main() {
     println(banner("hi"))

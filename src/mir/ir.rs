@@ -64,6 +64,8 @@ pub enum ListMethodOp {
     IsEmpty,
     /// `push(self, x)`: append `x`, mutating the shared heap object.
     Push,
+    /// `reserve(self, n)`: make room for `n` more elements.
+    Reserve,
     /// `pop(self) -> T`: remove and return the last element. Panics when
     /// the list is empty.
     Pop,
@@ -382,6 +384,26 @@ pub enum MirTerminator {
     },
     Return(MirOperand),
     Unreachable,
+}
+
+impl MirTerminator {
+    /// The blocks control can flow to next.
+    pub fn successors(&self) -> Vec<MirBlockId> {
+        match self {
+            MirTerminator::Goto(b) => vec![*b],
+            MirTerminator::SwitchInt {
+                targets, otherwise, ..
+            } => targets
+                .iter()
+                .map(|(_, b)| *b)
+                .chain(std::iter::once(*otherwise))
+                .collect(),
+            MirTerminator::SwitchEnum {
+                targets, otherwise, ..
+            } => targets.iter().map(|(_, b)| *b).chain(*otherwise).collect(),
+            MirTerminator::Return(_) | MirTerminator::Unreachable => Vec::new(),
+        }
+    }
 }
 
 /// Declaration of one local variable.

@@ -626,7 +626,12 @@ fun hex_digit(v: int) -> int {
 // subtraction is NaN.
 fun number_to_json(n: float) -> str {
     if n - n == 0.0 {
-        return n.to_string()
+        let text = n.to_string()
+        // A whole number is written without a fraction: `1`, not `1.0`.
+        if text.ends_with(".0") {
+            return text.substring(0, text.len() - 2)
+        }
+        return text
     }
     return "null"
 }

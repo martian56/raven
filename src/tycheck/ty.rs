@@ -243,28 +243,44 @@ impl fmt::Display for Ty {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Ty::Unit => f.write_str("()"),
-            Ty::Bool => f.write_str("Bool"),
-            Ty::Int => f.write_str("Int"),
-            Ty::Float => f.write_str("Float"),
-            Ty::Char => f.write_str("Char"),
-            Ty::Str => f.write_str("String"),
+            Ty::Bool => f.write_str("bool"),
+            Ty::Int => f.write_str("int"),
+            Ty::Float => f.write_str("float"),
+            Ty::Char => f.write_str("char"),
+            Ty::Str => f.write_str("str"),
             Ty::Struct { name, args, .. } | Ty::Enum { name, args, .. } => {
-                f.write_str(name)?;
-                if !args.is_empty() {
-                    f.write_str("<")?;
+                let list = |f: &mut fmt::Formatter<'_>| -> fmt::Result {
                     for (i, a) in args.iter().enumerate() {
                         if i > 0 {
                             f.write_str(", ")?;
                         }
                         write!(f, "{}", a)?;
                     }
-                    f.write_str(">")?;
+                    Ok(())
+                };
+                // Module-qualified names show only the type's own name.
+                let bare = name.rsplit('.').next().unwrap_or(name);
+                let shown = match bare {
+                    "Map" => "dict",
+                    "Set" => "set",
+                    n if n.starts_with("Tuple") && n[5..].parse::<usize>() == Ok(args.len()) => {
+                        f.write_str("(")?;
+                        list(f)?;
+                        return f.write_str(")");
+                    }
+                    n => n,
+                };
+                f.write_str(shown)?;
+                if !args.is_empty() {
+                    f.write_str("[")?;
+                    list(f)?;
+                    f.write_str("]")?;
                 }
                 Ok(())
             }
-            Ty::Option(inner) => write!(f, "Option<{}>", inner),
-            Ty::Result(t, e) => write!(f, "Result<{}, {}>", t, e),
-            Ty::List(inner) => write!(f, "List<{}>", inner),
+            Ty::Option(inner) => write!(f, "Option[{}]", inner),
+            Ty::Result(t, e) => write!(f, "Result[{}, {}]", t, e),
+            Ty::List(inner) => write!(f, "list[{}]", inner),
             Ty::Function { params, ret } => {
                 f.write_str("fun(")?;
                 for (i, p) in params.iter().enumerate() {
@@ -292,19 +308,19 @@ mod tests {
 
     #[test]
     fn display_primitive_types() {
-        assert_eq!(format!("{}", Ty::Int), "Int");
-        assert_eq!(format!("{}", Ty::Bool), "Bool");
+        assert_eq!(format!("{}", Ty::Int), "int");
+        assert_eq!(format!("{}", Ty::Bool), "bool");
         assert_eq!(format!("{}", Ty::Unit), "()");
     }
 
     #[test]
     fn display_built_in_generics() {
         let opt_int = Ty::Option(Box::new(Ty::Int));
-        assert_eq!(format!("{}", opt_int), "Option<Int>");
+        assert_eq!(format!("{}", opt_int), "Option[int]");
         let res = Ty::Result(Box::new(Ty::Int), Box::new(Ty::Str));
-        assert_eq!(format!("{}", res), "Result<Int, String>");
+        assert_eq!(format!("{}", res), "Result[int, str]");
         let list = Ty::List(Box::new(Ty::Bool));
-        assert_eq!(format!("{}", list), "List<Bool>");
+        assert_eq!(format!("{}", list), "list[bool]");
     }
 
     #[test]
@@ -313,7 +329,7 @@ mod tests {
             params: vec![Ty::Int, Ty::Int],
             ret: Box::new(Ty::Bool),
         };
-        assert_eq!(format!("{}", fty), "fun(Int, Int) -> Bool");
+        assert_eq!(format!("{}", fty), "fun(int, int) -> bool");
     }
 
     #[test]
@@ -323,7 +339,7 @@ mod tests {
             name: "Box".into(),
             args: vec![Ty::Int],
         };
-        assert_eq!(format!("{}", s), "Box<Int>");
+        assert_eq!(format!("{}", s), "Box[int]");
     }
 
     #[test]

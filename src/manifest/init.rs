@@ -79,16 +79,14 @@ pub fn lib_rv_template(name: &str) -> String {
     format!(
         "// lib.rv is the entry point of the `{name}` package: the items declared\n\
          // here are what other projects import, for example:\n\
-         //   import \"github.com/<user>/{name}\" {{ greet, Greeting }}\n\
+         //   from \"github.com/<user>/{name}\" import greet, Greeting\n\
          //\n\
          // A sub-path import like `github.com/<user>/{name}/util` loads `util.rv`\n\
          // next to this file.\n\
          \n\
-         import std/string\n\
+         class Greeting {{\n    who: str\n}}\n\
          \n\
-         struct Greeting {{\n    who: String,\n}}\n\
-         \n\
-         fun greet(who: String) -> String {{\n    return \"hello, \".concat(who)\n}}\n"
+         fun greet(who: str) -> str {{\n    return \"hello, ${{who}}\"\n}}\n"
     )
 }
 

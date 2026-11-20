@@ -1,11 +1,11 @@
-// Pass and return a small C struct BY VALUE across the FFI. The C struct
+// Pass and return a small C class BY VALUE across the FFI. The C struct
 // `Point { int x; int y; }` is eight bytes, so both System V AMD64 and
 // Windows x64 carry it in a single integer register. The Raven side marks
 // the matching struct `@repr(C)` so its fields marshal by value at the
 // call boundary. See docs/v2/specs/std-ffi.md.
 
 @repr(C)
-struct Point {
+class Point {
     x: CInt
     y: CInt
 }

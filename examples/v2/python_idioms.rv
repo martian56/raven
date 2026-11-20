@@ -1,0 +1,22 @@
+fun main() {
+    print("a", 1, true)
+    let xs = [1, 2, 3]
+    print(xs[-1], xs[-3])
+    print("ab" * 3, [0] * 3, [1] + [2, 3])
+    var a = 1
+    var b = 2
+    (a, b) = (b, a)
+    print(a, b)
+    print(" ".join(["a", "b"]))
+    print(abs(-3), round(2.6), abs(-1.5), round(-2.5))
+    let d = {"a": 1}
+    for (k, v) in d.items() {
+        print(k, v)
+    }
+    let s = "Hello"
+    print(s.lower(), s.upper(), s.replace("l", "L"), s.startswith("He"))
+    print(int("42") + 1, float("2.5") * 2.0, int(3.9))
+    print([[i * j for j in range(3)] for i in range(2)])
+    print({x % 3 for x in range(10)})
+    print({w: len(w) for w in ["hi", "there"]})
+}

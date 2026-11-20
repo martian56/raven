@@ -3,7 +3,7 @@
 A small HTTP/1.1 **client** and **server**, both built on [std/net](net.md).
 The client sends `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, and `HEAD` requests
 and hands back a captured response. Every call returns
-`Result<HttpResponse, Error>`, so transport failures (DNS, connect, timeout)
+`Result[HttpResponse, Error]`, so transport failures (DNS, connect, timeout)
 come back as an [std/error](error.md) `Error` you handle with `match`. The
 server (`Server`, `Request`, `Response`, `Method`) lets you route requests to
 handler functions; jump to [Server](#server) below.
@@ -30,7 +30,7 @@ module and needs no separate selector.
 
 ## The response type
 
-### `struct HttpResponse`
+### `class HttpResponse`
 
 ```rust
 class HttpResponse {
@@ -43,10 +43,10 @@ class HttpResponse {
 
 | Field | Meaning |
 |-------|---------|
-| `status_code` | The HTTP status as an `Int`, for example `200` or `404`. |
+| `status_code` | The HTTP status as an `int`, for example `200` or `404`. |
 | `status_text` | The reason phrase, for example `"OK"` or `"Not Found"`. |
 | `headers` | Response headers as `Key: Value` lines joined by `\n`. |
-| `body` | The full response body as a `String`. |
+| `body` | The full response body as a `str`. |
 
 Read the fields directly off the struct once you have unwrapped the `Ok`
 case.
@@ -72,7 +72,7 @@ fun main() {
 
 ## Requests
 
-### `get(url: String) -> Result<HttpResponse, Error>`
+### `get(url: str) -> Result[HttpResponse, Error]`
 
 Send a `GET` to `url`. No request body.
 
@@ -90,7 +90,7 @@ fun main() {
 }
 ```
 
-### `post(url: String, body: String) -> Result<HttpResponse, Error>`
+### `post(url: str, body: str) -> Result[HttpResponse, Error]`
 
 Send `body` to `url` with a `POST`.
 
@@ -105,15 +105,15 @@ fun main() {
 }
 ```
 
-### `put(url: String, body: String) -> Result<HttpResponse, Error>`
+### `put(url: str, body: str) -> Result[HttpResponse, Error]`
 
 Send `body` to `url` with a `PUT`.
 
-### `delete(url: String) -> Result<HttpResponse, Error>`
+### `delete(url: str) -> Result[HttpResponse, Error]`
 
 Send a `DELETE` to `url`. No request body.
 
-### `patch(url: String, body: String) -> Result<HttpResponse, Error>`
+### `patch(url: str, body: str) -> Result[HttpResponse, Error]`
 
 Send `body` to `url` with a `PATCH`, for a partial update.
 
@@ -128,7 +128,7 @@ fun main() {
 }
 ```
 
-### `head(url: String) -> Result<HttpResponse, Error>`
+### `head(url: str) -> Result[HttpResponse, Error]`
 
 Send a `HEAD` to `url`. The response carries the status and headers but no
 body, so `resp.body` is empty. Use it to check status or read headers without
@@ -148,7 +148,7 @@ fun main() {
 }
 ```
 
-### `request(method: String, url: String, body: String, headers: String) -> Result<HttpResponse, Error>`
+### `request(method: str, url: str, body: str, headers: str) -> Result[HttpResponse, Error]`
 
 The general form the others delegate to. `method` is the HTTP verb
 (`"GET"`, `"POST"`, and so on), `body` is the request body (pass `""` for
@@ -172,7 +172,7 @@ fun main() {
 pass `""` for both body and headers, while `post` and `put` pass your body
 and `""` for headers.
 
-### `request_with_timeout(method, url, body, headers, timeout_ms) -> Result<HttpResponse, Error>`
+### `request_with_timeout(method, url, body, headers, timeout_ms) -> Result[HttpResponse, Error]`
 
 Like `request`, with an overall deadline for connecting, sending, and reading
 the complete response body. A positive `timeout_ms` replaces the default;
@@ -202,7 +202,7 @@ when the body should be consumed as it arrives.
 
 ## Streaming responses
 
-### `stream(method, url, body, headers, timeout_ms) -> Result<HttpStream, Error>`
+### `stream(method, url, body, headers, timeout_ms) -> Result[HttpStream, Error]`
 
 Open a request without buffering its complete body. The returned `HttpStream`
 already contains `status_code`, `status_text`, and `headers`. Its timeout is
@@ -295,7 +295,7 @@ fun hello(req: Request) -> Response {
 
 fun main() {
     let app = Server.new()
-    app.get("/", (req: Request) -> Response => Response.html("<h1>Raven</h1>"))
+    app.get("/", (req: Request) -> Response => Response.html("<h1>Raven[/h1]"))
     app.get("/hello/:name", hello)
     app.post("/echo", (req: Request) -> Response => Response.json_raw(req.body))
     app.listen("127.0.0.1:8080")
@@ -336,9 +336,7 @@ timeouts both default to **30 seconds** and are set in seconds:
 ```rust
 let app = Server.new().with_timeout(15) // both read and write -> 15s
 // or set them separately:
-let app2 = Server.new().with_read_timeout(10).with_write_timeout(
-    30,
-)
+let app2 = Server.new().with_read_timeout(10).with_write_timeout(30)
 // waiting for the request
 // sending the response
 ```
@@ -418,10 +416,10 @@ fun show_user(req: Request) -> Response {
 }
 
 app.get("/users/:id", show_user)
-app.get("/ping", fun(req: Request) -> Response = Response.text("pong"))
+app.get("/ping", (req: Request) -> Response => Response.text("pong"))
 ```
 
-### `struct Request`
+### `class Request`
 
 ```rust
 class Request {
@@ -452,7 +450,7 @@ fun search(req: Request) -> Response {
 }
 ```
 
-### `struct Response`
+### `class Response`
 
 Build a response with a constructor, then refine it with chaining builders.
 
@@ -515,7 +513,7 @@ fun show_user(req: Request) -> Response {
 }
 ```
 
-To read a JSON request body into a struct, use `req.json<T>()`, which decodes
+To read a JSON request body into a struct, use `req.json[T]()`, which decodes
 the body through the type's `FromJson` impl. Decoding failures (bad JSON, a
 missing or mistyped field) come back as an `Error`:
 
@@ -529,7 +527,7 @@ fun create_user(req: Request) -> Response {
 ```
 
 The type can also come from an annotation, `let user: User = req.json()?`, and
-`decode<User>(req.body)` from [std/json](json.md) does the same thing without a
+`decode[User](req.body)` from [std/json](json.md) does the same thing without a
 request. For ad-hoc access when a struct is overkill, `req.json_value()` returns
 the body as a `JsonValue`.
 
