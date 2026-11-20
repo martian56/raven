@@ -171,7 +171,11 @@ struct LocalRoots {
 
 impl LocalRoots {
     fn register() -> Self {
-        let ctx = Box::into_raw(Box::new(RootContext::new()));
+        let mut boxed = Box::new(RootContext::new());
+        if let Some(f) = chain_accessor() {
+            boxed.chain_slot = f();
+        }
+        let ctx = Box::into_raw(boxed);
         ROOT_REGISTRY.register(ctx);
         LocalRoots { ctx }
     }
@@ -267,7 +271,7 @@ pub(crate) fn take_root_chain() -> SavedRoots {
             std::mem::take(&mut ctx.roots),
             std::mem::take(&mut ctx.frames),
             std::mem::take(&mut ctx.defer_frames),
-            std::mem::replace(&mut ctx.chain, std::ptr::null_mut()),
+            unsafe { std::mem::replace(&mut *ctx.head_slot(), std::ptr::null_mut()) },
         )
     })
 }
@@ -280,7 +284,7 @@ pub(crate) fn install_root_chain(saved: SavedRoots) {
         ctx.roots = saved.0;
         ctx.frames = saved.1;
         ctx.defer_frames = saved.2;
-        ctx.chain = saved.3;
+        unsafe { *ctx.head_slot() = saved.3 };
     });
 }
 
@@ -508,32 +512,28 @@ pub extern "C" fn raven_gc_enter_frame(roots: *mut *mut u8, count: usize) {
     }
 }
 
-/// Push a compiled function's root record (see [`FrameRec`]) onto this
-/// thread's chain. The caller fills in `count` and the slot addresses.
-///
-/// # Safety
-///
-/// `rec` must stay live until the matching [`raven_gc_unlink_frame`].
-#[no_mangle]
-pub unsafe extern "C" fn raven_gc_link_frame(rec: *mut FrameRec) {
-    shadow_guard_enter();
-    with_roots(|ctx| unsafe {
-        (*rec).prev = ctx.chain;
-        ctx.chain = rec;
-    });
-    shadow_guard_exit();
+/// The compiled program's accessor for its thread-local chain head, or 0.
+static CHAIN_ACCESSOR: AtomicUsize = AtomicUsize::new(0);
+
+type ChainAccessor = extern "C" fn() -> *mut *mut FrameRec;
+
+fn chain_accessor() -> Option<ChainAccessor> {
+    match CHAIN_ACCESSOR.load(Ordering::Acquire) {
+        0 => None,
+        // SAFETY: only `raven_gc_set_chain_accessor` stores a nonzero value,
+        // and it stores a function pointer of this type.
+        f => Some(unsafe { std::mem::transmute::<usize, ChainAccessor>(f) }),
+    }
 }
 
-/// Pop `rec`, the innermost record, off this thread's chain.
-///
-/// # Safety
-///
-/// `rec` must be the record most recently linked and not yet unlinked.
+/// Register the compiled program's accessor for the thread-local head of its
+/// root record chain. Compiled code pushes and pops records (see
+/// [`FrameRec`]) on that head inline; the collector and the scheduler reach
+/// it through each thread's context. Called once at program entry.
 #[no_mangle]
-pub unsafe extern "C" fn raven_gc_unlink_frame(rec: *mut FrameRec) {
-    shadow_guard_enter();
-    with_roots(|ctx| ctx.chain = unsafe { (*rec).prev });
-    shadow_guard_exit();
+pub extern "C" fn raven_gc_set_chain_accessor(f: ChainAccessor) {
+    CHAIN_ACCESSOR.store(f as usize, Ordering::Release);
+    with_roots(|ctx| ctx.chain_slot = f());
 }
 
 /// Unregister the most recently registered frame, truncating the shadow

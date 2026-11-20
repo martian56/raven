@@ -115,6 +115,7 @@ pub struct ModuleCx {
     /// Counter handing out unique vtable data symbol names.
     vtable_counter: u32,
     gc_stop_flag: Option<DataId>,
+    frame_chain: Option<DataId>,
     /// Counter handing out unique reflection-metadata data symbol names.
     reflect_counter: u32,
     /// C layouts of `@repr(C)` structs, keyed by mangled struct name. A
@@ -166,6 +167,7 @@ impl ModuleCx {
             vtables: HashMap::new(),
             vtable_counter: 0,
             gc_stop_flag: None,
+            frame_chain: None,
             reflect_counter: 0,
             repr_c_structs: HashMap::new(),
             globals: HashMap::new(),
@@ -205,6 +207,50 @@ impl ModuleCx {
             .module
             .declare_data("RAVEN_GC_STOP_PENDING", Linkage::Import, true, false)?;
         self.gc_stop_flag = Some(id);
+        Ok(id)
+    }
+
+    /// The thread-local head of the GC root record chain, defined on first use.
+    pub fn frame_chain(&mut self) -> Result<DataId, CodegenError> {
+        if let Some(id) = self.frame_chain {
+            return Ok(id);
+        }
+        let id = self
+            .module
+            .declare_data("__raven_frame_chain", Linkage::Local, true, true)?;
+        let mut desc = DataDescription::new();
+        desc.define(vec![0u8; 8].into_boxed_slice());
+        self.module.define_data(id, &desc)?;
+        self.frame_chain = Some(id);
+        Ok(id)
+    }
+
+    /// Define a function returning this thread's address of the chain head,
+    /// which the runtime calls to reach it.
+    fn define_chain_accessor(&mut self) -> Result<FuncId, CodegenError> {
+        let ptr = self.pointer_type();
+        let chain = self.frame_chain()?;
+        let mut sig = Signature::new(self.module.target_config().default_call_conv);
+        sig.returns.push(AbiParam::new(ptr));
+        let id = self
+            .module
+            .declare_function("__raven_frame_chain_addr", Linkage::Local, &sig)?;
+        let mut ctx = Context::new();
+        ctx.func.signature = sig;
+        let gv = self.module.declare_data_in_func(chain, &mut ctx.func);
+        let mut fb = FunctionBuilderContext::new();
+        {
+            let mut builder = FunctionBuilder::new(&mut ctx.func, &mut fb);
+            let block = builder.create_block();
+            builder.switch_to_block(block);
+            builder.seal_block(block);
+            let addr = builder.ins().tls_value(ptr, gv);
+            builder.ins().return_(&[addr]);
+            builder.finalize();
+        }
+        self.module
+            .define_function(id, &mut ctx)
+            .map_err(|e| CodegenError::Codegen(format!("define chain accessor: {}", e)))?;
         Ok(id)
     }
 
@@ -521,10 +567,9 @@ impl ModuleCx {
         sig = self.make_sig(&[i32t, i32t, i64t], &[]);
         self.declare_runtime(intrinsics::RUNTIME_ENUM_REGISTER, &sig)?;
 
-        // raven_gc_link_frame(rec: ptr), raven_gc_unlink_frame(rec: ptr)
+        // raven_gc_set_chain_accessor(f: ptr)
         sig = self.make_sig(&[ptr], &[]);
-        self.declare_runtime(intrinsics::RUNTIME_GC_LINK_FRAME, &sig)?;
-        self.declare_runtime(intrinsics::RUNTIME_GC_UNLINK_FRAME, &sig)?;
+        self.declare_runtime(intrinsics::RUNTIME_GC_SET_CHAIN_ACCESSOR, &sig)?;
 
         // raven_gc_push_root(slot: ptr)
         sig = self.make_sig(&[ptr], &[]);
@@ -1025,6 +1070,12 @@ impl ModuleCx {
         };
 
         let callee = self.module.declare_func_in_func(raven_main, &mut ctx.func);
+        let accessor = self.define_chain_accessor()?;
+        let accessor_ref = self.module.declare_func_in_func(accessor, &mut ctx.func);
+        let set_accessor_ref = self
+            .runtime_id(intrinsics::RUNTIME_GC_SET_CHAIN_ACCESSOR)
+            .map(|id| self.module.declare_func_in_func(id, &mut ctx.func));
+        let ptr_ty = self.module.target_config().pointer_type();
         // Collect descriptors and the registration symbol before the
         // builder borrows the function, so the closure below only needs
         // the resolved references.
@@ -1096,6 +1147,10 @@ impl ModuleCx {
             let block = builder.create_block();
             builder.switch_to_block(block);
             builder.seal_block(block);
+            if let Some(set) = set_accessor_ref {
+                let f = builder.ins().func_addr(ptr_ty, accessor_ref);
+                builder.ins().call(set, &[f]);
+            }
             // Enter the running set first: the main thread runs compiled Raven,
             // so a parallel collection must wait for it to reach a safepoint.
             if let Some(enter) = enter_running_ref {

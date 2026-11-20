@@ -87,6 +87,10 @@ pub fn host_isa() -> Result<Arc<dyn TargetIsa>, CodegenError> {
     flag_builder
         .set("opt_level", &opt)
         .map_err(|e| CodegenError::Target(e.to_string()))?;
+    let tls_model = if cfg!(windows) { "coff" } else { "elf_gd" };
+    flag_builder
+        .set("tls_model", tls_model)
+        .map_err(|e| CodegenError::Target(e.to_string()))?;
     let flags = settings::Flags::new(flag_builder);
     let isa_builder = cranelift_native::builder()
         .map_err(|s| CodegenError::Target(format!("native ISA: {}", s)))?;

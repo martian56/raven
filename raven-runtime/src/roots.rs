@@ -65,8 +65,13 @@ pub struct RootContext {
     /// migrates worker threads. Held as `*mut u8` to keep this module free of
     /// object-layout types.
     pub defer_frames: Vec<Vec<*mut u8>>,
-    /// The innermost compiled function's root record.
+    /// The innermost compiled function's root record, used when the program
+    /// has not registered a chain accessor (see `chain_slot`).
     pub chain: *mut FrameRec,
+    /// Where this thread's chain head lives: the compiled program's
+    /// thread-local, which compiled code links frames into directly. Null
+    /// means `chain`.
+    pub chain_slot: *mut *mut FrameRec,
 }
 
 impl RootContext {
@@ -76,6 +81,29 @@ impl RootContext {
             frames: Vec::new(),
             defer_frames: Vec::new(),
             chain: std::ptr::null_mut(),
+            chain_slot: std::ptr::null_mut(),
+        }
+    }
+
+    /// The address holding this thread's chain head.
+    pub fn head_slot(&mut self) -> *mut *mut FrameRec {
+        if self.chain_slot.is_null() {
+            &mut self.chain
+        } else {
+            self.chain_slot
+        }
+    }
+
+    /// The innermost root record.
+    ///
+    /// # Safety
+    ///
+    /// `chain_slot`, when set, must point at the owning thread's live head.
+    pub unsafe fn head(&self) -> *mut FrameRec {
+        if self.chain_slot.is_null() {
+            self.chain
+        } else {
+            unsafe { *self.chain_slot }
         }
     }
 }
@@ -137,7 +165,7 @@ impl RootRegistry {
                     visit(slot);
                 }
             }
-            unsafe { for_each_chain_slot(ctx.chain, visit) };
+            unsafe { for_each_chain_slot(ctx.head(), visit) };
             // Parked deferred closures are roots too: hand the collector the
             // address of each slot holding a closure pointer.
             for frame in &ctx.defer_frames {
@@ -172,12 +200,14 @@ mod tests {
             frames: vec![],
             defer_frames: vec![],
             chain: std::ptr::null_mut(),
+            chain_slot: std::ptr::null_mut(),
         };
         let mut ctx_b = RootContext {
             roots: vec![&mut obj_b as *mut *mut u8],
             frames: vec![],
             defer_frames: vec![],
             chain: std::ptr::null_mut(),
+            chain_slot: std::ptr::null_mut(),
         };
         reg.register(&mut ctx_a);
         reg.register(&mut ctx_b);
@@ -205,6 +235,7 @@ mod tests {
             frames: vec![],
             defer_frames: vec![],
             chain: std::ptr::null_mut(),
+            chain_slot: std::ptr::null_mut(),
         };
         reg.register(&mut ctx);
 
@@ -227,6 +258,7 @@ mod tests {
             frames: vec![],
             defer_frames: vec![],
             chain: std::ptr::null_mut(),
+            chain_slot: std::ptr::null_mut(),
         };
         reg.register(&mut ctx);
         reg.deregister(&mut ctx);

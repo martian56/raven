@@ -96,6 +96,8 @@ struct LocalSlot {
 struct RootFrame {
     array: StackSlot,
     count: usize,
+    /// Holds the address of the thread-local chain head.
+    head: Variable,
 }
 
 /// Lowering driver for a single function.
@@ -175,9 +177,12 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
             let bytes = (gc_locals.len() as u32 + 2) * (ptr.bytes());
             let array = builder
                 .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, bytes));
+            let head = Variable::from_u32(self.func.locals.len() as u32);
+            builder.declare_var(head, ptr);
             Some(RootFrame {
                 array,
                 count: gc_locals.len(),
+                head,
             })
         };
 
@@ -295,9 +300,8 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
     /// before the body assigns it never reads an uninitialized slot.
     /// Parameter locals already hold their incoming pointer and are not
     /// re-zeroed. The slot address of each GC local is then written into
-    /// the root record, and `raven_gc_link_frame` pushes the record onto the
-    /// thread's chain. A matching `raven_gc_unlink_frame` runs at every
-    /// return.
+    /// the root record, which is pushed onto the thread-local chain the
+    /// collector walks. Every return pops it.
     fn enter_root_frame(
         cx: &mut ModuleCx,
         builder: &mut FunctionBuilder<'_>,
@@ -333,11 +337,13 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
             .ins()
             .stack_store(count, frame.array, ptr.bytes() as i32);
         let rec = builder.ins().stack_addr(ptr, frame.array, 0);
-        let link = cx
-            .runtime_id(intrinsics::RUNTIME_GC_LINK_FRAME)
-            .expect("gc link frame declared at module init");
-        let link_ref = cx.module().declare_func_in_func(link, builder.func);
-        builder.ins().call(link_ref, &[rec]);
+        let chain = cx.frame_chain().expect("frame chain defines");
+        let gv = cx.module().declare_data_in_func(chain, builder.func);
+        let head = builder.ins().tls_value(ptr, gv);
+        builder.def_var(frame.head, head);
+        let prev = builder.ins().load(ptr, MemFlags::trusted(), head, 0);
+        builder.ins().stack_store(prev, frame.array, 0);
+        builder.ins().store(MemFlags::trusted(), rec, head, 0);
     }
 }
 
@@ -3311,7 +3317,7 @@ fn lower_terminator(
     }
 }
 
-/// Emit the matching `raven_gc_unlink_frame` for a function that entered
+/// Pop the root record for a function that entered
 /// a root frame. A no-op when the function has no GC pointer locals.
 fn leave_root_frame(
     cx: &mut ModuleCx,
@@ -3322,12 +3328,9 @@ fn leave_root_frame(
         return;
     };
     let ptr = cx.pointer_type();
-    let rec = builder.ins().stack_addr(ptr, frame.array, 0);
-    let unlink = cx
-        .runtime_id(intrinsics::RUNTIME_GC_UNLINK_FRAME)
-        .expect("gc unlink frame declared at module init");
-    let unlink_ref = cx.module().declare_func_in_func(unlink, builder.func);
-    builder.ins().call(unlink_ref, &[rec]);
+    let prev = builder.ins().stack_load(ptr, frame.array, 0);
+    let head = builder.use_var(frame.head);
+    builder.ins().store(MemFlags::trusted(), prev, head, 0);
 }
 
 /// Open the per-call defer frame at function entry.

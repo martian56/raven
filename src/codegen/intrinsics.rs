@@ -139,9 +139,9 @@ pub const RUNTIME_STRUCT_REGISTER: &str = "raven_struct_register";
 /// tracing the union of every variant's pointers.
 pub const RUNTIME_ENUM_REGISTER: &str = "raven_enum_register";
 
-/// Runtime C symbols pushing and popping a function's GC root record.
-pub const RUNTIME_GC_LINK_FRAME: &str = "raven_gc_link_frame";
-pub const RUNTIME_GC_UNLINK_FRAME: &str = "raven_gc_unlink_frame";
+/// Runtime C symbol registering the program's accessor for its thread-local
+/// root record chain head.
+pub const RUNTIME_GC_SET_CHAIN_ACCESSOR: &str = "raven_gc_set_chain_accessor";
 
 /// Runtime C symbol registering a single root slot. Used to keep a heap
 /// temporary that an rvalue builds across further allocations reachable
