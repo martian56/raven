@@ -938,8 +938,58 @@ impl ModuleCx {
 
     /// Lower the body of every declared MIR function.
     pub fn define_functions(&mut self, program: &MirProgram) -> Result<(), CodegenError> {
+        let mut built = Vec::with_capacity(program.functions.len());
         for func in &program.functions {
-            self.define_one(func)?;
+            built.push(self.build_one(func)?);
+        }
+        // Build the IR in order (it declares symbols in the module), compile
+        // the functions on every core, then define them in order.
+        let isa = self.module.isa();
+        let threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .min(built.len().max(1));
+        let chunk = built.len().div_ceil(threads).max(1);
+        let errors: Vec<Option<String>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = built
+                .chunks_mut(chunk)
+                .map(|part| {
+                    scope.spawn(move || {
+                        for (_, ctx, name) in part.iter_mut() {
+                            let mut plane = cranelift_codegen::control::ControlPlane::default();
+                            if let Err(e) = ctx.compile(isa, &mut plane) {
+                                return Some(format!(
+                                    "define {}: Compilation error: {}",
+                                    name, e.inner
+                                ));
+                            }
+                        }
+                        None
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| {
+                    h.join()
+                        .unwrap_or_else(|_| Some("codegen thread panicked".into()))
+                })
+                .collect()
+        });
+        if let Some(msg) = errors.into_iter().flatten().next() {
+            return Err(CodegenError::Codegen(msg));
+        }
+        for (func_id, ctx, name) in &built {
+            let compiled = ctx.compiled_code().expect("compiled above");
+            self.module
+                .define_function_bytes(
+                    *func_id,
+                    &ctx.func,
+                    compiled.buffer.alignment as u64,
+                    compiled.code_buffer(),
+                    compiled.buffer.relocs(),
+                )
+                .map_err(|e| CodegenError::Codegen(format!("define {}: {}", name, e)))?;
         }
         if self.main_entry.is_some() {
             self.define_main_shim(program)?;
@@ -1133,7 +1183,7 @@ impl ModuleCx {
         Ok(())
     }
 
-    fn define_one(&mut self, func: &MirFunction) -> Result<(), CodegenError> {
+    fn build_one(&mut self, func: &MirFunction) -> Result<(FuncId, Context, String), CodegenError> {
         let func_id = self
             .functions
             .get(&func.name)
@@ -1147,11 +1197,7 @@ impl ModuleCx {
             let mut lowering = FunctionLowering::new(self, &mut ctx.func, func);
             lowering.lower()?;
         }
-
-        self.module
-            .define_function(func_id, &mut ctx)
-            .map_err(|e| CodegenError::Codegen(format!("define {}: {}", func.name, e)))?;
-        Ok(())
+        Ok((func_id, ctx, func.name.clone()))
     }
 
     /// Consume the context and return the Cranelift `ObjectProduct`

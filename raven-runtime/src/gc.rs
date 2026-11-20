@@ -19,9 +19,9 @@ use crate::object::{
     TAG_CLOSURE, TAG_LIST, TAG_MAP, TAG_SET, TAG_STRUCT,
 };
 use crate::object::{MapEntry, SetEntry, BOX_PAYLOAD_OFFSET};
+use crate::raven_dealloc;
 use crate::roots::{RootContext, RootRegistry};
 use crate::stw::StopTheWorld;
-use crate::raven_dealloc;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
@@ -1518,11 +1518,11 @@ mod collector_tests {
     #[test]
     fn allocation_triggers_collection_at_threshold() {
         isolated(|| {
-            // Each string body is 24 bytes, so 1 MiB of bodies is about
-            // 43.7k objects. Allocating well past that with unrooted
+            // Each string body is 24 bytes, so the 8 MiB floor is about
+            // 350k objects. Allocating well past that with unrooted
             // strings must trigger at least one automatic collection,
             // keeping liveness below the total allocated count.
-            const COUNT: usize = 120_000;
+            const COUNT: usize = 1_000_000;
             for _ in 0..COUNT {
                 let _garbage = raven_string_new(8);
             }

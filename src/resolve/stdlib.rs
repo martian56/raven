@@ -396,7 +396,10 @@ pub fn expand_with_stdlib_ctx(
     // whether any of those expansions needs them.
     let mut needs_json_helpers = false;
     if std::env::var_os("RAVEN_TIMINGS").is_some() {
-        eprintln!("  (stdlib modules {:.1} ms)", t_std.elapsed().as_secs_f64() * 1000.0);
+        eprintln!(
+            "  (stdlib modules {:.1} ms)",
+            t_std.elapsed().as_secs_f64() * 1000.0
+        );
     }
     let t_local = std::time::Instant::now();
     let mut t_derive_sum = std::time::Duration::ZERO;
@@ -474,7 +477,10 @@ pub fn expand_with_stdlib_ctx(
     }
 
     if std::env::var_os("RAVEN_TIMINGS").is_some() {
-        eprintln!("  (local modules {:.1} ms)", t_local.elapsed().as_secs_f64() * 1000.0);
+        eprintln!(
+            "  (local modules {:.1} ms)",
+            t_local.elapsed().as_secs_f64() * 1000.0
+        );
     }
     // Merge the external package sources through the same merge core, with
     // an `ext.<host>.<user>.<repo>.<hash>` namespace. Each module's rename
@@ -540,7 +546,10 @@ pub fn expand_with_stdlib_ctx(
     needs_json_helpers |=
         super::derive::expand_derives(&combined_items, &mut derived_impls, "<derive>")?;
     if std::env::var_os("RAVEN_TIMINGS").is_some() {
-        eprintln!("  (derive {:.1} ms)", t_derive.elapsed().as_secs_f64() * 1000.0);
+        eprintln!(
+            "  (derive {:.1} ms)",
+            t_derive.elapsed().as_secs_f64() * 1000.0
+        );
     }
     combined_items.append(&mut derived_impls);
 
@@ -556,7 +565,10 @@ pub fn expand_with_stdlib_ctx(
     super::sugar::expand(&mut combined_items)?;
     inject_default_methods(&mut combined_items);
     if std::env::var_os("RAVEN_TIMINGS").is_some() {
-        eprintln!("  (sugar {:.1} ms)", t_sugar.elapsed().as_secs_f64() * 1000.0);
+        eprintln!(
+            "  (sugar {:.1} ms)",
+            t_sugar.elapsed().as_secs_f64() * 1000.0
+        );
     }
 
     Ok((
