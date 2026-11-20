@@ -991,6 +991,26 @@ impl<'a, 'b> Checker<'a, 'b> {
                     }
                 }
                 let target_ty = self.check_expr_recover(target);
+                let class_receiver = match &target.kind {
+                    ExprKind::Index { receiver, .. } => self
+                        .types
+                        .lookup(&receiver.span)
+                        .map(|t| self.infer.resolve(t))
+                        .filter(|t| {
+                            matches!(t.strip_self(), Ty::Struct { .. } | Ty::Enum { .. })
+                                && self.type_has_method(t.strip_self(), "set_index")
+                        }),
+                    _ => None,
+                };
+                if class_receiver.is_some() {
+                    let call = crate::ast::set_index_call(target, *op, value, &stmt.span)
+                        .expect("index target");
+                    if let Err(e) = self.check_expr(&call) {
+                        self.push_error(e);
+                    }
+                    self.types.record_operator(&stmt.span);
+                    return;
+                }
                 let value_ty = self.check_expr_recover(value);
                 match op {
                     AssignOp::Assign => {
@@ -3193,6 +3213,15 @@ impl<'a, 'b> Checker<'a, 'b> {
         span: &Span,
     ) -> Result<Ty, RavenError> {
         let recv = self.check_expr(receiver)?;
+        let rt = self.infer.resolve(&recv);
+        if matches!(rt.strip_self(), Ty::Struct { .. } | Ty::Enum { .. })
+            && self.type_has_method(rt.strip_self(), "index")
+        {
+            let t =
+                self.check_method_call(receiver, "index", &[], std::slice::from_ref(index), span)?;
+            self.types.record_operator(span);
+            return Ok(t);
+        }
         let idx = self.check_expr(index)?;
         self.unify(&Ty::Int, &idx, &index.span)?;
         let recv_resolved = self.infer.resolve(&recv);

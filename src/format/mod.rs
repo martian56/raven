@@ -1552,9 +1552,14 @@ impl Printer<'_> {
             match frag {
                 StrFragment::Literal(text) => s.push_str(&escape_str_body(text)),
                 StrFragment::Expr(e) => {
-                    let inner = self.render_expr(e);
+                    let (value, spec) = split_formatted(e);
+                    let inner = self.render_expr(value);
                     s.push_str("${");
                     s.push_str(&inner);
+                    if let Some(spec) = spec {
+                        s.push(':');
+                        s.push_str(&spec);
+                    }
                     s.push('}');
                 }
             }
@@ -2166,3 +2171,78 @@ fn assign_op(op: AssignOp) -> &'static str {
 
 #[cfg(test)]
 mod tests;
+
+/// The value and format spec of a `${value:spec}` fragment, which the parser
+/// expands into calls to the prelude formatting helpers.
+fn split_formatted(e: &Expr) -> (&Expr, Option<String>) {
+    fn float(e: &Expr) -> Option<(&Expr, i64)> {
+        let ExprKind::Call { callee, args } = &e.kind else {
+            return None;
+        };
+        let ExprKind::Ident { name, .. } = &callee.kind else {
+            return None;
+        };
+        match (name.as_str(), args.as_slice()) {
+            ("__fmt_float", [value, places]) => match places.kind {
+                ExprKind::Int(p) => Some((value, p)),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    fn helper<'a>(e: &'a Expr, name: &str) -> Option<&'a [Expr]> {
+        match &e.kind {
+            ExprKind::Call { callee, args } => match &callee.kind {
+                ExprKind::Ident { name: n, .. } if n == name => Some(args),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    let int = |e: &Expr| match e.kind {
+        ExprKind::Int(n) => Some(n),
+        _ => None,
+    };
+    let text = |e: &Expr| match &e.kind {
+        ExprKind::Str(s) => s.chars().next(),
+        _ => None,
+    };
+
+    if let Some(args) = helper(e, "__fmt_pad").filter(|a| a.len() == 4) {
+        let (Some(w), Some(align), Some(fill)) = (int(&args[1]), text(&args[2]), text(&args[3]))
+        else {
+            return (e, None);
+        };
+        let (value, precision) = match float(&args[0]) {
+            Some((v, p)) => (v, Some(p)),
+            None => match &args[0].kind {
+                ExprKind::MethodCall {
+                    receiver,
+                    name,
+                    args: a,
+                    ..
+                } if name == "to_string" && a.is_empty() => (&**receiver, None),
+                _ => return (e, None),
+            },
+        };
+        let default_align = if precision.is_some() { '>' } else { '<' };
+        let mut spec = if fill == '0' && align == '>' {
+            "0".to_string()
+        } else if fill == ' ' && align == default_align {
+            String::new()
+        } else if fill == ' ' {
+            align.to_string()
+        } else {
+            format!("{fill}{align}")
+        };
+        spec.push_str(&w.to_string());
+        if let Some(p) = precision {
+            spec.push_str(&format!(".{p}"));
+        }
+        return (value, Some(spec));
+    }
+    if let Some((value, p)) = float(e) {
+        return (value, Some(format!(".{p}")));
+    }
+    (e, None)
+}

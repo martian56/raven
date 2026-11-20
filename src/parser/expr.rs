@@ -1937,12 +1937,133 @@ fn split_interpolation(
 /// that cannot collide with real source spans. Parse errors are
 /// re-anchored to the literal's span so the diagnostic points the reader
 /// at the offending string.
+/// A `${value:spec}` format spec: `[[fill]align][0][width][.precision][type]`.
+struct FormatSpec {
+    fill: char,
+    align: char,
+    width: Option<i64>,
+    precision: Option<i64>,
+}
+
+/// Split a trailing format spec off an interpolation snippet. Only a suffix
+/// after the last `:` that is a whole valid spec counts, so a dict literal or
+/// named argument inside `${...}` is left alone.
+fn split_format_spec(snippet: &str) -> Option<(&str, FormatSpec)> {
+    let colon = snippet.rfind(':')?;
+    let (value, spec) = (&snippet[..colon], &snippet[colon + 1..]);
+    if value.trim().is_empty() || spec.is_empty() {
+        return None;
+    }
+    let chars: Vec<char> = spec.chars().collect();
+    let mut i = 0;
+    let mut fill = ' ';
+    let mut align = None;
+    let is_align = |c: char| matches!(c, '<' | '>' | '^');
+    if chars.len() >= 2 && is_align(chars[1]) {
+        fill = chars[0];
+        align = Some(chars[1]);
+        i = 2;
+    } else if !chars.is_empty() && is_align(chars[0]) {
+        align = Some(chars[0]);
+        i = 1;
+    }
+    if align.is_none() && chars.get(i) == Some(&'0') {
+        fill = '0';
+        align = Some('>');
+        i += 1;
+    }
+    let digits = |i: &mut usize| {
+        let start = *i;
+        while chars.get(*i).is_some_and(|c| c.is_ascii_digit()) {
+            *i += 1;
+        }
+        (*i > start).then(|| {
+            chars[start..*i]
+                .iter()
+                .collect::<String>()
+                .parse::<i64>()
+                .ok()
+        })?
+    };
+    let width = digits(&mut i);
+    let mut precision = None;
+    if chars.get(i) == Some(&'.') {
+        i += 1;
+        precision = Some(digits(&mut i)?);
+    }
+    if chars.get(i).is_some_and(|c| matches!(c, 'f' | 'd' | 's')) {
+        i += 1;
+    }
+    if i != chars.len() || (width.is_none() && precision.is_none()) {
+        return None;
+    }
+    let align = align.unwrap_or(if precision.is_some() { '>' } else { '<' });
+    Some((
+        value,
+        FormatSpec {
+            fill,
+            align,
+            width,
+            precision,
+        },
+    ))
+}
+
+/// Wrap `value` in the prelude formatting calls `spec` asks for.
+fn apply_format_spec(value: Expr, spec: &FormatSpec) -> Expr {
+    let at = |e: &Expr| e.span.in_copy(crate::span::next_copy_id());
+    let call = |name: &str, args: Vec<Expr>, span: Span| Expr {
+        kind: ExprKind::Call {
+            callee: Box::new(Expr {
+                kind: ExprKind::Ident {
+                    name: name.to_string(),
+                    generics: Vec::new(),
+                },
+                span: span.in_copy(crate::span::next_copy_id()),
+            }),
+            args,
+        },
+        span,
+    };
+    let lit = |kind: ExprKind, e: &Expr| Expr { kind, span: at(e) };
+    let mut out = value;
+    if let Some(p) = spec.precision {
+        let places = lit(ExprKind::Int(p), &out);
+        let span = at(&out);
+        out = call("__fmt_float", vec![out, places], span);
+    } else {
+        let span = at(&out);
+        out = Expr {
+            kind: ExprKind::MethodCall {
+                receiver: Box::new(out),
+                name: "to_string".into(),
+                generics: Vec::new(),
+                args: Vec::new(),
+            },
+            span,
+        };
+    }
+    if let Some(w) = spec.width {
+        let width = lit(ExprKind::Int(w), &out);
+        let align = lit(ExprKind::Str(spec.align.to_string()), &out);
+        let fill = lit(ExprKind::Str(spec.fill.to_string()), &out);
+        let span = at(&out);
+        out = call("__fmt_pad", vec![out, width, align, fill], span);
+    }
+    out
+}
+
 fn parse_interpolation_snippet(
     snippet: &str,
     span: &Span,
     frag_index: usize,
     macros: &crate::macros::MacroTable,
 ) -> ParseResult<(Expr, crate::macros::DefSites)> {
+    if let Some((value, spec)) = split_format_spec(snippet) {
+        if let Ok((expr, sites)) = parse_interpolation_snippet(value, span, frag_index, macros) {
+            return Ok((apply_format_spec(expr, &spec), sites));
+        }
+    }
     let synthetic = std::path::PathBuf::from(format!(
         "{}<interp:{}:{}>",
         span.file.display(),

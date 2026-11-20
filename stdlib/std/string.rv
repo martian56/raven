@@ -14,6 +14,44 @@ fun digit_to_float(d: int) -> float {
     return f
 }
 
+extern "C" {
+    fun raven_float_fixed(x: float, places: int) -> str
+}
+
+// `"${x:.2}"`: `x` with exactly `places` decimals.
+fun __fmt_float(x: float, places: int) -> str = raven_float_fixed(x, places)
+
+// `"${s:>8}"`: `s` padded with `fill` to `width` characters. `align` is
+// "<", ">", or "^". Zero fill keeps a leading minus sign in front.
+fun __fmt_pad(s: str, width: int, align: str, fill: str) -> str {
+    let n = s.iter().len()
+    if n >= width {
+        return s
+    }
+    let pad = width - n
+    if fill == "0" and s.starts_with("-") {
+        return "-" + __fmt_pad(s.substring(1, s.len()), width - 1, align, fill)
+    }
+    var left = 0
+    if align == ">" {
+        left = pad
+    } else if align == "^" {
+        left = pad / 2
+    }
+    var out = ""
+    var i = 0
+    while i < left {
+        out = out + fill
+        i += 1
+    }
+    out = out + s
+    while i < pad {
+        out = out + fill
+        i += 1
+    }
+    return out
+}
+
 impl str {
     fun len(self) -> int = __str_len(self)
 

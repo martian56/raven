@@ -208,6 +208,18 @@ pub(crate) fn lower_expr(
             };
             return lower_expr(&call, _hint, cx);
         }
+        ExprKind::Index { receiver, index } if cx.typed.types.is_operator(&span) => {
+            let call = Expr {
+                kind: ExprKind::MethodCall {
+                    receiver: receiver.clone(),
+                    name: "index".into(),
+                    generics: Vec::new(),
+                    args: vec![(**index).clone()],
+                },
+                span: span.clone(),
+            };
+            return lower_expr(&call, _hint, cx);
+        }
         ExprKind::Unary { op, operand } => {
             let lowered = lower_expr(operand, &Ty::Error, cx)?;
             HirExprKind::Unary {

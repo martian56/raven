@@ -311,6 +311,14 @@ pub extern "C" fn raven_float_to_string(value: f64) -> *mut String {
     raven_string_from_bytes(rendered.as_ptr(), rendered.len())
 }
 
+/// Allocate a GC `String` rendering `value` with exactly `places` digits
+/// after the decimal point (clamped to 0..=64), for `"${x:.2}"`.
+#[no_mangle]
+pub extern "C" fn raven_float_fixed(value: f64, places: i64) -> *mut String {
+    let rendered = format!("{:.*}", places.clamp(0, 64) as usize, value);
+    raven_string_from_bytes(rendered.as_ptr(), rendered.len())
+}
+
 /// Allocate a GC `String` holding a single Unicode scalar value. The C
 /// ABI passes the `Char` as a `u32` code point; an invalid code point
 /// renders as the Unicode replacement character.

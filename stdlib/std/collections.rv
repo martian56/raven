@@ -336,6 +336,21 @@ impl[K: Eq + Hash, V] dict[K, V] {
         return out
     }
 
+    // `d[k]`: the value for `k`. Panics when `k` is missing; use `get` for
+    // an `Option`.
+    fun index(self, k: K) -> V {
+        let slot = self._find(k, k.hash())
+        if slot < 0 {
+            panic("key not found in dict")
+        }
+        return self.vals[self.slots[slot]]
+    }
+
+    // `d[k] = v`.
+    fun set_index(self, k: K, v: V) {
+        self.set(k, v)
+    }
+
     // Whether `k` is a key, for `k in d`.
     fun contains(self, k: K) -> bool = self.has(k)
 

@@ -100,6 +100,15 @@ pub(crate) fn lower_stmt(stmt: &Stmt, cx: &LowerCtx<'_>) -> Result<Vec<HirStmt>,
                 span: stmt.span.clone(),
             }])
         }
+        StmtKind::Assign { target, op, value } if cx.typed.types.is_operator(&stmt.span) => {
+            let call =
+                crate::ast::set_index_call(target, *op, value, &stmt.span).expect("index target");
+            let lowered = lower_expr(&call, &Ty::Error, cx)?;
+            Ok(vec![HirStmt {
+                kind: HirStmtKind::Expr(lowered),
+                span: stmt.span.clone(),
+            }])
+        }
         StmtKind::Assign { target, op, value } => match op {
             AssignOp::Assign => {
                 let tgt = lower_assign_target(target, cx)?;
