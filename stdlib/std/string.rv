@@ -103,6 +103,13 @@ impl str {
         return __str_concat(self, other)
     }
 
+    // Python spellings of to_upper, to_lower, and trim.
+    fun upper(self) -> str = self.to_upper()
+
+    fun lower(self) -> str = self.to_lower()
+
+    fun strip(self) -> str = self.trim()
+
     fun to_upper(self) -> str {
         let n = __str_len(self)
         var out = ""

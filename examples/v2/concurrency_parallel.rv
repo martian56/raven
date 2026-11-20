@@ -8,7 +8,7 @@
 
 from std.sync import Channel, channel
 
-fun worker(out: Channel, n: int) -> Unit {
+fun worker(out: Channel[int], n: int) -> Unit {
     var acc = 0
     var i = 0
     while i < n {

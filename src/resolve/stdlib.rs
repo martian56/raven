@@ -375,6 +375,36 @@ pub fn expand_with_stdlib_ctx(
         }
     }
 
+    // A struct or enum the user's file declares under a bundled type's name
+    // takes that name; the bundled one moves to its namespaced name. The
+    // names the compiler builds directly stay reserved.
+    let user_types: BTreeSet<String> = user
+        .items
+        .iter()
+        .filter_map(|d| match &d.kind {
+            DeclKind::Struct(s) => Some(s.name.clone()),
+            DeclKind::Enum(e) => Some(e.name.clone()),
+            _ => None,
+        })
+        .filter(|n| !matches!(n.as_str(), "Map" | "Set") && !n.starts_with("Tuple"))
+        .collect();
+    let mut shadowed: HashMap<String, String> = HashMap::new();
+    if !user_types.is_empty() {
+        for module in &wanted {
+            let module_file = parse_bundled_module(module)?;
+            for d in &module_file.items {
+                let name = match &d.kind {
+                    DeclKind::Struct(s) => &s.name,
+                    DeclKind::Enum(e) => &e.name,
+                    _ => continue,
+                };
+                if user_types.contains(name) {
+                    shadowed.insert(name.clone(), mangle_stdlib_fn(module, name));
+                }
+            }
+        }
+    }
+
     let mut combined_items = Vec::new();
     let bundled_path = PathBuf::from("<bundled>");
     for module in &wanted {
@@ -387,6 +417,7 @@ pub fn expand_with_stdlib_ctx(
         for name in top_level_fn_names(&module_file) {
             rename.insert(name.clone(), mangle_stdlib_fn(module, &name));
         }
+        rename.extend(shadowed.iter().map(|(k, v)| (k.clone(), v.clone())));
         merge_module_items(module_file.items, &rename, &mut combined_items);
     }
 

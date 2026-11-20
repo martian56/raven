@@ -763,6 +763,7 @@ impl Parser {
                 })
             }
             TokenKind::LParen => self.parse_paren_or_tuple(),
+            TokenKind::Spawn => self.parse_spawn_expr(),
             TokenKind::LBracket => self.parse_array_lit(),
             TokenKind::LBrace => self.parse_brace_primary(),
             TokenKind::If => self.parse_if(),
@@ -822,6 +823,35 @@ impl Parser {
             }
             _ => None,
         }
+    }
+
+    /// `spawn { ... }` as a value: a `Task` handle for the running block.
+    fn parse_spawn_expr(&mut self) -> ParseResult<Expr> {
+        let start = self.advance().span;
+        let block = self.parse_block()?;
+        let span = merge_spans(&start, &block.span);
+        let body_span = block.span.clone();
+        Ok(Expr {
+            kind: ExprKind::Call {
+                callee: Box::new(Expr {
+                    kind: ExprKind::Ident {
+                        name: "__spawn_task".into(),
+                        generics: Vec::new(),
+                    },
+                    span: start,
+                }),
+                args: vec![Expr {
+                    kind: ExprKind::Lambda {
+                        params: Vec::new(),
+                        ret: None,
+                        body: crate::ast::LambdaBody::Block(block),
+                        params_inferred: false,
+                    },
+                    span: body_span,
+                }],
+            },
+            span,
+        })
     }
 
     fn parse_paren_or_tuple(&mut self) -> ParseResult<Expr> {

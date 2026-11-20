@@ -1232,6 +1232,28 @@ impl Printer<'_> {
                 let e = self.expr_at(end, base, ecol);
                 format!("{}{}{}", s, sep, e)
             }
+            ExprKind::Call { callee, args }
+                if matches!(&callee.kind, ExprKind::Ident { name, .. } if name == "__spawn_task")
+                    && matches!(
+                        args.as_slice(),
+                        [Expr {
+                            kind: ExprKind::Lambda {
+                                body: crate::ast::LambdaBody::Block(_),
+                                ..
+                            },
+                            ..
+                        }]
+                    ) =>
+            {
+                let ExprKind::Lambda {
+                    body: crate::ast::LambdaBody::Block(b),
+                    ..
+                } = &args[0].kind
+                else {
+                    unreachable!()
+                };
+                format!("spawn {}", self.render_block(b, base))
+            }
             ExprKind::Call { callee, args } => {
                 let callee = self.expr_at(callee, base, col);
                 // The callee already consumed any comments inside it, so a

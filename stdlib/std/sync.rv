@@ -24,37 +24,65 @@ extern "C" {
     fun raven_waitgroup_free(id: int)
 }
 
-// A channel of Int values. The id keys the runtime's channel registry.
-class Channel {
-    id: int
+// A channel of `T` values. Items wait in a Raven list, so the collector sees
+// them; the runtime channel `signal` carries one token per item and does the
+// blocking, and `lock` (a one-token runtime channel) guards the list.
+class Channel[T] {
+    signal: int
+    lock: int
+    items: list[T]
+    head: int
+}
+
+fun _new_channel[T](signal: int) -> Channel[T] {
+    let lock = raven_channel_new_buffered(1)
+    raven_channel_send(lock, 0)
+    let items: list[T] = []
+    return Channel(signal: signal, lock: lock, items: items, head: 0)
 }
 
 // Create an unbuffered (rendezvous) channel.
-fun channel() -> Channel {
-    return Channel(id: raven_channel_new())
+fun channel[T]() -> Channel[T] {
+    return _new_channel(raven_channel_new())
 }
 
 // Create a buffered channel of capacity `cap`.
-fun channel_buffered(cap: int) -> Channel {
-    return Channel(id: raven_channel_new_buffered(cap))
+fun channel_buffered[T](cap: int) -> Channel[T] {
+    return _new_channel(raven_channel_new_buffered(cap))
 }
 
-impl Channel {
+impl[T] Channel[T] {
     // Send `value`, blocking until the channel can accept it.
-    fun send(self, value: int) {
-        raven_channel_send(self.id, value)
+    fun send(self, value: T) {
+        raven_channel_recv(self.lock)
+        self.items.push(value)
+        raven_channel_send(self.lock, 0)
+        raven_channel_send(self.signal, 0)
     }
 
     // Receive a value, blocking until one is available.
-    fun recv(self) -> int {
-        return raven_channel_recv(self.id)
+    fun recv(self) -> T {
+        raven_channel_recv(self.signal)
+        return self._take()
     }
 
-    // Release the channel's runtime registry entry. The channel must not be
-    // used afterward. Call this when done to avoid leaking the entry; there is
-    // no destructor.
+    fun _take(self) -> T {
+        raven_channel_recv(self.lock)
+        let value = self.items[self.head]
+        self.head += 1
+        if self.head >= 64 and self.head * 2 >= self.items.len() {
+            self.items = self.items.slice(self.head, self.items.len())
+            self.head = 0
+        }
+        raven_channel_send(self.lock, 0)
+        return value
+    }
+
+    // Release the channel's runtime registry entries. The channel must not be
+    // used afterward; there is no destructor.
     fun free(self) {
-        raven_channel_free(self.id)
+        raven_channel_free(self.signal)
+        raven_channel_free(self.lock)
     }
 }
 
@@ -72,25 +100,25 @@ fun sleep_millis(ms: int) {
 // token: the token present means unlocked, taken means locked. `lock` takes
 // the token (blocking until it is returned), `unlock` returns it.
 class Mutex {
-    ch: Channel
+    ch: int
 }
 
 // Create an unlocked mutex.
 fun mutex() -> Mutex {
-    let m = Mutex(ch: channel_buffered(1))
-    m.ch.send(0)
+    let m = Mutex(ch: raven_channel_new_buffered(1))
+    raven_channel_send(m.ch, 0)
     return m
 }
 
 impl Mutex {
     // Acquire the lock, blocking until it is free.
     fun lock(self) {
-        let _ = self.ch.recv()
+        raven_channel_recv(self.ch)
     }
 
     // Release the lock. Call only while holding it.
     fun unlock(self) {
-        self.ch.send(0)
+        raven_channel_send(self.ch, 0)
     }
 }
 
@@ -132,20 +160,22 @@ impl WaitGroup {
 // The outcome of a `select_recv`: `index` is the position in the channel list
 // of the channel that produced a value (or -1 if the list was empty), and
 // `value` is that value.
-class SelectResult {
+class SelectResult[T] {
     index: int
-    value: int
+    value: T
 }
 
 // Block until one of `channels` has a value to receive, then return its index
 // in the list and the value. When several are ready the lowest index wins.
-fun select_recv(channels: list[Channel]) -> SelectResult {
+fun select_recv[T](channels: list[Channel[T]]) -> SelectResult[T] {
+    if channels.len() == 0 {
+        panic("select_recv needs at least one channel")
+    }
     let set = raven_select_new()
     for ch in channels {
-        raven_select_add(set, ch.id)
+        raven_select_add(set, ch.signal)
     }
     let index = raven_select_recv(set)
-    let value = raven_select_value()
     raven_select_free(set)
-    return SelectResult(index: index, value: value)
+    return SelectResult(index: index, value: channels[index]._take())
 }

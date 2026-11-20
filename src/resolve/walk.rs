@@ -753,6 +753,7 @@ const PRELUDE_FUNCTIONS: &[(&str, &str)] = &[
     ("__max2", "core"),
     ("__fmt_float", "string"),
     ("__fmt_pad", "string"),
+    ("__spawn_task", "core"),
 ];
 
 fn is_builtin_ctor_name(name: &str) -> bool {

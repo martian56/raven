@@ -1000,3 +1000,38 @@ impl float {
 impl bool {
     fun as_int(self) -> int = 1 if self else 0
 }
+
+extern "C" {
+    fun raven_waitgroup_new() -> int
+    fun raven_waitgroup_add(id: int, delta: int)
+    fun raven_waitgroup_wait(id: int)
+    fun raven_waitgroup_free(id: int)
+}
+
+// A running `spawn { ... }` block. `join()` waits for it to finish.
+class Task {
+    wg: int
+    joined: bool
+}
+
+impl Task {
+    fun join(self) {
+        if self.joined {
+            return
+        }
+        raven_waitgroup_wait(self.wg)
+        raven_waitgroup_free(self.wg)
+        self.joined = true
+    }
+}
+
+// `let t = spawn { ... }`.
+fun __spawn_task(f: fun() -> Unit) -> Task {
+    let wg = raven_waitgroup_new()
+    raven_waitgroup_add(wg, 1)
+    spawn {
+        f()
+        raven_waitgroup_add(wg, -1)
+    }
+    return Task(wg: wg, joined: false)
+}
