@@ -191,6 +191,7 @@ impl ModuleCx {
                 .declare_data(&g.name, Linkage::Local, true, false)?;
             let mut desc = DataDescription::new();
             desc.define(vec![0u8; 8].into_boxed_slice());
+            desc.set_align(8);
             self.module.define_data(id, &desc)?;
             self.globals.insert(g.name.clone(), id);
             if crate::codegen::layout::is_gc_pointer(&g.ty) {
@@ -231,6 +232,7 @@ impl ModuleCx {
             .declare_data(&key, Linkage::Local, true, false)?;
         let mut desc = DataDescription::new();
         desc.define(vec![0u8; 8].into_boxed_slice());
+        desc.set_align(8);
         self.module.define_data(id, &desc)?;
         self.global_roots.push(id);
         self.unit_variants.insert(key, id);
@@ -247,6 +249,7 @@ impl ModuleCx {
             .declare_data("__raven_frame_chain", Linkage::Local, true, true)?;
         let mut desc = DataDescription::new();
         desc.define(vec![0u8; 8].into_boxed_slice());
+        desc.set_align(8);
         self.module.define_data(id, &desc)?;
         self.frame_chain = Some(id);
         Ok(id)
