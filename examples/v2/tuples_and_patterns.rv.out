@@ -16,7 +16,7 @@ boom
 err x
 none
 dot
-strip 4
+strip 4.0
 circle 2.5
 rect
 five

@@ -158,7 +158,7 @@ fn enum_construction_compiles_and_runs() {
     // User enum variants constructed in expression position and matched.
     // `Color.Green` (unit) prints `green`; `Shape.Circle(2.0)` and
     // `Shape.Square(3.0)` (payload) print 12 and 9.
-    compile_link_run_and_check("enum_construct.rv", "green\n12\n9\n", &runtime);
+    compile_link_run_and_check("enum_construct.rv", "green\n12.0\n9.0\n", &runtime);
 }
 
 #[test]
@@ -453,7 +453,7 @@ fn ffi_cfloat_program_compiles_and_runs() {
     // returns a C `float`. The Raven `Float` argument 16.0 is narrowed to
     // f32 at the call (fdemote) and the f32 result is widened back to f64
     // (fpromote) before printing; sqrtf(16.0) is 4.
-    compile_link_run_and_check("ffi_cfloat.rv", "4\n", &runtime);
+    compile_link_run_and_check("ffi_cfloat.rv", "4.0\n", &runtime);
 }
 
 #[test]
@@ -742,7 +742,7 @@ fn math_program_compiles_and_runs() {
     // tolerance check true, sin 0, cos 1, and the two constant checks true.
     compile_link_run_and_check(
         "use_math.rv",
-        "5\n3\n7\n10\n1024\n4\n1024\n4\n3\n4\n3\n3\ntrue\n0\n1\ntrue\ntrue\n",
+        "5\n3\n7\n10\n1024\n4.0\n1024.0\n4.0\n3.0\n4.0\n3.0\n3.0\ntrue\n0.0\n1.0\ntrue\ntrue\n",
         &runtime,
     );
 }

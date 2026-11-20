@@ -330,6 +330,7 @@ fn is_valid_lvalue(expr: &Expr) -> bool {
         ExprKind::Field { receiver, .. } => is_valid_lvalue(receiver),
         ExprKind::Index { receiver, .. } => is_valid_lvalue(receiver),
         ExprKind::Paren(inner) => is_valid_lvalue(inner),
+        ExprKind::Tuple(items) => !items.is_empty() && items.iter().all(is_valid_lvalue),
         _ => false,
     }
 }

@@ -1086,9 +1086,13 @@ impl<'a, 'b> Checker<'a, 'b> {
                 let l = self.check_expr(lhs)?;
                 if let Some(name) = op.method_name() {
                     let lr = self.infer.resolve(&l);
-                    if matches!(lr.strip_self(), Ty::Struct { .. } | Ty::Enum { .. })
-                        && self.type_has_method(lr.strip_self(), name)
-                    {
+                    let overloadable = match lr.strip_self() {
+                        Ty::Struct { .. } | Ty::Enum { .. } => true,
+                        Ty::Str => *op == BinaryOp::Mul,
+                        Ty::List(_) => matches!(op, BinaryOp::Add | BinaryOp::Mul),
+                        _ => false,
+                    };
+                    if overloadable && self.type_has_method(lr.strip_self(), name) {
                         let t = self.check_method_call(
                             lhs,
                             name,
@@ -2863,6 +2867,16 @@ impl<'a, 'b> Checker<'a, 'b> {
 
     /// Whether some impl for `ty`'s declared type has a method `name`.
     fn type_has_method(&self, ty: &Ty, name: &str) -> bool {
+        if matches!(ty.strip_self(), Ty::Str | Ty::List(_)) {
+            let list = matches!(ty.strip_self(), Ty::List(_));
+            return self.env.impls_with_method(name).iter().any(|&i| {
+                match self.env.impls[i].self_ty.strip_self() {
+                    Ty::List(_) => list,
+                    Ty::Str => !list,
+                    _ => false,
+                }
+            });
+        }
         let head = |t: &Ty| match t.strip_self() {
             Ty::Struct { id, .. } => Some((0, id.clone())),
             Ty::Enum { id, .. } => Some((1, id.clone())),

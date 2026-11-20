@@ -103,6 +103,32 @@ impl str {
         return __str_concat(self, other)
     }
 
+    // `"ab" * 3`.
+    fun mul(self, n: int) -> str = self.repeat(n)
+
+    // `" ".join(parts)`: the parts with this string between them.
+    fun join(self, parts: list[str]) -> str = parts.join(self)
+
+    // `int(s)` and `float(s)`: the number this string spells. Panics when it
+    // is not one; use parse_int or parse_float for an Option.
+    fun as_int(self) -> int {
+        match self.strip().parse_int() {
+            case Some(n) { return n }
+            case None { panic("not an int: \"${self}\"") }
+        }
+    }
+
+    fun as_float(self) -> float {
+        match self.strip().parse_float() {
+            case Some(x) { return x }
+            case None { panic("not a float: \"${self}\"") }
+        }
+    }
+
+    fun startswith(self, prefix: str) -> bool = self.starts_with(prefix)
+
+    fun endswith(self, suffix: str) -> bool = self.ends_with(suffix)
+
     // Python spellings of to_upper, to_lower, and trim.
     fun upper(self) -> str = self.to_upper()
 

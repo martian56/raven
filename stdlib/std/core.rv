@@ -434,6 +434,31 @@ impl[T] list[T] {
         return out
     }
 
+    // `xs + ys`: a new list of both.
+    fun add(self, other: list[T]) -> list[T] {
+        let out: list[T] = []
+        for x in self {
+            out.push(x)
+        }
+        for x in other {
+            out.push(x)
+        }
+        return out
+    }
+
+    // `xs * n`: the items repeated `n` times.
+    fun mul(self, n: int) -> list[T] {
+        let out: list[T] = []
+        var k = 0
+        while k < n {
+            for x in self {
+                out.push(x)
+            }
+            k += 1
+        }
+        return out
+    }
+
     // Every `k`th item, starting with the first: `(0..10).step(3)`.
     fun step(self, k: int) -> list[T] {
         let out: list[T] = []
@@ -995,12 +1020,19 @@ impl int {
     fun as_int(self) -> int = self
 
     fun as_float(self) -> float = self.to_float()
+
+    fun abs(self) -> int = -self if self < 0 else self
 }
 
 impl float {
     fun as_int(self) -> int = self.to_int()
 
     fun as_float(self) -> float = self
+
+    fun abs(self) -> float = -self if self < 0.0 else self
+
+    // The nearest int, halves rounding away from zero.
+    fun round(self) -> int = (self + 0.5).to_int() if self >= 0.0 else (self - 0.5).to_int()
 }
 
 impl bool {

@@ -351,6 +351,9 @@ impl[K: Eq + Hash, V] dict[K, V] {
         self.set(k, v)
     }
 
+    // The same pairs as iterating `d`, for `for (k, v) in d.items()`.
+    fun items(self) -> list[(K, V)] = self.iter()
+
     // Whether `k` is a key, for `k in d`.
     fun contains(self, k: K) -> bool = self.has(k)
 

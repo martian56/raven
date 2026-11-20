@@ -303,11 +303,14 @@ pub extern "C" fn raven_bool_to_string(value: i8) -> *mut String {
     raven_string_from_bytes(s.as_ptr(), s.len())
 }
 
-/// Allocate a GC `String` rendering of an `f64`, matching Rust's
-/// default `{}` float formatting (so `7.0` renders as `7`).
+/// Allocate a GC `String` rendering of an `f64`. A whole number keeps its
+/// `.0` (`7.0`, not `7`) so a float never prints like an int.
 #[no_mangle]
 pub extern "C" fn raven_float_to_string(value: f64) -> *mut String {
-    let rendered = format!("{}", value);
+    let mut rendered = format!("{}", value);
+    if value.is_finite() && !rendered.contains(['.', 'e', 'E']) {
+        rendered.push_str(".0");
+    }
     raven_string_from_bytes(rendered.as_ptr(), rendered.len())
 }
 
@@ -560,11 +563,11 @@ mod tests {
     }
 
     #[test]
-    fn float_to_string_matches_default_formatting() {
+    fn float_to_string_keeps_a_point() {
         let whole = raven_float_to_string(7.0);
         let frac = raven_float_to_string(3.5);
         let neg = raven_float_to_string(-0.25);
-        assert_eq!(read(whole), "7");
+        assert_eq!(read(whole), "7.0");
         assert_eq!(read(frac), "3.5");
         assert_eq!(read(neg), "-0.25");
         unsafe {

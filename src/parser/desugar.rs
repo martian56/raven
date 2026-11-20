@@ -52,6 +52,12 @@ pub fn desugar(file: &mut File) -> Result<(), RavenError> {
         })
         .chain(items.iter().flat_map(|d| {
             match &d.kind {
+                DeclKind::Extern(e) => e
+                    .items
+                    .iter()
+                    .map(|f| f.name.clone())
+                    .filter(|n| is_builtin_name(n))
+                    .collect::<Vec<_>>(),
                 DeclKind::Import(i) => i
                     .selectors
                     .iter()
@@ -256,6 +262,28 @@ fn lower_expr(e: &mut Expr) {
                     op: crate::ast::UnaryOp::Not,
                     operand: Box::new(call),
                 }
+            }
+        }
+        ExprKind::Index { receiver, index }
+            if negative_literal(&index).is_some() && is_place(&receiver) =>
+        {
+            // `xs[-k]` counts from the end: `xs[xs.len() - k]`.
+            let k = negative_literal(&index).expect("checked above");
+            let s = index.span.in_copy(crate::span::next_copy_id());
+            let len = method((*receiver).clone().respanned(), "len", Vec::new(), &s);
+            ExprKind::Index {
+                receiver,
+                index: Box::new(Expr {
+                    kind: ExprKind::Binary {
+                        op: BinaryOp::Sub,
+                        lhs: Box::new(len),
+                        rhs: Box::new(Expr {
+                            kind: ExprKind::Int(k),
+                            span: s.in_copy(crate::span::next_copy_id()),
+                        }),
+                    },
+                    span: s.in_copy(crate::span::next_copy_id()),
+                }),
             }
         }
         ExprKind::Index { receiver, index } if matches!(index.kind, ExprKind::Range { .. }) => {
@@ -557,16 +585,63 @@ fn destructure(p: &Pattern, init: Expr, mutable: bool, out: &mut Vec<Stmt>) {
 
 /// `let (a, b) = e` as `let t = e; let a = t._0; let b = t._1`.
 fn lower_let_tuple(b: &mut Block) -> Result<(), RavenError> {
-    if !b
-        .stmts
-        .iter()
-        .any(|s| matches!(s.kind, StmtKind::LetTuple { .. }))
-    {
+    if !b.stmts.iter().any(|s| {
+        matches!(s.kind, StmtKind::LetTuple { .. })
+            || matches!(&s.kind, StmtKind::Assign { target: Expr { kind: ExprKind::Call { callee, .. }, .. }, .. }
+                if matches!(&callee.kind, ExprKind::Ident { name, .. } if name.starts_with("Tuple")))
+    }) {
         return Ok(());
     }
     let mut out = Vec::with_capacity(b.stmts.len() + 4);
     for stmt in std::mem::take(&mut b.stmts) {
         match stmt.kind {
+            StmtKind::Assign {
+                target:
+                    Expr {
+                        kind: ExprKind::Call { callee, args },
+                        ..
+                    },
+                op: crate::ast::AssignOp::Assign,
+                value,
+            } if matches!(&callee.kind, ExprKind::Ident { name, .. } if name.starts_with("Tuple")) =>
+            {
+                // `(a, b) = (b, a)`: evaluate the right side once, then assign
+                // each part.
+                let tmp = format!("__swap{}", crate::span::next_copy_id());
+                let at = |s: &Span| s.in_copy(crate::span::next_copy_id());
+                out.push(Stmt {
+                    kind: StmtKind::Let {
+                        name: tmp.clone(),
+                        ty: None,
+                        init: Some(value),
+                        mutable: false,
+                    },
+                    span: at(&stmt.span),
+                });
+                for (i, target) in args.into_iter().enumerate() {
+                    let part = Expr {
+                        kind: ExprKind::Field {
+                            receiver: Box::new(Expr {
+                                kind: ExprKind::Ident {
+                                    name: tmp.clone(),
+                                    generics: Vec::new(),
+                                },
+                                span: at(&target.span),
+                            }),
+                            name: format!("_{i}"),
+                        },
+                        span: at(&target.span),
+                    };
+                    out.push(Stmt {
+                        span: at(&target.span),
+                        kind: StmtKind::Assign {
+                            target,
+                            op: crate::ast::AssignOp::Assign,
+                            value: part,
+                        },
+                    });
+                }
+            }
             StmtKind::LetTuple {
                 pattern,
                 init,
@@ -772,6 +847,11 @@ const BUILTINS: &[&str] = &[
     "zip",
     "str",
     "range",
+    "int",
+    "float",
+    "abs",
+    "round",
+    "print",
 ];
 
 fn is_builtin_name(n: &str) -> bool {
@@ -821,6 +901,37 @@ fn builtin_call(e: &mut Expr, values: &std::collections::HashSet<String>) {
         ("reversed", 1) => one("reversed", &mut args),
         ("enumerate", 1) => one("enumerate", &mut args),
         ("str", 1) => one("to_string", &mut args),
+        ("int", 1) => one("as_int", &mut args),
+        ("float", 1) => one("as_float", &mut args),
+        ("abs", 1) => one("abs", &mut args),
+        ("round", 1) => one("round", &mut args),
+        ("print", n) if n != 1 => {
+            // `print(a, b)` prints its arguments separated by spaces.
+            let mut frags = Vec::new();
+            for (i, a) in args.into_iter().enumerate() {
+                if i > 0 {
+                    frags.push(crate::ast::StrFragment::Literal(" ".into()));
+                }
+                frags.push(crate::ast::StrFragment::Expr(Box::new(a)));
+            }
+            let text = Expr {
+                kind: ExprKind::InterpolatedString(frags),
+                span: inner(&span),
+            };
+            Expr {
+                kind: ExprKind::Call {
+                    callee: Box::new(Expr {
+                        kind: ExprKind::Ident {
+                            name: "print".into(),
+                            generics: Vec::new(),
+                        },
+                        span: inner(&span),
+                    }),
+                    args: vec![text],
+                },
+                span: span.clone(),
+            }
+        }
         ("zip", 2) => {
             let a = args.remove(0);
             method(a, "zip", args, &span)
@@ -971,4 +1082,41 @@ fn comprehension(
         trailing: Some(Box::new(ident(&out))),
         span: at(),
     })
+}
+
+/// The magnitude of a negative integer literal index, `xs[-2]` giving 2.
+fn negative_literal(e: &Expr) -> Option<i64> {
+    match &e.kind {
+        ExprKind::Unary {
+            op: crate::ast::UnaryOp::Neg,
+            operand,
+        } => match operand.kind {
+            ExprKind::Int(n) if n > 0 => Some(n),
+            _ => None,
+        },
+        ExprKind::Int(n) if *n < 0 => Some(-n),
+        _ => None,
+    }
+}
+
+/// A receiver that is cheap and side-effect free to read twice.
+fn is_place(e: &Expr) -> bool {
+    match &e.kind {
+        ExprKind::Ident { .. } | ExprKind::SelfLower => true,
+        ExprKind::Field { receiver, .. } => is_place(receiver),
+        _ => false,
+    }
+}
+
+trait Respanned {
+    fn respanned(self) -> Self;
+}
+
+impl Respanned for Expr {
+    /// A copy with fresh spans, so later passes key it apart from the original.
+    fn respanned(mut self) -> Self {
+        let empty = std::collections::HashMap::new();
+        crate::ast::respan::Respan::new(crate::span::next_copy_id(), &empty).expr(&mut self);
+        self
+    }
 }

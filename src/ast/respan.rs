@@ -184,7 +184,7 @@ impl<'a> Respan<'a> {
         }
     }
 
-    fn expr(&self, e: &mut Expr) {
+    pub fn expr(&self, e: &mut Expr) {
         self.span(&mut e.span);
         match &mut e.kind {
             ExprKind::Int(_)
