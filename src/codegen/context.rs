@@ -116,6 +116,7 @@ pub struct ModuleCx {
     vtable_counter: u32,
     gc_stop_flag: Option<DataId>,
     frame_chain: Option<DataId>,
+    unit_variants: HashMap<String, DataId>,
     /// Counter handing out unique reflection-metadata data symbol names.
     reflect_counter: u32,
     /// C layouts of `@repr(C)` structs, keyed by mangled struct name. A
@@ -168,6 +169,7 @@ impl ModuleCx {
             vtable_counter: 0,
             gc_stop_flag: None,
             frame_chain: None,
+            unit_variants: HashMap::new(),
             reflect_counter: 0,
             repr_c_structs: HashMap::new(),
             globals: HashMap::new(),
@@ -207,6 +209,31 @@ impl ModuleCx {
             .module
             .declare_data("RAVEN_GC_STOP_PENDING", Linkage::Import, true, false)?;
         self.gc_stop_flag = Some(id);
+        Ok(id)
+    }
+
+    /// The rooted slot caching the one shared value of a payload-less enum
+    /// variant, defined on first use.
+    pub fn unit_variant_slot(
+        &mut self,
+        enum_mangle: &str,
+        variant: usize,
+    ) -> Result<DataId, CodegenError> {
+        let key: String = format!("__raven_unit_{enum_mangle}_{variant}")
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+            .collect();
+        if let Some(id) = self.unit_variants.get(&key) {
+            return Ok(*id);
+        }
+        let id = self
+            .module
+            .declare_data(&key, Linkage::Local, true, false)?;
+        let mut desc = DataDescription::new();
+        desc.define(vec![0u8; 8].into_boxed_slice());
+        self.module.define_data(id, &desc)?;
+        self.global_roots.push(id);
+        self.unit_variants.insert(key, id);
         Ok(id)
     }
 

@@ -310,6 +310,7 @@ thread_local! {
     /// out by `raven_gc_alloc`. The sweeper walks it once per cycle.
     static ALLOC: AllocState = AllocState {
         heap: RefCell::new(Vec::new()),
+        pages: RefCell::new(SmallHeap::new()),
         bytes: Cell::new(0),
         live: Cell::new(0),
         threshold: Cell::new(collection_floor()),
@@ -415,8 +416,11 @@ const INITIAL_THRESHOLD: usize = 16 * 1024 * 1024;
 /// Per-thread allocation bookkeeping, kept in one thread-local so an
 /// allocation touches thread-local storage once.
 struct AllocState {
-    /// Every object this thread allocated that is not yet freed.
+    /// Every large object this thread allocated that is not yet freed. Small
+    /// objects live in `pages`.
     heap: RefCell<Vec<*mut ObjectHeader>>,
+    /// Size-classed pages for objects of at most `SMALL_MAX` bytes.
+    pages: RefCell<SmallHeap>,
     /// Live object-body bytes. Drives the collection threshold.
     bytes: Cell<usize>,
     /// Live object count.
@@ -424,6 +428,149 @@ struct AllocState {
     /// A collection runs before an allocation that would carry `bytes` past
     /// this.
     threshold: Cell<usize>,
+}
+
+/// Objects of at most this many bytes come from size-classed pages.
+const SMALL_MAX: usize = 256;
+/// Every page slot is aligned to this.
+const SLOT_ALIGN: usize = 16;
+const PAGE_BYTES: usize = 64 * 1024;
+const CLASS_SIZES: [usize; 10] = [16, 32, 48, 64, 80, 96, 128, 160, 192, 256];
+/// Written over the tag of a free slot so the sweeper can skip it.
+const TAG_FREE: u32 = u32::MAX;
+
+fn size_class(size: usize) -> usize {
+    match size {
+        0..=16 => 0,
+        17..=32 => 1,
+        33..=48 => 2,
+        49..=64 => 3,
+        65..=80 => 4,
+        81..=96 => 5,
+        97..=128 => 6,
+        129..=160 => 7,
+        161..=192 => 8,
+        _ => 9,
+    }
+}
+
+/// One size class: its pages, a free list threaded through freed slots
+/// (the link sits after the header's tag and mark words), and the bump range
+/// of the newest page.
+struct SizeClass {
+    pages: Vec<*mut u8>,
+    free: *mut u8,
+    bump: *mut u8,
+    end: *mut u8,
+}
+
+/// A thread's small-object heap. Allocation pops a free slot or bumps into
+/// the newest page; sweeping walks every page and rebuilds the free lists.
+struct SmallHeap {
+    classes: [SizeClass; 10],
+}
+
+impl SmallHeap {
+    const fn new() -> Self {
+        const EMPTY: SizeClass = SizeClass {
+            pages: Vec::new(),
+            free: std::ptr::null_mut(),
+            bump: std::ptr::null_mut(),
+            end: std::ptr::null_mut(),
+        };
+        SmallHeap {
+            classes: [EMPTY; 10],
+        }
+    }
+
+    fn alloc(&mut self, class: usize) -> *mut u8 {
+        let size = CLASS_SIZES[class];
+        let c = &mut self.classes[class];
+        let slot = if !c.free.is_null() {
+            let slot = c.free;
+            // SAFETY: a free-list slot stores the next link at offset 8.
+            c.free = unsafe { *(slot.add(8) as *mut *mut u8) };
+            slot
+        } else {
+            if c.bump.is_null() || (c.end as usize) - (c.bump as usize) < size {
+                let Ok(layout) = std::alloc::Layout::from_size_align(PAGE_BYTES, 4096) else {
+                    return std::ptr::null_mut();
+                };
+                // SAFETY: the layout has a non-zero size.
+                let page = unsafe { std::alloc::alloc(layout) };
+                if page.is_null() {
+                    return page;
+                }
+                c.pages.push(page);
+                c.bump = page;
+                // SAFETY: `PAGE_BYTES / size` whole slots fit in the page.
+                c.end = unsafe { page.add(PAGE_BYTES / size * size) };
+            }
+            let slot = c.bump;
+            // SAFETY: at least one slot remains before `end`.
+            c.bump = unsafe { c.bump.add(size) };
+            slot
+        };
+        // SAFETY: the slot is `size` writable bytes.
+        unsafe { std::ptr::write_bytes(slot, 0, size) };
+        slot
+    }
+
+    #[cfg(test)]
+    fn release(&mut self, slot: *mut u8, class: usize) {
+        let c = &mut self.classes[class];
+        // SAFETY: the slot is a dead object of this class; mark it free and
+        // link it at offset 8.
+        unsafe {
+            *(slot as *mut u32) = TAG_FREE;
+            *(slot.add(8) as *mut *mut u8) = c.free;
+        }
+        c.free = slot;
+    }
+
+    /// Free every slot not marked with `epoch`; returns the bytes and object
+    /// count released.
+    fn sweep(&mut self, epoch: u32) -> (usize, usize) {
+        let mut freed_bytes = 0;
+        let mut freed = 0;
+        for (class, c) in self.classes.iter_mut().enumerate() {
+            let size = CLASS_SIZES[class];
+            c.free = std::ptr::null_mut();
+            let last = c.pages.last().copied();
+            for &page in c.pages.iter().rev() {
+                let limit = if Some(page) == last {
+                    c.bump
+                } else {
+                    // SAFETY: whole slots fit below this bound.
+                    unsafe { page.add(PAGE_BYTES / size * size) }
+                };
+                let mut slot = limit;
+                while slot > page {
+                    // SAFETY: stepping back by whole slots stays in the page.
+                    slot = unsafe { slot.sub(size) };
+                    let header = slot as *mut ObjectHeader;
+                    // SAFETY: every slot below the bump limit holds a header.
+                    let (tag, mark) = unsafe { ((*header).tag, (*header).gc_bits) };
+                    if tag != TAG_FREE && mark == epoch {
+                        continue;
+                    }
+                    if tag != TAG_FREE {
+                        // SAFETY: an unmarked live object; release its buffers.
+                        unsafe { free_object_buffers(header) };
+                        freed_bytes += size;
+                        freed += 1;
+                    }
+                    // SAFETY: the slot is dead; thread it onto the free list.
+                    unsafe {
+                        *(slot as *mut u32) = TAG_FREE;
+                        *(slot.add(8) as *mut *mut u8) = c.free;
+                    }
+                    c.free = slot;
+                }
+            }
+        }
+        (freed_bytes, freed)
+    }
 }
 
 /// The collection floor in bytes: the smallest the threshold is ever set
@@ -679,6 +826,15 @@ pub extern "C" fn raven_gc_alloc(size: usize, align: usize, tag: u32) -> *mut u8
     let over = ALLOC.with(|a| a.bytes.get() + size > a.threshold.get());
     if over {
         collect();
+    }
+    if size <= SMALL_MAX && align <= SLOT_ALIGN {
+        let class = size_class(size);
+        let ptr = ALLOC.with(|a| {
+            a.bytes.set(a.bytes.get() + CLASS_SIZES[class]);
+            a.live.set(a.live.get() + 1);
+            a.pages.borrow_mut().alloc(class)
+        });
+        return ptr;
     }
     let Ok(layout) = std::alloc::Layout::from_size_align(size.max(1), align) else {
         return std::ptr::null_mut();
@@ -986,6 +1142,11 @@ unsafe fn trace_object(object: *mut ObjectHeader, work: &mut Vec<*mut ObjectHead
 fn sweep() {
     let epoch = CURRENT_EPOCH.with(|e| e.get());
     ALLOC.with(|a| {
+        let (freed_bytes, freed) = a.pages.borrow_mut().sweep(epoch);
+        a.bytes.set(a.bytes.get().saturating_sub(freed_bytes));
+        a.live.set(a.live.get().saturating_sub(freed));
+    });
+    ALLOC.with(|a| {
         let mut heap = a.heap.borrow_mut();
         let mut write = 0usize;
         for read in 0..heap.len() {
@@ -1049,6 +1210,21 @@ pub extern "C" fn raven_gc_live_objects() -> usize {
 #[cfg(test)]
 pub(crate) unsafe fn free_for_test(header: *mut ObjectHeader) {
     if header.is_null() {
+        return;
+    }
+    // SAFETY: caller guarantees `header` is a live registered object.
+    let (size, _) = unsafe { object_body_layout(header) };
+    if size <= SMALL_MAX {
+        // SAFETY: as above; the slot came from this thread's pages.
+        unsafe { free_object_buffers(header) };
+        ALLOC.with(|a| {
+            a.pages
+                .borrow_mut()
+                .release(header as *mut u8, size_class(size));
+            a.bytes
+                .set(a.bytes.get().saturating_sub(CLASS_SIZES[size_class(size)]));
+            a.live.set(a.live.get().saturating_sub(1));
+        });
         return;
     }
     ALLOC.with(|a| {

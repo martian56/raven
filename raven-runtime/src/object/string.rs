@@ -722,8 +722,7 @@ mod tests {
         if s.is_null() {
             return;
         }
-        // SAFETY: matches the construction layout.
-        unsafe { free_buffers(s) };
-        raven_dealloc(s as *mut u8, size_of_string(), align_of_string());
+        // SAFETY: `s` is a live collector-allocated string.
+        unsafe { crate::gc::free_for_test(s as *mut crate::object::ObjectHeader) };
     }
 }

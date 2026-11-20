@@ -1399,6 +1399,32 @@ fn lower_enum_create(
     // operand can allocate and trigger a collection, and the partially
     // built value must stay reachable across it.
     let field_count = 1 + payload.len() as i64;
+    if payload.is_empty() {
+        // A payload-less variant is immutable, so every use shares one value,
+        // built on first use and kept in a rooted static slot.
+        let slot = cx.unit_variant_slot(&key, variant)?;
+        let gv = cx.module().declare_data_in_func(slot, builder.func);
+        let addr = builder.ins().symbol_value(ptr, gv);
+        let cached = builder.ins().load(ptr, MemFlags::trusted(), addr, 0);
+        let make = builder.create_block();
+        let done = builder.create_block();
+        builder.append_block_param(done, ptr);
+        builder.ins().brif(cached, done, &[cached], make, &[]);
+        builder.set_cold_block(make);
+        builder.switch_to_block(make);
+        builder.seal_block(make);
+        let obj = call_struct_new(cx, builder, field_count, type_id, ptr);
+        let base = call_struct_fields(cx, builder, obj, ptr);
+        let disc = builder.ins().iconst(ptr, variant as i64);
+        builder
+            .ins()
+            .store(MemFlags::new(), disc, base, layout::slot_offset(0));
+        builder.ins().store(MemFlags::trusted(), obj, addr, 0);
+        builder.ins().jump(done, &[obj]);
+        builder.switch_to_block(done);
+        builder.seal_block(done);
+        return Ok(Some(builder.block_params(done)[0]));
+    }
     if !payload.iter().any(operand_allocates) {
         let values = payload
             .iter()
