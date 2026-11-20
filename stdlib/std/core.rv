@@ -460,6 +460,15 @@ impl[T] list[T] {
     fun mul(self, n: int) -> list[T] {
         let out: list[T] = []
         out.reserve(len(self) * n)
+        if len(self) == 1 {
+            let x = self[0]
+            var j = 0
+            while j < n {
+                out.push(x)
+                j += 1
+            }
+            return out
+        }
         var k = 0
         while k < n {
             for x in self {
