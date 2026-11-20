@@ -1191,6 +1191,35 @@ impl Printer<'_> {
                 let v = self.expr_at(value, base, col);
                 format!("{} as {}", v, render_type(ty))
             }
+            ExprKind::Comprehension {
+                kind,
+                key,
+                value,
+                pattern,
+                iter,
+                cond,
+            } => {
+                let (open, close) = match kind {
+                    crate::ast::CompKind::List => ("[", "]"),
+                    _ => ("{", "}"),
+                };
+                let mut out = String::from(open);
+                if let Some(k) = key {
+                    out.push_str(&self.expr_at(k, base, col));
+                    out.push_str(": ");
+                }
+                out.push_str(&self.expr_at(value, base, col));
+                out.push_str(" for ");
+                out.push_str(&render_pattern(pattern));
+                out.push_str(" in ");
+                out.push_str(&self.expr_at(iter, base, col));
+                if let Some(c) = cond {
+                    out.push_str(" if ");
+                    out.push_str(&self.expr_at(c, base, col));
+                }
+                out.push_str(close);
+                out
+            }
             ExprKind::Block(b) => self.render_block(b, base),
             ExprKind::Unary { op, operand } => {
                 let op_s = unary_op(*op);

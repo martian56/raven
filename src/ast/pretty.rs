@@ -459,6 +459,13 @@ fn pretty_expr(buf: &mut String, expr: &Expr, depth: usize) {
             indent(buf, depth);
             buf.push_str(")\n");
         }
+        ExprKind::Comprehension { value, iter, .. } => {
+            buf.push_str("(comprehension\n");
+            pretty_expr(buf, value, depth + 1);
+            pretty_expr(buf, iter, depth + 1);
+            indent(buf, depth);
+            buf.push_str(")\n");
+        }
         ExprKind::Cast { value, ty } => {
             buf.push_str(&format!("(cast {}\n", pretty_type(ty)));
             pretty_expr(buf, value, depth + 1);

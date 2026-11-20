@@ -1757,7 +1757,9 @@ fn rewrite_expr(expr: &mut Expr, rename: &HashMap<String, String>) {
                 rewrite_expr(&mut f.value, rename);
             }
         }
-        ExprKind::Cast { .. } => unreachable!("casts are desugared after parsing"),
+        ExprKind::Cast { .. } | ExprKind::Comprehension { .. } => {
+                unreachable!("surface syntax is desugared after parsing")
+            }
         ExprKind::Paren(inner) | ExprKind::Try(inner) | ExprKind::NamedArg { value: inner, .. } => {
             rewrite_expr(inner, rename)
         }

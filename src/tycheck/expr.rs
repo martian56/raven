@@ -1067,7 +1067,9 @@ impl<'a, 'b> Checker<'a, 'b> {
                 .clone()
                 .map(|t| Ty::SelfTy(Box::new(t)))
                 .unwrap_or(Ty::Error)),
-            ExprKind::Cast { .. } => unreachable!("casts are desugared after parsing"),
+            ExprKind::Cast { .. } | ExprKind::Comprehension { .. } => {
+                unreachable!("surface syntax is desugared after parsing")
+            }
             ExprKind::Paren(inner) => self.check_expr(inner),
             ExprKind::NamedArg { value, .. } => self.check_expr(value),
             ExprKind::Ident { name, generics } => self.check_ident(name, generics, &expr.span),

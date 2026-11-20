@@ -228,6 +228,24 @@ impl<'a> Respan<'a> {
                 self.expr(value);
                 self.ty(ty);
             }
+            ExprKind::Comprehension {
+                key,
+                value,
+                pattern,
+                iter,
+                cond,
+                ..
+            } => {
+                if let Some(k) = key {
+                    self.expr(k);
+                }
+                self.expr(value);
+                self.pattern(pattern);
+                self.expr(iter);
+                if let Some(c) = cond {
+                    self.expr(c);
+                }
+            }
             ExprKind::Block(b) | ExprKind::Loop(b) => self.block(b),
             ExprKind::Unary { operand, .. } => self.expr(operand),
             ExprKind::Binary { lhs, rhs, .. } => {

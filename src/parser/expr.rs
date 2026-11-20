@@ -929,6 +929,9 @@ impl Parser {
         // whether a `:` follows it at the top level.
         let first = self.parse_expr()?;
         self.skip_newlines();
+        if matches!(self.peek_kind(), TokenKind::For) {
+            return self.parse_comprehension(lb.span, crate::ast::CompKind::List, None, first);
+        }
         if matches!(self.peek_kind(), TokenKind::Colon) {
             return self.parse_map_lit(lb.span, first);
         }
@@ -952,6 +955,45 @@ impl Parser {
         Ok(Expr {
             kind: ExprKind::Array(items),
             span,
+        })
+    }
+
+    /// The `for p in xs [if c]` tail of a comprehension and its closing
+    /// bracket. The iterable and condition stop short of `a if c else b`, so
+    /// the comprehension's own `if` is not read as a conditional value.
+    fn parse_comprehension(
+        &mut self,
+        open: Span,
+        kind: crate::ast::CompKind,
+        key: Option<Expr>,
+        value: Expr,
+    ) -> ParseResult<Expr> {
+        self.expect(&TokenKind::For, "`for`")?;
+        let pattern = self.parse_pattern()?;
+        self.expect(&TokenKind::In, "`in`")?;
+        let iter = self.parse_logical_or()?;
+        self.skip_newlines();
+        let cond = if self.eat(&TokenKind::If) {
+            let c = self.parse_logical_or()?;
+            self.skip_newlines();
+            Some(Box::new(c))
+        } else {
+            None
+        };
+        let close = match kind {
+            crate::ast::CompKind::List => self.expect(&TokenKind::RBracket, "`]`")?,
+            _ => self.expect(&TokenKind::RBrace, "`}`")?,
+        };
+        Ok(Expr {
+            kind: ExprKind::Comprehension {
+                kind,
+                key: key.map(Box::new),
+                value: Box::new(value),
+                pattern,
+                iter: Box::new(iter),
+                cond,
+            },
+            span: merge_spans(&open, &close.span),
         })
     }
 
@@ -1023,9 +1065,20 @@ impl Parser {
             return Ok(None);
         };
         self.skip_newlines();
+        if matches!(self.peek_kind(), TokenKind::For) {
+            return self
+                .parse_comprehension(lb.span, crate::ast::CompKind::Set, None, first)
+                .map(Some);
+        }
         if self.eat(&TokenKind::Colon) {
             self.skip_newlines();
             let value = self.parse_expr()?;
+            self.skip_newlines();
+            if matches!(self.peek_kind(), TokenKind::For) {
+                return self
+                    .parse_comprehension(lb.span, crate::ast::CompKind::Dict, Some(first), value)
+                    .map(Some);
+            }
             let mut pairs = vec![(first, value)];
             self.skip_newlines();
             while self.eat(&TokenKind::Comma) {

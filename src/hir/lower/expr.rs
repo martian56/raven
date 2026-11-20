@@ -179,7 +179,9 @@ pub(crate) fn lower_expr(
             ));
         }
         ExprKind::NamedArg { value, .. } => return lower_expr(value, _hint, cx),
-        ExprKind::Cast { .. } => unreachable!("casts are desugared after parsing"),
+        ExprKind::Cast { .. } | ExprKind::Comprehension { .. } => {
+            unreachable!("surface syntax is desugared after parsing")
+        }
         ExprKind::Paren(inner) => {
             let lowered = lower_expr(inner, &ty, cx)?;
             HirExprKind::Paren(Box::new(lowered))

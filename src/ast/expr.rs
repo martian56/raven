@@ -97,6 +97,16 @@ pub enum ExprKind {
         lhs: Box<Expr>,
         rhs: Box<Expr>,
     },
+    /// `[v for p in xs if c]`, `{v for ...}`, or `{k: v for ...}`; desugared
+    /// to a loop that fills a new collection.
+    Comprehension {
+        kind: CompKind,
+        key: Option<Box<Expr>>,
+        value: Box<Expr>,
+        pattern: super::Pattern,
+        iter: Box<Expr>,
+        cond: Option<Box<Expr>>,
+    },
     /// `value as T`, desugared to a conversion method call.
     Cast { value: Box<Expr>, ty: super::Type },
     /// Range expression: `start..end` or `start..=end`.
@@ -350,4 +360,12 @@ pub struct LambdaParam {
 pub enum LambdaBody {
     Block(Block),
     Expr(Box<Expr>),
+}
+
+/// The collection a comprehension builds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompKind {
+    List,
+    Set,
+    Dict,
 }

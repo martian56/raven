@@ -151,6 +151,22 @@ impl Walker<'_> {
                     self.expr(v);
                 }
             }
+            ExprKind::Comprehension {
+                key,
+                value,
+                iter,
+                cond,
+                ..
+            } => {
+                if let Some(k) = key {
+                    self.expr(k);
+                }
+                self.expr(value);
+                self.expr(iter);
+                if let Some(c) = cond {
+                    self.expr(c);
+                }
+            }
             ExprKind::Paren(x)
             | ExprKind::Try(x)
             | ExprKind::NamedArg { value: x, .. }

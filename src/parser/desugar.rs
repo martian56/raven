@@ -291,6 +291,14 @@ fn lower_expr(e: &mut Expr) {
             )
             .kind
         }
+        ExprKind::Comprehension {
+            kind,
+            key,
+            value,
+            pattern,
+            iter,
+            cond,
+        } => comprehension(kind, key, *value, pattern, *iter, cond, &span),
         ExprKind::Cast { value, ty } => {
             let target = match &ty.kind {
                 TypeKind::Path(p) if p.segments.len() == 1 => p.segments[0].name.to_lowercase(),
@@ -874,4 +882,93 @@ fn empty_collection_call(e: &mut Expr, values: &std::collections::HashSet<String
         "dict" => ExprKind::MapLit(Vec::new()),
         _ => return,
     };
+}
+
+/// `[v for p in xs if c]` as `{ let out = []; for p in xs { if c { out.push(v) } }; out }`,
+/// and likewise for sets (`add`) and dicts (`set(k, v)`).
+fn comprehension(
+    kind: crate::ast::CompKind,
+    key: Option<Box<Expr>>,
+    value: Expr,
+    pattern: Pattern,
+    iter: Expr,
+    cond: Option<Box<Expr>>,
+    span: &Span,
+) -> ExprKind {
+    use crate::ast::CompKind;
+    let at = || span.in_copy(crate::span::next_copy_id());
+    let out = format!("__comp{}", crate::span::next_copy_id());
+    let ident = |name: &str| Expr {
+        kind: ExprKind::Ident {
+            name: name.to_string(),
+            generics: Vec::new(),
+        },
+        span: at(),
+    };
+    let (empty, add, args) = match kind {
+        CompKind::List => (ExprKind::Array(Vec::new()), "push", vec![value]),
+        CompKind::Set => (ExprKind::SetLit(Vec::new()), "add", vec![value]),
+        CompKind::Dict => (
+            ExprKind::MapLit(Vec::new()),
+            "set",
+            vec![*key.expect("a dict comprehension has a key"), value],
+        ),
+    };
+    let push = Stmt {
+        kind: StmtKind::Expr(method(ident(&out), add, args, &at())),
+        span: at(),
+    };
+    let body_stmt = match cond {
+        Some(c) => Stmt {
+            kind: StmtKind::Expr(Expr {
+                kind: ExprKind::If {
+                    cond: c,
+                    then_branch: Block {
+                        stmts: vec![push],
+                        trailing: None,
+                        span: at(),
+                    },
+                    else_branch: None,
+                },
+                span: at(),
+            }),
+            span: at(),
+        },
+        None => push,
+    };
+    let mut for_loop = Expr {
+        kind: ExprKind::For {
+            pattern,
+            iter: Box::new(iter),
+            body: Block {
+                stmts: vec![body_stmt],
+                trailing: None,
+                span: at(),
+            },
+        },
+        span: at(),
+    };
+    lower_expr(&mut for_loop);
+    ExprKind::Block(Block {
+        stmts: vec![
+            Stmt {
+                kind: StmtKind::Let {
+                    name: out.clone(),
+                    ty: None,
+                    init: Some(Expr {
+                        kind: empty,
+                        span: at(),
+                    }),
+                    mutable: false,
+                },
+                span: at(),
+            },
+            Stmt {
+                kind: StmtKind::Expr(for_loop),
+                span: at(),
+            },
+        ],
+        trailing: Some(Box::new(ident(&out))),
+        span: at(),
+    })
 }

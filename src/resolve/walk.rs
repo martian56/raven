@@ -451,7 +451,9 @@ fn walk_expr(
                 walk_expr(v, scope, map)?;
             }
         }
-        ExprKind::Cast { .. } => unreachable!("casts are desugared after parsing"),
+        ExprKind::Cast { .. } | ExprKind::Comprehension { .. } => {
+                unreachable!("surface syntax is desugared after parsing")
+            }
         ExprKind::Paren(e) => walk_expr(e, scope, map)?,
         ExprKind::NamedArg { .. } => {
             return Err(RavenError::resolve(
