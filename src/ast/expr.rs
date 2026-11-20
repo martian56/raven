@@ -245,6 +245,22 @@ pub enum BinaryOp {
 }
 
 impl BinaryOp {
+    /// The method a class defines to overload this operator.
+    pub fn method_name(self) -> Option<&'static str> {
+        Some(match self {
+            BinaryOp::Add => "add",
+            BinaryOp::Sub => "sub",
+            BinaryOp::Mul => "mul",
+            BinaryOp::Div => "div",
+            BinaryOp::Mod => "mod",
+            BinaryOp::Lt => "lt",
+            BinaryOp::Le => "le",
+            BinaryOp::Gt => "gt",
+            BinaryOp::Ge => "ge",
+            _ => return None,
+        })
+    }
+
     /// The operator as it is written in source.
     ///
     /// This is the one definition of the spelling. The pretty printer, the

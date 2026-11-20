@@ -116,13 +116,12 @@ fn check_decl_body(
             errors
         }
         DeclKind::Trait(t) => {
-            // Default bodies in trait declarations: walk them without
-            // a concrete Self because we treat `Self` as an error
-            // marker for now; trait default bodies that reference Self
-            // remain limited in this release.
+            // A default body is checked in each impl that receives a copy,
+            // where `Self` is the implementing type. One that mentions `Self`
+            // cannot be checked on its own.
             let mut errors: Vec<RavenError> = Vec::new();
             for m in &t.members {
-                if matches!(m.body, FunctionBody::None) {
+                if matches!(m.body, FunctionBody::None) || mentions_self(m) {
                     continue;
                 }
                 errors.extend(check_function(m, None, &[], resolved, env, types));
@@ -1059,9 +1058,25 @@ impl<'a, 'b> Checker<'a, 'b> {
                 expr.span.clone(),
             )),
             ExprKind::Block(b) => self.check_block(b),
-            ExprKind::Unary { op, operand } => self.check_unary(*op, operand),
+            ExprKind::Unary { op, operand } => self.check_unary(*op, operand, &expr.span),
             ExprKind::Binary { op, lhs, rhs } => {
                 let l = self.check_expr(lhs)?;
+                if let Some(name) = op.method_name() {
+                    let lr = self.infer.resolve(&l);
+                    if matches!(lr.strip_self(), Ty::Struct { .. } | Ty::Enum { .. })
+                        && self.type_has_method(lr.strip_self(), name)
+                    {
+                        let t = self.check_method_call(
+                            lhs,
+                            name,
+                            &[],
+                            std::slice::from_ref(&**rhs),
+                            &expr.span,
+                        )?;
+                        self.types.record_operator(&expr.span);
+                        return Ok(t);
+                    }
+                }
                 let before_rhs = self.diverges;
                 let r = self.check_expr(rhs)?;
                 if matches!(op, BinaryOp::And | BinaryOp::Or) {
@@ -1591,8 +1606,17 @@ impl<'a, 'b> Checker<'a, 'b> {
         })
     }
 
-    fn check_unary(&mut self, op: UnaryOp, operand: &Expr) -> Result<Ty, RavenError> {
+    fn check_unary(&mut self, op: UnaryOp, operand: &Expr, span: &Span) -> Result<Ty, RavenError> {
         let t = self.check_expr(operand)?;
+        let t = self.infer.resolve(&t);
+        if op == UnaryOp::Neg
+            && matches!(t.strip_self(), Ty::Struct { .. } | Ty::Enum { .. })
+            && self.type_has_method(t.strip_self(), "neg")
+        {
+            let r = self.check_method_call(operand, "neg", &[], &[], span)?;
+            self.types.record_operator(span);
+            return Ok(r);
+        }
         match op {
             UnaryOp::Neg => match t.strip_self() {
                 Ty::Int => Ok(Ty::Int),
@@ -2794,7 +2818,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         let user_params: Vec<Ty> = sig
             .params
             .iter()
-            .filter(|t| !matches!(t, Ty::SelfTy(_)))
+            .skip(usize::from(sig.has_self))
             .map(|t| substitute(t, &full))
             .collect();
         if user_params.len() != args.len() {
@@ -2812,6 +2836,22 @@ impl<'a, 'b> Checker<'a, 'b> {
             self.unify(pt, &a, &arg.span)?;
         }
         Ok(substitute(&sig.ret, &full))
+    }
+
+    /// Whether some impl for `ty`'s declared type has a method `name`.
+    fn type_has_method(&self, ty: &Ty, name: &str) -> bool {
+        let head = |t: &Ty| match t.strip_self() {
+            Ty::Struct { id, .. } => Some((0, id.clone())),
+            Ty::Enum { id, .. } => Some((1, id.clone())),
+            _ => None,
+        };
+        let Some(want) = head(ty) else {
+            return false;
+        };
+        self.env
+            .impls_with_method(name)
+            .iter()
+            .any(|&i| head(&self.env.impls[i].self_ty) == Some(want.clone()))
     }
 
     /// If `recv` has a `next(self) -> Option<T>` method (from any impl,
@@ -2895,7 +2935,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         let user_params: Vec<Ty> = sig
             .params
             .iter()
-            .filter(|t| !matches!(t, Ty::SelfTy(_)))
+            .skip(usize::from(sig.has_self))
             .cloned()
             .collect();
         if user_params.len() != args.len() {
@@ -3711,17 +3751,15 @@ fn binary_op_error(op: BinaryOp, ls: &Ty, rs: &Ty, accepts: &str, span: &Span) -
     }
 }
 
-/// Advice for an operator applied to two values of the same user-declared
-/// type. Raven has no operator overloading, so each case names the method
-/// that does the job instead of the operator.
+/// Advice for an operator applied to two values of a user-declared type
+/// that does not overload it: the method that would.
 fn user_type_operator_hint(op: BinaryOp, ty: &Ty) -> String {
     use BinaryOp::*;
     match op {
         // `Ord` already models comparison and is derivable, so point at it
         // rather than asking for a hand-written method.
         Lt | Le | Gt | Ge => format!(
-            "Raven has no operator overloading; `@derive(Ord)` on `{}` synthesizes \
-             `compare(self, other) -> Int`, so write `a.compare(b) {} 0`",
+            "implement `Ord` for `{}` (its `compare` method, or `@derive(Ord)`) to use `{}`",
             ty,
             op.symbol()
         ),
@@ -3731,18 +3769,18 @@ fn user_type_operator_hint(op: BinaryOp, ty: &Ty) -> String {
                 Sub => "sub",
                 Mul => "mul",
                 Div => "div",
-                _ => "rem",
+                _ => "mod",
             };
             format!(
-                "Raven has no operator overloading; give `{}` a method such as \
-                 `fun {}(self, other: {}) -> {}` and call it",
-                ty, method, ty, ty
+                "define `fun {}(self, other: {}) -> {}` on `{}` to use `{}`",
+                method,
+                ty,
+                ty,
+                ty,
+                op.symbol()
             )
         }
-        _ => format!(
-            "Raven has no operator overloading; give `{}` a named method and call it",
-            ty
-        ),
+        _ => format!("`{}` does not support `{}`", ty, op.symbol()),
     }
 }
 
@@ -4076,4 +4114,21 @@ fn type_head(t: &Ty) -> Option<Head> {
         Ty::SelfTy(inner) => return type_head(inner),
         _ => return None,
     })
+}
+
+/// Whether a function's signature names `Self`.
+fn mentions_self(f: &crate::ast::Function) -> bool {
+    fn ty(t: &crate::ast::Type) -> bool {
+        use crate::ast::TypeKind;
+        match &t.kind {
+            TypeKind::Path(p) | TypeKind::Dyn(p) => p
+                .segments
+                .iter()
+                .any(|s| s.name == "Self" || s.generics.iter().any(ty)),
+            TypeKind::Optional(i) => ty(i),
+            TypeKind::Function { params, ret } => params.iter().any(ty) || ty(ret),
+            TypeKind::Unit => false,
+        }
+    }
+    f.params.iter().any(|p| ty(&p.ty)) || f.ret.as_ref().is_some_and(ty)
 }

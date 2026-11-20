@@ -12,6 +12,23 @@ trait Eq {
 trait Ord {
     // Negative when self < other, zero when equal, positive when self > other.
     fun compare(self, other: Self) -> int
+
+    // `<`, `<=`, `>`, and `>=` on classes and tuples.
+    fun lt(self, other: Self) -> bool {
+        return self.compare(other) < 0
+    }
+
+    fun le(self, other: Self) -> bool {
+        return self.compare(other) <= 0
+    }
+
+    fun gt(self, other: Self) -> bool {
+        return self.compare(other) > 0
+    }
+
+    fun ge(self, other: Self) -> bool {
+        return self.compare(other) >= 0
+    }
 }
 
 trait Hash {

@@ -192,9 +192,9 @@ fn binary_op_on_one_user_type_names_it_once() {
         "got: {}",
         rendered
     );
-    // Raven has no operator overloading, so the help points at a method.
+    // The help names the method that would overload the operator.
     assert!(
-        rendered.contains("no operator overloading"),
+        rendered.contains("fun add(self, other: V) -> V"),
         "got: {}",
         rendered
     );
@@ -228,6 +228,7 @@ fn ordering_a_user_type_points_at_derive_ord() {
         rendered
     );
     assert!(rendered.contains("@derive(Ord)"), "got: {}", rendered);
+    assert!(rendered.contains("implement `Ord`"), "got: {}", rendered);
     assert!(rendered.contains("compare"), "got: {}", rendered);
 }
 

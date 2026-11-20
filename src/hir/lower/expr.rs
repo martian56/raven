@@ -184,6 +184,30 @@ pub(crate) fn lower_expr(
             HirExprKind::Paren(Box::new(lowered))
         }
         ExprKind::Block(b) => HirExprKind::Block(lower_block_to_block(b, &ty, cx)?),
+        ExprKind::Unary { operand, .. } if cx.typed.types.is_operator(&span) => {
+            let call = Expr {
+                kind: ExprKind::MethodCall {
+                    receiver: operand.clone(),
+                    name: "neg".into(),
+                    generics: Vec::new(),
+                    args: Vec::new(),
+                },
+                span: span.clone(),
+            };
+            return lower_expr(&call, _hint, cx);
+        }
+        ExprKind::Binary { op, lhs, rhs } if cx.typed.types.is_operator(&span) => {
+            let call = Expr {
+                kind: ExprKind::MethodCall {
+                    receiver: lhs.clone(),
+                    name: op.method_name().unwrap_or("add").into(),
+                    generics: Vec::new(),
+                    args: vec![(**rhs).clone()],
+                },
+                span: span.clone(),
+            };
+            return lower_expr(&call, _hint, cx);
+        }
         ExprKind::Unary { op, operand } => {
             let lowered = lower_expr(operand, &Ty::Error, cx)?;
             HirExprKind::Unary {

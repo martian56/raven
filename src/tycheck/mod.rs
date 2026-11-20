@@ -92,6 +92,8 @@ pub struct TypeMap {
     /// `for` heads that iterate through the value's `iter()` method rather
     /// than the value itself.
     pub for_iter_calls: HashSet<UseKey>,
+    /// Operators on class values that call the class's operator method.
+    pub operator_calls: HashSet<UseKey>,
     /// Spans of closure values passed where a `CFnPtr` is expected. The site
     /// lowers to a generated trampoline (userdata-last) the closure is
     /// invoked through, rather than the closure object pointer.
@@ -136,6 +138,16 @@ impl TypeMap {
     /// Look up a `dyn Trait` coercion recorded at `span`, if any.
     pub fn lookup_coercion(&self, span: &Span) -> Option<&DynCoercion> {
         self.coercions.get(&UseKey::from_span(span))
+    }
+
+    /// Record that the operator at `span` calls its operand's method.
+    pub fn record_operator(&mut self, span: &Span) {
+        self.operator_calls.insert(UseKey::from_span(span));
+    }
+
+    /// True when the operator at `span` calls its operand's method.
+    pub fn is_operator(&self, span: &Span) -> bool {
+        self.operator_calls.contains(&UseKey::from_span(span))
     }
 
     /// Record that the `for` head at `span` calls `iter()`.
