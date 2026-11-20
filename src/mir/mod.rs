@@ -9,6 +9,7 @@
 //! See `docs/v2/specs/mir.md` for the full design.
 
 pub mod builder;
+pub mod inline;
 pub mod intrinsics;
 pub mod ir;
 pub mod lower;

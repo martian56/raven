@@ -231,7 +231,11 @@ pub fn compile_to_object(
     if std::env::var("RAVEN_DUMP_HIR").is_ok() {
         eprintln!("{}", crate::hir::pretty_program(&hir));
     }
-    let mir = lower_program(&hir).map_err(|e| frontend_diag(e, input, source))?;
+    let mut mir = lower_program(&hir).map_err(|e| frontend_diag(e, input, source))?;
+    if std::env::var_os("RAVEN_NO_INLINE").is_none() {
+        crate::mir::inline::inline_small_functions(&mut mir);
+        crate::mir::shake::remove_unreachable(&mut mir);
+    }
     t.mark("mir");
     if std::env::var("RAVEN_DUMP_MIR").is_ok() {
         eprintln!("{}", crate::mir::pretty::pretty_program(&mir));
