@@ -1,7 +1,23 @@
+// A format spec inside a default trait method, copied into each class.
+trait Priced {
+    fun price(self) -> float
+
+    fun label(self) -> str {
+        return "costs ${self.price():.2}"
+    }
+}
+
+class Book: Priced {
+    cents: int
+
+    fun price(self) -> float = float(self.cents) / 100.0
+}
+
 fun main() {
     let price = 3.14159
     let name = "ada"
     let n = -42
     print("[${price:.2}] [${price:8.3}] [${name:>6}] [${name:^7}] [${name:*<5}]")
     print("[${n:06}] [${7:03}] [${name}] [${price:<9.1}]")
+    print(Book(1999).label())
 }

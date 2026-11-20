@@ -308,11 +308,12 @@ mod tests {
     use super::*;
     use std::ffi::CString;
 
-    fn register_point() -> (CString, CString, CString) {
-        let name = CString::new("Point").unwrap();
-        let fx = CString::new("x").unwrap();
-        let fy = CString::new("y").unwrap();
-        let field_names = [fx.as_ptr(), fy.as_ptr()];
+    // The registry keeps the name pointers, and every test re-registers
+    // type 3, so they must be static: a test's own `CString`s would be freed
+    // while a parallel test still reads them.
+    fn register_point() {
+        let name = c"Point";
+        let field_names = [c"x".as_ptr(), c"y".as_ptr()];
         let field_ids = [7u32, 7u32];
         let field_gc = [0u32, 0u32];
         // SAFETY: pointers live for the duration of the call.
@@ -327,7 +328,6 @@ mod tests {
                 field_gc.as_ptr(),
             );
         }
-        (name, fx, fy)
     }
 
     #[test]
@@ -345,7 +345,7 @@ mod tests {
     #[test]
     fn type_name_and_field_names_from_any() {
         std::thread::spawn(|| {
-            let _keep = register_point();
+            register_point();
             let a = raven_any_new(0, 3, 0);
             let s = raven_any_type_name(a);
             // SAFETY: a non-null Raven String with `len` bytes.
@@ -366,7 +366,7 @@ mod tests {
     #[test]
     fn get_field_reads_a_scalar_field() {
         std::thread::spawn(|| {
-            let _keep = register_point();
+            register_point();
             // Build a Point struct value with x = 11, y = 22.
             use crate::gc::raven_struct_register;
             use crate::object::raven_struct_new;
@@ -402,7 +402,7 @@ mod tests {
     #[test]
     fn set_field_writes_matching_and_guards_mismatch() {
         std::thread::spawn(|| {
-            let _keep = register_point();
+            register_point();
             use crate::gc::raven_struct_register;
             use crate::object::raven_struct_new;
             raven_struct_register(3, 0);
@@ -446,7 +446,7 @@ mod tests {
                 raven_gc_live_objects, raven_struct_register,
             };
             use crate::object::{raven_string_new, raven_struct_new};
-            let _keep = register_point();
+            register_point();
             // A scalar slot 0 and a GC pointer slot 1. This uses its own struct
             // id, not Point's (3): the descriptor table is process-global, so
             // reusing id 3 with this fake mask would race the other tests that
