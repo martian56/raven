@@ -1,6 +1,6 @@
 //! End to end smoke test for the Cranelift back end.
 //!
-//! Compiles `examples/v2/hello.rv` with the driver, links the
+//! Compiles `examples/hello.rv` with the driver, links the
 //! resulting object with the `raven-runtime` staticlib using the
 //! toolchain-aware linker (MSVC `link.exe` on windows-msvc, `cc`
 //! elsewhere), runs the binary, and checks that stdout matches
@@ -310,7 +310,6 @@ fn deeply_nested_expression_does_not_overflow() {
     };
     let source_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("examples")
-        .join("v2")
         .join("deep_nesting.rv");
     let tmp = workdir();
     let binary = tmp.join(if cfg!(windows) {
@@ -946,7 +945,6 @@ fn env_program_compiles_and_runs() {
     let name = "use_env.rv";
     let source_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("examples")
-        .join("v2")
         .join(name);
     let source =
         std::fs::read_to_string(&source_path).unwrap_or_else(|e| panic!("read {}: {}", name, e));
@@ -1009,7 +1007,6 @@ fn fs_program_compiles_and_runs() {
     let name = "use_fs.rv";
     let source_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("examples")
-        .join("v2")
         .join(name);
     let source =
         std::fs::read_to_string(&source_path).unwrap_or_else(|e| panic!("read {}: {}", name, e));
@@ -1123,7 +1120,6 @@ fn net_program_compiles_and_runs() {
     let name = "use_net.rv";
     let source_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("examples")
-        .join("v2")
         .join(name);
     let source =
         std::fs::read_to_string(&source_path).unwrap_or_else(|e| panic!("read {}: {}", name, e));
@@ -1264,7 +1260,6 @@ fn http_program_compiles_and_runs() {
     let name = "use_http.rv";
     let source_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("examples")
-        .join("v2")
         .join(name);
     let source =
         std::fs::read_to_string(&source_path).unwrap_or_else(|e| panic!("read {}: {}", name, e));
@@ -1743,7 +1738,6 @@ fn time_program_compiles_and_runs() {
     let name = "use_time.rv";
     let source_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("examples")
-        .join("v2")
         .join(name);
     let source =
         std::fs::read_to_string(&source_path).unwrap_or_else(|e| panic!("read {}: {}", name, e));
@@ -2246,12 +2240,11 @@ struct ExampleBinary {
     tmp: PathBuf,
 }
 
-/// Compile `examples/v2/<name>` to a fresh temp executable and return its
+/// Compile `examples/<name>` to a fresh temp executable and return its
 /// path. Panics on any failure on a supported host.
 fn build_example_binary(name: &str, runtime: &RuntimeStaticLib) -> ExampleBinary {
     let source_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("examples")
-        .join("v2")
         .join(name);
     let source =
         std::fs::read_to_string(&source_path).unwrap_or_else(|e| panic!("read {}: {}", name, e));
@@ -2304,13 +2297,12 @@ fn supported_runtime() -> Option<RuntimeStaticLib> {
     }
 }
 
-/// Compile `examples/v2/<name>`, link it with the runtime, run it, and
+/// Compile `examples/<name>`, link it with the runtime, run it, and
 /// assert its stdout equals `expected`. Panics on any failure on a
 /// supported host so a regression is loud.
 fn compile_link_run_and_check(name: &str, expected: &str, runtime: &RuntimeStaticLib) {
     let source_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("examples")
-        .join("v2")
         .join(name);
     let source =
         std::fs::read_to_string(&source_path).unwrap_or_else(|e| panic!("read {}: {}", name, e));

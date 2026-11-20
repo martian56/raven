@@ -11,7 +11,7 @@
 //! bounds attached to a variable are verified eagerly when the variable
 //! resolves to a concrete type.
 //!
-//! See `docs/v2/specs/generics.md` for the design.
+//! See `docs/specs/generics.md` for the design.
 
 use std::collections::HashMap;
 

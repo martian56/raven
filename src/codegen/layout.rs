@@ -9,7 +9,7 @@
 //! alignment, and the collector traces a value through a per-type GC
 //! pointer bitmask the back end registers at startup.
 //!
-//! See `docs/v2/specs/object-layout.md` and `docs/v2/specs/codegen.md`.
+//! See `docs/specs/object-layout.md` and `docs/specs/codegen.md`.
 
 use crate::mir::MirType;
 

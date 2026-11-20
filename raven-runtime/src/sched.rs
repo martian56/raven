@@ -1,6 +1,6 @@
 //! M:N green-thread scheduler and channels for compiled Raven v2 programs.
 //!
-//! See `docs/v2/specs/mn-scheduler.md` for the model. Goroutines are
+//! See `docs/specs/mn-scheduler.md` for the model. Goroutines are
 //! `corosensei` coroutines multiplexed onto a pool of worker OS threads (one
 //! per available core), so they run in parallel; the main thread is goroutine 0
 //! and runs on its own stack. A goroutine yields at a full/empty channel, at an

@@ -1,6 +1,6 @@
 //! In-memory layout, constructor, and accessors for Raven `List<T>`.
 //!
-//! See `docs/v2/specs/object-layout.md` for the byte-exact field
+//! See `docs/specs/object-layout.md` for the byte-exact field
 //! offsets the back-end relies on.
 
 use super::{ObjectHeader, OBJECT_ALIGN, TAG_LIST};

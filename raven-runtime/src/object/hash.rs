@@ -3,7 +3,7 @@
 //! FNV-1a 64 is chosen because the persisted hash sits inside each
 //! bucket and must be reproducible when the table resizes. The
 //! function takes no per-process seed and pulls in no extra
-//! dependency. See `docs/v2/specs/object-layout.md` for the design
+//! dependency. See `docs/specs/object-layout.md` for the design
 //! note.
 
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;

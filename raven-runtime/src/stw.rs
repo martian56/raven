@@ -4,7 +4,7 @@
 //! where no other thread is mutating the heap or a shadow stack, so it sees a
 //! quiescent heap and a consistent set of roots. This module is that
 //! coordination, built and tested on its own before it guards real memory (see
-//! `docs/v2/specs/concurrency-parallelism.md`).
+//! `docs/specs/concurrency-parallelism.md`).
 //!
 //! # The model: short unsafe regions, not a poll-and-park barrier
 //!

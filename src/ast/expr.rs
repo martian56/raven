@@ -3,7 +3,7 @@
 //! Expressions are the recursive heart of the language. Most of the
 //! grammar's nesting lives here: arithmetic, calls, control flow,
 //! lambdas, struct literals. The variants below mirror the grammar in
-//! `docs/v2/specs/parser.md` closely.
+//! `docs/specs/parser.md` closely.
 
 use std::fmt;
 
@@ -37,7 +37,7 @@ pub enum ExprKind {
     /// segments, split into an ordered run of literal-text and embedded
     /// expression fragments. The parser produces this only when at least
     /// one real (non-escaped) `${...}` is present; otherwise the literal
-    /// stays a plain `Str`. See `docs/v2/specs/interpolation.md`.
+    /// stays a plain `Str`. See `docs/specs/interpolation.md`.
     InterpolatedString(Vec<StrFragment>),
     /// Triple quoted block string literal. Block strings are raw and are
     /// never interpolated.
@@ -80,7 +80,7 @@ pub enum ExprKind {
     MapLit(Vec<(Expr, Expr)>),
     /// `(a, b, c)` tuple literal. Always at least two elements. The
     /// parser produces this and the resolver rejects it until tuples
-    /// land; see `docs/v2/specs/parser.md`.
+    /// land; see `docs/specs/parser.md`.
     Tuple(Vec<Expr>),
     /// `(expr)` parenthesized expression, retained so spans cover the
     /// parens for error reporting.

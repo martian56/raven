@@ -218,7 +218,7 @@ pub enum MirRvalue {
     /// Raw FFI pointer load: read the pointee of type `pointee` from the
     /// address `addr` (a pointer-width value). The back end emits a single
     /// Cranelift `load` of the pointee's machine type. See
-    /// `docs/v2/specs/std-ffi.md`.
+    /// `docs/specs/std-ffi.md`.
     PtrLoad {
         addr: MirOperand,
         pointee: MirType,
@@ -241,7 +241,7 @@ pub enum MirRvalue {
     /// non-capturing top-level function is passed where a `CFnPtr` is
     /// expected. The function is compiled under the platform C ABI, so the
     /// resulting pointer is callable directly by C. See
-    /// `docs/v2/specs/std-ffi.md`.
+    /// `docs/specs/std-ffi.md`.
     FnAddr {
         mangled: String,
     },
@@ -272,7 +272,7 @@ pub enum MirRvalue {
     /// tagging it with `value_ty`'s runtime type id. The back end interns
     /// the id, widens a scalar value into the eight-byte payload, and sets
     /// the GC-pointer flag from `value_ty`. See
-    /// `docs/v2/specs/runtime-reflection.md`.
+    /// `docs/specs/runtime-reflection.md`.
     AnyBox {
         value: MirOperand,
         value_ty: MirType,
@@ -345,7 +345,7 @@ pub enum MirStatement {
     },
     /// Raw FFI pointer store: write `value` (of type `pointee`) to the
     /// address `addr`. The back end emits a single Cranelift `store` of the
-    /// pointee's machine type. See `docs/v2/specs/std-ffi.md`.
+    /// pointee's machine type. See `docs/specs/std-ffi.md`.
     PtrStore {
         addr: MirOperand,
         value: MirOperand,
@@ -444,7 +444,7 @@ pub struct MirFunction {
     pub span: Span,
     /// True when the function body registers at least one `defer`. Codegen
     /// opens a runtime defer frame on entry and runs it at every return
-    /// path only for such functions. See `docs/v2/specs/defer.md`.
+    /// path only for such functions. See `docs/specs/defer.md`.
     pub has_defer: bool,
 }
 
@@ -544,7 +544,7 @@ pub struct ReflectField {
 /// Runtime reflection metadata for one monomorphic type. The back end
 /// emits one `raven_type_register` call per entry at program startup so a
 /// boxed value of the type can report its name and (for a struct) walk its
-/// fields. See `docs/v2/specs/runtime-reflection.md`.
+/// fields. See `docs/specs/runtime-reflection.md`.
 #[derive(Debug, Clone)]
 pub struct ReflectType {
     /// The rendered type name (`Point`, `Int`, `Pair<Int, String>`).

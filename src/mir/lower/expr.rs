@@ -239,7 +239,7 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             // The return value is evaluated above. Deferred thunks run in
             // the function epilogue codegen emits at the `Return`
             // terminator (after the value, before leaving the GC frame),
-            // so no defer work is emitted here. See `docs/v2/specs/defer.md`.
+            // so no defer work is emitted here. See `docs/specs/defer.md`.
             if !cx.builder.is_closed(cx.current) {
                 cx.builder
                     .close_block(cx.current, MirTerminator::Return(op));
@@ -541,7 +541,7 @@ fn record_reflect_type(cx: &mut LowerCx<'_>, mty: &MirType) {
 /// Lower a runtime reflection builtin. The boxed/target type argument is
 /// grounded under the current substitution; reflection metadata for it is
 /// recorded so the back end registers the runtime type record. See
-/// `docs/v2/specs/runtime-reflection.md`.
+/// `docs/specs/runtime-reflection.md`.
 fn lower_reflect_builtin(
     cx: &mut LowerCx<'_>,
     op: ReflectBuiltinOp,
@@ -634,7 +634,7 @@ fn lower_reflect_builtin(
 /// Lower `type_name<T>()`. The carried type argument is grounded under the
 /// current substitution (so a generic parameter becomes the concrete type
 /// for this monomorphization), then rendered to its source spelling as a
-/// `String` constant. See `docs/v2/specs/reflection.md`.
+/// `String` constant. See `docs/specs/reflection.md`.
 fn lower_type_name(cx: &mut LowerCx<'_>, arg: &crate::tycheck::Ty, ty: MirType) -> MirOperand {
     let concrete = super::substitute(arg, cx.subst);
     let rendered = format!("{}", concrete.strip_self());
@@ -832,7 +832,7 @@ fn lower_variant_field_types(
 
 /// Lower a raw-pointer FFI builtin. The pointee is grounded under the
 /// current substitution so its machine width is known; the resulting MIR
-/// rvalue or statement carries it to codegen. See `docs/v2/specs/std-ffi.md`.
+/// rvalue or statement carries it to codegen. See `docs/specs/std-ffi.md`.
 fn lower_ptr_builtin(
     cx: &mut LowerCx<'_>,
     op: PtrBuiltinOp,

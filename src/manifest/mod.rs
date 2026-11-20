@@ -9,7 +9,7 @@
 //! dependencies, resolving version constraints, and wiring `[ffi]` into
 //! the link step are handled by later rvpm work.
 //!
-//! See `docs/v2/specs/rv-toml.md` for the full field reference.
+//! See `docs/specs/rv-toml.md` for the full field reference.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -177,7 +177,7 @@ pub const DEFAULT_DIST_OUT_DIR: &str = "target/dist";
 /// The optional `[dist]` section: how `rvpm dist` packages the built
 /// application. Every field has a default derived from `[package]`, so the
 /// section can be omitted entirely and `rvpm dist` still produces the host's
-/// native archive. See `docs/v2/specs/rvpm-dist.md`.
+/// native archive. See `docs/specs/rvpm-dist.md`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Dist {
     /// Artifact formats to produce when `--target` is not given. Empty means

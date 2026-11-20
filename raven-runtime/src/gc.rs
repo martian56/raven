@@ -5,7 +5,7 @@
 //! generator maintains: a runtime-owned stack of the addresses of the
 //! stack slots that currently hold live GC pointers. Codegen registers
 //! a frame's root array on entry and unregisters it on exit. See
-//! `docs/v2/specs/gc.md` for the full design and the ABI contract.
+//! `docs/specs/gc.md` for the full design and the ABI contract.
 //!
 //! Each worker owns an allocation list and shadow stack. A process-wide root
 //! registry and stop-the-world coordinator park parallel Raven mutators at
@@ -216,7 +216,7 @@ thread_local! {
     /// is thread-local: a global value would be overwritten by another thread's
     /// concurrent collection between this thread's mark and sweep. Reusing the
     /// `gc_bits` word as the epoch (rather than a wider field) keeps the pinned
-    /// 16-byte header layout. See `docs/v2/specs/concurrency-parallelism.md`.
+    /// 16-byte header layout. See `docs/specs/concurrency-parallelism.md`.
     static CURRENT_EPOCH: Cell<u32> = const { Cell::new(0) };
 }
 
@@ -991,7 +991,7 @@ fn visit_slot(slot: *const *mut u8, work: &mut Vec<*mut ObjectHeader>) {
 }
 
 /// Trace one already-marked object: follow the GC pointers its layout
-/// owns, per `docs/v2/specs/object-layout.md`, pushing newly marked
+/// owns, per `docs/specs/object-layout.md`, pushing newly marked
 /// children onto `work`.
 ///
 /// # Safety

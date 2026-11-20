@@ -11,7 +11,7 @@
 //! `update` re-resolves the refs as written. Range-based selection is
 //! future work.
 //!
-//! See `docs/v2/specs/rvpm.md` for the command semantics.
+//! See `docs/specs/rvpm.md` for the command semantics.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;

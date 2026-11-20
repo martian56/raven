@@ -93,7 +93,7 @@ impl fmt::Display for ParseError {
     }
 }
 
-/// Name resolution errors. See `docs/v2/specs/resolver.md` for the full catalog.
+/// Name resolution errors. See `docs/specs/resolver.md` for the full catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolveError {
     UnresolvedName(String),
@@ -151,7 +151,7 @@ impl fmt::Display for ResolveError {
     }
 }
 
-/// Type checking errors. See `docs/v2/specs/tycheck.md` for the full catalog.
+/// Type checking errors. See `docs/specs/tycheck.md` for the full catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeError {
     TypeMismatch {

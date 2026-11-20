@@ -4,7 +4,7 @@
 //! can only see the running thread's roots. Once the heap is shared across an
 //! OS-thread pool, a collection on one thread must scan *every* thread's roots,
 //! or it would free objects another thread still holds (see
-//! `docs/v2/specs/concurrency-parallelism.md`). This module is that registry,
+//! `docs/specs/concurrency-parallelism.md`). This module is that registry,
 //! built and tested on its own before it is wired into the allocator.
 //!
 //! Each mutator thread owns a [`RootContext`] (its shadow stack) and registers

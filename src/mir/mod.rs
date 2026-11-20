@@ -6,7 +6,7 @@
 //! distinct concrete type-argument tuple reachable from the program
 //! roots.
 //!
-//! See `docs/v2/specs/mir.md` for the full design.
+//! See `docs/specs/mir.md` for the full design.
 
 pub mod builder;
 pub mod copyprop;

@@ -21,7 +21,7 @@
 //! same pointer, so the captured object aliases the original and
 //! mutations through the heap object stay visible.
 //!
-//! See `docs/v2/specs/codegen.md` and `docs/v2/specs/object-layout.md`.
+//! See `docs/specs/codegen.md` and `docs/specs/object-layout.md`.
 
 use std::collections::HashSet;
 

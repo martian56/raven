@@ -7,7 +7,7 @@
 //! The pipeline lexes and parses the input, then walks the AST emitting
 //! canonical text. Line comments are recovered from the source separately
 //! (the lexer drops them) and woven back in by source position. See
-//! `docs/v2/specs/formatter.md` for the full set of rules.
+//! `docs/specs/formatter.md` for the full set of rules.
 
 use std::fmt::Write as _;
 

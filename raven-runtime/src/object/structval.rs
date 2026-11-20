@@ -12,7 +12,7 @@
 //! shapes. The back-end therefore registers a per-type descriptor (a
 //! bitmask of which slots hold GC pointers) keyed by a small integer
 //! type id, and stores that id in `header.cap`. See
-//! `docs/v2/specs/object-layout.md` and `docs/v2/specs/gc.md`.
+//! `docs/specs/object-layout.md` and `docs/specs/gc.md`.
 
 use super::{ObjectHeader, OBJECT_ALIGN, TAG_STRUCT};
 use crate::gc::raven_gc_alloc;

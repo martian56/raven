@@ -93,7 +93,7 @@ rvpm dist         # package the application for distribution
 ```
 
 rvpm also supports multi-package workspaces, explicit package selection, and
-manifest-defined compiled commands. See the [rvpm guide](https://martian56.github.io/raven/v2/guide/rvpm/#workspaces).
+manifest-defined compiled commands. See the [rvpm guide](https://martian56.github.io/raven/guide/rvpm/#workspaces).
 
 ### Build from source
 
@@ -111,10 +111,10 @@ The `raven` and `rvpm` binaries land in `target/release/`.
 
 - Full docs: [https://martian56.github.io/raven/](https://martian56.github.io/raven/)
 - Project website: [https://raven.ufazien.com/](https://raven.ufazien.com/)
-- Getting started: [https://martian56.github.io/raven/v2/guide/getting-started/](https://martian56.github.io/raven/v2/guide/getting-started/)
-- Language reference: [https://martian56.github.io/raven/v2/guide/language-reference/](https://martian56.github.io/raven/v2/guide/language-reference/)
-- Standard library: [https://martian56.github.io/raven/v2/guide/standard-library/](https://martian56.github.io/raven/v2/guide/standard-library/)
-- rvpm: [https://martian56.github.io/raven/v2/guide/rvpm/](https://martian56.github.io/raven/v2/guide/rvpm/)
+- Getting started: [https://martian56.github.io/raven/guide/getting-started/](https://martian56.github.io/raven/guide/getting-started/)
+- Language reference: [https://martian56.github.io/raven/guide/language-reference/](https://martian56.github.io/raven/guide/language-reference/)
+- Standard library: [https://martian56.github.io/raven/guide/standard-library/](https://martian56.github.io/raven/guide/standard-library/)
+- rvpm: [https://martian56.github.io/raven/guide/rvpm/](https://martian56.github.io/raven/guide/rvpm/)
 
 ## Technologies Used
 

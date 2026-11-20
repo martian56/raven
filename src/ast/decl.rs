@@ -105,7 +105,7 @@ pub struct Struct {
     pub derives: Vec<String>,
     /// Set by a preceding `@repr(C)` attribute. A repr(C) struct has C
     /// memory layout (fields in declaration order, naturally aligned) and
-    /// may cross the FFI boundary by value. See `docs/v2/specs/std-ffi.md`.
+    /// may cross the FFI boundary by value. See `docs/specs/std-ffi.md`.
     pub repr_c: bool,
     /// Written as `class` rather than `struct`.
     pub is_class: bool,

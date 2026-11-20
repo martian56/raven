@@ -15,7 +15,7 @@
 //! impl carries the per-parameter bound for the trait being derived, for
 //! example `impl<A: Eq, B: Eq> Eq for Pair<A, B>`.
 //!
-//! See `docs/v2/specs/derive.md` for the syntax, the generated-impl shapes,
+//! See `docs/specs/derive.md` for the syntax, the generated-impl shapes,
 //! and the formatting conventions.
 
 use crate::ast::{

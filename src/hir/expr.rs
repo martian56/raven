@@ -268,7 +268,7 @@ pub enum HirExprKind {
     /// `type_name<T>()` compile-time reflection builtin. Carries the
     /// resolved type argument (a `Ty::Param` for a generic parameter, or a
     /// concrete type), grounded per monomorphization in MIR and rendered to
-    /// a `String` constant. See `docs/v2/specs/reflection.md`.
+    /// a `String` constant. See `docs/specs/reflection.md`.
     TypeName(HirTy),
     /// `field_names<T>()` compile-time reflection builtin. Carries the
     /// resolved struct type argument, grounded per monomorphization in MIR
@@ -294,7 +294,7 @@ pub enum HirExprKind {
     /// `__ptr_free`). `pointee` is the resolved type argument `T`, grounded
     /// per monomorphization in MIR to pick the load/store width and element
     /// size. `args` are the lowered value operands. See
-    /// `docs/v2/specs/std-ffi.md`.
+    /// `docs/specs/std-ffi.md`.
     PtrBuiltin {
         op: PtrBuiltinOp,
         pointee: HirTy,
@@ -307,7 +307,7 @@ pub enum HirExprKind {
     /// downcast target), grounded per monomorphization in MIR so the box or
     /// compare uses the concrete runtime type tag; it is `None` for the
     /// other three. `args` are the lowered value operands. See
-    /// `docs/v2/specs/runtime-reflection.md`.
+    /// `docs/specs/runtime-reflection.md`.
     ReflectBuiltin {
         op: ReflectBuiltinOp,
         type_arg: Option<HirTy>,

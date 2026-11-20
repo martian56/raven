@@ -1146,7 +1146,7 @@ fn dist_usage() -> String {
         "Without --target, the manifest's [dist].targets applies; without a",
         "[dist] section, the host default does (zip on Windows, tar elsewhere).",
         "Metadata, extra files, and installer settings live in the optional",
-        "[dist] section of rv.toml; see docs/v2/specs/rvpm-dist.md.",
+        "[dist] section of rv.toml; see docs/specs/rvpm-dist.md.",
     ]
     .join("\n")
 }

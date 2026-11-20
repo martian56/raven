@@ -13,7 +13,7 @@
 //! * [`Ty::Var`] is an inference variable, solved by the union-find
 //!   table in [`super::infer::InferCtx`].
 //!
-//! See `docs/v2/specs/generics.md` for the design rationale.
+//! See `docs/specs/generics.md` for the design rationale.
 
 use crate::resolve::DeclId;
 use crate::span::Span;
@@ -81,7 +81,7 @@ pub struct InferVarId(pub u32);
 /// kept distinct from the native Raven types (`Int`, `String`) so a
 /// program cannot accidentally pass a native value where the C ABI
 /// expects a foreign one. The codegen back end maps each to a concrete
-/// Cranelift ABI type. See `docs/v2/specs/ffi.md`.
+/// Cranelift ABI type. See `docs/specs/ffi.md`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FfiTy {
     /// C `int`, 32-bit on the ABIs Raven targets. Maps to `i32`.
@@ -105,13 +105,13 @@ pub enum FfiTy {
     /// A typed raw pointer `CPtr<T>`. Maps to a pointer-width int. The
     /// pointee type drives the raw load/store width and the offset/alloc
     /// element stride of the `std/ffi` pointer surface. See
-    /// `docs/v2/specs/std-ffi.md`.
+    /// `docs/specs/std-ffi.md`.
     CPtr(Box<Ty>),
     /// An untyped C function pointer. Maps to a pointer-width int. A
     /// non-capturing top-level Raven function whose parameters and return
     /// are all C-FFI types can be passed where a `CFnPtr` is expected; the
     /// signature match is the programmer's responsibility, like C. See
-    /// `docs/v2/specs/std-ffi.md`.
+    /// `docs/specs/std-ffi.md`.
     CFnPtr,
 }
 
@@ -194,7 +194,7 @@ pub enum Ty {
     /// identity. The runtime reflection builtins (`to_any`, `cast`,
     /// `type_name_of`, `field_names_of`, `get_field`) produce and consume
     /// it. Represented at runtime as a single GC pointer to an `Any` box.
-    /// See `docs/v2/specs/runtime-reflection.md`.
+    /// See `docs/specs/runtime-reflection.md`.
     Any,
     /// A C FFI primitive type (`CInt`, `CStr`, `CPtr<T>`, ...). Used in
     /// `extern "C"` signatures and `c"..."` literals.

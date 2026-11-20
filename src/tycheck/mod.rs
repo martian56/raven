@@ -17,7 +17,7 @@
 //! * `pattern` and `match_check` validate pattern matching and
 //!   exhaustiveness.
 //!
-//! See `docs/v2/specs/tycheck.md` for the design.
+//! See `docs/specs/tycheck.md` for the design.
 
 pub mod builtin;
 pub mod collect;

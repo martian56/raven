@@ -388,7 +388,7 @@ impl ModuleCx {
     /// return the descriptor the main shim needs to call `raven_type_register`.
     /// The type id matches the GC descriptor id (interned by mangle), so a
     /// boxed value's runtime id and its metadata always agree. See
-    /// `docs/v2/specs/runtime-reflection.md`.
+    /// `docs/specs/runtime-reflection.md`.
     fn intern_reflect_metadata(
         &mut self,
         mangle: &str,
@@ -813,7 +813,7 @@ impl ModuleCx {
         sig = self.make_sig(&[ptr], &[]);
         self.declare_runtime(intrinsics::RUNTIME_FFI_FREE, &sig)?;
 
-        // Runtime reflection. See `docs/v2/specs/runtime-reflection.md`.
+        // Runtime reflection. See `docs/specs/runtime-reflection.md`.
         // raven_type_register(type_id: u32, name: ptr, is_struct: u32,
         //   field_count: u32, field_names: ptr, field_type_ids: ptr,
         //   field_is_gc_ptr: ptr)
@@ -888,7 +888,7 @@ impl ModuleCx {
     /// The symbol is recorded in the function table under its raw C name
     /// so a `Call` to that name resolves to the import; the linker
     /// satisfies it from the CRT (for `strlen`, `abs`, ...) or a library
-    /// supplied on the link line. See `docs/v2/specs/ffi.md`.
+    /// supplied on the link line. See `docs/specs/ffi.md`.
     pub fn declare_externs(&mut self, program: &MirProgram) -> Result<(), CodegenError> {
         let ptr = self.pointer_type();
         // Only declare a foreign function the program actually references.

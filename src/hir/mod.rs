@@ -6,7 +6,7 @@
 //! smaller core. Every HIR node keeps the originating `Span` and, for
 //! expressions, the inferred `Ty` from the type checker.
 //!
-//! See `docs/v2/specs/hir.md` for the full design.
+//! See `docs/specs/hir.md` for the full design.
 
 pub mod decl;
 pub mod expr;

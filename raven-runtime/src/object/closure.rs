@@ -1,6 +1,6 @@
 //! In-memory layout, constructor, and accessors for Raven closures.
 //!
-//! See `docs/v2/specs/object-layout.md` for the byte-exact field
+//! See `docs/specs/object-layout.md` for the byte-exact field
 //! offsets the back-end relies on. Captures are stored in a separately
 //! allocated, owned buffer pointed to by `captures`, so every closure
 //! object is the same fixed size regardless of capture count.

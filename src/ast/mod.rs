@@ -13,7 +13,7 @@
 //! re exported here for convenience.
 //!
 //! The grammar this AST encodes is documented in
-//! `docs/v2/specs/parser.md`.
+//! `docs/specs/parser.md`.
 
 pub mod decl;
 pub mod expr;

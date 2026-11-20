@@ -73,7 +73,7 @@ pub enum MirType {
     /// return, or `c"..."` literal.
     Ffi(MirFfiTy),
     /// `Any`: a boxed value plus its runtime type tag. Lowered as a single
-    /// GC pointer to an `Any` box. See `docs/v2/specs/runtime-reflection.md`.
+    /// GC pointer to an `Any` box. See `docs/specs/runtime-reflection.md`.
     Any,
 }
 

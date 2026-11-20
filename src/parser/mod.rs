@@ -16,7 +16,7 @@
 //! The cursor and helper machinery live in this module on the `Parser`
 //! struct; the category modules implement methods on it.
 //!
-//! See `docs/v2/specs/parser.md` for the full grammar and the design
+//! See `docs/specs/parser.md` for the full grammar and the design
 //! notes on disambiguation rules.
 
 use crate::ast::File;

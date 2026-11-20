@@ -192,7 +192,7 @@ fn resolve_one_import(
                     ResolveError::UnresolvedImport(format!("std/{}", segments.join("/"))),
                     import.span.clone(),
                 )
-                .with_hint("unknown stdlib module; see `docs/v2/specs/resolver.md`"));
+                .with_hint("unknown stdlib module; see `docs/specs/resolver.md`"));
             }
             Ok(ResolvedImport {
                 id,

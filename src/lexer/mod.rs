@@ -1,7 +1,7 @@
 //! Raven v2 lexer.
 //!
 //! Tokenizes UTF-8 source text into a `Vec<Token>` ending in `TokenKind::Eof`.
-//! See `docs/v2/specs/lexer.md` for the full token catalog,
+//! See `docs/specs/lexer.md` for the full token catalog,
 //! conventions, and edge cases.
 //!
 //! The lexer owns its source as a `String` (not a `&str`) so that the
@@ -22,7 +22,7 @@ use crate::span::Span;
 /// escaped; the interpolation splitter strips it and treats the dollar
 /// as ordinary text. `U+E000` is in the Unicode private-use area and is
 /// reserved for this internal purpose. See
-/// `docs/v2/specs/interpolation.md`.
+/// `docs/specs/interpolation.md`.
 pub const ESCAPED_DOLLAR_SENTINEL: char = '\u{E000}';
 
 /// Kinds of tokens produced by the lexer.
@@ -861,7 +861,7 @@ impl Lexer {
                 // decoded literal, can tell an escaped `$` apart from a real
                 // `${` interpolation start. The sentinel is dropped when the
                 // splitter emits the literal text. See
-                // `docs/v2/specs/interpolation.md`.
+                // `docs/specs/interpolation.md`.
                 self.bump();
                 Ok(format!("{}$", ESCAPED_DOLLAR_SENTINEL))
             }

@@ -14,7 +14,7 @@
 //! `import std/io { println }` then binds the bare name `println` to the
 //! `std.io.println` function (see `imports.rs`).
 //!
-//! See `docs/v2/specs/stdlib.md` for the full mechanism.
+//! See `docs/specs/stdlib.md` for the full mechanism.
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -75,7 +75,7 @@ pub const BUNDLED_MODULES: &[(&str, &str)] = &[
 /// Its traits (`ToString`, `Eq`, `Ord`, `Hash`, `Iterator`) and their
 /// built-in impls are always in scope, so a user writes neither an
 /// `import std/core` line nor an explicit `impl` for the built-in types.
-/// See `docs/v2/specs/core-traits.md`.
+/// See `docs/specs/core-traits.md`.
 pub const PRELUDE_MODULE: &str = "core";
 
 /// The separator used when namespacing a bundled function name. The

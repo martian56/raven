@@ -139,7 +139,7 @@ fn run_program(binary: &Path, threshold: &str, timeout: Duration) -> Result<Stri
 
 fn read_example(name: &str) -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("examples/v2")
+        .join("examples")
         .join(name);
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }

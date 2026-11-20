@@ -57,7 +57,7 @@ pub fn cranelift_ty(ty: &MirType, ptr: CType) -> Option<CType> {
         // the 64-bit targets Raven supports. `CLong` is C `long`, which is
         // 64-bit under LP64 (Linux) but 32-bit under LLP64 (Windows); Raven
         // compiles for the host, so the host OS decides its width. See
-        // `docs/v2/specs/ffi.md`.
+        // `docs/specs/ffi.md`.
         MirType::Ffi(ffi) => Some(match ffi {
             MirFfiTy::CInt => types::I32,
             MirFfiTy::CLong => {
@@ -794,7 +794,7 @@ fn lower_ptr_alloc(
 /// Lower `to_any<T>(v)`: box `value` into a fresh `Any` tagged with `T`'s
 /// runtime type id. A scalar payload is widened into the eight-byte slot; a
 /// GC-pointer payload sets the box's traced flag so the collector keeps it
-/// alive through the `Any`. See `docs/v2/specs/runtime-reflection.md`.
+/// alive through the `Any`. See `docs/specs/runtime-reflection.md`.
 fn lower_any_box(
     cx: &mut ModuleCx,
     builder: &mut FunctionBuilder<'_>,
@@ -856,7 +856,7 @@ fn lower_any_runtime_call(
 /// whose discriminant and payload are chosen by the comparison: `Some` with
 /// the payload reinterpreted as `T` on a match, `None` (with a null
 /// payload) otherwise. The branch-free `select` keeps the rvalue a single
-/// value. See `docs/v2/specs/runtime-reflection.md`.
+/// value. See `docs/specs/runtime-reflection.md`.
 fn lower_any_cast(
     cx: &mut ModuleCx,
     builder: &mut FunctionBuilder<'_>,
@@ -917,7 +917,7 @@ fn lower_any_cast(
 
 /// Lower `get_field(a, name)`: call the runtime to read the named field as
 /// an `Any` (or null), then wrap it into `Option<Any>` (`Some(any)` when
-/// non-null, `None` when null). See `docs/v2/specs/runtime-reflection.md`.
+/// non-null, `None` when null). See `docs/specs/runtime-reflection.md`.
 fn lower_any_get_field(
     cx: &mut ModuleCx,
     builder: &mut FunctionBuilder<'_>,
@@ -1611,7 +1611,7 @@ fn operand_allocates_heap(op: &MirOperand) -> bool {
 /// widened on store and narrowed on load; a GC pointer is already this
 /// wide. Keeping a single slot width means indexing is a plain
 /// `base + i * ELEMENT_SLOT` and the collector's element tracing walks
-/// pointer-sized slots. See `docs/v2/specs/object-layout.md`.
+/// pointer-sized slots. See `docs/specs/object-layout.md`.
 const ELEMENT_SLOT: i64 = 8;
 
 /// Lower a `List<T>` literal `[a, b, c]`.
@@ -2706,7 +2706,7 @@ fn aarch64_hfa(layout: &ReprCLayout) -> Option<Vec<RegSlot>> {
 }
 
 /// The register plan for a by-value `@repr(C)` struct under the target ABI.
-/// See `docs/v2/specs/ffi-extensions.md`.
+/// See `docs/specs/ffi-extensions.md`.
 pub(crate) fn repr_c_register_plan(layout: &ReprCLayout, conv: CallConv) -> RegPlan {
     match conv {
         // Windows x64: sizes 1/2/4/8 in one integer register (a float-field

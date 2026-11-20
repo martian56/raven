@@ -3,7 +3,7 @@
 //! A `Box` is the object that lets a primitive value live on the heap,
 //! for example as a pointer slot inside a generic `List<T>`. Its
 //! payload follows the header inline. See
-//! `docs/v2/specs/object-layout.md` for the byte-exact layout.
+//! `docs/specs/object-layout.md` for the byte-exact layout.
 
 use super::{ObjectHeader, OBJECT_ALIGN, TAG_BOX};
 use crate::gc::raven_gc_alloc;

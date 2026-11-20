@@ -11,7 +11,7 @@
 //! values, trait objects, closures, and `defer` are tracked by issues
 //! #65, #66, #67, and #68.
 //!
-//! See `docs/v2/specs/codegen.md` for the full design.
+//! See `docs/specs/codegen.md` for the full design.
 
 pub mod context;
 pub mod function;
