@@ -2,80 +2,74 @@
 
 All notable changes to Raven are documented in this file.
 
-## [Unreleased]
+## [3.0.0] - 2026-11-21
+
+Raven 3 reads like Python with braces, compiles faster, and runs faster. It is not source compatible with Raven 2: the old syntax is rejected with errors that name the new form, and a package with `edition = "v2"` is rejected with a message that it needs converting.
 
 ### Changed
 
-- New surface syntax ("Python with braces"), the only syntax Raven accepts. The old forms (`struct`, `const`, `<T>` generics, `Int`/`String`, `&&`/`||`/`!`, `[k: v]`, `Name { field: value }`, `pattern -> value` arms, `{ x -> .. }` and `fun(..) { .. }` lambdas, `import std/x`, `import path { names }`) are errors that name their replacement.
-  - `let` bindings are immutable; `var` declares a reassignable one.
+- New surface syntax, the only one Raven accepts. The old forms (`struct`, `const`, `<T>` generics, `Int`/`String`, `&&`/`||`/`!`, `[k: v]`, `Name { field: value }`, `pattern -> value` arms, `{ x -> .. }` and `fun(..) { .. }` lambdas, `import std/x`, `import path { names }`) are errors that name their replacement.
+  - `let` bindings are immutable; `var` declares a reassignable one. A module level `let` bound to a constant is a compile time constant, and assigning to it is an error that suggests `var`.
   - Built-in type names are lowercase: `int`, `float`, `bool`, `str`, `char`, `list[T]`, `dict[K, V]`, `set[T]`.
   - Generic parameters and arguments use square brackets: `fun first[T](xs: list[T]) -> Option[T]`.
-  - `class Name: Trait { field: T = default  fun method(self) { .. } }` declares fields, defaults, methods, and implemented traits in one place.
-  - Values are built with call syntax and named arguments: `Point(1.0, 2.0)`, `Point(x: 1.0)`, `Point(..p, y: 2.0)`.
-  - Functions take default parameter values and named arguments.
+  - `class Name: Trait { field: T = default  fun method(self) { .. } }` declares fields, defaults, methods, and implemented traits in one place. A class that writes `to_string`, `equals`, or `hash` implements the matching trait with it.
+  - Values are built with call syntax and named arguments: `Point(1.0, 2.0)`, `Point(x: 1.0)`, `Point(..p, y: 2.0)`. Functions take default parameter values and named arguments.
   - Lambdas are written `x => x * 2`, `(a, b) => a + b`, `() => { .. }`.
-  - `match` cases are `case Pattern { .. }`, and variants may be written qualified: `case Shape.Circle(r) { .. }`.
+  - `match` cases are `case Pattern { .. }`, with qualified variants: `case Shape.Circle(r) { .. }`.
   - `and`, `or`, and `not`; `a if cond else b` for a conditional value.
-  - A module-level `let` bound to a constant expression is a compile-time constant; `var` declares a mutable global.
-  - Diagnostics and `type_name` print types in this syntax: `int`, `list[int]`, `dict[str, int]`, `(int, str)`.
-  - Floats print with their point (`5.0`), and lists, dicts, sets, tuples, `Option`, and derived class printing quote strings (`["a"]`).
   - Python-style imports: `import std.fs`, `from std.json import parse, stringify`, `from "./models" import User`.
-  - Collection literals: `{"a": 1}` dict, `{1, 2}` set, `{}` empty dict, `set()` empty set.
-  - `spawn { .. }` starts a goroutine without a wrapping closure.
-  - `std/string`, `std/collections`, and `std/error` are part of the prelude.
+  - Collection literals: `{"a": 1}` dict, `{1, 2}` and `{x}` sets, `{}` empty dict, `set()` empty set.
+  - `spawn { .. }` starts a goroutine and returns a task handle with `join()`; `Channel[T]` carries any type.
+  - Diagnostics and `type_name` print types in this syntax: `int`, `list[int]`, `dict[str, int]`, `(int, str)`.
+  - Floats print with their point (`5.0`), and containers and derived printing quote strings (`["a"]`).
+  - `rv.toml` uses `edition = "v3"`, the default and only accepted edition.
+  - The documentation moved from `docs/v2/` to `docs/guide` and `docs/specs`, and the examples from `examples/v2/` to `examples/`.
 
 ### Added
 
 - Tuples: `(int, str)` types, `(a, b)` values, `t.0` fields, `let (a, b) = ..` and `for (k, v) in ..` destructuring, `(a, b) = (b, a)`, tuple patterns, and equality, hashing, ordering, and printing.
 - Comprehensions: `[v for x in xs if c]`, `{v for x in xs}`, `{k: v for x in xs}`.
-- Patterns nest to any depth (`case Some(Ok(0))`), with exhaustiveness checked through them.
+- Patterns nest to any depth (`case Some(Ok(0))`), with exhaustiveness checked through them. `if let`, `while let`, and `let ... else`.
 - Python builtins: `len`, `sum`, `min`, `max`, `sorted`, `reversed`, `enumerate`, `zip`, `range`, `int`, `float`, `str`, `abs`, `round`, and multi-argument `print`.
 - `x in xs` and `x not in xs`; `for` loops over dicts (pairs), sets, strings (characters), and any value with an `iter()` method.
 - Format specs in interpolation: `"${x:.2}"`, `"${name:>10}"`, `"${n:05}"`.
-- Operator overloading through methods: `add`, `sub`, `mul`, `div`, `mod`, `neg`, `index`, `set_index`, and `<` `<=` `>` `>=` from `Ord`. `d[k]`, `d[k] = v`, and `d[k] += 1` on dicts; `str * n`, `list * n`, `list + list`.
-- `xs[-1]`, slices `xs[1..3]` and `s[0..5]`, stepped ranges `(0..n).step(k)`, and `x as int` / `x as float` / `x as str`.
-- `Channel[T]` carries any type, and `let task = spawn { .. }` returns a handle with `join()`.
-- A user class may reuse the name of a bundled type such as `Entry` or `Task`.
-- `raven run file.rv`, `raven check file.rv`, and `raven fmt file.rv [--write]`.
-- `RAVEN_TIMINGS=1` prints how long each compiler phase took; `RAVEN_DUMP_OBJ=path` writes the object file.
+- Operator overloading through methods: `add`, `sub`, `mul`, `div`, `mod`, `neg`, `index`, `set_index`, and ordering from `Ord`. `d[k]`, `d[k] = v`, and `d[k] += 1` on dicts; `str * n`, `list * n`, `list + list`.
+- Indexing and slicing: `xs[-1]`, `xs[1..3]`, `xs[2..]`, `xs[..2]`, and negative slice bounds that count from the end (`xs[-2..]`); stepped ranges `(0..n).step(k)`; casts `x as int`, `x as float`, `x as str`.
+- `assert cond` and `assert cond, "message"`, built in; a failure reports the condition as written.
+- In `main`, a failing `?` stops the program with the error's message, like an uncaught exception.
+- A trait used as a type is a trait object: `list[Shape]` and `fun f(s: Shape)` take any implementing class, and list literals convert each element.
+- Untyped lambda parameters are inferred from how the lambda is called: `let add = (a, b) => a + b` then `add(1, 2)`.
+- `xs.reserve(n)` grows a list once ahead of many pushes.
+- Python spellings: `elif`, `for i, x in xs`, `x ** y`, `xs.append(x)`, `list(x)`, `xs.reverse()`, `xs.sort(reverse: true)`, `sorted(xs, reverse: true)`, and `range(a, b, step)` with Python's semantics (negative steps count down; a zero step is an error). `True`, `f"..."`, `xs[a:b]`, and `let a, b = ...` are errors that name the Raven form.
+- `import std.math` then `math.sqrt(x)`: module-qualified calls reach a stdlib module's C functions.
+- `raven run`, `raven check`, and `raven fmt [--write]`; `rvpm test NAME` runs only the tests whose name contains `NAME`.
+- `Option`, `Result`, and list methods in the prelude (`unwrap`, `map`, `and_then`, `filter`, `fold`, `sorted`, `join`, and the rest).
+- `RAVEN_TIMINGS=1` prints how long each compiler phase took.
 
 ### Performance
 
-- Small objects come from per-thread size-class pages; payload-less enum variants are shared; GC root records are linked inline through a thread-local chain and hold GC pointers in place.
-- MIR inlining of small functions, copy propagation, and dict probing that keeps nearby integer keys together; counted `for` loops test their bound once per iteration.
+Measured against C (clang -O2), Go, and Rust on `benchmarks/runtime`, Raven is ahead of all three on `trees`, level with C on `maps`, `strings`, and `fib`, ahead of or level with Go on every benchmark, and behind C and Rust on `sieve` and `nbody`. The 10k-line compile benchmark builds in about 0.75 s, roughly ten times faster than 2.26.2 and about four times faster than `go build` on the same program.
+
+- Cranelift 0.138 with its optimizer on; scalar locals in registers; functions compile in parallel and only when reachable from `main`.
+- An MIR inliner, including one level of self-inlining for small recursive functions, and copy propagation.
+- String literals are static objects, so using one allocates nothing.
+- Small objects come from per-thread size-class pages; payload-less enum variants are shared; GC root records are linked inline through a thread-local chain, and functions that cannot trigger a collection skip the root frame.
+- Loops poll the GC safepoint through a register-preserving thunk with the flag address loaded once per function, and simple `while` loops are rotated to test once per iteration.
+- Float fields and float math stay in float registers; `sqrt`, `floor`, `ceil`, `trunc`, and `fabs` are single instructions.
+- `dict` and `set` keep items in dense insertion-ordered lists with an open-addressed index; `list[bool]` stores one byte per element; list indexing, length, and `push` are inline.
 - Linking uses `rust-lld` when available.
-
-- `if let`, `while let`, and `let ... else` pattern forms.
-- `panic(msg)` aborts with a message. It, `return`, `break`, and `continue` diverge, so they fit anywhere a value is expected: a `match` arm that returns, an `if` branch that returns, or `None -> panic(...)` all type check now.
-- `loop` evaluates to the value its `break` carries.
-- `Option` and `Result` methods in the prelude: `unwrap`, `expect`, `unwrap_or`, `unwrap_or_else`, `map`, `and_then`, `or_else`, `map_err`, `ok_or`, `ok`, `err`, and the `is_*` tests.
-- `List` methods in the prelude: `map`, `filter`, `fold`, `each`, `any`, `all`, `find`, `position`, `count`, `first`, `last`, `slice`, `take`, `skip`, `reversed`, `extend`, `concat`, `sorted_by`, `contains`, `index_of`, `sorted`, `sort`, `min`, `max`, `sum`, and `join`.
-- `+` and `+=` join strings.
-- Lambda parameter types are inferred from the function or method the lambda is passed to: `xs.map(fun(x) = x * 2)`.
-- An empty `[]` infers its element type from later use.
-- Structs and enums whose fields can be compared get `==` by value automatically.
-- Default trait methods work: an impl that does not define a method inherits the trait's body, through direct calls, generic bounds, and `dyn`.
-- Unused functions are dropped before code generation, so a program only compiles the library code it calls.
-
-### Performance
-
-- Cranelift's optimizer is enabled (`RAVEN_OPT=none` turns it off).
-- Scalar locals live in registers instead of stack slots.
-- List indexing, length, and `push` are inlined instead of calling into the runtime, and the GC safepoint poll in loops is a single flag load.
-- The runtime allocates through mimalloc, collects less often for small heaps (16 MiB floor), and registers GC root frames with less overhead; functions that cannot trigger a collection skip the root frame entirely.
-- Struct and enum field addresses are computed inline.
-- `dict` and `set` keep items in dense insertion-ordered lists with an open-addressed index, so lookups allocate nothing and iteration follows insertion order.
-- `list[bool]` stores one byte per element.
-- Compilation: functions are lowered only when reachable from `main`, Cranelift compiles functions on every core, and the type checker indexes impls by method name and receiver type. The 10k-line compile benchmark builds about ten times faster than 2.26.2.
 
 ### Fixed
 
-- Trait impls are checked against the trait. A missing method, an extra method, or a parameter or return type that differs from the trait is a compile error; before, a mismatched return type could segfault at run time.
-- A block-bodied lambda's `return` leaves the lambda instead of being checked against the enclosing function.
-- A function that can reach its end without returning a value is a compile error instead of a code generation failure.
-- A misspelled variant in a pattern, or a payload variant written without its payload, is an error instead of a silent catch-all binding. Unknown variant errors suggest the closest name.
-- `==` on a struct or enum that cannot be compared is a compile error instead of comparing object identity.
-- `Ok(x)` and `Err(e)` infer the other half of the `Result` instead of leaving it unchecked.
+- Trait impls are checked against the trait: a missing or extra method, or a mismatched signature, is a compile error instead of a possible segfault.
+- A format spec inside a default trait method no longer crashes code generation.
+- Inlining no longer grows a function until its stack frame overflows.
+- `return`, `break`, `continue`, and `panic` diverge, so they fit anywhere a value is expected; a function that can reach its end without a value is a compile error.
+- A misspelled variant in a pattern is an error instead of a silent catch-all binding.
+- `==` on a type that cannot be compared is a compile error instead of comparing identity.
+- A class whose name starts with `_` accepts named constructor arguments.
+- Diagnostics show a module's type by its own name instead of an internal mangled one.
+- A module `let` cannot be reassigned, and macro hygiene covers `var` bindings.
 
 ## [2.26.2] - 2026-09-12
 
