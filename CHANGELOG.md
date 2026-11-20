@@ -6,7 +6,7 @@ All notable changes to Raven are documented in this file.
 
 ### Changed
 
-- New surface syntax ("Python with braces"). `raven fmt --write file.rv` (or `rvpm fmt`) rewrites existing code into it; the old forms still parse during the transition.
+- New surface syntax ("Python with braces"), the only syntax Raven accepts. The old forms (`struct`, `const`, `<T>` generics, `Int`/`String`, `&&`/`||`/`!`, `[k: v]`, `Name { field: value }`, `pattern -> value` arms, `{ x -> .. }` and `fun(..) { .. }` lambdas, `import std/x`, `import path { names }`) are errors that name their replacement.
   - `let` bindings are immutable; `var` declares a reassignable one.
   - Built-in type names are lowercase: `int`, `float`, `bool`, `str`, `char`, `list[T]`, `dict[K, V]`, `set[T]`.
   - Generic parameters and arguments use square brackets: `fun first[T](xs: list[T]) -> Option[T]`.
@@ -15,7 +15,10 @@ All notable changes to Raven are documented in this file.
   - Functions take default parameter values and named arguments.
   - Lambdas are written `x => x * 2`, `(a, b) => a + b`, `() => { .. }`.
   - `match` cases are `case Pattern { .. }`, and variants may be written qualified: `case Shape.Circle(r) { .. }`.
-  - `and`, `or`, and `not` (the symbol forms are still accepted); `a if cond else b` for a conditional value.
+  - `and`, `or`, and `not`; `a if cond else b` for a conditional value.
+  - A module-level `let` bound to a constant expression is a compile-time constant; `var` declares a mutable global.
+  - Diagnostics and `type_name` print types in this syntax: `int`, `list[int]`, `dict[str, int]`, `(int, str)`.
+  - Floats print with their point (`5.0`), and lists, dicts, sets, tuples, `Option`, and derived class printing quote strings (`["a"]`).
   - Python-style imports: `import std.fs`, `from std.json import parse, stringify`, `from "./models" import User`.
   - Collection literals: `{"a": 1}` dict, `{1, 2}` set, `{}` empty dict, `set()` empty set.
   - `spawn { .. }` starts a goroutine without a wrapping closure.
@@ -23,8 +26,24 @@ All notable changes to Raven are documented in this file.
 
 ### Added
 
+- Tuples: `(int, str)` types, `(a, b)` values, `t.0` fields, `let (a, b) = ..` and `for (k, v) in ..` destructuring, `(a, b) = (b, a)`, tuple patterns, and equality, hashing, ordering, and printing.
+- Comprehensions: `[v for x in xs if c]`, `{v for x in xs}`, `{k: v for x in xs}`.
+- Patterns nest to any depth (`case Some(Ok(0))`), with exhaustiveness checked through them.
+- Python builtins: `len`, `sum`, `min`, `max`, `sorted`, `reversed`, `enumerate`, `zip`, `range`, `int`, `float`, `str`, `abs`, `round`, and multi-argument `print`.
+- `x in xs` and `x not in xs`; `for` loops over dicts (pairs), sets, strings (characters), and any value with an `iter()` method.
+- Format specs in interpolation: `"${x:.2}"`, `"${name:>10}"`, `"${n:05}"`.
+- Operator overloading through methods: `add`, `sub`, `mul`, `div`, `mod`, `neg`, `index`, `set_index`, and `<` `<=` `>` `>=` from `Ord`. `d[k]`, `d[k] = v`, and `d[k] += 1` on dicts; `str * n`, `list * n`, `list + list`.
+- `xs[-1]`, slices `xs[1..3]` and `s[0..5]`, stepped ranges `(0..n).step(k)`, and `x as int` / `x as float` / `x as str`.
+- `Channel[T]` carries any type, and `let task = spawn { .. }` returns a handle with `join()`.
+- A user class may reuse the name of a bundled type such as `Entry` or `Task`.
 - `raven run file.rv`, `raven check file.rv`, and `raven fmt file.rv [--write]`.
-- `RAVEN_TIMINGS=1` prints how long each compiler phase took.
+- `RAVEN_TIMINGS=1` prints how long each compiler phase took; `RAVEN_DUMP_OBJ=path` writes the object file.
+
+### Performance
+
+- Small objects come from per-thread size-class pages; payload-less enum variants are shared; GC root records are linked inline through a thread-local chain and hold GC pointers in place.
+- MIR inlining of small functions, copy propagation, and dict probing that keeps nearby integer keys together; counted `for` loops test their bound once per iteration.
+- Linking uses `rust-lld` when available.
 
 - `if let`, `while let`, and `let ... else` pattern forms.
 - `panic(msg)` aborts with a message. It, `return`, `break`, and `continue` diverge, so they fit anywhere a value is expected: a `match` arm that returns, an `if` branch that returns, or `None -> panic(...)` all type check now.
