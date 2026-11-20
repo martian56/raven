@@ -55,8 +55,7 @@ Construct variants with the qualified form (`JsonValue.Null`,
 variant names (`Null`, `Bool(b)`, `Number(n)`, ...).
 
 `Object` holds a `std/collections` `Map<String, JsonValue>`. The serializer
-emits members in the Map's key order (the hash-bucket layout), not insertion
-order.
+emits members in insertion order.
 
 ### Numbers are Float
 
@@ -159,7 +158,7 @@ fun main() {
 
 ### `keys(self) -> List<String>`
 
-The object's member keys as a `List<String>`, in the Map's key order. An
+The object's member keys as a `List<String>`, in insertion order. An
 empty list for any non-object value.
 
 ### `length(self) -> Int`
@@ -211,7 +210,7 @@ inner value.
 ### `stringify(value: JsonValue) -> String`
 
 Compact serialization with no spaces between tokens. Object members are
-emitted in the Map's key order. String escaping is the reverse of parsing:
+emitted in insertion order. String escaping is the reverse of parsing:
 `"` and `\` are escaped, control bytes below `0x20` use the `\b \f \n \r \t`
 shorthands where they exist and `\u00XX` otherwise, and every other byte
 passes through unchanged.

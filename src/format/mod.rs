@@ -233,6 +233,15 @@ impl<'a> Printer<'a> {
         for item in &file.items {
             collect_assigned_decl(item, &mut all);
         }
+        let globals: std::collections::HashSet<String> = file
+            .items
+            .iter()
+            .filter_map(|d| match &d.kind {
+                DeclKind::Let(l) => Some(l.name.clone()),
+                _ => None,
+            })
+            .collect();
+        all.retain(|n| globals.contains(n));
         self.assigned = all;
         for item in &file.items {
             // Emit any own-line comments that precede this item, each with a

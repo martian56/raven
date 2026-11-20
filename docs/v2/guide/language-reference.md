@@ -666,7 +666,7 @@ class User {
 fun main() {
     let u = User(id: 7, name: "ada")
     let text = stringify(u.to_json())
-    print(text) // {"id":7,"name":"ada"} (key order is the map layout)
+    print(text) // {"id":7,"name":"ada"}
     match parse(text) {
         case Ok(v) {
             match User.from_json(v) {
@@ -679,7 +679,7 @@ fun main() {
 }
 ```
 
-Object key order follows the map hash-bucket layout, not source order.
+Object keys keep their insertion order.
 Enum variants with named-field payloads are not derivable yet; unit and
 tuple variants are. `Ord` derives a `compare` that orders field by field
 (struct) or by variant then payload (enum).

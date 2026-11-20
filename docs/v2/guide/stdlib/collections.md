@@ -1,9 +1,9 @@
 # std/collections
 
-Hash-backed `Set<T>` and `Map<K, V>` over keys that implement the prelude
-`Eq + Hash` traits. Storage is a hash-bucket layout, so lookup, insert, and
-remove are O(1) average. `List<T>` is built into the language (literals,
-indexing, `len`, `push`, `pop`, `get`) and needs no import.
+Hash-backed `set[T]` and `dict[K, V]` over keys that implement the prelude
+`Eq + Hash` traits. Lookup, insert, and remove are O(1) average, and
+iteration follows insertion order. Both are part of the prelude, as is
+`list[T]`.
 
 ```rust
 import std.collections
@@ -115,8 +115,8 @@ True when the set has no elements.
 
 ### `contains(self, x: T) -> Bool`
 
-True when `x` is in the set. Hashes `x` to a bucket and scans that bucket
-with `Eq`.
+True when `x` is in the set. Hashes `x` and probes the index table,
+comparing with `Eq`.
 
 ### `add(self, x: T)`
 
@@ -125,8 +125,8 @@ holds duplicates.
 
 ### `remove(self, x: T) -> Bool`
 
-Remove `x` if present, returning whether it was. Order within a bucket is not
-preserved.
+Remove `x` if present, returning whether it was. The most recently added
+item moves into its position.
 
 ```rust
 import std.collections
@@ -147,8 +147,8 @@ fun main() {
 
 ### `to_list(self) -> List<T>`
 
-Every element as a list, in hash-bucket order (not insertion order). This is
-the way to enumerate a set: iterate the returned list.
+Every element as a list, in insertion order. This is the way to enumerate
+a set: iterate the returned list.
 
 ```rust
 import std.collections
@@ -156,7 +156,7 @@ import std.collections
 fun main() {
     let s = {1, 2, 3}
     for x in s.to_list() {
-        print(x) // 1, 2, 3 (bucket order)
+        print(x) // 1, 2, 3 (insertion order)
     }
 }
 ```
@@ -257,7 +257,7 @@ already present.
 
 ### `keys(self) -> List<K>`
 
-Every key in the map, in hash-bucket order (not insertion order).
+Every key in the map, in insertion order.
 
 ### `values(self) -> List<V>`
 
@@ -266,7 +266,7 @@ Every value in the map, aligned with `keys()`: the value at index `i` in
 
 ### `entries(self) -> List<Entry<K, V>>`
 
-Every key/value pair as a list of `Entry`, in hash-bucket order. Each `Entry`
+Every key/value pair as a list of `Entry`, in insertion order. Each `Entry`
 has a `.key` and a `.value` field.
 
 ```rust
@@ -275,15 +275,15 @@ import std.collections
 fun main() {
     let m = {"a": 1, "b": 2}
     for e in m.entries() {
-        print("${e.key}=${e.value}") // a=1, then b=2 (bucket order)
+        print("${e.key}=${e.value}") // a=1, then b=2 (insertion order)
     }
 }
 ```
 
 ### `remove(self, k: K) -> Bool`
 
-Remove the entry for `k` if present, returning whether it was. Order within a
-bucket is not preserved.
+Remove the entry for `k` if present, returning whether it was. The most
+recently added entry moves into its position.
 
 ```rust
 import std.collections
@@ -317,12 +317,10 @@ fun main() {
 
 ## Iteration order
 
-Both types store entries in an array of buckets. The table starts with 8
-buckets and doubles, rehashing every entry, once the load factor
-(`count / bucket_count`) passes 0.75. Because of this, `keys()` and
-`values()` follow the current bucket layout, not the order entries were
-inserted. Do not rely on iteration order being stable across inserts or
-across runs.
+Both types keep their items in dense lists in insertion order and find them
+through an open-addressed index table, which doubles once it is three quarters
+full. `keys()`, `values()`, `entries()`, and `to_list()` follow insertion
+order. Removing an item moves the most recently inserted one into its place.
 
 ## Worked example: word frequencies
 

@@ -4,8 +4,8 @@
 //   ok
 //   2
 //   {
-//     "name": "ok",
-//     "n": 7
+//     "n": 7,
+//     "name": "ok"
 //   }
 from std.json import stringify_pretty, json_object, json_int, json_string, parse
 import std.collections

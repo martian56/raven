@@ -169,8 +169,7 @@ fun to_json(self) -> JsonValue
   `{"tag":"Rect","values":[2,5]}`, and `Shape.Dot` to
   `{"tag":"Dot","values":[]}`.
 
-Object key order follows the `Map` hash-bucket layout of `std/json`, not
-source order. Combine `to_json` with `stringify` to get a `String`.
+Object keys follow the field declaration order. Combine `to_json` with `stringify` to get a `String`.
 
 ### FromJson
 
