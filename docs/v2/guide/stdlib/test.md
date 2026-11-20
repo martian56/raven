@@ -42,7 +42,7 @@ after it do not run.
 Each assertion checks a condition and, when it does not hold, panics with a
 fixed message and exits nonzero.
 
-### `assert(cond: Bool)`
+### `assert(cond: bool)`
 
 Fails when `cond` is false. Panic message: `assertion failed`.
 
@@ -55,7 +55,7 @@ fun main() {
 }
 ```
 
-### `assert_msg(cond: Bool, msg: String)`
+### `assert_msg(cond: bool, msg: str)`
 
 Fails when `cond` is false, panicking with the caller-supplied `msg`. Use
 this when you want the failure to explain itself.
@@ -69,11 +69,11 @@ fun main() {
 }
 ```
 
-### `assert_true(cond: Bool)`
+### `assert_true(cond: bool)`
 
 Fails when `cond` is false. Panic message: `assertion failed: expected true`.
 
-### `assert_false(cond: Bool)`
+### `assert_false(cond: bool)`
 
 Fails when `cond` is true. Panic message: `assertion failed: expected false`.
 
@@ -87,7 +87,7 @@ fun main() {
 }
 ```
 
-### `assert_eq_int(a: Int, b: Int)`
+### `assert_eq_int(a: int, b: int)`
 
 Fails when `a != b`. The panic message interpolates both operands
 (`assertion failed: ${a} != ${b}`), so a failure shows the mismatched
@@ -105,7 +105,7 @@ fun main() {
 }
 ```
 
-### `assert_eq_str(a: String, b: String)`
+### `assert_eq_str(a: str, b: str)`
 
 Fails when `a != b`, compared by content. The panic message interpolates
 both operands (`assertion failed: ${a} != ${b}`).
@@ -119,7 +119,7 @@ fun main() {
 }
 ```
 
-### `assert_eq<T: Eq + ToString>(a: T, b: T)` and `assert_ne<T: Eq + ToString>(a: T, b: T)`
+### `assert_eq[T: Eq + ToString](a: T, b: T)` and `assert_ne[T: Eq + ToString](a: T, b: T)`
 
 Generic equality and inequality over any `Eq + ToString` type. `assert_eq`
 fails when `a != b`, `assert_ne` fails when `a == b`. Both interpolate the two
@@ -134,7 +134,7 @@ fun main() {
 }
 ```
 
-### `assert_eq_float(a: Float, b: Float, eps: Float)`
+### `assert_eq_float(a: float, b: float, eps: float)`
 
 Fails when `a` and `b` differ by more than `eps`. This is the right way to
 compare floats: exact `==` is unreliable for computed results.
@@ -147,7 +147,7 @@ fun main() {
 }
 ```
 
-### `assert_some<T>(o: Option<T>)` and `assert_none<T>(o: Option<T>)`
+### `assert_some[T](o: Option[T])` and `assert_none[T](o: Option[T])`
 
 `assert_some` fails on `None`, `assert_none` fails on `Some`.
 
@@ -161,7 +161,7 @@ fun main() {
 }
 ```
 
-### `assert_ok<T, E>(r: Result<T, E>)` and `assert_err<T, E>(r: Result<T, E>)`
+### `assert_ok[T, E](r: Result[T, E])` and `assert_err[T, E](r: Result[T, E])`
 
 `assert_ok` fails on `Err`, `assert_err` fails on `Ok`.
 

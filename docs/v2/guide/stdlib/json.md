@@ -54,12 +54,12 @@ Construct variants with the qualified form (`JsonValue.Null`,
 `JsonValue.Array(list)`, `JsonValue.Object(map)`). Match with the bare
 variant names (`Null`, `Bool(b)`, `Number(n)`, ...).
 
-`Object` holds a `std/collections` `Map<String, JsonValue>`. The serializer
+`Object` holds a `std/collections` `dict[str, JsonValue]`. The serializer
 emits members in insertion order.
 
 ### Numbers are Float
 
-Every JSON number, integer or not, parses to `Number(Float)`. Raven `Float`
+Every JSON number, integer or not, parses to `Number(float)`. Raven `float`
 is an IEEE 754 double, so integers beyond the 53-bit mantissa (roughly
 9.0e15) lose precision. There is no separate integer JSON type, so a
 whole-number value like `7` comes back as `Number(7.0)` and serializes again
@@ -67,7 +67,7 @@ as `7`.
 
 ## Parsing
 
-### `parse(text: String) -> Result<JsonValue, Error>`
+### `parse(text: str) -> Result[JsonValue, Error]`
 
 Parse `text` as a single JSON value. The parser handles nested objects and
 arrays (including empty `{}` and `[]`), strings, numbers, `true`, `false`,
@@ -99,41 +99,41 @@ decodes to the astral code point; an unpaired surrogate is a parse error.
 ## Navigating a parsed value
 
 A `JsonValue` is a tree. Two methods step into containers and four extract a
-scalar. The container steps return `Option<JsonValue>`, and the extractors
+scalar. The container steps return `Option[JsonValue]`, and the extractors
 return an `Option` of the underlying type, so a wrong-kind or missing lookup
 is a normal `None` rather than an error.
 
-### `get(self, key: String) -> Option<JsonValue>`
+### `get(self, key: str) -> Option[JsonValue]`
 
 The member of an object by key, or `None` when the value is not an object or
 the key is absent.
 
-### `at(self, i: Int) -> Option<JsonValue>`
+### `at(self, i: int) -> Option[JsonValue]`
 
 The element of an array by index, or `None` when out of range or not an
 array.
 
-### `is_null(self) -> Bool`
+### `is_null(self) -> bool`
 
 True only for the `Null` variant.
 
-### `as_bool(self) -> Option<Bool>`
+### `as_bool(self) -> Option[bool]`
 
-`Some(b)` for a `Bool`, else `None`.
+`Some(b)` for a `bool`, else `None`.
 
-### `as_number(self) -> Option<Float>`
+### `as_number(self) -> Option[float]`
 
 `Some(n)` for a `Number`, else `None`. Remember every JSON number is a
-`Float`.
+`float`.
 
-### `as_string(self) -> Option<String>`
+### `as_string(self) -> Option[str]`
 
 `Some(s)` for a `Str`, else `None`.
 
-### `as_int(self) -> Option<Int>`
+### `as_int(self) -> Option[int]`
 
 `Some(i)` for a `Number`, truncated toward zero, else `None`. Use this when
-you want a whole-number field as an `Int` rather than the raw `Float`.
+you want a whole-number field as an `int` rather than the raw `float`.
 
 ```rust
 from std.json import parse
@@ -156,12 +156,12 @@ fun main() {
 }
 ```
 
-### `keys(self) -> List<String>`
+### `keys(self) -> list[str]`
 
-The object's member keys as a `List<String>`, in insertion order. An
+The object's member keys as a `list[str]`, in insertion order. An
 empty list for any non-object value.
 
-### `length(self) -> Int`
+### `length(self) -> int`
 
 The element count: the number of array elements or object members. `0` for
 any scalar value.
@@ -202,12 +202,12 @@ fun main() {
 ```
 
 Reaching into nested data composes the same way: `v.get("user")` returns an
-`Option<JsonValue>` you match on, then call `.get("name")` or `.at(0)` on the
+`Option[JsonValue]` you match on, then call `.get("name")` or `.at(0)` on the
 inner value.
 
 ## Serializing
 
-### `stringify(value: JsonValue) -> String`
+### `stringify(value: JsonValue) -> str`
 
 Compact serialization with no spaces between tokens. Object members are
 emitted in insertion order. String escaping is the reverse of parsing:
@@ -215,7 +215,7 @@ emitted in insertion order. String escaping is the reverse of parsing:
 shorthands where they exist and `\u00XX` otherwise, and every other byte
 passes through unchanged.
 
-A whole-number `Float` renders the way the runtime prints it, so `1.0`
+A whole-number `float` renders the way the runtime prints it, so `1.0`
 serializes as `1` and `0.15` serializes as `0.15`.
 
 ```rust
@@ -229,7 +229,7 @@ fun main() {
 }
 ```
 
-### `stringify_pretty(value: JsonValue, indent: Int) -> String`
+### `stringify_pretty(value: JsonValue, indent: int) -> str`
 
 Multi-line serialization with `indent` spaces of padding per nesting level.
 Object members and array elements each go on their own line; empty arrays and
@@ -261,27 +261,27 @@ from std.json import json_null, json_bool, json_number, json_int, json_string, j
 
 The `Null` value.
 
-### `json_bool(b: Bool) -> JsonValue`
+### `json_bool(b: bool) -> JsonValue`
 
-A `Bool` value.
+A `bool` value.
 
-### `json_number(n: Float) -> JsonValue`
+### `json_number(n: float) -> JsonValue`
 
-A `Number` from a `Float`.
+A `Number` from a `float`.
 
-### `json_int(n: Int) -> JsonValue`
+### `json_int(n: int) -> JsonValue`
 
-A `Number` from an `Int`, widened to `Float` (JSON has one number type).
+A `Number` from an `int`, widened to `float` (JSON has one number type).
 
-### `json_string(s: String) -> JsonValue`
+### `json_string(s: str) -> JsonValue`
 
 A `Str` value.
 
-### `json_array(items: List<JsonValue>) -> JsonValue`
+### `json_array(items: list[JsonValue]) -> JsonValue`
 
 An `Array` wrapping a list of values.
 
-### `json_object(map: Map<String, JsonValue>) -> JsonValue`
+### `json_object(map: dict[str, JsonValue]) -> JsonValue`
 
 An `Object` wrapping a `std/collections` `Map`. A map literal `["k": v]`
 serves as the argument.
@@ -313,10 +313,10 @@ trait FromJson {
 ```
 
 `to_json` is an ordinary `self` method; `from_json` is an associated
-function called as `Point.from_json(j)`. Built-in impls cover `Int`, `Float`,
-`Bool`, `String`, `List<T>`, and `Option<T>` so field recursion bottoms out.
-An `Int` round-trips through `Float` (JSON has one number type) and loses
-precision beyond 2^53; a number decodes back to `Int` by truncation toward
+function called as `Point.from_json(j)`. Built-in impls cover `int`, `float`,
+`bool`, `str`, `list[T]`, and `Option[T]` so field recursion bottoms out.
+An `int` round-trips through `float` (JSON has one number type) and loses
+precision beyond 2^53; a number decodes back to `int` by truncation toward
 zero.
 
 Annotate a user struct or enum with `@derive(ToJson, FromJson)` to get these

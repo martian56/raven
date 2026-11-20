@@ -1,6 +1,6 @@
 # std/list
 
-Free utility functions over the built-in `List<T>`. `List` ships with
+Free utility functions over the built-in `list[T]`. `List` ships with
 `len`, `get`, `push`, and `pop` as built-in methods; this module adds the
 common operations on top of them. Functions that build a new list return a
 fresh `List` and never mutate their input.
@@ -22,7 +22,7 @@ fun main() {
 import std.list
 ```
 
-A bare `import std/list` binds the module alias, so the functions are called
+A bare `import std.list` binds the module alias, so the functions are called
 as `list.contains(...)`. To call them unqualified, list the names in a
 selective import:
 
@@ -30,16 +30,16 @@ selective import:
 from std.list import contains, reverse, range
 ```
 
-`List<T>` itself is built into the language and needs no import for literals,
+`list[T]` itself is built into the language and needs no import for literals,
 indexing, `len`, `get`, `push`, or `pop`.
 
 ## Searching
 
-### `contains<T: Eq>(xs: List<T>, x: T) -> Bool`
+### `contains[T: Eq](xs: list[T], x: T) -> bool`
 
 True when `xs` holds a value equal to `x`. Bound by `T: Eq`.
 
-### `index_of<T: Eq>(xs: List<T>, x: T) -> Int`
+### `index_of[T: Eq](xs: list[T], x: T) -> int`
 
 The index of the first element equal to `x`, or `-1` when absent.
 
@@ -56,11 +56,11 @@ fun main() {
 
 ## Slicing and combining
 
-### `reverse<T>(xs: List<T>) -> List<T>`
+### `reverse[T](xs: list[T]) -> list[T]`
 
 A new list with the elements of `xs` in reverse order.
 
-### `slice<T>(xs: List<T>, start: Int, end: Int) -> List<T>`
+### `slice[T](xs: list[T], start: int, end: int) -> list[T]`
 
 The half-open range `[start, end)` as a new list, clamped to the list bounds.
 
@@ -78,11 +78,11 @@ fun main() {
 }
 ```
 
-### `concat<T>(a: List<T>, b: List<T>) -> List<T>`
+### `concat[T](a: list[T], b: list[T]) -> list[T]`
 
 The elements of `a` followed by the elements of `b`, as a new list.
 
-### `flatten<T>(xss: List<List<T>>) -> List<T>`
+### `flatten[T](xss: list[list[T]]) -> list[T]`
 
 Flatten a list of lists into a single list, preserving order.
 
@@ -101,11 +101,11 @@ fun main() {
 
 ## First and last
 
-### `first<T>(xs: List<T>) -> Option<T>`
+### `first[T](xs: list[T]) -> Option[T]`
 
 The first element, or `None` for an empty list.
 
-### `last<T>(xs: List<T>) -> Option<T>`
+### `last[T](xs: list[T]) -> Option[T]`
 
 The last element, or `None` for an empty list.
 
@@ -129,11 +129,11 @@ fun main() {
 
 These return a new list and leave their input unchanged.
 
-### `insert<T>(xs: List<T>, i: Int, x: T) -> List<T>`
+### `insert[T](xs: list[T], i: int, x: T) -> list[T]`
 
 A new list with `x` inserted at index `i`, clamped to `[0, len]`.
 
-### `remove_at<T>(xs: List<T>, i: Int) -> List<T>`
+### `remove_at[T](xs: list[T], i: int) -> list[T]`
 
 A new list with the element at index `i` removed. An out-of-range index leaves
 the list unchanged.
@@ -152,11 +152,11 @@ fun main() {
 }
 ```
 
-### `repeat<T>(x: T, n: Int) -> List<T>`
+### `repeat[T](x: T, n: int) -> list[T]`
 
 A list containing `x` repeated `n` times. Empty for a non-positive `n`.
 
-### `range(start: Int, end: Int) -> List<Int>`
+### `range(start: int, end: int) -> list[int]`
 
 The integers `[start, end)` as a list. Empty when `start >= end`.
 

@@ -73,7 +73,7 @@ checking, and it is one of the main reasons to reach for an enum.
 ## Step 3: a variant that carries data
 
 Some statuses need more than a name. A blocked task should say what it is
-waiting on. A variant can carry a payload, so give `Blocked` a `String`:
+waiting on. A variant can carry a payload, so give `Blocked` a `str`:
 
 ```rust
 enum Status {
@@ -126,7 +126,7 @@ together, and `self` gives access to every field.
 ## Step 5: look something up with `Option`
 
 Searching a list might find nothing, and Raven has no `null` to return in that
-case. The answer is `Option<T>`: `Some(value)` when there is a result, `None`
+case. The answer is `Option[T]`: `Some(value)` when there is a result, `None`
 when there is not. A lookup by id:
 
 ```rust
@@ -217,7 +217,7 @@ found: ship release
 
 ## Where to go next
 
-- Count how many tasks are in each status with a `Map<String, Int>` from
+- Count how many tasks are in each status with a `dict[str, int]` from
   [std/collections](../stdlib/collections.md), keyed by `label(t.status)`.
 - Filter to just the blocked tasks and print their reasons.
 - Persist the list as JSON with [std/json](../stdlib/json.md), or derive

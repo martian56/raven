@@ -1,7 +1,7 @@
 # Tutorial: error handling with Option, Result, and `?`
 
 Raven has no exceptions and no `null`. A value that might be absent has type
-`Option<T>`, and an operation that might fail returns `Result<T, E>`. Both are
+`Option[T]`, and an operation that might fail returns `Result[T, E]`. Both are
 ordinary enums built into the language, so failure shows up in the type
 signature and the compiler makes you handle it. This tutorial works through
 absence, failure, the `?` operator that propagates failures, and the
@@ -10,7 +10,7 @@ Every step compiles and runs.
 
 ## Step 1: absence with `Option`
 
-`Option<T>` is either `Some(value)` or `None`. Use it for a lookup that might
+`Option[T]` is either `Some(value)` or `None`. Use it for a lookup that might
 find nothing. You read it back with `match`, which forces you to handle both
 the present and the absent case:
 
@@ -35,7 +35,7 @@ compile.
 
 ## Step 2: failure with `Result`
 
-`Result<T, E>` is either `Ok(value)` or `Err(error)`. The `E` slot is whatever
+`Result[T, E]` is either `Ok(value)` or `Err(error)`. The `E` slot is whatever
 error type you choose. A clean default is the `Error` value from `std/error`,
 built with `error("message")`:
 
@@ -181,7 +181,7 @@ just the message when the kind is empty), and `print(e)` uses the same form.
 
 ## Step 6: a different error type per layer
 
-The `E` in `Result<T, E>` does not have to be `Error`. A library often defines
+The `E` in `Result[T, E]` does not have to be `Error`. A library often defines
 a struct that carries structured failure data, and `?` threads it through
 unchanged even when the `Ok` and `Err` types differ:
 
@@ -217,17 +217,17 @@ fun main() {
 }
 ```
 
-Here `check` returns `Result<Bool, Fail>` and `run` returns `Result<Int,
-Fail>`: the `Ok` types differ, but the `Err` type is the same, so `?` carries a
+Here `check` returns `Result[bool, Fail]` and `run` returns `Result[int,
+Fail]`: the `Ok` types differ, but the `Err` type is the same, so `?` carries a
 `Fail` from `check` straight out of `run`. The `Err(e)` arm binds `e` as a
 `Fail`, so you can read `e.code` and `e.message`.
 
 ## When to use what
 
-- **`Option<T>`** for a value that may be absent, with no reason needed.
-- **`Result<T, Error>`** for an operation that may fail, where a message is
+- **`Option[T]`** for a value that may be absent, with no reason needed.
+- **`Result[T, Error]`** for an operation that may fail, where a message is
   enough.
-- **`Result<T, MyStruct>`** when callers need to branch on structured failure
+- **`Result[T, MyStruct]`** when callers need to branch on structured failure
   data.
 - **`?`** to propagate, **`match`** to handle, and the `std/error` helpers to
   recover in one line.

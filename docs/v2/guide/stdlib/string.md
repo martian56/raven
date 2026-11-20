@@ -1,8 +1,8 @@
 # std/string
 
-Methods for working with text. `std/string` adds an `impl String` block, so
-a bare `import std/string` brings every method below into scope as a method
-on any `String` value.
+Methods for working with text. `std/string` adds an `impl str` block, so
+a bare `import std.string` brings every method below into scope as a method
+on any `str` value.
 
 ```rust
 import std.string
@@ -20,17 +20,17 @@ import std.string
 ```
 
 Import the whole module (not a selective `{ ... }` list): the methods are
-merged from an `impl String` block, and the bare import is what merges it.
+merged from an `impl str` block, and the bare import is what merges it.
 
 Two methods are built into the compiler and need **no** import:
 
 | Built in | Meaning |
 |----------|---------|
-| `String.len()` | byte length (alias of `length`) |
-| `String.is_empty()` | `len() == 0` |
+| `str.len()` | byte length (alias of `length`) |
+| `str.is_empty()` | `len() == 0` |
 
 Everything else (`concat`, `to_upper`, `substring`, `replace`, ...) comes
-from `import std/string`.
+from `import std.string`.
 
 ## A note on bytes
 
@@ -42,7 +42,7 @@ unchanged.
 
 ## Inspecting
 
-### `length(self) -> Int`
+### `length(self) -> int`
 
 The number of UTF-8 bytes in the string. `len` is a built-in alias.
 
@@ -55,11 +55,11 @@ fun main() {
 }
 ```
 
-### `is_empty(self) -> Bool`
+### `is_empty(self) -> bool`
 
 True when the string has no bytes. Also available built in.
 
-### `is_blank(self) -> Bool`
+### `is_blank(self) -> bool`
 
 True when the string is empty or contains only ASCII whitespace (space, tab,
 newline, carriage return, vertical tab, form feed).
@@ -75,13 +75,13 @@ fun main() {
 
 ## Slicing
 
-### `char_at(self, i: Int) -> String`
+### `char_at(self, i: int) -> str`
 
 The single byte at index `i`, returned as a one-byte string. An out-of-range
 index yields the empty string. (For multi-byte characters this returns one
 byte of the encoding, not the whole character.)
 
-### `byte_at(self, i: Int) -> Int`
+### `byte_at(self, i: int) -> int`
 
 The raw byte value (0..255) at index `i`, or `-1` when `i` is out of range.
 Where `char_at` gives a one-byte string, `byte_at` gives the numeric byte.
@@ -95,7 +95,7 @@ fun main() {
 }
 ```
 
-### `substring(self, start: Int, end: Int) -> String`
+### `substring(self, start: int, end: int) -> str`
 
 The half-open byte range `[start, end)`, clamped to `0..length`. A `start`
 at or past `end` yields the empty string.
@@ -111,12 +111,12 @@ fun main() {
 
 ## Case and whitespace
 
-### `to_upper(self) -> String` and `to_lower(self) -> String`
+### `to_upper(self) -> str` and `to_lower(self) -> str`
 
 ASCII case mapping. Bytes `a`-`z` and `A`-`Z` are mapped; every other byte
 is left as is.
 
-### `trim(self) -> String`
+### `trim(self) -> str`
 
 Remove leading and trailing ASCII whitespace. Interior whitespace is kept.
 
@@ -129,7 +129,7 @@ fun main() {
 }
 ```
 
-### `repeat(self, n: Int) -> String`
+### `repeat(self, n: int) -> str`
 
 The string concatenated `n` times. A non-positive `n` yields the empty
 string.
@@ -142,7 +142,7 @@ fun main() {
 }
 ```
 
-### `trim_start(self) -> String` and `trim_end(self) -> String`
+### `trim_start(self) -> str` and `trim_end(self) -> str`
 
 Remove leading (`trim_start`) or trailing (`trim_end`) ASCII whitespace only,
 leaving the other end untouched.
@@ -156,7 +156,7 @@ fun main() {
 }
 ```
 
-### `reverse(self) -> String`
+### `reverse(self) -> str`
 
 The string with its bytes reversed. For ASCII this reverses characters; a
 multi-byte character's encoding is reversed byte-wise.
@@ -171,17 +171,17 @@ fun main() {
 
 ## Searching
 
-### `index_of(self, needle: String) -> Int`
+### `index_of(self, needle: str) -> int`
 
 The byte index of the first occurrence of `needle`, or `-1` when it is
 absent. An empty needle matches at `0`.
 
-### `last_index_of(self, needle: String) -> Int`
+### `last_index_of(self, needle: str) -> int`
 
 The byte index of the last occurrence of `needle`, or `-1` when it is absent.
 An empty needle matches at `length`.
 
-### `count(self, needle: String) -> Int`
+### `count(self, needle: str) -> int`
 
 The number of non-overlapping occurrences of `needle`, scanning left to right.
 An empty needle counts as `0`.
@@ -195,15 +195,15 @@ fun main() {
 }
 ```
 
-### `contains(self, needle: String) -> Bool`
+### `contains(self, needle: str) -> bool`
 
 True when `needle` occurs anywhere in the string.
 
-### `starts_with(self, prefix: String) -> Bool` and `ends_with(self, suffix: String) -> Bool`
+### `starts_with(self, prefix: str) -> bool` and `ends_with(self, suffix: str) -> bool`
 
 Prefix and suffix tests, compared by bytes.
 
-### `matches_at(self, needle: String, at: Int) -> Bool`
+### `matches_at(self, needle: str, at: int) -> bool`
 
 True when the bytes of `needle` occur starting at byte index `at`. The
 building block the other search methods use; handy for hand-written
@@ -222,12 +222,12 @@ fun main() {
 
 ## Transforming
 
-### `concat(self, other: String) -> String`
+### `concat(self, other: str) -> str`
 
 Join two strings. String interpolation (`"${a}${b}"`) is usually clearer for
 building up text, but `concat` is the explicit method form.
 
-### `replace(self, from: String, to: String) -> String`
+### `replace(self, from: str, to: str) -> str`
 
 Replace every non-overlapping occurrence of `from` with `to`, scanning left
 to right. An empty `from` returns the input unchanged.
@@ -243,7 +243,7 @@ fun main() {
 
 ## Splitting
 
-### `split(self, sep: String) -> List<String>`
+### `split(self, sep: str) -> list[str]`
 
 Split on every non-overlapping occurrence of `sep`, left to right. Consecutive
 separators produce empty pieces. An empty `sep` returns the whole string as a
@@ -259,7 +259,7 @@ fun main() {
 }
 ```
 
-### `split_whitespace(self) -> List<String>`
+### `split_whitespace(self) -> list[str]`
 
 Split on runs of ASCII whitespace, discarding empty pieces. Leading and
 trailing whitespace produce no empty elements.
@@ -274,7 +274,7 @@ fun main() {
 }
 ```
 
-### `lines(self) -> List<String>`
+### `lines(self) -> list[str]`
 
 Split into lines on `\n`, stripping a trailing `\r` from each line so both
 Unix and Windows endings work. A trailing newline does not produce a final
@@ -292,7 +292,7 @@ fun main() {
 
 ## Parsing
 
-### `parse_int(self) -> Option<Int>`
+### `parse_int(self) -> Option[int]`
 
 Parse a base-10 integer with an optional leading `+` or `-`. The string is
 trimmed first. Returns `None` when it is empty or holds any non-digit
@@ -313,7 +313,7 @@ fun main() {
 }
 ```
 
-### `parse_float(self) -> Option<Float>`
+### `parse_float(self) -> Option[float]`
 
 Parse a floating point number: an optional sign, an integer part, an optional
 `.fraction`, and an optional `e`/`E` exponent. The string is trimmed first.
@@ -332,7 +332,7 @@ fun main() {
 
 ## Comparison and matching
 
-`String` values compare lexicographically by bytes with `<`, `<=`, `>`, and
+`str` values compare lexicographically by bytes with `<`, `<=`, `>`, and
 `>=`, and they support `==`. A string literal can also be a `match` pattern,
 compared by content:
 

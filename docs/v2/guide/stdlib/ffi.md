@@ -1,8 +1,8 @@
 # std/ffi
 
 Bridges for the C foreign-function interface. `std/ffi` converts a Raven
-`String` to and from a C `CStr`, and gives you a raw pointer API over
-`CPtr<T>` for allocating, reading, and writing C memory. Use it alongside an
+`str` to and from a C `CStr`, and gives you a raw pointer API over
+`CPtr[T]` for allocating, reading, and writing C memory. Use it alongside an
 `extern "C"` block to call C functions with runtime values.
 
 ```rust
@@ -18,9 +18,9 @@ fun main() {
 }
 ```
 
-The C type set (`CInt`, `CLong`, `CSize`, `CStr`, `CPtr<T>`, `CFloat`,
+The C type set (`CInt`, `CLong`, `CSize`, `CStr`, `CPtr[T]`, `CFloat`,
 `CDouble`) is built into the type checker. A `c"..."` literal already yields a
-`CStr` at compile time; `to_cstr` covers the case of a `String` value computed
+`CStr` at compile time; `to_cstr` covers the case of a `str` value computed
 at runtime, which has no compile-time form.
 
 ## Importing
@@ -39,7 +39,7 @@ Read this before using `to_cstr` or `alloc`.
 Both `to_cstr` and `alloc` hand back memory that the garbage collector does
 **not** trace and will **never** reclaim. The lifetime is manual:
 
-- `alloc<T>(...)` memory is yours to `free`. You **must** call `free` on it, or
+- `alloc[T](...)` memory is yours to `free`. You **must** call `free` on it, or
   it leaks for the rest of the program run.
 - `to_cstr(...)` copies into a fresh buffer. Release it with `free_cstr` when
   the C side is done with it, or leave it for the rest of the run. A call that
@@ -54,7 +54,7 @@ type `T` consistent with how the C side allocated the memory.
 
 ## String bridges
 
-### `to_cstr(s: String) -> CStr`
+### `to_cstr(s: str) -> CStr`
 
 Copy `s` into a fresh, null-terminated C string and return a `CStr` pointing
 at the first byte. The result is a standalone copy (not the String's own
@@ -69,11 +69,11 @@ pointer must not be used after the call. Pass only a `to_cstr` result, not a
 `c"..."` literal (which is static) or a `CStr` from `from_cstr`'s source or
 another C function, which have a different owner.
 
-### `from_cstr(p: CStr) -> String`
+### `from_cstr(p: CStr) -> str`
 
 Read the null-terminated bytes at `p`, stopping at the first NUL, and build an
-ordinary GC-managed Raven `String` (the terminator is dropped). The resulting
-`String` is traced and reclaimed like any other.
+ordinary GC-managed Raven `str` (the terminator is dropped). The resulting
+`str` is traced and reclaimed like any other.
 
 ```rust
 from std.ffi import to_cstr, from_cstr
@@ -83,50 +83,50 @@ fun main() {
 }
 ```
 
-Plain UTF-8 text without interior NUL bytes round-trips exactly. A `String`
+Plain UTF-8 text without interior NUL bytes round-trips exactly. A `str`
 with an embedded NUL truncates at that NUL on a round trip, since the C reader
 stops there.
 
 ## Raw pointer and buffer access
 
-`CPtr<T>` is a usable raw pointer. The following generic functions allocate,
+`CPtr[T]` is a usable raw pointer. The following generic functions allocate,
 release, and read or write C memory through it. The pointee type `T` must be a
 C scalar (`CInt`, `CLong`, `CSize`, `CFloat`, `CDouble`, `CStr`) or a native
-`Int`/`Float`; its width drives the load/store size and the element stride for
+`int`/`float`; its width drives the load/store size and the element stride for
 `offset`.
 
-### `alloc<T>(count: Int) -> CPtr<T>`
+### `alloc[T](count: int) -> CPtr[T]`
 
-Reserve room for `count` elements of type `T` and return a `CPtr<T>` to the
+Reserve room for `count` elements of type `T` and return a `CPtr[T]` to the
 buffer. The memory is uninitialized. Returns the null pointer on a zero count
 or allocation failure. The caller must `free` it.
 
-### `free<T>(p: CPtr<T>)`
+### `free[T](p: CPtr[T])`
 
 Release a buffer obtained from `alloc`. A null pointer is a no-op.
 
-### `load<T>(p: CPtr<T>) -> T`
+### `load[T](p: CPtr[T]) -> T`
 
 Read the element of type `T` at `p`.
 
-### `store<T>(p: CPtr<T>, value: T)`
+### `store[T](p: CPtr[T], value: T)`
 
 Write `value` to the element of type `T` at `p`.
 
-### `offset<T>(p: CPtr<T>, count: Int) -> CPtr<T>`
+### `offset[T](p: CPtr[T], count: int) -> CPtr[T]`
 
 Advance `p` by `count` elements, scaled by the size of `T`
 (`p + count * sizeof(T)`). There is no indexed load in this release; compose
 `load(offset(p, i))` to read element `i`.
 
-### `is_null<T>(p: CPtr<T>) -> Bool`
+### `is_null[T](p: CPtr[T]) -> bool`
 
 True exactly when `p` is the null pointer. Many C APIs return null on failure,
 so check before dereferencing.
 
-### `null_ptr<T>() -> CPtr<T>`
+### `null_ptr[T]() -> CPtr[T]`
 
-The null `CPtr<T>`.
+The null `CPtr[T]`.
 
 ### Example: a buffer of `CInt`
 
@@ -160,7 +160,7 @@ fun main() {
 ## Calling a C function with a runtime String
 
 Declare the C function in an `extern "C"` block, then pass a `to_cstr`
-conversion of a runtime `String` where the signature expects a `CStr`:
+conversion of a runtime `str` where the signature expects a `CStr`:
 
 ```rust
 from std.ffi import to_cstr, from_cstr
@@ -179,7 +179,7 @@ fun main() {
 ```
 
 The integer FFI types print directly: `CInt`, `CLong`, and `CSize` satisfy
-`ToString` by widening to `Int`, so a `CSize` or `CInt` result can be printed
+`ToString` by widening to `int`, so a `CSize` or `CInt` result can be printed
 or interpolated into a `"${...}"` string.
 
 ## See also
@@ -187,4 +187,4 @@ or interpolated into a `"${...}"` string.
 - The [language reference](../language-reference.md) for the FFI section:
   `extern "C"` blocks, the C type set, `c"..."` literals, `@repr(C)` structs by
   value, and `CFnPtr` callbacks.
-- [std/string](string.md) for working with the `String` values you convert.
+- [std/string](string.md) for working with the `str` values you convert.

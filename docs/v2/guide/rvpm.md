@@ -122,7 +122,7 @@ Sections:
 - `[ffi]` (optional): native code linked into a program that uses the
   package. `sources` are bundled C files (relative to the package root)
   that `rvpm build` compiles and links in, `libs` are libraries to link
-  (`-l<name>`), and `link_args` are raw linker arguments. The `[ffi]` of
+  (`-l[name]`), and `link_args` are raw linker arguments. The `[ffi]` of
   every dependency is collected, so a package can ship its own C (for
   example a bundled SQLite) and a consumer needs no system library
   preinstalled. Building bundled `sources` does need a **C compiler** on

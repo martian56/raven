@@ -1,6 +1,6 @@
 # std/iter
 
-Lazy, single-pass iterator pipelines. `std/iter` gives a `List<T>` an
+Lazy, single-pass iterator pipelines. `std/iter` gives a `list[T]` an
 `iter()` method that turns it into an iterator, a set of lazy adapters (`map`,
 `filter`, `take`, `skip`, `enumerate`) that you chain with method calls, and a
 set of consumers (`collect`, `count`, `fold`, `any`, `all`, `find`,
@@ -29,7 +29,7 @@ from std.iter import collect, fold
 ```
 
 You can list any of `collect`, `count`, `fold`, `any`, `all`, `find`, and
-`for_each` inside the `{ ... }`. The bridge (`iter()` on `List<T>`) and the
+`for_each` inside the `{ ... }`. The bridge (`iter()` on `list[T]`) and the
 adapter methods come along with the module.
 
 ## Lazy vs eager
@@ -53,13 +53,13 @@ fun main() {
 ```
 
 Only a consumer that builds a list (`collect`) allocates. The other consumers
-return a scalar or an `Option<T>` without allocating an intermediate list.
+return a scalar or an `Option[T]` without allocating an intermediate list.
 
-## The bridge: `List<T>` to an iterator
+## The bridge: `list[T]` to an iterator
 
-### `iter(self) -> ListIter<T>`
+### `iter(self) -> ListIter[T]`
 
-Defined on `List<T>`. Returns a `ListIter<T>` that walks the list by index.
+Defined on `list[T]`. Returns a `ListIter[T]` that walks the list by index.
 This is the usual entry point into a pipeline.
 
 ```rust
@@ -73,22 +73,22 @@ fun main() {
 }
 ```
 
-### `from_list<T>(xs: List<T>) -> ListIter<T>`
+### `from_list[T](xs: list[T]) -> ListIter[T]`
 
 The free-function form of the same bridge, for when you prefer a call over a
-method. `from_list(xs)` and `xs.iter()` produce the same `ListIter<T>`.
+method. `from_list(xs)` and `xs.iter()` produce the same `ListIter[T]`.
 
 ## Adapters
 
 Each adapter is a generic struct over its element type(s) and a bounded source
-`S: Iterator<T>`. The adapter methods are defined on every concrete iterator
+`S: Iterator[T]`. The adapter methods are defined on every concrete iterator
 type, so chaining is uniform: `xs.iter().map(f).filter(g).take(n)`. Each
 adapter's `next` pulls from its source on demand.
 
 ### `map`
 
 ```rust
-fun map<U>(self, f: fun(T) -> U) -> MapIter<T, U, Self>
+fun map[U](self, f: fun(T) -> U) -> MapIter[T, U, Self]
 ```
 
 Apply a closure to each element, yielding the result. The element type can
@@ -109,7 +109,7 @@ fun main() {
 ### `filter`
 
 ```rust
-fun filter(self, pred: fun(T) -> Bool) -> Filter<T, Self>
+fun filter(self, pred: fun(T) -> bool) -> Filter[T, Self]
 ```
 
 Keep only the elements for which `pred` returns `true`. `next` pulls from the
@@ -130,7 +130,7 @@ fun main() {
 ### `take`
 
 ```rust
-fun take(self, n: Int) -> Take<T, Self>
+fun take(self, n: int) -> Take[T, Self]
 ```
 
 Yield at most the first `n` elements, then stop. Because the pipeline is lazy,
@@ -150,7 +150,7 @@ fun main() {
 ### `skip`
 
 ```rust
-fun skip(self, n: Int) -> Skip<T, Self>
+fun skip(self, n: int) -> Skip[T, Self]
 ```
 
 Discard the first `n` elements, then pass the rest through.
@@ -169,11 +169,11 @@ fun main() {
 ### `enumerate`
 
 ```rust
-fun enumerate(self) -> Enumerate<T, Self>
+fun enumerate(self) -> Enumerate[T, Self]
 ```
 
 Pair each element with its running index, starting at `0`. Raven has no tuples
-yet, so `enumerate` yields an `Indexed<T>` record instead of a `(Int, T)`
+yet, so `enumerate` yields an `Indexed[T]` record instead of a `(int, T)`
 pair:
 
 ```rust
@@ -198,17 +198,17 @@ fun main() {
 ```
 
 `enumerate` is a terminal adapter in the chaining methods: it produces an
-`Enumerate<T, S>`, which you hand directly to a consumer rather than chaining
+`Enumerate[T, S]`, which you hand directly to a consumer rather than chaining
 further adapters onto.
 
 ## Consumers
 
-Consumers are free generic functions over any `S: Iterator<T>`. A consumer is
+Consumers are free generic functions over any `S: Iterator[T]`. A consumer is
 what drives the pipeline, so every pipeline ends in exactly one consumer call.
 
-### `collect<T, S: Iterator<T>>(it: S) -> List<T>`
+### `collect[T, S: Iterator[T]](it: S) -> list[T]`
 
-Gather every remaining element into a `List<T>`, in order.
+Gather every remaining element into a `list[T]`, in order.
 
 ```rust
 from std.iter import collect
@@ -220,7 +220,7 @@ fun main() {
 }
 ```
 
-### `count<T, S: Iterator<T>>(it: S) -> Int`
+### `count[T, S: Iterator[T]](it: S) -> int`
 
 Count the remaining elements.
 
@@ -234,7 +234,7 @@ fun main() {
 }
 ```
 
-### `fold<T, A, S: Iterator<T>>(it: S, init: A, f: fun(A, T) -> A) -> A`
+### `fold[T, A, S: Iterator[T]](it: S, init: A, f: fun(A, T) -> A) -> A`
 
 Left fold: start from `init` and combine the running accumulator with each
 element.
@@ -249,11 +249,11 @@ fun main() {
 }
 ```
 
-### `any<T, S: Iterator<T>>(it: S, pred: fun(T) -> Bool) -> Bool`
+### `any[T, S: Iterator[T]](it: S, pred: fun(T) -> bool) -> bool`
 
 True when at least one element satisfies `pred`. Stops at the first match.
 
-### `all<T, S: Iterator<T>>(it: S, pred: fun(T) -> Bool) -> Bool`
+### `all[T, S: Iterator[T]](it: S, pred: fun(T) -> bool) -> bool`
 
 True when every element satisfies `pred`. Vacuously true for an empty
 iterator.
@@ -268,7 +268,7 @@ fun main() {
 }
 ```
 
-### `find<T, S: Iterator<T>>(it: S, pred: fun(T) -> Bool) -> Option<T>`
+### `find[T, S: Iterator[T]](it: S, pred: fun(T) -> bool) -> Option[T]`
 
 The first element satisfying `pred`, or `None` when none does.
 
@@ -287,7 +287,7 @@ fun main() {
 }
 ```
 
-### `for_each<T, S: Iterator<T>>(it: S, f: fun(T) -> Unit)`
+### `for_each[T, S: Iterator[T]](it: S, f: fun(T) -> Unit)`
 
 Apply `f` to each element for its side effect.
 
@@ -303,14 +303,14 @@ fun main() {
 // 3
 ```
 
-### `sum<S: Iterator<Int>>(it: S) -> Int`
+### `sum[S: Iterator[int]](it: S) -> int`
 
-Sum of every remaining element of an `Int` iterator. `0` for an empty
+Sum of every remaining element of an `int` iterator. `0` for an empty
 iterator.
 
-### `product<S: Iterator<Int>>(it: S) -> Int`
+### `product[S: Iterator[int]](it: S) -> int`
 
-Product of every remaining element of an `Int` iterator. `1` for an empty
+Product of every remaining element of an `int` iterator. `1` for an empty
 iterator.
 
 ```rust
@@ -322,11 +322,11 @@ fun main() {
 }
 ```
 
-### `min<T: Ord, S: Iterator<T>>(it: S) -> Option<T>`
+### `min[T: Ord, S: Iterator[T]](it: S) -> Option[T]`
 
 The smallest element by `Ord`, or `None` when the iterator is empty.
 
-### `max<T: Ord, S: Iterator<T>>(it: S) -> Option<T>`
+### `max[T: Ord, S: Iterator[T]](it: S) -> Option[T]`
 
 The largest element by `Ord`, or `None` when the iterator is empty.
 
@@ -350,7 +350,7 @@ fun main() {
 }
 ```
 
-### `position<T, S: Iterator<T>>(it: S, pred: fun(T) -> Bool) -> Option<Int>`
+### `position[T, S: Iterator[T]](it: S, pred: fun(T) -> bool) -> Option[int]`
 
 The index of the first element satisfying `pred`, or `None` when none does.
 
@@ -368,7 +368,7 @@ fun main() {
 }
 ```
 
-### `nth<T, S: Iterator<T>>(it: S, n: Int) -> Option<T>`
+### `nth[T, S: Iterator[T]](it: S, n: int) -> Option[T]`
 
 The element at index `n` (zero-based), or `None` when the iterator is shorter.
 
@@ -386,7 +386,7 @@ fun main() {
 }
 ```
 
-### `last<T, S: Iterator<T>>(it: S) -> Option<T>`
+### `last[T, S: Iterator[T]](it: S) -> Option[T]`
 
 The final element, or `None` when the iterator is empty.
 

@@ -3,7 +3,7 @@
 TCP networking: connect a client stream, bind a listener and accept
 connections, read and write bytes, resolve DNS names, and probe whether an
 address is reachable. The handle types (`TcpStream`, `TcpListener`) and the
-free functions all return values through the `Result<T, Error>` model.
+free functions all return values through the `Result[T, Error]` model.
 
 ```rust
 from std.net import connect
@@ -47,7 +47,7 @@ and `accept`, and use the methods below.
 
 ## The error model
 
-Every fallible operation returns `Result<T, Error>` where `Error` is the
+Every fallible operation returns `Result[T, Error]` where `Error` is the
 [std/error](error.md) type tagged with kind `"net"`. The message is a short
 context prefix (the operation name) joined to the OS error text. Match on the
 `Result`, or use the [std/error](error.md) combinators to thread it.
@@ -64,11 +64,11 @@ fun main() {
 ```
 
 The one exception is `reachable`, which never fails and returns a plain
-`Bool` rather than a `Result`.
+`bool` rather than a `Result`.
 
 ## Connecting a client
 
-### `connect(addr: String) -> Result<TcpStream, Error>`
+### `connect(addr: str) -> Result[TcpStream, Error]`
 
 Open a TCP stream to `addr` in `"host:port"` form. On success you get an open
 `TcpStream`; on failure an `Err` carrying the OS message.
@@ -91,19 +91,19 @@ fun main() {
 
 The stream methods come in with the `TcpStream` type.
 
-### `read(self, max: Int) -> Result<String, Error>`
+### `read(self, max: int) -> Result[str, Error]`
 
-Read up to `max` bytes and return them as a `String`. The payload is a raw
-byte buffer carried in a `String`, not guaranteed to be text; the bytes are
+Read up to `max` bytes and return them as a `str`. The payload is a raw
+byte buffer carried in a `str`, not guaranteed to be text; the bytes are
 preserved exactly, with no UTF-8 conversion, so binary data round-trips. A
 clean end of stream returns `Ok("")`, so an empty result means EOF rather than
 an error.
 
-### `read_all(self) -> Result<String, Error>`
+### `read_all(self) -> Result[str, Error]`
 
-Read until end of stream, accumulating every byte into one `String`. It reads
+Read until end of stream, accumulating every byte into one `str`. It reads
 in 4 KiB chunks and stops at a clean EOF. Like `read`, the payload is a byte
-buffer carried in a `String`, not guaranteed text.
+buffer carried in a `str`, not guaranteed text.
 
 ```rust
 from std.net import connect
@@ -123,17 +123,17 @@ fun main() {
 }
 ```
 
-### `write(self, data: String) -> Result<Int, Error>`
+### `write(self, data: str) -> Result[int, Error]`
 
 Write all bytes of `data` and return the count written.
 
-### `set_read_timeout_ms(self, ms: Int)`
+### `set_read_timeout_ms(self, ms: int)`
 
 Set the read timeout in milliseconds. A value of `0` means no timeout
 (blocking reads); a positive value makes a stalled read fail rather than hang.
 This method does not return a `Result`.
 
-### `set_write_timeout_ms(self, ms: Int)`
+### `set_write_timeout_ms(self, ms: int)`
 
 Set the write timeout in milliseconds, the same way as the read timeout: `0`
 means no timeout, and a positive value makes a stalled write fail rather than
@@ -168,11 +168,11 @@ fun main() {
 
 ## Binding a listener
 
-### `listen(addr: String) -> Result<TcpListener, Error>`
+### `listen(addr: str) -> Result[TcpListener, Error]`
 
 Bind a TCP listener to `addr` in `"host:port"` form.
 
-### `accept(self) -> Result<TcpStream, Error>`
+### `accept(self) -> Result[TcpStream, Error]`
 
 A method on `TcpListener`. Block until a connection arrives and return the
 accepted `TcpStream`. `accept` blocks the calling goroutine, but the other
@@ -218,9 +218,9 @@ freeing the bound port. It does not return a `Result`.
 
 ## Resolving and probing
 
-### `dns_lookup(host: String) -> Result<List<String>, Error>`
+### `dns_lookup(host: str) -> Result[list[str], Error]`
 
-Resolve `host` to its IP addresses as a `List<String>`. An empty result is an
+Resolve `host` to its IP addresses as a `list[str]`. An empty result is an
 empty list, not a one-element list of `""`.
 
 ```rust
@@ -240,10 +240,10 @@ fun main() {
 }
 ```
 
-### `reachable(addr: String) -> Bool`
+### `reachable(addr: str) -> bool`
 
 Probe whether `addr` in `"host:port"` form accepts a TCP connection within a
-short timeout. This is a non-failing check: it returns a plain `Bool` and
+short timeout. This is a non-failing check: it returns a plain `bool` and
 never sets an error.
 
 ```rust

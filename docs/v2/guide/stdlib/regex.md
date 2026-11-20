@@ -33,7 +33,7 @@ A pattern is compiled once into a `Regex` handle, then reused for every match
 operation. Compiling is the only fallible step: an invalid pattern is reported
 here rather than at each match.
 
-### `compile(pattern: String) -> Result<Regex, Error>`
+### `compile(pattern: str) -> Result[Regex, Error]`
 
 Compile `pattern` into a reusable `Regex`. On success the result is
 `Ok(Regex)`. An invalid pattern is `Err(Error)` from [std/error](error.md),
@@ -70,7 +70,7 @@ method on the handle afterward.
 
 ## Matching
 
-### `is_match(self, text: String) -> Bool`
+### `is_match(self, text: str) -> bool`
 
 True when the pattern matches anywhere in `text`.
 
@@ -89,7 +89,7 @@ fun main() {
 }
 ```
 
-### `find(self, text: String) -> Option<String>`
+### `find(self, text: str) -> Option[str]`
 
 The first match in `text`, or `None` when there is no match. A matched empty
 string is `Some("")`, distinct from `None`.
@@ -111,7 +111,7 @@ fun main() {
 }
 ```
 
-### `find_all(self, text: String) -> List<String>`
+### `find_all(self, text: str) -> list[str]`
 
 Every non-overlapping match in `text`, in order. No matches yields an empty
 list.
@@ -134,7 +134,7 @@ fun main() {
 
 ## Capture groups
 
-### `captures(self, text: String) -> List<String>`
+### `captures(self, text: str) -> list[str]`
 
 The capture groups of the first match: group 0 (the whole match) first, then
 groups 1, 2, and so on. An unmatched optional group is an empty string. No
@@ -159,7 +159,7 @@ fun main() {
 
 ## Replacing
 
-### `replace_all(self, text: String, repl: String) -> String`
+### `replace_all(self, text: str, repl: str) -> str`
 
 Replace every non-overlapping match in `text` with `repl`. Group references in
 `repl` are honored: `$1` and `${1}` for numbered groups, `$name` for named
@@ -182,7 +182,7 @@ fun main() {
 
 ## Splitting
 
-### `split(self, text: String) -> List<String>`
+### `split(self, text: str) -> list[str]`
 
 Split `text` on the pattern, returning the pieces in order.
 
@@ -213,7 +213,7 @@ alternation, groups, named groups, and Unicode classes.
 
 ## A note on newlines in results
 
-`find_all`, `captures`, and `split` return their pieces as a `List<String>`.
+`find_all`, `captures`, and `split` return their pieces as a `list[str]`.
 Internally the pieces are joined on `\n` to cross the runtime boundary, so a
 matched substring or split piece that itself contains a literal newline reads
 back as two list elements. A pattern that does not match newline content is
@@ -232,7 +232,7 @@ fun main() {
         case Ok(re) {
             for line in lines {
                 match re.find(line) {
-                    case Some(hit) { print("${line} -> ${hit}") } // ... -> =localhost, ...
+                    case Some(hit) { print("${line} -> ${hit}") } // ... -> =localhost ...
                     case None { print("skip: ${line}") }
                 }
             }

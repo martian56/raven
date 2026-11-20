@@ -12,7 +12,7 @@ A couple of facts to keep in mind as you go:
 - `spawn` takes a `fun() -> Unit` closure and is a statement, not an
   expression: you write `spawn(...)` on its own line, you do not assign its
   result.
-- Channels carry `Int` values. To move richer data, send an index or a count
+- Channels carry `int` values. To move richer data, send an index or a count
   and keep the payload in shared state, or send the parts and reassemble them.
 
 ## Step 1: start a goroutine

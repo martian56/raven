@@ -10,7 +10,7 @@ implementations. Every step compiles and runs.
 
 ## Step 1: a generic struct
 
-A type parameter in angle brackets makes a struct hold any type. `Box<T>` wraps
+A type parameter in angle brackets makes a struct hold any type. `Box[T]` wraps
 one value of type `T`:
 
 ```rust
@@ -27,14 +27,14 @@ fun main() {
 ```
 
 You never write the type argument when constructing: the compiler infers `T`
-from the value you pass, so `Box { value: 7 }` is a `Box<Int>` and `Box { value:
-"raven" }` is a `Box<String>`. Each instantiation gets its own layout and its
-own garbage-collector descriptor, so wrapping an `Int` and wrapping a `String`
+from the value you pass, so `Box { value: 7 }` is a `Box[int]` and `Box { value:
+"raven" }` is a `Box[str]`. Each instantiation gets its own layout and its
+own garbage-collector descriptor, so wrapping an `int` and wrapping a `str`
 are both fully typed.
 
 ## Step 2: generic methods on a generic type
 
-An `impl<T>` block adds methods that work for every instantiation. A method's
+An `impl[T]` block adds methods that work for every instantiation. A method's
 body can use `T` as the element type:
 
 ```rust
@@ -49,8 +49,8 @@ impl[T] Box[T] {
 fun main() {
     let a = Box(value: 42)
     let b = Box(value: "raven")
-    print(a.unwrap()) // 42     (unwrap specialized at T = Int)
-    print(b.unwrap()) // raven  (unwrap specialized at T = String)
+    print(a.unwrap()) // 42     (unwrap specialized at T = int)
+    print(b.unwrap()) // raven  (unwrap specialized at T = str)
 }
 ```
 
@@ -63,7 +63,7 @@ impl Box[int] {
 }
 ```
 
-`doubled` exists only on `Box<Int>`; calling it on a `Box<String>` is a compile
+`doubled` exists only on `Box[int]`; calling it on a `Box[str]` is a compile
 error.
 
 ## Step 3: a trait
@@ -146,7 +146,7 @@ fun main() {
 }
 ```
 
-No `import std/core` line is needed: the prelude with `ToString` is always in
+No `import std.core` line is needed: the prelude with `ToString` is always in
 scope.
 
 ## Step 5: dynamic dispatch with `dyn Trait`
@@ -188,7 +188,7 @@ types behind one type at runtime.
 ## Step 6: method-level type parameters
 
 A method can introduce its own type parameter, separate from the type's. Here
-`mapped<U>` transforms a `Box<T>` into a `U` using a function you pass:
+`mapped[U]` transforms a `Box[T]` into a `U` using a function you pass:
 
 ```rust
 class Box[T] {
@@ -208,9 +208,9 @@ fun main() {
 }
 ```
 
-Calling `mapped` at two different `U` on the same `Box<Int>` compiles to two
+Calling `mapped` at two different `U` on the same `Box[int]` compiles to two
 distinct specializations. The closures use the single-expression form
-`fun(x: Int) -> Int = x * 2`, which is how a closure that returns a value is
+`fun(x: int) -> int = x * 2`, which is how a closure that returns a value is
 written.
 
 ## Step 7: deriving common implementations
@@ -239,7 +239,7 @@ fun main() {
 
 `@derive(Eq, Hash)` writes the `equals` and `hash` methods for you; `@derive`
 also understands `Ord` (ordering) among others. Without the derive, using
-`Box<Int>` as a key is a clear type error rather than a failure deep in code
+`Box[int]` as a key is a clear type error rather than a failure deep in code
 generation.
 
 ## Putting it together
@@ -266,7 +266,7 @@ fun main() {
 }
 ```
 
-The bound on the `impl<T: ToString>` block means `show` is available only when
+The bound on the `impl[T: ToString]` block means `show` is available only when
 `T` can be turned into a string, which is exactly when its body
 (`self.value.to_string()`) makes sense.
 

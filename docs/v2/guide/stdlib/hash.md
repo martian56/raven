@@ -1,7 +1,7 @@
 # std/hash
 
 Non-cryptographic hashing building blocks: free functions that hash the bytes
-of a `String` or mix an `Int`. They are fast, well-known mixing functions meant
+of a `str` or mix an `int`. They are fast, well-known mixing functions meant
 for hash tables, checksums, and folding several values into one composite hash.
 
 ```rust
@@ -34,7 +34,7 @@ from std.hash import fnv1a, djb2, crc32, hash_int, combine, checksum
 
 ## A note on integers
 
-Raven `Int` is i64 and arithmetic wraps in two's complement. That wrapping is
+Raven `int` is i64 and arithmetic wraps in two's complement. That wrapping is
 the intended behavior here: the FNV multiply, the djb2 multiply, and the
 integer mixes all rely on it. Returned hashes use the full i64 range and may be
 negative.
@@ -52,16 +52,16 @@ that does not matter for a non-cryptographic hash.
 
 | Function | Result | Notes |
 |---|---|---|
-| `fnv1a(s: String)` | `Int` | FNV-1a over the bytes of `s`, 64-bit variant |
-| `djb2(s: String)` | `Int` | classic djb2 string hash (`hash * 33 + byte`, seed 5381) |
-| `hash_int(n: Int)` | `Int` | splitmix64-style bit-mix so sequential ints scatter |
-| `combine(seed: Int, value: Int)` | `Int` | fold two hashes into one (boost `hash_combine`) |
-| `crc32(s: String)` | `Int` | CRC-32 IEEE checksum, in `[0, 2^32)` |
-| `checksum(s: String)` | `Int` | additive byte checksum; cheap and weak, change detection only |
+| `fnv1a(s: str)` | `int` | FNV-1a over the bytes of `s`, 64-bit variant |
+| `djb2(s: str)` | `int` | classic djb2 string hash (`hash * 33 + byte`, seed 5381) |
+| `hash_int(n: int)` | `int` | splitmix64-style bit-mix so sequential ints scatter |
+| `combine(seed: int, value: int)` | `int` | fold two hashes into one (boost `hash_combine`) |
+| `crc32(s: str)` | `int` | CRC-32 IEEE checksum, in `[0, 2^32)` |
+| `checksum(s: str)` | `int` | additive byte checksum; cheap and weak, change detection only |
 
 ## Hashing strings
 
-### `fnv1a(s: String) -> Int`
+### `fnv1a(s: str) -> int`
 
 FNV-1a over the bytes of `s`, the 64-bit variant. A good general-purpose string
 hash with strong avalanche behavior for short keys. Prefer this when you want
@@ -76,7 +76,7 @@ fun main() {
 }
 ```
 
-### `djb2(s: String) -> Int`
+### `djb2(s: str) -> int`
 
 The classic djb2 hash: start at `5381`, then `hash = hash * 33 + byte` for each
 byte. Simple and fast; included as a well-known alternative to `fnv1a`.
@@ -89,7 +89,7 @@ fun main() {
 }
 ```
 
-### `crc32(s: String) -> Int`
+### `crc32(s: str) -> int`
 
 The CRC-32 IEEE checksum of the bytes of `s`. Unlike the i64 hashes above,
 the result is always in `[0, 2^32)` and never negative. A checksum for change
@@ -103,7 +103,7 @@ fun main() {
 }
 ```
 
-### `checksum(s: String) -> Int`
+### `checksum(s: str) -> int`
 
 A plain additive checksum: the sum of the byte values in `s`. Cheaper and
 weaker than the hashes above, so use it only for quick change detection (did
@@ -119,7 +119,7 @@ fun main() {
 
 ## Mixing integers
 
-### `hash_int(n: Int) -> Int`
+### `hash_int(n: int) -> int`
 
 A splitmix64-style bit-mix. Sequential integers (`0, 1, 2, ...`) hash to
 scattered, well-spread values, which is what you want before using them as
@@ -134,7 +134,7 @@ fun main() {
 }
 ```
 
-### `combine(seed: Int, value: Int) -> Int`
+### `combine(seed: int, value: int) -> int`
 
 Fold `value` into `seed` and return the mixed result (the boost `hash_combine`
 recipe, using the 32-bit golden ratio constant). Chain it to hash a sequence of
@@ -156,8 +156,8 @@ different hashes.
 
 ## Relationship to the Hash trait
 
-The prelude defines `trait Hash { fun hash(self) -> Int }` with built-in impls
-for `Int`, `Bool`, and `String`, which is what [std/collections](collections.md)
+The prelude defines `trait Hash { fun hash(self) -> int }` with built-in impls
+for `int`, `bool`, and `str`, which is what [std/collections](collections.md)
 uses to key its hash-based containers. These functions are the building blocks
 a user's own `Hash` impl can call: hash each field, then fold the results with
 `combine`.

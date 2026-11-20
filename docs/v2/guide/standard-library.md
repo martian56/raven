@@ -24,7 +24,7 @@ fun main() {
 type (it merges an `impl` block or registers a type):
 
 ```rust
-import std.string // adds methods to String
+import std.string // adds methods to str
 import std.collections // registers Map.new() / Set.new()
 
 fun main() {
@@ -39,15 +39,15 @@ Two rules are worth memorizing up front:
 - Import `std/string` and `std/collections` **whole** (bare), not with a
   `{ ... }` list. Their methods and constructors come from `impl` blocks
   that only the bare form merges.
-- `String.len()` and `String.is_empty()` are built into the compiler and
+- `str.len()` and `str.is_empty()` are built into the compiler and
   work with no import at all. The richer string methods need
-  `import std/string`.
+  `import std.string`.
 
 ## Core traits are always in scope
 
 `std/core` defines the foundational traits (`ToString`, `Eq`, `Ord`,
-`Hash`, `Iterator<T>`) and implements them for the primitive types. It is
-auto-imported, so you never write `import std/core`:
+`Hash`, `Iterator[T]`) and implements them for the primitive types. It is
+auto-imported, so you never write `import std.core`:
 
 ```rust
 fun describe[T: ToString](x: T) -> str = x.to_string()
@@ -57,8 +57,8 @@ See [core traits](stdlib/core.md) for the full set.
 
 ## Errors use Result and Option
 
-Anything that can fail returns `Result<T, Error>`; anything that can be
-absent returns `Option<T>`. There are no exceptions and no `null`. Handle a
+Anything that can fail returns `Result[T, Error]`; anything that can be
+absent returns `Option[T]`. There are no exceptions and no `null`. Handle a
 `Result` with `match`, or propagate it with the `?` operator inside a
 function that itself returns `Result`:
 
@@ -87,7 +87,7 @@ helpers.
 
 | Module | What it is for |
 |--------|----------------|
-| [std/string](stdlib/string.md) | methods on `String`: slicing, case, search, replace |
+| [std/string](stdlib/string.md) | methods on `str`: slicing, case, search, replace |
 | [std/fmt](stdlib/fmt.md) | padding, joining, number bases, the `Debug` trait |
 | [std/regex](stdlib/regex.md) | regular expressions |
 | [std/encoding](stdlib/encoding.md) | hex and base64 |

@@ -20,7 +20,7 @@ from std.io import print, println, input, read_line
 ```
 
 `std/io` is a set of free functions, so use a selective import and list the
-names you want. A bare `import std/io` does not bring the functions into
+names you want. A bare `import std.io` does not bring the functions into
 scope.
 
 ### The global `print` builtin
@@ -37,16 +37,16 @@ fun main() {
 }
 ```
 
-The `print` function from `std/io` is the `String`-only form below. The
+The `print` function from `std/io` is the `str`-only form below. The
 always-available builtin is the more convenient choice for most output; reach
 for `std/io` when you want `println`, `input`, or `read_line`.
 
 ## Output
 
-### `print(s: String)`
+### `print(s: str)`
 
 Write `s` to standard output with no trailing newline. The argument must be a
-`String`; build one with interpolation or [std/string](string.md) methods if
+`str`; build one with interpolation or [std/string](string.md) methods if
 you have other values to include.
 
 ```rust
@@ -58,7 +58,7 @@ fun main() {
 }
 ```
 
-### `println(s: String)`
+### `println(s: str)`
 
 Write `s` to standard output followed by a newline.
 
@@ -73,7 +73,7 @@ fun main() {
 
 ## Input
 
-### `input(prompt: String) -> String`
+### `input(prompt: str) -> str`
 
 Write `prompt` to standard output with no trailing newline, then read one line
 from standard input and return it without its trailing newline. At end of
@@ -90,7 +90,7 @@ fun main() {
 }
 ```
 
-### `read_line() -> String`
+### `read_line() -> str`
 
 Read one line from standard input and return it without its trailing newline,
 printing no prompt. At end of input the returned string is empty, which is how

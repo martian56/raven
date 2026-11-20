@@ -21,7 +21,7 @@ fun main() {
 }
 ```
 
-Channels in this slice carry `Int` values.
+Channels in this slice carry `int` values.
 
 ## Importing
 
@@ -56,7 +56,7 @@ fun main() {
 }
 ```
 
-### `channel_buffered(cap: Int) -> Channel`
+### `channel_buffered(cap: int) -> Channel`
 
 Create a buffered channel of capacity `cap`. A `send` returns immediately while
 there is room in the buffer, and only blocks once the buffer is full. A `recv`
@@ -76,14 +76,14 @@ fun main() {
 
 ## Channel methods
 
-### `send(self, value: Int)`
+### `send(self, value: int)`
 
 Send `value`, blocking until the channel can accept it. On an unbuffered
 channel it blocks until a receiver is ready; on a buffered channel it blocks
 only when the buffer is full. When a `send` blocks, the goroutine yields to the
 scheduler so other goroutines can run.
 
-### `recv(self) -> Int`
+### `recv(self) -> int`
 
 Receive a value, blocking until one is available. On an empty channel the
 goroutine yields to the scheduler and resumes when a sender delivers a value.
@@ -205,7 +205,7 @@ that creates many channels over time.
 
 ## Sleeping
 
-### `sleep_millis(ms: Int)`
+### `sleep_millis(ms: int)`
 
 Block the current goroutine for `ms` milliseconds, yielding so other goroutines
 run in the meantime.
@@ -250,7 +250,7 @@ reaches zero, the usual way to wait for spawned goroutines to finish.
 
 Create a wait group with a zero counter.
 
-### `add(self, n: Int)`, `done(self)`, `wait(self)`, `free(self)`
+### `add(self, n: int)`, `done(self)`, `wait(self)`, `free(self)`
 
 `add(n)` raises the counter by `n` (call it before spawning the work),
 `done()` lowers it by one (call it as each unit finishes), `wait()` blocks
@@ -277,7 +277,7 @@ fun main() {
 
 ## Selecting over several channels
 
-### `select_recv(channels: List<Channel>) -> SelectResult`
+### `select_recv(channels: list[Channel]) -> SelectResult`
 
 Block until one of `channels` has a value to receive, then return a
 `SelectResult` with `index` (the position in the list of the channel that

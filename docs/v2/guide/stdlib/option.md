@@ -1,6 +1,6 @@
 # std/option
 
-Free combinator functions over the built-in `Option<T>`. `Option` and its
+Free combinator functions over the built-in `Option[T]`. `Option` and its
 variants `Some` and `None` are part of the language and need no import for the
 type itself; this module adds the common combinators, since methods cannot be
 attached to the built-in generic type.
@@ -24,7 +24,7 @@ fun main() {
 import std.option
 ```
 
-A bare `import std/option` binds the module alias, so the functions are called
+A bare `import std.option` binds the module alias, so the functions are called
 as `option.is_some(...)`. To call them unqualified, list the names in a
 selective import:
 
@@ -32,15 +32,15 @@ selective import:
 from std.option import is_some, map, unwrap_or
 ```
 
-`Option<T>`, `Some`, and `None` are built into the language and need no import.
+`Option[T]`, `Some`, and `None` are built into the language and need no import.
 
 ## Inspecting
 
-### `is_some<T>(o: Option<T>) -> Bool`
+### `is_some[T](o: Option[T]) -> bool`
 
 True when the option holds a value.
 
-### `is_none<T>(o: Option<T>) -> Bool`
+### `is_none[T](o: Option[T]) -> bool`
 
 True when the option is empty.
 
@@ -57,7 +57,7 @@ fun main() {
 
 ## Unwrapping
 
-### `unwrap_or<T>(o: Option<T>, default: T) -> T`
+### `unwrap_or[T](o: Option[T], default: T) -> T`
 
 The contained value, or `default` when the option is `None`.
 
@@ -74,11 +74,11 @@ fun main() {
 
 ## Transforming
 
-### `map<T, U>(o: Option<T>, f: fun(T) -> U) -> Option<U>`
+### `map[T, U](o: Option[T], f: fun(T) -> U) -> Option[U]`
 
 Apply `f` to the contained value, or pass `None` through. `f` is a lambda.
 
-### `and_then<T, U>(o: Option<T>, f: fun(T) -> Option<U>) -> Option<U>`
+### `and_then[T, U](o: Option[T], f: fun(T) -> Option[U]) -> Option[U]`
 
 Chain an option-returning function: `Some(v)` becomes `f(v)`, `None` stays
 `None`. The flat-map combinator.
@@ -99,11 +99,11 @@ fun main() {
 }
 ```
 
-### `filter<T>(o: Option<T>, pred: fun(T) -> Bool) -> Option<T>`
+### `filter[T](o: Option[T], pred: fun(T) -> bool) -> Option[T]`
 
 Keep the value only when it satisfies `pred`, otherwise `None`.
 
-### `or_else<T>(o: Option<T>, f: fun() -> Option<T>) -> Option<T>`
+### `or_else[T](o: Option[T], f: fun() -> Option[T]) -> Option[T]`
 
 The option itself when it is `Some`, otherwise the result of calling `f()`.
 `f` is a zero-arg lambda returning an `Option`, so the fallback is built only

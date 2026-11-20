@@ -23,7 +23,7 @@ from std.time import now, now_millis, from_timestamp, weekday, format_timestamp,
 
 ## Timestamp unit
 
-A timestamp is an `Int` holding Unix time in UTC. Everywhere except
+A timestamp is an `int` holding Unix time in UTC. Everywhere except
 `now_millis` the unit is **whole seconds** since 1970-01-01 00:00:00 UTC.
 `from_timestamp`, `weekday`, `format_timestamp`, and the value returned by
 `parse_timestamp` all use seconds. `now_millis` returns **milliseconds**, and
@@ -72,11 +72,11 @@ fun main() {
 
 ## Current time
 
-### `now() -> Int`
+### `now() -> int`
 
 The current Unix timestamp in whole seconds (UTC).
 
-### `now_millis() -> Int`
+### `now_millis() -> int`
 
 The current Unix time in milliseconds (UTC).
 
@@ -92,12 +92,12 @@ fun main() {
 
 ## Decomposition
 
-### `from_timestamp(ts: Int) -> DateTime`
+### `from_timestamp(ts: int) -> DateTime`
 
 Decompose a Unix timestamp (seconds, UTC) into a `DateTime`. A timestamp
 outside chrono's representable range falls back to the epoch.
 
-### `weekday(ts: Int) -> Int`
+### `weekday(ts: int) -> int`
 
 The weekday of `ts` (UTC) as `0` for Sunday through `6` for Saturday.
 
@@ -124,7 +124,7 @@ fun main() {
 | `%M`  | minute, `00` through `59` |
 | `%S`  | second, `00` through `59` |
 
-### `format_timestamp(ts: Int, pattern: String) -> String`
+### `format_timestamp(ts: int, pattern: str) -> str`
 
 Render the UTC datetime of `ts` with the given chrono strftime pattern, for
 example `"%Y-%m-%d %H:%M:%S"`.
@@ -138,7 +138,7 @@ fun main() {
 }
 ```
 
-### `parse_timestamp(text: String, pattern: String) -> Result<Int, Error>`
+### `parse_timestamp(text: str, pattern: str) -> Result[int, Error]`
 
 Parse `text` as a UTC datetime by the given pattern and return the Unix
 timestamp in seconds. Parsing is fallible: on failure it returns an `Err`
@@ -165,7 +165,7 @@ fun main() {
 
 ## Sleep
 
-### `sleep_millis(ms: Int)`
+### `sleep_millis(ms: int)`
 
 Sleep the current thread for `ms` milliseconds. A negative value is treated
 as zero.

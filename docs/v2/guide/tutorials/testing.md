@@ -116,13 +116,13 @@ from std.test import assert, assert_msg, assert_true, assert_false, assert_eq_in
 import std.string
 
 fun test_assertions_tour() {
-    assert(1 + 1 == 2) // any Bool condition
+    assert(1 + 1 == 2) // any bool condition
     assert_msg(7 % 2 == 1, "7 should be odd") // with a custom message
     assert_true(10 > 3)
     assert_false(3 > 10)
 
-    assert_eq_int(6 * 7, 42) // Int equality
-    assert_eq_str("ab".concat("c"), "abc") // String equality, by content
+    assert_eq_int(6 * 7, 42) // int equality
+    assert_eq_str("ab".concat("c"), "abc") // str equality, by content
     assert_eq(2 + 2, 4) // generic Eq + ToString
     assert_ne("yes", "no")
 
@@ -158,7 +158,7 @@ fun test_parse_rejects_invalid() {
 }
 ```
 
-This assumes a `parse_count(s: String) -> Result<Int, Error>` in `src/main.rv`.
+This assumes a `parse_count(s: str) -> Result[int, Error]` in `src/main.rv`.
 Testing the `Err` path is how you lock in that a failure stays a failure, not a
 silent `Ok`.
 

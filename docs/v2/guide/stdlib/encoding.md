@@ -1,7 +1,7 @@
 # std/encoding
 
-Hex, base64, base32, and URL percent encoding over the bytes of a `String`.
-These are free functions that turn a `String`'s raw bytes into encoded text
+Hex, base64, base32, and URL percent encoding over the bytes of a `str`.
+These are free functions that turn a `str`'s raw bytes into encoded text
 and decode the inverse.
 
 ```rust
@@ -22,26 +22,26 @@ import:
 from std.encoding import hex_encode, hex_decode, base64_encode, base64_decode, url_encode, url_decode, base32_encode, base32_decode
 ```
 
-Unlike [std/string](string.md) (which merges an `impl String` block on a bare
+Unlike [std/string](string.md) (which merges an `impl str` block on a bare
 import), these are plain functions you call as `hex_encode(s)`, not methods on
-`String`.
+`str`.
 
 ## A note on bytes
 
-A Raven `String` is a byte buffer. Every function here reads byte values
+A Raven `str` is a byte buffer. Every function here reads byte values
 `0..255` straight out of the input, so they work on arbitrary binary data
-carried in a `String`, not only valid UTF-8 text.
+carried in a `str`, not only valid UTF-8 text.
 
-The encoders and `url_decode` always succeed and return a `String`. The
+The encoders and `url_decode` always succeed and return a `str`. The
 `hex_decode`, `base64_decode`, and `base32_decode` decoders validate their
-input and return `Result<String, Error>`: well-formed text from the matching
+input and return `Result[str, Error]`: well-formed text from the matching
 encoder decodes to `Ok(bytes)`, and malformed text (a bad character, a wrong
 length, or stray padding) returns an `Err` rather than silently dropping or
 zeroing data.
 
 ## Hex
 
-### `hex_encode(s: String) -> String`
+### `hex_encode(s: str) -> str`
 
 Encode each input byte as two lowercase hex digits. The result is twice as
 long as the input.
@@ -55,7 +55,7 @@ fun main() {
 }
 ```
 
-### `hex_decode(s: String) -> Result<String, Error>`
+### `hex_decode(s: str) -> Result[str, Error]`
 
 The inverse of `hex_encode`. Reads the input two digits at a time, accepting
 lowercase, uppercase, or mixed hex (`0-9`, `a-f`, `A-F`). A non-hex character
@@ -88,7 +88,7 @@ fun main() {
 
 ## Base64
 
-### `base64_encode(s: String) -> String`
+### `base64_encode(s: str) -> str`
 
 Encode the input bytes with the standard base64 alphabet (`A-Z`, `a-z`,
 `0-9`, `+`, `/`) and `=` padding. Every three input bytes become four output
@@ -104,7 +104,7 @@ fun main() {
 }
 ```
 
-### `base64_decode(s: String) -> Result<String, Error>`
+### `base64_decode(s: str) -> Result[str, Error]`
 
 The inverse of `base64_encode`. Honors trailing `=` padding to recover how
 many bytes the final group yields. A length that is not a multiple of four, a
@@ -137,7 +137,7 @@ fun main() {
 
 ## URL percent encoding
 
-### `url_encode(s: String) -> String`
+### `url_encode(s: str) -> str`
 
 Percent-encode the input bytes per RFC 3986. Unreserved characters (`A-Z`,
 `a-z`, `0-9`, `-`, `.`, `_`, `~`) pass through; every other byte becomes
@@ -152,10 +152,10 @@ fun main() {
 }
 ```
 
-### `url_decode(s: String) -> String`
+### `url_decode(s: str) -> str`
 
 The inverse of `url_encode`. Reads each `%XX` escape back into its byte and
-leaves other characters untouched. It always returns a `String`.
+leaves other characters untouched. It always returns a `str`.
 
 ```rust
 from std.encoding import url_encode, url_decode
@@ -169,7 +169,7 @@ fun main() {
 
 ## Base32
 
-### `base32_encode(s: String) -> String`
+### `base32_encode(s: str) -> str`
 
 Encode the input bytes with the RFC 4648 base32 alphabet (`A-Z`, `2-7`) and
 `=` padding. Every five input bytes become eight output characters; a partial
@@ -183,7 +183,7 @@ fun main() {
 }
 ```
 
-### `base32_decode(s: String) -> Result<String, Error>`
+### `base32_decode(s: str) -> Result[str, Error]`
 
 The inverse of `base32_encode`. Honors trailing `=` padding to recover how
 many bytes the final group yields. A character outside the alphabet, a wrong
@@ -246,6 +246,6 @@ fun main() {
 ## See also
 
 - [std/string](string.md) for inspecting, slicing, and transforming the
-  `String` values these functions read and produce.
+  `str` values these functions read and produce.
 - [std/json](json.md) for structured serialization rather than raw byte
   encoding.
