@@ -14,15 +14,32 @@ use super::ty::{Type, TypeKind, TypePath};
 pub struct Respan<'a> {
     copy: usize,
     subst: &'a HashMap<String, Type>,
+    /// Spans that were already copies keep apart from each other and from
+    /// the originals: each earlier copy id maps to its own fresh id.
+    nested: std::cell::RefCell<HashMap<usize, usize>>,
 }
 
 impl<'a> Respan<'a> {
     pub fn new(copy: usize, subst: &'a HashMap<String, Type>) -> Self {
-        Respan { copy, subst }
+        Respan {
+            copy,
+            subst,
+            nested: Default::default(),
+        }
     }
 
     fn span(&self, s: &mut Span) {
-        *s = s.in_copy(self.copy);
+        let earlier = s.copy_id();
+        let id = if earlier == 0 {
+            self.copy
+        } else {
+            *self
+                .nested
+                .borrow_mut()
+                .entry(earlier)
+                .or_insert_with(crate::span::next_copy_id)
+        };
+        *s = s.in_copy(id);
     }
 
     pub fn function(&self, f: &mut Function) {

@@ -31,6 +31,11 @@ impl Span {
     /// This span as part of copy `id`. Later passes key on byte offsets, so a
     /// copied node needs offsets no other node has; the copy id replaces the
     /// high bits, which keeps nested copies distinct.
+    /// The copy id this span belongs to; 0 for a span from source.
+    pub fn copy_id(&self) -> usize {
+        self.start >> COPY_SHIFT
+    }
+
     pub fn in_copy(&self, id: usize) -> Span {
         let low = (1usize << COPY_SHIFT) - 1;
         Span {
