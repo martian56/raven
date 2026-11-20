@@ -9,7 +9,7 @@
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::types;
 use cranelift_codegen::ir::{
-    Function, InstBuilder, MemFlags, Signature, StackSlot, StackSlotData, StackSlotKind,
+    Function, InstBuilder, MemFlagsData, Signature, StackSlot, StackSlotData, StackSlotKind,
     Type as CType, Value,
 };
 use cranelift_codegen::isa::CallConv;
@@ -128,6 +128,7 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
     pub fn lower(&mut self) -> Result<(), CodegenError> {
         let ptr = self.cx.pointer_type();
         // Borrow the cranelift function exclusively for builder use.
+        let frontend = self.cx.module().isa().frontend_config();
         let mut builder = FunctionBuilder::new(self.cranelift_func, &mut self.builder_ctx);
 
         // Allocate one Cranelift block per MIR block.
@@ -161,10 +162,12 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
             None
         } else {
             let bytes = (gc_locals.len() as u32 + 2) * (ptr.bytes());
-            let array = builder
-                .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, bytes));
-            let head = Variable::from_u32(self.func.locals.len() as u32);
-            builder.declare_var(head, ptr);
+            let array = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                bytes,
+                3,
+            ));
+            let head = builder.declare_var(ptr);
             Some(RootFrame {
                 array,
                 count: gc_locals.len(),
@@ -182,11 +185,7 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
                 (Some(off), Some(frame)) => (Some(frame.array), off),
                 _ => (None, 0),
             };
-            let var = ty.map(|t| {
-                let v = Variable::from_u32(i as u32);
-                builder.declare_var(v, t);
-                v
-            });
+            let var = ty.map(|t| builder.declare_var(t));
             let byte_list = is_byte_list(&decl.ty);
             slots.push(LocalSlot {
                 slot,
@@ -243,7 +242,9 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
                             builder.ins().symbol_value(self.cx.pointer_type(), gv)
                         }
                     };
-                    let pending = builder.ins().load(types::I8, MemFlags::trusted(), addr, 0);
+                    let pending = builder
+                        .ins()
+                        .load(types::I8, MemFlagsData::trusted(), addr, 0);
                     let park = builder.create_block();
                     let cont = builder.create_block();
                     builder.ins().brif(pending, park, &[], cont, &[]);
@@ -268,7 +269,7 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
         }
 
         builder.seal_all_blocks();
-        builder.finalize();
+        builder.finalize(frontend);
         Ok(())
     }
 
@@ -294,7 +295,9 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
                 )
             });
             if let Some(slot) = slot_info.slot {
-                builder.ins().stack_store(v, slot, slot_info.offset);
+                builder
+                    .ins()
+                    .stack_store(types::I64, v, slot, slot_info.offset);
             }
             if let Some(var) = slot_info.var {
                 builder.def_var(var, v);
@@ -346,21 +349,23 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
             // pointer. Parameters already hold their spilled incoming
             // pointer and must not be clobbered.
             if !func.local_decl(*local).is_param {
-                builder.ins().stack_store(zero, slot, info.offset);
+                builder
+                    .ins()
+                    .stack_store(types::I64, zero, slot, info.offset);
             }
         }
         let count = builder.ins().iconst(ptr, frame.count as i64);
         builder
             .ins()
-            .stack_store(count, frame.array, ptr.bytes() as i32);
+            .stack_store(types::I64, count, frame.array, ptr.bytes() as i32);
         let rec = builder.ins().stack_addr(ptr, frame.array, 0);
         let chain = cx.frame_chain().expect("frame chain defines");
         let gv = cx.module().declare_data_in_func(chain, builder.func);
         let head = builder.ins().tls_value(ptr, gv);
         builder.def_var(frame.head, head);
-        let prev = builder.ins().load(ptr, MemFlags::trusted(), head, 0);
-        builder.ins().stack_store(prev, frame.array, 0);
-        builder.ins().store(MemFlags::trusted(), rec, head, 0);
+        let prev = builder.ins().load(ptr, MemFlagsData::trusted(), head, 0);
+        builder.ins().stack_store(types::I64, prev, frame.array, 0);
+        builder.ins().store(MemFlagsData::trusted(), rec, head, 0);
     }
 }
 
@@ -423,7 +428,7 @@ fn lower_stmt(
                 let gv = cx.module().declare_data_in_func(data_id, builder.func);
                 let ptr = cx.pointer_type();
                 let addr = builder.ins().symbol_value(ptr, gv);
-                builder.ins().store(MemFlags::new(), v, addr, 0);
+                builder.ins().store(MemFlagsData::new(), v, addr, 0);
             }
             Ok(())
         }
@@ -456,7 +461,7 @@ fn lower_store_field(
     let fields = call_struct_fields(cx, builder, base_ptr, ptr);
     builder
         .ins()
-        .store(MemFlags::new(), v, fields, layout::slot_offset(index));
+        .store(MemFlagsData::new(), v, fields, layout::slot_offset(index));
     Ok(())
 }
 
@@ -478,7 +483,7 @@ fn lower_ptr_store(
     )?;
     let v = require_value(lower_operand(cx, builder, value, slots)?, "ptr_store value")?;
     let v = coerce_to_param(builder, v, pointee, ptr);
-    builder.ins().store(MemFlags::new(), v, a, 0);
+    builder.ins().store(MemFlagsData::new(), v, a, 0);
     Ok(())
 }
 
@@ -539,9 +544,9 @@ fn lower_store_index(
     let elements = call_list_elements(cx, builder, list);
     let offset = builder
         .ins()
-        .imul_imm(idx, if byte { 1 } else { ELEMENT_SLOT });
+        .imul_imm_s(idx, if byte { 1 } else { ELEMENT_SLOT });
     let addr = builder.ins().iadd(elements, offset);
-    builder.ins().store(MemFlags::new(), v, addr, 0);
+    builder.ins().store(MemFlagsData::new(), v, addr, 0);
     Ok(())
 }
 
@@ -565,7 +570,7 @@ fn lower_rvalue(
             let ptr = cx.pointer_type();
             let addr = builder.ins().symbol_value(ptr, gv);
             match cranelift_ty(ty, ptr) {
-                Some(cty) => Ok(Some(builder.ins().load(cty, MemFlags::new(), addr, 0))),
+                Some(cty) => Ok(Some(builder.ins().load(cty, MemFlagsData::new(), addr, 0))),
                 None => Ok(None),
             }
         }
@@ -710,7 +715,7 @@ fn lower_ptr_load(
     let ptr = cx.pointer_type();
     let a = require_value(lower_operand(cx, builder, addr, slots)?, "ptr_load address")?;
     let (ty, _) = pointee_machine_ty(pointee, ptr);
-    let v = builder.ins().load(ty, MemFlags::new(), a, 0);
+    let v = builder.ins().load(ty, MemFlagsData::new(), a, 0);
     Ok(Some(v))
 }
 
@@ -752,7 +757,7 @@ fn lower_ptr_is_null(
         "ptr_is_null address",
     )?;
     // `icmp` yields an i8, the representation Raven uses for `Bool`.
-    Ok(Some(builder.ins().icmp_imm(IntCC::Equal, a, 0)))
+    Ok(Some(builder.ins().icmp_imm_s(IntCC::Equal, a, 0)))
 }
 
 /// Lower `__ptr_alloc<T>(count)`: call `raven_ffi_alloc(count * sizeof(T))`.
@@ -775,7 +780,7 @@ fn lower_ptr_alloc(
     // buffer far smaller than requested, so force the request to the maximum
     // and let the allocator reject it and return null.
     let hi = builder.ins().umulhi(n, stride);
-    let overflow = builder.ins().icmp_imm(IntCC::NotEqual, hi, 0);
+    let overflow = builder.ins().icmp_imm_s(IntCC::NotEqual, hi, 0);
     let max_bytes = builder.ins().iconst(ptr, -1);
     let bytes = builder.ins().select(overflow, max_bytes, bytes);
     let func_id = cx
@@ -894,7 +899,7 @@ fn lower_any_cast(
     let disc = builder.ins().select(matches, some_disc, none_disc);
     builder
         .ins()
-        .store(MemFlags::new(), disc, base, layout::slot_offset(0));
+        .store(MemFlagsData::new(), disc, base, layout::slot_offset(0));
 
     // payload: the boxed payload word narrowed to the slot on match, else 0.
     let payload_slot = if ptr == types::I64 {
@@ -906,7 +911,7 @@ fn lower_any_cast(
     let stored = builder.ins().select(matches, payload_slot, zero);
     builder
         .ins()
-        .store(MemFlags::new(), stored, base, layout::slot_offset(1));
+        .store(MemFlagsData::new(), stored, base, layout::slot_offset(1));
     Ok(Some(obj))
 }
 
@@ -945,16 +950,16 @@ fn lower_any_get_field(
     let field_any = pop_temp_root(cx, builder, field_root, ptr);
     let base = call_struct_fields(cx, builder, obj, ptr);
 
-    let is_some = builder.ins().icmp_imm(IntCC::NotEqual, field_any, 0);
+    let is_some = builder.ins().icmp_imm_s(IntCC::NotEqual, field_any, 0);
     let some_disc = builder.ins().iconst(ptr, 0);
     let none_disc = builder.ins().iconst(ptr, 1);
     let disc = builder.ins().select(is_some, some_disc, none_disc);
     builder
         .ins()
-        .store(MemFlags::new(), disc, base, layout::slot_offset(0));
+        .store(MemFlagsData::new(), disc, base, layout::slot_offset(0));
     builder
         .ins()
-        .store(MemFlags::new(), field_any, base, layout::slot_offset(1));
+        .store(MemFlagsData::new(), field_any, base, layout::slot_offset(1));
     Ok(Some(obj))
 }
 
@@ -1049,7 +1054,7 @@ fn load_local(builder: &mut FunctionBuilder<'_>, slots: &[LocalSlot], local: Mir
         (Some(s), Some(t)) => (s, t),
         _ => return None,
     };
-    Some(builder.ins().stack_load(ty, slot, info.offset))
+    Some(builder.ins().stack_load(types::I64, ty, slot, info.offset))
 }
 
 fn store_local(
@@ -1077,7 +1082,7 @@ fn store_local(
     // a `Float` or narrow scalar local needs a bitcast or reduce so the
     // Cranelift store type checks.
     let v = narrow_from_slot(builder, v, want);
-    builder.ins().stack_store(v, slot, info.offset);
+    builder.ins().stack_store(types::I64, v, slot, info.offset);
     if let Some(var) = info.var {
         builder.def_var(var, v);
     }
@@ -1255,7 +1260,7 @@ fn widen_to_slot(builder: &mut FunctionBuilder<'_>, value: RValue, ptr: CType) -
                 v
             } else if ty == types::F64 {
                 // Reinterpret the float's bits as an integer slot value.
-                builder.ins().bitcast(ptr, MemFlags::new(), v)
+                builder.ins().bitcast(ptr, MemFlagsData::new(), v)
             } else if ty.is_int() && ty.bytes() < ptr.bytes() {
                 builder.ins().uextend(ptr, v)
             } else {
@@ -1285,7 +1290,7 @@ fn coerce_to(builder: &mut FunctionBuilder<'_>, v: Value, want: CType) -> Value 
             } else {
                 builder.ins().uextend(types::I64, v)
             };
-            builder.ins().bitcast(want, MemFlags::new(), int)
+            builder.ins().bitcast(want, MemFlagsData::new(), int)
         }
         (false, true) => {
             let same = if got == types::F64 {
@@ -1293,7 +1298,7 @@ fn coerce_to(builder: &mut FunctionBuilder<'_>, v: Value, want: CType) -> Value 
             } else {
                 types::I32
             };
-            let int = builder.ins().bitcast(same, MemFlags::new(), v);
+            let int = builder.ins().bitcast(same, MemFlagsData::new(), v);
             coerce_to(builder, int, want)
         }
         (false, false) if want == types::F32 => builder.ins().fdemote(types::F32, v),
@@ -1307,7 +1312,7 @@ fn narrow_from_slot(builder: &mut FunctionBuilder<'_>, raw: Value, want: CType) 
         return raw;
     }
     if want == types::F64 {
-        return builder.ins().bitcast(types::F64, MemFlags::new(), raw);
+        return builder.ins().bitcast(types::F64, MemFlagsData::new(), raw);
     }
     if want.is_int() && got.is_int() && want.bytes() < got.bytes() {
         return builder.ins().ireduce(want, raw);
@@ -1359,7 +1364,7 @@ fn lower_struct_create(
             let v = widen_to_slot(builder, v, ptr);
             builder
                 .ins()
-                .store(MemFlags::new(), v, base, layout::slot_offset(i));
+                .store(MemFlagsData::new(), v, base, layout::slot_offset(i));
         }
         return Ok(Some(obj));
     }
@@ -1368,11 +1373,11 @@ fn lower_struct_create(
     for (i, f) in fields.iter().enumerate() {
         let v = lower_operand(cx, builder, f, slots)?;
         let v = widen_to_slot(builder, v, ptr);
-        let obj = builder.ins().stack_load(ptr, root, 0);
+        let obj = builder.ins().stack_load(types::I64, ptr, root, 0);
         let base = call_struct_fields(cx, builder, obj, ptr);
         builder
             .ins()
-            .store(MemFlags::new(), v, base, layout::slot_offset(i));
+            .store(MemFlagsData::new(), v, base, layout::slot_offset(i));
     }
     let obj = pop_temp_root(cx, builder, root, ptr);
     Ok(Some(obj))
@@ -1423,11 +1428,13 @@ fn lower_enum_create(
         let slot = cx.unit_variant_slot(&key, variant)?;
         let gv = cx.module().declare_data_in_func(slot, builder.func);
         let addr = builder.ins().symbol_value(ptr, gv);
-        let cached = builder.ins().load(ptr, MemFlags::trusted(), addr, 0);
+        let cached = builder.ins().load(ptr, MemFlagsData::trusted(), addr, 0);
         let make = builder.create_block();
         let done = builder.create_block();
         builder.append_block_param(done, ptr);
-        builder.ins().brif(cached, done, &[cached], make, &[]);
+        builder
+            .ins()
+            .brif(cached, done, &[cached.into()], make, &[]);
         builder.set_cold_block(make);
         builder.switch_to_block(make);
         builder.seal_block(make);
@@ -1436,9 +1443,9 @@ fn lower_enum_create(
         let disc = builder.ins().iconst(ptr, variant as i64);
         builder
             .ins()
-            .store(MemFlags::new(), disc, base, layout::slot_offset(0));
-        builder.ins().store(MemFlags::trusted(), obj, addr, 0);
-        builder.ins().jump(done, &[obj]);
+            .store(MemFlagsData::new(), disc, base, layout::slot_offset(0));
+        builder.ins().store(MemFlagsData::trusted(), obj, addr, 0);
+        builder.ins().jump(done, &[obj.into()]);
         builder.switch_to_block(done);
         builder.seal_block(done);
         return Ok(Some(builder.block_params(done)[0]));
@@ -1453,12 +1460,12 @@ fn lower_enum_create(
         let disc = builder.ins().iconst(ptr, variant as i64);
         builder
             .ins()
-            .store(MemFlags::new(), disc, base, layout::slot_offset(0));
+            .store(MemFlagsData::new(), disc, base, layout::slot_offset(0));
         for (i, v) in values.into_iter().enumerate() {
             let v = widen_to_slot(builder, v, ptr);
             builder
                 .ins()
-                .store(MemFlags::new(), v, base, layout::slot_offset(i + 1));
+                .store(MemFlagsData::new(), v, base, layout::slot_offset(i + 1));
         }
         return Ok(Some(obj));
     }
@@ -1469,16 +1476,16 @@ fn lower_enum_create(
     let disc = builder.ins().iconst(ptr, variant as i64);
     builder
         .ins()
-        .store(MemFlags::new(), disc, base, layout::slot_offset(0));
+        .store(MemFlagsData::new(), disc, base, layout::slot_offset(0));
     // Slots 1..: the payload.
     for (i, p) in payload.iter().enumerate() {
         let v = lower_operand(cx, builder, p, slots)?;
         let v = widen_to_slot(builder, v, ptr);
-        let obj = builder.ins().stack_load(ptr, root, 0);
+        let obj = builder.ins().stack_load(types::I64, ptr, root, 0);
         let base = call_struct_fields(cx, builder, obj, ptr);
         builder
             .ins()
-            .store(MemFlags::new(), v, base, layout::slot_offset(i + 1));
+            .store(MemFlagsData::new(), v, base, layout::slot_offset(i + 1));
     }
     let obj = pop_temp_root(cx, builder, root, ptr);
     Ok(Some(obj))
@@ -1501,7 +1508,7 @@ fn lower_field_access(
     // field is reinterpreted there).
     let raw = builder
         .ins()
-        .load(ptr, MemFlags::new(), fields, layout::slot_offset(index));
+        .load(ptr, MemFlagsData::new(), fields, layout::slot_offset(index));
     Ok(Some(raw))
 }
 
@@ -1522,9 +1529,12 @@ fn push_temp_root(
     obj: Value,
     ptr: CType,
 ) -> StackSlot {
-    let slot = builder
-        .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, ptr.bytes()));
-    builder.ins().stack_store(obj, slot, 0);
+    let slot = builder.create_sized_stack_slot(StackSlotData::new(
+        StackSlotKind::ExplicitSlot,
+        ptr.bytes(),
+        3,
+    ));
+    builder.ins().stack_store(types::I64, obj, slot, 0);
     let slot_addr = builder.ins().stack_addr(ptr, slot, 0);
     let push_id = cx
         .runtime_id(intrinsics::RUNTIME_GC_PUSH_ROOT)
@@ -1548,7 +1558,7 @@ fn pop_temp_root(
     let pop_ref = cx.module().declare_func_in_func(pop_id, builder.func);
     let one = builder.ins().iconst(ptr, 1);
     builder.ins().call(pop_ref, &[one]);
-    builder.ins().stack_load(ptr, slot, 0)
+    builder.ins().stack_load(types::I64, ptr, slot, 0)
 }
 
 /// Spill `obj` to a one-pointer stack slot and register it as a single GC
@@ -1557,9 +1567,12 @@ fn pop_temp_root(
 /// roots at once (with [`pop_n_roots`]) and does not need to reload the
 /// pointer (the value is non-moving, so the register stays valid).
 fn root_temp(cx: &mut ModuleCx, builder: &mut FunctionBuilder<'_>, obj: Value, ptr: CType) {
-    let slot = builder
-        .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, ptr.bytes()));
-    builder.ins().stack_store(obj, slot, 0);
+    let slot = builder.create_sized_stack_slot(StackSlotData::new(
+        StackSlotKind::ExplicitSlot,
+        ptr.bytes(),
+        3,
+    ));
+    builder.ins().stack_store(types::I64, obj, slot, 0);
     let slot_addr = builder.ins().stack_addr(ptr, slot, 0);
     let push_id = cx
         .runtime_id(intrinsics::RUNTIME_GC_PUSH_ROOT)
@@ -1651,6 +1664,7 @@ fn lower_array_lit(
     let scratch = builder.create_sized_stack_slot(StackSlotData::new(
         StackSlotKind::ExplicitSlot,
         ELEMENT_SLOT as u32,
+        3,
     ));
     let scratch_addr = builder.ins().stack_addr(ptr, scratch, 0);
     let push_id = cx
@@ -1659,10 +1673,10 @@ fn lower_array_lit(
     for e in elements {
         let v = lower_operand(cx, builder, e, slots)?;
         let v = widen_to_slot(builder, v, ptr);
-        builder.ins().stack_store(v, scratch, 0);
+        builder.ins().stack_store(types::I64, v, scratch, 0);
         // Reload the rooted list so the push targets the authoritative
         // pointer the collector observes through the slot.
-        let list = builder.ins().stack_load(ptr, root, 0);
+        let list = builder.ins().stack_load(types::I64, ptr, root, 0);
         let push_ref = cx.module().declare_func_in_func(push_id, builder.func);
         builder.ins().call(push_ref, &[list, scratch_addr]);
     }
@@ -1700,10 +1714,10 @@ fn lower_index_access(
     let elements = call_list_elements(cx, builder, list);
     let offset = builder
         .ins()
-        .imul_imm(idx, if byte { 1 } else { ELEMENT_SLOT });
+        .imul_imm_s(idx, if byte { 1 } else { ELEMENT_SLOT });
     let addr = builder.ins().iadd(elements, offset);
     let width = if byte { types::I8 } else { ptr };
-    let raw = builder.ins().load(width, MemFlags::new(), addr, 0);
+    let raw = builder.ins().load(width, MemFlagsData::new(), addr, 0);
     Ok(Some(raw))
 }
 
@@ -1749,12 +1763,14 @@ fn lower_list_method(
                 "list push value",
             )?;
             let value = widen_to_slot(builder, Some(value), ptr);
-            let len = builder
-                .ins()
-                .load(types::I32, MemFlags::trusted(), list, LIST_LEN_OFFSET);
-            let cap = builder
-                .ins()
-                .load(types::I32, MemFlags::trusted(), list, LIST_CAP_OFFSET);
+            let len =
+                builder
+                    .ins()
+                    .load(types::I32, MemFlagsData::trusted(), list, LIST_LEN_OFFSET);
+            let cap =
+                builder
+                    .ins()
+                    .load(types::I32, MemFlagsData::trusted(), list, LIST_CAP_OFFSET);
             let has_room = builder.ins().icmp(IntCC::UnsignedLessThan, len, cap);
             let fast = builder.create_block();
             let slow = builder.create_block();
@@ -1767,18 +1783,20 @@ fn lower_list_method(
             let wide_len = builder.ins().uextend(ptr, len);
             let offset = builder
                 .ins()
-                .imul_imm(wide_len, if byte { 1 } else { ELEMENT_SLOT });
+                .imul_imm_s(wide_len, if byte { 1 } else { ELEMENT_SLOT });
             let addr = builder.ins().iadd(elements, offset);
             let stored = if byte {
                 coerce_to(builder, value, types::I8)
             } else {
                 value
             };
-            builder.ins().store(MemFlags::trusted(), stored, addr, 0);
-            let next = builder.ins().iadd_imm(len, 1);
             builder
                 .ins()
-                .store(MemFlags::trusted(), next, list, LIST_LEN_OFFSET);
+                .store(MemFlagsData::trusted(), stored, addr, 0);
+            let next = builder.ins().iadd_imm_s(len, 1);
+            builder
+                .ins()
+                .store(MemFlagsData::trusted(), next, list, LIST_LEN_OFFSET);
             builder.ins().jump(done, &[]);
 
             builder.switch_to_block(slow);
@@ -1786,8 +1804,9 @@ fn lower_list_method(
             let scratch = builder.create_sized_stack_slot(StackSlotData::new(
                 StackSlotKind::ExplicitSlot,
                 ELEMENT_SLOT as u32,
+                3,
             ));
-            builder.ins().stack_store(value, scratch, 0);
+            builder.ins().stack_store(types::I64, value, scratch, 0);
             let scratch_addr = builder.ins().stack_addr(ptr, scratch, 0);
             let push_id = cx
                 .runtime_id(intrinsics::RUNTIME_LIST_PUSH)
@@ -1815,6 +1834,7 @@ fn lower_list_method(
             let scratch = builder.create_sized_stack_slot(StackSlotData::new(
                 StackSlotKind::ExplicitSlot,
                 ELEMENT_SLOT as u32,
+                3,
             ));
             let scratch_addr = builder.ins().stack_addr(ptr, scratch, 0);
             let pop_id = cx
@@ -1824,7 +1844,7 @@ fn lower_list_method(
             let inst = builder.ins().call(pop_ref, &[list, scratch_addr]);
             let ok = builder.inst_results(inst)[0];
             emit_status_check(cx, builder, ok, "pop from empty list");
-            let raw = builder.ins().stack_load(ptr, scratch, 0);
+            let raw = builder.ins().stack_load(types::I64, ptr, scratch, 0);
             Ok(Some(raw))
         }
         ListMethodOp::Get => {
@@ -1840,6 +1860,7 @@ fn lower_list_method(
             let scratch = builder.create_sized_stack_slot(StackSlotData::new(
                 StackSlotKind::ExplicitSlot,
                 ELEMENT_SLOT as u32,
+                3,
             ));
             let scratch_addr = builder.ins().stack_addr(ptr, scratch, 0);
             let get_id = cx
@@ -1849,7 +1870,7 @@ fn lower_list_method(
             let inst = builder.ins().call(get_ref, &[list, idx32, scratch_addr]);
             let ok = builder.inst_results(inst)[0];
             emit_status_check(cx, builder, ok, "list index out of bounds");
-            let raw = builder.ins().stack_load(ptr, scratch, 0);
+            let raw = builder.ins().stack_load(types::I64, ptr, scratch, 0);
             Ok(Some(raw))
         }
     }
@@ -1889,7 +1910,7 @@ fn call_list_len(
     let _ = cx;
     let len_u32 = builder
         .ins()
-        .load(types::I32, MemFlags::trusted(), list, LIST_LEN_OFFSET);
+        .load(types::I32, MemFlagsData::trusted(), list, LIST_LEN_OFFSET);
     builder.ins().uextend(ptr, len_u32)
 }
 
@@ -1903,7 +1924,7 @@ fn call_list_elements(cx: &mut ModuleCx, builder: &mut FunctionBuilder<'_>, list
     let ptr = cx.pointer_type();
     builder
         .ins()
-        .load(ptr, MemFlags::trusted(), list, LIST_ELEMENTS_OFFSET)
+        .load(ptr, MemFlagsData::trusted(), list, LIST_ELEMENTS_OFFSET)
 }
 
 /// Branch on an unsigned `index < len` check, calling `raven_panic` with
@@ -1981,7 +2002,7 @@ fn emit_status_check(
     emit_panic(cx, builder, message);
     builder
         .ins()
-        .trap(cranelift_codegen::ir::TrapCode::UnreachableCodeReached);
+        .trap(cranelift_codegen::ir::TrapCode::unwrap_user(1));
 
     builder.switch_to_block(continue_block);
     builder.seal_block(continue_block);
@@ -2130,7 +2151,7 @@ fn lower_closure_create(
         for (i, v) in capture_vals.into_iter().enumerate() {
             builder
                 .ins()
-                .store(MemFlags::new(), v, env_base, (i as i32) * CAPTURE_SLOT);
+                .store(MemFlagsData::new(), v, env_base, (i as i32) * CAPTURE_SLOT);
         }
     }
 
@@ -2153,9 +2174,12 @@ fn lower_env_load(
 ) -> Result<RValue, CodegenError> {
     let ptr = cx.pointer_type();
     let env_base = require_value(lower_operand(cx, builder, env, slots)?, "env load base")?;
-    let raw = builder
-        .ins()
-        .load(ptr, MemFlags::new(), env_base, (slot as i32) * CAPTURE_SLOT);
+    let raw = builder.ins().load(
+        ptr,
+        MemFlagsData::new(),
+        env_base,
+        (slot as i32) * CAPTURE_SLOT,
+    );
     Ok(Some(raw))
 }
 
@@ -2270,10 +2294,13 @@ fn lower_dyn_coerce(
     let base = call_struct_fields(cx, builder, obj, ptr);
     builder
         .ins()
-        .store(MemFlags::new(), data, base, layout::slot_offset(0));
-    builder
-        .ins()
-        .store(MemFlags::new(), vtable_ptr, base, layout::slot_offset(1));
+        .store(MemFlagsData::new(), data, base, layout::slot_offset(0));
+    builder.ins().store(
+        MemFlagsData::new(),
+        vtable_ptr,
+        base,
+        layout::slot_offset(1),
+    );
     Ok(Some(obj))
 }
 
@@ -2302,14 +2329,14 @@ fn lower_virtual_call(
     // Slot 0: the data pointer (the erased receiver). Slot 1: the vtable.
     let data = builder
         .ins()
-        .load(ptr, MemFlags::new(), base, layout::slot_offset(0));
+        .load(ptr, MemFlagsData::new(), base, layout::slot_offset(0));
     let vtable = builder
         .ins()
-        .load(ptr, MemFlags::new(), base, layout::slot_offset(1));
+        .load(ptr, MemFlagsData::new(), base, layout::slot_offset(1));
     // Load the method pointer from the vtable's slot.
     let method_ptr = builder.ins().load(
         ptr,
-        MemFlags::new(),
+        MemFlagsData::new(),
         vtable,
         (slot as i32) * (ptr.bytes() as i32),
     );
@@ -2365,7 +2392,7 @@ fn call_struct_fields(
     _ptr: CType,
 ) -> Value {
     let _ = cx;
-    builder.ins().iadd_imm(obj, STRUCT_FIELDS_OFFSET)
+    builder.ins().iadd_imm_s(obj, STRUCT_FIELDS_OFFSET)
 }
 
 // Size of the runtime `ObjectHeader` (raven-runtime/src/object.rs), which the
@@ -2481,7 +2508,7 @@ fn lower_call(
                         for s in slots {
                             arg_vals.push(builder.ins().load(
                                 s.ty,
-                                MemFlags::new(),
+                                MemFlagsData::new(),
                                 addr,
                                 s.offset as i32,
                             ));
@@ -2543,7 +2570,9 @@ fn lower_call(
                 let size = cx.repr_c_layout(&ret_ty.mangle()).unwrap().size;
                 let (slot, addr) = struct_image_slot(cx, builder, size);
                 for (s, r) in slots.iter().zip(results.iter()) {
-                    builder.ins().stack_store(*r, slot, s.offset as i32);
+                    builder
+                        .ins()
+                        .stack_store(types::I64, *r, slot, s.offset as i32);
                 }
                 image_to_struct(cx, builder, addr, ret_ty)
             }
@@ -2749,6 +2778,7 @@ fn struct_to_image(
     let slot = builder.create_sized_stack_slot(StackSlotData::new(
         StackSlotKind::ExplicitSlot,
         image_slot_bytes(layout.size),
+        3,
     ));
     write_image_fields(cx, builder, obj, &layout, slot, 0);
     builder.ins().stack_addr(ptr, slot, 0)
@@ -2772,21 +2802,23 @@ fn write_image_fields(
         let off = (base_off + f.offset) as i32;
         match &f.kind {
             ReprCFieldKind::Scalar(ffi) => {
-                let raw =
-                    builder
-                        .ins()
-                        .load(types::I64, MemFlags::new(), base, layout::slot_offset(i));
+                let raw = builder.ins().load(
+                    types::I64,
+                    MemFlagsData::new(),
+                    base,
+                    layout::slot_offset(i),
+                );
                 // A float field is stored in the heap as f64 bits: the C
                 // image wants f32 for `CFloat` (narrowed with fdemote) and
                 // f64 for `CDouble` (the same 8 bytes).
                 match ffi {
                     MirFfiTy::CFloat => {
-                        let f64v = builder.ins().bitcast(types::F64, MemFlags::new(), raw);
+                        let f64v = builder.ins().bitcast(types::F64, MemFlagsData::new(), raw);
                         let f32v = builder.ins().fdemote(types::F32, f64v);
-                        builder.ins().stack_store(f32v, slot, off);
+                        builder.ins().stack_store(types::I64, f32v, slot, off);
                     }
                     MirFfiTy::CDouble => {
-                        builder.ins().stack_store(raw, slot, off);
+                        builder.ins().stack_store(types::I64, raw, slot, off);
                     }
                     _ => {
                         let (fsize, _) = ffi
@@ -2797,7 +2829,7 @@ fn write_image_fields(
                         } else {
                             builder.ins().ireduce(int_type_for_size(fsize), raw)
                         };
-                        builder.ins().stack_store(v, slot, off);
+                        builder.ins().stack_store(types::I64, v, slot, off);
                     }
                 }
             }
@@ -2805,7 +2837,7 @@ fn write_image_fields(
                 let nested_ptr =
                     builder
                         .ins()
-                        .load(ptr, MemFlags::new(), base, layout::slot_offset(i));
+                        .load(ptr, MemFlagsData::new(), base, layout::slot_offset(i));
                 write_image_fields(cx, builder, nested_ptr, nested, slot, base_off + f.offset);
             }
         }
@@ -2858,19 +2890,25 @@ fn read_image_into_struct(
         let value = match &f.kind {
             ReprCFieldKind::Scalar(ffi) => match ffi {
                 MirFfiTy::CFloat => {
-                    let f32v = builder.ins().load(types::F32, MemFlags::new(), addr, off);
+                    let f32v = builder
+                        .ins()
+                        .load(types::F32, MemFlagsData::new(), addr, off);
                     let f64v = builder.ins().fpromote(types::F64, f32v);
-                    builder.ins().bitcast(types::I64, MemFlags::new(), f64v)
+                    builder.ins().bitcast(types::I64, MemFlagsData::new(), f64v)
                 }
-                MirFfiTy::CDouble => builder.ins().load(types::I64, MemFlags::new(), addr, off),
+                MirFfiTy::CDouble => builder
+                    .ins()
+                    .load(types::I64, MemFlagsData::new(), addr, off),
                 _ => {
                     let (fsize, _) = ffi
                         .c_scalar_layout()
                         .expect("repr(C) field has a scalar layout");
-                    let raw =
-                        builder
-                            .ins()
-                            .load(int_type_for_size(fsize), MemFlags::new(), addr, off);
+                    let raw = builder.ins().load(
+                        int_type_for_size(fsize),
+                        MemFlagsData::new(),
+                        addr,
+                        off,
+                    );
                     if fsize >= 8 {
                         raw
                     } else {
@@ -2892,11 +2930,11 @@ fn read_image_into_struct(
         };
         // Re-load the rooted parent (the nested reconstruction allocated) and
         // store the field.
-        let obj = builder.ins().stack_load(ptr, root, 0);
+        let obj = builder.ins().stack_load(types::I64, ptr, root, 0);
         let base = call_struct_fields(cx, builder, obj, ptr);
         builder
             .ins()
-            .store(MemFlags::new(), value, base, layout::slot_offset(i));
+            .store(MemFlagsData::new(), value, base, layout::slot_offset(i));
     }
     pop_temp_root(cx, builder, root, ptr)
 }
@@ -2912,6 +2950,7 @@ fn struct_image_slot(
     let slot = builder.create_sized_stack_slot(StackSlotData::new(
         StackSlotKind::ExplicitSlot,
         image_slot_bytes(size),
+        3,
     ));
     let addr = builder.ins().stack_addr(ptr, slot, 0);
     (slot, addr)
@@ -3371,7 +3410,7 @@ fn lower_terminator(
         MirTerminator::Unreachable => {
             builder
                 .ins()
-                .trap(cranelift_codegen::ir::TrapCode::UnreachableCodeReached);
+                .trap(cranelift_codegen::ir::TrapCode::unwrap_user(1));
             Ok(())
         }
     }
@@ -3388,9 +3427,9 @@ fn leave_root_frame(
         return;
     };
     let ptr = cx.pointer_type();
-    let prev = builder.ins().stack_load(ptr, frame.array, 0);
+    let prev = builder.ins().stack_load(types::I64, ptr, frame.array, 0);
     let head = builder.use_var(frame.head);
-    builder.ins().store(MemFlags::trusted(), prev, head, 0);
+    builder.ins().store(MemFlagsData::trusted(), prev, head, 0);
 }
 
 /// Open the per-call defer frame at function entry.
@@ -3432,7 +3471,7 @@ fn lower_switch_enum(
     // The discriminant is stored in slot 0 as a pointer-width integer.
     let disc = builder
         .ins()
-        .load(ptr, MemFlags::new(), fields, layout::slot_offset(0));
+        .load(ptr, MemFlagsData::new(), fields, layout::slot_offset(0));
 
     // Split the targets into a cascade and a fall-through block. With an
     // explicit otherwise every target is compared and the otherwise block
@@ -3445,7 +3484,7 @@ fn lower_switch_enum(
             None => {
                 builder
                     .ins()
-                    .trap(cranelift_codegen::ir::TrapCode::UnreachableCodeReached);
+                    .trap(cranelift_codegen::ir::TrapCode::unwrap_user(1));
                 return Ok(());
             }
         },
@@ -3495,7 +3534,7 @@ fn lower_switch_int(
         return Ok(());
     }
     if let [(v, t)] = targets {
-        let cmp = builder.ins().icmp_imm(IntCC::Equal, disc, *v);
+        let cmp = builder.ins().icmp_imm_s(IntCC::Equal, disc, *v);
         builder
             .ins()
             .brif(cmp, block(*t), &[], block(otherwise), &[]);

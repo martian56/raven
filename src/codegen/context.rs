@@ -275,13 +275,14 @@ impl ModuleCx {
         let gv = self.module.declare_data_in_func(chain, &mut ctx.func);
         let mut fb = FunctionBuilderContext::new();
         {
+            let frontend = self.module.isa().frontend_config();
             let mut builder = FunctionBuilder::new(&mut ctx.func, &mut fb);
             let block = builder.create_block();
             builder.switch_to_block(block);
             builder.seal_block(block);
             let addr = builder.ins().tls_value(ptr, gv);
             builder.ins().return_(&[addr]);
-            builder.finalize();
+            builder.finalize(frontend);
         }
         self.module
             .define_function(id, &mut ctx)
@@ -941,9 +942,7 @@ impl ModuleCx {
     /// by-value struct expands to its register slots' types, a single pointer
     /// (by reference), or a stack-passed aggregate (`StructArgument`, the
     /// System V MEMORY class, parameters only); a scalar uses its C machine
-    /// type. `is_param` selects the parameter vs return form for the MEMORY
-    /// class, which is passed on the stack as an argument but returned through
-    /// the `sret` pointer the return list echoes.
+    /// type. A struct returned through the `sret` pointer adds no return.
     fn push_abi(
         out: &mut Vec<AbiParam>,
         plan: Option<super::function::RegPlan>,
@@ -953,17 +952,14 @@ impl ModuleCx {
     ) {
         use super::function::RegPlan;
         match plan {
+            // A struct returned through the sret pointer has no return value:
+            // Cranelift hands the pointer back itself.
+            Some(RegPlan::ByRef | RegPlan::Memory(_)) if !is_param => {}
             Some(RegPlan::ByRef) => out.push(AbiParam::new(ptr)),
-            Some(RegPlan::Memory(size)) => {
-                if is_param {
-                    out.push(AbiParam::special(
-                        ptr,
-                        ArgumentPurpose::StructArgument(size),
-                    ));
-                } else {
-                    out.push(AbiParam::new(ptr));
-                }
-            }
+            Some(RegPlan::Memory(size)) => out.push(AbiParam::special(
+                ptr,
+                ArgumentPurpose::StructArgument(size),
+            )),
             Some(RegPlan::Regs(slots)) => {
                 for s in slots {
                     out.push(AbiParam::new(s.ty));
@@ -1097,10 +1093,16 @@ impl ModuleCx {
             self.module
                 .define_function_bytes(
                     *func_id,
-                    &ctx.func,
-                    compiled.buffer.alignment as u64,
+                    compiled.buffer.min_alignment as u64,
                     compiled.code_buffer(),
-                    compiled.buffer.relocs(),
+                    &compiled
+                        .buffer
+                        .relocs()
+                        .iter()
+                        .map(|r| {
+                            cranelift_module::ModuleReloc::from_mach_reloc(r, &ctx.func, *func_id)
+                        })
+                        .collect::<Vec<_>>(),
                 )
                 .map_err(|e| CodegenError::Codegen(format!("define {}: {}", name, e)))?;
         }
@@ -1214,6 +1216,7 @@ impl ModuleCx {
             .map(|id| self.module.declare_func_in_func(id, &mut ctx.func));
         let mut builder_ctx = FunctionBuilderContext::new();
         {
+            let frontend = self.module.isa().frontend_config();
             let mut builder = FunctionBuilder::new(&mut ctx.func, &mut builder_ctx);
             let block = builder.create_block();
             builder.switch_to_block(block);
@@ -1297,7 +1300,7 @@ impl ModuleCx {
             }
             let zero = builder.ins().iconst(types::I32, 0);
             builder.ins().return_(&[zero]);
-            builder.finalize();
+            builder.finalize(frontend);
         }
 
         self.module
