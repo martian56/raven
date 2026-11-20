@@ -330,6 +330,9 @@ struct Checker<'a, 'b> {
     loop_breaks: Vec<(bool, Option<Ty>)>,
     /// Types of diverging expressions; unsolved ones default to `Unit`.
     never_vars: Vec<super::ty::InferVarId>,
+    /// Operators whose operands were both unsolved when checked, as in the
+    /// lambda `(a, b) => a + b`; judged once the body's calls pin the types.
+    deferred_ops: Vec<(Ty, Ty, BinaryOp, Span)>,
     /// Expected parameter types for the lambda argument being checked.
     lambda_hint: Option<Vec<Ty>>,
 }
@@ -391,6 +394,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             diverges: false,
             loop_breaks: Vec::new(),
             never_vars: Vec::new(),
+            deferred_ops: Vec::new(),
             lambda_hint: None,
         }
     }
@@ -429,6 +433,26 @@ impl<'a, 'b> Checker<'a, 'b> {
         }
         let l = self.infer.resolve(&l);
         let r = self.infer.resolve(&r);
+        if let (Ty::Var(_), Ty::Var(_)) = (&l, &r) {
+            use BinaryOp::*;
+            match op {
+                Add | Sub | Mul | Div | Mod | Lt | Le | Gt | Ge | Eq | Ne => {
+                    self.unify(&l, &r, span)?;
+                    self.deferred_ops
+                        .push((l.clone(), r.clone(), op, span.clone()));
+                    return Ok(match op {
+                        Add | Sub | Mul | Div | Mod => l,
+                        _ => Ty::Bool,
+                    });
+                }
+                BitAnd | BitOr | BitXor | Shl | Shr => {
+                    self.unify(&l, &Ty::Int, span)?;
+                    self.unify(&r, &Ty::Int, span)?;
+                    return Ok(Ty::Int);
+                }
+                _ => {}
+            }
+        }
         check_binary(&l, &r, op, span)
     }
 
@@ -656,6 +680,32 @@ impl<'a, 'b> Checker<'a, 'b> {
             if self.infer.resolve(&Ty::Var(v)).has_var() {
                 let span = Span::new(std::sync::Arc::new(Default::default()), 0, 0, 1, 1);
                 let _ = self.infer.unify(&Ty::Var(v), &Ty::Unit, &span);
+            }
+        }
+        for (l, r, op, span) in std::mem::take(&mut self.deferred_ops) {
+            let l = self.infer.resolve(&l);
+            let r = self.infer.resolve(&r);
+            if l.has_var() || r.has_var() {
+                continue;
+            }
+            // A class operator dispatches to its method, which needs the type
+            // while checking; an untyped operand cannot use one.
+            if matches!(l.strip_self(), Ty::Struct { .. } | Ty::Enum { .. }) {
+                self.push_error(
+                    RavenError::ty(
+                        TypeError::Custom(format!(
+                            "`{}` on `{}` needs the operand types written out",
+                            op.symbol(),
+                            l
+                        )),
+                        span.clone(),
+                    )
+                    .with_hint("annotate the lambda parameters, as in `(a: T, b: T) => ...`"),
+                );
+                continue;
+            }
+            if let Err(e) = check_binary(&l, &r, op, &span) {
+                self.push_error(e);
             }
         }
         // First settle any deferred `Iterator<T>` element links: a call

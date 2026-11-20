@@ -1306,6 +1306,35 @@ fn reassigning_a_let_binding_is_rejected() {
 }
 
 #[test]
+fn untyped_lambda_operands_are_inferred_from_calls() {
+    check(
+        "fun f() -> int {
+    let add = (a, b) => a + b
+    return add(1, 2)
+}
+",
+    )
+    .unwrap();
+}
+
+#[test]
+fn untyped_lambda_operator_is_checked_once_types_are_known() {
+    let err = check(
+        "fun f() {
+    let add = (a, b) => a + b
+    let _ = add(true, false)
+}
+",
+    )
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("`+` is not defined"),
+        "got: {}",
+        err
+    );
+}
+
+#[test]
 fn private_class_takes_named_arguments() {
     check(
         "class _Pair { a: int, b: int }
