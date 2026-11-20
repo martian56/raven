@@ -277,7 +277,12 @@ fn struct_to_string_body(s: &Struct, method: &str) -> String {
     }
     let mut parts = Vec::new();
     for f in &s.fields {
-        parts.push(format!("{0}: ${{self.{0}.{method}()}}", f.name));
+        let inner = if method == "to_string" {
+            "repr"
+        } else {
+            method
+        };
+        parts.push(format!("{0}: ${{self.{0}.{inner}()}}", f.name));
     }
     format!(
         "    fun {fn_name}(self) -> str {{ return \"{} {{ {} }}\" }}\n",
@@ -452,7 +457,12 @@ fn enum_to_string_body(e: &Enum, method: &str) -> String {
             body.push_str(&format!("            case {0} {{ \"{0}\" }}\n", v.name));
         } else {
             let binds: Vec<String> = (0..n).map(|i| format!("a{i}")).collect();
-            let parts: Vec<String> = (0..n).map(|i| format!("${{a{i}.{method}()}}")).collect();
+            let inner = if method == "to_string" {
+                "repr"
+            } else {
+                method
+            };
+            let parts: Vec<String> = (0..n).map(|i| format!("${{a{i}.{inner}()}}")).collect();
             body.push_str(&format!(
                 "            case {0}({1}) {{ \"{0}({2})\" }}\n",
                 v.name,
@@ -1016,8 +1026,8 @@ fn type_supports(
                     .all(|g| type_supports(g, trait_name, gens, eligible, has))
             };
             let builtin: &[&str] = match trait_name {
-                "Hash" => &["int", "bool", "char", "str"],
-                _ => &["int", "float", "bool", "char", "str"],
+                "Hash" => &["Int", "Bool", "Char", "String"],
+                _ => &["Int", "Float", "Bool", "Char", "String"],
             };
             let containers: &[&str] = match trait_name {
                 "Hash" => &[],

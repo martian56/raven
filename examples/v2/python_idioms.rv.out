@@ -9,4 +9,4 @@ hello HELLO HeLLo true
 43 5.0 3
 [[0, 0, 0], [0, 1, 2]]
 {0, 1, 2}
-{hi: 2, there: 5}
+{"hi": 2, "there": 5}

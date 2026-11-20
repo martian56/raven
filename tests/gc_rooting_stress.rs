@@ -363,7 +363,7 @@ fn emit_tostring_shape(
         "    let {v} = Rec(id: {id}, tag: \"{w}\")\n\
          \x20   let {v}s = {v}.to_string()\n\
          \x20   let _ = churn({churn})\n\
-         \x20   if {v}s == \"Rec {{ id: {id}, tag: {w} }}\" {{ total = total + {weight} }}\n"
+         \x20   if {v}s == \"Rec {{ id: {id}, tag: \\\"{w}\\\" }}\" {{ total = total + {weight} }}\n"
     ));
     *checksum += weight;
 }

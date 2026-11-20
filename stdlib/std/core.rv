@@ -3,6 +3,12 @@
 
 trait ToString {
     fun to_string(self) -> str
+
+    // The text shown inside a list, dict, set, tuple, or Option: strings
+    // and chars are quoted there, everything else prints as to_string.
+    fun repr(self) -> str {
+        return self.to_string()
+    }
 }
 
 trait Eq {
@@ -58,11 +64,15 @@ impl ToString for bool {
 
 impl ToString for char {
     fun to_string(self) -> str = "${self}"
+
+    fun repr(self) -> str = "'${self}'"
 }
 
 // `String` is already text: `to_string` is the identity.
 impl ToString for str {
     fun to_string(self) -> str = self
+
+    fun repr(self) -> str = "\"" + self + "\""
 }
 
 // ----- Eq for the built-in scalar types -----
@@ -750,7 +760,7 @@ impl[T: ToString] ToString for list[T] {
             if i > 0 {
                 out = out + ", "
             }
-            out = out + self[i].to_string()
+            out = out + self[i].repr()
             i += 1
         }
         return out + "]"
@@ -759,15 +769,15 @@ impl[T: ToString] ToString for list[T] {
 
 impl[T: ToString] ToString for Option[T] {
     fun to_string(self) -> str = match self {
-        case Some(v) { "Some(" + v.to_string() + ")" }
+        case Some(v) { "Some(" + v.repr() + ")" }
         case None { "None" }
     }
 }
 
 impl[T: ToString, E: ToString] ToString for Result[T, E] {
     fun to_string(self) -> str = match self {
-        case Ok(v) { "Ok(" + v.to_string() + ")" }
-        case Err(e) { "Err(" + e.to_string() + ")" }
+        case Ok(v) { "Ok(" + v.repr() + ")" }
+        case Err(e) { "Err(" + e.repr() + ")" }
     }
 }
 
@@ -780,7 +790,7 @@ class Tuple2[A, B] {
 
 impl[A: ToString, B: ToString] ToString for (A, B) {
     fun to_string(self) -> str {
-        return "(" + self.0.to_string() + ", " + self.1.to_string() + ")"
+        return "(" + self.0.repr() + ", " + self.1.repr() + ")"
     }
 }
 
@@ -792,7 +802,7 @@ class Tuple3[A, B, C] {
 
 impl[A: ToString, B: ToString, C: ToString] ToString for (A, B, C) {
     fun to_string(self) -> str {
-        return "(" + self.0.to_string() + ", " + self.1.to_string() + ", " + self.2.to_string() + ")"
+        return "(" + self.0.repr() + ", " + self.1.repr() + ", " + self.2.repr() + ")"
     }
 }
 
@@ -805,7 +815,7 @@ class Tuple4[A, B, C, D] {
 
 impl[A: ToString, B: ToString, C: ToString, D: ToString] ToString for (A, B, C, D) {
     fun to_string(self) -> str {
-        return "(" + self.0.to_string() + ", " + self.1.to_string() + ", " + self.2.to_string() + ", " + self.3.to_string() + ")"
+        return "(" + self.0.repr() + ", " + self.1.repr() + ", " + self.2.repr() + ", " + self.3.repr() + ")"
     }
 }
 
@@ -819,7 +829,7 @@ class Tuple5[A, B, C, D, E] {
 
 impl[A: ToString, B: ToString, C: ToString, D: ToString, E: ToString] ToString for (A, B, C, D, E) {
     fun to_string(self) -> str {
-        return "(" + self.0.to_string() + ", " + self.1.to_string() + ", " + self.2.to_string() + ", " + self.3.to_string() + ", " + self.4.to_string() + ")"
+        return "(" + self.0.repr() + ", " + self.1.repr() + ", " + self.2.repr() + ", " + self.3.repr() + ", " + self.4.repr() + ")"
     }
 }
 
@@ -834,7 +844,7 @@ class Tuple6[A, B, C, D, E, F] {
 
 impl[A: ToString, B: ToString, C: ToString, D: ToString, E: ToString, F: ToString] ToString for (A, B, C, D, E, F) {
     fun to_string(self) -> str {
-        return "(" + self.0.to_string() + ", " + self.1.to_string() + ", " + self.2.to_string() + ", " + self.3.to_string() + ", " + self.4.to_string() + ", " + self.5.to_string() + ")"
+        return "(" + self.0.repr() + ", " + self.1.repr() + ", " + self.2.repr() + ", " + self.3.repr() + ", " + self.4.repr() + ", " + self.5.repr() + ")"
     }
 }
 

@@ -11,4 +11,4 @@ Circle(3)
 Dot
 true
 false
-Pair { first: 1, second: hi }
+Pair { first: 1, second: "hi" }

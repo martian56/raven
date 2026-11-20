@@ -1,0 +1,15 @@
+// Plain data classes get ==, hashing, and printing without a derive.
+class Point {
+    x: int
+    y: int
+    label: str
+}
+
+fun main() {
+    let a = Point(1, 2, "a")
+    let b = Point(1, 2, "a")
+    print(a == b)
+    print(a)
+    let seen = {a, b}
+    print(len(seen))
+}

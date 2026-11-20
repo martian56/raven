@@ -522,7 +522,7 @@ impl[K: Eq + Hash + ToString, V: ToString] ToString for dict[K, V] {
                 out = out + ", "
             }
             first = false
-            out = out + e.key.to_string() + ": " + e.value.to_string()
+            out = out + e.key.repr() + ": " + e.value.repr()
         }
         return out + "}"
     }
@@ -537,7 +537,7 @@ impl[T: Eq + Hash + ToString] ToString for set[T] {
                 out = out + ", "
             }
             first = false
-            out = out + x.to_string()
+            out = out + x.repr()
         }
         return out + "}"
     }

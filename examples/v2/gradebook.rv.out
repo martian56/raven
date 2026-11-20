@@ -4,5 +4,5 @@ grace    71.0 C
 errors: 2
   bad line: bad line
   bad score in: alan, x
-[ada, alan, grace]
+["ada", "alan", "grace"]
 [0, 4, 16]

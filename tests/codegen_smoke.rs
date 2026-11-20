@@ -184,7 +184,7 @@ fn derive_program_compiles_and_runs() {
     // generic `Pair` derive compares and prints at <Int, String>.
     compile_link_run_and_check(
         "use_derive.rv",
-        "true\nfalse\nPoint { x: 1, y: 2 }\nPoint { x: 1, y: 2 }\ntrue\ntrue\nfalse\ntrue\nfalse\nCircle(3)\nDot\ntrue\nfalse\nPair { first: 1, second: hi }\n",
+        "true\nfalse\nPoint { x: 1, y: 2 }\nPoint { x: 1, y: 2 }\ntrue\ntrue\nfalse\ntrue\nfalse\nCircle(3)\nDot\ntrue\nfalse\nPair { first: 1, second: \"hi\" }\n",
         &runtime,
     );
 }
