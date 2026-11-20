@@ -1113,7 +1113,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                 let e = self.check_expr(end)?;
                 if !assignable(&Ty::Int, &s) || !assignable(&Ty::Int, &e) {
                     return Err(RavenError::ty(
-                        TypeError::Custom("range bounds must be `Int`".into()),
+                        TypeError::Custom("range bounds must be `int`".into()),
                         expr.span.clone(),
                     ));
                 }
@@ -1263,7 +1263,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                         None => {
                             return Err(RavenError::ty(
                                 TypeError::Custom(format!(
-                                    "cannot iterate over `{}`; add an `Iterator<T>` bound to it",
+                                    "cannot iterate over `{}`; add an `Iterator[T]` bound to it",
                                     p.name
                                 )),
                                 iter.span.clone(),
@@ -1280,7 +1280,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                             None => {
                                 return Err(RavenError::ty(
                                     TypeError::Custom(format!(
-                                        "cannot iterate over `{}`; expected a `List<T>` or a type implementing `Iterator<T>`",
+                                        "cannot iterate over `{}`; expected a `list[T]` or a type implementing `Iterator[T]`",
                                         other
                                     )),
                                     iter.span.clone(),
@@ -1645,7 +1645,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                 Ty::Error => Ok(Ty::Error),
                 other => Err(RavenError::ty(
                     TypeError::TypeMismatch {
-                        expected: "Int or Float".into(),
+                        expected: "int or float".into(),
                         actual: format!("{}", other),
                     },
                     operand.span.clone(),
@@ -1737,7 +1737,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             if !is_variadic_ffi_arg(ra.strip_self()) {
                 return Err(ty_custom(
                     &format!(
-                        "a variadic C argument must be a C-FFI integer or pointer type (CInt, CLong, CSize, CStr, CPtr<T>) or a native Int; got `{ra}`. Float varargs are not supported (wrap the call in a C shim)"
+                        "a variadic C argument must be a C-FFI integer or pointer type (CInt, CLong, CSize, CStr, CPtr[T]) or a native int; got `{ra}`. float varargs are not supported (wrap the call in a C shim)"
                     ),
                     &arg.span,
                 ));
@@ -1843,7 +1843,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             if !is_ffi_abi_ty(rp.strip_self()) {
                 return Err(ty_custom(
                     &format!(
-                        "a `CFnPtr` callback parameter must be a C-FFI type (CInt, CLong, CSize, CFloat, CDouble, CStr, CPtr<T>), got `{}`",
+                        "a `CFnPtr` callback parameter must be a C-FFI type (CInt, CLong, CSize, CFloat, CDouble, CStr, CPtr[T]), got `{}`",
                         rp
                     ),
                     &arg.span,
@@ -2277,7 +2277,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         if !is_ptr_pointee(pointee.strip_self()) {
             return Err(ty_custom(
                 &format!(
-                    "`{}` pointee must be a C scalar (CInt, CLong, CSize, CFloat, CDouble, CStr) or Int/Float, got `{}`",
+                    "`{}` pointee must be a C scalar (CInt, CLong, CSize, CFloat, CDouble, CStr) or int/float, got `{}`",
                     name, pointee
                 ),
                 span,
@@ -3237,13 +3237,13 @@ impl<'a, 'b> Checker<'a, 'b> {
             // header as a list header, segfaulting at run time. Point at the
             // byte-oriented accessors, which are unambiguous.
             Ty::Str => Err(RavenError::ty(
-                TypeError::Custom("cannot index into a `String`".to_string()),
+                TypeError::Custom("cannot index into a `str`".to_string()),
                 span.clone(),
             )
             .with_hint(
-                "a String is a byte string: use `char_at(i)` for the one-byte \
+                "a str is a byte string: use `char_at(i)` for the one-byte \
                  substring at byte offset `i`, or `byte_at(i)` for that byte \
-                 as an `Int`; both come from `std/string`",
+                 as an `int`; both come from `std/string`",
             )),
             Ty::Error => Ok(Ty::Error),
             Ty::Var(_) => {
@@ -3625,7 +3625,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                 e.span.clone(),
             )
             .with_hint(format!(
-                "implement `ToString` for `{}` to interpolate it, or convert it to a `String` first",
+                "implement `ToString` for `{}` to interpolate it, or convert it to a `str` first",
                 resolved
             )));
         }
@@ -3696,7 +3696,7 @@ pub fn check_binary(l: &Ty, r: &Ty, op: BinaryOp, span: &Span) -> Result<Ty, Rav
                 op,
                 ls,
                 rs,
-                "Int, Float, and two matching C integer types",
+                "int, float, and two matching C integer types",
                 span,
             )),
         },
@@ -3722,17 +3722,17 @@ pub fn check_binary(l: &Ty, r: &Ty, op: BinaryOp, span: &Span) -> Result<Ty, Rav
                 op,
                 ls,
                 rs,
-                "Int, Float, Char, and String",
+                "int, float, char, and str",
                 span,
             )),
         },
         And | Or => match (ls, rs) {
             (Ty::Bool, Ty::Bool) => Ok(Ty::Bool),
-            _ => Err(binary_op_error(op, ls, rs, "Bool", span)),
+            _ => Err(binary_op_error(op, ls, rs, "bool", span)),
         },
         BitAnd | BitOr | BitXor | Shl | Shr => match (ls, rs) {
             (Ty::Int, Ty::Int) => Ok(Ty::Int),
-            _ => Err(binary_op_error(op, ls, rs, "Int", span)),
+            _ => Err(binary_op_error(op, ls, rs, "int", span)),
         },
     }
 }
@@ -3765,10 +3765,10 @@ fn binary_op_error(op: BinaryOp, ls: &Ty, rs: &Ty, accepts: &str, span: &Span) -
         // logical operators want `Bool`, so no numeric conversion helps there.
         (Ty::Int, Ty::Float) | (Ty::Float, Ty::Int) => match op {
             Add | Sub | Mul | Div | Mod | Lt | Le | Gt | Ge => {
-                err.with_hint("convert the `Int` with `.to_float()` so both sides are `Float`")
+                err.with_hint("convert the `int` with `.to_float()` so both sides are `float`")
             }
             BitAnd | BitOr | BitXor | Shl | Shr => {
-                err.with_hint("convert the `Float` with `.to_int()` so both sides are `Int`")
+                err.with_hint("convert the `float` with `.to_int()` so both sides are `int`")
             }
             _ => err,
         },

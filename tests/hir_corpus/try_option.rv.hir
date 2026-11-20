@@ -1,41 +1,41 @@
 (hir
-  (fn "head" params=("xs":List<Int>) ret=Option<Int>
+  (fn "head" params=("xs":list[int]) ret=Option[int]
     (body ty=()
       (stmt-expr
         (return ty=<error>
-          (some ty=Option<Int>
-            (int 1 ty=Int)
+          (some ty=Option[int]
+            (int 1 ty=int)
           )
         )
       )
     )
   )
-  (fn "caller" params=("xs":List<Int>) ret=Option<Int>
+  (fn "caller" params=("xs":list[int]) ret=Option[int]
     (body ty=()
-      (let "v" ty=Int
-        (match ty=Int
-          (call ty=Option<Int>
-            (fn-ref "head" ty=fun(List<Int>) -> Option<Int>)
-            (ident "xs" ty=List<Int>)
+      (let "v" ty=int
+        (match ty=int
+          (call ty=Option[int]
+            (fn-ref "head" ty=fun(list[int]) -> Option[int])
+            (ident "xs" ty=list[int])
           )
           (arm
             (pat Some(__hir_try_v_0))
-            (ident "__hir_try_v_0" ty=Int)
+            (ident "__hir_try_v_0" ty=int)
           )
           (arm
             (pat None())
             (return ty=<error>
-              (none ty=Option<Int>)
+              (none ty=Option[int])
             )
           )
         )
       )
       (stmt-expr
         (return ty=<error>
-          (some ty=Option<Int>
-            (binary + ty=Int
-              (ident "v" ty=Int)
-              (int 1 ty=Int)
+          (some ty=Option[int]
+            (binary + ty=int
+              (ident "v" ty=int)
+              (int 1 ty=int)
             )
           )
         )

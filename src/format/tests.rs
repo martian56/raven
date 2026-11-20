@@ -105,7 +105,7 @@ fn doc_comment_stays_attached_to_derived_item() {
     // A comment directly above `@derive` documents the item, so the formatter
     // must not split them with a blank line (which `rvpm doc` would read as the
     // comment no longer documenting the item).
-    let src = "// A point.\n@derive(Eq, Ord)\nstruct Point {\n    x: Int,\n}\n";
+    let src = "// A point.\n@derive(Eq, Ord)\nstruct Point {\n    x: int,\n}\n";
     let out = fmt(src);
     assert!(
         out.contains("// A point.\n@derive(Eq, Ord)"),
@@ -135,13 +135,13 @@ fn call_without_comments_stays_single_line() {
 
 #[test]
 fn function_expr_body() {
-    let out = fmt("fun double(x:Int)->Int=x*2");
+    let out = fmt("fun double(x:int)->int=x*2");
     assert_eq!(out, "fun double(x: int) -> int = x * 2\n");
 }
 
 #[test]
 fn generics_and_bounds() {
-    let out = fmt("fun id<T:Ord+Clone>(x:T)->T{return x}");
+    let out = fmt("fun id[T:Ord+Clone](x:T)->T{return x}");
     assert_eq!(
         out,
         "fun id[T: Ord + Clone](x: T) -> T {\n    return x\n}\n"
@@ -150,13 +150,13 @@ fn generics_and_bounds() {
 
 #[test]
 fn struct_decl() {
-    let out = fmt("struct Point{x:Int,y:Int}");
+    let out = fmt("struct Point{x:int,y:int}");
     assert_eq!(out, "class Point {\n    x: int\n    y: int\n}\n");
 }
 
 #[test]
 fn enum_with_payloads() {
-    let out = fmt("enum E{A,B(Int,String),C(x:Int)}");
+    let out = fmt("enum E{A,B(int,str),C(x:int)}");
     assert_eq!(
         out,
         "enum E {\n    A,\n    B(int, str),\n    C(x: int),\n}\n"
@@ -165,7 +165,7 @@ fn enum_with_payloads() {
 
 #[test]
 fn trait_and_impl() {
-    let out = fmt("trait T{fun f(self)->Int}\nimpl T for Int{fun f(self)->Int{return 0}}");
+    let out = fmt("trait T{fun f(self)->int}\nimpl T for int{fun f(self)->int{return 0}}");
     assert!(out.contains("trait T {"));
     assert!(out.contains("impl T for int {"));
     assert!(out.contains("fun f(self) -> int {"));
@@ -173,7 +173,7 @@ fn trait_and_impl() {
 
 #[test]
 fn match_with_guard() {
-    let src = "fun f(x:Int)->Int{return match x{0->1,n if n>0->2,_->3}}";
+    let src = "fun f(x:int)->int{return match x{0->1,n if n>0->2,_->3}}";
     let out = fmt(src);
     assert!(out.contains("match x {"));
     assert!(out.contains("        case 0 { 1 }"), "got: {out}");
@@ -183,7 +183,7 @@ fn match_with_guard() {
 
 #[test]
 fn if_expression() {
-    let out = fmt("fun f()->Int{let y=if true{1}else{2}\nreturn y}");
+    let out = fmt("fun f()->int{let y=if true{1}else{2}\nreturn y}");
     assert!(out.contains("let y = 1 if true else 2"), "got: {out}");
 }
 
@@ -251,7 +251,7 @@ fn spawn_stmt_formats_as_call() {
 
 #[test]
 fn extern_block() {
-    let out = fmt("extern \"C\"{fun foo(x:Int)->Int\nfun bar()}");
+    let out = fmt("extern \"C\"{fun foo(x:int)->int\nfun bar()}");
     assert!(out.contains("extern \"C\" {"));
     assert!(out.contains("    fun foo(x: int) -> int"));
     assert!(out.contains("    fun bar()"));
@@ -267,13 +267,13 @@ fn imports() {
 
 #[test]
 fn interpolation() {
-    let out = fmt("fun f(n:Int)->String{return \"value=${n}\"}");
+    let out = fmt("fun f(n:int)->str{return \"value=${n}\"}");
     assert!(out.contains("\"value=${n}\""));
 }
 
 #[test]
 fn method_chain() {
-    let out = fmt("fun f(xs:List<Int>)->Int{return xs.map(g).filter(h).len()}");
+    let out = fmt("fun f(xs:list[int])->int{return xs.map(g).filter(h).len()}");
     assert!(out.contains("xs.map(g).filter(h).len()"));
 }
 
@@ -286,7 +286,7 @@ fn compound_assignment() {
 
 #[test]
 fn lambda_forms() {
-    let out = fmt("fun f(){let g={x->x+1}\nlet h=fun(a:Int)->Int=a}");
+    let out = fmt("fun f(){let g={x->x+1}\nlet h=fun(a:int)->int=a}");
     assert!(out.contains("let g = x => x + 1"), "got: {out}");
     assert!(out.contains("let h = (a: int) -> int => a"), "got: {out}");
 }
@@ -299,7 +299,7 @@ fn collapse_blank_lines() {
 
 #[test]
 fn float_literal_keeps_point() {
-    let out = fmt("const PI: Float = 3.0");
+    let out = fmt("const PI: float = 3.0");
     assert_eq!(out, "const PI: float = 3.0\n");
 }
 
@@ -355,7 +355,7 @@ fn empty_input() {
 fn dollar_brace_in_plain_string_escaped() {
     // A literal `${` (written escaped in source) must stay escaped so it
     // does not re-parse as interpolation.
-    let out = fmt("fun f()->String{return \"\\${x}\"}");
+    let out = fmt("fun f()->str{return \"\\${x}\"}");
     assert!(out.contains("\\${x}"));
 }
 
@@ -421,7 +421,7 @@ fn comment_inside_map_literal_is_kept() {
 #[test]
 fn comment_inside_match_is_kept() {
     // Regression for #579: comments between and after match arms must survive.
-    let src = "fun f(x: Int) -> Int {\n    match x {\n        // the zero case\n        0 -> 1, // one\n        _ -> 2,\n    }\n}\n";
+    let src = "fun f(x: int) -> int {\n    match x {\n        // the zero case\n        0 -> 1, // one\n        _ -> 2,\n    }\n}\n";
     let out = fmt(src);
     assert!(
         out.contains("// the zero case"),
@@ -481,7 +481,7 @@ fn long_array_literal_wraps() {
 fn long_function_signature_wraps_parameters() {
     // A signature whose single-line form exceeds wrap_width breaks one
     // parameter per line. Regression for #581.
-    let src = "fun a_function_with_many_parameters(first: Int, second: Int, third: Int, fourth: Int) -> Int {\n    return first\n}\n";
+    let src = "fun a_function_with_many_parameters(first: int, second: int, third: int, fourth: int) -> int {\n    return first\n}\n";
     let out = fmt_w(src, 80);
     assert!(
         out.contains("a_function_with_many_parameters(\n"),
@@ -530,7 +530,7 @@ fn interpolation_with_nested_string_does_not_break_comment_scan() {
     // A string interpolation may itself contain a string literal. The comment
     // scanner must skip the whole interpolation so the inner `"` does not end
     // the outer literal and mis-scan a following `//`. Regression for #580.
-    let src = "fun f(name: String) {\n    let s = \"hi ${name.concat(\"!\")}\" // a greeting\n    print(s)\n}\n";
+    let src = "fun f(name: str) {\n    let s = \"hi ${name.concat(\"!\")}\" // a greeting\n    print(s)\n}\n";
     let out = fmt(src);
     assert!(
         out.contains("// a greeting"),

@@ -111,7 +111,7 @@ mod tests {
 
     #[test]
     fn collects_functions_and_structs() {
-        let file = parse_src("fun foo() {}\nstruct Point { x: Int, y: Int }\nfun bar() {}\n");
+        let file = parse_src("fun foo() {}\nstruct Point { x: int, y: int }\nfun bar() {}\n");
         let mut s = ScopeStack::new();
         collect_items(&file, &mut s).unwrap();
         let foo = s.lookup("foo").expect("foo bound");
@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn extern_items_become_module_bindings() {
-        let file = parse_src("extern \"C\" {\nfun puts(s: String) -> Int\n}\n");
+        let file = parse_src("extern \"C\" {\nfun puts(s: str) -> int\n}\n");
         let mut s = ScopeStack::new();
         collect_items(&file, &mut s).unwrap();
         let p = s.lookup("puts").expect("extern fn bound");
@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn impl_blocks_add_no_module_names() {
-        let file = parse_src("struct Point { x: Int }\nimpl Point { fun get(self) -> Int = 1 }\n");
+        let file = parse_src("struct Point { x: int }\nimpl Point { fun get(self) -> int = 1 }\n");
         let mut s = ScopeStack::new();
         collect_items(&file, &mut s).unwrap();
         // Point is in scope, `get` is not (it's reachable only through
@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn const_and_let_become_module_bindings() {
-        let file = parse_src("const PI: Int = 3\nlet counter: Int = 0\n");
+        let file = parse_src("const PI: int = 3\nlet counter: int = 0\n");
         let mut s = ScopeStack::new();
         collect_items(&file, &mut s).unwrap();
         assert!(matches!(s.lookup("PI").unwrap().binding, Binding::Const(_)));

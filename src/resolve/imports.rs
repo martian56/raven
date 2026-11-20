@@ -665,7 +665,7 @@ mod tests {
         loader.add(
             "./helpers",
             "helpers.rv",
-            "fun helper() {}\nstruct H { x: Int }\n",
+            "fun helper() {}\nstruct H { x: int }\n",
         );
         let mut scope = ScopeStack::new();
         let mut imports = Vec::new();

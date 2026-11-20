@@ -1,12 +1,12 @@
 (hir
-  (fn "greet" params=("name":String) ret=String
+  (fn "greet" params=("name":str) ret=str
     (body ty=()
       (stmt-expr
         (return ty=<error>
-          (interpolate ty=String
+          (interpolate ty=str
             (text "hello, ")
             (part
-              (ident "name" ty=String)
+              (ident "name" ty=str)
             )
             (text "!")
           )

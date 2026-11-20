@@ -1828,7 +1828,7 @@ mod tests {
         proj.write_manifest("[package]\nname = \"mylib\"\nversion = \"0.1.0\"\n");
         std::fs::write(
             proj.root.join(LIB_ENTRY_FILE),
-            "fun add(a: Int, b: Int) -> Int {\n    return a + b\n}\n",
+            "fun add(a: int, b: int) -> int {\n    return a + b\n}\n",
         )
         .expect("write lib.rv");
         let cache = proj.cache_root();
@@ -1848,7 +1848,7 @@ mod tests {
         proj.write_manifest("[package]\nname = \"mylib\"\nversion = \"0.1.0\"\n");
         std::fs::write(
             proj.root.join(LIB_ENTRY_FILE),
-            "fun add(a: Int, b: Int) -> Int {\n    return a + b\n}\n",
+            "fun add(a: int, b: int) -> int {\n    return a + b\n}\n",
         )
         .expect("write lib.rv");
         let cache = proj.cache_root();
@@ -1876,7 +1876,7 @@ mod tests {
         let f = proj.root.join("a_test.rv");
         std::fs::write(
             &f,
-            "fun test_a() {}\nfun test_b(x: Int) {}\nfun helper() {}\nfun test_c() {}\n",
+            "fun test_a() {}\nfun test_b(x: int) {}\nfun helper() {}\nfun test_c() {}\n",
         )
         .unwrap();
         let names = test_functions_in(&f).unwrap();

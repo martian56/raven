@@ -693,7 +693,7 @@ impl Parser {
                 self.advance();
                 Err(RavenError::parse(
                     ParseError::Custom(
-                        "integer literal 9223372036854775808 is out of range for Int (the maximum is 9223372036854775807); only -9223372036854775808 is valid".into(),
+                        "integer literal 9223372036854775808 is out of range for int (the maximum is 9223372036854775807); only -9223372036854775808 is valid".into(),
                     ),
                     tok.span,
                 ))

@@ -2338,10 +2338,10 @@ mod tests {
         ));
         let pkg_dir = cache.join("github.com").join("acme").join("pkg@v1.0.0");
         std::fs::create_dir_all(&pkg_dir).expect("mkdir package");
-        std::fs::write(pkg_dir.join("lib.rv"), "fun inside() -> Int { return 1 }\n")
+        std::fs::write(pkg_dir.join("lib.rv"), "fun inside() -> int { return 1 }\n")
             .expect("write lib");
         let outside = pkg_dir.parent().expect("package parent").join("escape.rv");
-        std::fs::write(&outside, "fun outside() -> Int { return 2 }\n").expect("write escape");
+        std::fs::write(&outside, "fun outside() -> int { return 2 }\n").expect("write escape");
 
         let lock = crate::lock::LockFile {
             version: crate::lock::LOCK_VERSION,
@@ -2381,7 +2381,7 @@ mod tests {
         std::fs::create_dir_all(&outside_dir).expect("mkdir outside");
         std::fs::write(
             outside_dir.join("util.rv"),
-            "fun outside() -> Int { return 2 }\n",
+            "fun outside() -> int { return 2 }\n",
         )
         .expect("write outside");
         symlink(outside_dir.join("util.rv"), pkg_dir.join("util.rv")).expect("create symlink");
@@ -2423,7 +2423,7 @@ mod tests {
         let src_path = pkg_dir.join("lib.rv");
         std::fs::write(
             &src_path,
-            "fun shout(s: String) -> String { return s.concat(\"!\") }\n",
+            "fun shout(s: str) -> str { return s.concat(\"!\") }\n",
         )
         .expect("write src");
 
@@ -2477,7 +2477,7 @@ mod tests {
         let src_path = pkg_dir.join("lib.rv");
         std::fs::write(
             &src_path,
-            "fun shout(s: String) -> String { return s.concat(\"!\") }\n",
+            "fun shout(s: str) -> str { return s.concat(\"!\") }\n",
         )
         .expect("src");
 
@@ -2496,7 +2496,7 @@ mod tests {
                 (
                     "helper.rv",
                     "import \"github.com/acme/greet/lib\" { shout }\n\
-                     fun loud(s: String) -> String { return shout(s) }\n",
+                     fun loud(s: str) -> str { return shout(s) }\n",
                 ),
                 (
                     "main.rv",
@@ -2556,12 +2556,12 @@ mod tests {
         .expect("toml");
         std::fs::write(
             pkg_dir.join("lib.rv"),
-            "import \"./util\" { value }\nfun answer() -> Int { return value() }\n",
+            "import \"./util\" { value }\nfun answer() -> int { return value() }\n",
         )
         .expect("lib");
         std::fs::write(
             pkg_dir.join("util.rv"),
-            "fun value() -> Int { return 42 }\n",
+            "fun value() -> int { return 42 }\n",
         )
         .expect("util");
 
@@ -2638,10 +2638,10 @@ mod tests {
         .expect("dep toml");
         std::fs::write(
             app_dir.join("lib.rv"),
-            "import \"github.com/acme/dep\"\nfun answer() -> Int { return dep.value() }\n",
+            "import \"github.com/acme/dep\"\nfun answer() -> int { return dep.value() }\n",
         )
         .expect("app lib");
-        std::fs::write(dep_dir.join("lib.rv"), "fun value() -> Int { return 7 }\n")
+        std::fs::write(dep_dir.join("lib.rv"), "fun value() -> int { return 7 }\n")
             .expect("dep lib");
 
         let lock = crate::lock::LockFile {
@@ -2713,7 +2713,7 @@ mod tests {
             "[package]\nname = \"dep\"\nversion = \"0.1.0\"\n",
         )
         .expect("dep toml");
-        std::fs::write(dep_dir.join("lib.rv"), "fun value() -> Int { return 9 }\n")
+        std::fs::write(dep_dir.join("lib.rv"), "fun value() -> int { return 9 }\n")
             .expect("dep lib");
 
         let lock = crate::lock::LockFile {
@@ -2730,7 +2730,7 @@ mod tests {
             &[
                 (
                     "helper.rv",
-                    "import \"github.com/acme/dep\"\nfun via() -> Int { return dep.value() }\n",
+                    "import \"github.com/acme/dep\"\nfun via() -> int { return dep.value() }\n",
                 ),
                 (
                     "main.rv",
@@ -2786,7 +2786,7 @@ mod tests {
         };
         let ctx = PackageContext::new(PathBuf::from("/cache"), &lock);
         let file = parse_src(
-            "import std/time { now_millis }\nfun stamp() -> Int { return now_millis() }\n",
+            "import std/time { now_millis }\nfun stamp() -> int { return now_millis() }\n",
         );
         let map = external_import_rename_map(&file, &ctx, None);
         assert_eq!(
@@ -2835,10 +2835,7 @@ mod tests {
     fn local_module_functions_are_merged_and_namespaced() {
         let (dir, entry) = write_temp_project(
             &[
-                (
-                    "helper.rv",
-                    "fun greet(name: String) -> String { return name }\n",
-                ),
+                ("helper.rv", "fun greet(name: str) -> str { return name }\n"),
                 ("main.rv", "import \"./helper\" { greet }\nfun main() {}\n"),
             ],
             "main.rv",
@@ -2861,7 +2858,7 @@ mod tests {
         let main_src = "import \"./limits\" { MAX_WIDTH }\nfun main() {\n    print(MAX_WIDTH)\n}\n";
         let (dir, entry) = write_temp_project(
             &[
-                ("limits.rv", "const MAX_WIDTH: Int = 120\n"),
+                ("limits.rv", "const MAX_WIDTH: int = 120\n"),
                 ("main.rv", main_src),
             ],
             "main.rv",
@@ -2890,10 +2887,10 @@ mod tests {
         let main_src = "import \"./width\" { width }\nfun main() { print(width()) }\n";
         let (dir, entry) = write_temp_project(
             &[
-                ("limits.rv", "const MAX_WIDTH: Int = 120\n"),
+                ("limits.rv", "const MAX_WIDTH: int = 120\n"),
                 (
                     "width.rv",
-                    "import \"./limits\" { MAX_WIDTH }\nfun width() -> Int = MAX_WIDTH\n",
+                    "import \"./limits\" { MAX_WIDTH }\nfun width() -> int = MAX_WIDTH\n",
                 ),
                 ("main.rv", main_src),
             ],
@@ -2924,7 +2921,7 @@ mod tests {
             &[
                 (
                     "widget.rv",
-                    "struct Widget { n: Int }\nfun make() -> Widget { return Widget { n: 7 } }\n",
+                    "struct Widget { n: int }\nfun make() -> Widget { return Widget { n: 7 } }\n",
                 ),
                 ("main.rv", main_src),
             ],
@@ -2947,7 +2944,7 @@ mod tests {
         // modules can both declare a `Point` without colliding at merge.
         let (dir, entry) = write_temp_project(
             &[
-                ("shapes.rv", "struct Point { x: Int }\n"),
+                ("shapes.rv", "struct Point { x: int }\n"),
                 ("main.rv", "import \"./shapes\" { Point }\nfun main() {}\n"),
             ],
             "main.rv",
@@ -2971,12 +2968,12 @@ mod tests {
 
     #[test]
     fn imported_trait_impl_satisfies_a_generic_bound() {
-        let main_src = "import \"./t_def\" { Speak, Dog }\n\nfun call<T: Speak>(x: T) -> Int {\n    return x.sound()\n}\n\nfun main() {\n    print(call(Dog {}))\n}\n";
+        let main_src = "import \"./t_def\" { Speak, Dog }\n\nfun call[T: Speak](x: T) -> int {\n    return x.sound()\n}\n\nfun main() {\n    print(call(Dog {}))\n}\n";
         let (dir, entry) = write_temp_project(
             &[
                 (
                     "t_def.rv",
-                    "trait Speak {\n    fun sound(self) -> Int\n}\n\nstruct Dog {}\n\nimpl Speak for Dog {\n    fun sound(self) -> Int {\n        return 1\n    }\n}\n",
+                    "trait Speak {\n    fun sound(self) -> int\n}\n\nstruct Dog {}\n\nimpl Speak for Dog {\n    fun sound(self) -> int {\n        return 1\n    }\n}\n",
                 ),
                 ("t_main.rv", main_src),
             ],
@@ -3002,8 +2999,8 @@ mod tests {
         let main_src = "import \"./a\" { A }\nimport \"./b\" { B }\nfun main() {}\n";
         let (dir, entry) = write_temp_project(
             &[
-                ("a.rv", "@derive(FromJson)\nstruct A { x: Int }\n"),
-                ("b.rv", "@derive(ToJson)\nstruct B { y: Int }\n"),
+                ("a.rv", "@derive(FromJson)\nstruct A { x: int }\n"),
+                ("b.rv", "@derive(ToJson)\nstruct B { y: int }\n"),
                 ("main.rv", main_src),
             ],
             "main.rv",
@@ -3031,8 +3028,8 @@ mod tests {
         let main_src = "import \"./a\" { get_a }\nimport \"./b\" { get_b }\nfun main() {}\n";
         let (dir, entry) = write_temp_project(
             &[
-                ("a.rv", "let value: Int = 1\nfun get_a() -> Int = value\n"),
-                ("b.rv", "let value: Int = 10\nfun get_b() -> Int = value\n"),
+                ("a.rv", "let value: int = 1\nfun get_a() -> int = value\n"),
+                ("b.rv", "let value: int = 10\nfun get_b() -> int = value\n"),
                 ("main.rv", main_src),
             ],
             "main.rv",
@@ -3057,7 +3054,7 @@ mod tests {
         // A user declaration that uses the reserved `raven_derive_` prefix is
         // rejected with a clear message, since it would otherwise collide with a
         // generated JSON derive helper.
-        let src = "fun raven_derive_json_decode() -> Int = 1\nfun main() {}\n";
+        let src = "fun raven_derive_json_decode() -> int = 1\nfun main() {}\n";
         let user = parse_at(src, Path::new("main.rv"));
         let err = expand_with_stdlib(&user).expect_err("reserved name must be rejected");
         let msg = format!("{err}");
@@ -3075,10 +3072,10 @@ mod tests {
         let main_src = "import \"./a\" { get_result }\nfun main() {}\n";
         let (dir, entry) = write_temp_project(
             &[
-                ("b.rv", "let b_value: Int = 42\nfun get_b() -> Int = b_value\n"),
+                ("b.rv", "let b_value: int = 42\nfun get_b() -> int = b_value\n"),
                 (
                     "a.rv",
-                    "import \"./b\" { get_b }\nlet a_result: Int = get_b()\nfun get_result() -> Int = a_result\n",
+                    "import \"./b\" { get_b }\nlet a_result: int = get_b()\nfun get_result() -> int = a_result\n",
                 ),
                 ("main.rv", main_src),
             ],
@@ -3105,10 +3102,10 @@ mod tests {
     fn transitive_local_imports_merge_and_rewrite_calls() {
         let (dir, entry) = write_temp_project(
             &[
-                ("b.rv", "fun base() -> Int { return 1 }\n"),
+                ("b.rv", "fun base() -> int { return 1 }\n"),
                 (
                     "a.rv",
-                    "import \"./b\" { base }\nfun via() -> Int { return base() }\n",
+                    "import \"./b\" { base }\nfun via() -> int { return base() }\n",
                 ),
                 ("main.rv", "import \"./a\" { via }\nfun main() {}\n"),
             ],
@@ -3148,10 +3145,10 @@ mod tests {
         // namespaced symbol rather than left as an unresolved `dep`.
         let (dir, entry) = write_temp_project(
             &[
-                ("b.rv", "fun base() -> Int { return 1 }\n"),
+                ("b.rv", "fun base() -> int { return 1 }\n"),
                 (
                     "a.rv",
-                    "import \"./b\" as dep\nfun via() -> Int { return dep.base() }\n",
+                    "import \"./b\" as dep\nfun via() -> int { return dep.base() }\n",
                 ),
                 ("main.rv", "import \"./a\" { via }\nfun main() {}\n"),
             ],
@@ -3190,7 +3187,7 @@ mod tests {
             &[
                 (
                     "module.rv",
-                    "let value: Int = 1\nfun echo(value: Int) -> Int { return value }\n",
+                    "let value: int = 1\nfun echo(value: int) -> int { return value }\n",
                 ),
                 ("main.rv", "import \"./module\" { echo }\nfun main() {}\n"),
             ],

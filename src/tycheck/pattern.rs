@@ -46,7 +46,7 @@ pub fn bind(
                 return Err(RavenError::ty(
                     TypeError::TypeMismatch {
                         expected: format!("{}", scrut_ty),
-                        actual: "Int range".into(),
+                        actual: "int range".into(),
                     },
                     pat.span.clone(),
                 ));

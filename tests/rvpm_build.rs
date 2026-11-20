@@ -134,7 +134,7 @@ fn project_with_github_dependency_builds_and_runs() {
     .expect("write pkg toml");
     std::fs::write(
         pkg_dir.join("lib.rv"),
-        "import std/string\nfun shout(s: String) -> String { return s.concat(\"!\") }\n",
+        "import std/string\nfun shout(s: str) -> str { return s.concat(\"!\") }\n",
     )
     .expect("write pkg lib");
 
@@ -280,7 +280,7 @@ fn rvpm_test_links_package_ffi() {
     .expect("write c");
     std::fs::write(
         project.join("lib.rv"),
-        "extern \"C\" {\n    fun c_inc(x: Int) -> Int\n}\nfun inc(x: Int) -> Int { return c_inc(x) }\n",
+        "extern \"C\" {\n    fun c_inc(x: int) -> int\n}\nfun inc(x: int) -> int { return c_inc(x) }\n",
     )
     .expect("write lib");
     std::fs::write(

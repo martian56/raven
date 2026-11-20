@@ -199,7 +199,7 @@ fn reflection_program_compiles_and_runs() {
     // per monomorphization, so the same body prints `Int` then `Point`.
     compile_link_run_and_check(
         "use_reflection.rv",
-        "Int\nString\nPoint\n2\nx\ny\nInt\nPoint\nintrospect Point\nfield x\nfield y\n",
+        "int\nstr\nPoint\n2\nx\ny\nint\nPoint\nintrospect Point\nfield x\nfield y\n",
         &runtime,
     );
 }
@@ -215,7 +215,7 @@ fn field_types_program_compiles_and_runs() {
     // reads `String`.
     compile_link_run_and_check(
         "use_field_types.rv",
-        "id: Int\nname: String\nactive: Bool\n--\nInt\nString\n--\nvalue: Int\n",
+        "id: int\nname: str\nactive: bool\n--\nint\nstr\n--\nvalue: int\n",
         &runtime,
     );
 }
@@ -231,7 +231,7 @@ fn variant_reflection_program_compiles_and_runs() {
     // so `Tree<Int>` renders `Int` payloads.
     compile_link_run_and_check(
         "use_variant_reflection.rv",
-        "Circle\nRectangle\nDot\n--\nCircle: Float\nRectangle: Float, Float\nDot\n== generic ==\nLeaf: Int\nBranch: Int, Int\nEmpty\n",
+        "Circle\nRectangle\nDot\n--\nCircle: float\nRectangle: float, float\nDot\n== generic ==\nLeaf: int\nBranch: int, int\nEmpty\n",
         &runtime,
     );
 }

@@ -218,10 +218,10 @@ mod tests {
 
     #[test]
     fn numeric_conversions() {
-        let (p, r) = lookup_method(&Ty::Int, "to_float").expect("Int has to_float");
+        let (p, r) = lookup_method(&Ty::Int, "to_float").expect("int has to_float");
         assert!(p.is_empty());
         assert_eq!(r, Ty::Float);
-        let (p2, r2) = lookup_method(&Ty::Float, "to_int").expect("Float has to_int");
+        let (p2, r2) = lookup_method(&Ty::Float, "to_int").expect("float has to_int");
         assert!(p2.is_empty());
         assert_eq!(r2, Ty::Int);
         // The conversions are not cross available.

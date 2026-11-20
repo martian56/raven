@@ -55,23 +55,23 @@ fn check_with_prelude(src: &str) -> Result<(), RavenError> {
 
 #[test]
 fn arithmetic_int_is_int() {
-    check("fun f() -> Int = 1 + 2 * 3\n").unwrap();
+    check("fun f() -> int = 1 + 2 * 3\n").unwrap();
 }
 
 #[test]
 fn const_local_is_usable() {
-    check("fun f() -> Int {\n    const K: Int = 5\n    return K + 1\n}\n").unwrap();
+    check("fun f() -> int {\n    const K: int = 5\n    return K + 1\n}\n").unwrap();
 }
 
 #[test]
 fn unit_function_discards_a_trailing_value() {
-    check("fun setup() -> Bool = true\nfun main() {\n    setup()\n}\n").unwrap();
+    check("fun setup() -> bool = true\nfun main() {\n    setup()\n}\n").unwrap();
 }
 
 #[test]
 fn if_without_else_discards_its_branch_value() {
     check(
-        "fun apply(n: Int) -> Bool = n > 0\nfun run(ready: Bool) {\n    if ready {\n        apply(1)\n    }\n}\n",
+        "fun apply(n: int) -> bool = n > 0\nfun run(ready: bool) {\n    if ready {\n        apply(1)\n    }\n}\n",
     )
     .unwrap();
 }
@@ -79,19 +79,19 @@ fn if_without_else_discards_its_branch_value() {
 #[test]
 fn unit_lambda_discards_a_trailing_value() {
     check(
-        "fun setup() -> Bool = true\nfun main() {\n    let f = fun() -> Unit { setup() }\n    f()\n}\n",
+        "fun setup() -> bool = true\nfun main() {\n    let f = fun() -> Unit { setup() }\n    f()\n}\n",
     )
     .unwrap();
 }
 
 #[test]
 fn non_unit_function_still_requires_its_declared_return_type() {
-    assert!(check("fun value() -> Int { true }").is_err());
+    assert!(check("fun value() -> int { true }").is_err());
 }
 
 #[test]
 fn if_with_else_still_requires_matching_branch_types() {
-    assert!(check("fun run(ready: Bool) { if ready { 1 } else { true } }").is_err());
+    assert!(check("fun run(ready: bool) { if ready { 1 } else { true } }").is_err());
 }
 
 #[test]
@@ -101,7 +101,7 @@ fn generic_arg_violating_a_bound_is_rejected() {
     // unresolved callee in the back end (the `Map<Uuid, V>` without `Hash`
     // class of bug).
     let err = check(
-        "trait Keyable {}\nstruct Holder<T: Keyable> { v: T }\nstruct Plain { x: Int }\nstruct Bad { h: Holder<Plain> }\n",
+        "trait Keyable {}\nstruct Holder[T: Keyable] { v: T }\nstruct Plain { x: int }\nstruct Bad { h: Holder[Plain] }\n",
     )
     .unwrap_err();
     match err {
@@ -140,7 +140,7 @@ fn indexing_a_string_is_rejected() {
     let err = check("fun main() {\n    let t = \"abc\"\n    let c = t[0]\n}\n").unwrap_err();
     match err {
         RavenError::Type(b, _, _) => assert!(
-            matches!(*b, TypeError::Custom(ref m) if m.contains("cannot index into a `String`")),
+            matches!(*b, TypeError::Custom(ref m) if m.contains("cannot index into a `str`")),
             "got: {:?}",
             b
         ),
@@ -155,7 +155,7 @@ fn assigning_through_a_string_index_is_rejected() {
     let err = check("fun main() {\n    let t = \"abc\"\n    t[0] = 'z'\n}\n").unwrap_err();
     match err {
         RavenError::Type(b, _, _) => assert!(
-            matches!(*b, TypeError::Custom(ref m) if m.contains("cannot index into a `String`")),
+            matches!(*b, TypeError::Custom(ref m) if m.contains("cannot index into a `str`")),
             "got: {:?}",
             b
         ),
@@ -167,7 +167,7 @@ fn assigning_through_a_string_index_is_rejected() {
 fn indexing_a_list_is_still_allowed() {
     // The guard above is specific to `String`; list indexing keeps working and
     // still yields the element type.
-    check("fun main() {\n    let xs = [1, 2, 3]\n    let n: Int = xs[1]\n}\n").unwrap();
+    check("fun main() {\n    let xs = [1, 2, 3]\n    let n: int = xs[1]\n}\n").unwrap();
 }
 
 #[test]
@@ -176,7 +176,7 @@ fn binary_op_on_one_user_type_names_it_once() {
     // `check_binary` built the expected half from the left operand twice, so
     // both halves were identical whenever the operands shared a type
     // (issue #895). The message now says what is actually wrong.
-    let src = "struct V { x: Int }\nfun main() {\n    let a = V { x: 1 }\n    let b = V { x: 2 }\n    let c = a + b\n}\n";
+    let src = "struct V { x: int }\nfun main() {\n    let a = V { x: 1 }\n    let b = V { x: 2 }\n    let c = a + b\n}\n";
     let err = check(src).unwrap_err();
     let rendered = err.render(src, false);
     assert!(
@@ -208,7 +208,7 @@ fn binary_op_on_mixed_types_names_both_sides() {
     let err = check(src).unwrap_err();
     let rendered = err.render(src, false);
     assert!(
-        rendered.contains("`+` is not defined for `Int` and `Float`"),
+        rendered.contains("`+` is not defined for `int` and `float`"),
         "got: {}",
         rendered
     );
@@ -219,7 +219,7 @@ fn binary_op_on_mixed_types_names_both_sides() {
 fn ordering_a_user_type_points_at_derive_ord() {
     // `Ord` is derivable and supplies `compare`, so the ordering operators
     // point there rather than at a hand-written arithmetic-style method.
-    let src = "struct V { x: Int }\nfun main() {\n    let c = V { x: 1 } < V { x: 2 }\n}\n";
+    let src = "struct V { x: int }\nfun main() {\n    let c = V { x: 1 } < V { x: 2 }\n}\n";
     let err = check(src).unwrap_err();
     let rendered = err.render(src, false);
     assert!(
@@ -236,33 +236,37 @@ fn ordering_a_user_type_points_at_derive_ord() {
 fn logical_and_bitwise_ops_report_their_own_domain() {
     // The logical and bitwise arms carry the operator's own accepted types
     // rather than a generic mismatch.
-    let src = "fun main() {\n    let c = 1 && 2\n}\n";
+    let src = "fun main() {\n    let c = 1 and 2\n}\n";
     let rendered = check(src).unwrap_err().render(src, false);
     assert!(
-        rendered.contains("`&&` is not defined for `Int`"),
+        rendered.contains("`and` is not defined for `int`"),
         "got: {}",
         rendered
     );
-    assert!(rendered.contains("`&&` works on Bool"), "got: {}", rendered);
+    assert!(
+        rendered.contains("`and` works on bool"),
+        "got: {}",
+        rendered
+    );
 
     let src = "fun main() {\n    let c = 1.5 & 2.5\n}\n";
     let rendered = check(src).unwrap_err().render(src, false);
     assert!(
-        rendered.contains("`&` is not defined for `Float`"),
+        rendered.contains("`&` is not defined for `float`"),
         "got: {}",
         rendered
     );
-    assert!(rendered.contains("`&` works on Int"), "got: {}", rendered);
+    assert!(rendered.contains("`&` works on int"), "got: {}", rendered);
 }
 
 #[test]
 fn mixed_numeric_hint_matches_the_operator_domain() {
     // A logical operator wants Bool, so a mixed Int/Float pair must not be
     // told to convert to Float; that expression would still be rejected.
-    let src = "fun main() {\n    let c = 1 && 2.0\n}\n";
+    let src = "fun main() {\n    let c = 1 and 2.0\n}\n";
     let rendered = check(src).unwrap_err().render(src, false);
     assert!(
-        rendered.contains("`&&` is not defined for `Int` and `Float`"),
+        rendered.contains("`and` is not defined for `int` and `float`"),
         "got: {}",
         rendered
     );
@@ -274,7 +278,7 @@ fn mixed_numeric_hint_matches_the_operator_domain() {
     let src = "fun main() {\n    let c = 1 & 2.0\n}\n";
     let rendered = check(src).unwrap_err().render(src, false);
     assert!(
-        rendered.contains("`&` is not defined for `Int` and `Float`"),
+        rendered.contains("`&` is not defined for `int` and `float`"),
         "got: {}",
         rendered
     );
@@ -289,7 +293,7 @@ fn supported_operators_still_type_check() {
         .unwrap();
     check("fun main() {\n    let a = 1 < 2\n    let b = \"a\" < \"b\"\n    let c = 'a' < 'b'\n}\n")
         .unwrap();
-    check("fun main() {\n    let a = true && false\n    let b = 6 & 3\n    let c = 1 << 4\n}\n")
+    check("fun main() {\n    let a = true and false\n    let b = 6 & 3\n    let c = 1 << 4\n}\n")
         .unwrap();
 }
 
@@ -299,7 +303,7 @@ fn inferred_type_violating_a_bound_is_rejected() {
     // moment the inference variable resolves to a concrete type, not deferred
     // to the back end (issue #375).
     let err = check(
-        "trait Keyed {}\nstruct Box<T: Keyed> { v: T }\nfun wrap<T: Keyed>(x: T) -> Box<T> {\n    return Box { v: x }\n}\nstruct Plain { x: Int }\nfun main() {\n    let b = wrap(Plain { x: 1 })\n}\n",
+        "trait Keyed {}\nstruct Box[T: Keyed] { v: T }\nfun wrap[T: Keyed](x: T) -> Box[T] {\n    return Box { v: x }\n}\nstruct Plain { x: int }\nfun main() {\n    let b = wrap(Plain { x: 1 })\n}\n",
     )
     .unwrap_err();
     match err {
@@ -321,8 +325,8 @@ fn nested_match_none_arm_infers() {
     // variable solved during checking; resolving it up front lets the inner
     // None infer and keeps exhaustiveness from flagging a false catch-all.
     // Regression for #515.
-    let src = "enum V { Str(String), Int(Int) }\n\
-               fun f(o: Option<V>) -> Option<String> {\n\
+    let src = "enum V { Str(str), Int(int) }\n\
+               fun f(o: Option[V]) -> Option[str] {\n\
                return match o {\n\
                Some(v) -> match v {\n\
                Str(s) -> Some(s),\n\
@@ -339,8 +343,8 @@ fn nested_match_none_arm_infers() {
 fn derive_ord_struct_and_enum_check() {
     // `@derive(Ord)` synthesizes a `compare` method that type-checks for a
     // struct and a tuple enum. Feature for #499.
-    assert!(check("@derive(Ord)\nstruct P { x: Int, y: Int }\nfun main() {}\n").is_ok());
-    assert!(check("@derive(Ord)\nenum E { A, B(Int), C(Int, Int) }\nfun main() {}\n").is_ok());
+    assert!(check("@derive(Ord)\nstruct P { x: int, y: int }\nfun main() {}\n").is_ok());
+    assert!(check("@derive(Ord)\nenum E { A, B(int), C(int, int) }\nfun main() {}\n").is_ok());
 }
 
 #[test]
@@ -348,7 +352,7 @@ fn module_level_let_non_literal_needs_annotation() {
     // An unannotated module-level `let` with a non-literal initializer is a
     // clean type error rather than an opaque codegen failure. Regression for
     // #497.
-    assert!(check("fun make() -> Int { return 5 }\nlet g = make()\nfun main() {}\n").is_err());
+    assert!(check("fun make() -> int { return 5 }\nlet g = make()\nfun main() {}\n").is_err());
 }
 
 #[test]
@@ -362,14 +366,14 @@ fn module_level_empty_list_adopts_annotation() {
     // A top-level `let xs: List<Int> = []` must adopt its annotated element
     // type, the same as a local binding does, rather than reporting that the
     // empty array needs a context type. Regression for #498.
-    assert!(check("let xs: List<Int> = []\nfun main() {}\n").is_ok());
+    assert!(check("let xs: list[int] = []\nfun main() {}\n").is_ok());
 }
 
 #[test]
 fn nested_constructor_patterns_check_exhaustiveness() {
-    let full = "fun f(x: Option<Result<Int, Int>>) -> Int {\n    return match x {\n        Some(Ok(n)) -> n,\n        Some(Err(e)) -> 0 - e,\n        None -> 0,\n    }\n}\nfun main() {}\n";
+    let full = "fun f(x: Option[Result[int, int]]) -> int {\n    return match x {\n        Some(Ok(n)) -> n,\n        Some(Err(e)) -> 0 - e,\n        None -> 0,\n    }\n}\nfun main() {}\n";
     assert!(check(full).is_ok());
-    let partial = "fun f(x: Option<Result<Int, Int>>) -> Int {\n    return match x {\n        Some(Ok(n)) -> n,\n        None -> 0,\n    }\n}\nfun main() {}\n";
+    let partial = "fun f(x: Option[Result[int, int]]) -> int {\n    return match x {\n        Some(Ok(n)) -> n,\n        None -> 0,\n    }\n}\nfun main() {}\n";
     assert!(check(partial).is_err());
 }
 
@@ -380,7 +384,7 @@ fn generic_method_return_only_param_is_grounded() {
     // explicit type argument on the call. Without grounding, the explicit-arg
     // call would leave `T` unresolved and fail finalization. Regression for
     // #384.
-    let src = "trait Mk { fun mk() -> Self }\nstruct A { t: Int }\nimpl Mk for A {\n    fun mk() -> A { return A { t: 1 } }\n}\nstruct F {}\nimpl F {\n    fun build<T: Mk>(self) -> T { return T.mk() }\n}\nfun main() {\n    let f = F {}\n    let a: A = f.build()\n    let b = f.build<A>()\n}\n";
+    let src = "trait Mk { fun mk() -> Self }\nstruct A { t: int }\nimpl Mk for A {\n    fun mk() -> A { return A { t: 1 } }\n}\nstruct F {}\nimpl F {\n    fun build[T: Mk](self) -> T { return T.mk() }\n}\nfun main() {\n    let f = F {}\n    let a: A = f.build()\n    let b = f.build[A]()\n}\n";
     let r = check(src);
     assert!(r.is_ok(), "expected ok, got {:?}", r.err());
 }
@@ -390,7 +394,7 @@ fn generic_instantiation_missing_bound_impl_is_rejected() {
     // A generic instantiation (`Box<Int>`) used where a bound requires a trait
     // its constructor never implements is a clean type error, not an unresolved
     // callee at codegen. Regression for #411.
-    let bad = "trait Greet { fun hi(self) -> Int }\nstruct Box<T> { value: T }\nfun need<K: Greet>(k: K) -> Int = 0\nfun main() { let x = need(Box { value: 1 }) }\n";
+    let bad = "trait Greet { fun hi(self) -> int }\nstruct Box[T] { value: T }\nfun need[K: Greet](k: K) -> int = 0\nfun main() { let x = need(Box { value: 1 }) }\n";
     assert!(check(bad).is_err());
 }
 
@@ -399,7 +403,7 @@ fn dyn_over_self_returning_trait_is_rejected() {
     // A trait with a `-> Self` method is not object-safe: building a `dyn`
     // value of it must be a type error, not a downstream miscompile. Regression
     // for #412.
-    let bad = "trait Cloner { fun dup(self) -> Self }\nstruct W { id: Int }\nimpl Cloner for W {\n    fun dup(self) -> W { return W { id: self.id } }\n}\nfun main() {\n    let w = W { id: 1 }\n    let d: dyn Cloner = w\n}\n";
+    let bad = "trait Cloner { fun dup(self) -> Self }\nstruct W { id: int }\nimpl Cloner for W {\n    fun dup(self) -> W { return W { id: self.id } }\n}\nfun main() {\n    let w = W { id: 1 }\n    let d: dyn Cloner = w\n}\n";
     assert!(check(bad).is_err());
 }
 
@@ -410,13 +414,13 @@ fn cross_function_unresolved_var_does_not_panic() {
     // entries, so `later` no longer tries to resolve `consumer`'s variable
     // against its own inference context. This must return a clean type error,
     // not panic.
-    let src = "fun ambiguous<T>() -> List<T> {\n    let xs: List<T> = []\n    return xs\n}\nfun consumer() {\n    let a = ambiguous()\n}\nfun later() {\n    let b = 1\n}\n";
+    let src = "fun ambiguous[T]() -> list[T] {\n    let xs: list[T] = []\n    return xs\n}\nfun consumer() {\n    let a = ambiguous()\n}\nfun later() {\n    let b = 1\n}\n";
     assert!(check(src).is_err());
 }
 
 #[test]
 fn reassigning_a_const_local_is_rejected() {
-    let err = check("fun f() {\n    const K: Int = 5\n    K = 7\n}\n").unwrap_err();
+    let err = check("fun f() {\n    const K: int = 5\n    K = 7\n}\n").unwrap_err();
     match err {
         RavenError::Type(b, _, _) => match *b {
             TypeError::Custom(msg) => assert!(msg.contains("cannot assign"), "got: {}", msg),
@@ -428,13 +432,13 @@ fn reassigning_a_const_local_is_rejected() {
 
 #[test]
 fn compound_assigning_a_const_local_is_rejected() {
-    let err = check("fun f() {\n    const K: Int = 5\n    K += 1\n}\n").unwrap_err();
+    let err = check("fun f() {\n    const K: int = 5\n    K += 1\n}\n").unwrap_err();
     assert!(matches!(err, RavenError::Type(_, _, _)));
 }
 
 #[test]
 fn reassigning_a_let_local_is_allowed() {
-    check("fun f() -> Int {\n    var m = 1\n    m = 2\n    return m\n}\n").unwrap();
+    check("fun f() -> int {\n    var m = 1\n    m = 2\n    return m\n}\n").unwrap();
 }
 
 #[test]
@@ -442,7 +446,7 @@ fn mixed_int_float_arithmetic_is_rejected() {
     // Still rejected; the diagnostic moved from `TypeMismatch` to the
     // operator-specific variant in issue #895, since the operator, not just
     // one operand's type, is what the message needs to name.
-    let err = check("fun f() -> Float = 1 + 2.0\n").unwrap_err();
+    let err = check("fun f() -> float = 1 + 2.0\n").unwrap_err();
     match err {
         RavenError::Type(b, _, _) => assert!(
             matches!(*b, TypeError::BinaryOpUnsupported { ref op, .. } if op == "+"),
@@ -455,17 +459,17 @@ fn mixed_int_float_arithmetic_is_rejected() {
 
 #[test]
 fn bool_logical_ops_produce_bool() {
-    check("fun f(a: Bool, b: Bool) -> Bool = a && b || !a\n").unwrap();
+    check("fun f(a: bool, b: bool) -> bool = a and b or !a\n").unwrap();
 }
 
 #[test]
 fn comparison_returns_bool() {
-    check("fun f(a: Int, b: Int) -> Bool = a < b\n").unwrap();
+    check("fun f(a: int, b: int) -> bool = a < b\n").unwrap();
 }
 
 #[test]
 fn comparison_requires_compatible_operands() {
-    let err = check("fun f(a: Int, b: Bool) -> Bool = a < b\n").unwrap_err();
+    let err = check("fun f(a: int, b: bool) -> bool = a < b\n").unwrap_err();
     assert!(matches!(err, RavenError::Type(_, _, _)));
 }
 
@@ -475,7 +479,7 @@ fn bound_trait_method_with_self_arg_keeps_its_parameter() {
     // bounded by that trait, must keep the argument: only the leading
     // `self` receiver is dropped, not every `Self`-typed parameter.
     check(
-        "trait Combine {\n    fun combine(self, other: Self) -> Self\n}\nfun pair<T: Combine>(a: T, b: T) -> T {\n    return a.combine(b)\n}\n",
+        "trait Combine {\n    fun combine(self, other: Self) -> Self\n}\nfun pair[T: Combine](a: T, b: T) -> T {\n    return a.combine(b)\n}\n",
     )
     .unwrap();
 }
@@ -483,14 +487,14 @@ fn bound_trait_method_with_self_arg_keeps_its_parameter() {
 #[test]
 fn struct_literal_and_field_access() {
     check(
-        "struct Point { x: Int, y: Int }\nfun f() -> Int {\n    let p = Point { x: 1, y: 2 }\n    return p.x\n}\n",
+        "struct Point { x: int, y: int }\nfun f() -> int {\n    let p = Point { x: 1, y: 2 }\n    return p.x\n}\n",
     )
     .unwrap();
 }
 
 #[test]
 fn struct_literal_missing_field_is_error() {
-    let err = check("struct P { x: Int, y: Int }\nfun f() -> P = P { x: 1 }\n").unwrap_err();
+    let err = check("struct P { x: int, y: int }\nfun f() -> P = P { x: 1 }\n").unwrap_err();
     match err {
         RavenError::Type(b, _, _) => match *b {
             TypeError::Custom(msg) => assert!(msg.contains("missing field")),
@@ -502,7 +506,7 @@ fn struct_literal_missing_field_is_error() {
 
 #[test]
 fn unknown_field_is_error() {
-    let err = check("struct P { x: Int }\nfun f(p: P) -> Int = p.z\n").unwrap_err();
+    let err = check("struct P { x: int }\nfun f(p: P) -> int = p.z\n").unwrap_err();
     match err {
         RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::UndefinedField { .. })),
         other => panic!("expected UndefinedField, got {:?}", other),
@@ -510,18 +514,18 @@ fn unknown_field_is_error() {
 }
 
 const DYN_SPEAK: &str = concat!(
-    "trait Speak { fun sound(self) -> Int }\n",
+    "trait Speak { fun sound(self) -> int }\n",
     "struct Dog {}\n",
     "struct Cat {}\n",
-    "impl Speak for Dog { fun sound(self) -> Int = 1 }\n",
-    "impl Speak for Cat { fun sound(self) -> Int = 2 }\n",
+    "impl Speak for Dog { fun sound(self) -> int = 1 }\n",
+    "impl Speak for Cat { fun sound(self) -> int = 2 }\n",
 );
 
 #[test]
 fn dyn_argument_coercion_and_dispatch_check() {
     let src = format!(
         "{DYN_SPEAK}\
-         fun describe(s: dyn Speak) -> Int = s.sound()\n\
+         fun describe(s: dyn Speak) -> int = s.sound()\n\
          fun main() {{\n    let d = Dog {{}}\n    print(describe(d))\n}}\n"
     );
     check_with_prelude(&src).unwrap();
@@ -541,7 +545,7 @@ fn dyn_coercion_of_non_implementor_is_error() {
     let src = format!(
         "{DYN_SPEAK}\
          struct Rock {{}}\n\
-         fun describe(s: dyn Speak) -> Int = s.sound()\n\
+         fun describe(s: dyn Speak) -> int = s.sound()\n\
          fun main() {{\n    print(describe(Rock {{}}))\n}}\n"
     );
     let err = check(&src).unwrap_err();
@@ -552,7 +556,7 @@ fn dyn_coercion_of_non_implementor_is_error() {
 fn dyn_unknown_trait_method_is_error() {
     let src = format!(
         "{DYN_SPEAK}\
-         fun describe(s: dyn Speak) -> Int = s.bark()\n"
+         fun describe(s: dyn Speak) -> int = s.bark()\n"
     );
     let err = check(&src).unwrap_err();
     match err {
@@ -565,8 +569,8 @@ fn dyn_unknown_trait_method_is_error() {
 fn dyn_of_non_object_safe_generic_method_is_error() {
     // A generic method makes the trait non-object-safe.
     let src = concat!(
-        "trait Maker { fun make<T>(self, x: T) -> Int }\n",
-        "fun describe(m: dyn Maker) -> Int = 0\n",
+        "trait Maker { fun make[T](self, x: T) -> int }\n",
+        "fun describe(m: dyn Maker) -> int = 0\n",
     );
     let err = check(src).unwrap_err();
     match err {
@@ -583,29 +587,29 @@ fn dyn_of_non_object_safe_generic_method_is_error() {
 
 #[test]
 fn array_literal_unifies_element_types() {
-    check("fun f() -> Int {\n    let xs = [1, 2, 3]\n    return xs.len()\n}\n").unwrap();
+    check("fun f() -> int {\n    let xs = [1, 2, 3]\n    return xs.len()\n}\n").unwrap();
 }
 
 #[test]
 fn array_literal_mixed_types_is_error() {
-    let err = check("fun f() -> Int {\n    let xs = [1, true]\n    return 0\n}\n").unwrap_err();
+    let err = check("fun f() -> int {\n    let xs = [1, true]\n    return 0\n}\n").unwrap_err();
     assert!(matches!(err, RavenError::Type(_, _, _)));
 }
 
 #[test]
 fn if_branches_must_unify() {
-    let err = check("fun f(c: Bool) -> Int = if c { 1 } else { true }\n").unwrap_err();
+    let err = check("fun f(c: bool) -> int = if c { 1 } else { true }\n").unwrap_err();
     assert!(matches!(err, RavenError::Type(_, _, _)));
 }
 
 #[test]
 fn if_returns_unified_type() {
-    check("fun f(c: Bool) -> Int = if c { 1 } else { 2 }\n").unwrap();
+    check("fun f(c: bool) -> int = if c { 1 } else { 2 }\n").unwrap();
 }
 
 #[test]
 fn unknown_type_in_signature_is_error() {
-    let err = check("fun f(x: Widget) -> Int = 0\n").unwrap_err();
+    let err = check("fun f(x: Widget) -> int = 0\n").unwrap_err();
     // The resolver catches this as UnresolvedName before the type
     // checker runs, but either is acceptable.
     assert!(matches!(
@@ -617,7 +621,7 @@ fn unknown_type_in_signature_is_error() {
 #[test]
 fn option_match_exhaustive() {
     check(
-        "fun f(x: Option<Int>) -> Int {\n    return match x {\n        None -> 0,\n        Some(n) -> n,\n    }\n}\n",
+        "fun f(x: Option[int]) -> int {\n    return match x {\n        None -> 0,\n        Some(n) -> n,\n    }\n}\n",
     )
     .unwrap();
 }
@@ -625,7 +629,7 @@ fn option_match_exhaustive() {
 #[test]
 fn option_match_non_exhaustive_is_error() {
     let err = check(
-        "fun f(x: Option<Int>) -> Int {\n    return match x {\n        None -> 0,\n    }\n}\n",
+        "fun f(x: Option[int]) -> int {\n    return match x {\n        None -> 0,\n    }\n}\n",
     )
     .unwrap_err();
     match err {
@@ -636,14 +640,14 @@ fn option_match_non_exhaustive_is_error() {
 
 #[test]
 fn match_wildcard_makes_it_exhaustive() {
-    check("fun f(x: Option<Int>) -> Int {\n    return match x {\n        _ -> 0,\n    }\n}\n")
+    check("fun f(x: Option[int]) -> int {\n    return match x {\n        _ -> 0,\n    }\n}\n")
         .unwrap();
 }
 
 #[test]
 fn redundant_pattern_after_wildcard_is_error() {
     let err = check(
-        "fun f(x: Option<Int>) -> Int {\n    return match x {\n        _ -> 0,\n        Some(n) -> n,\n    }\n}\n",
+        "fun f(x: Option[int]) -> int {\n    return match x {\n        _ -> 0,\n        Some(n) -> n,\n    }\n}\n",
     )
     .unwrap_err();
     match err {
@@ -655,14 +659,14 @@ fn redundant_pattern_after_wildcard_is_error() {
 #[test]
 fn method_call_resolves_to_inherent_impl() {
     check(
-        "struct Point { x: Int }\nimpl Point { fun get(self) -> Int = self.x }\nfun f(p: Point) -> Int = p.get()\n",
+        "struct Point { x: int }\nimpl Point { fun get(self) -> int = self.x }\nfun f(p: Point) -> int = p.get()\n",
     )
     .unwrap();
 }
 
 #[test]
 fn unknown_method_is_error() {
-    let err = check("struct P { x: Int }\nfun f(p: P) -> Int = p.nope()\n").unwrap_err();
+    let err = check("struct P { x: int }\nfun f(p: P) -> int = p.nope()\n").unwrap_err();
     match err {
         RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::UndefinedMethod { .. })),
         other => panic!("expected UndefinedMethod, got {:?}", other),
@@ -673,17 +677,17 @@ fn unknown_method_is_error() {
 fn impl_method_on_builtin_int_resolves() {
     // `impl Int { ... }` collects against the built in `Int` receiver and
     // a call on an integer expression resolves to the impl method.
-    check("impl Int { fun doubled(self) -> Int = self * 2 }\nfun f() -> Int = 21.doubled()\n")
-        .expect("impl Int method resolves");
+    check("impl int { fun doubled(self) -> int = self * 2 }\nfun f() -> int = 21.doubled()\n")
+        .expect("impl int method resolves");
 }
 
 #[test]
 fn impl_method_on_builtin_string_resolves() {
     check(
-        "impl String { fun first(self) -> Int = __str_byte_at(self, 0) }\n\
-         fun f() -> Int = \"A\".first()\n",
+        "impl str { fun first(self) -> int = __str_byte_at(self, 0) }\n\
+         fun f() -> int = \"A\".first()\n",
     )
-    .expect("impl String method resolves");
+    .expect("impl str method resolves");
 }
 
 #[test]
@@ -691,10 +695,10 @@ fn impl_method_on_generic_list_resolves() {
     // A generic impl on the built in `List<T>` introduces the impl's type
     // parameter and resolves the method per element type.
     check(
-        "impl<T> List<T> { fun head(self) -> T = self.get(0) }\n\
-         fun f() -> Int {\n    let xs = [1, 2, 3]\n    return xs.head()\n}\n",
+        "impl[T] list[T] { fun head(self) -> T = self.get(0) }\n\
+         fun f() -> int {\n    let xs = [1, 2, 3]\n    return xs.head()\n}\n",
     )
-    .expect("impl List<T> method resolves");
+    .expect("impl list[T] method resolves");
 }
 
 #[test]
@@ -703,7 +707,7 @@ fn impl_method_on_builtin_shadows_hardcoded_fast_path() {
     // the hard coded built in `String::len` fast path. The signature
     // checked is the user impl's, so a return type mismatch against it is
     // reported (the impl returns Int, used where Bool is expected).
-    let err = check("impl String { fun len(self) -> Int = 0 }\nfun f() -> Bool = \"hi\".len()\n")
+    let err = check("impl str { fun len(self) -> int = 0 }\nfun f() -> bool = \"hi\".len()\n")
         .unwrap_err();
     match err {
         RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::TypeMismatch { .. })),
@@ -714,7 +718,7 @@ fn impl_method_on_builtin_shadows_hardcoded_fast_path() {
 #[test]
 fn wrong_arity_is_error() {
     let err =
-        check("fun f() -> Int = add(1)\nfun add(a: Int, b: Int) -> Int = a + b\n").unwrap_err();
+        check("fun f() -> int = add(1)\nfun add(a: int, b: int) -> int = a + b\n").unwrap_err();
     match err {
         RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::WrongArity { .. })),
         other => panic!("expected WrongArity, got {:?}", other),
@@ -726,13 +730,13 @@ fn generic_identity_function_checks() {
     // The identity function now type checks; its body returns its
     // parameter unchanged. No call site is involved here so the test
     // only exercises declaration + body unification against `T`.
-    check("fun id<T>(x: T) -> T = x\n").unwrap();
+    check("fun id[T](x: T) -> T = x\n").unwrap();
 }
 
 #[test]
 fn generic_function_call_infers_type_argument() {
     // The call `id(1)` instantiates `T` to `Int` through unification.
-    check("fun id<T>(x: T) -> T = x\nfun main() -> Int = id(1)\n").unwrap();
+    check("fun id[T](x: T) -> T = x\nfun main() -> int = id(1)\n").unwrap();
 }
 
 #[test]
@@ -740,18 +744,18 @@ fn generic_function_explicit_type_argument() {
     // The parser admits `id<Int>(1)` as a call when the lookahead
     // disambiguates from comparison. When the parser supports it, the
     // explicit argument unifies with the inferred one.
-    let _ = check("fun id<T>(x: T) -> T = x\nfun main() -> Int = id<Int>(1)\n");
+    let _ = check("fun id[T](x: T) -> T = x\nfun main() -> int = id[int](1)\n");
 }
 
 #[test]
 fn generic_struct_field_substitutes_type_arg() {
-    check("struct Box<T> { value: T }\nfun read(b: Box<Int>) -> Int = b.value\n").unwrap();
+    check("struct Box[T] { value: T }\nfun read(b: Box[int]) -> int = b.value\n").unwrap();
 }
 
 #[test]
 fn generic_struct_literal_infers_field_type() {
     check(
-        "struct Box<T> { value: T }\nfun main() -> Int {\n    let b = Box { value: 1 }\n    return b.value\n}\n",
+        "struct Box[T] { value: T }\nfun main() -> int {\n    let b = Box { value: 1 }\n    return b.value\n}\n",
     )
     .unwrap();
 }
@@ -759,9 +763,9 @@ fn generic_struct_literal_infers_field_type() {
 #[test]
 fn generic_impl_on_generic_struct_returns_field_type() {
     check(
-        "struct Box<T> { value: T }\n\
-         impl<T> Box<T> {\n    fun get(self) -> T = self.value\n}\n\
-         fun read(b: Box<Int>) -> Int = b.get()\n",
+        "struct Box[T] { value: T }\n\
+         impl[T] Box[T] {\n    fun get(self) -> T = self.value\n}\n\
+         fun read(b: Box[int]) -> int = b.get()\n",
     )
     .unwrap();
 }
@@ -769,8 +773,8 @@ fn generic_impl_on_generic_struct_returns_field_type() {
 #[test]
 fn generic_enum_either_pattern_matches() {
     check(
-        "enum Either<L, R> { Left(L), Right(R) }\n\
-         fun unwrap_left(e: Either<Int, String>) -> Int {\n    \
+        "enum Either[L, R] { Left(L), Right(R) }\n\
+         fun unwrap_left(e: Either[int, str]) -> int {\n    \
             return match e {\n        \
                 Left(x) -> x,\n        \
                 Right(_) -> 0,\n    \
@@ -788,9 +792,9 @@ fn trait_impl_method_dispatches() {
     // resolver limitation; this test sidesteps it by using a free
     // function inside the trait so the focus stays on the impl
     // matching path.
-    let src = "trait Default { fun build() -> Int }\n\
-               struct A { name: String }\n\
-               impl Default for A { fun build() -> Int = 7 }\n";
+    let src = "trait Default { fun build() -> int }\n\
+               struct A { name: str }\n\
+               impl Default for A { fun build() -> int = 7 }\n";
     let _ = check(src);
 }
 
@@ -799,16 +803,16 @@ fn bounded_generic_collects_bound_name() {
     // A bound is parsed and recorded in the signature. The body
     // itself only references T, so it type checks straight away; the
     // bound is observed by looking at the collected signature.
-    let src = "trait Display { fun render() -> String }\n\
-               fun show<T: Display>(x: T) -> T = x\n";
+    let src = "trait Display { fun render() -> str }\n\
+               fun show[T: Display](x: T) -> T = x\n";
     let _ = check(src);
 }
 
 #[test]
 fn multi_bound_collects_each_bound() {
-    let src = "trait Display { fun render() -> String }\n\
-               trait Clone { fun copy() -> Int }\n\
-               fun util<T: Display + Clone>(x: T) -> T = x\n";
+    let src = "trait Display { fun render() -> str }\n\
+               trait Clone { fun copy() -> int }\n\
+               fun util[T: Display + Clone](x: T) -> T = x\n";
     let _ = check(src);
 }
 
@@ -817,7 +821,7 @@ fn generic_function_unifies_argument_to_parameter_type() {
     // Calling `pair(1, true)` on a generic `pair<T>(a: T, b: T)`
     // should fail because Int and Bool do not unify.
     let err =
-        check("fun pair<T>(a: T, b: T) -> T = a\nfun main() -> Int = pair(1, true)\n").unwrap_err();
+        check("fun pair[T](a: T, b: T) -> T = a\nfun main() -> int = pair(1, true)\n").unwrap_err();
     match err {
         RavenError::Type(b, _, _) => {
             assert!(matches!(*b, TypeError::TypeMismatch { .. }))
@@ -828,12 +832,12 @@ fn generic_function_unifies_argument_to_parameter_type() {
 
 #[test]
 fn option_some_constructor_infers_inner_type() {
-    check("fun f() -> Option<Int> = Some(1)\n").unwrap();
+    check("fun f() -> Option[int] = Some(1)\n").unwrap();
 }
 
 #[test]
 fn list_len_method_returns_int() {
-    check("fun f() -> Int {\n    let xs = [1, 2, 3]\n    return xs.len()\n}\n").unwrap();
+    check("fun f() -> int {\n    let xs = [1, 2, 3]\n    return xs.len()\n}\n").unwrap();
 }
 
 #[test]
@@ -856,7 +860,7 @@ fn empty_array_literal_without_any_use_cannot_infer() {
 #[test]
 fn empty_array_literal_infers_from_later_use() {
     check(
-        "fun f() -> Int {
+        "fun f() -> int {
     let xs = []
     xs.push(1)
     return xs.len()
@@ -871,21 +875,19 @@ fn try_operator_on_result_type_checks() {
     // The `?` operator unwraps a Result<T, E> to T. HIR lowering then
     // desugars it into a match; the type checker only needs to assign
     // a type here so subsequent expressions see the inner T.
-    check(
-        "fun f(x: Result<Int, String>) -> Result<Int, String> { let v = x?; return Ok(v + 1) }\n",
-    )
-    .expect("? on Result type-checks");
+    check("fun f(x: Result[int, str]) -> Result[int, str] { let v = x?; return Ok(v + 1) }\n")
+        .expect("? on Result type-checks");
 }
 
 #[test]
 fn try_operator_on_option_type_checks() {
-    check("fun f(x: Int?) -> Int? { let v = x?; return Some(v + 1) }\n")
+    check("fun f(x: int?) -> int? { let v = x?; return Some(v + 1) }\n")
         .expect("? on Option type-checks");
 }
 
 #[test]
 fn try_operator_on_int_is_error() {
-    let err = check("fun f() -> Int { let v = 1?; return v }\n").unwrap_err();
+    let err = check("fun f() -> int { let v = 1?; return v }\n").unwrap_err();
     match err {
         RavenError::Type(b, _, _) => match *b {
             TypeError::Custom(m) => assert!(m.contains("?")),
@@ -900,7 +902,7 @@ fn try_on_result_in_non_result_fn_is_error() {
     // `x?` propagates `Err(String)` out of a function that returns a plain
     // `Int`, which cannot carry the error. The checker must reject it instead
     // of silently dropping the propagated error (issue #527).
-    let err = check("fun f(x: Result<Int, String>) -> Int { let v = x?; return v }\n").unwrap_err();
+    let err = check("fun f(x: Result[int, str]) -> int { let v = x?; return v }\n").unwrap_err();
     match err {
         RavenError::Type(b, _, _) => match *b {
             TypeError::Custom(m) => assert!(m.contains("not a Result"), "got: {}", m),
@@ -915,7 +917,7 @@ fn try_on_result_with_incompatible_error_type_is_error() {
     // The propagated error type (`String`) must unify with the enclosing
     // function's error type (`Int`); a mismatch is a type error.
     let err =
-        check("fun f(x: Result<Int, String>) -> Result<Int, Int> { let v = x?; return Ok(v) }\n")
+        check("fun f(x: Result[int, str]) -> Result[int, int] { let v = x?; return Ok(v) }\n")
             .unwrap_err();
     assert!(
         matches!(err, RavenError::Type(_, _, _)),
@@ -928,7 +930,7 @@ fn try_on_result_with_incompatible_error_type_is_error() {
 fn try_on_option_in_non_option_fn_is_error() {
     // `?` on an `Option` propagates `None`, so the enclosing function must
     // return an `Option`; returning `Int` is rejected.
-    let err = check("fun f(x: Int?) -> Int { let v = x?; return v }\n").unwrap_err();
+    let err = check("fun f(x: int?) -> int { let v = x?; return v }\n").unwrap_err();
     match err {
         RavenError::Type(b, _, _) => match *b {
             TypeError::Custom(m) => assert!(m.contains("not an Option"), "got: {}", m),
@@ -979,19 +981,19 @@ fn duplicate_enum_variant_is_rejected() {
 #[test]
 fn duplicate_method_in_impl_is_rejected() {
     assert!(
-        check("struct S {}\nimpl S {\n    fun m(self) -> Int = 1\n    fun m(self) -> Int = 2\n}\nfun main() {}\n")
+        check("struct S {}\nimpl S {\n    fun m(self) -> int = 1\n    fun m(self) -> int = 2\n}\nfun main() {}\n")
             .is_err()
     );
 }
 
 #[test]
 fn duplicate_parameter_name_is_rejected() {
-    assert!(check("fun f(x: Int, x: Int) -> Int = x\nfun main() {}\n").is_err());
+    assert!(check("fun f(x: int, x: int) -> int = x\nfun main() {}\n").is_err());
 }
 
 #[test]
 fn constructor_pattern_on_a_non_enum_is_rejected() {
-    let err = check("fun f(n: Int) -> Int {\n    return match n {\n        Nope(x) -> x,\n        _ -> 0,\n    }\n}\nfun main() {}\n")
+    let err = check("fun f(n: int) -> int {\n    return match n {\n        Nope(x) -> x,\n        _ -> 0,\n    }\n}\nfun main() {}\n")
         .unwrap_err();
     match err {
         RavenError::Type(b, _, _) => match *b {
@@ -1006,7 +1008,7 @@ fn constructor_pattern_on_a_non_enum_is_rejected() {
 fn struct_variant_pattern_is_rejected_not_crashed() {
     // A named-field variant matched with `{ ... }` is rejected with a
     // diagnostic instead of reaching codegen and crashing Cranelift (#545).
-    let err = check("enum E {\n    P(x: Int, y: Int),\n    Z,\n}\nfun f(e: E) -> Int {\n    return match e {\n        P { x, y } -> x + y,\n        Z -> 0,\n    }\n}\nfun main() {}\n")
+    let err = check("enum E {\n    P(x: int, y: int),\n    Z,\n}\nfun f(e: E) -> int {\n    return match e {\n        P { x, y } -> x + y,\n        Z -> 0,\n    }\n}\nfun main() {}\n")
         .unwrap_err();
     assert!(
         matches!(err, RavenError::Type(_, _, _)),
@@ -1017,7 +1019,7 @@ fn struct_variant_pattern_is_rejected_not_crashed() {
 
 #[test]
 fn duplicate_variant_arm_is_redundant() {
-    let err = check("fun f(o: Option<Int>) -> Int {\n    return match o {\n        None -> 0,\n        None -> 1,\n        Some(n) -> n,\n    }\n}\nfun main() {}\n")
+    let err = check("fun f(o: Option[int]) -> int {\n    return match o {\n        None -> 0,\n        None -> 1,\n        Some(n) -> n,\n    }\n}\nfun main() {}\n")
         .unwrap_err();
     match err {
         RavenError::Type(b, _, _) => {
@@ -1029,7 +1031,7 @@ fn duplicate_variant_arm_is_redundant() {
 
 #[test]
 fn duplicate_literal_arm_is_redundant() {
-    let err = check("fun f(n: Int) -> String {\n    return match n {\n        0 -> \"a\",\n        0 -> \"b\",\n        _ -> \"c\",\n    }\n}\nfun main() {}\n")
+    let err = check("fun f(n: int) -> str {\n    return match n {\n        0 -> \"a\",\n        0 -> \"b\",\n        _ -> \"c\",\n    }\n}\nfun main() {}\n")
         .unwrap_err();
     match err {
         RavenError::Type(b, _, _) => {
@@ -1041,7 +1043,7 @@ fn duplicate_literal_arm_is_redundant() {
 
 #[test]
 fn distinct_literal_arms_are_ok() {
-    check("fun f(n: Int) -> String {\n    return match n {\n        0 -> \"a\",\n        1 -> \"b\",\n        _ -> \"c\",\n    }\n}\nfun main() {}\n")
+    check("fun f(n: int) -> str {\n    return match n {\n        0 -> \"a\",\n        1 -> \"b\",\n        _ -> \"c\",\n    }\n}\nfun main() {}\n")
         .expect("distinct literal arms are fine");
 }
 
@@ -1049,7 +1051,7 @@ fn distinct_literal_arms_are_ok() {
 fn ty_display_does_not_panic() {
     // Sanity check that exotic Ty values render.
     let t = Ty::List(Box::new(Ty::Option(Box::new(Ty::Int))));
-    assert_eq!(format!("{}", t), "List<Option<Int>>");
+    assert_eq!(format!("{}", t), "list[Option[int]]");
 }
 
 #[test]
@@ -1086,7 +1088,7 @@ fn repr_c_struct_crosses_ffi_by_value() {
 fn repr_c_struct_rejects_non_scalar_field() {
     // A repr(C) struct field must be a C scalar; a `String` field is
     // rejected at the declaration.
-    let err = check("@repr(C)\nstruct Bad {\n    s: String\n}\nfun main() {}\n").unwrap_err();
+    let err = check("@repr(C)\nstruct Bad {\n    s: str\n}\nfun main() {}\n").unwrap_err();
     assert!(matches!(err, RavenError::Type(_, _, _)));
 }
 
@@ -1167,7 +1169,7 @@ fn top_level_fn_passed_as_cfnptr_checks() {
     // A non-capturing top-level function whose params and return are all
     // C-FFI types is accepted where a `CFnPtr` is expected.
     check(
-        "extern \"C\" {\n    fun takes_cb(cmp: CFnPtr)\n}\nfun compare(a: CPtr<CInt>, b: CPtr<CInt>) -> CInt {\n    return __ptr_load<CInt>(a) - __ptr_load<CInt>(b)\n}\nfun main() {\n    takes_cb(compare)\n}\n",
+        "extern \"C\" {\n    fun takes_cb(cmp: CFnPtr)\n}\nfun compare(a: CPtr[CInt], b: CPtr[CInt]) -> CInt {\n    return __ptr_load[CInt](a) - __ptr_load[CInt](b)\n}\nfun main() {\n    takes_cb(compare)\n}\n",
     )
     .unwrap();
 }
@@ -1177,7 +1179,7 @@ fn cfnptr_arg_with_non_ffi_signature_is_rejected() {
     // A function with a native `Int` parameter has no defined C ABI, so it
     // cannot be passed as a `CFnPtr`.
     let err = check(
-        "extern \"C\" {\n    fun takes_cb(cmp: CFnPtr)\n}\nfun bad(x: Int) -> CInt {\n    return 0\n}\nfun main() {\n    takes_cb(bad)\n}\n",
+        "extern \"C\" {\n    fun takes_cb(cmp: CFnPtr)\n}\nfun bad(x: int) -> CInt {\n    return 0\n}\nfun main() {\n    takes_cb(bad)\n}\n",
     )
     .unwrap_err();
     assert!(matches!(err, RavenError::Type(_, _, _)));
@@ -1200,7 +1202,7 @@ fn cfnptr_arg_accepts_closure_value() {
     // parameter (a `CPtr`). Accepted as long as the closure's signature is
     // entirely C-FFI typed.
     check(
-        "extern \"C\" {\n    fun takes_cb(cb: CFnPtr, data: CPtr<Unit>)\n}\nfun main() {\n    let f = fun(a: CLong) -> CLong = a\n    takes_cb(f, f)\n}\n",
+        "extern \"C\" {\n    fun takes_cb(cb: CFnPtr, data: CPtr[Unit])\n}\nfun main() {\n    let f = fun(a: CLong) -> CLong = a\n    takes_cb(f, f)\n}\n",
     )
     .unwrap();
 }
@@ -1210,7 +1212,7 @@ fn cfnptr_arg_rejects_non_ffi_closure_signature() {
     // A closure callback whose parameter is not a C-FFI type has no defined
     // C ABI, so it is rejected.
     let err = check(
-        "extern \"C\" {\n    fun takes_cb(cb: CFnPtr, data: CPtr<Unit>)\n}\nfun main() {\n    let f = fun(a: Int) -> Int = a\n    takes_cb(f, f)\n}\n",
+        "extern \"C\" {\n    fun takes_cb(cb: CFnPtr, data: CPtr[Unit])\n}\nfun main() {\n    let f = fun(a: int) -> int = a\n    takes_cb(f, f)\n}\n",
     )
     .unwrap_err();
     assert!(matches!(err, RavenError::Type(_, _, _)));
@@ -1250,7 +1252,7 @@ fn non_variadic_extern_rejects_extra_args() {
 #[test]
 fn set_literal_type_checks() {
     check_with_prelude(
-        "import std/collections\nfun main() {\n    let s: Set<Int> = {1, 2, 2}\n    let _ = s.len()\n}\n",
+        "import std/collections\nfun main() {\n    let s: set[int] = {1, 2, 2}\n    let _ = s.len()\n}\n",
     )
     .unwrap();
 }
@@ -1282,7 +1284,7 @@ fn map_literal_infers_bool_values() {
 #[test]
 fn empty_map_literal_type_checks_with_annotation() {
     check_with_prelude(
-        "import std/collections\nfun main() {\n    let m: Map<String, Int> = [:]\n    let _ = m.len()\n}\n",
+        "import std/collections\nfun main() {\n    let m: dict[str, int] = [:]\n    let _ = m.len()\n}\n",
     )
     .unwrap();
 }
@@ -1307,9 +1309,9 @@ fn reassigning_a_let_binding_is_rejected() {
 fn type_name_accepts_scalar_and_struct() {
     check(
         r#"
-        struct Point { x: Int, y: Int }
-        fun a() -> String = type_name<Int>()
-        fun b() -> String = type_name<Point>()
+        struct Point { x: int, y: int }
+        fun a() -> str = type_name[int]()
+        fun b() -> str = type_name[Point]()
     "#,
     )
     .unwrap();
@@ -1319,8 +1321,8 @@ fn type_name_accepts_scalar_and_struct() {
 fn field_names_yields_list_of_string() {
     check(
         r#"
-        struct Point { x: Int, y: Int }
-        fun a() -> List<String> = field_names<Point>()
+        struct Point { x: int, y: int }
+        fun a() -> list[str] = field_names[Point]()
     "#,
     )
     .unwrap();
@@ -1328,15 +1330,15 @@ fn field_names_yields_list_of_string() {
 
 #[test]
 fn type_name_resolves_a_generic_parameter() {
-    check("fun describe<T>() -> String = type_name<T>()\n").unwrap();
+    check("fun describe[T]() -> str = type_name[T]()\n").unwrap();
 }
 
 #[test]
 fn field_types_yields_list_of_string() {
     check(
         r#"
-        struct Point { x: Int, y: Int }
-        fun a() -> List<String> = field_types<Point>()
+        struct Point { x: int, y: int }
+        fun a() -> list[str] = field_types[Point]()
     "#,
     )
     .unwrap();
@@ -1344,7 +1346,7 @@ fn field_types_yields_list_of_string() {
 
 #[test]
 fn field_names_on_scalar_is_rejected() {
-    let err = check("fun a() -> List<String> = field_names<Int>()\n").unwrap_err();
+    let err = check("fun a() -> list[str] = field_names[int]()\n").unwrap_err();
     match err {
         RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::Custom(_))),
         other => panic!("expected a type error, got {:?}", other),
@@ -1353,7 +1355,7 @@ fn field_names_on_scalar_is_rejected() {
 
 #[test]
 fn field_types_on_scalar_is_rejected() {
-    let err = check("fun a() -> List<String> = field_types<Int>()\n").unwrap_err();
+    let err = check("fun a() -> list[str] = field_types[int]()\n").unwrap_err();
     match err {
         RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::Custom(_))),
         other => panic!("expected a type error, got {:?}", other),
@@ -1363,8 +1365,8 @@ fn field_types_on_scalar_is_rejected() {
 #[test]
 fn variant_names_yields_list_of_string() {
     check(
-        "enum Shape {\n    Circle(r: Int)\n    Dot\n}\n\
-         fun a() -> List<String> = variant_names<Shape>()\n",
+        "enum Shape {\n    Circle(r: int)\n    Dot\n}\n\
+         fun a() -> list[str] = variant_names[Shape]()\n",
     )
     .unwrap();
 }
@@ -1372,8 +1374,8 @@ fn variant_names_yields_list_of_string() {
 #[test]
 fn variant_field_types_yields_nested_list() {
     check(
-        "enum Shape {\n    Circle(r: Int)\n    Dot\n}\n\
-         fun a() -> List<List<String>> = variant_field_types<Shape>()\n",
+        "enum Shape {\n    Circle(r: int)\n    Dot\n}\n\
+         fun a() -> list[list[str]] = variant_field_types[Shape]()\n",
     )
     .unwrap();
 }
@@ -1382,8 +1384,8 @@ fn variant_field_types_yields_nested_list() {
 fn variant_names_on_struct_is_rejected() {
     let err = check(
         r#"
-        struct P { x: Int }
-        fun a() -> List<String> = variant_names<P>()
+        struct P { x: int }
+        fun a() -> list[str] = variant_names[P]()
     "#,
     )
     .unwrap_err();
@@ -1400,16 +1402,16 @@ fn ptr_builtins_typecheck_for_c_scalars() {
     check(
         r#"
         fun roundtrip() -> CInt {
-            let p = __ptr_alloc<CInt>(4)
-            __ptr_store<CInt>(p, 10)
-            let q = __ptr_offset<CInt>(p, 1)
-            let v = __ptr_load<CInt>(q)
-            __ptr_free<CInt>(p)
+            let p = __ptr_alloc[CInt](4)
+            __ptr_store[CInt](p, 10)
+            let q = __ptr_offset[CInt](p, 1)
+            let v = __ptr_load[CInt](q)
+            __ptr_free[CInt](p)
             return v
         }
-        fun nulls() -> Bool {
-            let n = __ptr_null<CInt>()
-            return __ptr_is_null<CInt>(n)
+        fun nulls() -> bool {
+            let n = __ptr_null[CInt]()
+            return __ptr_is_null[CInt](n)
         }
     "#,
     )
@@ -1420,20 +1422,20 @@ fn ptr_builtins_typecheck_for_c_scalars() {
 fn ptr_load_yields_the_pointee_type() {
     // __ptr_load<CLong> returns a CLong, which unifies with the CLong
     // return; a mismatched return type would be a tycheck error.
-    check("fun f(p: CPtr<CLong>) -> CLong { return __ptr_load<CLong>(p) }\n").unwrap();
+    check("fun f(p: CPtr[CLong]) -> CLong { return __ptr_load[CLong](p) }\n").unwrap();
 }
 
 #[test]
 fn ptr_builtins_resolve_a_generic_parameter() {
     // The pointee may be a generic parameter, so the std/ffi wrappers can
     // forward it; grounded per monomorphization in MIR.
-    check("fun deref<T>(p: CPtr<T>) -> T { return __ptr_load<T>(p) }\n").unwrap();
+    check("fun deref[T](p: CPtr[T]) -> T { return __ptr_load[T](p) }\n").unwrap();
 }
 
 #[test]
 fn ptr_builtin_rejects_a_non_pointer_pointee() {
-    let err = check("fun f() -> Bool { return __ptr_is_null<String>(__ptr_null<String>()) }\n")
-        .unwrap_err();
+    let err =
+        check("fun f() -> bool { return __ptr_is_null[str](__ptr_null[str]()) }\n").unwrap_err();
     match err {
         RavenError::Type(b, _, _) => assert!(matches!(*b, TypeError::Custom(_))),
         other => panic!("expected a type error, got {:?}", other),
@@ -1444,7 +1446,7 @@ fn ptr_builtin_rejects_a_non_pointer_pointee() {
 fn reports_an_error_in_each_sibling_function() {
     // Two unrelated functions each have a return type mismatch; both are
     // reported in one compile, not just the first.
-    let errs = check_all("fun f() -> Int = \"x\"\nfun g() -> Bool = 5\n");
+    let errs = check_all("fun f() -> int = \"x\"\nfun g() -> bool = 5\n");
     assert_eq!(errs.len(), 2, "got: {:?}", errs);
 }
 
@@ -1453,7 +1455,7 @@ fn reports_an_error_for_each_failed_statement() {
     // Two `let` bindings with annotation mismatches both report; the later
     // use does not cascade because each binding adopts its annotated `Int`.
     let errs = check_all(
-        "fun h() -> Int {\n    let x: Int = \"a\"\n    let y: Int = true\n    return x + y\n}\n",
+        "fun h() -> int {\n    let x: int = \"a\"\n    let y: int = true\n    return x + y\n}\n",
     );
     assert_eq!(errs.len(), 2, "got: {:?}", errs);
 }
@@ -1463,33 +1465,33 @@ fn a_failed_unannotated_let_does_not_cascade() {
     // `let x = <type error>` records one error and binds `x` to `Error`, so
     // the later `x + z` use adds no diagnostic.
     let errs = check_all(
-        "fun u() -> Int {\n    let x = 1 + \"oops\"\n    let z = 5\n    return x + z\n}\n",
+        "fun u() -> int {\n    let x = 1 + \"oops\"\n    let z = 5\n    return x + z\n}\n",
     );
     assert_eq!(errs.len(), 1, "got: {:?}", errs);
 }
 
 #[test]
 fn a_clean_program_reports_no_errors() {
-    assert!(check_all("fun f() -> Int = 1 + 2\n").is_empty());
+    assert!(check_all("fun f() -> int = 1 + 2\n").is_empty());
 }
 
 #[test]
 fn duplicate_diagnostics_are_deduplicated() {
     // The same message at the same span is collapsed to one entry.
-    let errs = check_all("fun f() -> Int = \"x\"\n");
+    let errs = check_all("fun f() -> int = \"x\"\n");
     assert_eq!(errs.len(), 1, "got: {:?}", errs);
 }
 
 #[test]
 fn return_inside_a_for_loop_does_not_end_the_function() {
-    let err = check("fun f(xs: List<Int>) -> Int {\n    for x in xs {\n        return x\n    }\n    let z = 1\n}\n")
+    let err = check("fun f(xs: list[int]) -> int {\n    for x in xs {\n        return x\n    }\n    let z = 1\n}\n")
         .unwrap_err();
     assert!(matches!(err, RavenError::Type(..)), "got: {}", err);
 }
 
 #[test]
 fn panic_on_the_right_of_or_does_not_end_the_function() {
-    let err = check("fun f(c: Bool) -> Int {\n    let ok = c || panic(\"no\")\n    let z = 2\n}\n")
+    let err = check("fun f(c: bool) -> int {\n    let ok = c or panic(\"no\")\n    let z = 2\n}\n")
         .unwrap_err();
     assert!(matches!(err, RavenError::Type(..)), "got: {}", err);
 }

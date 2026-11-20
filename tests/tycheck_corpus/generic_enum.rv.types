@@ -1,9 +1,9 @@
 (types
   94..179 "{\n    return match e {\n        case Left(x) { x }\n        case Right(_) { 0 }\n    }\n}" -> ()
-  107..177 "match e {\n        case Left(x) { x }\n        case Right(_) { 0 }\n    }" -> Int
-  113..114 "e" -> Either<Int, String>
-  138..143 "{ x }" -> Int
-  140..141 "x" -> Int
-  166..171 "{ 0 }" -> Int
-  168..169 "0" -> Int
+  107..177 "match e {\n        case Left(x) { x }\n        case Right(_) { 0 }\n    }" -> int
+  113..114 "e" -> Either[int, str]
+  138..143 "{ x }" -> int
+  140..141 "x" -> int
+  166..171 "{ 0 }" -> int
+  168..169 "0" -> int
 )

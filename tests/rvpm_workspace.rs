@@ -142,7 +142,7 @@ fail = { package = "tool", args = ["fail"] }
 
 fun main() {
     let all = args()
-    if all.len() > 1 && all[1] == "fail" {
+    if all.len() > 1 and all[1] == "fail" {
         exit(7)
     }
     var i = 1

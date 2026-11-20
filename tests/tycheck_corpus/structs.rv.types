@@ -1,14 +1,14 @@
 (types
   81..85 "self" -> Self/* = Point */
-  81..87 "self.x" -> Int
+  81..87 "self.x" -> int
   116..120 "self" -> Self/* = Point */
-  116..122 "self.x" -> Int
-  116..131 "self.x + self.y" -> Int
+  116..122 "self.x" -> int
+  116..131 "self.x + self.y" -> int
   125..129 "self" -> Self/* = Point */
-  125..131 "self.y" -> Int
+  125..131 "self.y" -> int
   157..174 "Point(x: 1, y: 2)" -> Point
-  166..167 "1" -> Int
-  172..173 "2" -> Int
+  166..167 "1" -> int
+  172..173 "2" -> int
   203..204 "p" -> Point
-  203..212 "p.get_x()" -> Int
+  203..212 "p.get_x()" -> int
 )

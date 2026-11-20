@@ -138,18 +138,18 @@ fn generate_program(rng: &mut Rng) -> Program {
          import std/collections {{ Map, Set }}\n\
          \n\
          @derive(Eq, ToString, Debug)\n\
-         struct Rec {{ id: Int, tag: String }}\n\
+         struct Rec {{ id: int, tag: str }}\n\
          \n\
-         struct Nest {{ outer: Int, inner: Rec }}\n\
+         struct Nest {{ outer: int, inner: Rec }}\n\
          \n\
          @derive(Eq, ToString)\n\
          enum Variant {{\n\
          \x20   Empty,\n\
-         \x20   One(String),\n\
-         \x20   Two(Int, String),\n\
+         \x20   One(str),\n\
+         \x20   Two(int, str),\n\
          }}\n\
          \n\
-         fun churn(n: Int) -> Int {{\n\
+         fun churn(n: int) -> int {{\n\
          \x20   var acc = 0\n\
          \x20   var i = 0\n\
          \x20   while i < n {{\n\
@@ -314,7 +314,7 @@ fn emit_closure_shape(
         "    let {v}a = {a}\n\
          \x20   let {v}b = {b}\n\
          \x20   let {v}c = {c}\n\
-         \x20   let {v}f = fun(x: Int) -> Int = x + {v}a + {v}b + {v}c + {weight}\n\
+         \x20   let {v}f = fun(x: int) -> int = x + {v}a + {v}b + {v}c + {weight}\n\
          \x20   let _ = churn({churn})\n\
          \x20   total = total + {v}f(0)\n"
     ));
@@ -381,12 +381,12 @@ fn emit_any_shape(
     let w = words[(rng.next() as usize) % words.len()];
     let v = next_var(rng);
     body.push_str(&format!(
-        "    let {v} = to_any<Rec>(Rec {{ id: {id}, tag: \"{w}\" }})\n\
+        "    let {v} = to_any[Rec](Rec {{ id: {id}, tag: \"{w}\" }})\n\
          \x20   let _ = churn({churn})\n\
          \x20   let {v}f = get_field({v}, \"id\")\n\
          \x20   match {v}f {{\n\
          \x20       Some(av) -> {{\n\
-         \x20           match cast<Int>(av) {{\n\
+         \x20           match cast[int](av) {{\n\
          \x20               Some(iv) -> {{ if iv == {id} {{ total = total + {weight} }} }}\n\
          \x20               None -> {{}}\n\
          \x20           }}\n\

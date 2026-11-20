@@ -339,16 +339,16 @@ mod tests {
     fn collects_items_with_doc_comments() {
         let src = "// Add two integers.\n\
                    // Returns their sum.\n\
-                   fun add(a: Int, b: Int) -> Int {\n    return a + b\n}\n\
+                   fun add(a: int, b: int) -> int {\n    return a + b\n}\n\
                    \n\
                    fun _internal() {}\n\
                    \n\
                    // A 2D point.\n\
-                   struct Point {\n    x: Float,\n    y: Float,\n}\n";
+                   struct Point {\n    x: float,\n    y: float,\n}\n";
         let items = documented_items(src, Path::new("a.rv")).unwrap();
         assert_eq!(items.len(), 2, "internal _ item should be skipped");
         assert_eq!(items[0].name, "add");
-        assert_eq!(items[0].signature, "fun add(a: Int, b: Int) -> Int");
+        assert_eq!(items[0].signature, "fun add(a: int, b: int) -> int");
         assert!(items[0].doc.contains("Add two integers."));
         assert!(items[0].doc.contains("Returns their sum."));
         assert_eq!(items[1].name, "Point");
@@ -359,9 +359,9 @@ mod tests {
 
     #[test]
     fn single_expression_function_signature_stops_at_equals() {
-        let src = "fun double(x: Int) -> Int = x * 2\n";
+        let src = "fun double(x: int) -> int = x * 2\n";
         let items = documented_items(src, Path::new("a.rv")).unwrap();
-        assert_eq!(items[0].signature, "fun double(x: Int) -> Int");
+        assert_eq!(items[0].signature, "fun double(x: int) -> int");
         assert!(items[0].doc.is_empty());
     }
 }

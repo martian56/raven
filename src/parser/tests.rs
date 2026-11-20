@@ -69,7 +69,7 @@ fn parses_let_decl_with_initializer() {
 
 #[test]
 fn parses_let_with_type_annotation() {
-    let f = parse_ok("let n: Int = 7\n");
+    let f = parse_ok("let n: int = 7\n");
     let DeclKind::Let(d) = &f.items[0].kind else {
         panic!()
     };
@@ -363,7 +363,7 @@ fn parses_while_and_for() {
 
 #[test]
 fn parses_lambda_full_form() {
-    let f = parse_ok("let f = fun(x: Int) -> Int { x + 1 }\n");
+    let f = parse_ok("let f = fun(x: int) -> int { x + 1 }\n");
     let DeclKind::Let(d) = &f.items[0].kind else {
         panic!()
     };
@@ -557,7 +557,7 @@ fn field_and_index_chains_are_valid_targets() {
 
 #[test]
 fn parses_function_with_block_body() {
-    let f = parse_ok("fun add(a: Int, b: Int) -> Int { a + b }\n");
+    let f = parse_ok("fun add(a: int, b: int) -> int { a + b }\n");
     let DeclKind::Function(fun) = &f.items[0].kind else {
         panic!()
     };
@@ -569,7 +569,7 @@ fn parses_function_with_block_body() {
 
 #[test]
 fn parses_function_with_expr_body() {
-    let f = parse_ok("fun add(a: Int, b: Int) -> Int = a + b\n");
+    let f = parse_ok("fun add(a: int, b: int) -> int = a + b\n");
     let DeclKind::Function(fun) = &f.items[0].kind else {
         panic!()
     };
@@ -578,7 +578,7 @@ fn parses_function_with_expr_body() {
 
 #[test]
 fn parses_generic_function() {
-    let f = parse_ok("fun id<T>(x: T) -> T = x\n");
+    let f = parse_ok("fun id[T](x: T) -> T = x\n");
     let DeclKind::Function(fun) = &f.items[0].kind else {
         panic!()
     };
@@ -588,7 +588,7 @@ fn parses_generic_function() {
 
 #[test]
 fn parses_generic_with_bounds() {
-    let f = parse_ok("fun show<T: Display + Debug>(x: T) { }\n");
+    let f = parse_ok("fun show[T: Display + Debug](x: T) { }\n");
     let DeclKind::Function(fun) = &f.items[0].kind else {
         panic!()
     };
@@ -598,7 +598,7 @@ fn parses_generic_with_bounds() {
 #[test]
 fn parses_nested_generic_types() {
     // The closing `>>` must be split.
-    let f = parse_ok("fun foo() -> Vec<Vec<Int>> { }\n");
+    let f = parse_ok("fun foo() -> Vec[Vec[int]] { }\n");
     let DeclKind::Function(fun) = &f.items[0].kind else {
         panic!()
     };
@@ -607,7 +607,7 @@ fn parses_nested_generic_types() {
 
 #[test]
 fn parses_optional_type_sugar() {
-    let f = parse_ok("fun get() -> Int? { }\n");
+    let f = parse_ok("fun get() -> int? { }\n");
     let DeclKind::Function(fun) = &f.items[0].kind else {
         panic!()
     };
@@ -618,7 +618,7 @@ fn parses_optional_type_sugar() {
 
 #[test]
 fn parses_function_type() {
-    let f = parse_ok("fun apply(f: fun(Int) -> Int) -> Int { f(1) }\n");
+    let f = parse_ok("fun apply(f: fun(int) -> int) -> int { f(1) }\n");
     let DeclKind::Function(fun) = &f.items[0].kind else {
         panic!()
     };
@@ -629,7 +629,7 @@ fn parses_function_type() {
 
 #[test]
 fn missing_function_body_is_error() {
-    let err = parse_err("fun foo() -> Int\n");
+    let err = parse_err("fun foo() -> int\n");
     assert!(matches!(err, RavenError::Parse(_, _, _)));
 }
 
@@ -637,7 +637,7 @@ fn missing_function_body_is_error() {
 
 #[test]
 fn parses_struct_declaration() {
-    let f = parse_ok("struct Point { x: Int, y: Int }\n");
+    let f = parse_ok("struct Point { x: int, y: int }\n");
     let DeclKind::Struct(s) = &f.items[0].kind else {
         panic!()
     };
@@ -646,7 +646,7 @@ fn parses_struct_declaration() {
 
 #[test]
 fn struct_field_newline_separator() {
-    let src = "struct Point {\n  x: Int\n  y: Int\n}\n";
+    let src = "struct Point {\n  x: int\n  y: int\n}\n";
     let f = parse_ok(src);
     let DeclKind::Struct(s) = &f.items[0].kind else {
         panic!()
@@ -656,7 +656,7 @@ fn struct_field_newline_separator() {
 
 #[test]
 fn parses_trait_with_default_method() {
-    let f = parse_ok("trait Greet { fun hello() -> String { \"hi\" } }\n");
+    let f = parse_ok("trait Greet { fun hello() -> str { \"hi\" } }\n");
     let DeclKind::Trait(t) = &f.items[0].kind else {
         panic!()
     };
@@ -666,7 +666,7 @@ fn parses_trait_with_default_method() {
 
 #[test]
 fn parses_trait_with_signature_only() {
-    let f = parse_ok("trait Greet { fun hello() -> String\n }\n");
+    let f = parse_ok("trait Greet { fun hello() -> str\n }\n");
     let DeclKind::Trait(t) = &f.items[0].kind else {
         panic!()
     };
@@ -705,7 +705,7 @@ fn parses_enum_with_variants() {
 
 #[test]
 fn parses_enum_with_tuple_payload() {
-    let src = "enum Result { Ok(Int), Err(String) }\n";
+    let src = "enum Result { Ok(int), Err(str) }\n";
     let f = parse_ok(src);
     let DeclKind::Enum(e) = &f.items[0].kind else {
         panic!()
@@ -718,7 +718,7 @@ fn parses_enum_with_tuple_payload() {
 
 #[test]
 fn named_variant_payload_lowers_to_positional() {
-    let src = "enum Shape { Circle(radius: Int), Square(side: Int) }\n";
+    let src = "enum Shape { Circle(radius: int), Square(side: int) }\n";
     let f = parse_ok(src);
     let DeclKind::Enum(e) = &f.items[0].kind else {
         panic!()
@@ -731,7 +731,7 @@ fn named_variant_payload_lowers_to_positional() {
 
 #[test]
 fn derive_attribute_attaches_to_struct() {
-    let src = "@derive(Eq, Hash, ToString, Debug)\nstruct Point { x: Int, y: Int }\n";
+    let src = "@derive(Eq, Hash, ToString, Debug)\nstruct Point { x: int, y: int }\n";
     let f = parse_ok(src);
     let DeclKind::Struct(s) = &f.items[0].kind else {
         panic!("expected struct decl")
@@ -742,7 +742,7 @@ fn derive_attribute_attaches_to_struct() {
 
 #[test]
 fn derive_attribute_attaches_to_enum() {
-    let src = "@derive(Eq, ToString)\nenum Shape { Dot, Circle(Int) }\n";
+    let src = "@derive(Eq, ToString)\nenum Shape { Dot, Circle(int) }\n";
     let f = parse_ok(src);
     let DeclKind::Enum(e) = &f.items[0].kind else {
         panic!("expected enum decl")
@@ -753,7 +753,7 @@ fn derive_attribute_attaches_to_enum() {
 
 #[test]
 fn struct_without_derive_has_empty_list() {
-    let f = parse_ok("struct Point { x: Int }\n");
+    let f = parse_ok("struct Point { x: int }\n");
     let DeclKind::Struct(s) = &f.items[0].kind else {
         panic!()
     };
@@ -784,7 +784,7 @@ fn repr_c_and_derive_combine_on_struct() {
 
 #[test]
 fn struct_without_repr_is_not_repr_c() {
-    let f = parse_ok("struct Point { x: Int }\n");
+    let f = parse_ok("struct Point { x: int }\n");
     let DeclKind::Struct(s) = &f.items[0].kind else {
         panic!()
     };
@@ -865,7 +865,7 @@ fn parses_quoted_import_with_alias() {
 
 #[test]
 fn parses_extern_block() {
-    let f = parse_ok("extern \"C\" { fun puts(s: CString) -> Int\n }\n");
+    let f = parse_ok("extern \"C\" { fun puts(s: CString) -> int\n }\n");
     let DeclKind::Extern(e) = &f.items[0].kind else {
         panic!()
     };
@@ -891,7 +891,7 @@ fn parses_variadic_extern() {
 
 #[test]
 fn parses_const_decl() {
-    let f = parse_ok("const PI: Float = 3.14\n");
+    let f = parse_ok("const PI: float = 3.14\n");
     let DeclKind::Const(c) = &f.items[0].kind else {
         panic!()
     };
@@ -928,7 +928,7 @@ fn module_qualified_struct_literal_is_a_clear_error() {
 #[test]
 fn block_with_trailing_expr_is_value_bearing() {
     // The block's last item is a bare expr without separator => trailing.
-    let f = parse_ok("fun f() -> Int { 1 + 2 }\n");
+    let f = parse_ok("fun f() -> int { 1 + 2 }\n");
     let DeclKind::Function(fun) = &f.items[0].kind else {
         panic!()
     };
@@ -956,7 +956,7 @@ fn block_with_semicolon_terminator_has_no_trailing() {
 fn block_trailing_expr_survives_newline() {
     // Only `;` ends a statement; a trailing newline still leaves the
     // expression as the block's value, matching Rust semantics.
-    let f = parse_ok("fun f() -> Int { 1 + 2\n }\n");
+    let f = parse_ok("fun f() -> int { 1 + 2\n }\n");
     let DeclKind::Function(fun) = &f.items[0].kind else {
         panic!()
     };
@@ -1011,7 +1011,7 @@ fn recovery_reports_each_broken_statement_in_one_body() {
 fn statement_recovery_does_not_escape_the_block() {
     // A broken statement in `a` is recovered inside its body; the following
     // function `b` parses cleanly and adds no error.
-    let errs = parse_all_errors("fun a() {\n    let x = @\n    let y = 1\n}\nfun b() -> Int = 2\n");
+    let errs = parse_all_errors("fun a() {\n    let x = @\n    let y = 1\n}\nfun b() -> int = 2\n");
     assert_eq!(errs.len(), 1, "got: {:?}", errs);
 }
 
@@ -1020,7 +1020,7 @@ fn recovery_reports_an_error_in_each_broken_item() {
     // Two functions have a broken body; both errors are reported, and the
     // valid functions between and after them do not add noise.
     let errs = parse_all_errors(
-        "fun a() -> Int {\n    let x = @\n    return x\n}\nfun b() -> Int { return 2 }\nfun c() -> Int {\n    let y = )\n    return y\n}\nfun d() -> Int { return 4 }\n",
+        "fun a() -> int {\n    let x = @\n    return x\n}\nfun b() -> int { return 2 }\nfun c() -> int {\n    let y = )\n    return y\n}\nfun d() -> int { return 4 }\n",
     );
     assert_eq!(errs.len(), 2, "got: {:?}", errs);
 }
@@ -1030,7 +1030,7 @@ fn recovery_resyncs_at_a_struct_after_a_broken_function() {
     // A broken function followed by a valid struct and function: one error,
     // and recovery finds the next item.
     let errs = parse_all_errors(
-        "fun a() -> Int {\n    return @\n}\nstruct P { x: Int }\nfun b() -> Int { return 1 }\n",
+        "fun a() -> int {\n    return @\n}\nstruct P { x: int }\nfun b() -> int { return 1 }\n",
     );
     assert_eq!(errs.len(), 1, "got: {:?}", errs);
 }
@@ -1038,6 +1038,6 @@ fn recovery_resyncs_at_a_struct_after_a_broken_function() {
 #[test]
 fn recovery_on_a_clean_file_reports_nothing() {
     assert!(
-        parse_all_errors("fun a() -> Int { return 1 }\nfun b() -> Int { return 2 }\n").is_empty()
+        parse_all_errors("fun a() -> int { return 1 }\nfun b() -> int { return 2 }\n").is_empty()
     );
 }

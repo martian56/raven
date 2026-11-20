@@ -1,10 +1,10 @@
-Int
-String
+int
+str
 Point
 2
 x
 y
-Int
+int
 Point
 introspect Point
 field x

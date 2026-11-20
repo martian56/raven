@@ -1,24 +1,24 @@
 (hir
-  (fn "pick" params=("flag":Bool "a":Int "b":Int) ret=Int
+  (fn "pick" params=("flag":bool "a":int "b":int) ret=int
     (body ty=()
-      (let "x" ty=Int
-        (if ty=Int
-          (ident "flag" ty=Bool)
-          (then ty=Int
+      (let "x" ty=int
+        (if ty=int
+          (ident "flag" ty=bool)
+          (then ty=int
             (tail
-              (ident "a" ty=Int)
+              (ident "a" ty=int)
             )
           )
-          (else ty=Int
+          (else ty=int
             (tail
-              (ident "b" ty=Int)
+              (ident "b" ty=int)
             )
           )
         )
       )
       (stmt-expr
         (return ty=<error>
-          (ident "x" ty=Int)
+          (ident "x" ty=int)
         )
       )
     )

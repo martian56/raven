@@ -1,31 +1,31 @@
 (types
   39..118 "{\n    if xs.is_empty() {\n        return None\n    }\n    return Some(xs.get(0))\n}" -> ()
   45..89 "if xs.is_empty() {\n        return None\n    }" -> ()
-  48..50 "xs" -> List<Int>
-  48..61 "xs.is_empty()" -> Bool
+  48..50 "xs" -> list[int]
+  48..61 "xs.is_empty()" -> bool
   62..89 "{\n        return None\n    }" -> ()
-  79..83 "None" -> Option<Int>
-  101..116 "Some(xs.get(0))" -> Option<Int>
-  106..108 "xs" -> List<Int>
-  106..115 "xs.get(0)" -> Int
-  113..114 "0" -> Int
+  79..83 "None" -> Option[int]
+  101..116 "Some(xs.get(0))" -> Option[int]
+  106..108 "xs" -> list[int]
+  106..115 "xs.get(0)" -> int
+  113..114 "0" -> int
   167..252 "{\n    if b == 0 {\n        return Err(\"division by zero\")\n    }\n    return Ok(a / b)\n}" -> ()
   173..229 "if b == 0 {\n        return Err(\"division by zero\")\n    }" -> ()
-  176..177 "b" -> Int
-  176..182 "b == 0" -> Bool
-  181..182 "0" -> Int
+  176..177 "b" -> int
+  176..182 "b == 0" -> bool
+  181..182 "0" -> int
   183..229 "{\n        return Err(\"division by zero\")\n    }" -> ()
-  200..223 "Err(\"division by zero\")" -> Result<Int, String>
-  204..222 "\"division by zero\"" -> String
-  241..250 "Ok(a / b)" -> Result<Int, String>
-  244..245 "a" -> Int
-  244..249 "a / b" -> Int
-  248..249 "b" -> Int
+  200..223 "Err(\"division by zero\")" -> Result[int, str]
+  204..222 "\"division by zero\"" -> str
+  241..250 "Ok(a / b)" -> Result[int, str]
+  244..245 "a" -> int
+  244..249 "a / b" -> int
+  248..249 "b" -> int
   286..367 "{\n    return match x {\n        case None { 0 }\n        case Some(n) { n }\n    }\n}" -> ()
-  299..365 "match x {\n        case None { 0 }\n        case Some(n) { n }\n    }" -> Int
-  305..306 "x" -> Option<Int>
-  327..332 "{ 0 }" -> Int
-  329..330 "0" -> Int
-  354..359 "{ n }" -> Int
-  356..357 "n" -> Int
+  299..365 "match x {\n        case None { 0 }\n        case Some(n) { n }\n    }" -> int
+  305..306 "x" -> Option[int]
+  327..332 "{ 0 }" -> int
+  329..330 "0" -> int
+  354..359 "{ n }" -> int
+  356..357 "n" -> int
 )
