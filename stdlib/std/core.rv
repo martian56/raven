@@ -595,10 +595,18 @@ impl[T] list[T] {
         return out
     }
 
+    // `xs[a..b]`. Negative bounds count from the end, and out of range
+    // bounds clamp, as in Python.
     fun slice(self, start: int, end: int) -> list[T] {
-        var lo = 0 if start < 0 else start
-        let hi = self.len() if end > self.len() else end
+        let n = self.len()
+        var lo = start + n if start < 0 else start
+        var hi = end + n if end < 0 else end
+        lo = 0 if lo < 0 else lo
+        hi = n if hi > n else hi
         var out: list[T] = []
+        if hi > lo {
+            out.reserve(hi - lo)
+        }
         var i = lo
         while i < hi {
             out.push(self[i])

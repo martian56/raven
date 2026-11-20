@@ -363,14 +363,44 @@ impl Parser {
     }
 
     fn parse_range(&mut self) -> ParseResult<Expr> {
-        let lhs = self.parse_additive()?;
+        // `..b` starts at 0, as in the slice `xs[..b]`.
+        let lhs = if matches!(self.peek_kind(), TokenKind::DotDot | TokenKind::DotDotEq) {
+            let at = self.peek().span.clone();
+            Expr {
+                kind: ExprKind::Int(0),
+                span: at.in_copy(crate::span::next_copy_id()),
+            }
+        } else {
+            self.parse_additive()?
+        };
         self.skip_newlines_at_continuation();
         let inclusive = match self.peek_kind() {
             TokenKind::DotDot => false,
             TokenKind::DotDotEq => true,
             _ => return Ok(lhs),
         };
-        self.advance();
+        let dots = self.advance().span;
+        // `a..` runs to the end, as in the slice `xs[a..]`; slicing clamps.
+        if !inclusive
+            && matches!(
+                self.peek_kind(),
+                TokenKind::RBracket | TokenKind::RParen | TokenKind::Comma
+            )
+        {
+            let end = Expr {
+                kind: ExprKind::Int(i64::MAX),
+                span: dots.in_copy(crate::span::next_copy_id()),
+            };
+            let span = merge_spans(&lhs.span, &dots);
+            return Ok(Expr {
+                kind: ExprKind::Range {
+                    start: Box::new(lhs),
+                    end: Box::new(end),
+                    inclusive: false,
+                },
+                span,
+            });
+        }
         self.skip_newlines();
         let rhs = self.parse_additive()?;
         let span = merge_spans(&lhs.span, &rhs.span);

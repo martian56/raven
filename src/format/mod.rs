@@ -1276,9 +1276,22 @@ impl Printer<'_> {
                 inclusive,
             } => {
                 let sep = if *inclusive { "..=" } else { ".." };
-                let s = self.expr_at(start, base, col);
-                let ecol = self.after(col, &s) + sep.len();
-                let e = self.expr_at(end, base, ecol);
+                // The parser fills an omitted bound (`xs[..b]`, `xs[a..]`)
+                // with a compiler-made literal; print it omitted again.
+                let implied = |e: &Expr, v: i64| {
+                    e.span.copy_id() != 0 && matches!(e.kind, ExprKind::Int(n) if n == v)
+                };
+                let s = if implied(start, 0) {
+                    String::new()
+                } else {
+                    self.expr_at(start, base, col)
+                };
+                let e = if implied(end, i64::MAX) {
+                    String::new()
+                } else {
+                    let ecol = self.after(col, &s) + sep.len();
+                    self.expr_at(end, base, ecol)
+                };
                 format!("{}{}{}", s, sep, e)
             }
             ExprKind::Call { callee, args }

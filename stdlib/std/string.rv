@@ -56,7 +56,13 @@ impl str {
     fun len(self) -> int = __str_len(self)
 
     // `s[start..end]`: the bytes in `start..end`, clamped to the string.
-    fun slice(self, start: int, end: int) -> str = __str_substring(self, start, end)
+    // `s[a..b]` by byte offset. Negative bounds count from the end.
+    fun slice(self, start: int, end: int) -> str {
+        let n = __str_len(self)
+        let lo = start + n if start < 0 else start
+        let hi = end + n if end < 0 else end
+        return __str_substring(self, lo, hi)
+    }
 
     // Each character as a one-character string, for `for c in s`.
     fun iter(self) -> list[str] {
