@@ -13,7 +13,11 @@ impl Parser {
         match self.peek_kind() {
             TokenKind::Let => self.parse_let_stmt(false),
             TokenKind::Identifier(w)
-                if w == "var" && matches!(self.peek_kind_at(1), TokenKind::Identifier(_)) =>
+                if w == "var"
+                    && matches!(
+                        self.peek_kind_at(1),
+                        TokenKind::Identifier(_) | TokenKind::LParen
+                    ) =>
             {
                 self.parse_let_stmt(true)
             }
@@ -149,6 +153,24 @@ impl Parser {
         let pattern = self.parse_pattern()?;
         self.expect(&TokenKind::Eq, "`=`")?;
         self.skip_newlines();
+        if matches!(pattern.kind, PatternKind::Tuple { name: None, .. }) {
+            let init = self.parse_expr()?;
+            if !matches!(self.peek_kind(), TokenKind::Else) {
+                let span = merge_spans(&start, &init.span);
+                return Ok(Stmt {
+                    kind: StmtKind::LetTuple {
+                        pattern,
+                        init,
+                        mutable,
+                    },
+                    span,
+                });
+            }
+            return Err(RavenError::parse(
+                ParseError::Custom("a tuple pattern always matches; drop the `else`".into()),
+                self.peek().span.clone(),
+            ));
+        }
         let init = self.parse_expr_no_struct()?;
         if !self.eat(&TokenKind::Else) {
             return Err(RavenError::parse(

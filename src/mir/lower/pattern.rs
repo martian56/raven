@@ -49,7 +49,9 @@ pub fn lower_match(
     // A guard needs sequential fall-through, which the switch-based paths
     // cannot express, so any match with a guarded arm takes the sequential
     // lowering regardless of scrutinee type.
-    if arms.iter().any(|a| a.guard.is_some()) {
+    if arms.iter().any(|a| has_nested(&a.pattern)) {
+        lower_nested_match(cx, scrut_op, &scrut_ty, arms, result_local, cont);
+    } else if arms.iter().any(|a| a.guard.is_some()) {
         lower_sequential_match(cx, scrut_op, &scrut_ty, arms, result_local, cont);
     } else if is_enum_like(&scrut_ty) {
         lower_enum_match(cx, scrut_op, &scrut_ty, arms, result_local, cont);
@@ -437,6 +439,215 @@ fn lower_sequential_match(
     }
     if !cx.builder.is_closed(next_test) {
         cx.builder.close_block(next_test, MirTerminator::Goto(cont));
+    }
+}
+
+/// Whether a constructor or struct pattern has a part that is not a plain
+/// binding or wildcard.
+fn has_nested(pat: &HirPattern) -> bool {
+    let simple = |p: &HirPattern| {
+        matches!(
+            p.kind,
+            HirPatternKind::Wildcard | HirPatternKind::Binding(_)
+        )
+    };
+    match &pat.kind {
+        HirPatternKind::Constructor { elements, .. } => !elements.iter().all(simple),
+        HirPatternKind::Struct { fields, .. } => {
+            !fields.iter().filter_map(|f| f.pattern.as_ref()).all(simple)
+        }
+        _ => false,
+    }
+}
+
+/// Lower a match whose patterns nest. Each arm tests its whole pattern in
+/// order, binding as it goes, and any failed test drops to the next arm.
+fn lower_nested_match(
+    cx: &mut LowerCx<'_>,
+    scrut: MirOperand,
+    scrut_ty: &Ty,
+    arms: &[HirArm],
+    result: super::super::ir::MirLocal,
+    cont: MirBlockId,
+) {
+    for arm in arms {
+        let next = cx.builder.new_block();
+        cx.push_scope();
+        test_pattern(cx, &arm.pattern, scrut_ty, &scrut, next);
+        if let Some(guard) = &arm.guard {
+            let g = super::expr::lower_expr(cx, guard);
+            let run = cx.builder.new_block();
+            cx.builder.close_block(
+                cx.current,
+                MirTerminator::SwitchInt {
+                    discriminant: g,
+                    targets: vec![(1, run)],
+                    otherwise: next,
+                },
+            );
+            cx.current = run;
+        }
+        let v = super::expr::lower_expr(cx, &arm.body);
+        cx.builder.assign(cx.current, result, MirRvalue::Use(v));
+        cx.pop_scope();
+        if !cx.builder.is_closed(cx.current) {
+            cx.builder
+                .close_block(cx.current, MirTerminator::Goto(cont));
+        }
+        cx.current = next;
+    }
+    if !cx.builder.is_closed(cx.current) {
+        cx.builder
+            .close_block(cx.current, MirTerminator::Goto(cont));
+    }
+}
+
+/// Continue in `cx.current` only when `cond` holds; otherwise go to `fail`.
+fn require(cx: &mut LowerCx<'_>, cond: MirRvalue, fail: MirBlockId) {
+    let flag = cx.builder.fresh_temp("pat", MirType::Bool);
+    cx.builder.assign(cx.current, flag, cond);
+    let ok = cx.builder.new_block();
+    cx.builder.close_block(
+        cx.current,
+        MirTerminator::SwitchInt {
+            discriminant: MirOperand::Copy(flag),
+            targets: vec![(1, ok)],
+            otherwise: fail,
+        },
+    );
+    cx.current = ok;
+}
+
+/// Test `scrut` against `pat`, binding its names. Falls to `fail` on a
+/// mismatch and otherwise leaves `cx.current` at the matched path.
+fn test_pattern(
+    cx: &mut LowerCx<'_>,
+    pat: &HirPattern,
+    scrut_ty: &Ty,
+    scrut: &MirOperand,
+    fail: MirBlockId,
+) {
+    use super::super::ir::MirBinOp;
+    match &pat.kind {
+        HirPatternKind::Wildcard => {}
+        HirPatternKind::Binding(_) => bind_pattern(cx, pat, scrut_ty, scrut),
+        HirPatternKind::Literal(lit) => {
+            let test = if let HirLiteralPat::Str(s) = lit {
+                MirRvalue::Call {
+                    callee: super::super::ir::MirFnRef {
+                        mangled: super::super::intrinsics::STR_EQ.into(),
+                        origin: None,
+                    },
+                    args: vec![
+                        scrut.clone(),
+                        MirOperand::Const(MirConstant::Str(s.clone())),
+                    ],
+                }
+            } else {
+                MirRvalue::BinaryOp(
+                    MirBinOp::Eq,
+                    scrut.clone(),
+                    MirOperand::Const(literal_to_const(lit)),
+                )
+            };
+            require(cx, test, fail);
+        }
+        HirPatternKind::Range { lo, hi, inclusive } => {
+            require(
+                cx,
+                MirRvalue::BinaryOp(
+                    MirBinOp::Ge,
+                    scrut.clone(),
+                    MirOperand::Const(MirConstant::Int(*lo)),
+                ),
+                fail,
+            );
+            let op = if *inclusive {
+                MirBinOp::Le
+            } else {
+                MirBinOp::Lt
+            };
+            require(
+                cx,
+                MirRvalue::BinaryOp(op, scrut.clone(), MirOperand::Const(MirConstant::Int(*hi))),
+                fail,
+            );
+        }
+        HirPatternKind::Constructor { name, elements } => {
+            if let Some(idx) = variant_index_of(pat, scrut_ty, cx) {
+                let ok = cx.builder.new_block();
+                cx.builder.close_block(
+                    cx.current,
+                    MirTerminator::SwitchEnum {
+                        discriminant: scrut.clone(),
+                        targets: vec![(idx, ok)],
+                        otherwise: Some(fail),
+                    },
+                );
+                cx.current = ok;
+            }
+            for (i, element) in elements.iter().enumerate() {
+                if matches!(element.kind, HirPatternKind::Wildcard) {
+                    continue;
+                }
+                let part_ty = payload_type_at(scrut_ty, name.as_deref(), i, cx);
+                let part = cx.builder.fresh_temp("part", MirType::from_ty(&part_ty));
+                cx.builder.assign(
+                    cx.current,
+                    part,
+                    MirRvalue::FieldAccess {
+                        base: scrut.clone(),
+                        index: i + 1,
+                    },
+                );
+                test_pattern(cx, element, &part_ty, &MirOperand::Copy(part), fail);
+            }
+        }
+        HirPatternKind::Struct { name, fields } => {
+            let base_slot = match scrut_ty {
+                Ty::Struct { .. } => 0,
+                _ => {
+                    if let Some(idx) = variant_index_of(pat, scrut_ty, cx) {
+                        let ok = cx.builder.new_block();
+                        cx.builder.close_block(
+                            cx.current,
+                            MirTerminator::SwitchEnum {
+                                discriminant: scrut.clone(),
+                                targets: vec![(idx, ok)],
+                                otherwise: Some(fail),
+                            },
+                        );
+                        cx.current = ok;
+                    }
+                    1
+                }
+            };
+            for field in fields {
+                let decl_index = field_decl_index(scrut_ty, Some(name), &field.name, cx);
+                let part_ty = payload_type_at(scrut_ty, Some(name), decl_index, cx);
+                let part = cx.builder.fresh_temp("part", MirType::from_ty(&part_ty));
+                cx.builder.assign(
+                    cx.current,
+                    part,
+                    MirRvalue::FieldAccess {
+                        base: scrut.clone(),
+                        index: decl_index + base_slot,
+                    },
+                );
+                let part_op = MirOperand::Copy(part);
+                match &field.pattern {
+                    Some(p) => test_pattern(cx, p, &part_ty, &part_op, fail),
+                    None => {
+                        let local = cx
+                            .builder
+                            .named_local(field.name.clone(), MirType::from_ty(&part_ty));
+                        cx.builder
+                            .assign(cx.current, local, MirRvalue::Use(part_op));
+                        cx.bind(field.name.clone(), local);
+                    }
+                }
+            }
+        }
     }
 }
 

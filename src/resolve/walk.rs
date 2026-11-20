@@ -271,7 +271,9 @@ fn walk_stmt(
     map: &mut ResolutionMap,
 ) -> Result<(), RavenError> {
     match &stmt.kind {
-        StmtKind::LetElse { .. } => unreachable!("surface syntax is desugared after parsing"),
+        StmtKind::LetElse { .. } | StmtKind::LetTuple { .. } => {
+            unreachable!("surface syntax is desugared after parsing")
+        }
         StmtKind::Let {
             name,
             ty,
@@ -743,7 +745,12 @@ fn is_builtin_type_name(name: &str) -> bool {
 /// do.
 /// Free functions of prelude modules usable without an import, as
 /// `(name, module)`.
-const PRELUDE_FUNCTIONS: &[(&str, &str)] = &[("error", "error"), ("error_kind", "error")];
+const PRELUDE_FUNCTIONS: &[(&str, &str)] = &[
+    ("error", "error"),
+    ("error_kind", "error"),
+    ("__min2", "core"),
+    ("__max2", "core"),
+];
 
 fn is_builtin_ctor_name(name: &str) -> bool {
     matches!(

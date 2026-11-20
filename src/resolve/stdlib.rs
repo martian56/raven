@@ -1580,7 +1580,9 @@ fn rewrite_block(block: &mut Block, rename: &HashMap<String, String>) {
 
 fn rewrite_stmt(stmt: &mut Stmt, rename: &HashMap<String, String>) {
     match &mut stmt.kind {
-        StmtKind::LetElse { .. } => unreachable!("surface syntax is desugared after parsing"),
+        StmtKind::LetElse { .. } | StmtKind::LetTuple { .. } => {
+            unreachable!("surface syntax is desugared after parsing")
+        }
         StmtKind::Let { ty, init, .. } => {
             if let Some(t) = ty {
                 rewrite_type(t, rename);

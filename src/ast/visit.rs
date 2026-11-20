@@ -99,6 +99,7 @@ impl Walker<'_> {
                     self.expr(init);
                     self.block(else_block);
                 }
+                StmtKind::LetTuple { init, .. } => self.expr(init),
                 StmtKind::Return(e) | StmtKind::Break(e) => {
                     if let Some(e) = e {
                         self.expr(e);

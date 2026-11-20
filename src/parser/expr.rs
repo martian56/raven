@@ -271,6 +271,28 @@ impl Parser {
     fn parse_comparison(&mut self) -> ParseResult<Expr> {
         let lhs = self.parse_bit_or()?;
         self.skip_newlines_at_continuation();
+        let member = if matches!(self.peek_kind(), TokenKind::In) {
+            Some(BinaryOp::In)
+        } else if self.peek_word("not") && matches!(self.peek_kind_at(1), TokenKind::In) {
+            self.advance();
+            Some(BinaryOp::NotIn)
+        } else {
+            None
+        };
+        if let Some(op) = member {
+            self.advance();
+            self.skip_newlines();
+            let rhs = self.parse_bit_or()?;
+            let span = merge_spans(&lhs.span, &rhs.span);
+            return Ok(Expr {
+                kind: ExprKind::Binary {
+                    op,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                },
+                span,
+            });
+        }
         let op = match self.peek_kind() {
             TokenKind::EqEq => Some(BinaryOp::Eq),
             TokenKind::NotEq => Some(BinaryOp::Ne),
@@ -461,6 +483,20 @@ impl Parser {
                 TokenKind::Dot => {
                     self.advance();
                     self.skip_newlines();
+                    if let Some(fields) = self.tuple_field_names() {
+                        let end = self.advance().span;
+                        for name in fields {
+                            let span = merge_spans(&expr.span, &end);
+                            expr = Expr {
+                                kind: ExprKind::Field {
+                                    receiver: Box::new(expr),
+                                    name,
+                                },
+                                span,
+                            };
+                        }
+                        continue;
+                    }
                     let (name, name_span) = self.expect_ident("field or method name")?;
                     // Optional explicit generics: `.name<T>`.
                     let mut generics = Vec::new();
@@ -757,14 +793,28 @@ impl Parser {
         })
     }
 
+    /// `t.0` names tuple field `_0`; `t.0.1` lexes as a float and names two.
+    fn tuple_field_names(&self) -> Option<Vec<String>> {
+        match self.peek_kind() {
+            TokenKind::IntLit(n) => Some(vec![format!("_{n}")]),
+            TokenKind::FloatLit(v) => {
+                let text = format!("{v}");
+                let (a, b) = text.split_once('.')?;
+                Some(vec![format!("_{a}"), format!("_{b}")])
+            }
+            _ => None,
+        }
+    }
+
     fn parse_paren_or_tuple(&mut self) -> ParseResult<Expr> {
         let lparen = self.advance();
         self.skip_newlines();
-        // `()` is a unit value: we represent it as an empty tuple but
-        // reject it as UnsupportedTuple for now. Actually `()` does not
-        // appear in the spec as a value form, so reject.
         if matches!(self.peek_kind(), TokenKind::RParen) {
-            return Err(RavenError::parse(ParseError::UnsupportedTuple, lparen.span));
+            let rp = self.advance();
+            return Ok(Expr {
+                kind: ExprKind::Tuple(Vec::new()),
+                span: merge_spans(&lparen.span, &rp.span),
+            });
         }
         let first = self.parse_expr()?;
         self.skip_newlines();
@@ -776,21 +826,27 @@ impl Parser {
                 span,
             });
         }
-        // Tuple: at least one comma after `first`. Parse the rest of
-        // the elements to give a useful span, then report
-        // UnsupportedTuple.
-        let _ = first;
+        let mut items = vec![first];
         while self.eat(&TokenKind::Comma) {
             self.skip_newlines();
             if matches!(self.peek_kind(), TokenKind::RParen) {
                 break;
             }
-            self.parse_expr()?;
+            items.push(self.parse_expr()?);
             self.skip_newlines();
         }
         let rp = self.expect(&TokenKind::RParen, "`)`")?;
         let span = merge_spans(&lparen.span, &rp.span);
-        Err(RavenError::parse(ParseError::UnsupportedTuple, span))
+        if items.len() > 6 {
+            return Err(RavenError::parse(
+                ParseError::Custom("a tuple holds at most 6 items; use a class".into()),
+                span,
+            ));
+        }
+        Ok(Expr {
+            kind: ExprKind::Tuple(items),
+            span,
+        })
     }
 
     /// Parse a `[...]` bracket primary: a list literal `[a, b]`, an empty

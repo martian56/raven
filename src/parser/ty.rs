@@ -27,12 +27,39 @@ impl Parser {
         match self.peek_kind() {
             TokenKind::LParen => {
                 self.advance(); // (
+                let mut items = Vec::new();
+                while !matches!(self.peek_kind(), TokenKind::RParen) {
+                    items.push(self.parse_type()?);
+                    if !self.eat(&TokenKind::Comma) {
+                        break;
+                    }
+                }
                 let rparen = self.expect(&TokenKind::RParen, "`)`")?;
                 let span = merge_spans(&start, &rparen.span);
-                Ok(Type {
-                    kind: TypeKind::Unit,
-                    span,
-                })
+                match items.len() {
+                    0 => Ok(Type {
+                        kind: TypeKind::Unit,
+                        span,
+                    }),
+                    1 => Ok(items.remove(0)),
+                    n if n <= 6 => Ok(Type {
+                        kind: TypeKind::Path(crate::ast::TypePath {
+                            segments: vec![crate::ast::TypePathSegment {
+                                name: format!("Tuple{n}"),
+                                generics: items,
+                                span: span.clone(),
+                            }],
+                            span: span.clone(),
+                        }),
+                        span,
+                    }),
+                    _ => Err(crate::error::RavenError::parse(
+                        crate::error::ParseError::Custom(
+                            "a tuple holds at most 6 items; use a class".into(),
+                        ),
+                        span,
+                    )),
+                }
             }
             TokenKind::Identifier(name) if name == "dyn" => {
                 // `dyn` is a contextual keyword: an identifier
@@ -90,6 +117,16 @@ impl Parser {
     /// Parse a dot separated qualified type path with optional generic
     /// arguments at each segment.
     pub(crate) fn parse_type_path(&mut self) -> ParseResult<TypePath> {
+        if matches!(self.peek_kind(), TokenKind::LParen) {
+            let ty = self.parse_type()?;
+            return match ty.kind {
+                TypeKind::Path(p) => Ok(p),
+                _ => Err(crate::error::RavenError::parse(
+                    crate::error::ParseError::Custom("expected a type name or tuple type".into()),
+                    ty.span,
+                )),
+            };
+        }
         let first = self.parse_type_path_segment()?;
         let mut span = first.span.clone();
         let mut segments = vec![first];

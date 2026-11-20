@@ -4,8 +4,9 @@
 
 use crate::ast::visit;
 use crate::ast::{
-    Block, Decl, DeclKind, ElseBranch, Expr, ExprKind, File, GenericParam, Impl, MatchArm, Pattern,
-    PatternKind, Stmt, StmtKind, Type, TypeKind, TypePath, TypePathSegment, VariantPayload,
+    BinaryOp, Block, Decl, DeclKind, ElseBranch, Expr, ExprKind, File, GenericParam, Impl,
+    MatchArm, Pattern, PatternKind, Stmt, StmtKind, Type, TypeKind, TypePath, TypePathSegment,
+    VariantPayload,
 };
 use crate::error::{ParseError, RavenError};
 use crate::span::Span;
@@ -34,7 +35,7 @@ pub fn desugar(file: &mut File) -> Result<(), RavenError> {
             &mut |e: &mut Expr| lower_expr(e),
             &mut |b: &mut Block| {
                 if error.is_none() {
-                    if let Err(e) = lower_let_else(b) {
+                    if let Err(e) = lower_let_tuple(b).and_then(|_| lower_let_else(b)) {
                         error = Some(e);
                     }
                 }
@@ -46,9 +47,20 @@ pub fn desugar(file: &mut File) -> Result<(), RavenError> {
         .filter_map(|d| match &d.kind {
             DeclKind::Let(l) => Some(l.name.clone()),
             DeclKind::Const(c) => Some(c.name.clone()),
-            DeclKind::Function(f) if f.name == "set" || f.name == "dict" => Some(f.name.clone()),
+            DeclKind::Function(f) if is_builtin_name(&f.name) => Some(f.name.clone()),
             _ => None,
         })
+        .chain(items.iter().flat_map(|d| {
+            match &d.kind {
+                DeclKind::Import(i) => i
+                    .selectors
+                    .iter()
+                    .map(|s| s.local().to_string())
+                    .filter(|n| is_builtin_name(n))
+                    .collect::<Vec<_>>(),
+                _ => Vec::new(),
+            }
+        }))
         .collect();
     for decl in &mut items {
         let mut each = |f: &mut crate::ast::Function| {
@@ -57,6 +69,7 @@ pub fn desugar(file: &mut File) -> Result<(), RavenError> {
             visit::exprs_in_fn(f, &mut |e: &mut Expr| {
                 index_not_type_args(e, &values);
                 empty_collection_call(e, &values);
+                builtin_call(e, &values);
             });
         };
         match &mut decl.kind {
@@ -225,12 +238,102 @@ fn lower_expr(e: &mut Expr) {
     let span = e.span.clone();
     let kind = std::mem::replace(&mut e.kind, ExprKind::Bool(false));
     e.kind = match kind {
+        ExprKind::Binary {
+            op: op @ (BinaryOp::In | BinaryOp::NotIn),
+            lhs,
+            rhs,
+        } => {
+            let call = method(
+                *rhs,
+                "contains",
+                vec![*lhs],
+                &span.in_copy(crate::span::next_copy_id()),
+            );
+            if op == BinaryOp::In {
+                call.kind
+            } else {
+                ExprKind::Unary {
+                    op: crate::ast::UnaryOp::Not,
+                    operand: Box::new(call),
+                }
+            }
+        }
+        ExprKind::Tuple(items) if items.is_empty() => ExprKind::Block(empty_block(&span)),
+        ExprKind::Tuple(items) => ExprKind::Call {
+            callee: Box::new(Expr {
+                kind: ExprKind::Ident {
+                    name: format!("Tuple{}", items.len()),
+                    generics: Vec::new(),
+                },
+                span: span.in_copy(crate::span::next_copy_id()),
+            }),
+            args: items,
+        },
+        ExprKind::Match {
+            scrutinee,
+            mut arms,
+        } => {
+            for arm in &mut arms {
+                tuple_patterns(&mut arm.pattern);
+            }
+            ExprKind::Match { scrutinee, arms }
+        }
+        ExprKind::For {
+            mut pattern,
+            mut iter,
+            mut body,
+        } => {
+            if !matches!(iter.kind, ExprKind::Range { .. }) {
+                let s = iter.span.clone();
+                let receiver = std::mem::replace(
+                    &mut *iter,
+                    Expr {
+                        kind: ExprKind::Bool(false),
+                        span: s.clone(),
+                    },
+                );
+                *iter = method(
+                    receiver,
+                    "__for_iter",
+                    Vec::new(),
+                    &s.in_copy(crate::span::next_copy_id()),
+                );
+            }
+            if matches!(pattern.kind, PatternKind::Tuple { name: None, .. }) {
+                let name = format!("__item{}", crate::span::next_copy_id());
+                let item_span = pattern.span.in_copy(crate::span::next_copy_id());
+                let whole = std::mem::replace(
+                    &mut pattern,
+                    Pattern {
+                        kind: PatternKind::Ident(name.clone()),
+                        span: item_span,
+                    },
+                );
+                let init = Expr {
+                    kind: ExprKind::Ident {
+                        name,
+                        generics: Vec::new(),
+                    },
+                    span: whole.span.in_copy(crate::span::next_copy_id()),
+                };
+                let mut stmts = Vec::new();
+                destructure(&whole, init, false, &mut stmts);
+                stmts.append(&mut body.stmts);
+                body.stmts = stmts;
+            }
+            ExprKind::For {
+                pattern,
+                iter,
+                body,
+            }
+        }
         ExprKind::IfLet {
-            pattern,
+            mut pattern,
             scrutinee,
             then_branch,
             else_branch,
         } => {
+            tuple_patterns(&mut pattern);
             let key = Span {
                 end: span.start + 2,
                 ..span.clone()
@@ -262,10 +365,11 @@ fn lower_expr(e: &mut Expr) {
             }
         }
         ExprKind::WhileLet {
-            pattern,
+            mut pattern,
             scrutinee,
             body,
         } => {
+            tuple_patterns(&mut pattern);
             let key = Span {
                 end: span.start + 5,
                 ..span.clone()
@@ -313,6 +417,131 @@ fn lower_expr(e: &mut Expr) {
     };
 }
 
+/// A bare `(p, q)` pattern as the struct pattern `Tuple2 { _0: p, _1: q }`.
+fn tuple_patterns(p: &mut Pattern) {
+    match &mut p.kind {
+        PatternKind::Tuple { name, elements } => {
+            for e in elements.iter_mut() {
+                tuple_patterns(e);
+            }
+            if name.is_none() {
+                let fields = std::mem::take(elements)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, e)| crate::ast::FieldPattern {
+                        name: format!("_{i}"),
+                        span: e.span.clone(),
+                        pattern: Some(e),
+                    })
+                    .collect::<Vec<_>>();
+                p.kind = PatternKind::Struct {
+                    name: format!("Tuple{}", fields.len()),
+                    fields,
+                };
+            }
+        }
+        PatternKind::Struct { fields, .. } => {
+            for f in fields {
+                if let Some(sub) = &mut f.pattern {
+                    tuple_patterns(sub);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Bind the parts of tuple pattern `p` from `init` as plain lets.
+fn destructure(p: &Pattern, init: Expr, mutable: bool, out: &mut Vec<Stmt>) {
+    let PatternKind::Tuple { elements, .. } = &p.kind else {
+        return;
+    };
+    let tmp = format!("__tuple{}", crate::span::next_copy_id());
+    let tmp_span = p.span.in_copy(crate::span::next_copy_id());
+    out.push(Stmt {
+        kind: StmtKind::Let {
+            name: tmp.clone(),
+            ty: None,
+            init: Some(init),
+            mutable: false,
+        },
+        span: tmp_span.clone(),
+    });
+    for (i, el) in elements.iter().enumerate() {
+        let field = Expr {
+            kind: ExprKind::Field {
+                receiver: Box::new(Expr {
+                    kind: ExprKind::Ident {
+                        name: tmp.clone(),
+                        generics: Vec::new(),
+                    },
+                    span: el.span.in_copy(crate::span::next_copy_id()),
+                }),
+                name: format!("_{i}"),
+            },
+            span: el.span.in_copy(crate::span::next_copy_id()),
+        };
+        match &el.kind {
+            PatternKind::Ident(name) => out.push(Stmt {
+                kind: StmtKind::Let {
+                    name: name.clone(),
+                    ty: None,
+                    init: Some(field),
+                    mutable,
+                },
+                span: el.span.clone(),
+            }),
+            PatternKind::Tuple { name: None, .. } => destructure(el, field, mutable, out),
+            _ => {}
+        }
+    }
+}
+
+/// `let (a, b) = e` as `let t = e; let a = t._0; let b = t._1`.
+fn lower_let_tuple(b: &mut Block) -> Result<(), RavenError> {
+    if !b
+        .stmts
+        .iter()
+        .any(|s| matches!(s.kind, StmtKind::LetTuple { .. }))
+    {
+        return Ok(());
+    }
+    let mut out = Vec::with_capacity(b.stmts.len() + 4);
+    for stmt in std::mem::take(&mut b.stmts) {
+        match stmt.kind {
+            StmtKind::LetTuple {
+                pattern,
+                init,
+                mutable,
+            } => {
+                if let Some(bad) = refutable_part(&pattern) {
+                    return Err(RavenError::parse(
+                        ParseError::Custom(
+                            "a `let` tuple pattern takes names, `_`, or nested tuples; use `match` for anything else".into(),
+                        ),
+                        bad,
+                    ));
+                }
+                destructure(&pattern, init, mutable, &mut out);
+            }
+            _ => out.push(stmt),
+        }
+    }
+    b.stmts = out;
+    Ok(())
+}
+
+fn refutable_part(p: &Pattern) -> Option<Span> {
+    match &p.kind {
+        PatternKind::Wildcard | PatternKind::Ident(_) => None,
+        PatternKind::Tuple {
+            name: None,
+            elements,
+        } => elements.iter().find_map(refutable_part),
+        _ => Some(p.span.clone()),
+    }
+}
+
 /// `let P = e else { .. }` as `let x = match e { P -> x, _ -> { .. } }` for
 /// the one name `P` binds.
 fn lower_let_else(b: &mut Block) -> Result<(), RavenError> {
@@ -335,6 +564,8 @@ fn lower_let_else(b: &mut Block) -> Result<(), RavenError> {
             end: span.start + 3,
             ..span.clone()
         };
+        let mut pattern = pattern;
+        tuple_patterns(&mut pattern);
         let mut names = Vec::new();
         pattern_bindings(&pattern, &mut names);
         let else_arm = MatchArm {
@@ -470,6 +701,114 @@ fn index_not_type_args(e: &mut Expr, values: &std::collections::HashSet<String>)
 
 /// `set()` and `dict()` are empty collection literals unless the program
 /// declares a value or function of that name.
+const BUILTINS: &[&str] = &[
+    "set",
+    "dict",
+    "len",
+    "sum",
+    "min",
+    "max",
+    "sorted",
+    "reversed",
+    "enumerate",
+    "zip",
+    "str",
+    "range",
+];
+
+fn is_builtin_name(n: &str) -> bool {
+    BUILTINS.contains(&n)
+}
+
+fn method(receiver: Expr, name: &str, args: Vec<Expr>, span: &Span) -> Expr {
+    Expr {
+        kind: ExprKind::MethodCall {
+            receiver: Box::new(receiver),
+            name: name.to_string(),
+            generics: Vec::new(),
+            args,
+        },
+        span: span.clone(),
+    }
+}
+
+/// Python-style builtins: `len(x)` is `x.len()`, `min(xs)` is
+/// `xs.min().unwrap()`, `range(a, b)` is `a..b`, and so on, unless the file
+/// defines or imports a function by that name.
+fn builtin_call(e: &mut Expr, values: &std::collections::HashSet<String>) {
+    let ExprKind::Call { callee, args } = &mut e.kind else {
+        return;
+    };
+    let ExprKind::Ident { name, generics } = &callee.kind else {
+        return;
+    };
+    if !generics.is_empty() || values.contains(name) || !is_builtin_name(name) {
+        return;
+    }
+    if args
+        .iter()
+        .any(|a| matches!(a.kind, ExprKind::NamedArg { .. }))
+    {
+        return;
+    }
+    let name = name.clone();
+    let span = e.span.clone();
+    let inner = |s: &Span| s.in_copy(crate::span::next_copy_id());
+    let mut args = std::mem::take(args);
+    let one = |m: &str, args: &mut Vec<Expr>| method(args.remove(0), m, Vec::new(), &span);
+    let new = match (name.as_str(), args.len()) {
+        ("len", 1) => one("len", &mut args),
+        ("sum", 1) => one("sum", &mut args),
+        ("sorted", 1) => one("sorted", &mut args),
+        ("reversed", 1) => one("reversed", &mut args),
+        ("enumerate", 1) => one("enumerate", &mut args),
+        ("str", 1) => one("to_string", &mut args),
+        ("zip", 2) => {
+            let a = args.remove(0);
+            method(a, "zip", args, &span)
+        }
+        ("min" | "max", 1) => {
+            let m = method(args.remove(0), &name, Vec::new(), &inner(&span));
+            method(m, "unwrap", Vec::new(), &span)
+        }
+        ("min" | "max", 2) => Expr {
+            kind: ExprKind::Call {
+                callee: Box::new(Expr {
+                    kind: ExprKind::Ident {
+                        name: format!("__{name}2"),
+                        generics: Vec::new(),
+                    },
+                    span: inner(&span),
+                }),
+                args,
+            },
+            span: span.clone(),
+        },
+        ("range", 1 | 2) => {
+            let end = args.pop().expect("range end");
+            let start = args.pop().unwrap_or(Expr {
+                kind: ExprKind::Int(0),
+                span: inner(&span),
+            });
+            Expr {
+                kind: ExprKind::Range {
+                    start: Box::new(start),
+                    end: Box::new(end),
+                    inclusive: false,
+                },
+                span: span.clone(),
+            }
+        }
+        _ => {
+            if let ExprKind::Call { args: a, .. } = &mut e.kind {
+                *a = args;
+            }
+            return;
+        }
+    };
+    *e = new;
+}
+
 fn empty_collection_call(e: &mut Expr, values: &std::collections::HashSet<String>) {
     let ExprKind::Call { callee, args } = &e.kind else {
         return;

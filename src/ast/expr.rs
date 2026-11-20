@@ -238,6 +238,10 @@ pub enum BinaryOp {
     BitXor,
     Shl,
     Shr,
+    /// `x in xs`, desugared to `xs.contains(x)`.
+    In,
+    /// `x not in xs`.
+    NotIn,
 }
 
 impl BinaryOp {
@@ -248,6 +252,8 @@ impl BinaryOp {
     /// so a new operator cannot pick up a different spelling in one of them.
     pub fn symbol(self) -> &'static str {
         match self {
+            BinaryOp::In => "in",
+            BinaryOp::NotIn => "not in",
             BinaryOp::Add => "+",
             BinaryOp::Sub => "-",
             BinaryOp::Mul => "*",

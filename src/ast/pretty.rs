@@ -275,6 +275,7 @@ fn pretty_stmt(buf: &mut String, stmt: &Stmt, depth: usize) {
     indent(buf, depth);
     match &stmt.kind {
         StmtKind::LetElse { .. } => writeln!(buf, "(let-else)").unwrap(),
+        StmtKind::LetTuple { .. } => writeln!(buf, "(let-tuple)").unwrap(),
         StmtKind::Let {
             name,
             ty,

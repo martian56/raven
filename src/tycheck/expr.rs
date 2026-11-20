@@ -846,7 +846,9 @@ impl<'a, 'b> Checker<'a, 'b> {
     /// later references do not cascade into spurious "undefined" errors.
     fn check_stmt(&mut self, stmt: &Stmt) {
         match &stmt.kind {
-            StmtKind::LetElse { .. } => unreachable!("surface syntax is desugared after parsing"),
+            StmtKind::LetElse { .. } | StmtKind::LetTuple { .. } => {
+                unreachable!("surface syntax is desugared after parsing")
+            }
             StmtKind::Let {
                 name: _,
                 ty,
@@ -1188,7 +1190,31 @@ impl<'a, 'b> Checker<'a, 'b> {
                 iter,
                 body,
             } => {
-                let iter_ty = self.check_expr(iter)?;
+                let iter_ty = match &iter.kind {
+                    ExprKind::MethodCall {
+                        receiver,
+                        name,
+                        args,
+                        ..
+                    } if name == "__for_iter" && args.is_empty() => {
+                        let rt = self.check_expr(receiver)?;
+                        let r = self.infer.resolve(&rt);
+                        let direct =
+                            matches!(r.strip_self(), Ty::List(_) | Ty::Param(_) | Ty::Error)
+                                || self.iterator_elem_ty(r.strip_self(), &iter.span).is_some();
+                        let t = if direct {
+                            r
+                        } else {
+                            let t =
+                                self.check_method_call(receiver, "iter", &[], &[], &iter.span)?;
+                            self.types.record_for_iter(&iter.span);
+                            self.infer.resolve(&t)
+                        };
+                        self.record(&iter.span, t.clone());
+                        t
+                    }
+                    _ => self.check_expr(iter)?,
+                };
                 let resolved = self.infer.resolve(&iter_ty);
                 let elem = match resolved.strip_self() {
                     Ty::List(t) => *t.clone(),
@@ -3216,18 +3242,6 @@ impl<'a, 'b> Checker<'a, 'b> {
         let mut all_div = !arms.is_empty();
 
         for arm in arms {
-            // A constructor pattern whose element is itself a constructor,
-            // literal, or range (`Some(Ok(x))`, `Some(0)`) is not supported:
-            // the lowering binds only one level and would miscompile. Reject it
-            // rather than silently mis-binding.
-            if let Some(nested) = unsupported_nesting_span(&arm.pattern) {
-                return Err(RavenError::ty(
-                    TypeError::Custom(
-                        "a nested pattern inside a constructor is not supported yet; bind the inner value and match it separately".into(),
-                    ),
-                    nested,
-                ));
-            }
             // Each arm gets its own pattern bindings.
             let mut arm_locals = self.locals.clone();
             pattern::bind(&arm.pattern, &scrut_stripped, self.env, &mut arm_locals)?;
@@ -3253,7 +3267,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             // A guarded arm only matches when its guard holds, so it neither
             // covers its pattern for exhaustiveness nor shadows a later arm with
             // the same pattern. Treat it as a non-covering specific head.
-            let head = if arm.guard.is_some() {
+            let head = if arm.guard.is_some() || has_refutable_subpattern(&arm.pattern) {
                 super::match_check::PatternHead::Other
             } else {
                 super::match_check::pattern_head(&arm.pattern)
@@ -3262,7 +3276,27 @@ impl<'a, 'b> Checker<'a, 'b> {
         }
 
         self.diverges = outer || all_div;
-        super::match_check::check(&scrut_stripped, &pattern_names, span, self.env)?;
+        if arms
+            .iter()
+            .any(|a| a.guard.is_none() && has_refutable_subpattern(&a.pattern))
+        {
+            let rows: Vec<&crate::ast::Pattern> = arms
+                .iter()
+                .filter(|a| a.guard.is_none())
+                .map(|a| &a.pattern)
+                .collect();
+            let scrut = self.infer.resolve(&scrut_stripped);
+            if !super::match_check::rows_cover(&rows, &scrut, self.env) {
+                return Err(RavenError::ty(
+                    TypeError::NonExhaustiveMatch {
+                        missing: vec!["some values (add a `_` arm)".into()],
+                    },
+                    span.clone(),
+                ));
+            }
+        } else {
+            super::match_check::check(&scrut_stripped, &pattern_names, span, self.env)?;
+        }
         Ok(result_ty.unwrap_or(Ty::Unit))
     }
 
@@ -3578,6 +3612,7 @@ pub fn check_binary(l: &Ty, r: &Ty, op: BinaryOp, span: &Span) -> Result<Ty, Rav
     let ls = l.strip_self();
     let rs = r.strip_self();
     match op {
+        In | NotIn => unreachable!("membership is desugared after parsing"),
         Add | Sub | Mul | Div | Mod => match (ls, rs) {
             (Ty::Int, Ty::Int) => Ok(Ty::Int),
             (Ty::Str, Ty::Str) if op == Add => Ok(Ty::Str),
@@ -3731,21 +3766,23 @@ fn compound_binary_op(op: AssignOp) -> BinaryOp {
 /// constructor, literal, or range (an unsupported nested pattern), or `None`
 /// when the pattern nests only wildcards and bindings. A bare identifier is
 /// allowed because it lowers to a simple binding.
-fn unsupported_nesting_span(pat: &crate::ast::Pattern) -> Option<Span> {
+/// Whether a constructor pattern constrains one of its parts (`Some(0)`,
+/// `Some(Ok(x))`). Such an arm does not cover its constructor, so it counts
+/// like a guarded arm for exhaustiveness.
+fn has_refutable_subpattern(pat: &crate::ast::Pattern) -> bool {
     use crate::ast::PatternKind;
-    let trivial =
-        |p: &crate::ast::Pattern| matches!(p.kind, PatternKind::Wildcard | PatternKind::Ident(_));
+    let refutable = |p: &crate::ast::Pattern| match &p.kind {
+        PatternKind::Wildcard => false,
+        PatternKind::Ident(n) => n.chars().next().is_some_and(|c| c.is_ascii_uppercase()),
+        _ => true,
+    };
     match &pat.kind {
-        PatternKind::Tuple { elements, .. } => elements
-            .iter()
-            .find(|e| !trivial(e))
-            .map(|e| e.span.clone()),
+        PatternKind::Tuple { elements, .. } => elements.iter().any(refutable),
         PatternKind::Struct { fields, .. } => fields
             .iter()
             .filter_map(|f| f.pattern.as_ref())
-            .find(|p| !trivial(p))
-            .map(|p| p.span.clone()),
-        _ => None,
+            .any(refutable),
+        _ => false,
     }
 }
 

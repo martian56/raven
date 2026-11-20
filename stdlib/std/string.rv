@@ -17,6 +17,27 @@ fun digit_to_float(d: int) -> float {
 impl str {
     fun len(self) -> int = __str_len(self)
 
+    // Each character as a one-character string, for `for c in s`.
+    fun iter(self) -> list[str] {
+        let out: list[str] = []
+        let n = __str_len(self)
+        var i = 0
+        while i < n {
+            let b = __str_byte_at(self, i)
+            var w = 1
+            if b >= 240 {
+                w = 4
+            } else if b >= 224 {
+                w = 3
+            } else if b >= 192 {
+                w = 2
+            }
+            out.push(__str_substring(self, i, i + w))
+            i += w
+        }
+        return out
+    }
+
     fun length(self) -> int {
         return __str_len(self)
     }

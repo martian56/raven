@@ -288,13 +288,9 @@ fn parses_paren_expr() {
 }
 
 #[test]
-fn tuple_expr_is_unsupported() {
-    let err = parse_err("let a = (1, 2)\n");
-    assert!(
-        matches!(err, RavenError::Parse(ParseError::UnsupportedTuple, _, _)),
-        "got: {}",
-        err
-    );
+fn seven_item_tuple_is_rejected() {
+    let err = parse_err("let a = (1, 2, 3, 4, 5, 6, 7)\n");
+    assert!(err.to_string().contains("at most 6"), "got: {}", err);
 }
 
 #[test]

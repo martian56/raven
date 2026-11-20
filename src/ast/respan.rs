@@ -128,6 +128,10 @@ impl<'a> Respan<'a> {
                 self.expr(init);
                 self.block(else_block);
             }
+            StmtKind::LetTuple { pattern, init, .. } => {
+                self.pattern(pattern);
+                self.expr(init);
+            }
             StmtKind::Defer(e) | StmtKind::Spawn(e) | StmtKind::Expr(e) => self.expr(e),
             StmtKind::Assign { target, value, .. } => {
                 self.expr(target);

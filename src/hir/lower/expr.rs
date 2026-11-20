@@ -866,6 +866,7 @@ fn lower_binop(op: BinaryOp) -> HirBinaryOp {
         BinaryOp::BitXor => HirBinaryOp::BitXor,
         BinaryOp::Shl => HirBinaryOp::Shl,
         BinaryOp::Shr => HirBinaryOp::Shr,
+        BinaryOp::In | BinaryOp::NotIn => unreachable!("membership is desugared after parsing"),
     }
 }
 
@@ -1039,6 +1040,46 @@ fn lower_for(
         ));
     }
 
+    let via_iter;
+    let iter = match &iter.kind {
+        ExprKind::MethodCall { receiver, name, .. } if name == "__for_iter" => {
+            if cx.typed.types.is_for_iter(&iter.span) {
+                via_iter = Expr {
+                    kind: ExprKind::MethodCall {
+                        receiver: receiver.clone(),
+                        name: "iter".into(),
+                        generics: Vec::new(),
+                        args: Vec::new(),
+                    },
+                    span: iter.span.clone(),
+                };
+                &via_iter
+            } else {
+                &**receiver
+            }
+        }
+        _ => iter,
+    };
+    if let ExprKind::Range {
+        start,
+        end,
+        inclusive,
+    } = &iter.kind
+    {
+        let start_lowered = lower_expr(start, &Ty::Int, cx)?;
+        let end_lowered = lower_expr(end, &Ty::Int, cx)?;
+        return Ok(lower_counter_for(
+            pat,
+            start_lowered,
+            end_lowered,
+            *inclusive,
+            None,
+            Ty::Int,
+            body,
+            span,
+            cx,
+        ));
+    }
     let source_expr = lower_expr(iter, &Ty::Error, cx)?;
     // A non-range, non-list iterable is any value whose type implements
     // `Iterator<T>`. Drive it through repeated `next()` calls.
@@ -1925,7 +1966,7 @@ fn fold_binary(op: BinaryOp, l: HirExprKind, r: HirExprKind) -> Option<HirExprKi
             Le => Some(Bool(a <= b)),
             Gt => Some(Bool(a > b)),
             Ge => Some(Bool(a >= b)),
-            And | Or => None,
+            And | Or | In | NotIn => None,
         },
         (Float(a), Float(b)) => match op {
             Add => Some(Float(a + b)),

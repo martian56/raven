@@ -53,6 +53,12 @@ pub enum StmtKind {
     /// A bare expression evaluated for its side effects (or returned as
     /// the trailing value of a block).
     Expr(Expr),
+    /// `let (a, b) = e`; desugared after parsing.
+    LetTuple {
+        pattern: super::pattern::Pattern,
+        init: Expr,
+        mutable: bool,
+    },
     /// `let P = e else { .. }`; desugared after parsing.
     LetElse {
         pattern: super::pattern::Pattern,

@@ -136,6 +136,9 @@ impl[T: Eq + Hash] set[T] {
         }
     }
 
+    // The items in insertion order, for `for x in s`.
+    fun iter(self) -> list[T] = self.items
+
     fun contains(self, x: T) -> bool {
         return self._find(x, x.hash()) >= 0
     }
@@ -321,6 +324,20 @@ impl[K: Eq + Hash, V] dict[K, V] {
             }
         }
     }
+
+    // `(key, value)` pairs in insertion order, for `for (k, v) in d`.
+    fun iter(self) -> list[(K, V)] {
+        let out: list[(K, V)] = []
+        var i = 0
+        while i < self.keys_.len() {
+            out.push((self.keys_[i], self.vals[i]))
+            i += 1
+        }
+        return out
+    }
+
+    // Whether `k` is a key, for `k in d`.
+    fun contains(self, k: K) -> bool = self.has(k)
 
     fun has(self, k: K) -> bool {
         return self._find(k, k.hash()) >= 0

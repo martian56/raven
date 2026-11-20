@@ -224,3 +224,179 @@ fn scrutinee_ctors(scrut: &Ty, env: &TypeEnv) -> Vec<String> {
         _ => Vec::new(),
     }
 }
+
+/// Whether the patterns `rows` together match every value of `ty`, looking
+/// inside constructors: `Some(Ok(_))`, `Some(Err(_))`, and `None` cover an
+/// `Option[Result[T, E]]`.
+pub fn rows_cover(rows: &[&Pattern], ty: &Ty, env: &TypeEnv) -> bool {
+    let rows: Vec<Vec<Pat>> = rows.iter().map(|p| vec![Pat::Ast(p)]).collect();
+    covers(rows, vec![ty.clone()], env, 0)
+}
+
+#[derive(Clone)]
+enum Pat<'a> {
+    Ast(&'a Pattern),
+    Wild,
+}
+
+/// A closed type's constructors and their payload types.
+fn ctors_of(ty: &Ty, env: &TypeEnv) -> Option<Vec<(String, Vec<Ty>)>> {
+    use std::collections::HashMap;
+    match ty.strip_self() {
+        Ty::Bool => Some(vec![("true".into(), vec![]), ("false".into(), vec![])]),
+        Ty::Option(t) => Some(vec![
+            ("Some".into(), vec![(**t).clone()]),
+            ("None".into(), vec![]),
+        ]),
+        Ty::Result(t, e) => Some(vec![
+            ("Ok".into(), vec![(**t).clone()]),
+            ("Err".into(), vec![(**e).clone()]),
+        ]),
+        Ty::Enum { id, args, .. } => {
+            let sig = env.enums.get(id)?;
+            let subst: HashMap<_, _> = sig
+                .generics
+                .iter()
+                .zip(args.iter())
+                .map(|(p, a)| (p.id.clone(), a.clone()))
+                .collect();
+            Some(
+                sig.variants
+                    .iter()
+                    .map(|v| {
+                        let tys = match &v.payload {
+                            super::env::VariantPayloadSig::Unit => vec![],
+                            super::env::VariantPayloadSig::Tuple(ts) => ts
+                                .iter()
+                                .map(|t| super::infer::substitute(t, &subst))
+                                .collect(),
+                            super::env::VariantPayloadSig::Struct(fs) => fs
+                                .iter()
+                                .map(|f| super::infer::substitute(&f.ty, &subst))
+                                .collect(),
+                        };
+                        (v.name.clone(), tys)
+                    })
+                    .collect(),
+            )
+        }
+        _ => None,
+    }
+}
+
+fn is_wild(p: &Pat, ctors: &[(String, Vec<Ty>)]) -> bool {
+    match p {
+        Pat::Wild => true,
+        Pat::Ast(p) => match &p.kind {
+            PatternKind::Wildcard => true,
+            PatternKind::Ident(n) => !ctors.iter().any(|(c, _)| c == n),
+            _ => false,
+        },
+    }
+}
+
+/// The parts of `p` when it is constructor `name` with `arity` parts.
+fn specialize<'a>(p: &Pat<'a>, name: &str, arity: usize) -> Option<Vec<Pat<'a>>> {
+    let Pat::Ast(p) = p else {
+        return Some(vec![Pat::Wild; arity]);
+    };
+    match &p.kind {
+        PatternKind::Ident(n) if n == name => Some(vec![Pat::Wild; arity]),
+        PatternKind::Tuple {
+            name: Some(n),
+            elements,
+        } if n == name && elements.len() == arity => Some(elements.iter().map(Pat::Ast).collect()),
+        PatternKind::Literal(crate::ast::LiteralPattern::Bool(b)) if b.to_string() == name => {
+            Some(Vec::new())
+        }
+        _ => None,
+    }
+}
+
+fn covers(rows: Vec<Vec<Pat>>, tys: Vec<Ty>, env: &TypeEnv, depth: usize) -> bool {
+    if tys.is_empty() {
+        return !rows.is_empty();
+    }
+    if rows.is_empty() {
+        return false;
+    }
+    if depth > 64 {
+        return true;
+    }
+    let head_ty = tys[0].clone();
+    let rest_tys = tys[1..].to_vec();
+    if let Some(ctors) = ctors_of(&head_ty, env) {
+        for (name, ptys) in &ctors {
+            let mut spec = Vec::new();
+            for row in &rows {
+                let head = &row[0];
+                let parts = if is_wild(head, &ctors) {
+                    Some(vec![Pat::Wild; ptys.len()])
+                } else {
+                    specialize(head, name, ptys.len())
+                };
+                if let Some(mut parts) = parts {
+                    parts.extend(row[1..].iter().cloned());
+                    spec.push(parts);
+                }
+            }
+            let mut sub_tys = ptys.clone();
+            sub_tys.extend(rest_tys.iter().cloned());
+            if !covers(spec, sub_tys, env, depth + 1) {
+                return false;
+            }
+        }
+        return true;
+    }
+    if let Ty::Struct { id, args, .. } = head_ty.strip_self() {
+        if let Some(sig) = env.structs.get(id) {
+            let expands = rows.iter().any(
+                |r| matches!(&r[0], Pat::Ast(p) if matches!(p.kind, PatternKind::Struct { .. })),
+            );
+            if expands {
+                let subst: std::collections::HashMap<_, _> = sig
+                    .generics
+                    .iter()
+                    .zip(args.iter())
+                    .map(|(p, a)| (p.id.clone(), a.clone()))
+                    .collect();
+                let field_tys: Vec<Ty> = sig
+                    .fields
+                    .iter()
+                    .map(|f| super::infer::substitute(&f.ty, &subst))
+                    .collect();
+                let mut spec = Vec::new();
+                for row in &rows {
+                    let mut parts: Vec<Pat> = vec![Pat::Wild; field_tys.len()];
+                    match &row[0] {
+                        Pat::Ast(p) => match &p.kind {
+                            PatternKind::Struct { fields, .. } => {
+                                for f in fields {
+                                    if let (Some((i, _)), Some(sub)) =
+                                        (sig.field(&f.name), f.pattern.as_ref())
+                                    {
+                                        parts[i] = Pat::Ast(sub);
+                                    }
+                                }
+                            }
+                            PatternKind::Wildcard | PatternKind::Ident(_) => {}
+                            _ => continue,
+                        },
+                        Pat::Wild => {}
+                    }
+                    parts.extend(row[1..].iter().cloned());
+                    spec.push(parts);
+                }
+                let mut sub_tys = field_tys;
+                sub_tys.extend(rest_tys.iter().cloned());
+                return covers(spec, sub_tys, env, depth + 1);
+            }
+        }
+    }
+    let default: Vec<Vec<Pat>> = rows
+        .iter()
+        .filter(|r| is_wild(&r[0], &[]))
+        .map(|r| r[1..].to_vec())
+        .collect();
+    covers(default, rest_tys, env, depth + 1)
+}

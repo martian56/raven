@@ -920,6 +920,16 @@ impl Printer<'_> {
                 let b = self.render_block(else_block, 0);
                 self.emit_multiline(&format!("{head}{init} else {b}"));
             }
+            StmtKind::LetTuple {
+                pattern,
+                init,
+                mutable,
+            } => {
+                let kw = if *mutable { "var" } else { "let" };
+                let head = format!("{kw} {} = ", render_pattern(pattern));
+                let init = self.render_expr_col(init, head.len());
+                self.emit_multiline(&format!("{head}{init}"));
+            }
             StmtKind::Assign { target, op, value } => {
                 let target = self.render_expr_col(target, 0);
                 let op = assign_op(*op);
@@ -1248,6 +1258,10 @@ impl Printer<'_> {
             }
             ExprKind::Field { receiver, name } => {
                 let r = self.expr_at(receiver, base, col);
+                let name = match name.strip_prefix('_') {
+                    Some(d) if !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()) => d,
+                    _ => name.as_str(),
+                };
                 format!("{}.{}", r, name)
             }
             ExprKind::Index { receiver, index } => {
@@ -1958,6 +1972,17 @@ fn render_type(ty: &Type) -> String {
 }
 
 fn render_type_path(p: &TypePath) -> String {
+    if let [seg] = p.segments.as_slice() {
+        if seg
+            .name
+            .strip_prefix("Tuple")
+            .and_then(|n| n.parse::<usize>().ok())
+            == Some(seg.generics.len())
+        {
+            let parts: Vec<String> = seg.generics.iter().map(render_type).collect();
+            return format!("({})", parts.join(", "));
+        }
+    }
     let mut out = String::new();
     for (i, seg) in p.segments.iter().enumerate() {
         if i > 0 {

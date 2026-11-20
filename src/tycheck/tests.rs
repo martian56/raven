@@ -365,12 +365,11 @@ fn module_level_empty_list_adopts_annotation() {
 }
 
 #[test]
-fn nested_constructor_pattern_is_rejected() {
-    // A constructor pattern whose element is itself a constructor is not
-    // supported and must be a clean type error, not a silent miscompile.
-    // Regression for #409.
-    let bad = "fun f(x: Option<Result<Int, Int>>) -> Int {\n    return match x {\n        Some(Ok(n)) -> n,\n        Some(Err(e)) -> 0 - e,\n        None -> 0,\n    }\n}\nfun main() {}\n";
-    assert!(check(bad).is_err());
+fn nested_constructor_patterns_check_exhaustiveness() {
+    let full = "fun f(x: Option<Result<Int, Int>>) -> Int {\n    return match x {\n        Some(Ok(n)) -> n,\n        Some(Err(e)) -> 0 - e,\n        None -> 0,\n    }\n}\nfun main() {}\n";
+    assert!(check(full).is_ok());
+    let partial = "fun f(x: Option<Result<Int, Int>>) -> Int {\n    return match x {\n        Some(Ok(n)) -> n,\n        None -> 0,\n    }\n}\nfun main() {}\n";
+    assert!(check(partial).is_err());
 }
 
 #[test]

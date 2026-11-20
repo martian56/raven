@@ -89,6 +89,9 @@ pub struct TypeMap {
     /// raw C address rather than a Raven closure object. Every other
     /// function-typed name used as a value is a Raven closure value.
     pub callback_fns: HashSet<UseKey>,
+    /// `for` heads that iterate through the value's `iter()` method rather
+    /// than the value itself.
+    pub for_iter_calls: HashSet<UseKey>,
     /// Spans of closure values passed where a `CFnPtr` is expected. The site
     /// lowers to a generated trampoline (userdata-last) the closure is
     /// invoked through, rather than the closure object pointer.
@@ -133,6 +136,16 @@ impl TypeMap {
     /// Look up a `dyn Trait` coercion recorded at `span`, if any.
     pub fn lookup_coercion(&self, span: &Span) -> Option<&DynCoercion> {
         self.coercions.get(&UseKey::from_span(span))
+    }
+
+    /// Record that the `for` head at `span` calls `iter()`.
+    pub fn record_for_iter(&mut self, span: &Span) {
+        self.for_iter_calls.insert(UseKey::from_span(span));
+    }
+
+    /// True when the `for` head at `span` calls `iter()`.
+    pub fn is_for_iter(&self, span: &Span) -> bool {
+        self.for_iter_calls.contains(&UseKey::from_span(span))
     }
 
     /// Record that the function name at `span` is a C-FFI callback (passed
