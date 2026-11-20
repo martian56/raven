@@ -224,6 +224,10 @@ impl<'a> Respan<'a> {
             ExprKind::Paren(x) | ExprKind::Try(x) | ExprKind::NamedArg { value: x, .. } => {
                 self.expr(x)
             }
+            ExprKind::Cast { value, ty } => {
+                self.expr(value);
+                self.ty(ty);
+            }
             ExprKind::Block(b) | ExprKind::Loop(b) => self.block(b),
             ExprKind::Unary { operand, .. } => self.expr(operand),
             ExprKind::Binary { lhs, rhs, .. } => {

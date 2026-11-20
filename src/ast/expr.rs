@@ -97,6 +97,8 @@ pub enum ExprKind {
         lhs: Box<Expr>,
         rhs: Box<Expr>,
     },
+    /// `value as T`, desugared to a conversion method call.
+    Cast { value: Box<Expr>, ty: super::Type },
     /// Range expression: `start..end` or `start..=end`.
     Range {
         start: Box<Expr>,

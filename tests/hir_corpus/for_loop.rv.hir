@@ -19,32 +19,9 @@
                   (ident "__hir_list_0" ty=List<Int>)
                 )
               )
-              (let "__hir_first_3" ty=Bool
-                (bool true ty=Bool)
-              )
               (tail
                 (loop ty=()
                   (body ty=()
-                    (stmt-expr
-                      (if ty=()
-                        (ident "__hir_first_3" ty=Bool)
-                        (then ty=()
-                          (assign
-                            (target-ident "__hir_first_3")
-                            (bool false ty=Bool)
-                          )
-                        )
-                        (else ty=()
-                          (assign
-                            (target-ident "__hir_i_1")
-                            (binary + ty=Int
-                              (ident "__hir_i_1" ty=Int)
-                              (int 1 ty=Int)
-                            )
-                          )
-                        )
-                      )
-                    )
                     (stmt-expr
                       (if ty=()
                         (binary >= ty=Bool
@@ -63,6 +40,13 @@
                       (index ty=Int
                         (ident "__hir_list_0" ty=List<Int>)
                         (ident "__hir_i_1" ty=Int)
+                      )
+                    )
+                    (assign
+                      (target-ident "__hir_i_1")
+                      (binary + ty=Int
+                        (ident "__hir_i_1" ty=Int)
+                        (int 1 ty=Int)
                       )
                     )
                     (stmt-expr

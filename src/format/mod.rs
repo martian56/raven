@@ -1187,6 +1187,10 @@ impl Printer<'_> {
                 let inner = self.expr_at(inner, base, col + 1);
                 format!("({})", inner)
             }
+            ExprKind::Cast { value, ty } => {
+                let v = self.expr_at(value, base, col);
+                format!("{} as {}", v, render_type(ty))
+            }
             ExprKind::Block(b) => self.render_block(b, base),
             ExprKind::Unary { op, operand } => {
                 let op_s = unary_op(*op);

@@ -434,6 +434,17 @@ impl[T] list[T] {
         return out
     }
 
+    // Every `k`th item, starting with the first: `(0..10).step(3)`.
+    fun step(self, k: int) -> list[T] {
+        let out: list[T] = []
+        var i = 0
+        while i < self.len() {
+            out.push(self[i])
+            i += k
+        }
+        return out
+    }
+
     // Pairs of items at the same position, up to the shorter list.
     fun zip[U](self, other: list[U]) -> list[(T, U)] {
         let out: list[(T, U)] = []
@@ -970,4 +981,22 @@ impl[A: Ord, B: Ord, C: Ord, D: Ord, E: Ord, F: Ord] Ord for Tuple6[A, B, C, D, 
         }
         return self._5.compare(other._5)
     }
+}
+
+// `x as int`, `x as float`: numeric conversions. Float to int truncates
+// toward zero; a bool is 1 or 0.
+impl int {
+    fun as_int(self) -> int = self
+
+    fun as_float(self) -> float = self.to_float()
+}
+
+impl float {
+    fun as_int(self) -> int = self.to_int()
+
+    fun as_float(self) -> float = self
+}
+
+impl bool {
+    fun as_int(self) -> int = 1 if self else 0
 }

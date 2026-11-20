@@ -55,6 +55,9 @@ fun __fmt_pad(s: str, width: int, align: str, fill: str) -> str {
 impl str {
     fun len(self) -> int = __str_len(self)
 
+    // `s[start..end]`: the bytes in `start..end`, clamped to the string.
+    fun slice(self, start: int, end: int) -> str = __str_substring(self, start, end)
+
     // Each character as a one-character string, for `for c in s`.
     fun iter(self) -> list[str] {
         let out: list[str] = []

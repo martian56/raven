@@ -258,6 +258,56 @@ fn lower_expr(e: &mut Expr) {
                 }
             }
         }
+        ExprKind::Index { receiver, index } if matches!(index.kind, ExprKind::Range { .. }) => {
+            let ExprKind::Range {
+                start,
+                end,
+                inclusive,
+            } = index.kind
+            else {
+                unreachable!()
+            };
+            let end = if inclusive {
+                let s = end.span.in_copy(crate::span::next_copy_id());
+                Expr {
+                    kind: ExprKind::Binary {
+                        op: BinaryOp::Add,
+                        lhs: end,
+                        rhs: Box::new(Expr {
+                            kind: ExprKind::Int(1),
+                            span: s.in_copy(crate::span::next_copy_id()),
+                        }),
+                    },
+                    span: s,
+                }
+            } else {
+                *end
+            };
+            method(
+                *receiver,
+                "slice",
+                vec![*start, end],
+                &span.in_copy(crate::span::next_copy_id()),
+            )
+            .kind
+        }
+        ExprKind::Cast { value, ty } => {
+            let target = match &ty.kind {
+                TypeKind::Path(p) if p.segments.len() == 1 => p.segments[0].name.to_lowercase(),
+                _ => "unsupported".into(),
+            };
+            let name = match target.as_str() {
+                "string" | "str" => "to_string".to_string(),
+                other => format!("as_{other}"),
+            };
+            method(
+                *value,
+                &name,
+                Vec::new(),
+                &span.in_copy(crate::span::next_copy_id()),
+            )
+            .kind
+        }
         ExprKind::Tuple(items) if items.is_empty() => ExprKind::Block(empty_block(&span)),
         ExprKind::Tuple(items) => ExprKind::Call {
             callee: Box::new(Expr {

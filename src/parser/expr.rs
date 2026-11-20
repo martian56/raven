@@ -390,13 +390,31 @@ impl Parser {
 
     fn parse_multiplicative(&mut self) -> ParseResult<Expr> {
         self.parse_left_assoc(
-            Self::parse_unary,
+            Self::parse_cast,
             &[
                 (TokenKind::Star, BinaryOp::Mul),
                 (TokenKind::Slash, BinaryOp::Div),
                 (TokenKind::Percent, BinaryOp::Mod),
             ],
         )
+    }
+
+    /// `value as T`, binding tighter than `*` and looser than unary `-`.
+    fn parse_cast(&mut self) -> ParseResult<Expr> {
+        let mut e = self.parse_unary()?;
+        while matches!(self.peek_kind(), TokenKind::As) {
+            self.advance();
+            let ty = self.parse_type()?;
+            let span = merge_spans(&e.span, &ty.span);
+            e = Expr {
+                kind: ExprKind::Cast {
+                    value: Box::new(e),
+                    ty,
+                },
+                span,
+            };
+        }
+        Ok(e)
     }
 
     fn parse_left_assoc(
