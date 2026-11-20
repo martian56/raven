@@ -134,13 +134,13 @@ fn generate_program(rng: &mut Rng) -> Program {
     body.push_str("    print(total)\n");
 
     let source = format!(
-        "import std/string\n\
-         import std/collections {{ Map, Set }}\n\
+        "import std.string\n\
+         from std.collections import Map, Set\n\
          \n\
          @derive(Eq, ToString, Debug)\n\
-         struct Rec {{ id: int, tag: str }}\n\
+         class Rec {{ id: int, tag: str }}\n\
          \n\
-         struct Nest {{ outer: int, inner: Rec }}\n\
+         class Nest {{ outer: int, inner: Rec }}\n\
          \n\
          @derive(Eq, ToString)\n\
          enum Variant {{\n\
@@ -153,7 +153,7 @@ fn generate_program(rng: &mut Rng) -> Program {
          \x20   var acc = 0\n\
          \x20   var i = 0\n\
          \x20   while i < n {{\n\
-         \x20       let junk = Rec {{ id: i, tag: \"scratch\" }}\n\
+         \x20       let junk = Rec(id: i, tag: \"scratch\")\n\
          \x20       acc = acc + junk.id\n\
          \x20       i = i + 1\n\
          \x20   }}\n\
@@ -184,13 +184,13 @@ fn emit_struct_shape(
     let v = next_var(rng);
     if nested {
         body.push_str(&format!(
-            "    let {v} = Nest {{ outer: {id}, inner: Rec {{ id: {id}, tag: \"{w}\" }} }}\n\
+            "    let {v} = Nest(outer: {id}, inner: Rec(id: {id}, tag: \"{w}\"))\n\
              \x20   let _ = churn({churn})\n\
              \x20   if {v}.inner.tag == \"{w}\" {{ total = total + {weight} + {v}.outer }}\n"
         ));
     } else {
         body.push_str(&format!(
-            "    let {v} = Rec {{ id: {id}, tag: \"{w}\" }}\n\
+            "    let {v} = Rec(id: {id}, tag: \"{w}\")\n\
              \x20   let _ = churn({churn})\n\
              \x20   if {v}.tag == \"{w}\" {{ total = total + {weight} + {v}.id }}\n"
         ));
@@ -214,9 +214,9 @@ fn emit_enum_shape(
         "    let {v} = Variant.Two({n}, \"{w}\")\n\
          \x20   let _ = churn({churn})\n\
          \x20   let {v}r = match {v} {{\n\
-         \x20       Empty -> 0,\n\
-         \x20       One(s) -> 1,\n\
-         \x20       Two(k, s) -> if s == \"{w}\" {{ k + {weight} }} else {{ 0 }},\n\
+         \x20       case Empty {{ 0 }}\n\
+         \x20       case One(s) {{ 1 }}\n\
+         \x20       case Two(k, s) {{ k + {weight} if s == \"{w}\" else 0 }}\n\
          \x20   }}\n\
          \x20   total = total + {v}r\n"
     ));
@@ -269,8 +269,8 @@ fn emit_map_shape(
          \x20   {v}.set(\"{k}\", \"{val}\")\n\
          \x20   let _ = churn({churn})\n\
          \x20   match {v}.get(\"{k}\") {{\n\
-         \x20       Some(got) -> {{ if got == \"{val}\" {{ total = total + {weight} }} }}\n\
-         \x20       None -> {{}}\n\
+         \x20       case Some(got) {{ if got == \"{val}\" {{ total = total + {weight} }} }}\n\
+         \x20       case None {{}}\n\
          \x20   }}\n"
     ));
     *checksum += weight;
@@ -314,7 +314,7 @@ fn emit_closure_shape(
         "    let {v}a = {a}\n\
          \x20   let {v}b = {b}\n\
          \x20   let {v}c = {c}\n\
-         \x20   let {v}f = fun(x: int) -> int = x + {v}a + {v}b + {v}c + {weight}\n\
+         \x20   let {v}f = (x: int) => x + {v}a + {v}b + {v}c + {weight}\n\
          \x20   let _ = churn({churn})\n\
          \x20   total = total + {v}f(0)\n"
     ));
@@ -337,7 +337,7 @@ fn emit_interp_shape(
     // Build a Rec, then interpolate several of its parts plus extra
     // expressions: the fold concatenates many heap Strings.
     body.push_str(&format!(
-        "    let {v} = Rec {{ id: {id}, tag: \"{w}\" }}\n\
+        "    let {v} = Rec(id: {id}, tag: \"{w}\")\n\
          \x20   let {v}n = {n}\n\
          \x20   let {v}s = \"a=${{{v}.id}}-b=${{{v}.tag}}-c=${{{v}n}}-d=${{{v}.id}}\"\n\
          \x20   let _ = churn({churn})\n\
@@ -360,7 +360,7 @@ fn emit_tostring_shape(
     let w = words[(rng.next() as usize) % words.len()];
     let v = next_var(rng);
     body.push_str(&format!(
-        "    let {v} = Rec {{ id: {id}, tag: \"{w}\" }}\n\
+        "    let {v} = Rec(id: {id}, tag: \"{w}\")\n\
          \x20   let {v}s = {v}.to_string()\n\
          \x20   let _ = churn({churn})\n\
          \x20   if {v}s == \"Rec {{ id: {id}, tag: {w} }}\" {{ total = total + {weight} }}\n"
@@ -381,17 +381,17 @@ fn emit_any_shape(
     let w = words[(rng.next() as usize) % words.len()];
     let v = next_var(rng);
     body.push_str(&format!(
-        "    let {v} = to_any[Rec](Rec {{ id: {id}, tag: \"{w}\" }})\n\
+        "    let {v} = to_any[Rec](Rec(id: {id}, tag: \"{w}\"))\n\
          \x20   let _ = churn({churn})\n\
          \x20   let {v}f = get_field({v}, \"id\")\n\
          \x20   match {v}f {{\n\
-         \x20       Some(av) -> {{\n\
+         \x20       case Some(av) {{\n\
          \x20           match cast[int](av) {{\n\
-         \x20               Some(iv) -> {{ if iv == {id} {{ total = total + {weight} }} }}\n\
-         \x20               None -> {{}}\n\
+         \x20               case Some(iv) {{ if iv == {id} {{ total = total + {weight} }} }}\n\
+         \x20               case None {{}}\n\
          \x20           }}\n\
          \x20       }}\n\
-         \x20       None -> {{}}\n\
+         \x20       case None {{}}\n\
          \x20   }}\n"
     ));
     *checksum += weight;

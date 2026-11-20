@@ -8,6 +8,6 @@ extern "C" {
     fun strlen(s: CString) -> int
 }
 
-const MAX: int = 100
+let MAX: int = 100
 
 let greeting: str = "hi"

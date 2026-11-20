@@ -66,7 +66,7 @@ fn recursive_generic_instantiation_is_rejected_not_hung() {
     // A generic function that instantiates itself at an ever larger type would
     // give the monomorphizer a new key every round and loop forever. It must
     // instead report a clean depth-limit error.
-    let src = "struct Box[T] { value: T }\nfun deep[T](x: T) {\n    deep(Box { value: x })\n}\nfun main() {\n    deep(0)\n}\n";
+    let src = "class Box[T] { value: T }\nfun deep[T](x: T) {\n    deep(Box(value: x))\n}\nfun main() {\n    deep(0)\n}\n";
     let tokens = Lexer::new(src.to_string(), PathBuf::from("t.rv"))
         .tokenize()
         .expect("lex");
@@ -197,8 +197,8 @@ fn return_terminates_block() {
 #[test]
 fn struct_create_emitted_for_struct_literal() {
     let src = r#"
-        struct Point { x: int, y: int }
-        fun mk() -> Point { return Point { x: 1, y: 2 } }
+        class Point { x: int, y: int }
+        fun mk() -> Point { return Point(x: 1, y: 2) }
     "#;
     let prog = compile(src);
     let f = find_fn(&prog, "mk");
@@ -462,7 +462,7 @@ fn capturing_lambda_records_captured_local() {
     let prog = compile(
         r#"
         fun make_adder(n: int) -> fun(int) -> int {
-            return fun(x: int) -> int = x + n
+            return (x: int) -> int => x + n
         }
     "#,
     );
@@ -487,7 +487,7 @@ fn non_capturing_lambda_has_no_captures() {
     let prog = compile(
         r#"
         fun make() -> fun(int) -> int {
-            return fun(x: int) -> int = x + 1
+            return (x: int) -> int => x + 1
         }
     "#,
     );
@@ -507,7 +507,7 @@ fn lambda_body_is_lifted_to_standalone_function() {
     let prog = compile(
         r#"
         fun make_adder(n: int) -> fun(int) -> int {
-            return fun(x: int) -> int = x + n
+            return (x: int) -> int => x + n
         }
     "#,
     );
@@ -581,7 +581,7 @@ fn generic_call_inside_closure_body_is_monomorphized() {
         }
 
         fun main() {
-            let f = fun(x: int) -> int = identity(x) + 1
+            let f = (x: int) -> int => identity(x) + 1
             print(apply(f, 41))
         }
     "#,
@@ -631,7 +631,7 @@ fn gc_pointer_captures_are_ordered_first() {
     let prog = compile(
         r#"
         fun build(k: int, s: str) -> fun() -> str {
-            return fun() -> str = "${k}${s}"
+            return () -> str => "${k}${s}"
         }
     "#,
     );
@@ -690,7 +690,7 @@ fn type_name_on_scalar_lowers_to_name_constant() {
 fn type_name_on_struct_lowers_to_name_constant() {
     let prog = compile(
         r#"
-        struct Point { x: int, y: int }
+        class Point { x: int, y: int }
         fun f() -> str = type_name[Point]()
     "#,
     );
@@ -702,7 +702,7 @@ fn type_name_on_struct_lowers_to_name_constant() {
 fn field_names_on_struct_lowers_to_field_constants() {
     let prog = compile(
         r#"
-        struct Point { x: int, y: int }
+        class Point { x: int, y: int }
         fun f() -> list[str] = field_names[Point]()
     "#,
     );
@@ -718,7 +718,7 @@ fn type_name_on_generic_param_resolves_per_monomorphization() {
     // name, so the two specialized functions carry different constants.
     let prog = compile(
         r#"
-        struct Point { x: int, y: int }
+        class Point { x: int, y: int }
         fun describe[T]() -> str = type_name[T]()
         fun main() {
             let a = describe[int]()
@@ -839,7 +839,7 @@ fn repr_c_struct_layout_is_recorded() {
     let prog = compile(
         r#"
         @repr(C)
-        struct Point {
+        class Point {
             x: CInt
             y: CInt
         }
@@ -847,7 +847,7 @@ fn repr_c_struct_layout_is_recorded() {
             fun f(p: Point) -> Point
         }
         fun main() {
-            let q = f(Point { x: 1, y: 2 })
+            let q = f(Point(x: 1, y: 2))
         }
         "#,
     );
@@ -867,12 +867,12 @@ fn plain_struct_has_no_repr_c_layout() {
     // FFI layout.
     let prog = compile(
         r#"
-        struct Point {
+        class Point {
             x: int
             y: int
         }
         fun main() {
-            let p = Point { x: 1, y: 2 }
+            let p = Point(x: 1, y: 2)
         }
         "#,
     );

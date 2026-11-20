@@ -134,7 +134,7 @@ fn project_with_github_dependency_builds_and_runs() {
     .expect("write pkg toml");
     std::fs::write(
         pkg_dir.join("lib.rv"),
-        "import std/string\nfun shout(s: str) -> str { return s.concat(\"!\") }\n",
+        "import std.string\nfun shout(s: str) -> str { return s.concat(\"!\") }\n",
     )
     .expect("write pkg lib");
 
@@ -148,7 +148,7 @@ fn project_with_github_dependency_builds_and_runs() {
     std::fs::create_dir_all(&src).expect("mkdir src");
     std::fs::write(
         src.join("main.rv"),
-        "import \"github.com/acme/greet/lib\" { shout }\nfun main() { print(shout(\"hi\")) }\n",
+        "from \"github.com/acme/greet/lib\" import shout\nfun main() { print(shout(\"hi\")) }\n",
     )
     .expect("write main");
 
@@ -231,7 +231,7 @@ fn project_with_dependency_bundling_c_builds_and_runs() {
     std::fs::create_dir_all(&src).expect("mkdir src");
     std::fs::write(
         src.join("main.rv"),
-        "import \"github.com/acme/cmath/lib\" { times4 }\nfun main() { print(times4(5)) }\n",
+        "from \"github.com/acme/cmath/lib\" import times4\nfun main() { print(times4(5)) }\n",
     )
     .expect("write main");
 
@@ -285,7 +285,7 @@ fn rvpm_test_links_package_ffi() {
     .expect("write lib");
     std::fs::write(
         project.join("lib_test.rv"),
-        "import std/test { assert_eq_int }\nimport \"./lib\" { inc }\nfun test_inc() { assert_eq_int(inc(4), 5) }\n",
+        "from std.test import assert_eq_int\nfrom \"./lib\" import inc\nfun test_inc() { assert_eq_int(inc(4), 5) }\n",
     )
     .expect("write test");
 

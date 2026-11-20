@@ -344,7 +344,7 @@ mod tests {
                    fun _internal() {}\n\
                    \n\
                    // A 2D point.\n\
-                   struct Point {\n    x: float,\n    y: float,\n}\n";
+                   class Point {\n    x: float,\n    y: float,\n}\n";
         let items = documented_items(src, Path::new("a.rv")).unwrap();
         assert_eq!(items.len(), 2, "internal _ item should be skipped");
         assert_eq!(items[0].name, "add");
@@ -352,7 +352,7 @@ mod tests {
         assert!(items[0].doc.contains("Add two integers."));
         assert!(items[0].doc.contains("Returns their sum."));
         assert_eq!(items[1].name, "Point");
-        assert!(items[1].signature.starts_with("struct Point {"));
+        assert!(items[1].signature.starts_with("class Point {"));
         assert!(items[1].signature.ends_with("}"));
         assert!(items[1].doc.contains("A 2D point."));
     }

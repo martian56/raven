@@ -733,7 +733,7 @@ mod tests {
         // `println` starts at byte 13, col 14.
         let span = Span::new(file(), 13, 20, 1, 14);
         let err = RavenError::resolve(ResolveError::UnresolvedName("println".into()), span)
-            .with_hint("did you mean to `import std/io { println }`?");
+            .with_hint("did you mean to `from std.io import println`?");
         let rendered = err.render(src, false);
         assert!(rendered.contains("cannot find `println` in scope"));
         assert!(rendered.contains("fun main() { println"));
@@ -823,7 +823,7 @@ mod tests {
     fn carets_do_not_overrun_the_source_line() {
         // A span covering a multi-line construct must not print more carets
         // than the visible part of the first line.
-        let src = "match c {\n  A -> 1,\n}\n";
+        let src = "match c {\n  case A { 1 }\n}\n";
         let span = Span::new(file(), 0, 21, 1, 1);
         let err = RavenError::ty(
             TypeError::NonExhaustiveMatch {

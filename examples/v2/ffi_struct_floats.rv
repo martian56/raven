@@ -10,19 +10,19 @@
 //   30
 //   7.5
 @repr(C)
-struct PointF {
+class PointF {
     x: CFloat
     y: CFloat
 }
 
 @repr(C)
-struct Vec2D {
+class Vec2D {
     x: CDouble
     y: CDouble
 }
 
 @repr(C)
-struct Mixed {
+class Mixed {
     n: CInt
     f: CFloat
 }

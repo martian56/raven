@@ -105,7 +105,7 @@ fn doc_comment_stays_attached_to_derived_item() {
     // A comment directly above `@derive` documents the item, so the formatter
     // must not split them with a blank line (which `rvpm doc` would read as the
     // comment no longer documenting the item).
-    let src = "// A point.\n@derive(Eq, Ord)\nstruct Point {\n    x: int,\n}\n";
+    let src = "// A point.\n@derive(Eq, Ord)\nclass Point {\n    x: int,\n}\n";
     let out = fmt(src);
     assert!(
         out.contains("// A point.\n@derive(Eq, Ord)"),
@@ -150,7 +150,7 @@ fn generics_and_bounds() {
 
 #[test]
 fn struct_decl() {
-    let out = fmt("struct Point{x:int,y:int}");
+    let out = fmt("class Point{x:int,y:int}");
     assert_eq!(out, "class Point {\n    x: int\n    y: int\n}\n");
 }
 
@@ -173,7 +173,7 @@ fn trait_and_impl() {
 
 #[test]
 fn match_with_guard() {
-    let src = "fun f(x:int)->int{return match x{0->1,n if n>0->2,_->3}}";
+    let src = "fun f(x:int)->int{return match x{case 0{1} case n if n>0{2} case _{3}}}";
     let out = fmt(src);
     assert!(out.contains("match x {"));
     assert!(out.contains("        case 0 { 1 }"), "got: {out}");
@@ -245,7 +245,7 @@ fn macro_call_with_bracket_delimiter() {
 fn spawn_stmt_formats_as_call() {
     // `spawn` reads as a call: no space before the parenthesis, a single
     // paren layer, and stable under re-formatting (checked by `fmt`).
-    let out = fmt("fun f(){spawn (fun()->Unit{work()})}");
+    let out = fmt("fun f(){spawn (() -> Unit => {work()})}");
     assert!(out.contains("spawn {\n        work()\n    }"), "got: {out}");
 }
 
@@ -259,7 +259,7 @@ fn extern_block() {
 
 #[test]
 fn imports() {
-    let out = fmt("import std/io\nimport std/collections{Map,Set}\nimport \"./local\" as loc");
+    let out = fmt("import std.io\nfrom std.collections import Map,Set\nimport \"./local\" as loc");
     assert!(out.contains("import std.io\n"));
     assert!(out.contains("from std.collections import Map, Set"));
     assert!(out.contains("import \"./local\" as loc"));
@@ -286,7 +286,7 @@ fn compound_assignment() {
 
 #[test]
 fn lambda_forms() {
-    let out = fmt("fun f(){let g={x->x+1}\nlet h=fun(a:int)->int=a}");
+    let out = fmt("fun f(){let g=x=>x+1\nlet h=(a:int) -> int => a}");
     assert!(out.contains("let g = x => x + 1"), "got: {out}");
     assert!(out.contains("let h = (a: int) -> int => a"), "got: {out}");
 }
@@ -299,8 +299,8 @@ fn collapse_blank_lines() {
 
 #[test]
 fn float_literal_keeps_point() {
-    let out = fmt("const PI: float = 3.0");
-    assert_eq!(out, "const PI: float = 3.0\n");
+    let out = fmt("let PI: float = 3.0");
+    assert_eq!(out, "let PI: float = 3.0\n");
 }
 
 #[test]
@@ -333,14 +333,14 @@ fn nested_block_indentation() {
 
 #[test]
 fn multiline_struct_literal_preserved() {
-    let src = "fun f()->P{return P{\nx: 1,\ny: 2,\n}}";
+    let src = "fun f()->P{return P(\nx: 1,\ny: 2\n)}";
     let out = fmt(src);
     assert!(out.contains("P(x: 1, y: 2)"), "got: {out}");
 }
 
 #[test]
 fn inline_struct_literal_stays_inline() {
-    let src = "fun f()->P{return P{x: 1, y: 2}}";
+    let src = "fun f()->P{return P(x: 1, y: 2)}";
     let out = fmt(src);
     assert!(out.contains("P(x: 1, y: 2)"), "got: {out}");
 }
@@ -373,13 +373,13 @@ fn single_element_set_keeps_one_element() {
 
 #[test]
 fn map_literal_round_trips() {
-    let out = fmt("fun f(){let m=[\"a\":1,\"b\":2]}");
+    let out = fmt("fun f(){let m={\"a\":1,\"b\":2}}");
     assert_eq!(out, "fun f() {\n    let m = {\"a\": 1, \"b\": 2}\n}\n");
 }
 
 #[test]
 fn empty_map_literal_round_trips() {
-    let out = fmt("fun f(){let m=[:]}");
+    let out = fmt("fun f(){let m={}}");
     assert_eq!(out, "fun f() {\n    let m = {}\n}\n");
 }
 
@@ -394,7 +394,7 @@ fn comment_inside_struct_literal_is_kept() {
     // A comment interior to a struct literal must survive formatting. Before
     // #579 the struct-literal printer ignored the comment cursor and the
     // comment was relocated past the literal. Regression for #579.
-    let src = "fun f() {\n    let p = Point {\n        x: 1, // the x\n        // the y\n        y: 2,\n    }\n}\n";
+    let src = "fun f() {\n    let p = Point(\n        x: 1, // the x\n        // the y\n        y: 2,\n    )\n}\n";
     let out = fmt(src);
     assert!(
         out.contains("x: 1, // the x"),
@@ -410,7 +410,7 @@ fn comment_inside_struct_literal_is_kept() {
 fn comment_inside_map_literal_is_kept() {
     // Regression for #579: a comment inside a map literal must be kept and the
     // literal laid out multi-line.
-    let src = "fun f() {\n    let m = [\n        \"a\": 1, // first\n        \"b\": 2,\n    ]\n}\n";
+    let src = "fun f() {\n    let m = {\n        \"a\": 1, // first\n        \"b\": 2,\n    }\n}\n";
     let out = fmt(src);
     assert!(
         out.contains("\"a\": 1, // first"),
@@ -421,7 +421,7 @@ fn comment_inside_map_literal_is_kept() {
 #[test]
 fn comment_inside_match_is_kept() {
     // Regression for #579: comments between and after match arms must survive.
-    let src = "fun f(x: int) -> int {\n    match x {\n        // the zero case\n        0 -> 1, // one\n        _ -> 2,\n    }\n}\n";
+    let src = "fun f(x: int) -> int {\n    match x {\n        // the zero case\n        case 0 { 1 } // one\n        case _ { 2 }\n    }\n}\n";
     let out = fmt(src);
     assert!(
         out.contains("// the zero case"),

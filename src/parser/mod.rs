@@ -531,3 +531,13 @@ pub fn describe_token(kind: &TokenKind) -> String {
         TokenKind::Eof => "end of file".to_string(),
     }
 }
+
+impl Parser {
+    /// An error for syntax Raven no longer accepts, naming what replaced it.
+    pub(crate) fn legacy(&self, old: &str, new: &str) -> RavenError {
+        RavenError::parse(
+            ParseError::Custom(format!("{old} is not Raven syntax; {new}")),
+            self.peek().span.clone(),
+        )
+    }
+}

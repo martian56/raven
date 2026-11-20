@@ -738,8 +738,8 @@ impl Printer<'_> {
 
     fn const_decl(&mut self, c: &Const) -> Option<String> {
         let prefix = match &c.ty {
-            Some(t) => format!("const {}: {} = ", c.name, render_type(t)),
-            None => format!("const {} = ", c.name),
+            Some(t) => format!("let {}: {} = ", c.name, render_type(t)),
+            None => format!("let {} = ", c.name),
         };
         let value = self.render_expr_col(&c.value, prefix.chars().count());
         self.line(&format!("{}{}", prefix, value));
@@ -1521,7 +1521,7 @@ impl Printer<'_> {
     /// Render a map literal multi-line, weaving interior comments at their
     /// source positions. `close_byte` is the position of the closing `]`.
     fn map_multiline(&mut self, pairs: &[(Expr, Expr)], close_byte: usize, base: usize) -> String {
-        let mut s = String::from("[\n");
+        let mut s = String::from("{\n");
         for (k, v) in pairs {
             self.weave_own_line_comments(&mut s, k.span.start, base + 1);
             self.push_indent(&mut s, base + 1);
@@ -1537,7 +1537,7 @@ impl Printer<'_> {
         }
         self.weave_own_line_comments(&mut s, close_byte, base + 1);
         self.push_indent(&mut s, base);
-        s.push(']');
+        s.push('}');
         s
     }
 

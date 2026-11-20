@@ -1181,9 +1181,9 @@ fn test_import_path(project_dir: &Path, file: &Path) -> String {
 /// Render a runner that imports a test file's functions and calls the one named
 /// by the first process argument. Running it per test name isolates panics.
 fn generate_test_dispatcher(import: &str, names: &[String]) -> String {
-    let mut src = String::from("import std/env { arg_at }\n");
+    let mut src = String::from("from std.env import arg_at\n");
     src.push_str(&format!(
-        "import \"{}\" {{ {} }}\n\n",
+        "from \"{}\" import {}\n\n",
         import,
         names.join(", ")
     ));
@@ -1889,7 +1889,7 @@ mod tests {
             "./src/a_test",
             &["test_a".to_string(), "test_b".to_string()],
         );
-        assert!(src.contains("import \"./src/a_test\" { test_a, test_b }"));
+        assert!(src.contains("from \"./src/a_test\" import test_a, test_b"));
         assert!(src.contains("if name.equals(\"test_a\") {"));
         assert!(src.contains("} else if name.equals(\"test_b\") {"));
         assert!(src.contains("test_a()"));

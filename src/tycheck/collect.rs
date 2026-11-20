@@ -1351,7 +1351,7 @@ mod tests {
 
     #[test]
     fn collects_struct_fields() {
-        let env = check_source("struct Point { x: int, y: int }\n").unwrap();
+        let env = check_source("class Point { x: int, y: int }\n").unwrap();
         let s = env.structs.values().next().expect("one struct");
         assert_eq!(s.fields.len(), 2);
         assert_eq!(s.fields[0].name, "x");
@@ -1372,7 +1372,7 @@ mod tests {
 
     #[test]
     fn collects_generic_struct_field_types() {
-        let env = check_source("struct Box[T] { value: T }\n").unwrap();
+        let env = check_source("class Box[T] { value: T }\n").unwrap();
         let s = env.structs.values().next().expect("one struct");
         assert_eq!(s.generics.len(), 1);
         match &s.fields[0].ty {
@@ -1401,7 +1401,7 @@ mod tests {
     #[test]
     fn struct_and_impl_collected() {
         let env = check_source(
-            "struct Point { x: int }\nimpl Point { fun get_x(self) -> int = self.x }\n",
+            "class Point { x: int }\nimpl Point { fun get_x(self) -> int = self.x }\n",
         )
         .unwrap();
         assert_eq!(env.structs.len(), 1);

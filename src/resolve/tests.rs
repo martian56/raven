@@ -140,7 +140,7 @@ fn self_outside_impl_is_an_error() {
 #[test]
 fn self_inside_impl_is_ok() {
     let file = parse_src(
-        "struct Point { x: int }\nimpl Point {\n    fun get(self) -> int = self.x\n}\n",
+        "class Point { x: int }\nimpl Point {\n    fun get(self) -> int = self.x\n}\n",
         "test.rv",
     );
     let r = resolve_file(&file, &mut NoLoader).expect("ok");
@@ -154,7 +154,7 @@ fn self_without_self_param_is_an_error() {
     // rejected at resolve time, rather than surfacing as a confusing codegen
     // error (a field access on a Unit `self`).
     let file = parse_src(
-        "struct T { items: list[int] }\nimpl T {\n    fun add(n: int) { self.items.push(n) }\n}\n",
+        "class T { items: list[int] }\nimpl T {\n    fun add(n: int) { self.items.push(n) }\n}\n",
         "test.rv",
     );
     let err = resolve_file(&file, &mut NoLoader).unwrap_err();
@@ -167,7 +167,7 @@ fn self_without_self_param_is_an_error() {
 #[test]
 fn self_upper_inside_impl_resolves_to_self_type() {
     let file = parse_src(
-        "struct Pair { x: int, y: int }\nimpl Pair {\n    fun make() -> Self { Pair { x: 1, y: 2 } }\n}\n",
+        "class Pair { x: int, y: int }\nimpl Pair {\n    fun make() -> Self { Pair(x: 1, y: 2) }\n}\n",
         "test.rv",
     );
     let r = resolve_file(&file, &mut NoLoader).expect("ok");
@@ -206,7 +206,7 @@ fn generic_parameter_is_in_scope_in_signature() {
 #[test]
 fn pattern_binding_introduces_name() {
     let file = parse_src(
-        "fun classify(n: int) -> int {\n    match n {\n        x -> x + 1\n    }\n}\n",
+        "fun classify(n: int) -> int {\n    match n {\n        case x { x + 1\n }}\n}\n",
         "test.rv",
     );
     let r = resolve_file(&file, &mut NoLoader).expect("ok");
@@ -223,7 +223,7 @@ fn pattern_binding_introduces_name() {
 
 #[test]
 fn import_alias_is_bound_at_module_level() {
-    let file = parse_src("import std/io\nfun main() {}\n", "main.rv");
+    let file = parse_src("import std.io\nfun main() {}\n", "main.rv");
     let r = resolve_file(&file, &mut NoLoader).expect("ok");
     let alias = r
         .module_scope
@@ -235,7 +235,7 @@ fn import_alias_is_bound_at_module_level() {
 #[test]
 fn import_selector_binds_inner_name() {
     let file = parse_src(
-        "import std/io { println }\nfun main() { println(\"hi\") }\n",
+        "from std.io import println\nfun main() { println(\"hi\") }\n",
         "main.rv",
     );
     let r = resolve_file(&file, &mut NoLoader).expect("ok");
@@ -283,7 +283,7 @@ fn selective_bundled_type_import_does_not_double_declare() {
     // under their own names; the selector must bind to the merged type
     // rather than introduce a second declaration.
     let user = parse_src(
-        "import std/collections { Map, Set }\nfun main() { let m = Map.new() let s = Set.new() }\n",
+        "from std.collections import Map, Set\nfun main() { let m = Map.new() let s = Set.new() }\n",
         "main.rv",
     );
     let combined = super::expand_with_stdlib(&user).expect("expand");
@@ -292,7 +292,7 @@ fn selective_bundled_type_import_does_not_double_declare() {
 
 #[test]
 fn unknown_stdlib_module_is_unresolved() {
-    let file = parse_src("import std/nonsense\n", "main.rv");
+    let file = parse_src("import std.nonsense\n", "main.rv");
     let err = resolve_file(&file, &mut NoLoader).unwrap_err();
     match err {
         RavenError::Resolve(ResolveError::UnresolvedImport(p), _, _) => {
@@ -305,7 +305,7 @@ fn unknown_stdlib_module_is_unresolved() {
 #[test]
 fn struct_field_type_resolves_to_struct() {
     let file = parse_src(
-        "struct Inner { v: int }\nstruct Outer { inner: Inner }\n",
+        "class Inner { v: int }\nclass Outer { inner: Inner }\n",
         "test.rv",
     );
     let r = resolve_file(&file, &mut NoLoader).expect("ok");

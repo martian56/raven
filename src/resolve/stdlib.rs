@@ -2029,7 +2029,7 @@ mod tests {
         // module's free helper `is_space_byte`. After expansion the call
         // site inside the method body must reference the namespaced name so
         // it resolves to the renamed free declaration.
-        let user = parse_src("import std/string\nfun main() {}\n");
+        let user = parse_src("import std.string\nfun main() {}\n");
         let combined = expand_with_stdlib(&user).expect("expand");
         let trim_fn = combined
             .items
@@ -2119,7 +2119,7 @@ mod tests {
 
     #[test]
     fn expand_prepends_namespaced_io_functions() {
-        let user = parse_src("import std/io { println }\nfun main() {}\n");
+        let user = parse_src("from std.io import println\nfun main() {}\n");
         let combined = expand_with_stdlib(&user).expect("expand");
         let names: Vec<String> = combined
             .items
@@ -2167,7 +2167,7 @@ mod tests {
         // `error_kind(...)` inside `io_error`. After expansion that call
         // site must reference the dependency's namespaced symbol
         // (`std.error.error_kind`), not the bare name (issue #178).
-        let user = parse_src("import std/fs { read }\nfun main() {}\n");
+        let user = parse_src("from std.fs import read\nfun main() {}\n");
         let combined = expand_with_stdlib(&user).expect("expand");
         let io_error = combined
             .items
@@ -2195,7 +2195,7 @@ mod tests {
         // `std/path` imports `std/string`. A user importing only `std/path`
         // must still get `std/string`'s items merged (so path's `String`
         // method calls resolve), and exactly once.
-        let user = parse_src("import std/path { basename }\nfun main() {}\n");
+        let user = parse_src("from std.path import basename\nfun main() {}\n");
         let combined = expand_with_stdlib(&user).expect("expand");
 
         // `std/string` declares the free helper `is_space_byte`; it must be
@@ -2236,7 +2236,8 @@ mod tests {
 
     #[test]
     fn duplicate_imports_load_module_once() {
-        let user = parse_src("import std/io { println }\nimport std/io { print }\nfun main() {}\n");
+        let user =
+            parse_src("from std.io import println\nfrom std.io import print\nfun main() {}\n");
         let combined = expand_with_stdlib(&user).expect("expand");
         let println_count = combined
             .items
@@ -2438,7 +2439,7 @@ mod tests {
         let ctx = PackageContext::new(cache.clone(), &lock);
 
         let user = parse_src(
-            "import \"github.com/acme/greet/lib\" { shout }\nfun main() { print(shout(\"hi\")) }\n",
+            "from \"github.com/acme/greet/lib\" import shout\nfun main() { print(shout(\"hi\")) }\n",
         );
         let (combined, _sites) = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
 
@@ -2495,19 +2496,19 @@ mod tests {
             &[
                 (
                     "helper.rv",
-                    "import \"github.com/acme/greet/lib\" { shout }\n\
+                    "from \"github.com/acme/greet/lib\" import shout\n\
                      fun loud(s: str) -> str { return shout(s) }\n",
                 ),
                 (
                     "main.rv",
-                    "import \"./helper\" { loud }\nfun main() { print(loud(\"hi\")) }\n",
+                    "from \"./helper\" import loud\nfun main() { print(loud(\"hi\")) }\n",
                 ),
             ],
             "main.rv",
         );
         let canon = proj.join("helper.rv").canonicalize().expect("canon");
         let user = parse_at(
-            "import \"./helper\" { loud }\nfun main() { print(loud(\"hi\")) }\n",
+            "from \"./helper\" import loud\nfun main() { print(loud(\"hi\")) }\n",
             &entry,
         );
         let (combined, _sites) = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
@@ -2556,7 +2557,7 @@ mod tests {
         .expect("toml");
         std::fs::write(
             pkg_dir.join("lib.rv"),
-            "import \"./util\" { value }\nfun answer() -> int { return value() }\n",
+            "from \"./util\" import value\nfun answer() -> int { return value() }\n",
         )
         .expect("lib");
         std::fs::write(
@@ -2575,7 +2576,7 @@ mod tests {
         };
         let ctx = PackageContext::new(cache.clone(), &lock);
         let user = parse_src(
-            "import \"github.com/acme/calc\" { answer }\nfun main() { print(answer()) }\n",
+            "from \"github.com/acme/calc\" import answer\nfun main() { print(answer()) }\n",
         );
         let (combined, _sites) = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
 
@@ -2661,7 +2662,7 @@ mod tests {
         };
         let ctx = PackageContext::new(cache.clone(), &lock);
         let user = parse_src(
-            "import \"github.com/acme/app\" { answer }\nfun main() { print(answer()) }\n",
+            "from \"github.com/acme/app\" import answer\nfun main() { print(answer()) }\n",
         );
         let (combined, _sites) = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
 
@@ -2734,14 +2735,14 @@ mod tests {
                 ),
                 (
                     "main.rv",
-                    "import \"./helper\" { via }\nfun main() { print(via()) }\n",
+                    "from \"./helper\" import via\nfun main() { print(via()) }\n",
                 ),
             ],
             "main.rv",
         );
         let canon = proj.join("helper.rv").canonicalize().expect("canon");
         let user = parse_at(
-            "import \"./helper\" { via }\nfun main() { print(via()) }\n",
+            "from \"./helper\" import via\nfun main() { print(via()) }\n",
             &entry,
         );
         let (combined, _sites) = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
@@ -2786,7 +2787,7 @@ mod tests {
         };
         let ctx = PackageContext::new(PathBuf::from("/cache"), &lock);
         let file = parse_src(
-            "import std/time { now_millis }\nfun stamp() -> int { return now_millis() }\n",
+            "from std.time import now_millis\nfun stamp() -> int { return now_millis() }\n",
         );
         let map = external_import_rename_map(&file, &ctx, None);
         assert_eq!(
@@ -2836,12 +2837,12 @@ mod tests {
         let (dir, entry) = write_temp_project(
             &[
                 ("helper.rv", "fun greet(name: str) -> str { return name }\n"),
-                ("main.rv", "import \"./helper\" { greet }\nfun main() {}\n"),
+                ("main.rv", "from \"./helper\" import greet\nfun main() {}\n"),
             ],
             "main.rv",
         );
         let canon = dir.join("helper.rv").canonicalize().expect("canon");
-        let user = parse_at("import \"./helper\" { greet }\nfun main() {}\n", &entry);
+        let user = parse_at("from \"./helper\" import greet\nfun main() {}\n", &entry);
         let combined = expand_with_stdlib(&user).expect("expand");
         let key = local_module_key(&canon);
         let mangled = mangle_local_fn(&key, "greet");
@@ -2855,10 +2856,11 @@ mod tests {
 
     #[test]
     fn selectively_imported_local_const_resolves() {
-        let main_src = "import \"./limits\" { MAX_WIDTH }\nfun main() {\n    print(MAX_WIDTH)\n}\n";
+        let main_src =
+            "from \"./limits\" import MAX_WIDTH\nfun main() {\n    print(MAX_WIDTH)\n}\n";
         let (dir, entry) = write_temp_project(
             &[
-                ("limits.rv", "const MAX_WIDTH: int = 120\n"),
+                ("limits.rv", "let MAX_WIDTH: int = 120\n"),
                 ("main.rv", main_src),
             ],
             "main.rv",
@@ -2867,30 +2869,29 @@ mod tests {
         let combined = expand_with_stdlib(&user).expect("expand");
         let mut loader = FsLoader;
         let resolved = super::super::resolve_file(&combined, &mut loader)
-            .expect("imported const should resolve");
+            .expect("imported let should resolve");
         assert!(
             resolved
                 .map
                 .uses
                 .values()
                 .any(|binding| matches!(binding, super::super::Binding::Const(_))),
-            "MAX_WIDTH should bind to the merged const declaration"
+            "MAX_WIDTH should bind to the merged let declaration"
         );
-        let typed =
-            crate::tycheck::check_file(&resolved).expect("imported const should type check");
-        crate::hir::lower_file(&typed).expect("imported const should lower");
+        let typed = crate::tycheck::check_file(&resolved).expect("imported let should type check");
+        crate::hir::lower_file(&typed).expect("imported let should lower");
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn local_module_can_import_const_from_another_local_module() {
-        let main_src = "import \"./width\" { width }\nfun main() { print(width()) }\n";
+        let main_src = "from \"./width\" import width\nfun main() { print(width()) }\n";
         let (dir, entry) = write_temp_project(
             &[
-                ("limits.rv", "const MAX_WIDTH: int = 120\n"),
+                ("limits.rv", "let MAX_WIDTH: int = 120\n"),
                 (
                     "width.rv",
-                    "import \"./limits\" { MAX_WIDTH }\nfun width() -> int = MAX_WIDTH\n",
+                    "from \"./limits\" import MAX_WIDTH\nfun width() -> int = MAX_WIDTH\n",
                 ),
                 ("main.rv", main_src),
             ],
@@ -2900,10 +2901,9 @@ mod tests {
         let combined = expand_with_stdlib(&user).expect("expand");
         let mut loader = FsLoader;
         let resolved = super::super::resolve_file(&combined, &mut loader)
-            .expect("const import inside a merged module should resolve");
-        let typed =
-            crate::tycheck::check_file(&resolved).expect("imported const should type check");
-        crate::hir::lower_file(&typed).expect("imported const should lower");
+            .expect("let import inside a merged module should resolve");
+        let typed = crate::tycheck::check_file(&resolved).expect("imported let should type check");
+        crate::hir::lower_file(&typed).expect("imported let should lower");
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -2914,14 +2914,14 @@ mod tests {
         // the rename pass. Without that, resolution fails with
         // "cannot find `T` in scope" for the lambda signature even though the
         // same type resolves fine as a plain parameter, return, or let type.
-        let main_src = "import \"./widget\" { Widget, make }\n\
+        let main_src = "from \"./widget\" import Widget, make\n\
              fun apply(w: Widget, f: fun(Widget) -> Widget) -> Widget { return f(w) }\n\
-             fun main() {\n    let id = fun(x: Widget) -> Widget = x\n    print(apply(make(), id).n)\n}\n";
+             fun main() {\n    let id = (x: Widget) -> Widget => x\n    print(apply(make(), id).n)\n}\n";
         let (dir, entry) = write_temp_project(
             &[
                 (
                     "widget.rv",
-                    "struct Widget { n: int }\nfun make() -> Widget { return Widget { n: 7 } }\n",
+                    "class Widget { n: int }\nfun make() -> Widget { return Widget(n: 7) }\n",
                 ),
                 ("main.rv", main_src),
             ],
@@ -2944,13 +2944,13 @@ mod tests {
         // modules can both declare a `Point` without colliding at merge.
         let (dir, entry) = write_temp_project(
             &[
-                ("shapes.rv", "struct Point { x: int }\n"),
-                ("main.rv", "import \"./shapes\" { Point }\nfun main() {}\n"),
+                ("shapes.rv", "class Point { x: int }\n"),
+                ("main.rv", "from \"./shapes\" import Point\nfun main() {}\n"),
             ],
             "main.rv",
         );
         let canon = dir.join("shapes.rv").canonicalize().expect("canon");
-        let user = parse_at("import \"./shapes\" { Point }\nfun main() {}\n", &entry);
+        let user = parse_at("from \"./shapes\" import Point\nfun main() {}\n", &entry);
         let combined = expand_with_stdlib(&user).expect("expand");
         let mangled = mangle_local_fn(&local_module_key(&canon), "Point");
         let present = combined
@@ -2968,12 +2968,12 @@ mod tests {
 
     #[test]
     fn imported_trait_impl_satisfies_a_generic_bound() {
-        let main_src = "import \"./t_def\" { Speak, Dog }\n\nfun call[T: Speak](x: T) -> int {\n    return x.sound()\n}\n\nfun main() {\n    print(call(Dog {}))\n}\n";
+        let main_src = "from \"./t_def\" import Speak, Dog\n\nfun call[T: Speak](x: T) -> int {\n    return x.sound()\n}\n\nfun main() {\n    print(call(Dog()))\n}\n";
         let (dir, entry) = write_temp_project(
             &[
                 (
                     "t_def.rv",
-                    "trait Speak {\n    fun sound(self) -> int\n}\n\nstruct Dog {}\n\nimpl Speak for Dog {\n    fun sound(self) -> int {\n        return 1\n    }\n}\n",
+                    "trait Speak {\n    fun sound(self) -> int\n}\n\nclass Dog {}\n\nimpl Speak for Dog {\n    fun sound(self) -> int {\n        return 1\n    }\n}\n",
                 ),
                 ("t_main.rv", main_src),
             ],
@@ -2996,11 +2996,11 @@ mod tests {
         // exactly once in the combined program. Emitting them per module
         // declared `raven_derive_json_decode` several times, which resolve
         // rejected as "declared multiple times" in a multi-file project.
-        let main_src = "import \"./a\" { A }\nimport \"./b\" { B }\nfun main() {}\n";
+        let main_src = "from \"./a\" import A\nfrom \"./b\" import B\nfun main() {}\n";
         let (dir, entry) = write_temp_project(
             &[
-                ("a.rv", "@derive(FromJson)\nstruct A { x: int }\n"),
-                ("b.rv", "@derive(ToJson)\nstruct B { y: int }\n"),
+                ("a.rv", "@derive(FromJson)\nclass A { x: int }\n"),
+                ("b.rv", "@derive(ToJson)\nclass B { y: int }\n"),
                 ("main.rv", main_src),
             ],
             "main.rv",
@@ -3025,11 +3025,11 @@ mod tests {
         // namespaced per module like functions, so merging them does not report
         // `value` as declared multiple times even though the importer selects
         // only the uniquely named functions.
-        let main_src = "import \"./a\" { get_a }\nimport \"./b\" { get_b }\nfun main() {}\n";
+        let main_src = "from \"./a\" import get_a\nfrom \"./b\" import get_b\nfun main() {}\n";
         let (dir, entry) = write_temp_project(
             &[
-                ("a.rv", "let value: int = 1\nfun get_a() -> int = value\n"),
-                ("b.rv", "let value: int = 10\nfun get_b() -> int = value\n"),
+                ("a.rv", "var value: int = 1\nfun get_a() -> int = value\n"),
+                ("b.rv", "var value: int = 10\nfun get_b() -> int = value\n"),
                 ("main.rv", main_src),
             ],
             "main.rv",
@@ -3069,13 +3069,13 @@ mod tests {
         // `a` imports `b` and initializes a global from `b`'s function at load
         // time. `b` must be merged ahead of `a`, so its global initializer runs
         // first and `a` reads the initialized value rather than zero.
-        let main_src = "import \"./a\" { get_result }\nfun main() {}\n";
+        let main_src = "from \"./a\" import get_result\nfun main() {}\n";
         let (dir, entry) = write_temp_project(
             &[
-                ("b.rv", "let b_value: int = 42\nfun get_b() -> int = b_value\n"),
+                ("b.rv", "var b_value: int = 42\nfun get_b() -> int = b_value\n"),
                 (
                     "a.rv",
-                    "import \"./b\" { get_b }\nlet a_result: int = get_b()\nfun get_result() -> int = a_result\n",
+                    "from \"./b\" import get_b\nlet a_result: int = get_b()\nfun get_result() -> int = a_result\n",
                 ),
                 ("main.rv", main_src),
             ],
@@ -3105,14 +3105,14 @@ mod tests {
                 ("b.rv", "fun base() -> int { return 1 }\n"),
                 (
                     "a.rv",
-                    "import \"./b\" { base }\nfun via() -> int { return base() }\n",
+                    "from \"./b\" import base\nfun via() -> int { return base() }\n",
                 ),
-                ("main.rv", "import \"./a\" { via }\nfun main() {}\n"),
+                ("main.rv", "from \"./a\" import via\nfun main() {}\n"),
             ],
             "main.rv",
         );
         let canon_b = dir.join("b.rv").canonicalize().expect("canon b");
-        let user = parse_at("import \"./a\" { via }\nfun main() {}\n", &entry);
+        let user = parse_at("from \"./a\" import via\nfun main() {}\n", &entry);
         let combined = expand_with_stdlib(&user).expect("expand");
 
         // `a::via` calls `base`, imported from `./b`. The merged `via` body
@@ -3150,12 +3150,12 @@ mod tests {
                     "a.rv",
                     "import \"./b\" as dep\nfun via() -> int { return dep.base() }\n",
                 ),
-                ("main.rv", "import \"./a\" { via }\nfun main() {}\n"),
+                ("main.rv", "from \"./a\" import via\nfun main() {}\n"),
             ],
             "main.rv",
         );
         let canon_b = dir.join("b.rv").canonicalize().expect("canon b");
-        let user = parse_at("import \"./a\" { via }\nfun main() {}\n", &entry);
+        let user = parse_at("from \"./a\" import via\nfun main() {}\n", &entry);
         let combined = expand_with_stdlib(&user).expect("expand");
 
         let key_b = local_module_key(&canon_b);
@@ -3189,12 +3189,12 @@ mod tests {
                     "module.rv",
                     "let value: int = 1\nfun echo(value: int) -> int { return value }\n",
                 ),
-                ("main.rv", "import \"./module\" { echo }\nfun main() {}\n"),
+                ("main.rv", "from \"./module\" import echo\nfun main() {}\n"),
             ],
             "main.rv",
         );
         let canon = dir.join("module.rv").canonicalize().expect("canon");
-        let user = parse_at("import \"./module\" { echo }\nfun main() {}\n", &entry);
+        let user = parse_at("from \"./module\" import echo\nfun main() {}\n", &entry);
         let combined = expand_with_stdlib(&user).expect("expand");
 
         let key = local_module_key(&canon);

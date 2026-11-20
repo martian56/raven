@@ -1,4 +1,4 @@
-// Module-qualified calls: `import std/<m>` then `m.func(...)`, working
+// Module-qualified calls: `import std.<m>` then `m.func(...)`, working
 // alongside the existing name-import form. Feature for issue #264. Prints:
 //   4
 //   256

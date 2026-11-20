@@ -21,7 +21,7 @@ impl Parser {
             {
                 self.parse_let_stmt(true)
             }
-            TokenKind::Const => self.parse_let_stmt(false),
+            TokenKind::Const => Err(self.legacy("`const`", "declare it with `let`")),
             TokenKind::Return => {
                 self.advance();
                 if matches!(

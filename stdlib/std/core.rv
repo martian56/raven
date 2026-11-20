@@ -753,9 +753,9 @@ class Tuple2[A, B] {
     _1: B
 }
 
-impl[A: ToString, B: ToString] ToString for Tuple2[A, B] {
+impl[A: ToString, B: ToString] ToString for (A, B) {
     fun to_string(self) -> str {
-        return "(" + self._0.to_string() + ", " + self._1.to_string() + ")"
+        return "(" + self.0.to_string() + ", " + self.1.to_string() + ")"
     }
 }
 
@@ -765,9 +765,9 @@ class Tuple3[A, B, C] {
     _2: C
 }
 
-impl[A: ToString, B: ToString, C: ToString] ToString for Tuple3[A, B, C] {
+impl[A: ToString, B: ToString, C: ToString] ToString for (A, B, C) {
     fun to_string(self) -> str {
-        return "(" + self._0.to_string() + ", " + self._1.to_string() + ", " + self._2.to_string() + ")"
+        return "(" + self.0.to_string() + ", " + self.1.to_string() + ", " + self.2.to_string() + ")"
     }
 }
 
@@ -778,9 +778,9 @@ class Tuple4[A, B, C, D] {
     _3: D
 }
 
-impl[A: ToString, B: ToString, C: ToString, D: ToString] ToString for Tuple4[A, B, C, D] {
+impl[A: ToString, B: ToString, C: ToString, D: ToString] ToString for (A, B, C, D) {
     fun to_string(self) -> str {
-        return "(" + self._0.to_string() + ", " + self._1.to_string() + ", " + self._2.to_string() + ", " + self._3.to_string() + ")"
+        return "(" + self.0.to_string() + ", " + self.1.to_string() + ", " + self.2.to_string() + ", " + self.3.to_string() + ")"
     }
 }
 
@@ -792,9 +792,9 @@ class Tuple5[A, B, C, D, E] {
     _4: E
 }
 
-impl[A: ToString, B: ToString, C: ToString, D: ToString, E: ToString] ToString for Tuple5[A, B, C, D, E] {
+impl[A: ToString, B: ToString, C: ToString, D: ToString, E: ToString] ToString for (A, B, C, D, E) {
     fun to_string(self) -> str {
-        return "(" + self._0.to_string() + ", " + self._1.to_string() + ", " + self._2.to_string() + ", " + self._3.to_string() + ", " + self._4.to_string() + ")"
+        return "(" + self.0.to_string() + ", " + self.1.to_string() + ", " + self.2.to_string() + ", " + self.3.to_string() + ", " + self.4.to_string() + ")"
     }
 }
 
@@ -807,179 +807,185 @@ class Tuple6[A, B, C, D, E, F] {
     _5: F
 }
 
-impl[A: ToString, B: ToString, C: ToString, D: ToString, E: ToString, F: ToString] ToString for Tuple6[A, B, C, D, E, F] {
+impl[A: ToString, B: ToString, C: ToString, D: ToString, E: ToString, F: ToString] ToString for (A, B, C, D, E, F) {
     fun to_string(self) -> str {
-        return "(" + self._0.to_string() + ", " + self._1.to_string() + ", " + self._2.to_string() + ", " + self._3.to_string() + ", " + self._4.to_string() + ", " + self._5.to_string() + ")"
+        return "(" + self.0.to_string() + ", " + self.1.to_string() + ", " + self.2.to_string() + ", " + self.3.to_string() + ", " + self.4.to_string() + ", " + self.5.to_string() + ")"
     }
 }
 
-impl[A: Eq, B: Eq] Eq for Tuple2[A, B] {
-    fun equals(self, other: Tuple2[A, B]) -> bool {
-        return self._0.equals(other._0) and self._1.equals(other._1)
+impl[A: Eq, B: Eq] Eq for (A, B) {
+    fun equals(self, other: (A, B)) -> bool {
+        return self.0.equals(other.0) and self.1.equals(other.1)
     }
 }
 
-impl[A: Hash, B: Hash] Hash for Tuple2[A, B] {
+impl[A: Hash, B: Hash] Hash for (A, B) {
     fun hash(self) -> int {
-        var h = self._0.hash()
-        h = h * 31 + self._1.hash()
+        var h = self.0.hash()
+        h = h * 31 + self.1.hash()
         return h
     }
 }
 
-impl[A: Ord, B: Ord] Ord for Tuple2[A, B] {
-    fun compare(self, other: Tuple2[A, B]) -> int {
-        let c0 = self._0.compare(other._0)
+impl[A: Ord, B: Ord] Ord for (A, B) {
+    fun compare(self, other: (A, B)) -> int {
+        let c0 = self.0.compare(other.0)
         if c0 != 0 {
             return c0
         }
-        return self._1.compare(other._1)
+        return self.1.compare(other.1)
     }
 }
 
-impl[A: Eq, B: Eq, C: Eq] Eq for Tuple3[A, B, C] {
-    fun equals(self, other: Tuple3[A, B, C]) -> bool {
-        return self._0.equals(other._0) and self._1.equals(other._1) and self._2.equals(other._2)
+impl[A: Eq, B: Eq, C: Eq] Eq for (A, B, C) {
+    fun equals(self, other: (A, B, C)) -> bool {
+        return self.0.equals(other.0) and self.1.equals(other.1) and self.2.equals(other.2)
     }
 }
 
-impl[A: Hash, B: Hash, C: Hash] Hash for Tuple3[A, B, C] {
+impl[A: Hash, B: Hash, C: Hash] Hash for (A, B, C) {
     fun hash(self) -> int {
-        var h = self._0.hash()
-        h = h * 31 + self._1.hash()
-        h = h * 31 + self._2.hash()
+        var h = self.0.hash()
+        h = h * 31 + self.1.hash()
+        h = h * 31 + self.2.hash()
         return h
     }
 }
 
-impl[A: Ord, B: Ord, C: Ord] Ord for Tuple3[A, B, C] {
-    fun compare(self, other: Tuple3[A, B, C]) -> int {
-        let c0 = self._0.compare(other._0)
+impl[A: Ord, B: Ord, C: Ord] Ord for (A, B, C) {
+    fun compare(self, other: (A, B, C)) -> int {
+        let c0 = self.0.compare(other.0)
         if c0 != 0 {
             return c0
         }
-        let c1 = self._1.compare(other._1)
+        let c1 = self.1.compare(other.1)
         if c1 != 0 {
             return c1
         }
-        return self._2.compare(other._2)
+        return self.2.compare(other.2)
     }
 }
 
-impl[A: Eq, B: Eq, C: Eq, D: Eq] Eq for Tuple4[A, B, C, D] {
-    fun equals(self, other: Tuple4[A, B, C, D]) -> bool {
-        return self._0.equals(other._0) and self._1.equals(other._1) and self._2.equals(other._2) and self._3.equals(other._3)
+impl[A: Eq, B: Eq, C: Eq, D: Eq] Eq for (A, B, C, D) {
+    fun equals(self, other: (A, B, C, D)) -> bool {
+        return self.0.equals(other.0) and self.1.equals(other.1) and self.2.equals(other.2) and self.3.equals(
+            other.3,
+        )
     }
 }
 
-impl[A: Hash, B: Hash, C: Hash, D: Hash] Hash for Tuple4[A, B, C, D] {
+impl[A: Hash, B: Hash, C: Hash, D: Hash] Hash for (A, B, C, D) {
     fun hash(self) -> int {
-        var h = self._0.hash()
-        h = h * 31 + self._1.hash()
-        h = h * 31 + self._2.hash()
-        h = h * 31 + self._3.hash()
+        var h = self.0.hash()
+        h = h * 31 + self.1.hash()
+        h = h * 31 + self.2.hash()
+        h = h * 31 + self.3.hash()
         return h
     }
 }
 
-impl[A: Ord, B: Ord, C: Ord, D: Ord] Ord for Tuple4[A, B, C, D] {
-    fun compare(self, other: Tuple4[A, B, C, D]) -> int {
-        let c0 = self._0.compare(other._0)
+impl[A: Ord, B: Ord, C: Ord, D: Ord] Ord for (A, B, C, D) {
+    fun compare(self, other: (A, B, C, D)) -> int {
+        let c0 = self.0.compare(other.0)
         if c0 != 0 {
             return c0
         }
-        let c1 = self._1.compare(other._1)
+        let c1 = self.1.compare(other.1)
         if c1 != 0 {
             return c1
         }
-        let c2 = self._2.compare(other._2)
+        let c2 = self.2.compare(other.2)
         if c2 != 0 {
             return c2
         }
-        return self._3.compare(other._3)
+        return self.3.compare(other.3)
     }
 }
 
-impl[A: Eq, B: Eq, C: Eq, D: Eq, E: Eq] Eq for Tuple5[A, B, C, D, E] {
-    fun equals(self, other: Tuple5[A, B, C, D, E]) -> bool {
-        return self._0.equals(other._0) and self._1.equals(other._1) and self._2.equals(other._2) and self._3.equals(other._3) and self._4.equals(other._4)
+impl[A: Eq, B: Eq, C: Eq, D: Eq, E: Eq] Eq for (A, B, C, D, E) {
+    fun equals(self, other: (A, B, C, D, E)) -> bool {
+        return self.0.equals(other.0) and self.1.equals(other.1) and self.2.equals(other.2) and self.3.equals(
+            other.3,
+        ) and self.4.equals(other.4)
     }
 }
 
-impl[A: Hash, B: Hash, C: Hash, D: Hash, E: Hash] Hash for Tuple5[A, B, C, D, E] {
+impl[A: Hash, B: Hash, C: Hash, D: Hash, E: Hash] Hash for (A, B, C, D, E) {
     fun hash(self) -> int {
-        var h = self._0.hash()
-        h = h * 31 + self._1.hash()
-        h = h * 31 + self._2.hash()
-        h = h * 31 + self._3.hash()
-        h = h * 31 + self._4.hash()
+        var h = self.0.hash()
+        h = h * 31 + self.1.hash()
+        h = h * 31 + self.2.hash()
+        h = h * 31 + self.3.hash()
+        h = h * 31 + self.4.hash()
         return h
     }
 }
 
-impl[A: Ord, B: Ord, C: Ord, D: Ord, E: Ord] Ord for Tuple5[A, B, C, D, E] {
-    fun compare(self, other: Tuple5[A, B, C, D, E]) -> int {
-        let c0 = self._0.compare(other._0)
+impl[A: Ord, B: Ord, C: Ord, D: Ord, E: Ord] Ord for (A, B, C, D, E) {
+    fun compare(self, other: (A, B, C, D, E)) -> int {
+        let c0 = self.0.compare(other.0)
         if c0 != 0 {
             return c0
         }
-        let c1 = self._1.compare(other._1)
+        let c1 = self.1.compare(other.1)
         if c1 != 0 {
             return c1
         }
-        let c2 = self._2.compare(other._2)
+        let c2 = self.2.compare(other.2)
         if c2 != 0 {
             return c2
         }
-        let c3 = self._3.compare(other._3)
+        let c3 = self.3.compare(other.3)
         if c3 != 0 {
             return c3
         }
-        return self._4.compare(other._4)
+        return self.4.compare(other.4)
     }
 }
 
-impl[A: Eq, B: Eq, C: Eq, D: Eq, E: Eq, F: Eq] Eq for Tuple6[A, B, C, D, E, F] {
-    fun equals(self, other: Tuple6[A, B, C, D, E, F]) -> bool {
-        return self._0.equals(other._0) and self._1.equals(other._1) and self._2.equals(other._2) and self._3.equals(other._3) and self._4.equals(other._4) and self._5.equals(other._5)
+impl[A: Eq, B: Eq, C: Eq, D: Eq, E: Eq, F: Eq] Eq for (A, B, C, D, E, F) {
+    fun equals(self, other: (A, B, C, D, E, F)) -> bool {
+        return self.0.equals(other.0) and self.1.equals(other.1) and self.2.equals(other.2) and self.3.equals(
+            other.3,
+        ) and self.4.equals(other.4) and self.5.equals(other.5)
     }
 }
 
-impl[A: Hash, B: Hash, C: Hash, D: Hash, E: Hash, F: Hash] Hash for Tuple6[A, B, C, D, E, F] {
+impl[A: Hash, B: Hash, C: Hash, D: Hash, E: Hash, F: Hash] Hash for (A, B, C, D, E, F) {
     fun hash(self) -> int {
-        var h = self._0.hash()
-        h = h * 31 + self._1.hash()
-        h = h * 31 + self._2.hash()
-        h = h * 31 + self._3.hash()
-        h = h * 31 + self._4.hash()
-        h = h * 31 + self._5.hash()
+        var h = self.0.hash()
+        h = h * 31 + self.1.hash()
+        h = h * 31 + self.2.hash()
+        h = h * 31 + self.3.hash()
+        h = h * 31 + self.4.hash()
+        h = h * 31 + self.5.hash()
         return h
     }
 }
 
-impl[A: Ord, B: Ord, C: Ord, D: Ord, E: Ord, F: Ord] Ord for Tuple6[A, B, C, D, E, F] {
-    fun compare(self, other: Tuple6[A, B, C, D, E, F]) -> int {
-        let c0 = self._0.compare(other._0)
+impl[A: Ord, B: Ord, C: Ord, D: Ord, E: Ord, F: Ord] Ord for (A, B, C, D, E, F) {
+    fun compare(self, other: (A, B, C, D, E, F)) -> int {
+        let c0 = self.0.compare(other.0)
         if c0 != 0 {
             return c0
         }
-        let c1 = self._1.compare(other._1)
+        let c1 = self.1.compare(other.1)
         if c1 != 0 {
             return c1
         }
-        let c2 = self._2.compare(other._2)
+        let c2 = self.2.compare(other.2)
         if c2 != 0 {
             return c2
         }
-        let c3 = self._3.compare(other._3)
+        let c3 = self.3.compare(other.3)
         if c3 != 0 {
             return c3
         }
-        let c4 = self._4.compare(other._4)
+        let c4 = self.4.compare(other.4)
         if c4 != 0 {
             return c4
         }
-        return self._5.compare(other._5)
+        return self.5.compare(other.5)
     }
 }
 

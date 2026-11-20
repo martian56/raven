@@ -336,9 +336,9 @@ fn match_in_let_position_lowers() {
 enum Color { Red, Green, Blue }
 fun name(c: Color) -> int {
     let n = match c {
-        Color.Red -> 1,
-        Color.Green -> 2,
-        Color.Blue -> 3,
+        case Color.Red { 1 }
+        case Color.Green { 2 }
+        case Color.Blue { 3 }
     };
     return n
 }
@@ -354,7 +354,7 @@ fun name(c: Color) -> int {
 
 #[test]
 fn struct_decl_lowers() {
-    let p = lower("struct Point { x: int, y: int }");
+    let p = lower("class Point { x: int, y: int }");
     assert!(p.items.iter().any(|i| matches!(
         &i.kind,
         HirItemKind::Struct(s) if s.name == "Point"
@@ -396,7 +396,7 @@ fn unused_for_silences_dead_code() {
 fn computed_const_folds_and_inlines() {
     // A const with a computed initializer folds to a literal and inlines at
     // the use site: `get` returns the folded value `14`, not a reference.
-    let p = lower("const N: int = 2 + 3 * 4\nfun get() -> int = N\n");
+    let p = lower("let N: int = 2 + 3 * 4\nfun get() -> int = N\n");
     let f = only_fn(&p, "get");
     let body = f.body.as_ref().expect("body");
     let tail = body.tail.as_ref().expect("trailing expr");
@@ -412,7 +412,7 @@ fn module_let_becomes_a_global_with_an_init_function() {
     // A module-level `let` is a mutable global: a reference reads its slot
     // (a `GlobalGet`, not an inlined literal) and the synthesized
     // `__raven_init_globals` function is emitted to set it before `main`.
-    let p = lower("let g: int = 5\nfun read() -> int = g\n");
+    let p = lower("var g: int = 5\nfun read() -> int = g\n");
     assert!(
         p.items.iter().any(|i| matches!(
             &i.kind,
@@ -433,7 +433,7 @@ fn module_let_becomes_a_global_with_an_init_function() {
 fn module_const_still_inlines_and_has_no_init_function() {
     // A `const` is unchanged: its reference inlines to the folded literal and
     // no initializer function is synthesized.
-    let p = lower("const C: int = 5\nfun read() -> int = C\n");
+    let p = lower("let C: int = 5\nfun read() -> int = C\n");
     assert!(
         !p.items.iter().any(|i| matches!(
             &i.kind,
@@ -445,15 +445,19 @@ fn module_const_still_inlines_and_has_no_init_function() {
     let tail = f.body.as_ref().unwrap().tail.as_ref().unwrap();
     assert!(
         matches!(tail.kind, HirExprKind::Int(5)),
-        "a const reference inlines, got {:?}",
+        "a let reference inlines, got {:?}",
         tail.kind
     );
 }
 
 #[test]
-fn non_constant_const_initializer_is_an_error() {
-    let err = lower_result("fun side() -> int = 1\nconst X: int = side()\nfun get() -> int = X\n")
-        .expect_err("a non-constant const initializer must be rejected");
-    let msg = format!("{}", err);
-    assert!(msg.contains("constant expression"), "got: {}", msg);
+fn non_constant_module_let_is_a_global() {
+    let p = lower("fun side() -> int = 1\nlet X: int = side()\nfun get() -> int = X\n");
+    let f = only_fn(&p, "get");
+    let tail = f.body.as_ref().unwrap().tail.as_ref().unwrap();
+    assert!(
+        matches!(tail.kind, HirExprKind::GlobalGet(_)),
+        "got {:?}",
+        tail.kind
+    );
 }

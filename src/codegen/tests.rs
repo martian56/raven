@@ -326,7 +326,7 @@ fn compiles_float_arithmetic() {
 
 #[test]
 fn compiles_bool_logical_ops() {
-    let prog = compile("fun nand(a: bool, b: bool) -> bool { return !(a and b) }");
+    let prog = compile("fun nand(a: bool, b: bool) -> bool { return not (a and b) }");
     let object = compile_program(&prog).expect("codegen bool");
     assert!(object.len() > 64);
 }

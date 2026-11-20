@@ -4,8 +4,8 @@
 //! level. The level order from lowest to highest matches the spec.
 
 use crate::ast::{
-    BinaryOp, Block, ElseBranch, Expr, ExprKind, FieldInit, LambdaBody, LambdaParam, MacroCall,
-    MacroDelim, MatchArm, StrFragment, Type, UnaryOp,
+    BinaryOp, Block, ElseBranch, Expr, ExprKind, LambdaBody, LambdaParam, MacroCall, MacroDelim,
+    MatchArm, StrFragment, Type, UnaryOp,
 };
 use crate::error::{ParseError, RavenError};
 use crate::lexer::{Lexer, Token, TokenKind, ESCAPED_DOLLAR_SENTINEL};
@@ -189,7 +189,10 @@ impl Parser {
         let mut lhs = self.parse_logical_and()?;
         loop {
             self.skip_newlines_at_continuation();
-            if matches!(self.peek_kind(), TokenKind::OrOr) || self.peek_word("or") {
+            if matches!(self.peek_kind(), TokenKind::OrOr) {
+                return Err(self.legacy("`||`", "write `or`"));
+            }
+            if self.peek_word("or") {
                 self.advance();
                 self.skip_newlines();
                 let rhs = self.parse_logical_and()?;
@@ -248,7 +251,10 @@ impl Parser {
         let mut lhs = self.parse_not()?;
         loop {
             self.skip_newlines_at_continuation();
-            if matches!(self.peek_kind(), TokenKind::AndAnd) || self.peek_word("and") {
+            if matches!(self.peek_kind(), TokenKind::AndAnd) {
+                return Err(self.legacy("`&&`", "write `and`"));
+            }
+            if self.peek_word("and") {
                 self.advance();
                 self.skip_newlines();
                 let rhs = self.parse_not()?;
@@ -451,7 +457,7 @@ impl Parser {
         let start = self.peek().span.clone();
         let op = match self.peek_kind() {
             TokenKind::Minus => Some(UnaryOp::Neg),
-            TokenKind::Bang => Some(UnaryOp::Not),
+            TokenKind::Bang => return Err(self.legacy("`!`", "write `not`")),
             TokenKind::Amp => Some(UnaryOp::Ref),
             _ => None,
         };
@@ -905,17 +911,10 @@ impl Parser {
     fn parse_array_lit(&mut self) -> ParseResult<Expr> {
         let lb = self.advance();
         self.skip_newlines();
-        // Empty map: `[:]`.
         if matches!(self.peek_kind(), TokenKind::Colon)
             && matches!(self.peek_kind_at(1), TokenKind::RBracket)
         {
-            self.advance(); // :
-            let rb = self.advance(); // ]
-            let span = merge_spans(&lb.span, &rb.span);
-            return Ok(Expr {
-                kind: ExprKind::MapLit(Vec::new()),
-                span,
-            });
+            return Err(self.legacy("`[:]`", "write `{}` for an empty dict"));
         }
         // Empty list: `[]`.
         if matches!(self.peek_kind(), TokenKind::RBracket) {
@@ -961,31 +960,8 @@ impl Parser {
     /// key. Produces an `ExprKind::MapLit` of `(key, value)` pairs; the
     /// HIR lowers it to `Map.new()` plus one `set(k, v)` per pair.
     fn parse_map_lit(&mut self, lbracket: Span, first_key: Expr) -> ParseResult<Expr> {
-        let mut pairs: Vec<(Expr, Expr)> = Vec::new();
-        self.expect(&TokenKind::Colon, "`:`")?;
-        self.skip_newlines();
-        let first_val = self.parse_expr()?;
-        pairs.push((first_key, first_val));
-        self.skip_newlines();
-        while self.eat(&TokenKind::Comma) {
-            self.skip_newlines();
-            if matches!(self.peek_kind(), TokenKind::RBracket) {
-                break;
-            }
-            let key = self.parse_expr()?;
-            self.skip_newlines();
-            self.expect(&TokenKind::Colon, "`:`")?;
-            self.skip_newlines();
-            let val = self.parse_expr()?;
-            pairs.push((key, val));
-            self.skip_newlines();
-        }
-        let rb = self.expect(&TokenKind::RBracket, "`]`")?;
-        let span = merge_spans(&lbracket, &rb.span);
-        Ok(Expr {
-            kind: ExprKind::MapLit(pairs),
-            span,
-        })
+        let _ = (lbracket, first_key);
+        Err(self.legacy("`[key: value]`", "write a dict as `{key: value}`"))
     }
 
     /// Parse a `{...}` primary: either a shorthand lambda or a block
@@ -1194,113 +1170,14 @@ impl Parser {
     }
 
     fn parse_lambda_shorthand(&mut self) -> ParseResult<Expr> {
-        let lb = self.advance(); // {
-        let mut params = Vec::new();
-        // Optional parameter list followed by `->`.
-        // It is guaranteed by is_shorthand_lambda that an Arrow exists
-        // before the closing brace, but the parameter list may be
-        // empty in degenerate cases. We require at least one ident if
-        // followed by something other than `->`.
-        loop {
-            self.skip_newlines();
-            if matches!(self.peek_kind(), TokenKind::Arrow) {
-                break;
-            }
-            let (name, span) = self.expect_ident("lambda parameter name")?;
-            params.push(LambdaParam {
-                name,
-                ty: None,
-                span,
-            });
-            self.skip_newlines();
-            if !self.eat(&TokenKind::Comma) {
-                break;
-            }
-        }
-        self.skip_newlines();
-        self.expect(&TokenKind::Arrow, "`->`")?;
-        self.skip_separators();
-        // The body is the rest of the brace contents parsed as a block.
-        let body_block = self.parse_block_body_until_rbrace()?;
-        let rb = self.expect(&TokenKind::RBrace, "`}`")?;
-        let span = merge_spans(&lb.span, &rb.span);
-        let body_span = merge_spans(&lb.span, &rb.span);
-        Ok(Expr {
-            kind: ExprKind::Lambda {
-                params,
-                ret: None,
-                body: LambdaBody::Block(Block {
-                    span: body_span,
-                    stmts: body_block.0,
-                    trailing: body_block.1,
-                }),
-                params_inferred: true,
-            },
-            span,
-        })
+        Err(self.legacy("`{ x -> ... }`", "write a lambda as `x => ...`"))
     }
 
     fn parse_lambda_fun(&mut self) -> ParseResult<Expr> {
-        // `fun ( params ) [-> Type] body`
-        let fun_tok = self.advance();
-        self.expect(&TokenKind::LParen, "`(`")?;
-        let mut params = Vec::new();
-        if !matches!(self.peek_kind(), TokenKind::RParen) {
-            loop {
-                self.skip_newlines();
-                let (name, name_span) = self.expect_ident("parameter name")?;
-                if self.eat(&TokenKind::Colon) {
-                    let ty = self.parse_type()?;
-                    let span = merge_spans(&name_span, &ty.span);
-                    params.push(LambdaParam {
-                        name,
-                        ty: Some(ty),
-                        span,
-                    });
-                } else {
-                    params.push(LambdaParam {
-                        name,
-                        ty: None,
-                        span: name_span,
-                    });
-                }
-                self.skip_newlines();
-                if !self.eat(&TokenKind::Comma) {
-                    break;
-                }
-                self.skip_newlines();
-                if matches!(self.peek_kind(), TokenKind::RParen) {
-                    break;
-                }
-            }
-        }
-        self.expect(&TokenKind::RParen, "`)`")?;
-        let ret = if self.eat(&TokenKind::Arrow) {
-            Some(self.parse_type()?)
-        } else {
-            None
-        };
-        // Body: `= expr` or block.
-        let (body, body_span) = if self.eat(&TokenKind::Eq) {
-            self.skip_newlines();
-            let e = self.parse_expr()?;
-            let s = e.span.clone();
-            (LambdaBody::Expr(Box::new(e)), s)
-        } else {
-            let block = self.parse_block()?;
-            let s = block.span.clone();
-            (LambdaBody::Block(block), s)
-        };
-        let span = merge_spans(&fun_tok.span, &body_span);
-        Ok(Expr {
-            kind: ExprKind::Lambda {
-                params,
-                ret,
-                body,
-                params_inferred: false,
-            },
-            span,
-        })
+        Err(self.legacy(
+            "`fun(params) { ... }` as a value",
+            "write a lambda as `(a, b) => ...`",
+        ))
     }
 
     /// Parse a macro invocation `name!(...)` / `name![...]` / `name!{...}`
@@ -1397,59 +1274,10 @@ impl Parser {
                 _ => false,
             };
             if probe_ok {
-                let mut fields: Vec<FieldInit> = Vec::new();
-                while !matches!(self.peek_kind(), TokenKind::RBrace) {
-                    self.skip_separators();
-                    if matches!(self.peek_kind(), TokenKind::RBrace) {
-                        break;
-                    }
-                    let (fname, fspan) = self.expect_ident("field name")?;
-                    let (value, vspan) = if self.eat(&TokenKind::Colon) {
-                        self.skip_newlines();
-                        let v = self.parse_expr()?;
-                        let s = v.span.clone();
-                        (v, s)
-                    } else {
-                        // Shorthand: `x` means `x: x` with same span.
-                        (
-                            Expr {
-                                kind: ExprKind::Ident {
-                                    name: fname.clone(),
-                                    generics: Vec::new(),
-                                },
-                                span: fspan.clone(),
-                            },
-                            fspan.clone(),
-                        )
-                    };
-                    // Duplicate detection.
-                    if fields.iter().any(|f| f.name == fname) {
-                        return Err(RavenError::parse(ParseError::DuplicateField(fname), fspan));
-                    }
-                    let full_span = merge_spans(&fspan, &vspan);
-                    fields.push(FieldInit {
-                        name: fname,
-                        value,
-                        span: full_span,
-                    });
-                    if !self.eat(&TokenKind::Comma) {
-                        // Newline alone is also accepted as a separator.
-                        if !matches!(self.peek_kind(), TokenKind::Newline | TokenKind::RBrace) {
-                            break;
-                        }
-                    }
-                    self.skip_separators();
-                }
-                let rb = self.expect(&TokenKind::RBrace, "`}`")?;
-                let span = merge_spans(&name_span, &rb.span);
-                return Ok(Expr {
-                    kind: ExprKind::StructLit {
-                        name,
-                        generics,
-                        fields,
-                    },
-                    span,
-                });
+                return Err(self.legacy(
+                    &format!("`{name} {{ field: value }}`"),
+                    &format!("construct it as `{name}(field: value)`"),
+                ));
             }
             // Rewind: this `{` is not a struct literal after all.
             self.rewind(saved);
@@ -1477,40 +1305,7 @@ impl Parser {
             self.rewind(saved);
             return None;
         }
-        // Quick reject: if the token after `<` is one that can never
-        // start a type, bail out.
-        match self.peek_kind_at(1) {
-            TokenKind::Identifier(_)
-            | TokenKind::SelfUpper
-            | TokenKind::Fun
-            | TokenKind::LParen => {}
-            _ => return None,
-        }
-        let try_args = self.parse_type_args_required();
-        let Ok((args, _span)) = try_args else {
-            self.rewind(saved);
-            return None;
-        };
-        // Confirm: the token after the closing angle must be one of
-        // the followers that indicate a generic application.
-        match self.peek_kind() {
-            TokenKind::LParen
-            | TokenKind::Dot
-            | TokenKind::ColonColon
-            | TokenKind::LBrace
-            | TokenKind::Eq
-            | TokenKind::Comma
-            | TokenKind::RParen
-            | TokenKind::RBracket
-            | TokenKind::RBrace
-            | TokenKind::Semi
-            | TokenKind::Newline
-            | TokenKind::Eof => Some(args),
-            _ => {
-                self.rewind(saved);
-                None
-            }
-        }
+        None
     }
 
     // ----- control flow -----
@@ -1627,30 +1422,11 @@ impl Parser {
             });
             self.skip_separators();
         }
-        while !matches!(self.peek_kind(), TokenKind::RBrace) {
-            let pattern = self.parse_pattern()?;
-            let guard = if self.eat(&TokenKind::If) {
-                Some(self.parse_expr_no_struct()?)
-            } else {
-                None
-            };
-            self.expect(&TokenKind::Arrow, "`->`")?;
-            self.skip_newlines();
-            let body = self.parse_block_or_expr()?;
-            let span_start = pattern.span.clone();
-            let span_end = body.span.clone();
-            let span = merge_spans(&span_start, &span_end);
-            arms.push(MatchArm {
-                pattern,
-                guard,
-                body,
-                span,
-            });
-            // Arm separator: `,` or newline.
-            if !self.eat(&TokenKind::Comma) && !matches!(self.peek_kind(), TokenKind::Newline) {
-                break;
-            }
-            self.skip_separators();
+        if !matches!(self.peek_kind(), TokenKind::RBrace) {
+            return Err(self.legacy(
+                "a `pattern -> value` match arm",
+                "write `case pattern { ... }`",
+            ));
         }
         let rb = self.expect(&TokenKind::RBrace, "`}`")?;
         let span = merge_spans(&m.span, &rb.span);

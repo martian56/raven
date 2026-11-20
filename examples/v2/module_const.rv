@@ -10,15 +10,15 @@
 //   3600
 //   true
 //   19
-const MAX: int = 100
-const PI: float = 3.14159
+let MAX: int = 100
+let PI: float = 3.14159
 let GREETING = "hello"
 let NEG = -7
 
 // Computed compile-time constants.
-const SECS_PER_HOUR: int = 60 * 60
-const ENABLED: bool = true and (1 < 2)
-const COMBO: int = (2 + 3) * 4 - 1
+let SECS_PER_HOUR: int = 60 * 60
+let ENABLED: bool = true and (1 < 2)
+let COMBO: int = (2 + 3) * 4 - 1
 
 fun area(r: float) -> float = PI * r * r
 

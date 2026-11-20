@@ -564,7 +564,7 @@ mod tests {
 
     #[test]
     fn std_io_import_binds_alias() {
-        let file = parse_src("import std/io\nfun main() {}\n", "main.rv");
+        let file = parse_src("import std.io\nfun main() {}\n", "main.rv");
         let mut scope = ScopeStack::new();
         let mut loader = MapLoader::default();
         let mut imports = Vec::new();
@@ -588,7 +588,7 @@ mod tests {
 
     #[test]
     fn unknown_std_module_is_unresolved() {
-        let file = parse_src("import std/nope\n", "main.rv");
+        let file = parse_src("import std.nope\n", "main.rv");
         let mut scope = ScopeStack::new();
         let mut loader = MapLoader::default();
         let mut imports = Vec::new();
@@ -612,7 +612,7 @@ mod tests {
     #[test]
     fn selector_list_binds_each_selector() {
         let file = parse_src(
-            "import std/io { println, eprintln }\nfun main() {}\n",
+            "from std.io import println, eprintln\nfun main() {}\n",
             "main.rv",
         );
         let mut scope = ScopeStack::new();
@@ -665,7 +665,7 @@ mod tests {
         loader.add(
             "./helpers",
             "helpers.rv",
-            "fun helper() {}\nstruct H { x: int }\n",
+            "fun helper() {}\nclass H { x: int }\n",
         );
         let mut scope = ScopeStack::new();
         let mut imports = Vec::new();

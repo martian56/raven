@@ -36,16 +36,13 @@ impl Parser {
             self.advance();
         }
         if self.peek_word("class") && matches!(self.peek_kind_at(1), TokenKind::Identifier(_)) {
-            return self.parse_class_decl(derives, false);
+            return self.parse_class_decl(derives, repr_c);
         }
-        if matches!(self.peek_kind(), TokenKind::Struct | TokenKind::Enum)
-            && matches!(self.peek_kind_at(2), TokenKind::LBracket | TokenKind::Colon)
-            || matches!(self.peek_kind(), TokenKind::Struct) && self.struct_body_has_methods()
-        {
-            let is_enum = matches!(self.peek_kind(), TokenKind::Enum);
-            if !is_enum {
-                return self.parse_class_decl(derives, false);
-            }
+        if matches!(self.peek_kind(), TokenKind::Struct) {
+            return Err(self.legacy("`struct`", "declare it with `class Name { ... }`"));
+        }
+        if matches!(self.peek_kind(), TokenKind::Const) {
+            return Err(self.legacy("`const`", "declare it with `let`"));
         }
         if self.peek_word("from") {
             return self.parse_from_import();
@@ -54,18 +51,16 @@ impl Parser {
             return self.parse_let_decl();
         }
         match self.peek_kind() {
-            TokenKind::Struct => self.parse_struct_decl(derives, repr_c),
             TokenKind::Enum if !repr_c => self.parse_enum_decl(derives),
-            _ if repr_c => Err(self.unexpected("`struct` after `@repr(C)`")),
+            _ if repr_c => Err(self.unexpected("`class` after `@repr(C)`")),
             _ if !derives.is_empty() => {
-                Err(self.unexpected("`struct` or `enum` after `@derive(...)`"))
+                Err(self.unexpected("`class` or `enum` after `@derive(...)`"))
             }
             TokenKind::Fun => self.parse_function_decl(),
             TokenKind::Trait => self.parse_trait_decl(),
             TokenKind::Impl => self.parse_impl_decl(),
             TokenKind::Extern => self.parse_extern_decl(),
             TokenKind::Import => self.parse_import_decl(),
-            TokenKind::Const => self.parse_const_decl(),
             TokenKind::Let => self.parse_let_decl(),
             _ => Err(self.unexpected("top level item")),
         }
@@ -226,66 +221,10 @@ impl Parser {
         if matches!(self.peek_kind(), TokenKind::LBracket) {
             return self.parse_bracket_generic_params();
         }
-        if !matches!(self.peek_kind(), TokenKind::Lt) {
-            return Ok(Vec::new());
+        if matches!(self.peek_kind(), TokenKind::Lt) {
+            return Err(self.legacy("`<T>` generics", "write `[T]`"));
         }
-        self.advance(); // <
-        let mut params = Vec::new();
-        loop {
-            self.skip_newlines();
-            let (name, name_span) = self.expect_ident("generic parameter name")?;
-            let mut bounds = Vec::new();
-            let mut span = name_span;
-            if self.eat(&TokenKind::Colon) {
-                loop {
-                    let path = self.parse_type_path()?;
-                    span = merge_spans(&span, &path.span);
-                    bounds.push(path);
-                    if !self.eat(&TokenKind::Plus) {
-                        break;
-                    }
-                }
-            }
-            params.push(GenericParam { name, bounds, span });
-            self.skip_newlines();
-            if !self.eat(&TokenKind::Comma) {
-                break;
-            }
-            self.skip_newlines();
-            if matches!(self.peek_kind(), TokenKind::Gt | TokenKind::Shr) {
-                break;
-            }
-        }
-        // Close angle: same as type args.
-        match self.peek_kind() {
-            TokenKind::Gt => {
-                self.advance();
-            }
-            TokenKind::Shr => {
-                // Split into two `>` and consume the first half.
-                self.split_shr_close_first();
-            }
-            _ => return Err(self.unexpected("`>`")),
-        }
-        Ok(params)
-    }
-
-    /// Split a `>>` at the cursor into two `>` and consume the first.
-    /// Mirror of the type args closer; kept here because generic
-    /// parameters can also nest (e.g. `fun foo<T: Box<U>>(...)`).
-    fn split_shr_close_first(&mut self) {
-        let tok = self.tokens[self.pos].clone();
-        let second_half = crate::span::Span::new(
-            tok.span.file.clone(),
-            tok.span.start + 1,
-            tok.span.end,
-            tok.span.line,
-            tok.span.col.saturating_add(1),
-        );
-        self.tokens[self.pos] = crate::lexer::Token {
-            kind: TokenKind::Gt,
-            span: second_half,
-        };
+        Ok(Vec::new())
     }
 
     fn parse_param_list(&mut self) -> ParseResult<Vec<Param>> {
@@ -347,52 +286,6 @@ impl Parser {
             }
         }
         Ok(params)
-    }
-
-    fn parse_struct_decl(&mut self, derives: Vec<String>, repr_c: bool) -> ParseResult<Decl> {
-        let start = self.advance().span; // struct
-        let (name, name_span) = self.expect_ident("struct name")?;
-        let generics = self.parse_generic_params_opt()?;
-        self.expect(&TokenKind::LBrace, "`{`")?;
-        self.skip_separators();
-        let mut fields: Vec<StructField> = Vec::new();
-        while !matches!(self.peek_kind(), TokenKind::RBrace) {
-            let (fname, fspan) = self.expect_ident("field name")?;
-            self.expect(&TokenKind::Colon, "`:`")?;
-            let ty = self.parse_type()?;
-            let span = merge_spans(&fspan, &ty.span);
-            if fields.iter().any(|f| f.name == fname) {
-                return Err(RavenError::parse(ParseError::DuplicateField(fname), fspan));
-            }
-            fields.push(StructField {
-                name: fname,
-                ty,
-                default: None,
-                span,
-            });
-            // Separator: `,`, newline, or both.
-            if !self.eat(&TokenKind::Comma) && !matches!(self.peek_kind(), TokenKind::Newline) {
-                break;
-            }
-            self.skip_separators();
-        }
-        let rb = self.expect(&TokenKind::RBrace, "`}`")?;
-        let span = merge_spans(&start, &rb.span);
-        Ok(Decl {
-            kind: DeclKind::Struct(Struct {
-                name,
-                generics,
-                fields,
-                derives,
-                repr_c,
-                is_class: false,
-                methods: Vec::new(),
-                implements: Vec::new(),
-                name_span,
-                span: span.clone(),
-            }),
-            span,
-        })
     }
 
     fn parse_trait_decl(&mut self) -> ParseResult<Decl> {
@@ -642,6 +535,12 @@ impl Parser {
             None
         };
         let mut selectors = Vec::new();
+        if matches!(self.peek_kind(), TokenKind::LBrace) {
+            return Err(self.legacy(
+                "`import path { names }`",
+                "write `from path import name, other`",
+            ));
+        }
         if self.eat(&TokenKind::LBrace) {
             self.skip_separators();
             while !matches!(self.peek_kind(), TokenKind::RBrace) {
@@ -691,7 +590,10 @@ impl Parser {
                 self.advance(); // std
                 let mut parts: Vec<String> = Vec::new();
                 while matches!(self.peek_kind(), TokenKind::Slash | TokenKind::Dot) {
-                    self.advance(); // / or .
+                    if matches!(self.peek_kind(), TokenKind::Slash) {
+                        return Err(self.legacy("`import std/...`", "write `import std.name`"));
+                    }
+                    self.advance(); // .
                     let (name, sp) = self.expect_ident("identifier")?;
                     parts.push(name);
                     span = merge_spans(&span, &sp);
@@ -705,34 +607,10 @@ impl Parser {
         }
     }
 
-    /// Whether the `struct` at the cursor declares a method in its body.
-    fn struct_body_has_methods(&self) -> bool {
-        let mut i = 0;
-        while !matches!(self.peek_kind_at(i), TokenKind::LBrace | TokenKind::Eof) {
-            i += 1;
-        }
-        let mut depth = 0i32;
-        loop {
-            match self.peek_kind_at(i) {
-                TokenKind::LBrace | TokenKind::LParen | TokenKind::LBracket => depth += 1,
-                TokenKind::RBrace | TokenKind::RParen | TokenKind::RBracket => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return false;
-                    }
-                }
-                TokenKind::Fun if depth == 1 => return true,
-                TokenKind::Eof => return false,
-                _ => {}
-            }
-            i += 1;
-        }
-    }
-
     /// `class Name[T]: Trait, Other { field: T = default  fun method(self) {..} }`.
     /// Emits the struct, one inherent impl holding every method, and an empty
     /// impl per listed trait; expansion moves each trait's methods over.
-    fn parse_class_decl(&mut self, derives: Vec<String>, _repr_c: bool) -> ParseResult<Decl> {
+    fn parse_class_decl(&mut self, derives: Vec<String>, repr_c: bool) -> ParseResult<Decl> {
         let is_class = self.peek_word("class");
         let start = self.advance().span;
         let (name, name_span) = self.expect_ident("class name")?;
@@ -788,7 +666,7 @@ impl Parser {
                 generics,
                 fields,
                 derives,
-                repr_c: false,
+                repr_c,
                 is_class,
                 methods,
                 implements: traits,
@@ -841,32 +719,8 @@ impl Parser {
         })
     }
 
-    fn parse_const_decl(&mut self) -> ParseResult<Decl> {
-        let start = self.advance().span; // const
-        let (name, _) = self.expect_ident("identifier")?;
-        // The type annotation is optional: an unannotated `const` infers its
-        // type from a literal initializer, like a module-level `let`.
-        let ty = if self.eat(&TokenKind::Colon) {
-            Some(self.parse_type()?)
-        } else {
-            None
-        };
-        self.expect(&TokenKind::Eq, "`=`")?;
-        self.skip_newlines();
-        let value = self.parse_expr()?;
-        let span = merge_spans(&start, &value.span);
-        Ok(Decl {
-            kind: DeclKind::Const(Const {
-                name,
-                ty,
-                value,
-                span: span.clone(),
-            }),
-            span,
-        })
-    }
-
     fn parse_let_decl(&mut self) -> ParseResult<Decl> {
+        let immutable = matches!(self.peek_kind(), TokenKind::Let);
         let start = self.advance().span; // let
         let (name, _) = self.expect_ident("identifier")?;
         let ty = if self.eat(&TokenKind::Colon) {
@@ -886,6 +740,19 @@ impl Parser {
             .or_else(|| ty.as_ref().map(|t| t.span.clone()))
             .unwrap_or_else(|| start.clone());
         let span = merge_spans(&start, &end_span);
+        // A module `let` bound to a constant expression is a compile-time
+        // constant, folded and inlined at each use.
+        if let Some(value) = init.as_ref().filter(|e| immutable && is_constant_expr(e)) {
+            return Ok(Decl {
+                kind: DeclKind::Const(Const {
+                    name,
+                    ty,
+                    value: value.clone(),
+                    span: span.clone(),
+                }),
+                span,
+            });
+        }
         Ok(Decl {
             kind: DeclKind::Let(LetDecl {
                 name,
@@ -895,5 +762,21 @@ impl Parser {
             }),
             span,
         })
+    }
+}
+
+/// Literals combined with operators: a value known at compile time.
+fn is_constant_expr(e: &crate::ast::Expr) -> bool {
+    use crate::ast::ExprKind;
+    match &e.kind {
+        ExprKind::Int(_)
+        | ExprKind::Float(_)
+        | ExprKind::Bool(_)
+        | ExprKind::Str(_)
+        | ExprKind::Char(_) => true,
+        ExprKind::Unary { operand, .. } => is_constant_expr(operand),
+        ExprKind::Binary { lhs, rhs, .. } => is_constant_expr(lhs) && is_constant_expr(rhs),
+        ExprKind::Paren(inner) => is_constant_expr(inner),
+        _ => false,
     }
 }
