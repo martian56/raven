@@ -22,12 +22,13 @@ use std::sync::Mutex;
 pub type RootSlot = *mut *mut u8;
 
 /// A compiled function's root record, laid out on its machine stack:
-/// the previous record, the slot count, then that many slot addresses.
+/// the previous record, the slot count, then that many GC pointers (or
+/// nulls), which the collector reads in place.
 #[repr(C)]
 pub struct FrameRec {
     pub prev: *mut FrameRec,
     pub count: usize,
-    pub slots: [RootSlot; 0],
+    pub slots: [*mut u8; 0],
 }
 
 /// Visit each slot address in the chain of records starting at `rec`.
@@ -37,12 +38,10 @@ pub struct FrameRec {
 /// Every record in the chain must be live and well formed.
 pub unsafe fn for_each_chain_slot(mut rec: *mut FrameRec, visit: &mut dyn FnMut(RootSlot)) {
     while !rec.is_null() {
-        let r = unsafe { &*rec };
-        let slots = unsafe { std::slice::from_raw_parts(r.slots.as_ptr(), r.count) };
-        for &slot in slots {
-            if !slot.is_null() {
-                visit(slot);
-            }
+        let r = unsafe { &mut *rec };
+        let base = r.slots.as_mut_ptr();
+        for i in 0..r.count {
+            visit(unsafe { base.add(i) });
         }
         rec = r.prev;
     }

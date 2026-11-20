@@ -77,10 +77,11 @@ pub fn cranelift_ty(ty: &MirType, ptr: CType) -> Option<CType> {
 /// Per local lowering record.
 #[derive(Clone, Copy)]
 struct LocalSlot {
-    /// Stack slot of a GC pointer local, which the collector reads through
-    /// the root frame. Every store writes it; reads use `var`, which is safe
+    /// The root record slot holding a GC pointer local, and the local's byte
+    /// offset in it. Every store writes it; reads use `var`, which is safe
     /// because the collector never moves objects.
     slot: Option<StackSlot>,
+    offset: i32,
     /// SSA variable holding the local's current value.
     var: Option<Variable>,
     /// The local is a `list[bool]`, whose elements are one byte.
@@ -141,37 +142,22 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
         // Allocate one stack slot per local with a machine type, and note
         // which locals hold GC pointers the collector must trace.
         let mut slots: Vec<LocalSlot> = Vec::with_capacity(self.func.locals.len());
-        let mut gc_locals: Vec<MirLocal> = Vec::new();
-        for (i, decl) in self.func.locals.iter().enumerate() {
-            let ty = cranelift_ty(&decl.ty, ptr);
-            let gc = layout::is_gc_pointer(&decl.ty);
-            let slot = ty.filter(|_| gc).map(|t| {
-                builder.create_sized_stack_slot(StackSlotData::new(
-                    StackSlotKind::ExplicitSlot,
-                    t.bytes(),
-                ))
-            });
-            let var = ty.map(|t| {
-                let v = Variable::from_u32(i as u32);
-                builder.declare_var(v, t);
-                v
-            });
-            if slot.is_some() {
-                gc_locals.push(MirLocal(i as u32));
-            }
-            let byte_list = is_byte_list(&decl.ty);
-            slots.push(LocalSlot {
-                slot,
-                var,
-                ty,
-                byte_list,
-            });
-        }
+        let used = referenced_locals(self.func);
+        let gc_locals: Vec<MirLocal> = if may_collect(self.func) {
+            (0..self.func.locals.len())
+                .filter(|&i| {
+                    let ty = &self.func.locals[i].ty;
+                    used[i] && cranelift_ty(ty, ptr).is_some() && layout::is_gc_pointer(ty)
+                })
+                .map(|i| MirLocal(i as u32))
+                .collect()
+        } else {
+            Vec::new()
+        };
 
-        // Allocate the root record once when the function holds any GC
-        // pointer locals: the chain link, the count, then one slot address
-        // per GC local.
-        let root_frame = if gc_locals.is_empty() || !may_collect(self.func) {
+        // The root record: the chain link, the count, then the GC pointer
+        // locals themselves, which the collector reads in place.
+        let root_frame = if gc_locals.is_empty() {
             None
         } else {
             let bytes = (gc_locals.len() as u32 + 2) * (ptr.bytes());
@@ -185,6 +171,31 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
                 head,
             })
         };
+        let mut offsets = vec![None; self.func.locals.len()];
+        for (k, l) in gc_locals.iter().enumerate() {
+            offsets[l.0 as usize] = Some((k as i32 + 2) * ptr.bytes() as i32);
+        }
+
+        for (i, decl) in self.func.locals.iter().enumerate() {
+            let ty = cranelift_ty(&decl.ty, ptr);
+            let (slot, offset) = match (offsets[i], root_frame) {
+                (Some(off), Some(frame)) => (Some(frame.array), off),
+                _ => (None, 0),
+            };
+            let var = ty.map(|t| {
+                let v = Variable::from_u32(i as u32);
+                builder.declare_var(v, t);
+                v
+            });
+            let byte_list = is_byte_list(&decl.ty);
+            slots.push(LocalSlot {
+                slot,
+                offset,
+                var,
+                ty,
+                byte_list,
+            });
+        }
 
         // Lower each block. The entry block first spills incoming
         // parameters, then sets up the GC root frame, then runs the MIR.
@@ -270,7 +281,7 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
                 )
             });
             if let Some(slot) = slot_info.slot {
-                builder.ins().stack_store(v, slot, 0);
+                builder.ins().stack_store(v, slot, slot_info.offset);
             }
             if let Some(var) = slot_info.var {
                 builder.def_var(var, v);
@@ -299,8 +310,7 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
     /// Every GC pointer local is first zeroed so a collection triggered
     /// before the body assigns it never reads an uninitialized slot.
     /// Parameter locals already hold their incoming pointer and are not
-    /// re-zeroed. The slot address of each GC local is then written into
-    /// the root record, which is pushed onto the thread-local chain the
+    /// re-zeroed. The record is then pushed onto the thread-local chain the
     /// collector walks. Every return pops it.
     fn enter_root_frame(
         cx: &mut ModuleCx,
@@ -315,7 +325,7 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
             return;
         };
         let zero = builder.ins().iconst(ptr, 0);
-        for (i, local) in gc_locals.iter().enumerate() {
+        for local in gc_locals {
             let info = slots[local.0 as usize];
             let slot = info.slot.expect("gc local has a stack slot");
             // Non-parameter GC locals start null so a collection that
@@ -323,14 +333,8 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
             // pointer. Parameters already hold their spilled incoming
             // pointer and must not be clobbered.
             if !func.local_decl(*local).is_param {
-                builder.ins().stack_store(zero, slot, 0);
+                builder.ins().stack_store(zero, slot, info.offset);
             }
-            // Record the slot's address in the contiguous root array; the
-            // collector dereferences it to read the live pointer.
-            let slot_addr = builder.ins().stack_addr(ptr, slot, 0);
-            builder
-                .ins()
-                .stack_store(slot_addr, frame.array, (i as i32 + 2) * ptr.bytes() as i32);
         }
         let count = builder.ins().iconst(ptr, frame.count as i64);
         builder
@@ -1027,7 +1031,7 @@ fn load_local(builder: &mut FunctionBuilder<'_>, slots: &[LocalSlot], local: Mir
         (Some(s), Some(t)) => (s, t),
         _ => return None,
     };
-    Some(builder.ins().stack_load(ty, slot, 0))
+    Some(builder.ins().stack_load(ty, slot, info.offset))
 }
 
 fn store_local(
@@ -1055,7 +1059,7 @@ fn store_local(
     // a `Float` or narrow scalar local needs a bitcast or reduce so the
     // Cranelift store type checks.
     let v = narrow_from_slot(builder, v, want);
-    builder.ins().stack_store(v, slot, 0);
+    builder.ins().stack_store(v, slot, info.offset);
     if let Some(var) = info.var {
         builder.def_var(var, v);
     }
@@ -3539,4 +3543,30 @@ fn operand_is_byte_list(op: &MirOperand, slots: &[LocalSlot]) -> bool {
         MirOperand::Copy(l) => slots.get(l.0 as usize).is_some_and(|s| s.byte_list),
         _ => false,
     }
+}
+
+/// Which locals the body mentions. Locals left unused by MIR passes get no
+/// root slot.
+fn referenced_locals(func: &MirFunction) -> Vec<bool> {
+    let mut used = vec![false; func.locals.len()];
+    for p in &func.params {
+        used[p.0 as usize] = true;
+    }
+    let mut assigned = Vec::new();
+    let mut mark = |op: &MirOperand| {
+        if let MirOperand::Copy(l) = op {
+            used[l.0 as usize] = true;
+        }
+    };
+    for b in &func.blocks {
+        for st in &b.statements {
+            crate::mir::visit::statement_operands(st, &mut mark);
+            assigned.extend(crate::mir::visit::assigned_local(st));
+        }
+        crate::mir::visit::terminator_operands(&b.terminator, &mut mark);
+    }
+    for l in assigned {
+        used[l.0 as usize] = true;
+    }
+    used
 }

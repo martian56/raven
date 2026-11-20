@@ -384,6 +384,26 @@ pub enum MirTerminator {
     Unreachable,
 }
 
+impl MirTerminator {
+    /// The blocks control can flow to next.
+    pub fn successors(&self) -> Vec<MirBlockId> {
+        match self {
+            MirTerminator::Goto(b) => vec![*b],
+            MirTerminator::SwitchInt {
+                targets, otherwise, ..
+            } => targets
+                .iter()
+                .map(|(_, b)| *b)
+                .chain(std::iter::once(*otherwise))
+                .collect(),
+            MirTerminator::SwitchEnum {
+                targets, otherwise, ..
+            } => targets.iter().map(|(_, b)| *b).chain(*otherwise).collect(),
+            MirTerminator::Return(_) | MirTerminator::Unreachable => Vec::new(),
+        }
+    }
+}
+
 /// Declaration of one local variable.
 #[derive(Debug, Clone)]
 pub struct MirLocalDecl {

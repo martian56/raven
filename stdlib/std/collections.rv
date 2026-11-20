@@ -3,15 +3,27 @@
 //
 // Both keep their items in dense lists in insertion order (so iteration
 // follows insertion order) and find them through an open-addressed index
-// table of positions into those lists, probed linearly from a mixed hash.
-// The table holds -1 for an empty slot and -2 for a removed one, and doubles
-// once it is three quarters used. Removal moves the last item into the hole.
+// table of positions into those lists. Probing starts near the key's own
+// value, scans the next slots (one cache line), then jumps using the high
+// hash bits, so sequential int keys land side by side while clustered
+// hashes still spread out. The table holds -1 for an empty slot and -2 for
+// a removed one, and doubles once it is three quarters used. Removal moves
+// the last item into the hole.
 
-// Spread a key hash over the table. Int hashes are the value itself, so
-// sequential keys would otherwise cluster.
-fun _mix(h: int) -> int {
-    let x = h * -7046029254386353131
-    return x ^ (x >> 29)
+// The first slot to probe. Small keys keep their own value, so
+// sequential ints land side by side; larger ones fold in their high bits.
+fun _start(h: int) -> int {
+    return h ^ (h >> 21) ^ (h >> 42)
+}
+
+// The probe step after slot `i`; `p` is the remaining hash bits.
+fun _next(i: int, p: int) -> int {
+    return 5 * i + 1 + p
+}
+
+// Drop the five hash bits the last step used (a logical shift).
+fun _shift(p: int) -> int {
+    return (p >> 5) & 576460752303423487
 }
 
 fun _empty_slots(n: int) -> list[int] {
@@ -103,7 +115,9 @@ impl[T: Eq + Hash] set[T] {
     // The table slot holding `x`, or -1.
     fun _find(self, x: T, h: int) -> int {
         let mask = self.slots.len() - 1
-        var i = _mix(h) & mask
+        var i = _start(h) & mask
+        var p = h
+        var step = 0
         loop {
             let s = self.slots[i]
             if s == -1 {
@@ -112,7 +126,13 @@ impl[T: Eq + Hash] set[T] {
             if s >= 0 and self.hashes[s] == h and self.items[s].equals(x) {
                 return i
             }
-            i = (i + 1) & mask
+            step += 1
+            if step < 4 {
+                i = (i + 1) & mask
+            } else {
+                p = _shift(p)
+                i = _next(i, p) & mask
+            }
         }
     }
 
@@ -124,7 +144,9 @@ impl[T: Eq + Hash] set[T] {
     fun add(self, x: T) {
         let h = x.hash()
         let mask = self.slots.len() - 1
-        var i = _mix(h) & mask
+        var i = _start(h) & mask
+        var p = h
+        var step = 0
         var free = -1
         loop {
             let s = self.slots[i]
@@ -138,7 +160,13 @@ impl[T: Eq + Hash] set[T] {
             } else if self.hashes[s] == h and self.items[s].equals(x) {
                 return
             }
-            i = (i + 1) & mask
+            step += 1
+            if step < 4 {
+                i = (i + 1) & mask
+            } else {
+                p = _shift(p)
+                i = _next(i, p) & mask
+            }
         }
         if free >= 0 {
             i = free
@@ -185,9 +213,18 @@ impl[T: Eq + Hash] set[T] {
         let mask = n - 1
         var idx = 0
         while idx < self.items.len() {
-            var i = _mix(self.hashes[idx]) & mask
+            let h = self.hashes[idx]
+            var i = _start(h) & mask
+            var p = h
+            var step = 0
             while slots[i] != -1 {
-                i = (i + 1) & mask
+                step += 1
+                if step < 4 {
+                    i = (i + 1) & mask
+                } else {
+                    p = _shift(p)
+                    i = _next(i, p) & mask
+                }
             }
             slots[i] = idx
             idx += 1
@@ -264,7 +301,9 @@ impl[K: Eq + Hash, V] dict[K, V] {
     // The table slot holding `k`, or -1.
     fun _find(self, k: K, h: int) -> int {
         let mask = self.slots.len() - 1
-        var i = _mix(h) & mask
+        var i = _start(h) & mask
+        var p = h
+        var step = 0
         loop {
             let s = self.slots[i]
             if s == -1 {
@@ -273,7 +312,13 @@ impl[K: Eq + Hash, V] dict[K, V] {
             if s >= 0 and self.hashes[s] == h and self.keys_[s].equals(k) {
                 return i
             }
-            i = (i + 1) & mask
+            step += 1
+            if step < 4 {
+                i = (i + 1) & mask
+            } else {
+                p = _shift(p)
+                i = _next(i, p) & mask
+            }
         }
     }
 
@@ -293,7 +338,9 @@ impl[K: Eq + Hash, V] dict[K, V] {
     fun set(self, k: K, v: V) {
         let h = k.hash()
         let mask = self.slots.len() - 1
-        var i = _mix(h) & mask
+        var i = _start(h) & mask
+        var p = h
+        var step = 0
         var free = -1
         loop {
             let s = self.slots[i]
@@ -308,7 +355,13 @@ impl[K: Eq + Hash, V] dict[K, V] {
                 self.vals[s] = v
                 return
             }
-            i = (i + 1) & mask
+            step += 1
+            if step < 4 {
+                i = (i + 1) & mask
+            } else {
+                p = _shift(p)
+                i = _next(i, p) & mask
+            }
         }
         if free >= 0 {
             i = free
@@ -376,9 +429,18 @@ impl[K: Eq + Hash, V] dict[K, V] {
         let mask = n - 1
         var idx = 0
         while idx < self.keys_.len() {
-            var i = _mix(self.hashes[idx]) & mask
+            let h = self.hashes[idx]
+            var i = _start(h) & mask
+            var p = h
+            var step = 0
             while slots[i] != -1 {
-                i = (i + 1) & mask
+                step += 1
+                if step < 4 {
+                    i = (i + 1) & mask
+                } else {
+                    p = _shift(p)
+                    i = _next(i, p) & mask
+                }
             }
             slots[i] = idx
             idx += 1
