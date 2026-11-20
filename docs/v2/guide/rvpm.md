@@ -83,7 +83,7 @@ the executable's exit code are forwarded unchanged. Use
 name = "demo"
 version = "0.1.0"
 authors = ["Ada", "Grace"]
-edition = "v2"
+edition = "v3"
 
 [dependencies]
 "github.com/martian56/raven-http" = "1.0"
@@ -115,7 +115,7 @@ schema = { package = "schema", args = [] }
 Sections:
 
 - `[package]` (required): `name` and `version` are required. `authors`
-  defaults to empty. `edition` defaults to `v2` (accepted: `v2`, `2026`).
+  defaults to empty. `edition` defaults to `v3`, the only accepted value; a `v2` package is Raven 2 syntax and is rejected with a message saying so.
 - `[dependencies]` (optional): keys identify a whole repository and must be
   bare `github.com/<user>/<repo>` paths. Values are git refs (a tag or branch).
   Source imports may add a subpath, but manifest keys may not.

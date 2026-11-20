@@ -312,6 +312,8 @@ server so it chains onto `Server.new()`. Each served request prints its method,
 path, and status code:
 
 ```rust
+from std.http import Server, Request, Response
+
 fun main() {
     let app = Server.new().with_access_log()
     app.get("/", (req: Request) -> Response => Response.text("ok"))
@@ -542,6 +544,8 @@ from its extension (`html`, `css`, `js`, `json`, `svg`, `txt`; otherwise
 segment, so a request cannot escape `dir` with a slash.
 
 ```rust
+from std.http import Server, Request, Response
+
 fun main() {
     let app = Server.new()
     app.static("/static", "public") // GET /static/style.css -> public/style.css

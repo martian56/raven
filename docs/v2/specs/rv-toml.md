@@ -20,7 +20,7 @@ typos surface early.
 | `name`    | String          | yes      | none    | The package name. Must not be empty. |
 | `version` | String          | yes      | none    | Semver-style string, for example `0.1.0`. Stored verbatim; full semver validation is not performed here. |
 | `authors` | Array of String | no       | `[]`    | Free-form author entries. |
-| `edition` | String          | no       | `v2`    | Accepted values: `v2`, `2026`. Any other value is rejected. |
+| `edition` | String          | no       | `v3`    | Accepted value: `v3`. `v2` and `2026` are Raven 2 syntax and are rejected with a message saying so. |
 
 ### `[dependencies]` (optional)
 
@@ -93,7 +93,7 @@ name = "tiny"
 version = "0.0.1"
 ```
 
-This parses with `edition = "v2"`, no authors, no dependencies, default
+This parses with `edition = "v3"`, no authors, no dependencies, default
 `[ffi]`, default `[fmt]`, and no explicit `[dist]` section. Running `rvpm dist`
 still applies the host archive and `target/dist` defaults.
 
@@ -104,7 +104,7 @@ still applies the host archive and `target/dist` defaults.
 name = "demo"
 version = "0.1.0"
 authors = ["Ada", "Grace"]
-edition = "v2"
+edition = "v3"
 
 [dependencies]
 "github.com/martian56/raven-http" = "1.0"
@@ -145,7 +145,7 @@ output:
 `rvpm init [name] [--lib]` scaffolds a new package in the current directory:
 
 - Writes `rv.toml` with `[package]` (`name`, `version = "0.1.0"`,
-  `edition = "v2"`) and an empty `[dependencies]` table. When `name` is
+  `edition = "v3"`) and an empty `[dependencies]` table. When `name` is
   omitted it defaults to the current directory name.
 - Writes `src/main.rv` with a hello-world `main`, or `lib.rv` when `--lib`
   is passed.

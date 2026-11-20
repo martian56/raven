@@ -97,7 +97,7 @@ The generated `rv.toml`:
 [package]
 name = "my_app"
 version = "0.1.0"
-edition = "v2"
+edition = "v3"
 
 [dependencies]
 ```

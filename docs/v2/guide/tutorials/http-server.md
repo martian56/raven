@@ -47,6 +47,8 @@ A path segment written `:name` matches any single segment and captures it. Read
 it in the handler with `req.param("name")`:
 
 ```rust
+from std.http import Server, Request, Response
+
 fun greet(req: Request) -> Response {
     return Response.text("Hi, ${req.param("name")}!")
 }
@@ -93,6 +95,8 @@ For `POST` and `PUT`, the request carries a body in `req.body`. This handler
 echoes whatever it receives back as JSON:
 
 ```rust
+from std.http import Server, Request, Response
+
 fun echo(req: Request) -> Response {
     if req.body.length() == 0 {
         return Response.bad_request("send a body")

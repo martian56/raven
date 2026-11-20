@@ -198,7 +198,7 @@ The output lists each public item with its signature and the comment above it:
 ### slugify
 
 ```rust
-fun slugify(text: String) -> String
+fun slugify(text: str) -> str
 ```
 
 Turn arbitrary text into a URL slug: lowercased, with runs of
@@ -239,7 +239,7 @@ Turn text into URL slugs. No dependencies.
 ## Usage
 
 ```rust
-import "github.com/martian56/raven-slug" { slugify, Slugger }
+from "github.com/martian56/raven-slug" import slugify, Slugger
 
 slugify("Hello, World!")                       // "hello-world"
 Slugger.new().separator("_").slugify("a b")    // "a_b"

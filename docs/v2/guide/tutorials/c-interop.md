@@ -70,7 +70,7 @@ as a return value. Its fields must be C scalars (or nested `@repr(C)` structs):
 
 ```rust
 @repr(C)
-struct Point {
+class Point {
     x: CDouble
     y: CDouble
 }
@@ -151,7 +151,7 @@ C shim.
 API reads or writes. The memory is outside the GC and is yours to `free`:
 
 ```rust
-from std.ffi import alloc, store, load, free
+from std.ffi import alloc, store, load, free, offset
 
 fun main() {
     let buf: CPtr[CInt] = alloc[CInt](3)

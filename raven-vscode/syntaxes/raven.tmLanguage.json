@@ -47,35 +47,18 @@
     "imports": {
       "patterns": [
         {
-          "name": "meta.import.selective.raven",
-          "begin": "\\b(import)\\s+([a-zA-Z_][a-zA-Z0-9_]*(?:/[a-zA-Z_][a-zA-Z0-9_]*)*)\\s*(\\{)",
+          "name": "meta.import.from.raven",
+          "begin": "\\b(from)\\s+(\"[^\"]*\"|[a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)*)\\s+(import)\\b",
           "beginCaptures": {
             "1": { "name": "keyword.control.import.raven" },
             "2": { "name": "entity.name.namespace.raven" },
-            "3": { "name": "punctuation.section.block.begin.raven" }
+            "3": { "name": "keyword.control.import.raven" }
           },
-          "end": "\\}",
-          "endCaptures": {
-            "0": { "name": "punctuation.section.block.end.raven" }
-          },
+          "end": "$",
           "patterns": [{ "include": "#importNames" }]
         },
         {
-          "name": "meta.import.selective.raven",
-          "begin": "\\b(import)\\s+(\"[^\"]*\")\\s*(\\{)",
-          "beginCaptures": {
-            "1": { "name": "keyword.control.import.raven" },
-            "2": { "name": "string.quoted.double.raven" },
-            "3": { "name": "punctuation.section.block.begin.raven" }
-          },
-          "end": "\\}",
-          "endCaptures": {
-            "0": { "name": "punctuation.section.block.end.raven" }
-          },
-          "patterns": [{ "include": "#importNames" }]
-        },
-        {
-          "match": "\\b(import|from)\\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)*)(?:\\s+(as|import)\\s+([a-zA-Z_][a-zA-Z0-9_]*))?",
+          "match": "\\b(import)\\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)*)(?:\\s+(as)\\s+([a-zA-Z_][a-zA-Z0-9_]*))?",
           "captures": {
             "1": { "name": "keyword.control.import.raven" },
             "2": { "name": "entity.name.namespace.raven" },

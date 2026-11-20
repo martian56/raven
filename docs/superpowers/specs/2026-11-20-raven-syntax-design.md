@@ -5,8 +5,9 @@ Date: 2026-11-20. Status: agreed with the maintainer.
 ## Intent
 
 Raven should read and write like Python while keeping braces, compile at
-Go-class speed, and run close to C. Breaking changes are accepted; existing
-code moves over with an automatic migration (`rvpm migrate`).
+Go-class speed, and run close to C. Breaking changes are accepted and there is no backward compatibility: this
+ships as Raven 3.0, and the old syntax is rejected with errors that name the
+new form.
 
 ## Decisions
 
@@ -16,10 +17,10 @@ code moves over with an automatic migration (`rvpm migrate`).
 | Functions | `fun name(a: int, b: int = 3) -> int { ... }`; one-line `fun f(x: int) -> int = x * x`. |
 | Variables | `let` immutable, `var` mutable. Types inferred; `let x: int = 1` when wanted. |
 | Built-in types | lowercase: `int`, `float`, `bool`, `str`, `char`, `list[T]`, `dict[K, V]`, `set[T]`, `Option[T]`, `Result[T, E]`, tuples `(int, str)`. |
-| Sized numbers | `i8 i16 i32 i64 u8 u16 u32 u64 f32 f64`; `x as i32` casts. |
-| Overflow | Panics in debug builds, wraps in release builds. |
+| Sized numbers | Deferred past 3.0. `x as int`, `x as float`, `x as str` casts exist; C-sized types (`CInt`, `CDouble`, ...) cover FFI. |
+| Overflow | Deferred past 3.0; integer arithmetic wraps. |
 | Generics | Square brackets: `fun first[T](xs: list[T]) -> Option[T]`, bounds inline `[T: Eq + Hash]`. |
-| Logic | `and` / `or` / `not`, and `&&` / `||` / `!` also accepted; the formatter writes the words. |
+| Logic | `and` / `or` / `not`. `&&` / `||` / `!` are rejected with a message naming the word. |
 | Lambdas | `x => x * 2`, `(a, b) => a + b`, `() => { ... }`. |
 | Strings | `"hello ${name}"`, format specs `"${price:.2}"`. |
 | Comments | `//` and `/* */`. |
@@ -33,8 +34,8 @@ code moves over with an automatic migration (`rvpm migrate`).
 | Match | Statement with case blocks: `match s { case Shape.Circle(r) { ... } case _ { ... } }`. Patterns: literals, ranges, `_`, variants, tuples, guards `case x if x > 0`. |
 | Control flow | `if`/`match`/blocks are statements. Conditional value: `a if cond else b`. `if let`, `while let`, `let ... else` kept. |
 | Loops | `for x in xs`, `for i in 0..n`, `0..=n`, `(0..n).step(2)`, `for (i, x) in xs.enumerate()`, `for (k, v) in d`. `while`, `loop`, `break`, `continue`. |
-| Literals | `[1, 2]`, `{"a": 1}`, `{1, 2}`, `{}` is an empty dict, `set()` an empty set, `(1, "a")` a tuple, `()` unit. |
-| Errors | `Result[T, E]` with `?`. `panic(msg)` aborts. |
+| Literals | `[1, 2]`, `{"a": 1}`, `{1, 2}`, `{x}` a one-element set, `{}` an empty dict, `set()` an empty set, `(1, "a")` a tuple, `()` unit. Slices `xs[a..b]`, `xs[a..]`, `xs[..b]`, negative bounds from the end. |
+| Errors | `Result[T, E]` with `?`; in `main` a failing `?` stops the program with the error. `panic(msg)` aborts; `assert cond, msg` checks. |
 | Absence | `Option[T]` with `Some(x)` / `None`. |
 | Modules | `import std.fs`, `from std.json import parse, stringify`, `from "./models" import User`. Private by default, `pub` exports, `pub import` re-exports. |
 | Operators | Classes overload operators through methods: `add sub mul div mod neg eq lt le gt ge index`. |
@@ -50,6 +51,7 @@ code moves over with an automatic migration (`rvpm migrate`).
 
 ## Migration
 
-`rvpm migrate` parses old syntax with the legacy parser and prints the new
-syntax with the formatter, so the stdlib, examples, tests, and packages move
-over mechanically.
+There is no migration tool. The stdlib, examples, tests, docs, and every
+package under `testing/` were converted once with scripts and checked by
+their test suites; a Raven 2 package (`edition = "v2"`) is rejected with a
+message saying it needs converting.

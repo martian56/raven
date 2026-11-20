@@ -2,46 +2,34 @@
 
 Hash-backed `set[T]` and `dict[K, V]` over keys that implement the prelude
 `Eq + Hash` traits. Lookup, insert, and remove are O(1) average, and
-iteration follows insertion order. Both are part of the prelude, as is
-`list[T]`.
+iteration follows insertion order. Both are built in, like `list[T]`, so
+they need no import.
 
 ```rust
-import std.collections
-
 fun main() {
-    let seen = Set.new()
-    seen.add("ada")
-    print(seen.contains("ada")) // true
+    let seen = {"ada"}
+    seen.add("grace")
+    print("ada" in seen) // true
 
-    let counts = Map.new()
-    counts.set("x", 1)
-    print(counts.len()) // 1
+    let counts = {"x": 1}
+    counts["y"] = 2
+    print(counts["x"], len(counts)) // 1 2
+    for (name, n) in counts {
+        print(name, n)
+    }
 }
 ```
 
-## Importing
+## Empty collections
+
+`{}` is an empty dict and `set()` an empty set. Their element types come from
+the first use, or from an annotation when nothing later pins them:
 
 ```rust
-import std.collections
-```
-
-Import the whole module (not a selective `{ ... }` list). The idiomatic
-constructor is the associated function `new()` on each type, called as
-`Type.new()`. A bare `import std.collections` merges the `Set` and `Map`
-`impl` blocks, so both the constructors and the instance methods resolve by
-type. A selective import would bring in named functions but not the type
-`impl` blocks, so `Set.new()` and the methods below would fail to resolve.
-
-Element and key/value types are inferred from the first use: `s.add(1)`
-fixes `s` as `set[int]`. Where no later use pins them, write the type
-arguments on the call:
-
-```rust
-import std.collections
-
 fun main() {
-    let s = set[int].new()
-    let m = dict[str, int].new()
+    let s: set[int] = set()
+    let m: dict[str, int] = {}
+    print(len(s), len(m)) // 0 0
 }
 ```
 
@@ -63,12 +51,9 @@ keyed on them do not satisfy the bound.
 
 ## Set and map literals
 
-Set and map values have literal syntax. Both lower to the constructors
-above, so they need the same `import std.collections` in scope.
+Set and map values have literal syntax:
 
 ```rust
-import std.collections
-
 fun main() {
     let s = {1, 2, 2, 3} // set[int], dedups to {1, 2, 3}
     let m = {"a": 1, "b": 2} // dict[str, int]
@@ -77,33 +62,25 @@ fun main() {
 }
 ```
 
-Grammar and disambiguation:
+How braces read:
 
-- A set literal is `{ e1, e2, ... }`: braces around one or more
-  comma-separated expressions. It must carry at least one comma, so a
-  single-element set is written `{x,}`. A bare `{ x }` stays a block whose
-  tail expression is `x`, and `{}` is an empty block. An empty set is written
-  `Set.new()`.
-- A map literal is `[ k1: v1, k2: v2, ... ]`: brackets around one or more
-  comma-separated `key: value` pairs. The empty map is the distinct `[:]`
-  form, so the bare `[]` stays an empty list. A bracket whose first element
-  has no top-level `:` is a list (`[1, 2, 3]`); a `:` after the first element
-  makes it a map.
+- `{a, b}` and `{a}` are sets; `{k: v, ...}` is a dict; `{}` is an empty
+  dict and `set()` an empty set.
+- `[x for x in xs]`, `{x for x in xs}`, and `{k: v for k in xs}` build a list,
+  set, or dict from a loop.
 
 Element, key, and value types are inferred from the literal contents:
-`{1, 2}` is `set[int]`, and `["x": true]` is `dict[str, bool]`. The set's
-`T` and the map's `K` must implement `Eq + Hash`, the same bound the types
-carry. `{a, b}` desugars to `Set.new()` then `add(a); add(b)`, and `[k: v]`
-desugars to `Map.new()` then `set(k, v)`.
+`{1, 2}` is `set[int]`, and `{"x": true}` is `dict[str, bool]`. The set's
+`T` and the dict's `K` must implement `Eq + Hash`.
 
 ## set[T: Eq + Hash]
 
-A set of distinct elements. Construct with a set literal `{1, 2}` or with
-`Set.new()`.
+A set of distinct elements. Construct with a set literal `{1, 2}`, or
+`set()` for an empty one.
 
 ### `new() -> set[T]`
 
-A new empty set. Called on the type: `Set.new()`.
+A new empty set, the same as `set()`.
 
 ### `len(self) -> int`
 
@@ -129,8 +106,6 @@ Remove `x` if present, returning whether it was. The most recently added
 item moves into its position.
 
 ```rust
-import std.collections
-
 fun main() {
     let s = Set.new()
     s.add("a")
@@ -151,8 +126,6 @@ Every element as a list, in insertion order. This is the way to enumerate
 a set: iterate the returned list.
 
 ```rust
-import std.collections
-
 fun main() {
     let s = {1, 2, 3}
     for x in s.to_list() {
@@ -178,8 +151,6 @@ A new set with the elements of `self` that are not in `other`.
 True when every element of `self` is in `other`.
 
 ```rust
-import std.collections
-
 fun main() {
     let a = {1, 2, 3}
     let b = {2, 3, 4}
@@ -193,12 +164,13 @@ fun main() {
 
 ## dict[K: Eq + Hash, V]
 
-A map from keys to values. Construct with a map literal `["a": 1]` (or `[:]`
-for an empty map) or with `Map.new()`.
+A map from keys to values. Construct with a dict literal `{"a": 1}`, or `{}`
+for an empty one. `d[k]` reads a value (panicking when `k` is missing),
+`d[k] = v` sets one, and `k in d` tests for a key.
 
 ### `new() -> dict[K, V]`
 
-A new empty map. Called on the type: `Map.new()`.
+A new empty dict, the same as `{}`.
 
 ### `len(self) -> int`
 
@@ -217,8 +189,6 @@ True when `k` has an entry in the map.
 `Some(v)` when `k` is present, otherwise `None`. Handle it with `match`:
 
 ```rust
-import std.collections
-
 fun main() {
     let m = Map.new()
     m.set("ada", 1815)
@@ -241,8 +211,6 @@ The value for `k`, or `default` when the key is absent. The non-`Option`
 shortcut for `get` when you have a sensible fallback.
 
 ```rust
-import std.collections
-
 fun main() {
     let m = {"a": 1}
     print(m.get_or("a", 0)) // 1
@@ -270,8 +238,6 @@ Every key/value pair as a list of `Entry`, in insertion order. Each `Entry`
 has a `.key` and a `.value` field.
 
 ```rust
-import std.collections
-
 fun main() {
     let m = {"a": 1, "b": 2}
     for e in m.entries() {
@@ -286,8 +252,6 @@ Remove the entry for `k` if present, returning whether it was. The most
 recently added entry moves into its position.
 
 ```rust
-import std.collections
-
 fun main() {
     let m = Map.new()
     m.set("a", 1)
@@ -306,8 +270,6 @@ fun main() {
 Remove every entry, leaving an empty map.
 
 ```rust
-import std.collections
-
 fun main() {
     let m = {"a": 1, "b": 2}
     m.clear()
@@ -331,7 +293,7 @@ import std.string
 fun main() {
     let words = ["red", "blue", "red", "green", "blue", "red"]
 
-    let counts: dict[str, int] = Map.new()
+    let counts: dict[str, int] = {}
     var i = 0
     while i < words.len() {
         let w = words[i]
