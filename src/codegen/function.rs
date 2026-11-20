@@ -82,6 +82,8 @@ struct LocalSlot {
     slot: Option<StackSlot>,
     /// SSA variable of a scalar local.
     var: Option<Variable>,
+    /// The local is a `list[bool]`, whose elements are one byte.
+    byte_list: bool,
     /// Cranelift type, `None` for `Unit` locals.
     ty: Option<CType>,
 }
@@ -154,7 +156,13 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
             if slot.is_some() {
                 gc_locals.push(MirLocal(i as u32));
             }
-            slots.push(LocalSlot { slot, var, ty });
+            let byte_list = is_byte_list(&decl.ty);
+            slots.push(LocalSlot {
+                slot,
+                var,
+                ty,
+                byte_list,
+            });
         }
 
         // Allocate the root array slot once when the function holds any
@@ -483,8 +491,14 @@ fn lower_store_index(
         lower_operand(cx, builder, index, slots)?,
         "index store value",
     )?;
+    let byte = operand_is_byte_list(base, slots);
     let v = lower_operand(cx, builder, value, slots)?;
-    let v = widen_to_slot(builder, v, ptr);
+    let v = if byte {
+        let v = require_value(v, "index store value")?;
+        coerce_to(builder, v, types::I8)
+    } else {
+        widen_to_slot(builder, v, ptr)
+    };
     // The index is a native `Int` (i64); take it to pointer width for the
     // address arithmetic and the unsigned bounds compare.
     let idx = to_pointer_width(builder, idx, ptr);
@@ -493,8 +507,9 @@ fn lower_store_index(
     emit_bounds_check(cx, builder, idx, len, "list index out of bounds");
 
     let elements = call_list_elements(cx, builder, list);
-    let slot_size = builder.ins().iconst(ptr, ELEMENT_SLOT);
-    let offset = builder.ins().imul(idx, slot_size);
+    let offset = builder
+        .ins()
+        .imul_imm(idx, if byte { 1 } else { ELEMENT_SLOT });
     let addr = builder.ins().iadd(elements, offset);
     builder.ins().store(MemFlags::new(), v, addr, 0);
     Ok(())
@@ -1516,7 +1531,13 @@ fn lower_array_lit(
     // alive transitively. Each element value is unrooted only between its
     // own production and its immediate push, with no allocation in between,
     // so it is never live across a collection on its own.
-    let list = call_list_new(cx, builder, elements.len() as i64, gc_ptrs);
+    let list = call_list_new(
+        cx,
+        builder,
+        elements.len() as i64,
+        gc_ptrs,
+        elem_size(elem_ty),
+    );
     let root = push_temp_root(cx, builder, list, ptr);
 
     // One reusable scratch slot the size of a single element; each push
@@ -1569,11 +1590,14 @@ fn lower_index_access(
     let len = call_list_len(cx, builder, list, ptr);
     emit_bounds_check(cx, builder, idx, len, "list index out of bounds");
 
+    let byte = operand_is_byte_list(base, slots);
     let elements = call_list_elements(cx, builder, list);
-    let slot_size = builder.ins().iconst(ptr, ELEMENT_SLOT);
-    let offset = builder.ins().imul(idx, slot_size);
+    let offset = builder
+        .ins()
+        .imul_imm(idx, if byte { 1 } else { ELEMENT_SLOT });
     let addr = builder.ins().iadd(elements, offset);
-    let raw = builder.ins().load(ptr, MemFlags::new(), addr, 0);
+    let width = if byte { types::I8 } else { ptr };
+    let raw = builder.ins().load(width, MemFlags::new(), addr, 0);
     Ok(Some(raw))
 }
 
@@ -1632,11 +1656,19 @@ fn lower_list_method(
             builder.ins().brif(has_room, fast, &[], slow, &[]);
 
             builder.switch_to_block(fast);
+            let byte = is_byte_elem(_elem_ty);
             let elements = call_list_elements(cx, builder, list);
             let wide_len = builder.ins().uextend(ptr, len);
-            let offset = builder.ins().imul_imm(wide_len, ELEMENT_SLOT);
+            let offset = builder
+                .ins()
+                .imul_imm(wide_len, if byte { 1 } else { ELEMENT_SLOT });
             let addr = builder.ins().iadd(elements, offset);
-            builder.ins().store(MemFlags::trusted(), value, addr, 0);
+            let stored = if byte {
+                coerce_to(builder, value, types::I8)
+            } else {
+                value
+            };
+            builder.ins().store(MemFlags::trusted(), stored, addr, 0);
             let next = builder.ins().iadd_imm(len, 1);
             builder
                 .ins()
@@ -1712,13 +1744,14 @@ fn call_list_new(
     builder: &mut FunctionBuilder<'_>,
     cap: i64,
     gc_ptrs: bool,
+    elem_bytes: i64,
 ) -> Value {
     let new_id = cx
         .runtime_id(intrinsics::RUNTIME_LIST_NEW)
         .expect("list new declared at module init");
     let new_ref = cx.module().declare_func_in_func(new_id, builder.func);
-    let size = builder.ins().iconst(types::I32, ELEMENT_SLOT);
-    let align = builder.ins().iconst(types::I32, ELEMENT_SLOT);
+    let size = builder.ins().iconst(types::I32, elem_bytes);
+    let align = builder.ins().iconst(types::I32, elem_bytes);
     let cap = builder.ins().iconst(types::I32, cap);
     let flag = builder
         .ins()
@@ -3406,4 +3439,29 @@ fn may_collect(func: &MirFunction) -> bool {
                 _ => false,
             })
     })
+}
+
+/// Elements of a `list[bool]` take one byte; every other element type takes
+/// an eight-byte slot.
+fn is_byte_elem(elem: &MirType) -> bool {
+    matches!(elem, MirType::Bool)
+}
+
+fn is_byte_list(ty: &MirType) -> bool {
+    matches!(ty, MirType::List(inner) if is_byte_elem(inner))
+}
+
+fn elem_size(elem: &MirType) -> i64 {
+    if is_byte_elem(elem) {
+        1
+    } else {
+        ELEMENT_SLOT
+    }
+}
+
+fn operand_is_byte_list(op: &MirOperand, slots: &[LocalSlot]) -> bool {
+    match op {
+        MirOperand::Copy(l) => slots.get(l.0 as usize).is_some_and(|s| s.byte_list),
+        _ => false,
+    }
 }

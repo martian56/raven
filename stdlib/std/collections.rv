@@ -1,208 +1,199 @@
-// std/collections: hash-backed Set and Map over keys that implement
-// `Eq + Hash`.
+// std/collections: hash-backed `set[T]` and `dict[K, V]` over keys that
+// implement `Eq + Hash`.
 //
-// Storage is an array of buckets (a `List` of `List`s). A key is placed
-// in `bucket_index(key) = ((key.hash() % n) + n) % n`, where `n` is the
-// bucket count; the double-modulo keeps the index non-negative even when
-// `hash()` returns a negative `Int` (the `Int` hash is the value itself,
-// and the `String` hash can overflow). Lookup, insert, and remove hash
-// the key, then linearly scan the one matching bucket with `Eq`, which is
-// O(1) average. The table starts with 8 buckets and doubles, rehashing
-// every entry, once the load factor (count / bucket count) passes 0.75.
-//
-// `Hash` is implemented for Int, Bool, and String (see std/core); any user
-// type with `Eq + Hash` impls works as a key. Char and Float do not yet
-// implement `Hash`, so they cannot be keys. `List<T>` is built into the
-// language and needs no import.
+// Both keep their items in dense lists in insertion order (so iteration
+// follows insertion order) and find them through an open-addressed index
+// table of positions into those lists, probed linearly from a mixed hash.
+// The table holds -1 for an empty slot and -2 for a removed one, and doubles
+// once it is three quarters used. Removal moves the last item into the hole.
 
-class Set[T: Eq + Hash] {
-    buckets: list[list[T]]
-    count: int
+// Spread a key hash over the table. Int hashes are the value itself, so
+// sequential keys would otherwise cluster.
+fun _mix(h: int) -> int {
+    let x = h * -7046029254386353131
+    return x ^ (x >> 29)
 }
 
-// Superseded by the set literal `{a, b}` and `Set.new()`. Kept for
-// selective imports.
+fun _empty_slots(n: int) -> list[int] {
+    let slots: list[int] = []
+    var i = 0
+    while i < n {
+        slots.push(-1)
+        i += 1
+    }
+    return slots
+}
+
+class Set[T: Eq + Hash] {
+    items: list[T]
+    hashes: list[int]
+    slots: list[int]
+    used: int
+}
+
+// Superseded by set literals `{1, 2}` and `set()`. Kept for selective imports.
 fun empty_set[T: Eq + Hash]() -> set[T] {
     return Set.new()
 }
 
 impl[T: Eq + Hash] set[T] {
     fun new() -> set[T] {
-        let buckets: list[list[T]] = []
-        var i = 0
-        while i < 8 {
-            let b: list[T] = []
-            buckets.push(b)
-            i = i + 1
-        }
-        return Set(buckets: buckets, count: 0)
+        let items: list[T] = []
+        let hashes: list[int] = []
+        return Set(items: items, hashes: hashes, slots: _empty_slots(8), used: 0)
     }
 
     fun len(self) -> int {
-        return self.count
+        return self.items.len()
     }
 
     fun is_empty(self) -> bool {
-        return self.count == 0
+        return self.items.len() == 0
     }
 
-    // Every element of the set as a list, in no particular order. This is the
-    // way to enumerate a set's contents.
+    // The items in insertion order.
     fun to_list(self) -> list[T] {
-        var out: list[T] = []
-        var i = 0
-        while i < self.buckets.len() {
-            let bucket = self.buckets[i]
-            var j = 0
-            while j < bucket.len() {
-                out.push(bucket[j])
-                j = j + 1
-            }
-            i = i + 1
+        let out: list[T] = []
+        for x in self.items {
+            out.push(x)
         }
         return out
     }
 
-    // A new set with every element of either set.
     fun union(self, other: set[T]) -> set[T] {
-        var out: set[T] = Set.new()
-        let a = self.to_list()
-        var i = 0
-        while i < a.len() {
-            out.add(a[i])
-            i = i + 1
+        let out: set[T] = Set.new()
+        for x in self.items {
+            out.add(x)
         }
-        let b = other.to_list()
-        var j = 0
-        while j < b.len() {
-            out.add(b[j])
-            j = j + 1
+        for x in other.items {
+            out.add(x)
         }
         return out
     }
 
-    // A new set with the elements present in both sets.
     fun intersection(self, other: set[T]) -> set[T] {
-        var out: set[T] = Set.new()
-        let a = self.to_list()
-        var i = 0
-        while i < a.len() {
-            if other.contains(a[i]) {
-                out.add(a[i])
+        let out: set[T] = Set.new()
+        for x in self.items {
+            if other.contains(x) {
+                out.add(x)
             }
-            i = i + 1
         }
         return out
     }
 
-    // A new set with the elements in this set but not in `other`.
     fun difference(self, other: set[T]) -> set[T] {
-        var out: set[T] = Set.new()
-        let a = self.to_list()
-        var i = 0
-        while i < a.len() {
-            if other.contains(a[i]) == false {
-                out.add(a[i])
+        let out: set[T] = Set.new()
+        for x in self.items {
+            if not other.contains(x) {
+                out.add(x)
             }
-            i = i + 1
         }
         return out
     }
 
-    // True when every element of this set is also in `other`.
     fun is_subset(self, other: set[T]) -> bool {
-        let a = self.to_list()
-        var i = 0
-        while i < a.len() {
-            if other.contains(a[i]) == false {
+        for x in self.items {
+            if not other.contains(x) {
                 return false
             }
-            i = i + 1
         }
         return true
     }
 
-    fun bucket_index(self, x: T) -> int {
-        let n = self.buckets.len()
-        let h = x.hash() % n
-        return (h + n) % n
+    // The table slot holding `x`, or -1.
+    fun _find(self, x: T, h: int) -> int {
+        let mask = self.slots.len() - 1
+        var i = _mix(h) & mask
+        loop {
+            let s = self.slots[i]
+            if s == -1 {
+                return -1
+            }
+            if s >= 0 and self.hashes[s] == h and self.items[s].equals(x) {
+                return i
+            }
+            i = (i + 1) & mask
+        }
     }
 
     fun contains(self, x: T) -> bool {
-        let bucket = self.buckets[self.bucket_index(x)]
-        var i = 0
-        let n = bucket.len()
-        while i < n {
-            if bucket[i].equals(x) {
-                return true
-            }
-            i = i + 1
-        }
-        return false
+        return self._find(x, x.hash()) >= 0
     }
 
     // Add `x` if it is not already present.
     fun add(self, x: T) {
-        let bucket = self.buckets[self.bucket_index(x)]
-        var i = 0
-        let n = bucket.len()
-        while i < n {
-            if bucket[i].equals(x) {
+        let h = x.hash()
+        let mask = self.slots.len() - 1
+        var i = _mix(h) & mask
+        var free = -1
+        loop {
+            let s = self.slots[i]
+            if s == -1 {
+                break
+            }
+            if s == -2 {
+                if free < 0 {
+                    free = i
+                }
+            } else if self.hashes[s] == h and self.items[s].equals(x) {
                 return
             }
-            i = i + 1
+            i = (i + 1) & mask
         }
-        bucket.push(x)
-        self.count = self.count + 1
-        if self.count * 4 > self.buckets.len() * 3 {
-            self.grow()
+        if free >= 0 {
+            i = free
+        } else {
+            self.used += 1
+        }
+        self.slots[i] = self.items.len()
+        self.items.push(x)
+        self.hashes.push(h)
+        if self.used * 4 >= self.slots.len() * 3 {
+            self._grow()
         }
     }
 
-    // Remove `x` if present, returning whether it was. Order within a
-    // bucket is not preserved: the last entry fills the removed slot.
+    // Remove `x`; true when it was present.
     fun remove(self, x: T) -> bool {
-        let bucket = self.buckets[self.bucket_index(x)]
-        var i = 0
-        let n = bucket.len()
-        while i < n {
-            if bucket[i].equals(x) {
-                let last = bucket.len() - 1
-                bucket[i] = bucket[last]
-                bucket.pop()
-                self.count = self.count - 1
-                return true
-            }
-            i = i + 1
+        let h = x.hash()
+        let slot = self._find(x, h)
+        if slot < 0 {
+            return false
         }
-        return false
+        let idx = self.slots[slot]
+        self.slots[slot] = -2
+        let last = self.items.len() - 1
+        if idx != last {
+            let moved = self.items[last]
+            let moved_hash = self.hashes[last]
+            let at = self._find(moved, moved_hash)
+            self.slots[at] = idx
+            self.items[idx] = moved
+            self.hashes[idx] = moved_hash
+        }
+        self.items.pop()
+        self.hashes.pop()
+        return true
     }
 
-    fun grow(self) {
-        let new_count = self.buckets.len() * 2
-        let fresh: list[list[T]] = []
-        var i = 0
-        while i < new_count {
-            let b: list[T] = []
-            fresh.push(b)
-            i = i + 1
+    fun _grow(self) {
+        var n = self.slots.len() * 2
+        while self.items.len() * 2 >= n {
+            n *= 2
         }
-        var bi = 0
-        let nb = self.buckets.len()
-        while bi < nb {
-            let bucket = self.buckets[bi]
-            var j = 0
-            let m = bucket.len()
-            while j < m {
-                let x = bucket[j]
-                let h = x.hash() % new_count
-                let target = (h + new_count) % new_count
-                fresh[target].push(x)
-                j = j + 1
+        let slots = _empty_slots(n)
+        let mask = n - 1
+        var idx = 0
+        while idx < self.items.len() {
+            var i = _mix(self.hashes[idx]) & mask
+            while slots[i] != -1 {
+                i = (i + 1) & mask
             }
-            bi = bi + 1
+            slots[i] = idx
+            idx += 1
         }
-        self.buckets = fresh
+        self.slots = slots
+        self.used = self.items.len()
     }
 }
 
@@ -212,204 +203,188 @@ class Entry[K, V] {
 }
 
 class Map[K: Eq + Hash, V] {
-    buckets: list[list[Entry[K, V]]]
-    count: int
+    keys_: list[K]
+    vals: list[V]
+    hashes: list[int]
+    slots: list[int]
+    used: int
 }
 
-// Superseded by the map literal `["a": 1]` (and `[:]`) and `Map.new()`.
-// Kept for selective imports.
+// Superseded by dict literals `{"a": 1}` and `{}`. Kept for selective imports.
 fun empty_map[K: Eq + Hash, V]() -> dict[K, V] {
     return Map.new()
 }
 
 impl[K: Eq + Hash, V] dict[K, V] {
     fun new() -> dict[K, V] {
-        let buckets: list[list[Entry[K, V]]] = []
-        var i = 0
-        while i < 8 {
-            let b: list[Entry[K, V]] = []
-            buckets.push(b)
-            i = i + 1
-        }
-        return Map(buckets: buckets, count: 0)
+        let keys_: list[K] = []
+        let vals: list[V] = []
+        let hashes: list[int] = []
+        return Map(keys_: keys_, vals: vals, hashes: hashes, slots: _empty_slots(8), used: 0)
     }
 
     fun len(self) -> int {
-        return self.count
+        return self.keys_.len()
     }
 
     fun is_empty(self) -> bool {
-        return self.count == 0
+        return self.keys_.len() == 0
     }
 
-    // The value for `k`, or `default` when the key is absent.
     fun get_or(self, k: K, default: V) -> V {
-        return match self.get(k) {
-            case Some(v) { v }
-            case None { default }
+        let slot = self._find(k, k.hash())
+        if slot < 0 {
+            return default
         }
+        return self.vals[self.slots[slot]]
     }
 
-    // Every key/value pair as a list of `Entry`, in no particular order.
+    // The entries in insertion order.
     fun entries(self) -> list[Entry[K, V]] {
-        var out: list[Entry[K, V]] = []
+        let out: list[Entry[K, V]] = []
         var i = 0
-        while i < self.buckets.len() {
-            let bucket = self.buckets[i]
-            var j = 0
-            while j < bucket.len() {
-                out.push(bucket[j])
-                j = j + 1
-            }
-            i = i + 1
+        while i < self.keys_.len() {
+            out.push(Entry(key: self.keys_[i], value: self.vals[i]))
+            i += 1
         }
         return out
     }
 
-    // Remove every entry, leaving an empty map.
     fun clear(self) {
-        let buckets: list[list[Entry[K, V]]] = []
-        var i = 0
-        while i < 8 {
-            let b: list[Entry[K, V]] = []
-            buckets.push(b)
-            i = i + 1
-        }
-        self.buckets = buckets
-        self.count = 0
+        let keys_: list[K] = []
+        let vals: list[V] = []
+        let hashes: list[int] = []
+        self.keys_ = keys_
+        self.vals = vals
+        self.hashes = hashes
+        self.slots = _empty_slots(8)
+        self.used = 0
     }
 
-    fun bucket_index(self, k: K) -> int {
-        let n = self.buckets.len()
-        let h = k.hash() % n
-        return (h + n) % n
+    // The table slot holding `k`, or -1.
+    fun _find(self, k: K, h: int) -> int {
+        let mask = self.slots.len() - 1
+        var i = _mix(h) & mask
+        loop {
+            let s = self.slots[i]
+            if s == -1 {
+                return -1
+            }
+            if s >= 0 and self.hashes[s] == h and self.keys_[s].equals(k) {
+                return i
+            }
+            i = (i + 1) & mask
+        }
     }
 
     fun has(self, k: K) -> bool {
-        let bucket = self.buckets[self.bucket_index(k)]
-        var i = 0
-        let n = bucket.len()
-        while i < n {
-            if bucket[i].key.equals(k) {
-                return true
-            }
-            i = i + 1
-        }
-        return false
+        return self._find(k, k.hash()) >= 0
     }
 
     fun get(self, k: K) -> Option[V] {
-        let bucket = self.buckets[self.bucket_index(k)]
-        var i = 0
-        let n = bucket.len()
-        while i < n {
-            if bucket[i].key.equals(k) {
-                return Some(bucket[i].value)
-            }
-            i = i + 1
+        let slot = self._find(k, k.hash())
+        if slot < 0 {
+            return None
         }
-        return None
+        return Some(self.vals[self.slots[slot]])
     }
 
     // Insert `k` with `v`, or overwrite the value if `k` is present.
     fun set(self, k: K, v: V) {
-        let bucket = self.buckets[self.bucket_index(k)]
-        var i = 0
-        let n = bucket.len()
-        while i < n {
-            if bucket[i].key.equals(k) {
-                bucket[i].value = v
+        let h = k.hash()
+        let mask = self.slots.len() - 1
+        var i = _mix(h) & mask
+        var free = -1
+        loop {
+            let s = self.slots[i]
+            if s == -1 {
+                break
+            }
+            if s == -2 {
+                if free < 0 {
+                    free = i
+                }
+            } else if self.hashes[s] == h and self.keys_[s].equals(k) {
+                self.vals[s] = v
                 return
             }
-            i = i + 1
+            i = (i + 1) & mask
         }
-        bucket.push(Entry(key: k, value: v))
-        self.count = self.count + 1
-        if self.count * 4 > self.buckets.len() * 3 {
-            self.grow()
+        if free >= 0 {
+            i = free
+        } else {
+            self.used += 1
+        }
+        self.slots[i] = self.keys_.len()
+        self.keys_.push(k)
+        self.vals.push(v)
+        self.hashes.push(h)
+        if self.used * 4 >= self.slots.len() * 3 {
+            self._grow()
         }
     }
 
-    // All keys across every bucket, in unspecified order.
+    // The keys in insertion order.
     fun keys(self) -> list[K] {
-        var out: list[K] = []
-        var bi = 0
-        let nb = self.buckets.len()
-        while bi < nb {
-            let bucket = self.buckets[bi]
-            var j = 0
-            let m = bucket.len()
-            while j < m {
-                out.push(bucket[j].key)
-                j = j + 1
-            }
-            bi = bi + 1
+        let out: list[K] = []
+        for k in self.keys_ {
+            out.push(k)
         }
         return out
     }
 
-    // All values across every bucket, in the same order as `keys()`.
+    // The values in insertion order.
     fun values(self) -> list[V] {
-        var out: list[V] = []
-        var bi = 0
-        let nb = self.buckets.len()
-        while bi < nb {
-            let bucket = self.buckets[bi]
-            var j = 0
-            let m = bucket.len()
-            while j < m {
-                out.push(bucket[j].value)
-                j = j + 1
-            }
-            bi = bi + 1
+        let out: list[V] = []
+        for v in self.vals {
+            out.push(v)
         }
         return out
     }
 
-    // Remove `k` if present, returning whether it was. Order within a
-    // bucket is not preserved.
+    // Remove `k`; true when it was present.
     fun remove(self, k: K) -> bool {
-        let bucket = self.buckets[self.bucket_index(k)]
-        var i = 0
-        let n = bucket.len()
-        while i < n {
-            if bucket[i].key.equals(k) {
-                let last = bucket.len() - 1
-                bucket[i] = bucket[last]
-                bucket.pop()
-                self.count = self.count - 1
-                return true
-            }
-            i = i + 1
+        let h = k.hash()
+        let slot = self._find(k, h)
+        if slot < 0 {
+            return false
         }
-        return false
+        let idx = self.slots[slot]
+        self.slots[slot] = -2
+        let last = self.keys_.len() - 1
+        if idx != last {
+            let moved = self.keys_[last]
+            let moved_hash = self.hashes[last]
+            let at = self._find(moved, moved_hash)
+            self.slots[at] = idx
+            self.keys_[idx] = moved
+            self.vals[idx] = self.vals[last]
+            self.hashes[idx] = moved_hash
+        }
+        self.keys_.pop()
+        self.vals.pop()
+        self.hashes.pop()
+        return true
     }
 
-    fun grow(self) {
-        let new_count = self.buckets.len() * 2
-        let fresh: list[list[Entry[K, V]]] = []
-        var i = 0
-        while i < new_count {
-            let b: list[Entry[K, V]] = []
-            fresh.push(b)
-            i = i + 1
+    fun _grow(self) {
+        var n = self.slots.len() * 2
+        while self.keys_.len() * 2 >= n {
+            n *= 2
         }
-        var bi = 0
-        let nb = self.buckets.len()
-        while bi < nb {
-            let bucket = self.buckets[bi]
-            var j = 0
-            let m = bucket.len()
-            while j < m {
-                let e = bucket[j]
-                let h = e.key.hash() % new_count
-                let target = (h + new_count) % new_count
-                fresh[target].push(e)
-                j = j + 1
+        let slots = _empty_slots(n)
+        let mask = n - 1
+        var idx = 0
+        while idx < self.keys_.len() {
+            var i = _mix(self.hashes[idx]) & mask
+            while slots[i] != -1 {
+                i = (i + 1) & mask
             }
-            bi = bi + 1
+            slots[i] = idx
+            idx += 1
         }
-        self.buckets = fresh
+        self.slots = slots
+        self.used = self.keys_.len()
     }
 }
 
