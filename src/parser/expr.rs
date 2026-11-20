@@ -1100,6 +1100,14 @@ impl Parser {
                 .parse_comprehension(lb.span, crate::ast::CompKind::Set, None, first)
                 .map(Some);
         }
+        // `{x}` is a one-element set, as in Python; blocks are statements.
+        if matches!(self.peek_kind(), TokenKind::RBrace) {
+            let rb = self.advance();
+            return Ok(Some(Expr {
+                kind: ExprKind::SetLit(vec![first]),
+                span: merge_spans(&lb.span, &rb.span),
+            }));
+        }
         if self.eat(&TokenKind::Colon) {
             self.skip_newlines();
             let value = self.parse_expr()?;

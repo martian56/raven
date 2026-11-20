@@ -15,10 +15,8 @@ fun main() {
     let N = 1
     let xs = [10, 20, 30]
     print(xs[N])
-    let block_value = {
-        5
-    }
-    print(block_value)
+    let single = {5}
+    print(single)
     let one = {7,}
     print(one.len())
     print(classify(5))

@@ -62,7 +62,7 @@ pub fn manifest_template(name: &str) -> String {
         "[package]\n\
          name = \"{name}\"\n\
          version = \"{STARTER_VERSION}\"\n\
-         edition = \"v2\"\n\
+         edition = \"v3\"\n\
          \n\
          [dependencies]\n"
     )
@@ -176,7 +176,7 @@ mod tests {
         let m = Manifest::from_toml_str(&manifest_text).expect("generated manifest parses");
         assert_eq!(m.package.name, "demo_pkg");
         assert_eq!(m.package.version, STARTER_VERSION);
-        assert_eq!(m.package.edition, "v2");
+        assert_eq!(m.package.edition, "v3");
         assert!(m.dependencies.is_empty());
 
         let main_rv = std::fs::read_to_string(dir.join("src").join("main.rv")).unwrap();

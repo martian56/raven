@@ -94,6 +94,9 @@ pub struct TypeMap {
     pub for_iter_calls: HashSet<UseKey>,
     /// Operators on class values that call the class's operator method.
     pub operator_calls: HashSet<UseKey>,
+    /// `?` sites in `main` with nowhere to propagate to: an `Err` or `None`
+    /// stops the program with a message instead, like an uncaught error.
+    pub try_panics: HashSet<UseKey>,
     /// Spans of closure values passed where a `CFnPtr` is expected. The site
     /// lowers to a generated trampoline (userdata-last) the closure is
     /// invoked through, rather than the closure object pointer.
@@ -148,6 +151,16 @@ impl TypeMap {
     /// True when the operator at `span` calls its operand's method.
     pub fn is_operator(&self, span: &Span) -> bool {
         self.operator_calls.contains(&UseKey::from_span(span))
+    }
+
+    /// Record that the `?` at `span` panics instead of propagating.
+    pub fn record_try_panic(&mut self, span: &Span) {
+        self.try_panics.insert(UseKey::from_span(span));
+    }
+
+    /// True when the `?` at `span` panics instead of propagating.
+    pub fn is_try_panic(&self, span: &Span) -> bool {
+        self.try_panics.contains(&UseKey::from_span(span))
     }
 
     /// Record that the `for` head at `span` calls `iter()`.

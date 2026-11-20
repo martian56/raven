@@ -1197,7 +1197,7 @@ fn print_usage() {
     println!("  build          Compile src/main.rv to a binary, or type-check a lib.rv library");
     println!("  dist           Package the built application (tar, zip, deb, rpm, msi, inno)");
     println!("  run [args]     Build the application then run it, forwarding args");
-    println!("  test           Run fun test_*() tests in *_test.rv files");
+    println!("  test [NAME]    Run fun test_*() tests in *_test.rv files (NAME filters)");
     println!("  doc            Generate Markdown API docs into target/doc");
     println!("  fmt [paths]    Format .rv files in place (--check to verify only)");
     println!("  fetch <pkg>    Fetch 'github.com/<user>/<repo>@<version>' into the shared cache");

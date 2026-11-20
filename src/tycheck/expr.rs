@@ -225,6 +225,7 @@ fn check_function(
     let mut cx =
         Checker::new(resolved, env, types, self_ty.cloned(), ret_ty.clone()).with_scope(full_scope);
     cx.errors = setup_errors;
+    cx.in_main = self_ty.is_none() && f.name == "main" && ret_ty == Ty::Unit;
     // Record the trait bounds of every in-scope generic parameter (the
     // enclosing impl's plus this function's own) so a method call on a
     // `Ty::Param` value can resolve through its bound.
@@ -333,6 +334,8 @@ struct Checker<'a, 'b> {
     /// Operators whose operands were both unsolved when checked, as in the
     /// lambda `(a, b) => a + b`; judged once the body's calls pin the types.
     deferred_ops: Vec<(Ty, Ty, BinaryOp, Span)>,
+    /// Checking the program's `main`, where `?` may stop the program.
+    in_main: bool,
     /// Expected parameter types for the lambda argument being checked.
     lambda_hint: Option<Vec<Ty>>,
 }
@@ -395,6 +398,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             loop_breaks: Vec::new(),
             never_vars: Vec::new(),
             deferred_ops: Vec::new(),
+            in_main: false,
             lambda_hint: None,
         }
     }
@@ -1198,6 +1202,16 @@ impl<'a, 'b> Checker<'a, 'b> {
                                 self.unify(&ret_e, &e, &expr.span)?;
                             }
                             Ty::Error => {}
+                            Ty::Unit
+                                if self.in_main
+                                    && (matches!(self.infer.resolve(&e), Ty::Str)
+                                        || self.type_has_method(
+                                            &self.infer.resolve(&e),
+                                            "to_string",
+                                        )) =>
+                            {
+                                self.types.record_try_panic(&expr.span);
+                            }
                             other => {
                                 return Err(RavenError::ty(
                                     TypeError::Custom(format!(
@@ -1216,6 +1230,9 @@ impl<'a, 'b> Checker<'a, 'b> {
                         // must return an Option.
                         match self.infer.resolve(&self.return_ty) {
                             Ty::Option(_) | Ty::Error => {}
+                            Ty::Unit if self.in_main => {
+                                self.types.record_try_panic(&expr.span);
+                            }
                             other => {
                                 return Err(RavenError::ty(
                                     TypeError::Custom(format!(

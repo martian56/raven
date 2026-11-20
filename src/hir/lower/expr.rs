@@ -921,6 +921,27 @@ fn lower_try(
     let inner_ty = inner_lowered.ty.clone();
     let temp_v = cx.fresh("try_v");
     let temp_e = cx.fresh("try_e");
+    // In `main` with nothing to propagate to, a failure stops the program.
+    let in_main = cx.typed.types.is_try_panic(span);
+    let panic_with = |message: HirExpr| {
+        let callee = make_expr(
+            HirExprKind::Ident("__panic".into()),
+            Ty::Function {
+                params: vec![Ty::Str],
+                ret: Box::new(Ty::Unit),
+            },
+            span.clone(),
+        );
+        make_expr(
+            HirExprKind::Call {
+                callee: Box::new(callee),
+                args: vec![message],
+                type_args: Vec::new(),
+            },
+            Ty::Error,
+            span.clone(),
+        )
+    };
 
     let (ok_arm, err_arm) = match &inner_ty {
         Ty::Result(t, e) => {
@@ -931,11 +952,30 @@ fn lower_try(
                 inner_ty.clone(),
                 span.clone(),
             );
-            let return_expr = make_expr(
-                HirExprKind::Return(Some(Box::new(err_ctor))),
-                Ty::Error,
-                span.clone(),
-            );
+            let return_expr = if in_main {
+                let e_ty = (**e).clone();
+                let payload = ident_expr(&temp_e, e_ty.clone(), span.clone());
+                let text = if matches!(e_ty.strip_self(), Ty::Str) {
+                    payload
+                } else {
+                    make_expr(
+                        HirExprKind::MethodCall {
+                            receiver: Box::new(payload),
+                            name: "to_string".into(),
+                            args: Vec::new(),
+                        },
+                        Ty::Str,
+                        span.clone(),
+                    )
+                };
+                panic_with(text)
+            } else {
+                make_expr(
+                    HirExprKind::Return(Some(Box::new(err_ctor))),
+                    Ty::Error,
+                    span.clone(),
+                )
+            };
             let ok_arm = HirArm {
                 pattern: ctor_pat("Ok", vec![bind_pat(&temp_v, span.clone())], span.clone()),
                 guard: None,
@@ -953,11 +993,19 @@ fn lower_try(
         Ty::Option(t) => {
             let some_body = ident_expr(&temp_v, (**t).clone(), span.clone());
             let none_ctor = make_expr(HirExprKind::NoneCtor, inner_ty.clone(), span.clone());
-            let return_expr = make_expr(
-                HirExprKind::Return(Some(Box::new(none_ctor))),
-                Ty::Error,
-                span.clone(),
-            );
+            let return_expr = if in_main {
+                panic_with(make_expr(
+                    HirExprKind::Str("`?` found None".into()),
+                    Ty::Str,
+                    span.clone(),
+                ))
+            } else {
+                make_expr(
+                    HirExprKind::Return(Some(Box::new(none_ctor))),
+                    Ty::Error,
+                    span.clone(),
+                )
+            };
             let ok_arm = HirArm {
                 pattern: ctor_pat("Some", vec![bind_pat(&temp_v, span.clone())], span.clone()),
                 guard: None,

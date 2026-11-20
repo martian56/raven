@@ -925,7 +925,9 @@ pub fn run_package_in(
 /// The output binary path for a package: `target/raven-out/<name>` with
 /// the platform executable extension.
 fn output_binary_path(project_dir: &Path, name: &str) -> PathBuf {
-    let mut p = project_dir.join(OUTPUT_DIR);
+    let mut p = OUTPUT_DIR
+        .split('/')
+        .fold(project_dir.to_path_buf(), |p, c| p.join(c));
     if cfg!(windows) {
         p.push(format!("{}.exe", name));
     } else {
