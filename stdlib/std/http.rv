@@ -6,7 +6,7 @@
 // status (404, 500) is a successful request that yielded a response, not
 // a transport error: only DNS, connect, and timeout failures take the Err
 // path through the runtime's thread-local last-error slot, tagged with
-// kind "http". See docs/v2/specs/std-http.md.
+// kind "http". See docs/specs/std-http.md.
 
 from std.error import error_kind
 from std.net import listen, connect, TcpStream

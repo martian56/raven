@@ -4,7 +4,7 @@
 // symbols through `extern "C"`; the structs are assembled in pure Raven
 // from scalar component extractors because a struct cannot cross the FFI
 // boundary. Parsing is fallible and returns Result<Int, Error> through the
-// runtime's thread-local last-error slot. See docs/v2/specs/std-time.md.
+// runtime's thread-local last-error slot. See docs/specs/std-time.md.
 
 from std.error import error_kind
 

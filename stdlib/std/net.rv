@@ -4,7 +4,7 @@
 // the id. Fallible ops return Result<T, Error> tagged with kind "net" via
 // the runtime's thread-local last-error slot. Goroutines run in parallel, so a
 // program can be both a client and a server at once (spawn a goroutine per
-// accepted connection). See docs/v2/specs/std-net.md.
+// accepted connection). See docs/specs/std-net.md.
 
 from std.error import error_kind
 import std.string

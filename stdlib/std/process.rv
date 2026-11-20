@@ -19,7 +19,7 @@
 // with a single NUL byte (`\0`) between elements and split back in the
 // runtime. Program args effectively never contain NUL, so this is
 // unambiguous; an arg containing a NUL byte is not supported. An empty arg
-// list is the empty String. See docs/v2/specs/std-process.md.
+// list is the empty String. See docs/specs/std-process.md.
 
 import std.error
 import std.string

@@ -9,7 +9,7 @@
 // The default connect verifies the server against the bundled Mozilla root
 // store and sends `server_name` for SNI. For a private CA, a client certificate
 // (mTLS), or a dev-only skip of verification, build a TlsConfig and use
-// connect_with. See docs/v2/specs/std-tls.md.
+// connect_with. See docs/specs/std-tls.md.
 
 from std.error import error_kind
 from std.net import TcpStream

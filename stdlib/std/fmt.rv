@@ -2,7 +2,7 @@
 // count UTF-8 bytes, matching the byte-oriented String model. There is no
 // printf-style format function: string interpolation "${expr}" is the
 // placeholder mechanism, and these are the building blocks. See
-// docs/v2/specs/std-fmt.md.
+// docs/specs/std-fmt.md.
 
 import std.string
 from std.math import floor, fabs

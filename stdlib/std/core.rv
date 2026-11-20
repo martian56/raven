@@ -1,5 +1,5 @@
 // std/core: the prelude, auto-imported into every program. See
-// docs/v2/specs/core-traits.md.
+// docs/specs/core-traits.md.
 
 trait ToString {
     fun to_string(self) -> str

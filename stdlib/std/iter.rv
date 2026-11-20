@@ -1,5 +1,5 @@
 // std/iter: lazy, single-pass iterator adapters over the Iterator trait.
-// See docs/v2/specs/std-iter.md.
+// See docs/specs/std-iter.md.
 //
 // A bound that mentions a sibling parameter (`S: Iterator<T>`) must come
 // after it, so each adapter lists element types before its source type.

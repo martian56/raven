@@ -6,7 +6,7 @@
 // wrapper runs the op and turns a non-empty last error into an Err. The
 // non-fallible queries (exists, is_file, is_dir) treat a missing path as a
 // normal false. Path manipulation is pure Raven string work on `/`. See
-// docs/v2/specs/std-fs.md.
+// docs/specs/std-fs.md.
 
 from std.error import error_kind
 import std.string

@@ -2,7 +2,7 @@
 // Raven program whose `main` calls these assertions; a failed assertion
 // calls the runtime panic, aborting with a message and a nonzero exit.
 // There is no discovery or registration framework. See
-// docs/v2/specs/std-test.md.
+// docs/specs/std-test.md.
 
 fun assert_msg(cond: bool, msg: str) {
     if not cond {

@@ -2,7 +2,7 @@
 // (CInt, CLong, CSize, CStr, CPtr<T>, CFloat, CDouble) is built into the type
 // checker; this module adds runtime conversions between a Raven `String`
 // and a C `CStr`. The primitives bind the raven-runtime C ABI through
-// `extern "C"`; the wrappers are pure Raven. See docs/v2/specs/std-ffi.md.
+// `extern "C"`; the wrappers are pure Raven. See docs/specs/std-ffi.md.
 
 extern "C" {
     fun raven_string_to_cstr(s: str) -> CStr
@@ -43,7 +43,7 @@ fun from_cstr(p: CStr) -> str {
 // reclaimed automatically, so the caller MUST `free` it. The access is
 // unchecked raw memory; an out-of-range offset or a load through a freed or
 // null pointer is undefined behavior, exactly as in C. See
-// docs/v2/specs/std-ffi.md.
+// docs/specs/std-ffi.md.
 
 // Allocate room for `count` elements of type `T` and return a `CPtr<T>` to
 // the buffer (null on a zero count or allocation failure). The memory is

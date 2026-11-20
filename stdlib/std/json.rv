@@ -2,7 +2,7 @@
 // intrinsics. `parse` is a recursive descent parser returning
 // Result<JsonValue, Error>; `stringify` is a compact serializer. All JSON
 // numbers parse to Float, so integers beyond the 53-bit mantissa lose
-// precision. See docs/v2/specs/std-json.md.
+// precision. See docs/specs/std-json.md.
 
 import std.collections
 import std.error
@@ -919,7 +919,7 @@ fun array_at(value: JsonValue, i: int) -> Option[JsonValue] {
 // `from_json_value` helper so the type parameter selects the impl.
 //
 // `@derive(ToJson, FromJson)` synthesizes these for user structs and enums.
-// See docs/v2/specs/derive.md for the struct/enum JSON encodings.
+// See docs/specs/derive.md for the struct/enum JSON encodings.
 
 trait ToJson {
     fun to_json(self) -> JsonValue

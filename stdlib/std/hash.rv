@@ -1,6 +1,6 @@
 // std/hash: non-cryptographic hashing building blocks. NOT for security.
 // `Int` is i64 and arithmetic wraps in two's complement, which is the
-// intended behavior for these hashes. See docs/v2/specs/std-hash.md.
+// intended behavior for these hashes. See docs/specs/std-hash.md.
 
 // FNV-1a over the bytes of `s`, 64-bit variant. The offset basis
 // 14695981039346656037 and prime 1099511628211 are the standard FNV-64

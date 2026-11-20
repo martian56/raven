@@ -9,7 +9,7 @@
 // contain any byte (a newline included). There is no destructor, so a
 // caller should `free` a pattern when done; not freeing leaks the
 // registry entry for the life of the process. See
-// docs/v2/specs/std-regex.md.
+// docs/specs/std-regex.md.
 
 import std.error
 
