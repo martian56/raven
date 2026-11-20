@@ -77,9 +77,9 @@
                     </div>
                     <div class="code-content">
                         <pre><code><span class="keyword">fun</span> <span class="function">main</span>() {
-    <span class="keyword">let</span> <span class="variable">names</span> <span class="operator">=</span> [<span class="string">"Ada"</span>, <span class="string">"Alan"</span>, <span class="string">"Grace"</span>]
-    <span class="keyword">for</span> <span class="variable">name</span> <span class="keyword">in</span> <span class="variable">names</span> {
-        <span class="function">print</span>(<span class="string">"Hello, ${name}"</span>)
+    <span class="keyword">let</span> <span class="variable">names</span> <span class="operator">=</span> [<span class="string">&quot;Ada&quot;</span>, <span class="string">&quot;Alan&quot;</span>, <span class="string">&quot;Grace&quot;</span>]
+    <span class="keyword">for</span> (<span class="variable">i</span>, <span class="variable">name</span>) <span class="keyword">in</span> <span class="function">enumerate</span>(<span class="variable">names</span>) {
+        <span class="function">print</span>(<span class="string">&quot;${i + 1}. Hello, ${name}&quot;</span>)
     }
 }</code></pre>
                     </div>
@@ -152,40 +152,41 @@
             <div class="examples-content">
                 <div class="tab-content active" id="basics">
                     <div class="code-example">
-                        <pre><code><span class="comment">// A map literal needs the collections module</span>
-<span class="keyword">import</span> std/collections
+                        <pre><code><span class="comment">// Inferred types, no semicolons, Python-style builtins</span>
+<span class="keyword">let</span> <span class="variable">scores</span> <span class="operator">=</span> {<span class="string">&quot;ada&quot;</span>: <span class="number">95</span>, <span class="string">&quot;alan&quot;</span>: <span class="number">88</span>, <span class="string">&quot;grace&quot;</span>: <span class="number">91</span>}
+<span class="keyword">let</span> <span class="variable">passed</span> <span class="operator">=</span> [<span class="variable">name</span> <span class="keyword">for</span> (<span class="variable">name</span>, <span class="variable">s</span>) <span class="keyword">in</span> <span class="variable">scores</span> <span class="keyword">if</span> <span class="variable">s</span> <span class="operator">&gt;=</span> <span class="number">90</span>]
+<span class="function">print</span>(<span class="function">sorted</span>(<span class="variable">passed</span>))
 
-<span class="comment">// Inferred types, no semicolons</span>
-<span class="keyword">let</span> <span class="variable">name</span> <span class="operator">=</span> <span class="string">"Raven"</span>
-<span class="keyword">let</span> <span class="variable">version</span> <span class="operator">=</span> <span class="number">2</span>
-
-<span class="comment">// Collections and literals</span>
-<span class="keyword">let</span> <span class="variable">numbers</span>: <span class="type">List</span>&lt;<span class="type">Int</span>&gt; <span class="operator">=</span> [<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>]
-<span class="keyword">let</span> <span class="variable">scores</span> <span class="operator">=</span> [<span class="string">"ada"</span>: <span class="number">95</span>, <span class="string">"alan"</span>: <span class="number">88</span>]
-
-<span class="comment">// Range-based for and string interpolation</span>
-<span class="keyword">for</span> <span class="variable">n</span> <span class="keyword">in</span> <span class="number">0</span>..<span class="number">3</span> {
-    <span class="function">print</span>(<span class="string">"${name} v${version}: ${n}"</span>)
+<span class="comment">// Tuples, slicing, and f-string formatting</span>
+<span class="keyword">let</span> (<span class="variable">best</span>, <span class="variable">top</span>) <span class="operator">=</span> <span class="function">max</span>([(<span class="variable">s</span>, <span class="variable">n</span>) <span class="keyword">for</span> (<span class="variable">n</span>, <span class="variable">s</span>) <span class="keyword">in</span> <span class="variable">scores</span>])
+<span class="function">print</span>(<span class="string">&quot;${top:&lt;6} ${best as float / 10.0:.1}&quot;</span>)
+<span class="keyword">for</span> <span class="variable">n</span> <span class="keyword">in</span> (<span class="number">0</span>..<span class="number">10</span>).<span class="function">step</span>(<span class="number">3</span>) {
+    <span class="function">print</span>(<span class="variable">n</span>, <span class="variable">n</span> <span class="operator">*</span> <span class="variable">n</span>)
 }</code></pre>
                     </div>
                 </div>
                 <div class="tab-content" id="traits">
                     <div class="code-example">
-                        <pre><code><span class="comment">// A trait and an implementation</span>
+                        <pre><code><span class="comment">// A class with fields, methods, and a trait</span>
 <span class="keyword">trait</span> <span class="type">Shape</span> {
-    <span class="keyword">fun</span> <span class="function">area</span>(<span class="keyword">self</span>) <span class="operator">-></span> <span class="type">Float</span>
+    <span class="keyword">fun</span> <span class="function">area</span>(<span class="keyword">self</span>) <span class="operator">-&gt;</span> <span class="type">float</span>
 }
 
-<span class="keyword">struct</span> <span class="type">Circle</span> { <span class="variable">radius</span>: <span class="type">Float</span> }
+<span class="keyword">class</span> <span class="type">Circle</span>: <span class="type">Shape</span> {
+    <span class="variable">radius</span>: <span class="type">float</span>
 
-<span class="keyword">impl</span> <span class="type">Shape</span> <span class="keyword">for</span> <span class="type">Circle</span> {
-    <span class="keyword">fun</span> <span class="function">area</span>(<span class="keyword">self</span>) <span class="operator">-></span> <span class="type">Float</span> <span class="operator">=</span> <span class="number">3.14159</span> <span class="operator">*</span> <span class="keyword">self</span>.<span class="variable">radius</span> <span class="operator">*</span> <span class="keyword">self</span>.<span class="variable">radius</span>
+    <span class="keyword">fun</span> <span class="function">area</span>(<span class="keyword">self</span>) <span class="operator">-&gt;</span> <span class="type">float</span> <span class="operator">=</span> <span class="number">3.14159</span> <span class="operator">*</span> <span class="keyword">self</span>.<span class="variable">radius</span> <span class="operator">*</span> <span class="keyword">self</span>.<span class="variable">radius</span>
 }
 
-<span class="comment">// A generic function taking a closure</span>
-<span class="keyword">fun</span> <span class="function">max_by</span>&lt;<span class="type">T</span>&gt;(<span class="variable">a</span>: <span class="type">T</span>, <span class="variable">b</span>: <span class="type">T</span>, <span class="variable">key</span>: <span class="keyword">fun</span>(<span class="type">T</span>) <span class="operator">-></span> <span class="type">Int</span>) <span class="operator">-></span> <span class="type">T</span> {
-    <span class="keyword">if</span> <span class="variable">key</span>(<span class="variable">a</span>) <span class="operator">>=</span> <span class="variable">key</span>(<span class="variable">b</span>) { <span class="keyword">return</span> <span class="variable">a</span> }
-    <span class="keyword">return</span> <span class="variable">b</span>
+<span class="comment">// Generic functions use square brackets</span>
+<span class="keyword">fun</span> <span class="variable">largest</span>[<span class="type">T</span>: <span class="type">Ord</span>](<span class="variable">xs</span>: <span class="type">list</span>[<span class="type">T</span>]) <span class="operator">-&gt;</span> <span class="type">T</span> <span class="operator">=</span> <span class="function">max</span>(<span class="variable">xs</span>)
+
+<span class="comment">// Operators come from methods</span>
+<span class="keyword">class</span> <span class="type">Vec2</span> {
+    <span class="variable">x</span>: <span class="type">float</span>
+    <span class="variable">y</span>: <span class="type">float</span>
+
+    <span class="keyword">fun</span> <span class="function">add</span>(<span class="keyword">self</span>, <span class="variable">o</span>: <span class="type">Vec2</span>) <span class="operator">-&gt;</span> <span class="type">Vec2</span> <span class="operator">=</span> <span class="type">Vec2</span>(<span class="keyword">self</span>.<span class="variable">x</span> <span class="operator">+</span> <span class="variable">o</span>.<span class="variable">x</span>, <span class="keyword">self</span>.<span class="variable">y</span> <span class="operator">+</span> <span class="variable">o</span>.<span class="variable">y</span>)
 }</code></pre>
                     </div>
                 </div>
@@ -193,49 +194,47 @@
                     <div class="code-example">
                         <pre><code><span class="comment">// An enum with payload variants</span>
 <span class="keyword">enum</span> <span class="type">Shape</span> {
-    <span class="variable">Circle</span>(<span class="type">Float</span>),
-    <span class="variable">Rect</span>(<span class="type">Float</span>, <span class="type">Float</span>),
+    <span class="type">Circle</span>(<span class="variable">r</span>: <span class="type">float</span>),
+    <span class="function">Rect</span>(<span class="variable">w</span>: <span class="type">float</span>, <span class="variable">h</span>: <span class="type">float</span>),
 }
 
-<span class="comment">// Construct with EnumName.Variant, match with bare names</span>
-<span class="keyword">fun</span> <span class="function">area</span>(<span class="variable">s</span>: <span class="type">Shape</span>) <span class="operator">-></span> <span class="type">Float</span> {
-    <span class="keyword">return</span> <span class="keyword">match</span> <span class="variable">s</span> {
-        <span class="variable">Circle</span>(<span class="variable">r</span>) <span class="operator">-></span> <span class="number">3.14159</span> <span class="operator">*</span> <span class="variable">r</span> <span class="operator">*</span> <span class="variable">r</span>,
-        <span class="variable">Rect</span>(<span class="variable">w</span>, <span class="variable">h</span>) <span class="operator">-></span> <span class="variable">w</span> <span class="operator">*</span> <span class="variable">h</span>,
+<span class="comment">// Patterns nest, and match checks every case</span>
+<span class="keyword">fun</span> <span class="function">area</span>(<span class="variable">s</span>: <span class="type">Shape</span>) <span class="operator">-&gt;</span> <span class="type">float</span> {
+    <span class="keyword">match</span> <span class="variable">s</span> {
+        <span class="keyword">case</span> <span class="type">Shape</span>.<span class="type">Circle</span>(<span class="number">0.0</span>) { <span class="keyword">return</span> <span class="number">0.0</span> }
+        <span class="keyword">case</span> <span class="type">Shape</span>.<span class="type">Circle</span>(<span class="variable">r</span>) { <span class="keyword">return</span> <span class="number">3.14159</span> <span class="operator">*</span> <span class="variable">r</span> <span class="operator">*</span> <span class="variable">r</span> }
+        <span class="keyword">case</span> <span class="type">Shape</span>.<span class="function">Rect</span>(<span class="variable">w</span>, <span class="variable">h</span>) { <span class="keyword">return</span> <span class="variable">w</span> <span class="operator">*</span> <span class="variable">h</span> }
     }
 }
 
-<span class="comment">// Errors live in the type, propagated with ?</span>
-<span class="keyword">fun</span> <span class="function">half</span>(<span class="variable">n</span>: <span class="type">Int</span>) <span class="operator">-></span> <span class="type">Result</span>&lt;<span class="type">Int</span>, <span class="type">String</span>&gt; {
-    <span class="keyword">if</span> <span class="variable">n</span> <span class="operator">%</span> <span class="number">2</span> <span class="operator">!=</span> <span class="number">0</span> { <span class="keyword">return</span> <span class="function">Err</span>(<span class="string">"odd"</span>) }
+<span class="comment">// Errors live in the type and propagate with ?</span>
+<span class="keyword">fun</span> <span class="function">half</span>(<span class="variable">n</span>: <span class="type">int</span>) <span class="operator">-&gt;</span> <span class="type">Result</span>[<span class="type">int</span>, <span class="type">str</span>] {
+    <span class="keyword">if</span> <span class="variable">n</span> <span class="operator">%</span> <span class="number">2</span> <span class="operator">!=</span> <span class="number">0</span> {
+        <span class="keyword">return</span> <span class="function">Err</span>(<span class="string">&quot;odd&quot;</span>)
+    }
     <span class="keyword">return</span> <span class="function">Ok</span>(<span class="variable">n</span> <span class="operator">/</span> <span class="number">2</span>)
 }</code></pre>
                     </div>
                 </div>
                 <div class="tab-content" id="concurrency">
                     <div class="code-example">
-                        <pre><code><span class="comment">// Goroutines and channels</span>
-<span class="keyword">import</span> std/sync { channel }
+                        <pre><code><span class="comment">// Goroutines and typed channels, running on every core</span>
+<span class="keyword">from</span> <span class="variable">std</span>.<span class="variable">sync</span> <span class="keyword">import</span> <span class="variable">channel</span>
 
 <span class="keyword">fun</span> <span class="function">main</span>() {
-    <span class="keyword">let</span> <span class="variable">ch</span> <span class="operator">=</span> <span class="function">channel</span>()
-
-    <span class="comment">// A goroutine sends 1 through 5</span>
-    <span class="keyword">spawn</span>(<span class="keyword">fun</span>() <span class="operator">-></span> <span class="type">Unit</span> {
-        <span class="keyword">let</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">1</span>
-        <span class="keyword">while</span> <span class="variable">i</span> <span class="operator">&lt;=</span> <span class="number">5</span> {
-            <span class="variable">ch</span>.<span class="function">send</span>(<span class="variable">i</span>)
-            <span class="variable">i</span> <span class="operator">=</span> <span class="variable">i</span> <span class="operator">+</span> <span class="number">1</span>
+    <span class="keyword">let</span> <span class="variable">ch</span>: <span class="type">Channel</span>[(<span class="type">str</span>, <span class="type">int</span>)] <span class="operator">=</span> <span class="function">channel</span>()
+    <span class="keyword">let</span> <span class="variable">task</span> <span class="operator">=</span> <span class="keyword">spawn</span> {
+        <span class="keyword">for</span> <span class="variable">i</span> <span class="keyword">in</span> <span class="number">1</span>..<span class="operator">=</span><span class="number">5</span> {
+            <span class="variable">ch</span>.<span class="function">send</span>((<span class="string">&quot;item&quot;</span>, <span class="variable">i</span>))
         }
-    })
-
-    <span class="keyword">let</span> <span class="variable">sum</span> <span class="operator">=</span> <span class="number">0</span>
-    <span class="keyword">let</span> <span class="variable">n</span> <span class="operator">=</span> <span class="number">0</span>
-    <span class="keyword">while</span> <span class="variable">n</span> <span class="operator">&lt;</span> <span class="number">5</span> {
-        <span class="variable">sum</span> <span class="operator">=</span> <span class="variable">sum</span> <span class="operator">+</span> <span class="variable">ch</span>.<span class="function">recv</span>()
-        <span class="variable">n</span> <span class="operator">=</span> <span class="variable">n</span> <span class="operator">+</span> <span class="number">1</span>
     }
-    <span class="function">print</span>(<span class="variable">sum</span>)  <span class="comment">// 15</span>
+    <span class="keyword">var</span> <span class="variable">sum</span> <span class="operator">=</span> <span class="number">0</span>
+    <span class="keyword">for</span> <span class="variable">_</span> <span class="keyword">in</span> <span class="number">0</span>..<span class="number">5</span> {
+        <span class="keyword">let</span> (<span class="variable">_</span>, <span class="variable">n</span>) <span class="operator">=</span> <span class="variable">ch</span>.<span class="function">recv</span>()
+        <span class="variable">sum</span> <span class="operator">+=</span> <span class="variable">n</span>
+    }
+    <span class="variable">task</span>.<span class="function">join</span>()
+    <span class="function">print</span>(<span class="variable">sum</span>) <span class="comment">// 15</span>
 }</code></pre>
                     </div>
                 </div>
