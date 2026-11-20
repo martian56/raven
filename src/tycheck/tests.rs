@@ -1306,6 +1306,19 @@ fn reassigning_a_let_binding_is_rejected() {
 }
 
 #[test]
+fn private_class_takes_named_arguments() {
+    check(
+        "class _Pair { a: int, b: int }
+fun f() -> int {
+    let p = _Pair(a: 1, b: 2)
+    return p.b
+}
+",
+    )
+    .unwrap();
+}
+
+#[test]
 fn reassigning_a_module_let_is_rejected() {
     let err = check(
         "let hits = 0

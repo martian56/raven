@@ -946,14 +946,19 @@ pub struct TestReport {
 }
 
 /// Discover, compile, and run the package's tests under the default cache.
-pub fn test(project_dir: &Path) -> Result<TestReport, OpError> {
-    test_in(project_dir, &pkg::cache_root())
+pub fn test(project_dir: &Path, filter: Option<&str>) -> Result<TestReport, OpError> {
+    test_in(project_dir, &pkg::cache_root(), filter)
 }
 
 /// Run every `fun test_*()` found in the package's `*_test.rv` files. Each test
 /// runs in its own process (a small generated dispatcher selects the test by
 /// name) so a panic from a failed assertion fails only that test, not the run.
-pub fn test_in(project_dir: &Path, cache_root: &Path) -> Result<TestReport, OpError> {
+/// With `filter`, only tests whose name contains it run.
+pub fn test_in(
+    project_dir: &Path,
+    cache_root: &Path,
+    filter: Option<&str>,
+) -> Result<TestReport, OpError> {
     let manifest = Manifest::load(project_dir.join(MANIFEST_FILE_NAME))?;
     let (_outcome, _report) = install_in(project_dir, cache_root)?;
     let lock_path = project_dir.join(LOCK_FILE_NAME);
@@ -970,7 +975,10 @@ pub fn test_in(project_dir: &Path, cache_root: &Path) -> Result<TestReport, OpEr
     // Each suite is (relative import path of the test file, test function names).
     let mut suites: Vec<(String, Vec<String>)> = Vec::new();
     for file in discover_test_files(project_dir)? {
-        let names = test_functions_in(&file)?;
+        let mut names = test_functions_in(&file)?;
+        if let Some(f) = filter {
+            names.retain(|n| n.contains(f));
+        }
         if !names.is_empty() {
             suites.push((test_import_path(project_dir, &file), names));
         }

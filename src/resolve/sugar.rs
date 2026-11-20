@@ -359,7 +359,7 @@ fn rewrite(
             let fields = scope.lookup(&scope.structs, name, file).filter(|_| {
                 name.rsplit('.')
                     .next()
-                    .and_then(|n| n.chars().next())
+                    .and_then(|n| n.trim_start_matches('_').chars().next())
                     .is_some_and(|c| c.is_ascii_uppercase())
             });
             if let Some(fields) = fields {

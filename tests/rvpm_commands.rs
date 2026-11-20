@@ -171,6 +171,48 @@ fn add_bad_path_fails() {
     cleanup(&root);
 }
 
+#[test]
+fn test_name_filter_runs_only_matching_tests() {
+    let root = workdir();
+    let project = root.join("project");
+    let cache = root.join("cache");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(
+        project.join("rv.toml"),
+        "[package]
+name = \"app\"
+version = \"0.1.0\"
+",
+    )
+    .unwrap();
+    std::fs::write(
+        project.join("math_test.rv"),
+        "from std.test import assert_true
+
+fun test_adds() {
+    assert_true(1 + 1 == 2)
+}
+
+fun test_fails() {
+    assert_true(1 == 2)
+}
+",
+    )
+    .unwrap();
+    let out = rvpm(&project, &cache, &["test", "adds"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "stdout: {}
+stderr: {}",
+        stdout,
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(stdout.contains("running 1 test"), "stdout: {}", stdout);
+    assert!(!stdout.contains("test_fails"), "stdout: {}", stdout);
+    cleanup(&root);
+}
+
 fn workdir() -> PathBuf {
     use std::sync::atomic::{AtomicU64, Ordering};
     static SEQ: AtomicU64 = AtomicU64::new(0);
