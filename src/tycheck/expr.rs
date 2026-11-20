@@ -2404,7 +2404,8 @@ impl<'a, 'b> Checker<'a, 'b> {
         let impls_snapshot = &env.impls;
         let mut inherent_matches: Vec<(usize, FnSig, HashMap<ParamId, Ty>)> = Vec::new();
         let mut trait_matches: Vec<(usize, FnSig, HashMap<ParamId, Ty>, String)> = Vec::new();
-        for (idx, imp) in impls_snapshot.iter().enumerate() {
+        for &idx in env.impls_with_method(name) {
+            let imp = &impls_snapshot[idx];
             // Skip impls without this method before allocating inference
             // variables or unifying. A rejected impl whose self type still
             // unifies (for example `impl Eq for Map<K, V: Eq>`, which has no
@@ -2663,7 +2664,8 @@ impl<'a, 'b> Checker<'a, 'b> {
         let env = self.env;
         let impls_snapshot = &env.impls;
         let mut matches: Vec<(FnSig, HashMap<ParamId, Ty>)> = Vec::new();
-        for imp in impls_snapshot.iter() {
+        for &idx in env.impls_with_method(name) {
+            let imp = &impls_snapshot[idx];
             // Skip impls that do not provide this associated function before
             // allocating inference variables or unifying. A rejected impl whose
             // self type still unifies (for example `impl Eq for Map<K, V: Eq>`,
@@ -2785,7 +2787,8 @@ impl<'a, 'b> Checker<'a, 'b> {
     fn iterator_elem_ty(&mut self, recv: &Ty, span: &Span) -> Option<Ty> {
         let env = self.env;
         let impls_snapshot = &env.impls;
-        for imp in impls_snapshot.iter() {
+        for &idx in env.impls_with_method("next") {
+            let imp = &impls_snapshot[idx];
             let Some(msig) = imp.methods.get("next") else {
                 continue;
             };

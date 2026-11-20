@@ -484,3 +484,11 @@ mod tests {
         unsafe { crate::gc::free_for_test(l as *mut ObjectHeader) };
     }
 }
+
+// Compiled code reads these fields inline at fixed offsets.
+const _: () = {
+    assert!(std::mem::offset_of!(List, header) == 0);
+    assert!(std::mem::offset_of!(List, elements) == 32);
+    assert!(std::mem::offset_of!(crate::object::ObjectHeader, len) == 8);
+    assert!(std::mem::offset_of!(crate::object::ObjectHeader, cap) == 12);
+};

@@ -21,7 +21,7 @@ use crate::object::{
 use crate::object::{MapEntry, SetEntry, BOX_PAYLOAD_OFFSET};
 use crate::roots::{RootContext, RootRegistry};
 use crate::stw::StopTheWorld;
-use crate::{raven_alloc, raven_dealloc};
+use crate::raven_dealloc;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
@@ -300,21 +300,12 @@ pub(crate) fn for_each_slot_in(saved: &SavedRoots, visit: &mut dyn FnMut(RootSlo
 thread_local! {
     /// The all-objects list: the base pointer of every object handed
     /// out by `raven_gc_alloc`. The sweeper walks it once per cycle.
-    static HEAP: RefCell<Vec<*mut ObjectHeader>> = const { RefCell::new(Vec::new()) };
-
-    /// Live object-body bytes. Drives the collection threshold.
-    static BYTES_ALLOCATED: Cell<usize> = const { Cell::new(0) };
-
-    /// Live object count. Lets tests assert bounded liveness without
-    /// measuring flaky OS memory.
-    static LIVE_OBJECTS: Cell<usize> = const { Cell::new(0) };
-
-    /// Allocation high-water mark: a collection runs before serving an
-    /// allocation that would carry `bytes_allocated` past this. Reset
-    /// after each collection to a multiple of the surviving live bytes.
-    /// Initialised from `collection_floor()`, which honours the
-    /// `RAVEN_GC_THRESHOLD` override.
-    static THRESHOLD: Cell<usize> = Cell::new(collection_floor());
+    static ALLOC: AllocState = AllocState {
+        heap: RefCell::new(Vec::new()),
+        bytes: Cell::new(0),
+        live: Cell::new(0),
+        threshold: Cell::new(collection_floor()),
+    };
 }
 
 /// ABI of a deferred thunk: the runtime calls the closure's lifted body
@@ -410,8 +401,22 @@ pub extern "C" fn raven_defer_run_frame() {
     });
 }
 
-/// Default collection floor in bytes (1 MiB) when no override is set.
-const INITIAL_THRESHOLD: usize = 1024 * 1024;
+/// Default collection floor in bytes (8 MiB) when no override is set.
+const INITIAL_THRESHOLD: usize = 8 * 1024 * 1024;
+
+/// Per-thread allocation bookkeeping, kept in one thread-local so an
+/// allocation touches thread-local storage once.
+struct AllocState {
+    /// Every object this thread allocated that is not yet freed.
+    heap: RefCell<Vec<*mut ObjectHeader>>,
+    /// Live object-body bytes. Drives the collection threshold.
+    bytes: Cell<usize>,
+    /// Live object count.
+    live: Cell<usize>,
+    /// A collection runs before an allocation that would carry `bytes` past
+    /// this.
+    threshold: Cell<usize>,
+}
 
 /// The collection floor in bytes: the smallest the threshold is ever set
 /// to. Defaults to `INITIAL_THRESHOLD`, but a test or a stress program may
@@ -481,24 +486,22 @@ pub extern "C" fn raven_gc_pop_roots(n: usize) {
 /// `raven_gc_leave_frame`.
 #[no_mangle]
 pub extern "C" fn raven_gc_enter_frame(roots: *mut *mut u8, count: usize) {
-    shadow_guard_enter();
+    let in_raven = IN_RAVEN.with(|r| r.get());
+    if !in_raven {
+        COORDINATOR.enter_unsafe();
+    }
     with_roots(|ctx| {
         ctx.frames.push(ctx.roots.len());
-        if !roots.is_null() {
-            for i in 0..count {
-                // Each array entry is itself a slot address (the address of
-                // a stack local that holds a GC pointer), so read the entry
-                // to recover the slot address and push that. Pushing the
-                // entry's own address instead would add one extra level of
-                // indirection and make the collector read a stack address
-                // rather than the live GC pointer.
-                // SAFETY: caller guarantees `roots` has `count` entries.
-                let slot = unsafe { *roots.add(i) } as RootSlot;
-                ctx.roots.push(slot);
-            }
+        if !roots.is_null() && count > 0 {
+            // Each entry is the address of a stack local holding a GC pointer.
+            // SAFETY: caller guarantees `roots` has `count` entries.
+            let slots = unsafe { std::slice::from_raw_parts(roots as *const RootSlot, count) };
+            ctx.roots.extend_from_slice(slots);
         }
     });
-    shadow_guard_exit();
+    if !in_raven {
+        COORDINATOR.exit_unsafe();
+    }
 }
 
 /// Unregister the most recently registered frame, truncating the shadow
@@ -508,15 +511,19 @@ pub extern "C" fn raven_gc_enter_frame(roots: *mut *mut u8, count: usize) {
 /// A call with no open frame is a no-op.
 #[no_mangle]
 pub extern "C" fn raven_gc_leave_frame() {
-    shadow_guard_enter();
+    let in_raven = IN_RAVEN.with(|r| r.get());
+    if !in_raven {
+        COORDINATOR.enter_unsafe();
+    }
     with_roots(|ctx| {
         if let Some(boundary) = ctx.frames.pop() {
-            // Defensive: never grow past the current length.
             let target = boundary.min(ctx.roots.len());
             ctx.roots.truncate(target);
         }
     });
-    shadow_guard_exit();
+    if !in_raven {
+        COORDINATOR.exit_unsafe();
+    }
 }
 
 /// Register a struct type's GC pointer descriptor.
@@ -637,27 +644,24 @@ pub extern "C" fn raven_gc_alloc(size: usize, align: usize, tag: u32) -> *mut u8
     }
     // Collect before serving an allocation that would cross the
     // threshold, so the heap stays a bounded multiple of the live set.
-    let current = BYTES_ALLOCATED.with(|b| b.get());
-    let threshold = THRESHOLD.with(|t| t.get());
-    if current + size > threshold {
+    let over = ALLOC.with(|a| a.bytes.get() + size > a.threshold.get());
+    if over {
         collect();
     }
-    let ptr = raven_alloc(size, align);
+    let Ok(layout) = std::alloc::Layout::from_size_align(size.max(1), align) else {
+        return std::ptr::null_mut();
+    };
+    // SAFETY: the layout has a non-zero size.
+    let ptr = unsafe { std::alloc::alloc_zeroed(layout) };
     if ptr.is_null() {
         return std::ptr::null_mut();
     }
-    // SAFETY: `raven_alloc` returned `size` writable bytes.
-    unsafe { std::ptr::write_bytes(ptr, 0, size) };
-    register(ptr as *mut ObjectHeader, size);
+    ALLOC.with(|a| {
+        a.heap.borrow_mut().push(ptr as *mut ObjectHeader);
+        a.bytes.set(a.bytes.get() + size);
+        a.live.set(a.live.get() + 1);
+    });
     ptr
-}
-
-/// Record a freshly allocated object in the all-objects list and bump
-/// the live counters.
-fn register(header: *mut ObjectHeader, size: usize) {
-    HEAP.with(|h| h.borrow_mut().push(header));
-    BYTES_ALLOCATED.with(|b| b.set(b.get() + size));
-    LIVE_OBJECTS.with(|n| n.set(n.get() + 1));
 }
 
 /// Free a single object: its owned buffers, then its body. Decrements
@@ -672,9 +676,11 @@ unsafe fn free_one(header: *mut ObjectHeader) {
     let (size, align) = unsafe { object_body_layout(header) };
     // SAFETY: same guarantee; release owned buffers before the body.
     unsafe { free_object_buffers(header) };
-    raven_dealloc(header as *mut u8, size, align);
-    BYTES_ALLOCATED.with(|b| b.set(b.get().saturating_sub(size)));
-    LIVE_OBJECTS.with(|n| n.set(n.get().saturating_sub(1)));
+    raven_dealloc(header as *mut u8, size.max(1), align);
+    ALLOC.with(|a| {
+        a.bytes.set(a.bytes.get().saturating_sub(size));
+        a.live.set(a.live.get().saturating_sub(1));
+    });
 }
 
 /// Force a full mark-and-sweep collection regardless of the threshold.
@@ -715,9 +721,9 @@ fn collect() {
     // Reset the threshold to twice the surviving live bytes, never
     // below the floor, so a large live set collects less often and a
     // small one keeps a tight ceiling.
-    let live = BYTES_ALLOCATED.with(|b| b.get());
+    let live = ALLOC.with(|a| a.bytes.get());
     let next = collection_floor().max(live.saturating_mul(2));
-    THRESHOLD.with(|t| t.set(next));
+    ALLOC.with(|a| a.threshold.set(next));
     COORDINATOR.resume_the_world();
     if was_running {
         COORDINATOR.enter_running();
@@ -947,8 +953,8 @@ unsafe fn trace_object(object: *mut ObjectHeader, work: &mut Vec<*mut ObjectHead
 /// are implicitly unmarked then.
 fn sweep() {
     let epoch = CURRENT_EPOCH.with(|e| e.get());
-    HEAP.with(|h| {
-        let mut heap = h.borrow_mut();
+    ALLOC.with(|a| {
+        let mut heap = a.heap.borrow_mut();
         let mut write = 0usize;
         for read in 0..heap.len() {
             let object = heap[read];
@@ -989,7 +995,7 @@ fn for_each_root(mut visit: impl FnMut(*mut ObjectHeader)) {
 /// call it.
 #[no_mangle]
 pub extern "C" fn raven_gc_bytes_allocated() -> usize {
-    BYTES_ALLOCATED.with(|b| b.get())
+    ALLOC.with(|a| a.bytes.get())
 }
 
 /// Number of live objects currently tracked by the collector. A
@@ -997,7 +1003,7 @@ pub extern "C" fn raven_gc_bytes_allocated() -> usize {
 /// without measuring flaky OS memory.
 #[no_mangle]
 pub extern "C" fn raven_gc_live_objects() -> usize {
-    LIVE_OBJECTS.with(|n| n.get())
+    ALLOC.with(|a| a.live.get())
 }
 
 /// Unregister a single object from the all-objects list and free it.
@@ -1013,8 +1019,8 @@ pub(crate) unsafe fn free_for_test(header: *mut ObjectHeader) {
     if header.is_null() {
         return;
     }
-    HEAP.with(|h| {
-        let mut heap = h.borrow_mut();
+    ALLOC.with(|a| {
+        let mut heap = a.heap.borrow_mut();
         if let Some(idx) = heap.iter().position(|&p| p == header) {
             heap.swap_remove(idx);
         }

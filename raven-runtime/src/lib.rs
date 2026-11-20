@@ -49,6 +49,9 @@ pub use sched::{
     raven_go_spawn, raven_go_yield,
 };
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use std::alloc::{self, Layout};
 use std::cell::RefCell;
 use std::collections::HashMap;

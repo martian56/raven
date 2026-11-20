@@ -139,3 +139,6 @@ mod tests {
         assert!(raven_struct_fields(std::ptr::null()).is_null());
     }
 }
+
+// Compiled code computes field addresses inline with this offset.
+const _: () = assert!(STRUCT_FIELDS_OFFSET == 16);

@@ -159,7 +159,7 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
 
         // Allocate the root array slot once when the function holds any
         // GC pointer locals. It is one pointer-sized slot per GC local.
-        let root_frame = if gc_locals.is_empty() {
+        let root_frame = if gc_locals.is_empty() || !may_collect(self.func) {
             None
         } else {
             let bytes = (gc_locals.len() as u32) * (ptr.bytes());
@@ -2213,13 +2213,13 @@ fn call_struct_fields(
     obj: Value,
     _ptr: CType,
 ) -> Value {
-    let id = cx
-        .runtime_id(intrinsics::RUNTIME_STRUCT_FIELDS)
-        .expect("struct fields declared at module init");
-    let fref = cx.module().declare_func_in_func(id, builder.func);
-    let inst = builder.ins().call(fref, &[obj]);
-    builder.inst_results(inst)[0]
+    let _ = cx;
+    builder.ins().iadd_imm(obj, STRUCT_FIELDS_OFFSET)
 }
+
+// Size of the runtime `ObjectHeader` (raven-runtime/src/object.rs), which the
+// field slots of a struct or enum object follow.
+const STRUCT_FIELDS_OFFSET: i64 = 16;
 
 fn lower_call(
     cx: &mut ModuleCx,
@@ -3375,4 +3375,35 @@ pub fn build_signature(func: &MirFunction, ptr: CType, base: Signature) -> Signa
         sig.returns.push(cranelift_codegen::ir::AbiParam::new(t));
     }
     sig
+}
+
+/// Whether a collection can run while `func` executes: it calls something,
+/// allocates, defers, or loops (a loop polls the safepoint). Without any of
+/// those its GC locals need no root frame.
+fn may_collect(func: &MirFunction) -> bool {
+    if func.has_defer {
+        return true;
+    }
+    func.blocks.iter().any(|b| {
+        b.is_loop_header
+            || b.statements.iter().any(|st| match st {
+                MirStatement::Assign { rvalue, .. } => !matches!(
+                    rvalue,
+                    MirRvalue::Use(_)
+                        | MirRvalue::BinaryOp(..)
+                        | MirRvalue::UnaryOp(..)
+                        | MirRvalue::GlobalLoad { .. }
+                        | MirRvalue::FieldAccess { .. }
+                        | MirRvalue::IndexAccess { .. }
+                        | MirRvalue::Cast { .. }
+                        | MirRvalue::EnvLoad { .. }
+                        | MirRvalue::PtrLoad { .. }
+                        | MirRvalue::PtrOffset { .. }
+                        | MirRvalue::PtrIsNull { .. }
+                        | MirRvalue::PtrNull
+                        | MirRvalue::FnAddr { .. }
+                ),
+                _ => false,
+            })
+    })
 }

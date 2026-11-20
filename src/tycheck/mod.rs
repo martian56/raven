@@ -202,8 +202,12 @@ pub struct TypedFile<'a> {
 pub fn check_file_all<'a>(
     resolved: &'a ResolvedFile<'a>,
 ) -> Result<TypedFile<'a>, Vec<RavenError>> {
+    let t0 = std::time::Instant::now();
     let mut env = TypeEnv::new();
     collect::collect_declarations(resolved, &mut env).map_err(|e| vec![e])?;
+    if std::env::var_os("RAVEN_TIMINGS").is_some() {
+        eprintln!("  (collect {:.1} ms)", t0.elapsed().as_secs_f64() * 1000.0);
+    }
     // Reject declared types whose generic arguments do not satisfy the
     // declaration's bounds (for example a `Map<K, V>` key without `Hash`), with
     // a clear error here rather than an unresolved callee at codegen.
@@ -212,7 +216,11 @@ pub fn check_file_all<'a>(
         return Err(wf_errors);
     }
     let mut types = TypeMap::new();
+    let t1 = std::time::Instant::now();
     expr::check_bodies(resolved, &env, &mut types)?;
+    if std::env::var_os("RAVEN_TIMINGS").is_some() {
+        eprintln!("  (bodies {:.1} ms)", t1.elapsed().as_secs_f64() * 1000.0);
+    }
     Ok(TypedFile {
         file: resolved.file,
         resolved,
