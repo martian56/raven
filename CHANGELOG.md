@@ -43,7 +43,7 @@ All notable changes to Raven are documented in this file.
 - Cranelift's optimizer is enabled (`RAVEN_OPT=none` turns it off).
 - Scalar locals live in registers instead of stack slots.
 - List indexing, length, and `push` are inlined instead of calling into the runtime, and the GC safepoint poll in loops is a single flag load.
-- The runtime allocates through mimalloc, collects less often for small heaps (8 MiB floor), and registers GC root frames with less overhead; functions that cannot trigger a collection skip the root frame entirely.
+- The runtime allocates through mimalloc, collects less often for small heaps (16 MiB floor), and registers GC root frames with less overhead; functions that cannot trigger a collection skip the root frame entirely.
 - Struct and enum field addresses are computed inline.
 - `dict` and `set` keep items in dense insertion-ordered lists with an open-addressed index, so lookups allocate nothing and iteration follows insertion order.
 - `list[bool]` stores one byte per element.

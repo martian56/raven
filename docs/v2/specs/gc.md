@@ -307,7 +307,7 @@ Allocation goes through `raven_gc_alloc(size, align, tag)`:
 2. Allocate the object body through the raw allocator, zero it, register
    it in the all-objects list, bump the counters, and return it.
 
-The threshold starts at the collection floor (default `1 MiB`). After a
+The threshold starts at the collection floor (default `16 MiB`). After a
 collection it is reset to `max(floor, 2 * bytes_live_after_sweep)`, so a
 program with a large live set collects less often while a program with a
 small live set keeps a tight ceiling. This is the standard "allocation
@@ -319,7 +319,7 @@ the live set.
 The collection floor reads the `RAVEN_GC_THRESHOLD` environment variable
 once at startup. When it is set to a positive byte count the floor (and so
 the starting and post-collection threshold) is lowered or raised to that
-value; an unset, empty, zero, or unparseable value leaves the `1 MiB`
+value; an unset, empty, zero, or unparseable value leaves the `16 MiB`
 default unchanged. Lowering it to a few hundred bytes makes a collection
 fire after only a handful of allocations, so a test or a stress program
 exercises the frame-based root paths on nearly every allocation without

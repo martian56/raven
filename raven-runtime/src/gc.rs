@@ -401,8 +401,8 @@ pub extern "C" fn raven_defer_run_frame() {
     });
 }
 
-/// Default collection floor in bytes (8 MiB) when no override is set.
-const INITIAL_THRESHOLD: usize = 8 * 1024 * 1024;
+/// Default collection floor in bytes (16 MiB) when no override is set.
+const INITIAL_THRESHOLD: usize = 16 * 1024 * 1024;
 
 /// Per-thread allocation bookkeeping, kept in one thread-local so an
 /// allocation touches thread-local storage once.
@@ -1518,11 +1518,11 @@ mod collector_tests {
     #[test]
     fn allocation_triggers_collection_at_threshold() {
         isolated(|| {
-            // Each string body is 24 bytes, so the 8 MiB floor is about
-            // 350k objects. Allocating well past that with unrooted
+            // Each string body is 24 bytes, so the 16 MiB floor is about
+            // 700k objects. Allocating well past that with unrooted
             // strings must trigger at least one automatic collection,
             // keeping liveness below the total allocated count.
-            const COUNT: usize = 1_000_000;
+            const COUNT: usize = 2_000_000;
             for _ in 0..COUNT {
                 let _garbage = raven_string_new(8);
             }
