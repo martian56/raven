@@ -208,8 +208,10 @@ fn parses_single_element_set_with_trailing_comma() {
 }
 
 #[test]
-fn single_element_brace_is_a_set() {
+fn single_element_brace_is_a_block() {
     let f = parse_ok("let a = { 5 }\n");
+    assert!(matches!(let_init(&f), ExprKind::Block(_)));
+    let f = parse_ok("let a = { 5, }\n");
     let ExprKind::SetLit(items) = let_init(&f) else {
         panic!("expected a one-element set");
     };

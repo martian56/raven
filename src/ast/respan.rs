@@ -12,18 +12,17 @@ use super::stmt::{Stmt, StmtKind};
 use super::ty::{Type, TypeKind, TypePath};
 
 pub struct Respan<'a> {
-    delta: usize,
+    copy: usize,
     subst: &'a HashMap<String, Type>,
 }
 
 impl<'a> Respan<'a> {
-    pub fn new(delta: usize, subst: &'a HashMap<String, Type>) -> Self {
-        Respan { delta, subst }
+    pub fn new(copy: usize, subst: &'a HashMap<String, Type>) -> Self {
+        Respan { copy, subst }
     }
 
     fn span(&self, s: &mut Span) {
-        s.start += self.delta;
-        s.end += self.delta;
+        *s = s.in_copy(self.copy);
     }
 
     pub fn function(&self, f: &mut Function) {

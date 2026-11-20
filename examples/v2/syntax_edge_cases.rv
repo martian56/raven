@@ -1,0 +1,30 @@
+// Parser and expansion cases where the new syntax must keep older meanings.
+
+fun scale(x: int, k: int = 10) -> int = x * k
+
+fun apply(scale: fun(int) -> int, v: int) -> int = scale(v)
+
+fun classify(k: int) -> str {
+    return match k {
+        case n if (n > 2) { "big" }
+        case _ { "small" }
+    }
+}
+
+fun main() {
+    let N = 1
+    let xs = [10, 20, 30]
+    print(xs[N])
+    let block_value = {
+        5
+    }
+    print(block_value)
+    let one = {7,}
+    print(one.len())
+    print(classify(5))
+    print(apply(x => x + 1, 4))
+    print(scale(3))
+    print(not 1 == 2)
+    let empty: set[int] = set()
+    print(empty.len())
+}

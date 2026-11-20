@@ -1479,3 +1479,17 @@ fn duplicate_diagnostics_are_deduplicated() {
     let errs = check_all("fun f() -> Int = \"x\"\n");
     assert_eq!(errs.len(), 1, "got: {:?}", errs);
 }
+
+#[test]
+fn return_inside_a_for_loop_does_not_end_the_function() {
+    let err = check("fun f(xs: List<Int>) -> Int {\n    for x in xs {\n        return x\n    }\n    let z = 1\n}\n")
+        .unwrap_err();
+    assert!(matches!(err, RavenError::Type(..)), "got: {}", err);
+}
+
+#[test]
+fn panic_on_the_right_of_or_does_not_end_the_function() {
+    let err = check("fun f(c: Bool) -> Int {\n    let ok = c || panic(\"no\")\n    let z = 2\n}\n")
+        .unwrap_err();
+    assert!(matches!(err, RavenError::Type(..)), "got: {}", err);
+}

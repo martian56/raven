@@ -12,18 +12,12 @@ fun fetch_verified() {
         case Ok(stream) {
             let _ = stream.write("GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
             match stream.read(32) {
-                case Ok(data) {
-                    println("verified: ${data.trim()}")
-                }
-                case Err(e) {
-                    println("read: ${e.message()}")
-                }
+                case Ok(data) { println("verified: ${data.trim()}") }
+                case Err(e) { println("read: ${e.message()}") }
             }
             stream.close()
         }
-        case Err(e) {
-            println("connect: ${e.message()}")
-        }
+        case Err(e) { println("connect: ${e.message()}") }
     }
 }
 
@@ -38,18 +32,12 @@ fun fetch_with_config() {
                 "GET / HTTP/1.1\r\nHost: self-signed.badssl.com\r\nConnection: close\r\n\r\n",
             )
             match stream.read(32) {
-                case Ok(data) {
-                    println("skip-verify: ${data.trim()}")
-                }
-                case Err(e) {
-                    println("read: ${e.message()}")
-                }
+                case Ok(data) { println("skip-verify: ${data.trim()}") }
+                case Err(e) { println("read: ${e.message()}") }
             }
             stream.close()
         }
-        case Err(e) {
-            println("connect: ${e.message()}")
-        }
+        case Err(e) { println("connect: ${e.message()}") }
     }
     cfg.free()
 }

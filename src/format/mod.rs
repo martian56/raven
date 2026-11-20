@@ -1128,7 +1128,11 @@ impl Printer<'_> {
                 }
                 let saved = self.next_comment;
                 let parts = self.expr_list_at(items, col + 1, base);
-                let flat = format!("{{{}}}", parts.join(", "));
+                let flat = if parts.len() == 1 {
+                    format!("{{{},}}", parts[0])
+                } else {
+                    format!("{{{}}}", parts.join(", "))
+                };
                 if self.fits(col, &flat) {
                     return flat;
                 }
@@ -1172,7 +1176,18 @@ impl Printer<'_> {
                 format!("{}{}", op_s, operand)
             }
             ExprKind::Binary { op, lhs, rhs } => {
+                let wraps_not = |x: &Expr| {
+                    !matches!(op, BinaryOp::And | BinaryOp::Or)
+                        && matches!(
+                            x.kind,
+                            ExprKind::Unary {
+                                op: UnaryOp::Not,
+                                ..
+                            }
+                        )
+                };
                 let l = self.expr_at(lhs, base, col);
+                let l = if wraps_not(lhs) { format!("({l})") } else { l };
                 let op_s = match op {
                     BinaryOp::And => "and",
                     BinaryOp::Or => "or",
@@ -1180,6 +1195,7 @@ impl Printer<'_> {
                 };
                 let rcol = self.after(col, &l) + op_s.len() + 2;
                 let r = self.expr_at(rhs, base, rcol);
+                let r = if wraps_not(rhs) { format!("({r})") } else { r };
                 format!("{} {} {}", l, op_s, r)
             }
             ExprKind::Range {

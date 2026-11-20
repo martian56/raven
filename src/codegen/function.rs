@@ -1013,7 +1013,7 @@ fn store_local(
         return;
     };
     if let Some(var) = info.var {
-        let v = narrow_from_slot(builder, v, want);
+        let v = coerce_to(builder, v, want);
         builder.def_var(var, v);
         return;
     }
@@ -1213,6 +1213,39 @@ fn widen_to_slot(builder: &mut FunctionBuilder<'_>, value: RValue, ptr: CType) -
 
 /// Narrow a pointer-sized slot value back to a field's machine type when
 /// the field is a scalar smaller than a pointer or a float.
+/// Convert `v` to the machine type `want` of the local it is stored in.
+fn coerce_to(builder: &mut FunctionBuilder<'_>, v: Value, want: CType) -> Value {
+    let got = builder.func.dfg.value_type(v);
+    if got == want {
+        return v;
+    }
+    match (got.is_int(), want.is_int()) {
+        (true, true) if want.bytes() < got.bytes() => builder.ins().ireduce(want, v),
+        (true, true) => builder.ins().uextend(want, v),
+        (true, false) => {
+            let int = if got.bytes() == want.bytes() {
+                v
+            } else if got.bytes() > want.bytes() {
+                builder.ins().ireduce(types::I32, v)
+            } else {
+                builder.ins().uextend(types::I64, v)
+            };
+            builder.ins().bitcast(want, MemFlags::new(), int)
+        }
+        (false, true) => {
+            let same = if got == types::F64 {
+                types::I64
+            } else {
+                types::I32
+            };
+            let int = builder.ins().bitcast(same, MemFlags::new(), v);
+            coerce_to(builder, int, want)
+        }
+        (false, false) if want == types::F32 => builder.ins().fdemote(types::F32, v),
+        (false, false) => builder.ins().fpromote(types::F64, v),
+    }
+}
+
 fn narrow_from_slot(builder: &mut FunctionBuilder<'_>, raw: Value, want: CType) -> Value {
     let got = builder.func.dfg.value_type(raw);
     if got == want {
@@ -2808,7 +2841,7 @@ fn lower_intrinsic(
             builder.ins().call(local_ref, &[ptr_val, len_val]);
             Ok(None)
         }
-        intrinsics::PANIC_FN | intrinsics::PANIC_USER => {
+        intrinsics::PANIC_FN => {
             if args.len() != 1 {
                 return Err(CodegenError::Unsupported(format!(
                     "__panic intrinsic expects 1 arg, got {}",

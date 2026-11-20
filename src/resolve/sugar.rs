@@ -20,38 +20,191 @@ pub fn expand(items: &mut Vec<Decl>) -> Result<(), RavenError> {
 /// single module before merging), calls it cannot resolve are left for the
 /// whole-program pass.
 pub fn expand_calls(items: &mut [Decl], strict: bool) -> Result<(), RavenError> {
-    let mut structs = collect_structs(items);
-    for d in items.iter() {
-        if let DeclKind::Import(im) = &d.kind {
-            for sel in &im.selectors {
-                if let Some(alias) = &sel.alias {
-                    if let Some(fields) = structs
-                        .get(&sel.name)
-                        .or_else(|| suffix_get(&structs, &sel.name))
-                        .cloned()
-                    {
-                        structs.entry(alias.clone()).or_insert(fields);
-                    }
-                }
-            }
-        }
-    }
-    let funcs = collect_functions(items);
-    let mut counter: usize = if strict { 1 << 20 } else { 1 << 19 } + (items.len() << 8);
+    let scope = Visible::build(items);
     let mut error: Option<RavenError> = None;
     for decl in items.iter_mut() {
-        visit::exprs_in_decl(decl, &mut |e: &mut Expr| {
-            if error.is_some() {
-                return;
-            }
-            if let Err(err) = rewrite(e, &structs, &funcs, &mut counter, strict) {
-                error = Some(err);
-            }
-        });
+        let file = decl.span.file.clone();
+        let mut each = |func: &mut Function| {
+            let locals = local_names(func);
+            visit::exprs_in_fn(func, &mut |e: &mut Expr| {
+                if error.is_some() {
+                    return;
+                }
+                if let Err(err) = rewrite(e, &scope, &file, &locals, strict) {
+                    error = Some(err);
+                }
+            });
+        };
+        match &mut decl.kind {
+            DeclKind::Function(f) => each(f),
+            DeclKind::Impl(i) => i.items.iter_mut().for_each(&mut each),
+            DeclKind::Trait(t) => t.members.iter_mut().for_each(&mut each),
+            _ => {}
+        }
     }
     match error {
         Some(e) => Err(e),
         None => Ok(()),
+    }
+}
+
+type FileKey = std::sync::Arc<std::path::PathBuf>;
+
+/// Which classes and default-argument functions each file can name.
+struct Visible {
+    /// Declarations by name, with the file each is declared in.
+    structs: HashMap<String, Vec<(FileKey, Vec<StructField>)>>,
+    funcs: HashMap<String, Vec<(FileKey, Vec<Param>)>>,
+    /// Per file, local name to imported name from its selector imports.
+    imports: HashMap<FileKey, HashMap<String, String>>,
+    /// Every top-level name each file declares.
+    declared: HashMap<FileKey, std::collections::HashSet<String>>,
+}
+
+impl Visible {
+    fn build(items: &[Decl]) -> Self {
+        let mut v = Visible {
+            structs: HashMap::new(),
+            funcs: HashMap::new(),
+            imports: HashMap::new(),
+            declared: HashMap::new(),
+        };
+        for d in items {
+            let name = match &d.kind {
+                DeclKind::Struct(s) => Some(&s.name),
+                DeclKind::Function(f) => Some(&f.name),
+                DeclKind::Enum(e) => Some(&e.name),
+                _ => None,
+            };
+            if let Some(n) = name {
+                v.declared
+                    .entry(d.span.file.clone())
+                    .or_default()
+                    .insert(n.clone());
+            }
+            match &d.kind {
+                DeclKind::Struct(s) => v
+                    .structs
+                    .entry(s.name.clone())
+                    .or_default()
+                    .push((d.span.file.clone(), s.fields.clone())),
+                DeclKind::Function(f) if f.params.iter().any(|p| p.default.is_some()) => v
+                    .funcs
+                    .entry(f.name.clone())
+                    .or_default()
+                    .push((d.span.file.clone(), f.params.clone())),
+                DeclKind::Import(im) => {
+                    let m = v.imports.entry(d.span.file.clone()).or_default();
+                    for sel in &im.selectors {
+                        let local = sel.alias.clone().unwrap_or_else(|| sel.name.clone());
+                        m.insert(local, sel.name.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        v
+    }
+
+    fn lookup<'a, T>(
+        &self,
+        table: &'a HashMap<String, Vec<(FileKey, T)>>,
+        name: &str,
+        file: &FileKey,
+    ) -> Option<&'a T> {
+        if let Some(entries) = table.get(name) {
+            if name.contains('.') && entries.len() == 1 {
+                return Some(&entries[0].1);
+            }
+            if let Some((_, t)) = entries.iter().find(|(f, _)| f == file) {
+                return Some(t);
+            }
+        }
+        let Some(imported) = self.imports.get(file).and_then(|m| m.get(name)) else {
+            let shadowed = self.declared.get(file).is_some_and(|d| d.contains(name));
+            return match table.get(name).map(|v| v.as_slice()) {
+                Some([(_, t)]) if !shadowed => Some(t),
+                _ => None,
+            };
+        };
+        let mut found = table
+            .iter()
+            .filter(|(k, _)| *k == imported || k.rsplit('.').next() == Some(imported.as_str()))
+            .flat_map(|(_, v)| v.iter());
+        match (found.next(), found.next()) {
+            (Some((_, t)), None) => Some(t),
+            _ => None,
+        }
+    }
+}
+
+/// Every name a function binds as a value: parameters, `let`/`var`, lambda
+/// parameters, and pattern bindings.
+pub(crate) fn local_names(func: &Function) -> std::collections::HashSet<String> {
+    let mut out: std::collections::HashSet<String> =
+        func.params.iter().map(|p| p.name.clone()).collect();
+    let mut copy = func.clone();
+    let mut d = Decl {
+        span: copy.span.clone(),
+        kind: DeclKind::Function(std::mem::replace(
+            &mut copy,
+            Function {
+                name: String::new(),
+                generics: Vec::new(),
+                params: Vec::new(),
+                ret: None,
+                body: crate::ast::FunctionBody::None,
+                span: func.span.clone(),
+            },
+        )),
+    };
+    let names = std::cell::RefCell::new(Vec::new());
+    visit::walk_decl(
+        &mut d,
+        &mut |e: &mut Expr| match &e.kind {
+            ExprKind::Lambda { params, .. } => {
+                names
+                    .borrow_mut()
+                    .extend(params.iter().map(|p| p.name.clone()));
+            }
+            ExprKind::For { pattern, .. } => pattern_names(pattern, &mut names.borrow_mut()),
+            ExprKind::Match { arms, .. } => {
+                for a in arms {
+                    pattern_names(&a.pattern, &mut names.borrow_mut());
+                }
+            }
+            _ => {}
+        },
+        &mut |b: &mut Block| {
+            for st in &b.stmts {
+                if let StmtKind::Let { name, .. } = &st.kind {
+                    names.borrow_mut().push(name.clone());
+                }
+            }
+        },
+    );
+    out.extend(names.into_inner());
+    out
+}
+
+fn pattern_names(p: &crate::ast::Pattern, out: &mut Vec<String>) {
+    use crate::ast::PatternKind;
+    match &p.kind {
+        PatternKind::Ident(n) => out.push(n.clone()),
+        PatternKind::Tuple { elements, .. } => {
+            for e in elements {
+                pattern_names(e, out);
+            }
+        }
+        PatternKind::Struct { fields, .. } => {
+            for f in fields {
+                match &f.pattern {
+                    Some(sub) => pattern_names(sub, out),
+                    None => out.push(f.name.clone()),
+                }
+            }
+        }
+        _ => {}
     }
 }
 
@@ -160,30 +313,7 @@ fn suffix_get<'a, V>(map: &'a HashMap<String, V>, name: &str) -> Option<&'a V> {
     }
 }
 
-fn collect_structs(items: &[Decl]) -> HashMap<String, Vec<StructField>> {
-    let mut out = HashMap::new();
-    for d in items {
-        if let DeclKind::Struct(s) = &d.kind {
-            out.insert(s.name.clone(), s.fields.clone());
-        }
-    }
-    out
-}
-
-fn collect_functions(items: &[Decl]) -> HashMap<String, Vec<Param>> {
-    let mut out = HashMap::new();
-    for d in items {
-        if let DeclKind::Function(f) = &d.kind {
-            if f.params.iter().any(|p| p.default.is_some()) {
-                out.insert(f.name.clone(), f.params.clone());
-            }
-        }
-    }
-    out
-}
-
-fn fresh(counter: &mut usize, e: &Expr) -> Expr {
-    *counter += 1;
+fn fresh(e: &Expr) -> Expr {
     let mut copy = e.clone();
     let subst = HashMap::new();
     let mut tmp = Function {
@@ -194,18 +324,16 @@ fn fresh(counter: &mut usize, e: &Expr) -> Expr {
         body: crate::ast::FunctionBody::Expr(copy.clone()),
         span: e.span.clone(),
     };
-    Respan::new(*counter << 40, &subst).function(&mut tmp);
+    Respan::new(crate::span::next_copy_id(), &subst).function(&mut tmp);
     if let crate::ast::FunctionBody::Expr(x) = tmp.body {
         copy = x;
     }
     copy
 }
 
-fn shifted(counter: &mut usize, span: &crate::span::Span) -> crate::span::Span {
-    *counter += 1;
+fn shifted(span: &crate::span::Span) -> crate::span::Span {
     let mut s = span.clone();
-    s.start += *counter << 40;
-    s.end += *counter << 40;
+    s = s.in_copy(crate::span::next_copy_id());
     s
 }
 
@@ -215,54 +343,44 @@ fn bad(msg: String, span: &crate::span::Span) -> RavenError {
 
 fn rewrite(
     e: &mut Expr,
-    structs: &HashMap<String, Vec<StructField>>,
-    funcs: &HashMap<String, Vec<Param>>,
-    counter: &mut usize,
+    scope: &Visible,
+    file: &FileKey,
+    locals: &std::collections::HashSet<String>,
     strict: bool,
 ) -> Result<(), RavenError> {
-    if !strict {
-        if let ExprKind::Call { callee, .. } = &e.kind {
-            if let ExprKind::Ident { name, .. } = &callee.kind {
-                if !structs.contains_key(name) && !funcs.contains_key(name) {
-                    return Ok(());
-                }
-            }
-        }
-        if let ExprKind::MethodCall { .. } = &e.kind {
-            return Ok(());
-        }
-    }
     match &mut e.kind {
         ExprKind::Call { callee, args } => {
             let ExprKind::Ident { name, generics } = &callee.kind else {
-                return check_no_named(args);
+                return if strict { check_no_named(args) } else { Ok(()) };
             };
-            let fields = structs
-                .get(name)
-                .or_else(|| suffix_get(structs, name))
-                .filter(|_| name.chars().next().is_some_and(|c| c.is_ascii_uppercase()));
+            if locals.contains(name) {
+                return if strict { check_no_named(args) } else { Ok(()) };
+            }
+            let fields = scope.lookup(&scope.structs, name, file).filter(|_| {
+                name.rsplit('.')
+                    .next()
+                    .and_then(|n| n.chars().next())
+                    .is_some_and(|c| c.is_ascii_uppercase())
+            });
             if let Some(fields) = fields {
-                let lit = construct(
-                    name.clone(),
-                    generics.clone(),
-                    args,
-                    fields,
-                    &e.span,
-                    counter,
-                )?;
+                let lit = construct(name.clone(), generics.clone(), args, fields, &e.span)?;
                 *e = lit;
                 return Ok(());
             }
-            if let Some(params) = funcs.get(name).or_else(|| suffix_get(funcs, name)) {
-                let ordered = order_args(name, args, params, &e.span, counter)?;
+            if let Some(params) = scope.lookup(&scope.funcs, name, file) {
+                let ordered = order_args(name, args, params, &e.span)?;
                 *args = ordered;
                 return Ok(());
             }
-            check_no_named(args)
+            if strict {
+                check_no_named(args)
+            } else {
+                Ok(())
+            }
         }
-        ExprKind::MethodCall { args, .. } => check_no_named(args),
+        ExprKind::MethodCall { args, .. } if strict => check_no_named(args),
         ExprKind::StructLit { name, fields, .. } => {
-            let Some(decl) = structs.get(name).or_else(|| suffix_get(structs, name)) else {
+            let Some(decl) = scope.lookup(&scope.structs, name, file) else {
                 return Ok(());
             };
             for f in decl {
@@ -270,7 +388,7 @@ fn rewrite(
                     if !fields.iter().any(|x| x.name == f.name) {
                         fields.push(FieldInit {
                             name: f.name.clone(),
-                            value: fresh(counter, d),
+                            value: fresh(d),
                             span: e.span.clone(),
                         });
                     }
@@ -303,7 +421,6 @@ fn construct(
     args: &mut Vec<Expr>,
     fields: &[StructField],
     span: &crate::span::Span,
-    counter: &mut usize,
 ) -> Result<Expr, RavenError> {
     let mut inits: Vec<FieldInit> = Vec::new();
     let mut base: Option<Expr> = None;
@@ -343,14 +460,16 @@ fn construct(
             }
         }
     }
-    let base_var = base.as_ref().map(|_| format!("__base{}", *counter));
+    let base_var = base
+        .as_ref()
+        .map(|_| format!("__base{}", crate::span::next_copy_id()));
     for f in fields {
         if inits.iter().any(|i| i.name == f.name) {
             continue;
         }
         if let Some(var) = &base_var {
-            let use_span = shifted(counter, span);
-            let field_span = shifted(counter, span);
+            let use_span = shifted(span);
+            let field_span = shifted(span);
             inits.push(FieldInit {
                 name: f.name.clone(),
                 value: Expr {
@@ -371,7 +490,7 @@ fn construct(
         } else if let Some(d) = &f.default {
             inits.push(FieldInit {
                 name: f.name.clone(),
-                value: fresh(counter, d),
+                value: fresh(d),
                 span: span.clone(),
             });
         }
@@ -387,9 +506,9 @@ fn construct(
     let (Some(var), Some(base)) = (base_var, base) else {
         return Ok(lit);
     };
-    let let_span = shifted(counter, span);
-    let block_span = shifted(counter, span);
-    let lit_span = shifted(counter, span);
+    let let_span = shifted(span);
+    let block_span = shifted(span);
+    let lit_span = shifted(span);
     let mut lit = lit;
     lit.span = lit_span;
     Ok(Expr {
@@ -416,7 +535,6 @@ fn order_args(
     args: &mut Vec<Expr>,
     params: &[Param],
     span: &crate::span::Span,
-    counter: &mut usize,
 ) -> Result<Vec<Expr>, RavenError> {
     let mut slots: Vec<Option<Expr>> = vec![None; params.len()];
     let mut positional = 0usize;
@@ -450,7 +568,7 @@ fn order_args(
     for (slot, p) in slots.into_iter().zip(params) {
         match (slot, &p.default) {
             (Some(v), _) => out.push(v),
-            (None, Some(d)) => out.push(fresh(counter, d)),
+            (None, Some(d)) => out.push(fresh(d)),
             (None, None) => {
                 return Err(bad(
                     format!("missing argument `{}` in call to `{fname}`", p.name),

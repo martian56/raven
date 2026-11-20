@@ -41,6 +41,32 @@ pub fn desugar(file: &mut File) -> Result<(), RavenError> {
             },
         );
     }
+    let module_values: std::collections::HashSet<String> = items
+        .iter()
+        .filter_map(|d| match &d.kind {
+            DeclKind::Let(l) => Some(l.name.clone()),
+            DeclKind::Const(c) => Some(c.name.clone()),
+            DeclKind::Function(f) if f.name == "set" || f.name == "dict" => Some(f.name.clone()),
+            _ => None,
+        })
+        .collect();
+    for decl in &mut items {
+        let mut each = |f: &mut crate::ast::Function| {
+            let mut values = crate::resolve::sugar::local_names(f);
+            values.extend(module_values.iter().cloned());
+            visit::exprs_in_fn(f, &mut |e: &mut Expr| {
+                index_not_type_args(e, &values);
+                empty_collection_call(e, &values);
+            });
+        };
+        match &mut decl.kind {
+            DeclKind::Function(f) => each(f),
+            DeclKind::Impl(i) => i.items.iter_mut().for_each(&mut each),
+            DeclKind::Trait(t) => t.members.iter_mut().for_each(&mut each),
+            DeclKind::Struct(s) => s.methods.iter_mut().for_each(&mut each),
+            _ => {}
+        }
+    }
     crate::resolve::sugar::distribute_class_methods(&mut items);
     if let Some(e) = error {
         return Err(e);
@@ -87,28 +113,22 @@ fn split_class(decl: &mut Decl) -> Vec<Decl> {
         span: name_span,
     };
     let generics = s.generics.clone();
-    let mut copy = 0usize;
-    let mut fresh = || {
-        copy += 1;
-        let d = copy << 50;
+    let fresh = || {
+        let id = crate::span::next_copy_id();
         let mut p = self_path.clone();
-        shift_path(&mut p, d);
+        shift_path(&mut p, id);
         let gs: Vec<GenericParam> = generics
             .iter()
             .map(|g| {
                 let mut g = g.clone();
-                g.span.start += d;
-                g.span.end += d;
+                g.span = g.span.in_copy(id);
                 for b in &mut g.bounds {
-                    shift_path(b, d);
+                    shift_path(b, id);
                 }
                 g
             })
             .collect();
-        let mut sp = span.clone();
-        sp.start += d;
-        sp.end += d;
-        (p, gs, sp)
+        (p, gs, span.in_copy(id))
     };
     let mut out = Vec::new();
     {
@@ -143,11 +163,9 @@ fn split_class(decl: &mut Decl) -> Vec<Decl> {
 }
 
 fn shift_path(p: &mut TypePath, d: usize) {
-    p.span.start += d;
-    p.span.end += d;
+    p.span = p.span.in_copy(d);
     for seg in &mut p.segments {
-        seg.span.start += d;
-        seg.span.end += d;
+        seg.span = seg.span.in_copy(d);
         for g in &mut seg.generics {
             shift_type(g, d);
         }
@@ -155,8 +173,7 @@ fn shift_path(p: &mut TypePath, d: usize) {
 }
 
 fn shift_type(t: &mut Type, d: usize) {
-    t.span.start += d;
-    t.span.end += d;
+    t.span = t.span.in_copy(d);
     match &mut t.kind {
         TypeKind::Path(p) | TypeKind::Dyn(p) => shift_path(p, d),
         TypeKind::Optional(inner) => shift_type(inner, d),
@@ -412,4 +429,60 @@ fn pattern_bindings(p: &Pattern, out: &mut Vec<String>) {
         }
         _ => {}
     }
+}
+
+/// `xs[N]` on a value is an index, though it parses like type arguments.
+fn index_not_type_args(e: &mut Expr, values: &std::collections::HashSet<String>) {
+    let ExprKind::Ident { name, generics } = &e.kind else {
+        return;
+    };
+    if generics.len() != 1 || !values.contains(name) {
+        return;
+    }
+    let TypeKind::Path(p) = &generics[0].kind else {
+        return;
+    };
+    if p.segments.len() != 1 || !p.segments[0].generics.is_empty() {
+        return;
+    }
+    let index_name = p.segments[0].name.clone();
+    let index_span = generics[0].span.clone();
+    let receiver = Expr {
+        kind: ExprKind::Ident {
+            name: name.clone(),
+            generics: Vec::new(),
+        },
+        span: e.span.clone(),
+    };
+    let index = Expr {
+        kind: ExprKind::Ident {
+            name: index_name,
+            generics: Vec::new(),
+        },
+        span: index_span.clone(),
+    };
+    e.span = merge_spans(&e.span, &index_span);
+    e.kind = ExprKind::Index {
+        receiver: Box::new(receiver),
+        index: Box::new(index),
+    };
+}
+
+/// `set()` and `dict()` are empty collection literals unless the program
+/// declares a value or function of that name.
+fn empty_collection_call(e: &mut Expr, values: &std::collections::HashSet<String>) {
+    let ExprKind::Call { callee, args } = &e.kind else {
+        return;
+    };
+    let ExprKind::Ident { name, generics } = &callee.kind else {
+        return;
+    };
+    if !args.is_empty() || !generics.is_empty() || values.contains(name) {
+        return;
+    }
+    e.kind = match name.as_str() {
+        "set" => ExprKind::SetLit(Vec::new()),
+        "dict" => ExprKind::MapLit(Vec::new()),
+        _ => return,
+    };
 }

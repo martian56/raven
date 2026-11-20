@@ -343,7 +343,7 @@ fn run_program(args: &[OsString]) -> ExitCode {
     let status = std::process::Command::new(&exe).args(&args[1..]).status();
     let _ = std::fs::remove_file(&exe);
     match status {
-        Ok(s) => ExitCode::from(s.code().unwrap_or(1).clamp(0, 255) as u8),
+        Ok(s) => ExitCode::from(u8::try_from(s.code().unwrap_or(1)).unwrap_or(1)),
         Err(e) => {
             eprintln!("raven: run {}: {}", exe.display(), e);
             ExitCode::from(1)

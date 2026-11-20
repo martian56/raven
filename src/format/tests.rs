@@ -368,7 +368,7 @@ fn set_literal_round_trips() {
 #[test]
 fn single_element_set_keeps_one_element() {
     let out = fmt("fun f(){let s={1,}}");
-    assert_eq!(out, "fun f() {\n    let s = {1}\n}\n");
+    assert_eq!(out, "fun f() {\n    let s = {1,}\n}\n");
 }
 
 #[test]

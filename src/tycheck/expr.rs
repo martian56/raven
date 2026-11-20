@@ -1056,7 +1056,11 @@ impl<'a, 'b> Checker<'a, 'b> {
             ExprKind::Unary { op, operand } => self.check_unary(*op, operand),
             ExprKind::Binary { op, lhs, rhs } => {
                 let l = self.check_expr(lhs)?;
+                let before_rhs = self.diverges;
                 let r = self.check_expr(rhs)?;
+                if matches!(op, BinaryOp::And | BinaryOp::Or) {
+                    self.diverges = before_rhs;
+                }
                 // Resolve both operands through the inference table so
                 // arithmetic on `?N` after a generic call sees the
                 // solved type when one is available.
@@ -1225,9 +1229,13 @@ impl<'a, 'b> Checker<'a, 'b> {
                 // method resolution (used by the iterator-driven path).
                 self.record(&pat.span, elem.clone());
                 pattern::bind(pat, &elem, self.env, &mut self.locals)?;
+                let outer = self.diverges;
                 self.loop_kinds.push(false);
+                self.loop_breaks.push((false, None));
                 let r = self.check_block(body);
                 self.loop_kinds.pop();
+                self.loop_breaks.pop();
+                self.diverges = outer;
                 r?;
                 Ok(Ty::Unit)
             }

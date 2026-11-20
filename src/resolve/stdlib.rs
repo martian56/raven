@@ -3136,7 +3136,6 @@ fn inject_default_methods(items: &mut [Decl]) {
     if traits.is_empty() {
         return;
     }
-    let mut copies: usize = 0;
     for decl in items.iter_mut() {
         let DeclKind::Impl(imp) = &mut decl.kind else {
             continue;
@@ -3160,9 +3159,8 @@ fn inject_default_methods(items: &mut [Decl]) {
             {
                 continue;
             }
-            copies += 1;
             let mut f = member.clone();
-            Respan::new(copies << 40, &subst).function(&mut f);
+            Respan::new(crate::span::next_copy_id(), &subst).function(&mut f);
             imp.items.push(f);
         }
     }

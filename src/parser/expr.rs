@@ -95,10 +95,25 @@ impl Parser {
                     }
                     i += 1;
                 }
-                if !matches!(
-                    self.peek_kind_at(i + 1),
-                    TokenKind::FatArrow | TokenKind::Arrow
-                ) {
+                let lambda = match self.peek_kind_at(i + 1) {
+                    TokenKind::FatArrow => true,
+                    TokenKind::Arrow => {
+                        let mut j = i + 2;
+                        loop {
+                            match self.peek_kind_at(j) {
+                                TokenKind::FatArrow => break true,
+                                TokenKind::Newline
+                                | TokenKind::Semi
+                                | TokenKind::LBrace
+                                | TokenKind::RBrace
+                                | TokenKind::Eof => break false,
+                                _ => j += 1,
+                            }
+                        }
+                    }
+                    _ => false,
+                };
+                if !lambda {
                     return Ok(None);
                 }
                 self.advance();
@@ -194,14 +209,49 @@ impl Parser {
         Ok(lhs)
     }
 
+    /// `not x` binds looser than comparison: `not a == b` is `not (a == b)`.
+    fn parse_not(&mut self) -> ParseResult<Expr> {
+        let word_not = self.peek_word("not")
+            && !matches!(
+                self.peek_kind_at(1),
+                TokenKind::RParen
+                    | TokenKind::RBracket
+                    | TokenKind::RBrace
+                    | TokenKind::Comma
+                    | TokenKind::Dot
+                    | TokenKind::Eq
+                    | TokenKind::EqEq
+                    | TokenKind::NotEq
+                    | TokenKind::Colon
+                    | TokenKind::Newline
+                    | TokenKind::Semi
+                    | TokenKind::Eof
+                    | TokenKind::LBracket
+                    | TokenKind::Question
+            );
+        if !word_not {
+            return self.parse_comparison();
+        }
+        let start = self.advance().span;
+        let operand = self.parse_not()?;
+        let span = merge_spans(&start, &operand.span);
+        Ok(Expr {
+            kind: ExprKind::Unary {
+                op: UnaryOp::Not,
+                operand: Box::new(operand),
+            },
+            span,
+        })
+    }
+
     fn parse_logical_and(&mut self) -> ParseResult<Expr> {
-        let mut lhs = self.parse_comparison()?;
+        let mut lhs = self.parse_not()?;
         loop {
             self.skip_newlines_at_continuation();
             if matches!(self.peek_kind(), TokenKind::AndAnd) || self.peek_word("and") {
                 self.advance();
                 self.skip_newlines();
-                let rhs = self.parse_comparison()?;
+                let rhs = self.parse_not()?;
                 let span = merge_spans(&lhs.span, &rhs.span);
                 lhs = Expr {
                     kind: ExprKind::Binary {
@@ -359,20 +409,7 @@ impl Parser {
 
     fn parse_unary(&mut self) -> ParseResult<Expr> {
         let start = self.peek().span.clone();
-        let word_not = self.peek_word("not")
-            && matches!(
-                self.peek_kind_at(1),
-                TokenKind::Identifier(_)
-                    | TokenKind::LParen
-                    | TokenKind::Bang
-                    | TokenKind::Minus
-                    | TokenKind::True
-                    | TokenKind::False
-                    | TokenKind::SelfLower
-                    | TokenKind::IntLit(_)
-            );
         let op = match self.peek_kind() {
-            _ if word_not => Some(UnaryOp::Not),
             TokenKind::Minus => Some(UnaryOp::Neg),
             TokenKind::Bang => Some(UnaryOp::Not),
             TokenKind::Amp => Some(UnaryOp::Ref),
@@ -428,8 +465,13 @@ impl Parser {
                     // Optional explicit generics: `.name<T>`.
                     let mut generics = Vec::new();
                     if matches!(self.peek_kind(), TokenKind::Lt) || self.bracket_opens_type_args() {
+                        let before = self.checkpoint();
                         if let Some(args) = self.try_parse_type_args_for_call() {
-                            generics = args;
+                            if matches!(self.peek_kind(), TokenKind::LParen) {
+                                generics = args;
+                            } else {
+                                self.rewind(before);
+                            }
                         }
                     }
                     // Call form: `.name(args)`.
@@ -925,13 +967,6 @@ impl Parser {
                 span: merge_spans(&lb.span, &rb.span),
             }));
         }
-        if matches!(self.peek_kind(), TokenKind::RBrace) {
-            let rb = self.advance();
-            return Ok(Some(Expr {
-                kind: ExprKind::SetLit(vec![first]),
-                span: merge_spans(&lb.span, &rb.span),
-            }));
-        }
         self.rewind(saved);
         Ok(None)
     }
@@ -1220,24 +1255,6 @@ impl Parser {
     }
 
     fn parse_ident_primary(&mut self) -> ParseResult<Expr> {
-        if let TokenKind::Identifier(n) = self.peek_kind() {
-            if (n == "dict" || n == "set")
-                && matches!(self.peek_kind_at(1), TokenKind::LParen)
-                && matches!(self.peek_kind_at(2), TokenKind::RParen)
-            {
-                let is_dict = n == "dict";
-                let start = self.advance().span;
-                self.advance();
-                let end = self.advance().span;
-                let span = merge_spans(&start, &end);
-                let kind = if is_dict {
-                    ExprKind::MapLit(Vec::new())
-                } else {
-                    ExprKind::SetLit(Vec::new())
-                };
-                return Ok(Expr { kind, span });
-            }
-        }
         let (name, name_span) = self.expect_ident("identifier")?;
         // Macro invocation `name!(...)`. The compile pipeline expands macros
         // before parsing, so this is reached only by the formatter parsing

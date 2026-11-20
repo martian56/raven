@@ -370,6 +370,15 @@ pub(crate) fn lower_expr(
                     cx.ty_at(&callee.span),
                     callee.span.clone(),
                 ),
+                (ExprKind::Ident { name, .. }, None)
+                    if name == "panic" && cx.is_unbound_builtin(&callee.span) =>
+                {
+                    make_expr(
+                        HirExprKind::Ident("__panic".into()),
+                        cx.ty_at(&callee.span),
+                        callee.span.clone(),
+                    )
+                }
                 _ => lower_expr(callee, &Ty::Error, cx)?,
             };
             let mut lowered = Vec::with_capacity(args.len());

@@ -282,12 +282,12 @@ impl[T] Option[T] {
 
     fun unwrap(self) -> T = match self {
         case Some(v) { v }
-        case None { panic("called `unwrap` on a `None` value") }
+        case None { __panic("called `unwrap` on a `None` value") }
     }
 
     fun expect(self, msg: str) -> T = match self {
         case Some(v) { v }
-        case None { panic(msg) }
+        case None { __panic(msg) }
     }
 
     fun unwrap_or(self, default: T) -> T = match self {
@@ -344,16 +344,16 @@ impl[T, E] Result[T, E] {
 
     fun unwrap(self) -> T = match self {
         case Ok(v) { v }
-        case Err(_) { panic("called `unwrap` on an `Err` value") }
+        case Err(_) { __panic("called `unwrap` on an `Err` value") }
     }
 
     fun expect(self, msg: str) -> T = match self {
         case Ok(v) { v }
-        case Err(_) { panic(msg) }
+        case Err(_) { __panic(msg) }
     }
 
     fun unwrap_err(self) -> E = match self {
-        case Ok(_) { panic("called `unwrap_err` on an `Ok` value") }
+        case Ok(_) { __panic("called `unwrap_err` on an `Ok` value") }
         case Err(e) { e }
     }
 
