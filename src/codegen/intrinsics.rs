@@ -163,6 +163,9 @@ pub const RUNTIME_GC_EXIT_RUNNING: &str = "raven_gc_exit_running";
 /// back-edges. A single atomic load when no collection is pending; otherwise it
 /// parks the thread until the world resumes.
 pub const RUNTIME_GC_SAFEPOINT: &str = "raven_gc_safepoint";
+/// A generated wrapper around [`RUNTIME_GC_SAFEPOINT`] that preserves every
+/// register, which loops call.
+pub const SAFEPOINT_THUNK: &str = "__raven_safepoint";
 
 /// Runtime C symbol opening a per-call defer frame.
 pub const RUNTIME_DEFER_ENTER_FRAME: &str = "raven_defer_enter_frame";

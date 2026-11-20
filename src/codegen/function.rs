@@ -233,7 +233,7 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
             // parked for a stop-the-world collection (allocating loops poll at
             // the allocator). A single atomic load when no collection is pending.
             if mir_block.is_loop_header {
-                if let Some(sp) = self.cx.runtime_id(intrinsics::RUNTIME_GC_SAFEPOINT) {
+                if let Some(sp) = self.cx.runtime_id(intrinsics::SAFEPOINT_THUNK) {
                     let addr = match stop_flag {
                         Some(a) => a,
                         None => {

@@ -290,6 +290,38 @@ impl ModuleCx {
         Ok(id)
     }
 
+    /// A wrapper around `raven_gc_safepoint` that saves every register it
+    /// touches, so a loop that polls the safepoint keeps its values in
+    /// registers instead of spilling them around the (rarely taken) call.
+    fn define_safepoint_thunk(&mut self) -> Result<(), CodegenError> {
+        let target = self
+            .runtime_id(intrinsics::RUNTIME_GC_SAFEPOINT)
+            .expect("safepoint declared first");
+        let sig = Signature::new(CallConv::PreserveAll);
+        let id = self
+            .module
+            .declare_function(intrinsics::SAFEPOINT_THUNK, Linkage::Local, &sig)?;
+        let mut ctx = Context::new();
+        ctx.func.signature = sig;
+        let callee = self.module.declare_func_in_func(target, &mut ctx.func);
+        let mut fb = FunctionBuilderContext::new();
+        {
+            let frontend = self.module.isa().frontend_config();
+            let mut builder = FunctionBuilder::new(&mut ctx.func, &mut fb);
+            let block = builder.create_block();
+            builder.switch_to_block(block);
+            builder.seal_block(block);
+            builder.ins().call(callee, &[]);
+            builder.ins().return_(&[]);
+            builder.finalize(frontend);
+        }
+        self.module
+            .define_function(id, &mut ctx)
+            .map_err(|e| CodegenError::Codegen(format!("define safepoint thunk: {}", e)))?;
+        self.runtime.insert(intrinsics::SAFEPOINT_THUNK, id);
+        Ok(())
+    }
+
     /// The data slot of a mutable module-level global, by its mangled symbol.
     pub fn global_data(&self, name: &str) -> Option<DataId> {
         self.globals.get(name).copied()
@@ -652,6 +684,7 @@ impl ModuleCx {
         self.declare_runtime(intrinsics::RUNTIME_GC_ENTER_RUNNING, &sig)?;
         self.declare_runtime(intrinsics::RUNTIME_GC_EXIT_RUNNING, &sig)?;
         self.declare_runtime(intrinsics::RUNTIME_GC_SAFEPOINT, &sig)?;
+        self.define_safepoint_thunk()?;
 
         // raven_defer_enter_frame()
         sig = self.make_sig(&[], &[]);
