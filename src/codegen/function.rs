@@ -1010,6 +1010,11 @@ fn lower_constant(
             // reaches here, so a bare literal print stays allocation
             // free.
             let bytes = s.as_bytes();
+            if !bytes.is_empty() {
+                let id = cx.intern_static_string(bytes)?;
+                let gv = cx.module().declare_data_in_func(id, builder.func);
+                return Ok(Some(builder.ins().symbol_value(cx.pointer_type(), gv)));
+            }
             let id = cx.intern_string(bytes)?;
             let local_id = cx.module().declare_data_in_func(id, builder.func);
             let ptr = cx.pointer_type();

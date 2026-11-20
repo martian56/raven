@@ -11,6 +11,9 @@ use std::collections::HashMap;
 use cranelift_codegen::ir::{types, AbiParam, ArgumentPurpose, InstBuilder, Signature, Type};
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::Context;
+
+/// `TAG_STRING` in the runtime's object header.
+const STATIC_STRING_TAG: u32 = 0x01;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectModule, ObjectProduct};
@@ -87,6 +90,7 @@ pub struct ModuleCx {
     fn_params: HashMap<String, Vec<MirType>>,
     /// Interned string literal data ids keyed by the literal's bytes.
     strings: BTreeMap<Vec<u8>, DataId>,
+    static_strings: BTreeMap<Vec<u8>, DataId>,
     /// Counter for unique data symbol names.
     string_counter: u32,
     /// The C entry shim and the Raven `main` it wraps, recorded during
@@ -160,6 +164,7 @@ impl ModuleCx {
             variadic_externs: std::collections::HashSet::new(),
             fn_params: HashMap::new(),
             strings: BTreeMap::new(),
+            static_strings: BTreeMap::new(),
             string_counter: 0,
             main_entry: None,
             descriptors: HashMap::new(),
@@ -527,6 +532,38 @@ impl ModuleCx {
         desc.define(bytes.to_vec().into_boxed_slice());
         self.module.define_data(id, &desc)?;
         self.strings.insert(bytes.to_vec(), id);
+        Ok(id)
+    }
+
+    /// A string literal as a prebuilt `String` object in writable data, so
+    /// using it allocates nothing. Strings are immutable, the collector only
+    /// sweeps its own heap pages, and marking just stamps the header, so a
+    /// static object is safe to hand out as an ordinary GC pointer.
+    pub fn intern_static_string(&mut self, bytes: &[u8]) -> Result<DataId, CodegenError> {
+        if let Some(id) = self.static_strings.get(bytes) {
+            return Ok(*id);
+        }
+        let text = self.intern_string(bytes)?;
+        let name = format!("__raven_strobj_{}", self.static_strings.len());
+        let id = self
+            .module
+            .declare_data(&name, Linkage::Local, true, false)?;
+        let len = u32::try_from(bytes.len()).map_err(|_| {
+            CodegenError::Unsupported("string literal longer than 4 GiB".to_string())
+        })?;
+        let mut object = Vec::with_capacity(24);
+        object.extend_from_slice(&STATIC_STRING_TAG.to_le_bytes());
+        object.extend_from_slice(&0u32.to_le_bytes());
+        object.extend_from_slice(&len.to_le_bytes());
+        object.extend_from_slice(&len.to_le_bytes());
+        object.extend_from_slice(&0u64.to_le_bytes());
+        let mut desc = DataDescription::new();
+        desc.define(object.into_boxed_slice());
+        desc.set_align(8);
+        let gv = self.module.declare_data_in_data(text, &mut desc);
+        desc.write_data_addr(16, gv, 0);
+        self.module.define_data(id, &desc)?;
+        self.static_strings.insert(bytes.to_vec(), id);
         Ok(id)
     }
 

@@ -27,6 +27,14 @@ pub struct String {
 /// `cap = cap`. The byte buffer is zero-filled.
 ///
 /// Returns null when the allocation fails.
+// Codegen emits string literals as static objects with this exact layout.
+const _: () = {
+    assert!(TAG_STRING == 0x01);
+    assert!(std::mem::offset_of!(String, header) == 0);
+    assert!(std::mem::offset_of!(String, bytes) == 16);
+    assert!(std::mem::size_of::<String>() == 24);
+};
+
 #[no_mangle]
 pub extern "C" fn raven_string_new(cap: u32) -> *mut String {
     // Allocate the owned byte buffer first so a body-allocation failure
