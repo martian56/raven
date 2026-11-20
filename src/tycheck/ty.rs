@@ -258,7 +258,9 @@ impl fmt::Display for Ty {
                     }
                     Ok(())
                 };
-                let shown = match name.as_str() {
+                // Module-qualified names show only the type's own name.
+                let bare = name.rsplit('.').next().unwrap_or(name);
+                let shown = match bare {
                     "Map" => "dict",
                     "Set" => "set",
                     n if n.starts_with("Tuple") && n[5..].parse::<usize>() == Ok(args.len()) => {

@@ -1306,6 +1306,35 @@ fn reassigning_a_let_binding_is_rejected() {
 }
 
 #[test]
+fn reassigning_a_module_let_is_rejected() {
+    let err = check(
+        "let hits = 0
+fun f() {
+    hits = hits + 1
+}
+",
+    )
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("declared with `let`"),
+        "got: {}",
+        err
+    );
+}
+
+#[test]
+fn reassigning_a_module_var_is_allowed() {
+    check(
+        "var hits = 0
+fun f() {
+    hits = hits + 1
+}
+",
+    )
+    .unwrap();
+}
+
+#[test]
 fn type_name_accepts_scalar_and_struct() {
     check(
         r#"

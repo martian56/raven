@@ -106,8 +106,34 @@ fn split_class(decl: &mut Decl) -> Vec<Decl> {
         return Vec::new();
     }
     let methods = std::mem::take(&mut s.methods);
-    let traits = std::mem::take(&mut s.implements);
+    let mut traits = std::mem::take(&mut s.implements);
     let span = decl.span.clone();
+    // A class that writes `to_string`, `equals`, or `hash` itself implements
+    // the matching trait with it, the way `__str__` works in Python.
+    for (method, arity, trait_name) in [
+        ("to_string", 1, "ToString"),
+        ("equals", 2, "Eq"),
+        ("hash", 1, "Hash"),
+    ] {
+        let listed = traits
+            .iter()
+            .any(|t| t.segments.last().is_some_and(|g| g.name == trait_name))
+            || s.derives.iter().any(|d| d == trait_name);
+        if !listed
+            && methods
+                .iter()
+                .any(|f| f.name == method && f.params.len() == arity)
+        {
+            traits.push(TypePath {
+                segments: vec![TypePathSegment {
+                    name: trait_name.to_string(),
+                    generics: Vec::new(),
+                    span: span.clone(),
+                }],
+                span: span.clone(),
+            });
+        }
+    }
     let name_span = s.name_span.clone();
     let self_path = TypePath {
         segments: vec![TypePathSegment {

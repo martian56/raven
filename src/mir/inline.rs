@@ -15,6 +15,9 @@ use super::ir::{
 const MAX_STATEMENTS: usize = 40;
 const MAX_BLOCKS: usize = 24;
 const ROUNDS: usize = 2;
+// Inlining grows the caller's frame; past this many locals the stack cost
+// outweighs the saved calls.
+const MAX_CALLER_LOCALS: usize = 512;
 
 pub fn inline_small_functions(program: &mut MirProgram) {
     for _ in 0..ROUNDS {
@@ -91,11 +94,17 @@ fn inline_into(caller: &mut MirFunction, candidates: &HashMap<String, MirFunctio
     let mut changed = false;
     let mut bi = 0;
     while bi < caller.blocks.len() {
+        let room = MAX_CALLER_LOCALS.saturating_sub(caller.locals.len());
         let site = caller.blocks[bi].statements.iter().position(|st| match st {
             MirStatement::Assign {
                 rvalue: MirRvalue::Call { callee, .. },
                 ..
-            } => callee.mangled != caller.name && candidates.contains_key(&callee.mangled),
+            } => {
+                callee.mangled != caller.name
+                    && candidates
+                        .get(&callee.mangled)
+                        .is_some_and(|c| c.locals.len() <= room)
+            }
             _ => false,
         });
         let Some(k) = site else {

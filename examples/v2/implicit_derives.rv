@@ -5,6 +5,15 @@ class Point {
     label: str
 }
 
+// A class that writes its own to_string keeps it.
+class Celsius {
+    degrees: float
+
+    fun to_string(self) -> str {
+        return "${self.degrees} C"
+    }
+}
+
 fun main() {
     let a = Point(1, 2, "a")
     let b = Point(1, 2, "a")
@@ -12,4 +21,5 @@ fun main() {
     print(a)
     let seen = {a, b}
     print(len(seen))
+    print(Celsius(21.5))
 }

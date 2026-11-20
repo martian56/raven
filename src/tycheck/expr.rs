@@ -973,11 +973,13 @@ impl<'a, 'b> Checker<'a, 'b> {
                 // Reassigning a `const` local is rejected: the binding is
                 // immutable. Only a direct `name = ...` is guarded here.
                 if let ExprKind::Ident { name, .. } = &target.kind {
-                    let is_const = matches!(
-                        self.resolved.map.lookup(&target.span),
-                        Some(crate::resolve::Binding::Local(decl))
-                            if self.const_locals.contains(&BindingKey::local(decl))
-                    );
+                    let is_const = match self.resolved.map.lookup(&target.span) {
+                        Some(crate::resolve::Binding::Local(decl)) => {
+                            self.const_locals.contains(&BindingKey::local(decl))
+                        }
+                        Some(crate::resolve::Binding::Const(_)) => true,
+                        _ => false,
+                    };
                     if is_const {
                         self.push_error(
                             RavenError::ty(

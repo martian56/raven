@@ -934,7 +934,20 @@ pub fn add_implicit_derives(items: &mut [Decl]) {
 fn add_implicit(items: &mut [Decl], trait_name: &str) {
     use std::collections::{HashMap, HashSet};
     let mut has: HashSet<String> = HashSet::new();
+    let method = match trait_name {
+        "Eq" => "equals",
+        "Hash" => "hash",
+        _ => "to_string",
+    };
     for d in items.iter() {
+        // A type that defines the trait's method itself keeps its own.
+        if let DeclKind::Impl(i) = &d.kind {
+            if i.for_type.is_none() && i.items.iter().any(|f| f.name == method) {
+                if let Some(seg) = i.trait_or_type.segments.last() {
+                    has.insert(seg.name.clone());
+                }
+            }
+        }
         if let DeclKind::Impl(i) = &d.kind {
             let is_trait = i
                 .trait_or_type
