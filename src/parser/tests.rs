@@ -970,3 +970,16 @@ fn legacy_syntax_is_rejected_with_its_replacement() {
         assert!(err.contains(hint), "{src}: {err}");
     }
 }
+
+#[test]
+fn assert_fails_with_condition_text_or_message() {
+    let f = parse_ok("fun main() {\n    assert len(xs)==3\n    assert (x > 1), \"too small\"\n}\n");
+    let dump = format!("{:?}", f);
+    assert!(dump.contains("assertion failed: len(xs) == 3"), "{dump}");
+    assert!(dump.contains("too small"), "{dump}");
+}
+
+#[test]
+fn assert_is_still_a_usable_name() {
+    parse_ok("fun main() {\n    var assert = 1\n    assert = 2\n    print(assert)\n}\n");
+}

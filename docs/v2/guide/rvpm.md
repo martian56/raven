@@ -312,10 +312,12 @@ registered-command matching.
 ### rvpm test
 
 ```bash
-rvpm test [-p <package> | --workspace]
+rvpm test [NAME] [-p <package> | --workspace]
 ```
 
-Discovers and runs the package's tests. A test is a zero-argument function
+Discovers and runs the package's tests. With `NAME`, only the tests whose
+name contains it run, so `rvpm test parse` runs `test_parse_empty`,
+`test_parse_nested`, and so on. A test is a zero-argument function
 named `test_*` in a `*_test.rv` file anywhere in the package (commonly
 under `src/` or a `tests/` directory). It asserts with `std/test`; a failed
 assertion panics, which the runner reports as a failure.

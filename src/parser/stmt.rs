@@ -22,6 +22,40 @@ impl Parser {
                 self.parse_let_stmt(true)
             }
             TokenKind::Const => Err(self.legacy("`const`", "declare it with `let`")),
+            TokenKind::Identifier(w)
+                if w == "assert"
+                    && !matches!(
+                        self.peek_kind_at(1),
+                        TokenKind::Eq
+                            | TokenKind::Dot
+                            | TokenKind::Newline
+                            | TokenKind::Semi
+                            | TokenKind::RBrace
+                            | TokenKind::Eof
+                    ) =>
+            {
+                self.advance();
+                let cond = self.parse_expr()?;
+                let message = if matches!(self.peek_kind(), TokenKind::Comma) {
+                    self.advance();
+                    Some(self.parse_expr()?)
+                } else {
+                    None
+                };
+                let end = message.as_ref().unwrap_or(&cond).span.clone();
+                let text = match &cond.kind {
+                    crate::ast::ExprKind::Paren(inner) => crate::format::expr_text(inner),
+                    _ => crate::format::expr_text(&cond),
+                };
+                Ok(Stmt {
+                    span: merge_spans(&start_span, &end),
+                    kind: StmtKind::Assert {
+                        cond,
+                        message,
+                        text,
+                    },
+                })
+            }
             TokenKind::Return => {
                 self.advance();
                 if matches!(

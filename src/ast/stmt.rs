@@ -59,6 +59,13 @@ pub enum StmtKind {
         init: Expr,
         mutable: bool,
     },
+    /// `assert cond` or `assert cond, message`; desugared after parsing.
+    /// `text` is the condition as written, for the failure message.
+    Assert {
+        cond: Expr,
+        message: Option<Expr>,
+        text: String,
+    },
     /// `let P = e else { .. }`; desugared after parsing.
     LetElse {
         pattern: super::pattern::Pattern,

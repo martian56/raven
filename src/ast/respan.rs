@@ -132,6 +132,12 @@ impl<'a> Respan<'a> {
                 self.pattern(pattern);
                 self.expr(init);
             }
+            StmtKind::Assert { cond, message, .. } => {
+                self.expr(cond);
+                if let Some(m) = message {
+                    self.expr(m);
+                }
+            }
             StmtKind::Defer(e) | StmtKind::Spawn(e) | StmtKind::Expr(e) => self.expr(e),
             StmtKind::Assign { target, value, .. } => {
                 self.expr(target);

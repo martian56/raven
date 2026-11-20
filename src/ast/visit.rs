@@ -100,6 +100,12 @@ impl Walker<'_> {
                     self.block(else_block);
                 }
                 StmtKind::LetTuple { init, .. } => self.expr(init),
+                StmtKind::Assert { cond, message, .. } => {
+                    self.expr(cond);
+                    if let Some(m) = message {
+                        self.expr(m);
+                    }
+                }
                 StmtKind::Return(e) | StmtKind::Break(e) => {
                     if let Some(e) = e {
                         self.expr(e);

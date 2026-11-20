@@ -266,6 +266,25 @@ let port = match text.parse_int() {
 The `else` block of a `let ... else` must leave (`return`, `break`,
 `continue`, or `panic`).
 
+## assert
+
+`assert cond` stops the program when `cond` is false. The failure message is
+the condition as written; a message after a comma replaces it. No import is
+needed.
+
+```rust
+fun mean(xs: list[float]) -> float {
+    assert len(xs) > 0, "mean of an empty list"
+    return sum(xs) / float(len(xs))
+}
+
+fun main() {
+    assert mean([3.0, 4.0, 5.0]) == 4.0
+}
+```
+
+A failed `assert x == 5` prints `raven panic: assertion failed: x == 5`.
+
 ## defer
 
 `defer expr` runs `expr` when the function returns, in reverse order of

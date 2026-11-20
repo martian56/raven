@@ -271,7 +271,7 @@ fn walk_stmt(
     map: &mut ResolutionMap,
 ) -> Result<(), RavenError> {
     match &stmt.kind {
-        StmtKind::LetElse { .. } | StmtKind::LetTuple { .. } => {
+        StmtKind::LetElse { .. } | StmtKind::LetTuple { .. } | StmtKind::Assert { .. } => {
             unreachable!("surface syntax is desugared after parsing")
         }
         StmtKind::Let {

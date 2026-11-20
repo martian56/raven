@@ -1,0 +1,14 @@
+// `assert` checks a condition; a failure stops the program with the
+// condition's source text, or with the message after the comma.
+fun mean(xs: list[float]) -> float {
+    assert len(xs) > 0, "mean of an empty list"
+    return sum(xs) / float(len(xs))
+}
+
+fun main() {
+    let scores = [3.0, 4.0, 5.0]
+    assert mean(scores) == 4.0
+    assert "b" in ["a", "b"]
+    assert not scores.is_empty()
+    print("all assertions passed")
+}

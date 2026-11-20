@@ -52,7 +52,7 @@ Type the prefix, then **Tab** to expand:
 | `while`, `loop`, `for`, `foreach`, `forenum` | Loops |
 | `comp`, `dcomp`, `lambda` | Comprehensions and lambdas |
 | `class`, `classg`, `enum`, `trait`, `traitm`, `impl`, `implfor` | Types, traits, and methods |
-| `import`, `from`, `extern`, `defer` | Modules, FFI, and deferral |
+| `import`, `from`, `extern`, `defer`, `assert` | Modules, FFI, deferral, and checks |
 | `spawn`, `task`, `channel`, `channelb` | Concurrency |
 | `print`, `printi`, `main` | Output and program entry |
 

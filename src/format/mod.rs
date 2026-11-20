@@ -109,6 +109,11 @@ struct Printer<'a> {
     assigned: std::collections::HashSet<String>,
 }
 
+/// One expression on one line, as `raven fmt` would print it.
+pub fn expr_text(e: &Expr) -> String {
+    Printer::new("", Vec::new(), "    ".to_string(), usize::MAX).render_expr(e)
+}
+
 impl<'a> Printer<'a> {
     fn new(src: &'a str, comments: Vec<Comment>, indent_unit: String, wrap_width: usize) -> Self {
         Printer {
@@ -906,6 +911,21 @@ impl Printer<'_> {
                         ..
                     } if params.is_empty() => format!("spawn {}", self.render_block(b, 0)),
                     _ => format!("spawn({})", self.render_expr_col(inner, "spawn(".len())),
+                };
+                self.emit_multiline(&text);
+            }
+            StmtKind::Assert { cond, message, .. } => {
+                let cond = match &cond.kind {
+                    ExprKind::Paren(inner) => inner,
+                    _ => cond,
+                };
+                let c = self.render_expr_col(cond, "assert ".len());
+                let text = match message {
+                    Some(m) => {
+                        let m = self.render_expr_col(m, "assert ".len() + c.len() + 2);
+                        format!("assert {c}, {m}")
+                    }
+                    None => format!("assert {c}"),
                 };
                 self.emit_multiline(&text);
             }

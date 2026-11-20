@@ -149,6 +149,11 @@
     "body": ["(${1:x}) => ${2:x * 2}"],
     "description": "Anonymous function"
   },
+  "Assert": {
+    "prefix": "assert",
+    "body": ["assert ${1:condition}, \"${2:message}\""],
+    "description": "Stop with a message when a condition is false"
+  },
   "Defer": {
     "prefix": "defer",
     "body": ["defer ${1:cleanup()}"],

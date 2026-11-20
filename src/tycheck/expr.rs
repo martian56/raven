@@ -845,7 +845,7 @@ impl<'a, 'b> Checker<'a, 'b> {
     /// later references do not cascade into spurious "undefined" errors.
     fn check_stmt(&mut self, stmt: &Stmt) {
         match &stmt.kind {
-            StmtKind::LetElse { .. } | StmtKind::LetTuple { .. } => {
+            StmtKind::LetElse { .. } | StmtKind::LetTuple { .. } | StmtKind::Assert { .. } => {
                 unreachable!("surface syntax is desugared after parsing")
             }
             StmtKind::Let {

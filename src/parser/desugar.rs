@@ -39,6 +39,7 @@ pub fn desugar(file: &mut File) -> Result<(), RavenError> {
                         error = Some(e);
                     }
                 }
+                lower_assert(b);
             },
         );
     }
@@ -794,6 +795,62 @@ fn lower_let_else(b: &mut Block) -> Result<(), RavenError> {
         };
     }
     Ok(())
+}
+
+/// `assert c, m` as `if not c { panic("assertion failed: " + m) }`, where the
+/// message defaults to the condition's source text.
+fn lower_assert(b: &mut Block) {
+    for stmt in &mut b.stmts {
+        if !matches!(stmt.kind, StmtKind::Assert { .. }) {
+            continue;
+        }
+        let span = stmt.span.clone();
+        let StmtKind::Assert {
+            cond,
+            message,
+            text,
+        } = std::mem::replace(&mut stmt.kind, StmtKind::Continue)
+        else {
+            unreachable!()
+        };
+        let at = |kind: ExprKind| Expr {
+            kind,
+            span: span.in_copy(crate::span::next_copy_id()),
+        };
+        let prefix = at(ExprKind::Str("assertion failed: ".to_string()));
+        let message = match message {
+            Some(m) => method(
+                prefix,
+                "concat",
+                vec![m],
+                &span.in_copy(crate::span::next_copy_id()),
+            ),
+            None => at(ExprKind::Str(format!("assertion failed: {text}"))),
+        };
+        let panic = at(ExprKind::Call {
+            callee: Box::new(at(ExprKind::Ident {
+                name: "panic".to_string(),
+                generics: Vec::new(),
+            })),
+            args: vec![message],
+        });
+        let body = Block {
+            stmts: vec![Stmt {
+                kind: StmtKind::Expr(panic),
+                span: span.clone(),
+            }],
+            trailing: None,
+            span: span.clone(),
+        };
+        stmt.kind = StmtKind::Expr(at(ExprKind::If {
+            cond: Box::new(at(ExprKind::Unary {
+                op: crate::ast::UnaryOp::Not,
+                operand: Box::new(cond),
+            })),
+            then_branch: body,
+            else_branch: None,
+        }));
+    }
 }
 
 /// Names a pattern binds, in order. A capitalized bare name is a variant.

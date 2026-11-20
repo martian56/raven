@@ -6,11 +6,11 @@ program runs to completion and exits zero; if one fails, it panics with a
 message and aborts with a nonzero exit code.
 
 ```rust
-from std.test import assert, assert_eq_int
+from std.test import assert_eq_int
 from std.io import println
 
 fun main() {
-    assert(1 + 1 == 2)
+    assert 1 + 1 == 2
     assert_eq_int(6 * 7, 42)
     println("all passed")
 }
@@ -22,7 +22,7 @@ The assertions are free functions, so import the ones you use with a
 selective list:
 
 ```rust
-from std.test import assert, assert_msg, assert_true, assert_false, assert_eq_int, assert_eq_str
+from std.test import assert_msg, assert_true, assert_false, assert_eq_int, assert_eq_str
 ```
 
 ## The test model
@@ -42,16 +42,17 @@ after it do not run.
 Each assertion checks a condition and, when it does not hold, panics with a
 fixed message and exits nonzero.
 
-### `assert(cond: bool)`
+### `assert cond`
 
-Fails when `cond` is false. Panic message: `assertion failed`.
+`assert` is a statement built into the language, so it needs no import. It
+fails when `cond` is false, and the panic message is the condition as written,
+such as `assertion failed: "raven".len() == 5`. Write `assert cond, "message"`
+to use your own message instead.
 
 ```rust
-from std.test import assert
-
 fun main() {
-    assert(2 > 1)
-    assert("raven".len() == 5)
+    assert 2 > 1
+    assert "raven".len() == 5, "raven has five letters"
 }
 ```
 
@@ -187,7 +188,7 @@ program below exercises a couple of helpers and exits zero only if every
 check passes:
 
 ```rust
-from std.test import assert, assert_eq_int, assert_eq_str
+from std.test import assert_eq_int, assert_eq_str
 import std.string
 from std.io import println
 
@@ -202,7 +203,7 @@ fun shout(s: str) -> str {
 fun main() {
     assert_eq_int(add(2, 3), 5)
     assert_eq_int(add(-1, 1), 0)
-    assert(add(10, 10) > 15)
+    assert add(10, 10) > 15
 
     assert_eq_str(shout("  hi  "), "HI")
     assert_eq_str(shout("raven"), "RAVEN")

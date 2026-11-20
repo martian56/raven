@@ -1611,7 +1611,7 @@ fn rewrite_block(block: &mut Block, rename: &HashMap<String, String>) {
 
 fn rewrite_stmt(stmt: &mut Stmt, rename: &HashMap<String, String>) {
     match &mut stmt.kind {
-        StmtKind::LetElse { .. } | StmtKind::LetTuple { .. } => {
+        StmtKind::LetElse { .. } | StmtKind::LetTuple { .. } | StmtKind::Assert { .. } => {
             unreachable!("surface syntax is desugared after parsing")
         }
         StmtKind::Let { ty, init, .. } => {

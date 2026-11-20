@@ -51,7 +51,7 @@ fun test_add_negative() {
 ```
 
 A test file has no `main`: `rvpm test` calls each `test_*` function for you.
-`import "./main" { add }` pulls in the function from `src/main.rv` (a local
+`from "./main" import add` pulls in the function from `src/main.rv` (a local
 import is a relative path in quotes). Test function names must be unique within
 a file.
 
@@ -74,7 +74,19 @@ test result: ok. 2 passed; 0 failed
 ```
 
 Because each test runs in a separate process, one test's failure (a panic from
-a failed assertion) cannot take down the others.
+a failed assertion) cannot take down the others. To run some of them, pass part
+of a name: `rvpm test negative` runs only `test_add_negative`.
+
+For a quick check, the built-in `assert` statement needs no import:
+
+```rust
+fun test_add_is_commutative() {
+    assert add(2, 3) == add(3, 2)
+}
+```
+
+A failure reports the condition as written: `assertion failed: add(2, 3) ==
+add(3, 2)`. The `std/test` helpers below also print the values that differed.
 
 ## Step 4: see a failure
 
@@ -112,11 +124,11 @@ values. Fix the expected value (or the code) and the test goes back to `ok`.
 `std/test` has an assertion per common shape. Import the ones you use:
 
 ```rust
-from std.test import assert, assert_msg, assert_true, assert_false, assert_eq_int, assert_eq_str, assert_eq, assert_ne, assert_some, assert_none
+from std.test import assert_msg, assert_true, assert_false, assert_eq_int, assert_eq_str, assert_eq, assert_ne, assert_some, assert_none
 import std.string
 
 fun test_assertions_tour() {
-    assert(1 + 1 == 2) // any bool condition
+    assert 1 + 1 == 2 // built in, no import
     assert_msg(7 % 2 == 1, "7 should be odd") // with a custom message
     assert_true(10 > 3)
     assert_false(3 > 10)

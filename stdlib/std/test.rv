@@ -4,12 +4,6 @@
 // There is no discovery or registration framework. See
 // docs/v2/specs/std-test.md.
 
-fun assert(cond: bool) {
-    if not cond {
-        __panic("assertion failed")
-    }
-}
-
 fun assert_msg(cond: bool, msg: str) {
     if not cond {
         __panic(msg)
