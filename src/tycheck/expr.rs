@@ -73,7 +73,11 @@ fn check_decl_body(
         DeclKind::Function(f) => check_function(f, None, &[], resolved, env, types),
         DeclKind::Impl(i) => {
             let mut errors: Vec<RavenError> = Vec::new();
-            let impl_sig = env.impls.iter().find(|s| s.span == i.span).cloned();
+            let impl_sig = env
+                .impls
+                .iter()
+                .find(|s| s.span.start == i.span.start && s.span.end == i.span.end && s.span == i.span)
+                .cloned();
             let impl_generics = impl_sig
                 .as_ref()
                 .map(|s| s.generics.clone())
@@ -2404,8 +2408,14 @@ impl<'a, 'b> Checker<'a, 'b> {
         let impls_snapshot = &env.impls;
         let mut inherent_matches: Vec<(usize, FnSig, HashMap<ParamId, Ty>)> = Vec::new();
         let mut trait_matches: Vec<(usize, FnSig, HashMap<ParamId, Ty>, String)> = Vec::new();
+        let recv_head = type_head(&self.infer.resolve(&recv_stripped));
         for &idx in env.impls_with_method(name) {
             let imp = &impls_snapshot[idx];
+            if let (Some(want), Some(have)) = (recv_head, type_head(imp.self_ty.strip_self())) {
+                if want != have {
+                    continue;
+                }
+            }
             // Skip impls without this method before allocating inference
             // variables or unifying. A rejected impl whose self type still
             // unifies (for example `impl Eq for Map<K, V: Eq>`, which has no
@@ -4001,4 +4011,32 @@ fn match_impl_ty(pat: &Ty, ty: &Ty, params: &[&ParamId], subst: &mut HashMap<Par
         }
         _ => super::env::tys_equal(pat, ty),
     }
+}
+
+/// The outermost type constructor of a concrete type, used to skip impls
+/// that cannot match a receiver without unifying. `None` for a type that
+/// could match anything (a parameter or an unsolved variable).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Head {
+    Prim(u8),
+    Decl(crate::resolve::DeclId),
+}
+
+fn type_head(t: &Ty) -> Option<Head> {
+    Some(match t {
+        Ty::Unit => Head::Prim(0),
+        Ty::Bool => Head::Prim(1),
+        Ty::Int => Head::Prim(2),
+        Ty::Float => Head::Prim(3),
+        Ty::Char => Head::Prim(4),
+        Ty::Str => Head::Prim(5),
+        Ty::Option(_) => Head::Prim(6),
+        Ty::Result(..) => Head::Prim(7),
+        Ty::List(_) => Head::Prim(8),
+        Ty::Function { .. } => Head::Prim(9),
+        Ty::Any => Head::Prim(10),
+        Ty::Struct { id, .. } | Ty::Enum { id, .. } => Head::Decl(*id),
+        Ty::SelfTy(inner) => return type_head(inner),
+        _ => return None,
+    })
 }

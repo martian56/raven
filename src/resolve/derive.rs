@@ -896,6 +896,9 @@ mod tests {
 
 /// Derive `Eq`, `Hash`, and `ToString` for every type whose fields support them.
 pub fn add_implicit_derives(items: &mut [Decl]) {
+    if std::env::var_os("RAVEN_EXPERIMENT_NO_IMPLICIT").is_some() {
+        return;
+    }
     for trait_name in ["Eq", "Hash", "ToString"] {
         add_implicit(items, trait_name);
     }
