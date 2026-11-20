@@ -64,6 +64,8 @@ pub enum ListMethodOp {
     IsEmpty,
     /// `push(self, x)`: append `x`, mutating the shared heap object.
     Push,
+    /// `reserve(self, n)`: make room for `n` more elements.
+    Reserve,
     /// `pop(self) -> T`: remove and return the last element. Panics when
     /// the list is empty.
     Pop,

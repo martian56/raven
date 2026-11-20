@@ -459,6 +459,7 @@ impl[T] list[T] {
     // `xs * n`: the items repeated `n` times.
     fun mul(self, n: int) -> list[T] {
         let out: list[T] = []
+        out.reserve(len(self) * n)
         var k = 0
         while k < n {
             for x in self {

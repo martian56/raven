@@ -200,9 +200,18 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
         // Lower each block. The entry block first spills incoming
         // parameters, then sets up the GC root frame, then runs the MIR.
         let entry_idx = self.func.entry.0 as usize;
+        let has_loop = self.func.blocks.iter().any(|b| b.is_loop_header);
+        // The safepoint flag's address, computed once in the entry block so
+        // loops poll with a single load instead of reloading the address.
+        let mut stop_flag: Option<Value> = None;
         for (idx, mir_block) in self.func.blocks.iter().enumerate() {
             builder.switch_to_block(blocks[idx]);
             if idx == entry_idx {
+                if has_loop {
+                    let flag = self.cx.gc_stop_flag()?;
+                    let gv = self.cx.module().declare_data_in_func(flag, builder.func);
+                    stop_flag = Some(builder.ins().symbol_value(self.cx.pointer_type(), gv));
+                }
                 Self::spill_params(&mut builder, self.func, &slots, entry);
                 Self::enter_root_frame(
                     self.cx,
@@ -226,10 +235,14 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
             // the allocator). A single atomic load when no collection is pending.
             if mir_block.is_loop_header {
                 if let Some(sp) = self.cx.runtime_id(intrinsics::RUNTIME_GC_SAFEPOINT) {
-                    let flag = self.cx.gc_stop_flag()?;
-                    let ptr = self.cx.pointer_type();
-                    let gv = self.cx.module().declare_data_in_func(flag, builder.func);
-                    let addr = builder.ins().symbol_value(ptr, gv);
+                    let addr = match stop_flag {
+                        Some(a) => a,
+                        None => {
+                            let flag = self.cx.gc_stop_flag()?;
+                            let gv = self.cx.module().declare_data_in_func(flag, builder.func);
+                            builder.ins().symbol_value(self.cx.pointer_type(), gv)
+                        }
+                    };
                     let pending = builder.ins().load(types::I8, MemFlags::trusted(), addr, 0);
                     let park = builder.create_block();
                     let cont = builder.create_block();
@@ -1779,6 +1792,18 @@ fn lower_list_method(
             builder.ins().jump(done, &[]);
 
             builder.switch_to_block(done);
+            Ok(None)
+        }
+        ListMethodOp::Reserve => {
+            let n = require_value(
+                lower_operand(cx, builder, arg.expect("reserve has one argument"), slots)?,
+                "list reserve count",
+            )?;
+            let id = cx
+                .runtime_id(intrinsics::RUNTIME_LIST_RESERVE)
+                .expect("list reserve declared at module init");
+            let f = cx.module().declare_func_in_func(id, builder.func);
+            builder.ins().call(f, &[list, n]);
             Ok(None)
         }
         ListMethodOp::Pop => {

@@ -648,6 +648,10 @@ impl ModuleCx {
         sig = self.make_sig(&[ptr, ptr], &[]);
         self.declare_runtime(intrinsics::RUNTIME_LIST_PUSH, &sig)?;
 
+        // raven_list_reserve(List ptr, additional: i64)
+        sig = self.make_sig(&[ptr, types::I64], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_LIST_RESERVE, &sig)?;
+
         // raven_list_pop(List ptr, out ptr) -> u32
         sig = self.make_sig(&[ptr, ptr], &[i32t]);
         self.declare_runtime(intrinsics::RUNTIME_LIST_POP, &sig)?;

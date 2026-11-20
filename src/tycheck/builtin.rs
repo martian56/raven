@@ -113,6 +113,11 @@ pub fn list_methods() -> Vec<BuiltinMethod> {
             ret: MethodSlot::Concrete(Ty::Unit),
         },
         BuiltinMethod {
+            name: "reserve",
+            params: vec![MethodSlot::Concrete(Ty::Int)],
+            ret: MethodSlot::Concrete(Ty::Unit),
+        },
+        BuiltinMethod {
             name: "pop",
             params: vec![],
             ret: MethodSlot::Element,

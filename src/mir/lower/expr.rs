@@ -2032,6 +2032,7 @@ fn list_method_op(name: &str) -> Option<ListMethodOp> {
         "len" => ListMethodOp::Len,
         "is_empty" => ListMethodOp::IsEmpty,
         "push" => ListMethodOp::Push,
+        "reserve" => ListMethodOp::Reserve,
         "pop" => ListMethodOp::Pop,
         "get" => ListMethodOp::Get,
         _ => return None,
