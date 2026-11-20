@@ -595,6 +595,7 @@ dependencies = [
  "cranelift-native",
  "cranelift-object",
  "fs2",
+ "rustc-hash",
  "serde",
  "sha2",
  "target-lexicon",

@@ -287,7 +287,7 @@ struct Checker<'a, 'b> {
     /// The current function's declared return type.
     return_ty: Ty,
     /// Local variable types keyed by the binding's declaration span.
-    locals: HashMap<BindingKey, Ty>,
+    locals: rustc_hash::FxHashMap<BindingKey, Ty>,
     /// Lexical scope of generic parameters from the enclosing
     /// declaration (impl + method).
     generic_scope: GenericScope,
@@ -376,7 +376,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             types,
             self_ty,
             return_ty,
-            locals: HashMap::new(),
+            locals: Default::default(),
             generic_scope: GenericScope::new(),
             param_bounds: HashMap::new(),
             infer,

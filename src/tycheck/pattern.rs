@@ -24,7 +24,7 @@ pub fn bind(
     pat: &Pattern,
     scrut_ty: &Ty,
     env: &TypeEnv,
-    locals: &mut HashMap<BindingKey, Ty>,
+    locals: &mut rustc_hash::FxHashMap<BindingKey, Ty>,
 ) -> Result<(), RavenError> {
     match &pat.kind {
         PatternKind::Wildcard => Ok(()),

@@ -34,7 +34,7 @@ pub mod wf;
 #[cfg(test)]
 mod tests;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use crate::ast::File;
 use crate::error::RavenError;
@@ -74,16 +74,16 @@ pub struct TypeMap {
     /// `UseKey` (file path plus byte range). Statements that introduce
     /// a binding store the binding's type under the introducing span as
     /// well so downstream passes can look it up.
-    pub types: HashMap<UseKey, Ty>,
+    pub types: rustc_hash::FxHashMap<UseKey, Ty>,
     /// `dyn Trait` coercions keyed by the coerced expression's span.
-    pub coercions: HashMap<UseKey, DynCoercion>,
+    pub coercions: rustc_hash::FxHashMap<UseKey, DynCoercion>,
     /// Resolved explicit type arguments of a generic call, keyed by the
     /// callee's span. Recorded only when a call writes them (`f<Int>()`).
     /// MIR uses them to bind a callee's generic parameters that the value
     /// arguments and result type do not pin down (for example a
     /// `type_name<T>()` inside a generic body, or any `f<T>()` with no
     /// argument carrying `T`).
-    pub type_args: HashMap<UseKey, Vec<Ty>>,
+    pub type_args: rustc_hash::FxHashMap<UseKey, Vec<Ty>>,
     /// Spans of top-level function names passed where a `CFnPtr` is
     /// expected (a C-FFI callback). Such a name lowers to the function's
     /// raw C address rather than a Raven closure object. Every other
