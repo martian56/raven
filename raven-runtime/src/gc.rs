@@ -20,7 +20,7 @@ use crate::object::{
 };
 use crate::object::{MapEntry, SetEntry, BOX_PAYLOAD_OFFSET};
 use crate::raven_dealloc;
-use crate::roots::{RootContext, RootRegistry};
+use crate::roots::{for_each_chain_slot, FrameRec, RootContext, RootRegistry};
 use crate::stw::StopTheWorld;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -235,7 +235,7 @@ pub(crate) type RootSlot = *mut *mut u8;
 /// A saved root chain: the `ROOTS` and `FRAMES` vectors of a goroutine
 /// that is not currently running. The scheduler swaps these in and out of
 /// the thread-local cells on a context switch.
-pub(crate) type SavedRoots = (Vec<RootSlot>, Vec<usize>, Vec<Vec<*mut u8>>);
+pub(crate) type SavedRoots = (Vec<RootSlot>, Vec<usize>, Vec<Vec<*mut u8>>, *mut FrameRec);
 
 /// Hook the scheduler installs so the mark phase can reach the roots of
 /// every parked goroutine and every buffered channel value. It is called
@@ -267,6 +267,7 @@ pub(crate) fn take_root_chain() -> SavedRoots {
             std::mem::take(&mut ctx.roots),
             std::mem::take(&mut ctx.frames),
             std::mem::take(&mut ctx.defer_frames),
+            std::mem::replace(&mut ctx.chain, std::ptr::null_mut()),
         )
     })
 }
@@ -279,6 +280,7 @@ pub(crate) fn install_root_chain(saved: SavedRoots) {
         ctx.roots = saved.0;
         ctx.frames = saved.1;
         ctx.defer_frames = saved.2;
+        ctx.chain = saved.3;
     });
 }
 
@@ -289,6 +291,8 @@ pub(crate) fn for_each_slot_in(saved: &SavedRoots, visit: &mut dyn FnMut(RootSlo
     for &slot in &saved.0 {
         visit(slot);
     }
+    // SAFETY: a parked goroutine's records live on its preserved stack.
+    unsafe { for_each_chain_slot(saved.3, visit) };
     // A parked goroutine's deferred closures are roots too.
     for frame in &saved.2 {
         for closure_slot in frame.iter() {
@@ -502,6 +506,34 @@ pub extern "C" fn raven_gc_enter_frame(roots: *mut *mut u8, count: usize) {
     if !in_raven {
         COORDINATOR.exit_unsafe();
     }
+}
+
+/// Push a compiled function's root record (see [`FrameRec`]) onto this
+/// thread's chain. The caller fills in `count` and the slot addresses.
+///
+/// # Safety
+///
+/// `rec` must stay live until the matching [`raven_gc_unlink_frame`].
+#[no_mangle]
+pub unsafe extern "C" fn raven_gc_link_frame(rec: *mut FrameRec) {
+    shadow_guard_enter();
+    with_roots(|ctx| unsafe {
+        (*rec).prev = ctx.chain;
+        ctx.chain = rec;
+    });
+    shadow_guard_exit();
+}
+
+/// Pop `rec`, the innermost record, off this thread's chain.
+///
+/// # Safety
+///
+/// `rec` must be the record most recently linked and not yet unlinked.
+#[no_mangle]
+pub unsafe extern "C" fn raven_gc_unlink_frame(rec: *mut FrameRec) {
+    shadow_guard_enter();
+    with_roots(|ctx| ctx.chain = unsafe { (*rec).prev });
+    shadow_guard_exit();
 }
 
 /// Unregister the most recently registered frame, truncating the shadow

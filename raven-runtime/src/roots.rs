@@ -21,6 +21,33 @@ use std::sync::Mutex;
 /// null). The collector reads the slot's current value at collection time.
 pub type RootSlot = *mut *mut u8;
 
+/// A compiled function's root record, laid out on its machine stack:
+/// the previous record, the slot count, then that many slot addresses.
+#[repr(C)]
+pub struct FrameRec {
+    pub prev: *mut FrameRec,
+    pub count: usize,
+    pub slots: [RootSlot; 0],
+}
+
+/// Visit each slot address in the chain of records starting at `rec`.
+///
+/// # Safety
+///
+/// Every record in the chain must be live and well formed.
+pub unsafe fn for_each_chain_slot(mut rec: *mut FrameRec, visit: &mut dyn FnMut(RootSlot)) {
+    while !rec.is_null() {
+        let r = unsafe { &*rec };
+        let slots = unsafe { std::slice::from_raw_parts(r.slots.as_ptr(), r.count) };
+        for &slot in slots {
+            if !slot.is_null() {
+                visit(slot);
+            }
+        }
+        rec = r.prev;
+    }
+}
+
 /// One thread's shadow stack: the root slots it has registered and the frame
 /// boundaries into them. A thread mutates only its own context, and only the
 /// collector reads other threads' contexts (while they are parked), so no lock
@@ -38,6 +65,8 @@ pub struct RootContext {
     /// migrates worker threads. Held as `*mut u8` to keep this module free of
     /// object-layout types.
     pub defer_frames: Vec<Vec<*mut u8>>,
+    /// The innermost compiled function's root record.
+    pub chain: *mut FrameRec,
 }
 
 impl RootContext {
@@ -46,6 +75,7 @@ impl RootContext {
             roots: Vec::new(),
             frames: Vec::new(),
             defer_frames: Vec::new(),
+            chain: std::ptr::null_mut(),
         }
     }
 }
@@ -107,6 +137,7 @@ impl RootRegistry {
                     visit(slot);
                 }
             }
+            unsafe { for_each_chain_slot(ctx.chain, visit) };
             // Parked deferred closures are roots too: hand the collector the
             // address of each slot holding a closure pointer.
             for frame in &ctx.defer_frames {
@@ -140,11 +171,13 @@ mod tests {
             roots: vec![&mut obj_a as *mut *mut u8],
             frames: vec![],
             defer_frames: vec![],
+            chain: std::ptr::null_mut(),
         };
         let mut ctx_b = RootContext {
             roots: vec![&mut obj_b as *mut *mut u8],
             frames: vec![],
             defer_frames: vec![],
+            chain: std::ptr::null_mut(),
         };
         reg.register(&mut ctx_a);
         reg.register(&mut ctx_b);
@@ -171,6 +204,7 @@ mod tests {
             roots: vec![std::ptr::null_mut(), &mut obj as *mut *mut u8],
             frames: vec![],
             defer_frames: vec![],
+            chain: std::ptr::null_mut(),
         };
         reg.register(&mut ctx);
 
@@ -192,6 +226,7 @@ mod tests {
             roots: vec![&mut obj as *mut *mut u8],
             frames: vec![],
             defer_frames: vec![],
+            chain: std::ptr::null_mut(),
         };
         reg.register(&mut ctx);
         reg.deregister(&mut ctx);

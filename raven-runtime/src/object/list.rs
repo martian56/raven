@@ -306,6 +306,14 @@ fn grow_buffer(l: *mut List, elem_size: u32, elem_align: u32, old_cap: u32, new_
     true
 }
 
+// Compiled code reads these fields inline at fixed offsets.
+const _: () = {
+    assert!(std::mem::offset_of!(List, header) == 0);
+    assert!(std::mem::offset_of!(List, elements) == 32);
+    assert!(std::mem::offset_of!(crate::object::ObjectHeader, len) == 8);
+    assert!(std::mem::offset_of!(crate::object::ObjectHeader, cap) == 12);
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,11 +492,3 @@ mod tests {
         unsafe { crate::gc::free_for_test(l as *mut ObjectHeader) };
     }
 }
-
-// Compiled code reads these fields inline at fixed offsets.
-const _: () = {
-    assert!(std::mem::offset_of!(List, header) == 0);
-    assert!(std::mem::offset_of!(List, elements) == 32);
-    assert!(std::mem::offset_of!(crate::object::ObjectHeader, len) == 8);
-    assert!(std::mem::offset_of!(crate::object::ObjectHeader, cap) == 12);
-};

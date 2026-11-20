@@ -78,9 +78,10 @@ pub fn cranelift_ty(ty: &MirType, ptr: CType) -> Option<CType> {
 #[derive(Clone, Copy)]
 struct LocalSlot {
     /// Stack slot of a GC pointer local, which the collector reads through
-    /// the root frame.
+    /// the root frame. Every store writes it; reads use `var`, which is safe
+    /// because the collector never moves objects.
     slot: Option<StackSlot>,
-    /// SSA variable of a scalar local.
+    /// SSA variable holding the local's current value.
     var: Option<Variable>,
     /// The local is a `list[bool]`, whose elements are one byte.
     byte_list: bool,
@@ -148,7 +149,7 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
                     t.bytes(),
                 ))
             });
-            let var = ty.filter(|_| !gc).map(|t| {
+            let var = ty.map(|t| {
                 let v = Variable::from_u32(i as u32);
                 builder.declare_var(v, t);
                 v
@@ -165,12 +166,13 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
             });
         }
 
-        // Allocate the root array slot once when the function holds any
-        // GC pointer locals. It is one pointer-sized slot per GC local.
+        // Allocate the root record once when the function holds any GC
+        // pointer locals: the chain link, the count, then one slot address
+        // per GC local.
         let root_frame = if gc_locals.is_empty() || !may_collect(self.func) {
             None
         } else {
-            let bytes = (gc_locals.len() as u32) * (ptr.bytes());
+            let bytes = (gc_locals.len() as u32 + 2) * (ptr.bytes());
             let array = builder
                 .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, bytes));
             Some(RootFrame {
@@ -264,7 +266,8 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
             });
             if let Some(slot) = slot_info.slot {
                 builder.ins().stack_store(v, slot, 0);
-            } else if let Some(var) = slot_info.var {
+            }
+            if let Some(var) = slot_info.var {
                 builder.def_var(var, v);
             }
         }
@@ -292,8 +295,9 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
     /// before the body assigns it never reads an uninitialized slot.
     /// Parameter locals already hold their incoming pointer and are not
     /// re-zeroed. The slot address of each GC local is then written into
-    /// the contiguous root array, and `raven_gc_enter_frame` registers
-    /// the array. A matching `raven_gc_leave_frame` runs at every return.
+    /// the root record, and `raven_gc_link_frame` pushes the record onto the
+    /// thread's chain. A matching `raven_gc_unlink_frame` runs at every
+    /// return.
     fn enter_root_frame(
         cx: &mut ModuleCx,
         builder: &mut FunctionBuilder<'_>,
@@ -322,15 +326,18 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
             let slot_addr = builder.ins().stack_addr(ptr, slot, 0);
             builder
                 .ins()
-                .stack_store(slot_addr, frame.array, (i as i32) * ptr.bytes() as i32);
+                .stack_store(slot_addr, frame.array, (i as i32 + 2) * ptr.bytes() as i32);
         }
-        let array_addr = builder.ins().stack_addr(ptr, frame.array, 0);
         let count = builder.ins().iconst(ptr, frame.count as i64);
-        let enter = cx
-            .runtime_id(intrinsics::RUNTIME_GC_ENTER_FRAME)
-            .expect("gc enter frame declared at module init");
-        let enter_ref = cx.module().declare_func_in_func(enter, builder.func);
-        builder.ins().call(enter_ref, &[array_addr, count]);
+        builder
+            .ins()
+            .stack_store(count, frame.array, ptr.bytes() as i32);
+        let rec = builder.ins().stack_addr(ptr, frame.array, 0);
+        let link = cx
+            .runtime_id(intrinsics::RUNTIME_GC_LINK_FRAME)
+            .expect("gc link frame declared at module init");
+        let link_ref = cx.module().declare_func_in_func(link, builder.func);
+        builder.ins().call(link_ref, &[rec]);
     }
 }
 
@@ -1027,9 +1034,11 @@ fn store_local(
     let (Some(want), Some(v)) = (info.ty, value) else {
         return;
     };
-    if let Some(var) = info.var {
-        let v = coerce_to(builder, v, want);
-        builder.def_var(var, v);
+    if info.slot.is_none() {
+        if let Some(var) = info.var {
+            let v = coerce_to(builder, v, want);
+            builder.def_var(var, v);
+        }
         return;
     }
     let Some(slot) = info.slot else {
@@ -1041,6 +1050,9 @@ fn store_local(
     // Cranelift store type checks.
     let v = narrow_from_slot(builder, v, want);
     builder.ins().stack_store(v, slot, 0);
+    if let Some(var) = info.var {
+        builder.def_var(var, v);
+    }
 }
 
 fn require_value(v: RValue, what: &'static str) -> Result<Value, CodegenError> {
@@ -1308,6 +1320,21 @@ fn lower_struct_create(
     // must stay reachable across it. Each field value is unrooted only
     // between its production and its immediate store into the rooted struct,
     // with no allocation in between.
+    if !fields.iter().any(operand_allocates) {
+        let values = fields
+            .iter()
+            .map(|f| lower_operand(cx, builder, f, slots))
+            .collect::<Result<Vec<_>, _>>()?;
+        let obj = call_struct_new(cx, builder, fields.len() as i64, type_id, ptr);
+        let base = call_struct_fields(cx, builder, obj, ptr);
+        for (i, v) in values.into_iter().enumerate() {
+            let v = widen_to_slot(builder, v, ptr);
+            builder
+                .ins()
+                .store(MemFlags::new(), v, base, layout::slot_offset(i));
+        }
+        return Ok(Some(obj));
+    }
     let obj = call_struct_new(cx, builder, fields.len() as i64, type_id, ptr);
     let root = push_temp_root(cx, builder, obj, ptr);
     for (i, f) in fields.iter().enumerate() {
@@ -1362,6 +1389,25 @@ fn lower_enum_create(
     // operand can allocate and trigger a collection, and the partially
     // built value must stay reachable across it.
     let field_count = 1 + payload.len() as i64;
+    if !payload.iter().any(operand_allocates) {
+        let values = payload
+            .iter()
+            .map(|p| lower_operand(cx, builder, p, slots))
+            .collect::<Result<Vec<_>, _>>()?;
+        let obj = call_struct_new(cx, builder, field_count, type_id, ptr);
+        let base = call_struct_fields(cx, builder, obj, ptr);
+        let disc = builder.ins().iconst(ptr, variant as i64);
+        builder
+            .ins()
+            .store(MemFlags::new(), disc, base, layout::slot_offset(0));
+        for (i, v) in values.into_iter().enumerate() {
+            let v = widen_to_slot(builder, v, ptr);
+            builder
+                .ins()
+                .store(MemFlags::new(), v, base, layout::slot_offset(i + 1));
+        }
+        return Ok(Some(obj));
+    }
     let obj = call_struct_new(cx, builder, field_count, type_id, ptr);
     let root = push_temp_root(cx, builder, obj, ptr);
     // Slot 0: the discriminant.
@@ -1403,6 +1449,12 @@ fn lower_field_access(
         .ins()
         .load(ptr, MemFlags::new(), fields, layout::slot_offset(index));
     Ok(Some(raw))
+}
+
+/// Whether lowering `op` can allocate: a string literal becomes a heap
+/// `String`. Locals and scalar constants never allocate.
+fn operand_allocates(op: &MirOperand) -> bool {
+    matches!(op, MirOperand::Const(MirConstant::Str(_)))
 }
 
 /// Spill a freshly allocated heap object into a one-pointer stack slot and
@@ -3259,21 +3311,23 @@ fn lower_terminator(
     }
 }
 
-/// Emit the matching `raven_gc_leave_frame` for a function that entered
+/// Emit the matching `raven_gc_unlink_frame` for a function that entered
 /// a root frame. A no-op when the function has no GC pointer locals.
 fn leave_root_frame(
     cx: &mut ModuleCx,
     builder: &mut FunctionBuilder<'_>,
     root_frame: Option<RootFrame>,
 ) {
-    if root_frame.is_none() {
+    let Some(frame) = root_frame else {
         return;
-    }
-    let leave = cx
-        .runtime_id(intrinsics::RUNTIME_GC_LEAVE_FRAME)
-        .expect("gc leave frame declared at module init");
-    let leave_ref = cx.module().declare_func_in_func(leave, builder.func);
-    builder.ins().call(leave_ref, &[]);
+    };
+    let ptr = cx.pointer_type();
+    let rec = builder.ins().stack_addr(ptr, frame.array, 0);
+    let unlink = cx
+        .runtime_id(intrinsics::RUNTIME_GC_UNLINK_FRAME)
+        .expect("gc unlink frame declared at module init");
+    let unlink_ref = cx.module().declare_func_in_func(unlink, builder.func);
+    builder.ins().call(unlink_ref, &[rec]);
 }
 
 /// Open the per-call defer frame at function entry.
@@ -3363,9 +3417,27 @@ fn lower_switch_int(
         "switch discriminant",
     )?;
     let disc_ty = builder.func.dfg.value_type(disc);
-    // Widen i8 discriminants (typically Bool) to i64 so all comparisons
-    // share a single integer type; this matches the conventional
-    // expansion of an if into a switch_int with two integer targets.
+    let block = |b: MirBlockId| blocks[b.0 as usize];
+    let is_bool = disc_ty == types::I8;
+    let two_way = match targets {
+        [(0, f), (1, t)] | [(1, t), (0, f)] if is_bool => Some((*t, *f)),
+        [(1, t)] if is_bool => Some((*t, otherwise)),
+        [(0, f)] => Some((otherwise, *f)),
+        _ => None,
+    };
+    if let Some((on_true, on_false)) = two_way {
+        builder
+            .ins()
+            .brif(disc, block(on_true), &[], block(on_false), &[]);
+        return Ok(());
+    }
+    if let [(v, t)] = targets {
+        let cmp = builder.ins().icmp_imm(IntCC::Equal, disc, *v);
+        builder
+            .ins()
+            .brif(cmp, block(*t), &[], block(otherwise), &[]);
+        return Ok(());
+    }
     let disc_wide = if disc_ty == types::I64 {
         disc
     } else {

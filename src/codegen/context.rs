@@ -196,7 +196,6 @@ impl ModuleCx {
         Ok(())
     }
 
-    /// The data slot of a mutable module-level global, by its mangled symbol.
     /// The runtime's `RAVEN_GC_STOP_PENDING` flag, imported on first use.
     pub fn gc_stop_flag(&mut self) -> Result<DataId, CodegenError> {
         if let Some(id) = self.gc_stop_flag {
@@ -209,6 +208,7 @@ impl ModuleCx {
         Ok(id)
     }
 
+    /// The data slot of a mutable module-level global, by its mangled symbol.
     pub fn global_data(&self, name: &str) -> Option<DataId> {
         self.globals.get(name).copied()
     }
@@ -521,13 +521,10 @@ impl ModuleCx {
         sig = self.make_sig(&[i32t, i32t, i64t], &[]);
         self.declare_runtime(intrinsics::RUNTIME_ENUM_REGISTER, &sig)?;
 
-        // raven_gc_enter_frame(roots: ptr, count: usize)
-        sig = self.make_sig(&[ptr, ptr], &[]);
-        self.declare_runtime(intrinsics::RUNTIME_GC_ENTER_FRAME, &sig)?;
-
-        // raven_gc_leave_frame()
-        sig = self.make_sig(&[], &[]);
-        self.declare_runtime(intrinsics::RUNTIME_GC_LEAVE_FRAME, &sig)?;
+        // raven_gc_link_frame(rec: ptr), raven_gc_unlink_frame(rec: ptr)
+        sig = self.make_sig(&[ptr], &[]);
+        self.declare_runtime(intrinsics::RUNTIME_GC_LINK_FRAME, &sig)?;
+        self.declare_runtime(intrinsics::RUNTIME_GC_UNLINK_FRAME, &sig)?;
 
         // raven_gc_push_root(slot: ptr)
         sig = self.make_sig(&[ptr], &[]);

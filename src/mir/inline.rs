@@ -1,9 +1,9 @@
 //! Inline small leaf functions into their callers.
 //!
 //! Cranelift does not inline across functions, so tiny helpers (field
-//! getters, `Int` hashing and equality, arithmetic wrappers) cost a full call
-//! each. A callee qualifies when it has no calls, loops, or defers and only a
-//! handful of simple statements.
+//! getters, `Int` hashing and equality, hash table probes) cost a full call
+//! and a GC root frame each. A callee qualifies when it is small, not
+//! recursive, and has no defers.
 
 use std::collections::HashMap;
 
@@ -12,8 +12,8 @@ use super::ir::{
     MirStatement, MirTerminator,
 };
 
-const MAX_STATEMENTS: usize = 12;
-const MAX_BLOCKS: usize = 4;
+const MAX_STATEMENTS: usize = 40;
+const MAX_BLOCKS: usize = 24;
 const ROUNDS: usize = 2;
 
 pub fn inline_small_functions(program: &mut MirProgram) {
@@ -43,20 +43,21 @@ fn inlinable(f: &MirFunction) -> bool {
     }
     let mut count = 0;
     for b in &f.blocks {
-        if b.is_loop_header {
-            return false;
-        }
         if !matches!(
             b.terminator,
-            MirTerminator::Goto(_) | MirTerminator::SwitchInt { .. } | MirTerminator::Return(_)
+            MirTerminator::Goto(_)
+                | MirTerminator::SwitchInt { .. }
+                | MirTerminator::Return(_)
+                | MirTerminator::Unreachable
         ) {
             return false;
         }
         for st in &b.statements {
             count += 1;
             let ok = match st {
-                MirStatement::Assign { rvalue, .. } => simple_rvalue(rvalue),
+                MirStatement::Assign { rvalue, .. } => simple_rvalue(rvalue, &f.name),
                 MirStatement::StoreField { .. }
+                | MirStatement::StoreIndex { .. }
                 | MirStatement::StorageLive(_)
                 | MirStatement::StorageDead(_)
                 | MirStatement::Nop => true,
@@ -70,15 +71,20 @@ fn inlinable(f: &MirFunction) -> bool {
     count <= MAX_STATEMENTS
 }
 
-fn simple_rvalue(r: &MirRvalue) -> bool {
-    matches!(
-        r,
-        MirRvalue::Use(_)
-            | MirRvalue::BinaryOp(..)
-            | MirRvalue::UnaryOp(..)
-            | MirRvalue::FieldAccess { .. }
-            | MirRvalue::Cast { .. }
-    )
+fn simple_rvalue(r: &MirRvalue, own: &str) -> bool {
+    match r {
+        MirRvalue::Call { callee, .. } => callee.mangled != own,
+        _ => matches!(
+            r,
+            MirRvalue::Use(_)
+                | MirRvalue::BinaryOp(..)
+                | MirRvalue::UnaryOp(..)
+                | MirRvalue::FieldAccess { .. }
+                | MirRvalue::Cast { .. }
+                | MirRvalue::IndexAccess { .. }
+                | MirRvalue::ListMethod { .. }
+        ),
+    }
 }
 
 fn inline_into(caller: &mut MirFunction, candidates: &HashMap<String, MirFunction>) -> bool {
@@ -174,7 +180,7 @@ fn splice(
             id: map_block(cb.id),
             statements,
             terminator,
-            is_loop_header: false,
+            is_loop_header: cb.is_loop_header,
         });
     }
     caller.blocks.push(MirBlock {
@@ -203,6 +209,11 @@ fn map_statement(st: &MirStatement, f: &dyn Fn(MirLocal) -> MirLocal) -> MirStat
             index: *index,
             value: map_operand(value, f),
         },
+        MirStatement::StoreIndex { base, index, value } => MirStatement::StoreIndex {
+            base: map_operand(base, f),
+            index: map_operand(index, f),
+            value: map_operand(value, f),
+        },
         MirStatement::StorageLive(l) => MirStatement::StorageLive(f(*l)),
         MirStatement::StorageDead(l) => MirStatement::StorageDead(f(*l)),
         other => other.clone(),
@@ -219,6 +230,25 @@ fn map_rvalue(r: &MirRvalue, f: &dyn Fn(MirLocal) -> MirLocal) -> MirRvalue {
         MirRvalue::FieldAccess { base, index } => MirRvalue::FieldAccess {
             base: map_operand(base, f),
             index: *index,
+        },
+        MirRvalue::Call { callee, args } => MirRvalue::Call {
+            callee: callee.clone(),
+            args: args.iter().map(|a| map_operand(a, f)).collect(),
+        },
+        MirRvalue::IndexAccess { base, index } => MirRvalue::IndexAccess {
+            base: map_operand(base, f),
+            index: map_operand(index, f),
+        },
+        MirRvalue::ListMethod {
+            op,
+            receiver,
+            arg,
+            elem_ty,
+        } => MirRvalue::ListMethod {
+            op: *op,
+            receiver: map_operand(receiver, f),
+            arg: arg.as_ref().map(|a| map_operand(a, f)),
+            elem_ty: elem_ty.clone(),
         },
         MirRvalue::Cast { operand, target } => MirRvalue::Cast {
             operand: map_operand(operand, f),
