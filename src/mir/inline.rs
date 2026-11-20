@@ -3,7 +3,8 @@
 //! Cranelift does not inline across functions, so tiny helpers (field
 //! getters, `Int` hashing and equality, hash table probes) cost a full call
 //! and a GC root frame each. A callee qualifies when it is small, not
-//! recursive, and has no defers.
+//! recursive, and has no defers. A small recursive function is inlined into
+//! itself once.
 
 use std::collections::HashMap;
 
@@ -20,6 +21,9 @@ const ROUNDS: usize = 2;
 const MAX_CALLER_LOCALS: usize = 512;
 
 pub fn inline_small_functions(program: &mut MirProgram) {
+    for f in &mut program.functions {
+        inline_self_once(f);
+    }
     for _ in 0..ROUNDS {
         let candidates: HashMap<String, MirFunction> = program
             .functions
@@ -40,7 +44,50 @@ pub fn inline_small_functions(program: &mut MirProgram) {
     }
 }
 
+/// Inline a small recursive function into itself one level deep, the way C
+/// compilers do: each self call becomes the body, whose own self calls stay
+/// calls. `fib` then makes half as many calls.
+fn inline_self_once(f: &mut MirFunction) {
+    const MARKER: &str = "__raven_self_inline";
+    let calls = |g: &MirFunction, name: &str| {
+        g.blocks.iter().any(|b| {
+            b.statements.iter().any(|st| {
+                matches!(st, MirStatement::Assign { rvalue: MirRvalue::Call { callee, .. }, .. }
+                    if callee.mangled == name)
+            })
+        })
+    };
+    if !calls(f, &f.name) || !inlinable_with(f, true) {
+        return;
+    }
+    let original = f.clone();
+    let rename = |g: &mut MirFunction, from: &str, to: &str| {
+        for b in &mut g.blocks {
+            for st in &mut b.statements {
+                if let MirStatement::Assign {
+                    rvalue: MirRvalue::Call { callee, .. },
+                    ..
+                } = st
+                {
+                    if callee.mangled == from {
+                        callee.mangled = to.to_string();
+                    }
+                }
+            }
+        }
+    };
+    let name = f.name.clone();
+    rename(f, &name, MARKER);
+    let candidates = HashMap::from([(MARKER.to_string(), original)]);
+    inline_into(f, &candidates);
+    rename(f, MARKER, &name);
+}
+
 fn inlinable(f: &MirFunction) -> bool {
+    inlinable_with(f, false)
+}
+
+fn inlinable_with(f: &MirFunction, allow_self: bool) -> bool {
     if f.has_defer || f.blocks.len() > MAX_BLOCKS || f.origin == "main" {
         return false;
     }
@@ -58,7 +105,9 @@ fn inlinable(f: &MirFunction) -> bool {
         for st in &b.statements {
             count += 1;
             let ok = match st {
-                MirStatement::Assign { rvalue, .. } => simple_rvalue(rvalue, &f.name),
+                MirStatement::Assign { rvalue, .. } => {
+                    simple_rvalue(rvalue, if allow_self { "" } else { &f.name })
+                }
                 MirStatement::StoreField { .. }
                 | MirStatement::StoreIndex { .. }
                 | MirStatement::StorageLive(_)
