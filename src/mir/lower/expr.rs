@@ -987,20 +987,12 @@ fn lower_if(
     else_block: Option<&HirBlock>,
     ty: MirType,
 ) -> MirOperand {
-    let discr = lower_expr(cx, cond);
     let then_bb = cx.builder.new_block();
     let else_bb = cx.builder.new_block();
     let cont_bb = cx.builder.new_block();
     let result = cx.builder.fresh_temp("if", ty);
 
-    cx.builder.close_block(
-        cx.current,
-        MirTerminator::SwitchInt {
-            discriminant: discr,
-            targets: vec![(0, else_bb), (1, then_bb)],
-            otherwise: else_bb,
-        },
-    );
+    lower_cond_branch(cx, cond, then_bb, else_bb);
 
     cx.current = then_bb;
     let tv = lower_expr_block(cx, then_block);
@@ -1025,6 +1017,50 @@ fn lower_if(
     // The merge block is reachable even if one branch diverged.
     cx.diverged = false;
     MirOperand::Copy(result)
+}
+
+/// Branch to `then_bb` when `cond` holds and to `else_bb` otherwise. `and`,
+/// `or`, and `not` become branches instead of a materialized `bool`, so the
+/// block that computed a condition's operands dominates the branch it takes
+/// and later code can reuse those values.
+fn lower_cond_branch(
+    cx: &mut LowerCx<'_>,
+    cond: &HirExpr,
+    then_bb: super::super::ir::MirBlockId,
+    else_bb: super::super::ir::MirBlockId,
+) {
+    match &cond.kind {
+        HirExprKind::Paren(x) => lower_cond_branch(cx, x, then_bb, else_bb),
+        HirExprKind::Unary {
+            op: HirUnaryOp::Not,
+            operand,
+        } => lower_cond_branch(cx, operand, else_bb, then_bb),
+        HirExprKind::Binary { op, lhs, rhs }
+            if matches!(op, HirBinaryOp::And | HirBinaryOp::Or) =>
+        {
+            let mid = cx.builder.new_block();
+            if *op == HirBinaryOp::And {
+                lower_cond_branch(cx, lhs, mid, else_bb);
+            } else {
+                lower_cond_branch(cx, lhs, then_bb, mid);
+            }
+            cx.current = mid;
+            lower_cond_branch(cx, rhs, then_bb, else_bb);
+        }
+        _ => {
+            let c = lower_expr(cx, cond);
+            if !cx.builder.is_closed(cx.current) {
+                cx.builder.close_block(
+                    cx.current,
+                    MirTerminator::SwitchInt {
+                        discriminant: c,
+                        targets: vec![(0, else_bb), (1, then_bb)],
+                        otherwise: else_bb,
+                    },
+                );
+            }
+        }
+    }
 }
 
 fn lower_expr_block(cx: &mut LowerCx<'_>, block: &HirBlock) -> MirOperand {
@@ -1076,15 +1112,7 @@ fn lower_while(cx: &mut LowerCx<'_>, cond: &HirExpr, body: &HirBlock, ty: MirTyp
     }
 
     cx.current = header;
-    let c = lower_expr(cx, cond);
-    cx.builder.close_block(
-        cx.current,
-        MirTerminator::SwitchInt {
-            discriminant: c,
-            targets: vec![(0, cont), (1, body_bb)],
-            otherwise: cont,
-        },
-    );
+    lower_cond_branch(cx, cond, body_bb, cont);
 
     cx.current = body_bb;
     cx.loops.push(LoopFrame {
@@ -1115,15 +1143,7 @@ fn lower_while_rotated(cx: &mut LowerCx<'_>, cond: &HirExpr, body: &HirBlock) ->
     let cont = cx.builder.new_block();
 
     if !cx.builder.is_closed(cx.current) {
-        let c = lower_expr(cx, cond);
-        cx.builder.close_block(
-            cx.current,
-            MirTerminator::SwitchInt {
-                discriminant: c,
-                targets: vec![(0, cont), (1, body_bb)],
-                otherwise: cont,
-            },
-        );
+        lower_cond_branch(cx, cond, body_bb, cont);
     }
 
     cx.current = body_bb;
@@ -1140,15 +1160,7 @@ fn lower_while_rotated(cx: &mut LowerCx<'_>, cond: &HirExpr, body: &HirBlock) ->
     cx.loops.pop();
 
     cx.current = latch;
-    let c = lower_expr(cx, cond);
-    cx.builder.close_block(
-        cx.current,
-        MirTerminator::SwitchInt {
-            discriminant: c,
-            targets: vec![(0, cont), (1, body_bb)],
-            otherwise: cont,
-        },
-    );
+    lower_cond_branch(cx, cond, body_bb, cont);
 
     cx.current = cont;
     cx.diverged = false;
@@ -1169,7 +1181,20 @@ fn simple_cond(e: &HirExpr) -> bool {
         | HirExprKind::SelfValue => true,
         HirExprKind::Paren(x) => simple_cond(x),
         HirExprKind::Unary { operand, .. } => simple_cond(operand),
-        HirExprKind::Binary { lhs, rhs, .. } => simple_cond(lhs) && simple_cond(rhs),
+        // Arithmetic in the test is usually shared with the body (`zr * zr`
+        // in a mandelbrot loop); a second copy of the test would keep the
+        // body from reusing it, so only plain comparisons are rotated.
+        HirExprKind::Binary { op, lhs, rhs } => {
+            !matches!(
+                op,
+                HirBinaryOp::Add
+                    | HirBinaryOp::Sub
+                    | HirBinaryOp::Mul
+                    | HirBinaryOp::Div
+                    | HirBinaryOp::Mod
+            ) && simple_cond(lhs)
+                && simple_cond(rhs)
+        }
         HirExprKind::Field { receiver, .. } => simple_cond(receiver),
         HirExprKind::Index { receiver, index } => simple_cond(receiver) && simple_cond(index),
         HirExprKind::MethodCall { receiver, args, .. } => {

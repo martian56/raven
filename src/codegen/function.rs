@@ -86,6 +86,8 @@ struct LocalSlot {
     var: Option<Variable>,
     /// The local is a `list[bool]`, whose elements are one byte.
     byte_list: bool,
+    /// The local is a `list[float]`, whose elements load and store as f64.
+    float_list: bool,
     /// Cranelift type, `None` for `Unit` locals.
     ty: Option<CType>,
 }
@@ -187,12 +189,14 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
             };
             let var = ty.map(|t| builder.declare_var(t));
             let byte_list = is_byte_list(&decl.ty);
+            let float_list = matches!(&decl.ty, MirType::List(inner) if **inner == MirType::Float);
             slots.push(LocalSlot {
                 slot,
                 offset,
                 var,
                 ty,
                 byte_list,
+                float_list,
             });
         }
 
@@ -552,6 +556,10 @@ fn lower_store_index(
     let v = if byte {
         let v = require_value(v, "index store value")?;
         coerce_to(builder, v, types::I8)
+    } else if operand_is_float_list(base, slots)
+        && v.is_some_and(|x| builder.func.dfg.value_type(x) == types::F64)
+    {
+        v.expect("checked above")
     } else {
         widen_to_slot(builder, v, ptr)
     };
@@ -1737,7 +1745,13 @@ fn lower_index_access(
         .ins()
         .imul_imm_s(idx, if byte { 1 } else { ELEMENT_SLOT });
     let addr = builder.ins().iadd(elements, offset);
-    let width = if byte { types::I8 } else { ptr };
+    let width = if byte {
+        types::I8
+    } else if operand_is_float_list(base, slots) {
+        types::F64
+    } else {
+        ptr
+    };
     let raw = builder.ins().load(width, MemFlagsData::new(), addr, 0);
     Ok(Some(raw))
 }
@@ -2009,9 +2023,39 @@ fn emit_div_guard(
     zero_msg: &str,
 ) {
     let ty = builder.func.dfg.value_type(lhs);
+    // A constant divisor settles both checks at compile time.
+    let known = const_int(builder, rhs);
+    if known != Some(0) && known.is_some() {
+        if known == Some(-1) {
+            emit_min_neg_one_check(cx, builder, lhs, rhs, ty);
+        }
+        return;
+    }
     let zero = builder.ins().iconst(ty, 0);
     let nonzero = builder.ins().icmp(IntCC::NotEqual, rhs, zero);
     emit_status_check(cx, builder, nonzero, zero_msg);
+    emit_min_neg_one_check(cx, builder, lhs, rhs, ty);
+}
+
+/// The integer constant `v` was defined as, when it comes from an `iconst`.
+fn const_int(builder: &FunctionBuilder<'_>, v: Value) -> Option<i64> {
+    let inst = builder.func.dfg.value_def(v).inst()?;
+    match builder.func.dfg.insts[inst] {
+        cranelift_codegen::ir::InstructionData::UnaryImm {
+            opcode: cranelift_codegen::ir::Opcode::Iconst,
+            imm,
+        } => Some(imm.bits()),
+        _ => None,
+    }
+}
+
+fn emit_min_neg_one_check(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    lhs: Value,
+    rhs: Value,
+    ty: types::Type,
+) {
     // The signed overflow `MIN / -1` has no representable result and traps the
     // same way, at every width (a 32-bit `CInt` included). Continue only when
     // the operands are not that pair, using the type-appropriate minimum.
@@ -3691,6 +3735,13 @@ fn elem_size(elem: &MirType) -> i64 {
         1
     } else {
         ELEMENT_SLOT
+    }
+}
+
+fn operand_is_float_list(op: &MirOperand, slots: &[LocalSlot]) -> bool {
+    match op {
+        MirOperand::Copy(l) => slots.get(l.0 as usize).is_some_and(|s| s.float_list),
+        _ => false,
     }
 }
 
