@@ -1,0 +1,44 @@
+// A spawned child's output is all readable once `poll` reports its exit,
+// even for a command that exits right after writing. Prints: lost 0
+from std.process import start
+from std.env import os_name
+from std.sync import sleep_millis
+
+fun echo_hello() -> str {
+    var shell = "sh"
+    var flag = "-c"
+    if os_name() == "windows" {
+        shell = "cmd"
+        flag = "/c"
+    }
+    return match start(shell, [flag, "echo hello"]) {
+        case Ok(child) {
+            child.close_stdin()
+            var out = ""
+            while true {
+                out = out.concat(child.read_stdout())
+                match child.poll() {
+                    case Some(code) {
+                        out = out.concat(child.read_stdout())
+                        break
+                    }
+                    case None {}
+                }
+                sleep_millis(1)
+            }
+            child.free()
+            out
+        }
+        case Err(e) { "" }
+    }
+}
+
+fun main() {
+    var lost = 0
+    for i in range(100) {
+        if not echo_hello().contains("hello") {
+            lost += 1
+        }
+    }
+    print("lost", lost)
+}

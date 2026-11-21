@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [3.0.2] - 2026-11-21
+
+### Fixed
+
+- A spawned child's last output is no longer lost when it exits right after writing: once `poll` reports the exit, it waits up to 500 ms for the pipe readers to reach end of file, so a read that follows sees everything the child wrote. If a grandchild keeps the pipe open past that limit, later output can still arrive after the exit is reported.
+
 ## [3.0.1] - 2026-11-21
 
 ### Fixed
