@@ -1,10 +1,10 @@
-# std/http
+# std.http
 
-A small HTTP/1.1 **client** and **server**, both built on [std/net](net.md).
+A small HTTP/1.1 **client** and **server**, both built on [std.net](net.md).
 The client sends `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, and `HEAD` requests
 and hands back a captured response. Every call returns
 `Result[HttpResponse, Error]`, so transport failures (DNS, connect, timeout)
-come back as an [std/error](error.md) `Error` you handle with `match`. The
+come back as an [std.error](error.md) `Error` you handle with `match`. The
 server (`Server`, `Request`, `Response`, `Method`) lets you route requests to
 handler functions; jump to [Server](#server) below.
 
@@ -48,7 +48,7 @@ class HttpResponse {
 | `headers` | Response headers as `Key: Value` lines joined by `\n`. |
 | `body` | The full response body as a `str`. |
 
-Read the fields directly off the struct once you have unwrapped the `Ok`
+Read the fields directly off the value once you have unwrapped the `Ok`
 case.
 
 ## A 404 is not an error
@@ -152,7 +152,7 @@ fun main() {
 
 The general form the others delegate to. `method` is the HTTP verb
 (`"GET"`, `"POST"`, and so on), `body` is the request body (pass `""` for
-none), and `headers` is a String of `Key: Value` lines separated by `\n`
+none), and `headers` is a `str` of `Key: Value` lines separated by `\n`
 (pass `""` for none). Use `request` when you need a custom method or
 request headers.
 
@@ -282,7 +282,7 @@ fun main() {
 
 ## Server
 
-The server side of `std/http` runs an HTTP/1.1 endpoint. You build a routing
+The server side of `std.http` runs an HTTP/1.1 endpoint. You build a routing
 table on a `Server`, then `listen`. A handler is a function from a `Request` to
 a `Response`.
 
@@ -499,7 +499,7 @@ the response.
 ### Working with JSON
 
 `Response.json(value)` serializes any value whose type implements
-[`ToJson`](json.md), so a `@derive(ToJson)` struct or enum, a `List`, an
+[`ToJson`](json.md), so a `@derive(ToJson)` class or enum, a `list`, an
 `Option`, or a scalar, and sets `application/json`. No string-building, no manual
 escaping:
 
@@ -515,7 +515,7 @@ fun show_user(req: Request) -> Response {
 }
 ```
 
-To read a JSON request body into a struct, use `req.json[T]()`, which decodes
+To read a JSON request body into a class, use `req.json[T]()`, which decodes
 the body through the type's `FromJson` impl. Decoding failures (bad JSON, a
 missing or mistyped field) come back as an `Error`:
 
@@ -529,8 +529,8 @@ fun create_user(req: Request) -> Response {
 ```
 
 The type can also come from an annotation, `let user: User = req.json()?`, and
-`decode[User](req.body)` from [std/json](json.md) does the same thing without a
-request. For ad-hoc access when a struct is overkill, `req.json_value()` returns
+`decode[User](req.body)` from [std.json](json.md) does the same thing without a
+request. For ad-hoc access when a class is overkill, `req.json_value()` returns
 the body as a `JsonValue`.
 
 ### Serving files
@@ -583,7 +583,7 @@ pool, and a connection waiting on a read or write does not hold up the others.
 
 ## See also
 
-- [std/net](net.md) for the TCP sockets this client is built on.
-- [std/json](json.md) for parsing and building request and response bodies.
-- [std/error](error.md) for the `Error` type returned on transport failure
+- [std.net](net.md) for the TCP sockets this client is built on.
+- [std.json](json.md) for parsing and building request and response bodies.
+- [std.error](error.md) for the `Error` type returned on transport failure
   (the errors here are tagged with kind `"http"`).

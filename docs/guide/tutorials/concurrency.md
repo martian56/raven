@@ -2,18 +2,18 @@
 
 Raven runs concurrent work as goroutines: lightweight green threads scheduled
 across a pool of OS threads. You start one with the `spawn` keyword and pass
-values between them over channels from [`std/sync`](../stdlib/sync.md). This
+values between them over channels from [`std.sync`](../stdlib/sync.md). This
 tutorial builds up from a single goroutine to a parallel reduction, with a
 detour through `select` and the synchronization primitives. Every step
 compiles and runs.
 
 A couple of facts to keep in mind as you go:
 
-- `spawn` takes a `fun() -> Unit` closure and is a statement, not an
-  expression: you write `spawn(...)` on its own line, you do not assign its
-  result.
-- Channels carry `int` values. To move richer data, send an index or a count
-  and keep the payload in shared state, or send the parts and reassemble them.
+- `spawn { ... }` starts a goroutine. Write it on its own line to fire and
+  forget, or keep its handle (`let t = spawn { ... }`) and call `t.join()` to
+  wait for it.
+- A channel carries any type: `channel[int]()`, `channel_buffered[Msg](8)`.
+  The element type is usually inferred from the first `send`.
 
 ## Step 1: start a goroutine
 
@@ -197,7 +197,7 @@ up front which to read from. The value sum (`100`) and the per-channel counts
 ## Step 6: synchronizing with a wait group and a mutex
 
 Channels move values; sometimes you instead want many goroutines to update
-shared state and a way to wait for them all to finish. `std/sync` provides a
+shared state and a way to wait for them all to finish. `std.sync` provides a
 `wait_group` to join a set of goroutines and a `mutex` to guard a shared value:
 
 ```rust
@@ -282,14 +282,14 @@ fun main() {
 
 Each worker adds `3` to its accumulator `2000` times, so it sends `6000`; eight
 workers sum to `48000`. Note the named `worker` function takes the channel by
-its type `Channel` (imported from `std/sync`), and the `spawn` closure simply
+its type `Channel` (imported from `std.sync`), and the `spawn` closure simply
 calls it. A wrong total here would point at a real concurrency bug (a lost
 value or a scheduler race), which is what makes a deterministic reduction a good
 smoke test.
 
 ## Where to go next
 
-- The [`std/sync` reference](../stdlib/sync.md) documents every channel, select,
+- The [`std.sync` reference](../stdlib/sync.md) documents every channel, select,
   and synchronization function in detail.
 - The [language reference](../language-reference.md#concurrency) covers the
   `spawn` keyword and the scheduling model.

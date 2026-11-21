@@ -8,7 +8,7 @@ Raven 3 reads like Python with braces, compiles faster, and runs faster. It is n
 
 ### Changed
 
-- New surface syntax, the only one Raven accepts. The old forms (`struct`, `const`, `<T>` generics, `Int`/`String`, `&&`/`||`/`!`, `[k: v]`, `Name { field: value }`, `pattern -> value` arms, `{ x -> .. }` and `fun(..) { .. }` lambdas, `import std/x`, `import path { names }`) are errors that name their replacement.
+- New surface syntax, the only one Raven accepts. The old forms (`struct`, `const`, `<T>` generics, `Int`/`String`, `&&`/`||`/`!`, `[k: v]`, `Name { field: value }`, `pattern -> value` arms, `{ x -> .. }` and `fun(..) { .. }` lambdas, `import std.x`, `import path { names }`) are errors that name their replacement.
   - `let` bindings are immutable; `var` declares a reassignable one. A module level `let` bound to a constant is a compile time constant, and assigning to it is an error that suggests `var`.
   - Built-in type names are lowercase: `int`, `float`, `bool`, `str`, `char`, `list[T]`, `dict[K, V]`, `set[T]`.
   - Generic parameters and arguments use square brackets: `fun first[T](xs: list[T]) -> Option[T]`.
@@ -42,6 +42,7 @@ Raven 3 reads like Python with braces, compiles faster, and runs faster. It is n
 - `xs.reserve(n)` grows a list once ahead of many pushes.
 - Python spellings: `elif`, `for i, x in xs`, `x ** y`, `xs.append(x)`, `list(x)`, `xs.reverse()`, `xs.sort(reverse: true)`, `sorted(xs, reverse: true)`, and `range(a, b, step)` with Python's semantics (negative steps count down; a zero step is an error). `True`, `f"..."`, `xs[a:b]`, and `let a, b = ...` are errors that name the Raven form.
 - `import std.math` then `math.sqrt(x)`: module-qualified calls reach a stdlib module's C functions.
+- `x as int` and `x as float` convert a C numeric value (`CSize`, `CInt`, `CDouble`, ...) for native arithmetic.
 - `raven run`, `raven check`, and `raven fmt [--write]`; `rvpm test NAME` runs only the tests whose name contains `NAME`.
 - `Option`, `Result`, and list methods in the prelude (`unwrap`, `map`, `and_then`, `filter`, `fold`, `sorted`, `join`, and the rest).
 - `RAVEN_TIMINGS=1` prints how long each compiler phase took.
@@ -70,6 +71,10 @@ Measured against C (clang -O2), Go, and Rust on `benchmarks/runtime`, Raven is a
 - A class whose name starts with `_` accepts named constructor arguments.
 - Diagnostics show a module's type by its own name instead of an internal mangled one.
 - A module `let` cannot be reassigned, and macro hygiene covers `var` bindings.
+- `raven fmt` keeps a `@repr(C)` class a `class` instead of writing `struct`.
+- `std.cmp.sort` and `sorted_by` use the stable merge sort instead of an O(n^2) selection sort.
+- Printing or interpolating the result of an iterator consumer such as `collect(xs.iter().map(f))` works without a type annotation.
+- Diagnostics say class instead of struct, and name the missing package when an imported item comes from one that is not installed.
 
 ## [2.26.2] - 2026-09-12
 

@@ -1,4 +1,4 @@
-# std/option
+# std.option
 
 Free combinator functions over the built-in `Option[T]`. `Option` and its
 variants `Some` and `None` are part of the language and need no import for the
@@ -128,8 +128,8 @@ fun main() {
 
 ## See also
 
-- [std/error](error.md) for `Result` combinators and the `ok` / `err` bridges
+- [std.error](error.md) for `Result` combinators and the `ok` / `err` bridges
   between `Result` and `Option`.
-- [std/cmp](cmp.md), whose `min_of` and `max_of` return an `Option`.
+- [std.cmp](cmp.md), whose `min_of` and `max_of` return an `Option`.
 - The [language reference](../language-reference.md) for `Option`, `Some`,
   `None`, `match`, and the `?` operator.

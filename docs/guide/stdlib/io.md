@@ -1,4 +1,4 @@
-# std/io
+# std.io
 
 Console input and output: write lines to standard output and read lines from
 standard input. The functions here are free functions, so you import the ones
@@ -19,13 +19,13 @@ fun main() {
 from std.io import print, println, input, read_line
 ```
 
-`std/io` is a set of free functions, so use a selective import and list the
+`std.io` is a set of free functions, so use a selective import and list the
 names you want. A bare `import std.io` does not bring the functions into
 scope.
 
 ### The global `print` builtin
 
-You do not need `std/io` to print. The `print` builtin is always in scope and
+You do not need `std.io` to print. The `print` builtin is always in scope and
 accepts any value whose type implements `ToString`, so it works on numbers,
 booleans, and your own types without conversion:
 
@@ -37,16 +37,16 @@ fun main() {
 }
 ```
 
-The `print` function from `std/io` is the `str`-only form below. The
+The `print` function from `std.io` is the `str`-only form below. The
 always-available builtin is the more convenient choice for most output; reach
-for `std/io` when you want `println`, `input`, or `read_line`.
+for `std.io` when you want `println`, `input`, or `read_line`.
 
 ## Output
 
 ### `print(s: str)`
 
 Write `s` to standard output with no trailing newline. The argument must be a
-`str`; build one with interpolation or [std/string](string.md) methods if
+`str`; build one with interpolation or [std.string](string.md) methods if
 you have other values to include.
 
 ```rust
@@ -126,9 +126,9 @@ fun main() {
 
 ## See also
 
-- [std/string](string.md) for building and trimming the strings you read and
+- [std.string](string.md) for building and trimming the strings you read and
   print.
-- [std/fmt](fmt.md) for padding, joining, and number formatting before
+- [std.fmt](fmt.md) for padding, joining, and number formatting before
   output.
-- [std/fs](fs.md) when you want to read from and write to files instead of the
+- [std.fs](fs.md) when you want to read from and write to files instead of the
   console.

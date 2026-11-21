@@ -1,62 +1,71 @@
-# std/iter: the lazy iterator pipeline
+# std.iter: the lazy iterator pipeline
 
-`std/iter` is bundled Raven source compiled into a program when the user writes `import std/iter { ... }`. It provides lazy, single-pass iterator adapters and the consumers that drive them, built on the `Iterator<T>` trait from the `std/core` prelude:
+`std.iter` is bundled Raven source compiled into a program that imports it, as in `from std.iter import collect, fold`. It provides lazy, single-pass iterator adapters and the consumers that drive them, built on the `Iterator[T]` trait from the `std.core` prelude:
 
-```
-trait Iterator<T> {
-    fun next(self) -> Option<T>
+```rust
+trait Iterator[T] {
+    fun next(self) -> Option[T]
 }
 ```
 
 ## Design
 
-An adapter is a small struct that stores its source iterator (and, where applicable, a captured closure) and implements `Iterator`. Its `next` pulls from the source on demand, so a chain such as `list.iter().map(f).filter(g)` performs no work until a consumer drives it. Each adapter is monomorphized at its concrete source and element types, and the stored closures are called through statically known function-pointer slots, so a finished pipeline runs in a single pass with no per-stage List allocation. Only a consumer that builds a List (`collect`) allocates.
+An adapter is a small class that stores its source iterator (and, where applicable, a captured closure) and implements `next`. Its `next` pulls from the source on demand, so a chain such as `xs.iter().map(f).filter(g)` performs no work until a consumer drives it. Each adapter is compiled once per concrete source and element type, so a finished pipeline runs in a single pass with no intermediate list. Only a consumer that builds a list (`collect`) allocates.
 
 ## Bridge
 
-`ListIter<T>` iterates a `List<T>` by index. `List<T>` gains an `iter()` method (defined with `impl<T> List<T>`) returning a `ListIter<T>`, plus a free `from_list<T>` constructor.
+`ListIter[T]` iterates a `list[T]` by index. `list[T]` gains an `iter()` method returning a `ListIter[T]`, and `from_list(xs)` is the free-function form.
 
 ## Adapters
 
-Each adapter is a generic struct over its element types and a bounded source `S: Iterator<T>`, and implements `next`:
+Each adapter is a generic class over its element types and a bounded source `S: Iterator[T]`:
 
-- `MapIter<T, U, S>`: stores a closure `fun(T) -> U`; `next` maps each source element.
-- `Filter<T, S>`: stores a predicate `fun(T) -> Bool`; `next` pulls until the predicate holds.
-- `Take<T, S>`: yields at most n elements.
-- `Skip<T, S>`: discards the first n, then passes through.
-- `Enumerate<T, S>`: pairs each element with its running index. Raven has no tuples yet, so it yields an `Indexed<T> { index: Int, value: T }` record rather than `(Int, T)`.
+- `MapIter[T, U, S]`: stores a closure `fun(T) -> U`; `next` maps each source element.
+- `Filter[T, S]`: stores a predicate `fun(T) -> bool`; `next` pulls until the predicate holds.
+- `Take[T, S]`: yields at most n elements.
+- `Skip[T, S]`: discards the first n, then passes through.
+- `Enumerate[T, S]`: pairs each element with its running index as an `Indexed[T]` record with `index` and `value` fields.
 
-## Chaining ergonomics
+For plain lists, `for (i, x) in xs.enumerate()` is the simpler form and needs no import.
 
-Raven has no blanket trait impls, so the adapter-constructor methods (`map`, `filter`, `take`, `skip`, `enumerate`) are defined on each concrete iterator type (`ListIter`, `MapIter`, `Filter`, `Take`, `Skip`) rather than once on all `Iterator` types. This is repetitive in the module source but gives users uniform method-call chaining: `xs.iter().map(f).filter(g).take(n)`. A generic-parameter ordering rule applies: a bound that mentions a sibling parameter (`S: Iterator<T>`) must list that parameter first, so each adapter lists its element types before its bounded source type.
+## Chaining
+
+Raven has no blanket trait impls, so the adapter methods (`map`, `filter`, `take`, `skip`, `enumerate`) are defined on each concrete iterator class rather than once for every `Iterator`. That is repetitive in the module source but gives uniform chaining: `xs.iter().map(f).filter(g).take(n)`. A bound that mentions a sibling parameter (`S: Iterator[T]`) must list that parameter first, so each adapter lists its element types before its bounded source type.
 
 ## Consumers
 
-Consumers are free generic functions over any `S: Iterator<T>`, since a consumer cannot be a method shared by every adapter without blanket impls:
+Consumers are free generic functions over any `S: Iterator[T]`:
 
-- `collect<T, S>(it) -> List<T>`
-- `count<T, S>(it) -> Int`
-- `fold<T, A, S>(it, init, f) -> A`
-- `any<T, S>(it, pred) -> Bool`, `all<T, S>(it, pred) -> Bool`
-- `find<T, S>(it, pred) -> Option<T>`
-- `for_each<T, S>(it, f)`
+- `collect(it) -> list[T]`
+- `count(it) -> int`
+- `fold(it, init, f) -> A`
+- `any(it, pred) -> bool`, `all(it, pred) -> bool`
+- `find(it, pred) -> Option[T]`, `position(it, pred) -> Option[int]`
+- `nth(it, n) -> Option[T]`, `last(it) -> Option[T]`
+- `min(it)`, `max(it)` for an `Ord` element, `sum(it)` and `product(it)` for `int`
+- `for_each(it, f)`
 
-A pipeline is built with the adapter methods and then handed to a consumer: `collect(xs.iter().map(f).filter(g))`.
+A pipeline is built with the adapter methods and then handed to a consumer:
 
-## How the element type is recovered for consumers
+```rust
+from std.iter import collect
 
-A consumer's element type `T` appears only in its `S: Iterator<T>` bound and (for `collect`/`fold`) its return type, never in a parameter position. Two mechanisms recover it:
+fun main() {
+    let xs = [1, 2, 3, 4, 5]
+    print(collect(xs.iter().map(x => x * 10).filter(x => x > 20))) // [30, 40, 50]
+}
+```
 
-- The type checker links `T` to the element of the concrete source through deferred iterator links (`add_iterator_link` / `solve_iterator_links` in the inference context), so the call site's result type is concrete (`collect(pipeline)` types as `List<Int>`).
-- Monomorphization recovers `T` for the instantiation substitution by matching the consumer's declared return type against the concrete call result, since the arguments alone cannot bind a parameter that appears only in the return type or a bound. See the call lowering in `src/mir/lower/expr.rs`.
+## How a consumer's element type is found
 
-## for-loops
+A consumer's element type `T` appears only in its `S: Iterator[T]` bound and its return type, never in a parameter. The type checker links `T` to the element of the concrete source (`add_iterator_link` and `solve_iterator_links` in the inference context), so `collect(pipeline)` types as `list[int]`. Checks that need the element type, such as printing the result, run after those links are solved.
 
-`for x in <iterable>` drives any value whose type implements `Iterator` by calling `next` until it returns `None`. Lists and ranges keep their direct counter/index lowering (see `docs/specs/hir.md`); an arbitrary iterator, including a generic parameter bounded by `Iterator<T>`, iterates through the trait method. The loop binding takes the bound's element type.
+## for loops
 
-## Out of scope
+`for x in it` drives any value whose type implements `Iterator` by calling `next` until it returns `None`. Lists and ranges keep their direct index and counter loops; an arbitrary iterator, including a generic parameter bounded by `Iterator[T]`, iterates through the trait method.
 
-- `Zip` and `Chain` adapters: deferred.
-- Tuples for `Enumerate` (uses the `Indexed<T>` record instead).
+## Not included
+
+- `Zip` and `Chain` adapters.
 - Blanket trait impls that would let the adapter methods and consumers be written once for all `Iterator` types.
 - Double-ended and exact-size iteration.

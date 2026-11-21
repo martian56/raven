@@ -2,7 +2,7 @@
 
 This tutorial builds a small program that counts how often each word appears
 in a piece of text and prints the words from most to least common. Along the
-way you will use regular expressions, a hash map, structs, and a custom sort.
+way you will use regular expressions, a dict, classes, and a custom sort.
 Every step compiles and runs, so you can follow along and check your output.
 
 If you have not yet, read [Getting started](../getting-started.md) to install
@@ -56,35 +56,29 @@ A few things to notice:
 
 - `compile` returns a `Result[Regex, Error]`, so you `match` on it. A valid
   pattern gives `Ok(re)`; a malformed one gives `Err(e)`.
-- `text.to_lower()` (from [std/string](../stdlib/string.md)) folds the text to
+- `text.to_lower()` (from [std.string](../stdlib/string.md)) folds the text to
   lowercase first, so `The` and `the` count as the same word.
 - A compiled regex holds a runtime handle outside the garbage collector, so
   you call `re.free()` when you are done with it. See
-  [std/regex](../stdlib/regex.md).
+  [std.regex](../stdlib/regex.md).
 
 Running this prints each word on its own line.
 
-## Step 3: count with a map
+## Step 3: count with a dict
 
 To count, keep a `dict[str, int]` from each word to how many times you have
-seen it. For each word, look it up: if it is already there, store one more;
-if not, start it at one. [std/collections](../stdlib/collections.md) provides
-the map.
+seen it. `counts.get_or(word, 0)` is the current count, or `0` for a word not
+seen yet, so each word stores one more than that.
 
 ```rust
 from std.regex import compile
-import std.collections
-import std.string
 
 fun tally(text: str) -> dict[str, int] {
-    let counts: dict[str, int] = Map.new()
+    var counts: dict[str, int] = {}
     match compile("[a-z]+") {
         case Ok(re) {
             for word in re.find_all(text.to_lower()) {
-                match counts.get(word) {
-                    case Some(n) { counts.set(word, n + 1) }
-                    case None { counts.set(word, 1) }
-                }
+                counts[word] = counts.get_or(word, 0) + 1
             }
             re.free()
         }
@@ -95,34 +89,30 @@ fun tally(text: str) -> dict[str, int] {
 
 fun main() {
     let counts = tally("the cat sat on the mat the cat ran")
-    for key in counts.keys() {
-        match counts.get(key) {
-            case Some(n) { print("${key}: ${n}") }
-            case None {}
-        }
+    for (word, n) in counts {
+        print("${word}: ${n}")
     }
 }
 ```
 
-The annotation `let counts: dict[str, int] = Map.new()` tells the compiler
-the key and value types, since an empty map has nothing to infer them from.
-`counts.get(word)` returns an `Option[int]`: `Some(n)` when the word is
-present, `None` when it is not. That is how the language models "might be
-absent" without a `null`.
+The annotation `var counts: dict[str, int] = {}` tells the compiler the key
+and value types, since an empty dict has nothing to infer them from. Looping
+over a dict yields `(key, value)` pairs in insertion order. To look up a key
+that might be missing, `counts.get(word)` returns an `Option[int]`: `Some(n)`
+when the word is present and `None` when it is not. That is how the language
+models "might be absent" without a `null`.
 
-This prints each word and its count, but in no particular order.
+This prints each word and its count, in the order the words first appeared.
 
 ## Step 4: rank by frequency
 
 To print the words from most to least common, gather the entries into a list
-and sort it. A `Map` does not order its keys, so build a list of pairs first.
-Model a pair as a small struct, then sort with a comparator from
-[std/cmp](../stdlib/cmp.md):
+and sort it. A dict keeps insertion order, not frequency order, so build a list of
+pairs first. Model a pair as a small class, then sort with a comparator from
+[std.cmp](../stdlib/cmp.md):
 
 ```rust
 from std.regex import compile
-import std.collections
-import std.string
 from std.cmp import sorted_by
 
 class WordCount {
@@ -131,14 +121,11 @@ class WordCount {
 }
 
 fun tally(text: str) -> dict[str, int] {
-    let counts: dict[str, int] = Map.new()
+    var counts: dict[str, int] = {}
     match compile("[a-z]+") {
         case Ok(re) {
             for word in re.find_all(text.to_lower()) {
-                match counts.get(word) {
-                    case Some(n) { counts.set(word, n + 1) }
-                    case None { counts.set(word, 1) }
-                }
+                counts[word] = counts.get_or(word, 0) + 1
             }
             re.free()
         }
@@ -149,11 +136,8 @@ fun tally(text: str) -> dict[str, int] {
 
 fun ranked(counts: dict[str, int]) -> list[WordCount] {
     let pairs: list[WordCount] = []
-    for key in counts.keys() {
-        match counts.get(key) {
-            case Some(n) { pairs.push(WordCount(word: key, count: n)) }
-            case None {}
-        }
+    for (word, n) in counts {
+        pairs.push(WordCount(word, n))
     }
     // A comparator returns a negative number when `a` should come first. Using
     // `b.count - a.count` orders by count, highest first.
@@ -173,9 +157,9 @@ Output:
 ```
 the: 3
 cat: 2
-mat: 1
 sat: 1
 on: 1
+mat: 1
 ran: 1
 ```
 
@@ -183,12 +167,13 @@ ran: 1
 `int`: negative when the first argument should sort before the second, zero
 when they tie, positive otherwise. `b.count - a.count` produces a negative
 number when `b` has fewer occurrences than `a`, which puts the larger count
-first.
+first. The sort is stable, so words with the same count keep their first-seen
+order.
 
 ## Step 5: read from a file
 
 The hardcoded string was handy for testing. To count a real file, read it
-with [std/fs](../stdlib/fs.md) and feed its contents to `tally`. `read`
+with [std.fs](../stdlib/fs.md) and feed its contents to `tally`. `read`
 returns `Result[str, Error]`, so a missing file is handled the same way a
 bad regex was: with a `match`. Here is the complete program, reading from
 `input.txt`:
@@ -196,8 +181,6 @@ bad regex was: with a `match`. Here is the complete program, reading from
 ```rust
 from std.fs import read
 from std.regex import compile
-import std.collections
-import std.string
 from std.cmp import sorted_by
 
 class WordCount {
@@ -206,14 +189,11 @@ class WordCount {
 }
 
 fun tally(text: str) -> dict[str, int] {
-    let counts: dict[str, int] = Map.new()
+    var counts: dict[str, int] = {}
     match compile("[a-z]+") {
         case Ok(re) {
             for word in re.find_all(text.to_lower()) {
-                match counts.get(word) {
-                    case Some(n) { counts.set(word, n + 1) }
-                    case None { counts.set(word, 1) }
-                }
+                counts[word] = counts.get_or(word, 0) + 1
             }
             re.free()
         }
@@ -224,11 +204,8 @@ fun tally(text: str) -> dict[str, int] {
 
 fun ranked(counts: dict[str, int]) -> list[WordCount] {
     let pairs: list[WordCount] = []
-    for key in counts.keys() {
-        match counts.get(key) {
-            case Some(n) { pairs.push(WordCount(word: key, count: n)) }
-            case None {}
-        }
+    for (word, n) in counts {
+        pairs.push(WordCount(word, n))
     }
     return sorted_by(pairs, (a: WordCount, b: WordCount) -> int => b.count - a.count)
 }
@@ -250,10 +227,9 @@ fun main() {
 - Limit the output to the top ten words by stopping the loop after ten
   iterations.
 - Skip common stop words ("the", "on", "a") by checking each word against a
-  `set[str]` from [std/collections](../stdlib/collections.md) before
-  counting it.
+  `set[str]` such as `{"the", "on", "a"}` before counting it.
 - Read the filename from the command line with
-  [std/env](../stdlib/env.md)'s `args()` instead of hardcoding `input.txt`.
+  [std.env](../stdlib/env.md)'s `args()` instead of hardcoding `input.txt`.
 
 See the [Modeling data tutorial](task-tracker.md) next for a deeper look at
-structs, enums, and pattern matching.
+classes, enums, and pattern matching.

@@ -97,37 +97,37 @@ nav:
     - Overview: guide/standard-library.md
     - Core traits: guide/stdlib/core.md
     - Text and formatting:
-      - std/string: guide/stdlib/string.md
-      - std/fmt: guide/stdlib/fmt.md
-      - std/regex: guide/stdlib/regex.md
-      - std/encoding: guide/stdlib/encoding.md
+      - std.string: guide/stdlib/string.md
+      - std.fmt: guide/stdlib/fmt.md
+      - std.regex: guide/stdlib/regex.md
+      - std.encoding: guide/stdlib/encoding.md
     - Data structures and iteration:
-      - std/collections: guide/stdlib/collections.md
-      - std/list: guide/stdlib/list.md
-      - std/iter: guide/stdlib/iter.md
-      - std/cmp: guide/stdlib/cmp.md
-      - std/hash: guide/stdlib/hash.md
+      - std.collections: guide/stdlib/collections.md
+      - std.list: guide/stdlib/list.md
+      - std.iter: guide/stdlib/iter.md
+      - std.cmp: guide/stdlib/cmp.md
+      - std.hash: guide/stdlib/hash.md
     - Numbers:
-      - std/math: guide/stdlib/math.md
-      - std/random: guide/stdlib/random.md
+      - std.math: guide/stdlib/math.md
+      - std.random: guide/stdlib/random.md
     - Input, output, and the system:
-      - std/io: guide/stdlib/io.md
-      - std/fs: guide/stdlib/fs.md
-      - std/path: guide/stdlib/path.md
-      - std/env: guide/stdlib/env.md
-      - std/process: guide/stdlib/process.md
-      - std/time: guide/stdlib/time.md
+      - std.io: guide/stdlib/io.md
+      - std.fs: guide/stdlib/fs.md
+      - std.path: guide/stdlib/path.md
+      - std.env: guide/stdlib/env.md
+      - std.process: guide/stdlib/process.md
+      - std.time: guide/stdlib/time.md
     - Networking:
-      - std/net: guide/stdlib/net.md
-      - std/http: guide/stdlib/http.md
-      - std/tls: guide/stdlib/tls.md
-      - std/json: guide/stdlib/json.md
+      - std.net: guide/stdlib/net.md
+      - std.http: guide/stdlib/http.md
+      - std.tls: guide/stdlib/tls.md
+      - std.json: guide/stdlib/json.md
     - Concurrency, errors, FFI, testing:
-      - std/sync: guide/stdlib/sync.md
-      - std/error: guide/stdlib/error.md
-      - std/option: guide/stdlib/option.md
-      - std/ffi: guide/stdlib/ffi.md
-      - std/test: guide/stdlib/test.md
+      - std.sync: guide/stdlib/sync.md
+      - std.error: guide/stdlib/error.md
+      - std.option: guide/stdlib/option.md
+      - std.ffi: guide/stdlib/ffi.md
+      - std.test: guide/stdlib/test.md
   - rvpm:
     - Overview and commands: guide/rvpm.md
     - Distributing applications: specs/rvpm-dist.md

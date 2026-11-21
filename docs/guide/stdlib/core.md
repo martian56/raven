@@ -1,6 +1,6 @@
-# std/core
+# std.core
 
-The foundational traits every Raven program builds on. `std/core` is the
+The foundational traits every Raven program builds on. `std.core` is the
 prelude: the compiler merges it into every program before name resolution, so
 its traits and impls are always in scope. You never write `import std.core`,
 and there is nothing to import selectively.
@@ -148,7 +148,7 @@ A sequence that yields values one at a time. `next` returns `Some(value)`
 while elements remain and `None` when the sequence is exhausted. The element
 type `T` is a generic parameter on the trait (Raven has no associated types
 yet). The lazy adapter pipeline that builds on this lives in
-[std/iter](iter.md).
+[std.iter](iter.md).
 
 ## Using traits as generic bounds
 
@@ -170,7 +170,7 @@ fun main() {
 ```
 
 A type participates in a bound by implementing the trait. Implement it for your
-own struct or enum and that type becomes usable everywhere the bound appears:
+own class or enum and that type becomes usable everywhere the bound appears:
 
 ```rust
 class Point {
@@ -193,20 +193,21 @@ fun main() {
 
 ## Deriving for user types
 
-Most of the time you do not hand-write these impls. `@derive(...)` on a struct
-or enum generates them from the fields:
+Most of the time you do not hand-write these impls. A class or enum whose
+fields allow it gets `Eq`, `Hash`, and `ToString` automatically, and
+`@derive(...)` generates the others from the fields:
 
 ```rust
-@derive(Eq, Hash, ToString, Debug)
+@derive(Ord, Debug)
 class User {
     id: int
     name: str
 }
 ```
 
-`Eq`, `Hash`, `ToString`, and `Debug` are derivable; `Ord` is not derivable
-yet and must be written by hand. Every field must already implement the trait
-being derived. See the `@derive` section of the
+`Ord`, `Debug`, `ToJson`, and `FromJson` are derivable, and `Eq`, `Hash`, and
+`ToString` can be derived explicitly too. Every field must already implement
+the trait being derived. See the `@derive` section of the
 [language reference](../language-reference.md) for the full list and rules.
 
 ## Worked example: generic comparison and sorting key
@@ -243,8 +244,8 @@ fun main() {
 
 ## See also
 
-- [std/cmp](cmp.md) for comparison helpers built on `Ord`.
-- [std/collections](collections.md) for maps and sets that key on `Eq` and `Hash`.
-- [std/iter](iter.md) for the lazy adapter pipeline over `Iterator[T]`.
+- [std.cmp](cmp.md) for comparison helpers built on `Ord`.
+- [std.collections](collections.md) for maps and sets that key on `Eq` and `Hash`.
+- [std.iter](iter.md) for the lazy adapter pipeline over `Iterator[T]`.
 - The [language reference](../language-reference.md) for traits, generics,
   bounds, and `@derive`.

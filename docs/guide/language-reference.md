@@ -597,7 +597,9 @@ A native `int` is accepted where an integer C type is expected, and a
 where a `CFloat` or `CDouble` is expected; for `CFloat` the value is
 narrowed to f32 at the call and a `CFloat` return is widened back to a
 `float`. The integer and float C return types satisfy `ToString`, so a
-`CInt` or `CDouble` result prints and interpolates directly.
+`CInt` or `CDouble` result prints and interpolates directly. To do native
+arithmetic on a C result, convert it with `as int` or `as float`:
+`strlen(c"hi") as int + 1`.
 
 ```rust
 extern "C" {
@@ -746,16 +748,15 @@ type information.
 
 ### @derive
 
-`@derive(...)` sits on its own line before a `class` or `enum` and
-synthesizes trait impls from the type definition, so you do not hand write
-`equals`, `hash`, `to_string`, or `debug`. The derivable traits are `Eq`,
-`Hash`, `ToString`, `Debug`, `ToJson`, and `FromJson`. A field or payload
-type must itself implement the trait being derived.
+A class or enum whose fields allow it already gets `==`, hashing, and
+printing without any code. `@derive(...)` sits on its own line before a
+`class` or `enum` and synthesizes the rest from the type definition: `Ord`
+(ordering), `Debug`, `ToJson`, and `FromJson`. `Eq`, `Hash`, and `ToString`
+are accepted too, to make the impl explicit. A field or payload type must
+itself implement the trait being derived.
 
 ```rust
-from std.collections import Map, Set
-
-@derive(Eq, Hash, ToString, Debug)
+@derive(Ord, Debug)
 class Point {
     x: int
     y: int
@@ -764,15 +765,14 @@ class Point {
 fun main() {
     let p = Point(x: 1, y: 2)
     let q = Point(x: 1, y: 2)
-    print(p.equals(q)) // true
-    print(p.to_string()) // Point(x: 1, y: 2)
+    print(p == q) // true
+    print(p) // Point(x: 1, y: 2)
+    print(Point(0, 9) < p) // true: fields compare in order
 
-    // Derived Eq + Hash let the class key a dict or join a set.
-    let m: dict[Point, int] = Map.new()
-    m.set(p, 100)
-    print(m.has(q)) // true
-    let s: set[Point] = Set.new()
-    s.add(p)
+    // Equality and hashing let the class key a dict or join a set.
+    let m = {p: 100}
+    print(q in m) // true
+    let s = {p}
     print(s.contains(q)) // true
 }
 ```
@@ -810,7 +810,7 @@ fun main() {
 Object keys keep their insertion order.
 Enum variants with named-field payloads are not derivable yet; unit and
 tuple variants are. `Ord` derives a `compare` that orders field by field
-(struct) or by variant then payload (enum).
+(class) or by variant then payload (enum).
 
 ### Declarative macros
 
@@ -855,7 +855,7 @@ capture a caller's variable of the same spelling.
 
 Compile-time reflection reads type information resolved while the program
 compiles. `type_name[T]()` returns the rendered name of a type,
-`field_names[T]()` returns a struct's field names in declaration order, and
+`field_names[T]()` returns a class's field names in declaration order, and
 `field_types[T]()` returns the matching field type names by position. Inside
 a generic function each resolves to the concrete type bound to `T` at that
 instantiation.

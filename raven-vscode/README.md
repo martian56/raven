@@ -1,6 +1,6 @@
 # Raven Language
 
-[Raven](https://github.com/martian56/raven) is a statically typed systems language with a small runtime. This extension adds VS Code support for `.rv` files (Raven v2 syntax): highlighting, snippets, and a few editor conveniences.
+[Raven](https://github.com/martian56/raven) is a statically typed systems language with a small runtime. This extension adds VS Code support for `.rv` files: highlighting, snippets, and a few editor conveniences.
 
 **Docs:** [raven documentation](https://martian56.github.io/raven/) · **Language & compiler:** [GitHub](https://github.com/martian56/raven)
 
@@ -8,7 +8,7 @@
 
 ## Features
 
-- **Syntax highlighting** for Raven v2 source, including PascalCase types, traits, generics, `match` arms, `${...}` string interpolation, `c"..."` and `"""..."""` strings, ranges, and `extern` blocks
+- **Syntax highlighting** for Raven source, including PascalCase types, traits, generics, `match` arms, `${...}` string interpolation, `c"..."` and `"""..."""` strings, ranges, and `extern` blocks
 - **Snippets** for common patterns (bindings, functions, control flow, classes, enums, traits, impls, `match`, comprehensions, lambdas, concurrency, `defer`, imports, `main`, printing)
 - **Comments & brackets**: line comments (`//`), block comments, sensible bracket/indent behavior for `.rv` files
 - **Run Raven File**: opens a terminal and runs the current file with the `raven` CLI (see below)

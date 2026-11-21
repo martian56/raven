@@ -1,9 +1,9 @@
-# std/list
+# std.list
 
-Free utility functions over the built-in `list[T]`. `List` ships with
-`len`, `get`, `push`, and `pop` as built-in methods; this module adds the
+Free utility functions over the built-in `list[T]`. A list already has
+`len`, `get`, `push`, `append`, and `pop` as built-in methods; this module adds the
 common operations on top of them. Functions that build a new list return a
-fresh `List` and never mutate their input.
+fresh list and never mutate their input.
 
 ```rust
 import std.list
@@ -175,7 +175,7 @@ fun main() {
 
 ## See also
 
-- [std/cmp](cmp.md) for `sort`, `min_of`, and `max_of` over lists.
-- [std/iter](../../specs/std-iter.md) for `map`, `filter`, and `fold`.
+- [std.cmp](cmp.md) for `sort`, `min_of`, and `max_of` over lists.
+- [std.iter](../../specs/std-iter.md) for `map`, `filter`, and `fold`.
 - The [language reference](../language-reference.md) for list literals,
   indexing, generics, and `Option`.

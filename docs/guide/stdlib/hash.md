@@ -1,4 +1,4 @@
-# std/hash
+# std.hash
 
 Non-cryptographic hashing building blocks: free functions that hash the bytes
 of a `str` or mix an `int`. They are fast, well-known mixing functions meant
@@ -21,7 +21,7 @@ BLAKE3, and similar) are out of scope for the standard library and belong in a
 package.
 
 What they are good for: keys in a hash table, quick change detection, and
-combining the hashes of a struct's fields.
+combining the hashes of a class's fields.
 
 ## Importing
 
@@ -157,7 +157,7 @@ different hashes.
 ## Relationship to the Hash trait
 
 The prelude defines `trait Hash { fun hash(self) -> int }` with built-in impls
-for `int`, `bool`, and `str`, which is what [std/collections](collections.md)
+for `int`, `bool`, and `str`, which is what [std.collections](collections.md)
 uses to key its hash-based containers. These functions are the building blocks
 a user's own `Hash` impl can call: hash each field, then fold the results with
 `combine`.
@@ -180,7 +180,7 @@ impl Hash for Point {
 
 ## Worked example: hashing a record
 
-Hash a small struct by mixing a string field and an integer field into one
+Hash a small class by mixing a string field and an integer field into one
 value, suitable for use as a key.
 
 ```rust
@@ -207,6 +207,6 @@ fun main() {
 
 ## See also
 
-- [std/collections](collections.md) for the hash-based containers that build on
+- [std.collections](collections.md) for the hash-based containers that build on
   the `Hash` trait.
-- [std/string](string.md) for the string methods you may call before hashing.
+- [std.string](string.md) for the string methods you may call before hashing.

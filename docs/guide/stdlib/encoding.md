@@ -1,4 +1,4 @@
-# std/encoding
+# std.encoding
 
 Hex, base64, base32, and URL percent encoding over the bytes of a `str`.
 These are free functions that turn a `str`'s raw bytes into encoded text
@@ -22,7 +22,7 @@ import:
 from std.encoding import hex_encode, hex_decode, base64_encode, base64_decode, url_encode, url_decode, base32_encode, base32_decode
 ```
 
-Unlike [std/string](string.md) (which merges an `impl str` block on a bare
+Unlike [std.string](string.md) (which merges an `impl str` block on a bare
 import), these are plain functions you call as `hex_encode(s)`, not methods on
 `str`.
 
@@ -245,7 +245,7 @@ fun main() {
 
 ## See also
 
-- [std/string](string.md) for inspecting, slicing, and transforming the
+- [std.string](string.md) for inspecting, slicing, and transforming the
   `str` values these functions read and produce.
-- [std/json](json.md) for structured serialization rather than raw byte
+- [std.json](json.md) for structured serialization rather than raw byte
   encoding.

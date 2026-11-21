@@ -251,7 +251,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const target = entry.target;
                 const finalValue = target.textContent;
                 
-                if (finalValue === 'v1.1.0') {
+                if (finalValue.startsWith('v')) {
                     // Don't animate version number
                     return;
                 }
@@ -370,7 +370,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Console Easter Egg
     console.log('%c🦅 Welcome to Raven!', 'color: #00d4ff; font-size: 20px; font-weight: bold;');
-    console.log('%cRaven Programming Language v1.1.0', 'color: #1a1a2e; font-size: 14px;');
+    console.log('%cRaven Programming Language', 'color: #1a1a2e; font-size: 14px;');
     console.log('%cBuilt with Rust • Fast • Safe • Expressive', 'color: #64748b; font-size: 12px;');
     console.log('%cGitHub: https://github.com/martian56/raven', 'color: #00d4ff; font-size: 12px;');
 });

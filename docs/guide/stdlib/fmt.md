@@ -1,4 +1,4 @@
-# std/fmt
+# std.fmt
 
 String formatting helpers and a `Debug` trait. These are the building blocks
 that compose with string interpolation: pad and align fields, repeat and join
@@ -18,7 +18,7 @@ fun main() {
 
 There is no `format("{}", a, b)` function. Raven has no
 varargs and no format-placeholder runtime, so string interpolation `"${expr}"`
-is the placeholder mechanism. std/fmt provides the helpers that compose with
+is the placeholder mechanism. std.fmt provides the helpers that compose with
 it, not a printf replacement.
 
 ## Importing
@@ -30,7 +30,7 @@ from std.fmt import repeat, pad_left, pad_right, center, join, to_radix, to_bina
 ```
 
 The `Debug` trait is brought in by the same `import std.fmt` (its impls merge
-into scope like `std/string`'s methods). Once the module is imported, the
+into scope like `std.string`'s methods). Once the module is imported, the
 `debug` method dispatches on the receiver's type and needs no explicit
 selector:
 
@@ -50,7 +50,7 @@ are measured in **UTF-8 bytes**, not code points. For ASCII text a byte equals
 a displayed character; for multi-byte text the width is the encoded byte
 length. The `fill` argument to the padding functions is assumed to be a
 single-byte string; a multi-byte `fill` can overshoot the target width by up
-to its length minus one. See [std/string](string.md) for the same byte model.
+to its length minus one. See [std.string](string.md) for the same byte model.
 
 ## String helpers
 
@@ -247,7 +247,7 @@ built-in scalar types:
 | `char` | the value wrapped in single quotes |
 | `str` | the value wrapped in double quotes |
 
-Char and String quoting does not escape inner quotes: a String containing a
+`char` and `str` quoting does not escape inner quotes: a `str` containing a
 `"` reproduces it literally inside the surrounding quotes. So `"hi".debug()` is
 the 4-character string `"hi"`.
 
@@ -281,8 +281,8 @@ fun main() {
 
 ## See also
 
-- [std/string](string.md) for the methods on `str` values and the same
+- [std.string](string.md) for the methods on `str` values and the same
   byte model.
-- [std/io](io.md) for `print` and `println`.
+- [std.io](io.md) for `print` and `println`.
 - The [language reference](../language-reference.md) for string literals and
   interpolation.

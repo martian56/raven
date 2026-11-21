@@ -61,9 +61,7 @@ fun slugify(text: str) -> str {
 class Slugger {
     separator: str
     max_len: int
-}
 
-impl Slugger {
     // A slugger with sensible defaults: "-" between words and no length cap.
     fun new() -> Slugger {
         return Slugger(separator: "-", max_len: 0)
@@ -116,7 +114,7 @@ fun _is_alnum(b: int) -> bool {
 Two things worth calling out:
 
 - **Everything is public, except names starting with `_`.** Raven has no
-  `pub` keyword: every top-level `fun`, `struct`, `enum`, and `trait` is part of
+  `pub` keyword: every top-level `fun`, `class`, `enum`, and `trait` is part of
   the package's API. The leading underscore on `_is_alnum` is a convention that
   marks it internal; `rvpm doc` hides it, and it signals to readers "don't
   depend on this."
@@ -138,7 +136,7 @@ rvpm build
 ## Step 4: write tests
 
 A test is a zero-argument function named `test_*` in a `*_test.rv` file. It
-asserts with `std/test`, and a failed assertion panics, which the runner reports
+asserts with `std.test`, and a failed assertion panics, which the runner reports
 as a failure. Put the tests right next to the code, in `lib_test.rv`:
 
 ```rust

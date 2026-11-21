@@ -1,4 +1,4 @@
-// Sample Raven v2 program for exercising the VS Code extension grammar.
+// Sample Raven program for exercising the VS Code extension grammar.
 
 from std.io import println
 from std.sync import channel, channel_buffered, yield_now
@@ -11,7 +11,7 @@ class User {
 }
 
 @repr(C)
-struct Header {
+class Header {
     tag: CInt
     len: CInt
 }
@@ -72,7 +72,7 @@ fun main() {
     let s = Shape.Circle(2.0)
     print(describe(s.area()))
 
-    let n = strlen(c"hello")
+    let n = strlen(c"hello") as int
     print(n)
 
     print(twice!(n + 1))

@@ -1,12 +1,12 @@
 # Tutorial: a guestbook HTTP server
 
-This tutorial builds a small HTTP server with [std/http](../stdlib/http.md): a
+This tutorial builds a small HTTP server with [std.http](../stdlib/http.md): a
 guestbook that lists messages, accepts new ones over `POST`, and serves one
 message by id. Along the way you meet routing, path captures, request bodies,
 JSON and HTML responses, and a little in-memory state. Every step compiles and
 runs.
 
-The server is pure Raven on top of [std/net](../stdlib/net.md), so there is
+The server is pure Raven on top of [std.net](../stdlib/net.md), so there is
 nothing to install. You run the program, then talk to it from another terminal
 with `curl` (or a browser).
 
@@ -140,7 +140,7 @@ requests for as long as the server runs.
 ## Step 6: listing and fetching
 
 To list the messages as a JSON array, build the array text by joining the
-entries. (A real service would reach for [std/json](../stdlib/json.md) to
+entries. (A real service would reach for [std.json](../stdlib/json.md) to
 escape values; here we keep it to string building.)
 
 ```rust
@@ -279,11 +279,11 @@ Open `http://127.0.0.1:8080/` in a browser to see the messages as a list.
 
 ## Where to go next
 
-- The [std/http](../stdlib/http.md) reference lists every `Request` accessor,
+- The [std.http](../stdlib/http.md) reference lists every `Request` accessor,
   `Response` constructor, and `Server` method, including `query_value` for
   reading `?key=value` query strings.
 - The server handles one connection at a time. A request that takes a while to
   answer holds up the clients behind it; per-connection concurrency is a planned
   improvement.
-- [std/json](../stdlib/json.md) builds and parses JSON properly (with escaping),
+- [std.json](../stdlib/json.md) builds and parses JSON properly (with escaping),
   which you want once message text can contain quotes.

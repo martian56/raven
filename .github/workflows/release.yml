@@ -23,7 +23,7 @@ jobs:
   # installer for its platform. The raven_runtime static library is placed
   # next to the binaries in every artifact so the installed compiler locates
   # it when linking user programs without any environment configuration. The
-  # v2 standard library is embedded in the binaries via include_str!, so no
+  # standard library is embedded in the binaries via include_str!, so no
   # .rv files are shipped as separate assets.
   build:
     name: build ${{ matrix.name }}
@@ -268,7 +268,7 @@ jobs:
           # FFI: a 16-byte @repr(C) struct returned by value, exercising the
           # by-value struct ABI for this target (two registers on System V).
           # lldiv is in the C runtime on every platform.
-          printf '@repr(C)\nstruct D { quot: CLong, rem: CLong }\nextern "C" { fun lldiv(numer: CLong, denom: CLong) -> D }\nfun main() {\n  let r = lldiv(17, 5)\n  print(r.quot)\n  print(r.rem)\n}\n' > ffi.rv
+          printf '@repr(C)\nclass D { quot: CLong, rem: CLong }\nextern "C" { fun lldiv(numer: CLong, denom: CLong) -> D }\nfun main() {\n  let r = lldiv(17, 5)\n  print(r.quot)\n  print(r.rem)\n}\n' > ffi.rv
           raven build ffi.rv -o ffi
           ffi_out="$(./ffi | tr '\n' ',')"
           echo "ffi struct-by-value output: $ffi_out"
@@ -276,21 +276,21 @@ jobs:
           # FFI: a 16-byte float struct by value, exercising the float
           # register classification (two SSE registers on System V). The
           # fixtures ship in libraven_runtime.
-          printf '@repr(C)\nstruct V2 { x: CDouble, y: CDouble }\nextern "C" {\n  fun raven_ffi_make_vec2d(x: CDouble, y: CDouble) -> V2\n  fun raven_ffi_vec2d_sum(v: V2) -> CDouble\n}\nfun main() {\n  let v = raven_ffi_make_vec2d(10.0, 20.0)\n  print(raven_ffi_vec2d_sum(v))\n}\n' > ffif.rv
+          printf '@repr(C)\nclass V2 { x: CDouble, y: CDouble }\nextern "C" {\n  fun raven_ffi_make_vec2d(x: CDouble, y: CDouble) -> V2\n  fun raven_ffi_vec2d_sum(v: V2) -> CDouble\n}\nfun main() {\n  let v = raven_ffi_make_vec2d(10.0, 20.0)\n  print(raven_ffi_vec2d_sum(v))\n}\n' > ffif.rv
           raven build ffif.rv -o ffif
           ffif_out="$(./ffif)"
           echo "ffi float-struct output: $ffif_out"
           test "$ffif_out" = "30"
           # FFI: a capturing Raven closure passed as a C callback through a
           # generated trampoline (userdata-last); the fixture calls back in.
-          printf 'extern "C" {\n  fun raven_ffi_apply_cb(cb: CFnPtr, data: CPtr<Unit>, x: CLong) -> CLong\n}\nfun run(base: CLong) {\n  let add = fun(x: CLong) -> CLong = x + base\n  print(raven_ffi_apply_cb(add, add, 5))\n}\nfun main() {\n  run(100)\n}\n' > fficb.rv
+          printf 'extern "C" {\n  fun raven_ffi_apply_cb(cb: CFnPtr, data: CPtr[()], x: CLong) -> CLong\n}\nfun run(base: CLong) {\n  let add = (x: CLong) -> CLong => x + base\n  print(raven_ffi_apply_cb(add, add, 5))\n}\nfun main() {\n  run(100)\n}\n' > fficb.rv
           raven build fficb.rv -o fficb
           fficb_out="$(./fficb)"
           echo "ffi callback output: $fficb_out"
           test "$fficb_out" = "105"
           # FFI: a 24-byte struct by value, over two registers (System V passes
           # it in memory on the stack, Windows x64 by reference).
-          printf '@repr(C)\nstruct Big { a: CLong, b: CLong, c: CLong }\nextern "C" {\n  fun raven_ffi_make_big(a: CLong, b: CLong, c: CLong) -> Big\n  fun raven_ffi_big_sum(v: Big) -> CLong\n}\nfun main() {\n  let g = raven_ffi_make_big(10, 20, 30)\n  print(raven_ffi_big_sum(g))\n}\n' > ffibig.rv
+          printf '@repr(C)\nclass Big { a: CLong, b: CLong, c: CLong }\nextern "C" {\n  fun raven_ffi_make_big(a: CLong, b: CLong, c: CLong) -> Big\n  fun raven_ffi_big_sum(v: Big) -> CLong\n}\nfun main() {\n  let g = raven_ffi_make_big(10, 20, 30)\n  print(raven_ffi_big_sum(g))\n}\n' > ffibig.rv
           raven build ffibig.rv -o ffibig
           ffibig_out="$(./ffibig)"
           echo "ffi large-struct output: $ffibig_out"

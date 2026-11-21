@@ -1,4 +1,4 @@
-# std/time
+# std.time
 
 Date and time over the raven-runtime C ABI, backed by `chrono`. Every value
 is UTC, and there is no local-timezone handling. Timestamps are Unix time:
@@ -30,7 +30,7 @@ A timestamp is an `int` holding Unix time in UTC. Everywhere except
 `sleep_millis` takes a duration in **milliseconds**; divide a millisecond
 value by 1000 before passing it to the seconds-based functions.
 
-## Datetime structs
+## Datetime classes
 
 `from_timestamp` returns a `DateTime`, which nests a `Date` and a `Time`:
 
@@ -54,7 +54,7 @@ class DateTime {
 `month` is 1 through 12, `day` is 1 through 31, `hour` is 0 through 23, and
 `minute` and `second` are 0 through 59.
 
-Each struct has a `ToString` impl producing ISO-like text. A `Date` renders
+Each class has a `ToString` impl producing ISO-like text. A `Date` renders
 as `1970-01-01` (year zero-padded to four digits, month and day to two), a
 `Time` as `00:00:00`, and a `DateTime` as the two joined by a space,
 `1970-01-01 00:00:00`.
@@ -142,7 +142,7 @@ fun main() {
 
 Parse `text` as a UTC datetime by the given pattern and return the Unix
 timestamp in seconds. Parsing is fallible: on failure it returns an `Err`
-holding a `std/error` `Error` tagged with kind `"time"`. Handle the `Result`
+holding a `std.error` `Error` tagged with kind `"time"`. Handle the `Result`
 with a `match` or the `?` operator.
 
 ```rust
@@ -204,7 +204,7 @@ fun main() {
 
 ## See also
 
-- [std/error](error.md) for the `Error` type that `parse_timestamp` returns,
+- [std.error](error.md) for the `Error` type that `parse_timestamp` returns,
   plus helpers like `is_ok`, `unwrap_or`, and `with_context`.
-- [std/string](string.md) for building and inspecting the text you format and
+- [std.string](string.md) for building and inspecting the text you format and
   parse.

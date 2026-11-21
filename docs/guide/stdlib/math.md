@@ -1,6 +1,6 @@
-# std/math
+# std.math
 
-Numeric constants and functions. Everything in `std/math` is a free
+Numeric constants and functions. Everything in `std.math` is a free
 function, so you bring names into scope with a selective import:
 
 ```rust
@@ -291,8 +291,8 @@ fun main() {
 
 ## Constants
 
-The language has no `float` const items yet, so the constants are
-zero-argument functions returning `float`. Call them with `()`.
+The constants are zero-argument functions returning `float`. Call them with
+`()`.
 
 ### `pi() -> float`
 
@@ -336,8 +336,8 @@ fun main() {
 
 ## See also
 
-- [std/cmp](cmp.md) for `min`/`max`/`clamp` over the generic `Ord` trait
+- [std.cmp](cmp.md) for `min`/`max`/`clamp` over the generic `Ord` trait
   rather than numbers directly.
-- [std/random](random.md) for random number generation.
+- [std.random](random.md) for random number generation.
 - The [language reference](../language-reference.md) for the `int` and
   `float` types and numeric literals.

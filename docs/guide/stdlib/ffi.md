@@ -1,6 +1,6 @@
-# std/ffi
+# std.ffi
 
-Bridges for the C foreign-function interface. `std/ffi` converts a Raven
+Bridges for the C foreign-function interface. `std.ffi` converts a Raven
 `str` to and from a C `CStr`, and gives you a raw pointer API over
 `CPtr[T]` for allocating, reading, and writing C memory. Use it alongside an
 `extern "C"` block to call C functions with runtime values.
@@ -57,7 +57,7 @@ type `T` consistent with how the C side allocated the memory.
 ### `to_cstr(s: str) -> CStr`
 
 Copy `s` into a fresh, null-terminated C string and return a `CStr` pointing
-at the first byte. The result is a standalone copy (not the String's own
+at the first byte. The result is a standalone copy (not the `str`'s own
 length-prefixed buffer), so it is a valid `const char *` that a C function may
 read or retain after the call returns. Embedded NUL bytes are kept up to the
 first one, at which a C reader stops.
@@ -185,6 +185,6 @@ or interpolated into a `"${...}"` string.
 ## See also
 
 - The [language reference](../language-reference.md) for the FFI section:
-  `extern "C"` blocks, the C type set, `c"..."` literals, `@repr(C)` structs by
+  `extern "C"` blocks, the C type set, `c"..."` literals, `@repr(C)` classes by
   value, and `CFnPtr` callbacks.
-- [std/string](string.md) for working with the `str` values you convert.
+- [std.string](string.md) for working with the `str` values you convert.

@@ -1,4 +1,4 @@
-# std/env
+# std.env
 
 Access to the process environment: environment variables, command-line
 arguments, process exit, and platform info. The primitives bind the
@@ -145,6 +145,6 @@ fun main() {
 
 ## See also
 
-- [std/io](io.md) for reading from standard input and writing to standard
+- [std.io](io.md) for reading from standard input and writing to standard
   output and error.
-- [std/fs](fs.md) for working with files and paths.
+- [std.fs](fs.md) for working with files and paths.

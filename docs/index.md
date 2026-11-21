@@ -98,6 +98,3 @@ The `raven` and `rvpm` binaries land in `target/release/`.
 
 The [VS Code extension](https://marketplace.visualstudio.com/items?itemName=martian56.raven-language) adds syntax highlighting and snippets.
 
-## A note on versions
-
-This site documents **Raven 3**, which reads like Python with braces. Raven 2 used an older syntax that Raven 3 no longer compiles, and Raven 1 was a tree walking interpreter; neither is developed any more.

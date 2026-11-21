@@ -5,7 +5,7 @@ Raven has no exceptions and no `null`. A value that might be absent has type
 ordinary enums built into the language, so failure shows up in the type
 signature and the compiler makes you handle it. This tutorial works through
 absence, failure, the `?` operator that propagates failures, and the
-[`std/error`](../stdlib/error.md) helpers that keep the common cases short.
+[`std.error`](../stdlib/error.md) helpers that keep the common cases short.
 Every step compiles and runs.
 
 ## Step 1: absence with `Option`
@@ -36,7 +36,7 @@ compile.
 ## Step 2: failure with `Result`
 
 `Result[T, E]` is either `Ok(value)` or `Err(error)`. The `E` slot is whatever
-error type you choose. A clean default is the `Error` value from `std/error`,
+error type you choose. A clean default is the `Error` value from `std.error`,
 built with `error("message")`:
 
 ```rust
@@ -105,7 +105,7 @@ returns a plain value is a compile error, not a silently dropped failure.
 
 ## Step 4: recovering without a full `match`
 
-When you do not need to inspect the error, the `std/error` helpers cover the
+When you do not need to inspect the error, the `std.error` helpers cover the
 common shortcuts so you can skip writing a `match`:
 
 ```rust
@@ -182,7 +182,7 @@ just the message when the kind is empty), and `print(e)` uses the same form.
 ## Step 6: a different error type per layer
 
 The `E` in `Result[T, E]` does not have to be `Error`. A library often defines
-a struct that carries structured failure data, and `?` threads it through
+a class that carries structured failure data, and `?` threads it through
 unchanged even when the `Ok` and `Err` types differ:
 
 ```rust
@@ -227,9 +227,9 @@ Fail]`: the `Ok` types differ, but the `Err` type is the same, so `?` carries a
 - **`Option[T]`** for a value that may be absent, with no reason needed.
 - **`Result[T, Error]`** for an operation that may fail, where a message is
   enough.
-- **`Result[T, MyStruct]`** when callers need to branch on structured failure
+- **`Result[T, MyError]`** when callers need to branch on structured failure
   data.
-- **`?`** to propagate, **`match`** to handle, and the `std/error` helpers to
+- **`?`** to propagate, **`match`** to handle, and the `std.error` helpers to
   recover in one line.
 
 Errors in Raven are plain values, never control flow. Reach for `panic(msg)`
@@ -238,7 +238,7 @@ recoverable failure.
 
 ## Where to go next
 
-- The [`std/error` reference](../stdlib/error.md) documents every helper,
+- The [`std.error` reference](../stdlib/error.md) documents every helper,
   including `map_ok`, `map_err`, and `unwrap_or_else`.
 - The [language reference](../language-reference.md) covers `Result`, `Option`,
   pattern matching, and the `?` operator.

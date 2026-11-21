@@ -4,7 +4,7 @@
   raven_runtime static library into a per-machine bin directory and adds
   that directory to the system PATH. The runtime library sits next to the
   binaries so the compiler locates it when linking user programs without
-  any environment configuration. The v2 standard library is embedded in
+  any environment configuration. The standard library is embedded in
   the binaries, so no .rv files are installed.
 -->
 <?if $(sys.BUILDARCH) = x64 or $(sys.BUILDARCH) = arm64 ?>

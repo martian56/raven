@@ -44,7 +44,7 @@ no allocation. A native `int` is accepted where an integer C type (`CInt`,
 ## Passing a runtime String
 
 A `c"..."` literal is fixed at compile time. To pass a `str` value, convert
-it with `std/ffi`'s `to_cstr`, which copies into a fresh null-terminated
+it with `std.ffi`'s `to_cstr`, which copies into a fresh null-terminated
 buffer. The buffer lives outside the garbage collector; release it with
 `free_cstr` (or leave it for short-lived programs):
 
@@ -65,8 +65,9 @@ fun main() {
 
 ## Structs by value
 
-A struct marked `@repr(C)` crosses the C ABI by value, both as an argument and
-as a return value. Its fields must be C scalars (or nested `@repr(C)` structs):
+A class marked `@repr(C)` crosses the C ABI by value, both as an argument and
+as a return value, laid out like the matching C struct. Its fields must be C
+scalars (or nested `@repr(C)` classes):
 
 ```rust
 @repr(C)
@@ -84,9 +85,9 @@ extern "C" {
 The back end follows each platform's ABI: small structs travel in registers
 (integer or SSE), and larger ones in memory or by reference, with a hidden
 return pointer where the ABI calls for one. There is no size limit, and a field
-may itself be a nested `@repr(C)` struct, whose bytes are inlined. A struct
-literal accepts native `int`/`float` for its C-scalar fields:
-`Point { x: 1.0, y: 2.0 }`. See `examples/ffi_struct_*.rv`.
+may itself be a nested `@repr(C)` class, whose bytes are inlined. The
+constructor accepts native `int`/`float` for C-scalar fields:
+`Point(x: 1.0, y: 2.0)`. See `examples/ffi_struct_*.rv`.
 
 ## Callbacks
 
@@ -105,7 +106,7 @@ fun compare(a: CPtr[CInt], b: CPtr[CInt]) -> CInt { ... }
 
 A **capturing closure** also works, through a generated trampoline. Because the
 closure carries an environment, you pass it to the C function's callback slot
-*and* to its `userdata` slot (a `CPtr[Unit]`); C threads the closure back to the
+*and* to its `userdata` slot (a `CPtr[()]`); C threads the closure back to the
 trampoline, which invokes it. This is the userdata-last convention (for example
 glibc `qsort_r`):
 
@@ -147,7 +148,7 @@ C shim.
 
 ## Raw pointers
 
-`std/ffi` wraps manual allocation and unchecked pointer access for buffers a C
+`std.ffi` wraps manual allocation and unchecked pointer access for buffers a C
 API reads or writes. The memory is outside the GC and is yours to `free`:
 
 ```rust

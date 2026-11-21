@@ -1,9 +1,9 @@
-# std/sync
+# std.sync
 
 Goroutine-style concurrency primitives: channels for passing values between
 green threads, plus a mutex, a wait group, timed sleeping, and a multi-channel
-receive. `std/sync` pairs with the `spawn` keyword, which starts a goroutine
-running a `fun() -> Unit` closure. Goroutines run on an M:N scheduler that
+receive. `std.sync` pairs with the `spawn { ... }` statement, which starts a
+goroutine. Goroutines run on an M:N scheduler that
 spreads them across a pool of worker threads (one per available core), so they
 run in parallel. Within a worker, scheduling is cooperative: a goroutine keeps
 running until it hits a yield point (a blocking channel operation or an explicit
@@ -33,8 +33,8 @@ from std.sync import channel, channel_buffered, yield_now
 the ones you use by name. `send` and `recv` are methods on `Channel` and need
 no separate import once you hold a channel value.
 
-The `spawn` keyword is part of the language itself and needs no import. It
-takes a closure of type `fun() -> Unit` and starts it as a goroutine.
+The `spawn` keyword is part of the language itself and needs no import. `spawn { ... }`
+runs the block as a goroutine and returns a handle whose `join()` waits for it.
 
 ## Creating channels
 
@@ -127,8 +127,7 @@ fun main() {
 
 ## Pairing channels with `spawn`
 
-`spawn` starts a goroutine from a `fun() -> Unit` closure. The closure can
-capture channels from the surrounding scope and use them to communicate with
+`spawn { ... }` starts a goroutine. The block can capture channels from the surrounding scope and use them to communicate with
 `main` (which is itself goroutine 0) or with other goroutines.
 
 ```rust
