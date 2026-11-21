@@ -59,7 +59,7 @@ use std::io::{self, BufRead, Read, Write};
 use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::process;
 use std::slice;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -223,6 +223,8 @@ struct SpawnEntry {
     stdin: Arc<Mutex<Option<process::ChildStdin>>>,
     stdout: Arc<Mutex<Vec<u8>>>,
     stderr: Arc<Mutex<Vec<u8>>>,
+    /// Set by each reader thread once its pipe reaches end of file.
+    pumps: Vec<Arc<AtomicBool>>,
     code: Option<i64>,
 }
 
@@ -259,7 +261,9 @@ fn spawn_append(buf: &Arc<Mutex<Vec<u8>>>, bytes: &[u8]) {
 /// Pump one child pipe into a shared buffer until end of stream. Runs on a
 /// plain OS thread outside the collector: it only touches the Arc'd buffer,
 /// never a GC object.
-fn spawn_pump<R: Read + Send + 'static>(mut pipe: R, buf: Arc<Mutex<Vec<u8>>>) {
+fn spawn_pump<R: Read + Send + 'static>(mut pipe: R, buf: Arc<Mutex<Vec<u8>>>) -> Arc<AtomicBool> {
+    let done = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&done);
     std::thread::spawn(move || {
         let mut chunk = [0u8; 8192];
         loop {
@@ -268,7 +272,9 @@ fn spawn_pump<R: Read + Send + 'static>(mut pipe: R, buf: Arc<Mutex<Vec<u8>>>) {
                 Ok(n) => spawn_append(&buf, &chunk[..n]),
             }
         }
+        flag.store(true, Ordering::Release);
     });
+    done
 }
 
 /// The process-wide compiled-regex registry keyed by an incrementing id.
@@ -2566,11 +2572,12 @@ pub extern "C" fn raven_process_spawn(
     let stdin = Arc::new(Mutex::new(child.stdin.take()));
     let stdout = Arc::new(Mutex::new(Vec::new()));
     let stderr = Arc::new(Mutex::new(Vec::new()));
+    let mut pumps = Vec::new();
     if let Some(pipe) = child.stdout.take() {
-        spawn_pump(pipe, Arc::clone(&stdout));
+        pumps.push(spawn_pump(pipe, Arc::clone(&stdout)));
     }
     if let Some(pipe) = child.stderr.take() {
-        spawn_pump(pipe, Arc::clone(&stderr));
+        pumps.push(spawn_pump(pipe, Arc::clone(&stderr)));
     }
 
     let id = process_next_id();
@@ -2581,6 +2588,7 @@ pub extern "C" fn raven_process_spawn(
             stdin,
             stdout,
             stderr,
+            pumps,
             code: None,
         },
     );
@@ -2676,22 +2684,33 @@ pub extern "C" fn raven_process_read_stderr(id: i64) -> *mut object::String {
 /// code is cached so polling after exit stays cheap.
 #[no_mangle]
 pub extern "C" fn raven_process_poll(id: i64) -> i64 {
-    let mut registry = spawn_registry().lock().unwrap();
-    let Some(entry) = registry.get_mut(&id) else {
-        return -1;
-    };
-    if let Some(code) = entry.code {
-        return code;
-    }
-    match entry.child.try_wait() {
-        Ok(Some(status)) => {
-            let code = status.code().map(|c| c as i64).unwrap_or(-1);
-            entry.code = Some(code);
-            code
+    let (code, pumps) = {
+        let mut registry = spawn_registry().lock().unwrap();
+        let Some(entry) = registry.get_mut(&id) else {
+            return -1;
+        };
+        if let Some(code) = entry.code {
+            return code;
         }
-        Ok(None) => -2,
-        Err(_) => -1,
+        match entry.child.try_wait() {
+            Ok(Some(status)) => {
+                let code = status.code().map(|c| c as i64).unwrap_or(-1);
+                entry.code = Some(code);
+                (code, entry.pumps.clone())
+            }
+            Ok(None) => return -2,
+            Err(_) => return -1,
+        }
+    };
+    // The child has exited, but its last output may still sit in the pipe.
+    // Give the reader threads a moment to reach end of file so a read after
+    // the exit sees everything; a grandchild holding the pipe open only
+    // costs the bounded wait.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+    while !pumps.iter().all(|p| p.load(Ordering::Acquire)) && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(1));
     }
+    code
 }
 
 /// Kill the spawned child `id`. Returns 1 when the signal was delivered (or

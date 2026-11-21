@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [3.0.2] - 2026-11-21
+
+### Fixed
+
+- A spawned child's last output is no longer lost when it exits right after writing: once `poll` reports the exit, it waits briefly for the pipe readers to reach end of file, so a read that follows sees everything.
+
 ## [3.0.1] - 2026-11-21
 
 ### Fixed
