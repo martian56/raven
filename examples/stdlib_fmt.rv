@@ -1,0 +1,31 @@
+// std/fmt enrichment: fixed-decimal float formatting and parsing an integer
+// from a given base. Prints:
+//   3.14
+//   10.00
+//   -2.50
+//   255
+//   10
+//   true
+//   true
+from std.fmt import format_float, from_radix, from_hex
+
+fun main() {
+    print(format_float(3.14159, 2)) // 3.14
+    print(format_float(10.0, 2)) // 10.00
+    print(format_float(-2.5, 2)) // -2.50
+    match from_hex("ff") {
+        case Some(n) {
+            print(n) // 255
+        }
+        case None { print(-1) }
+    }
+    match from_radix("1010", 2) {
+        case Some(n) {
+            print(n) // 10
+        }
+        case None { print(-1) }
+    }
+    let huge = format_float(1.0, 400)
+    print(huge.length() > 0)
+    print(huge.length() < 400)
+}

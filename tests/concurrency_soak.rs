@@ -31,19 +31,19 @@ const DEFAULT_RUNS: u64 = 50;
 /// stoppable) while another allocates hard enough to keep the collector busy.
 /// Result is `5 + 0 = 5`.
 const SPIN_SOURCE: &str = r#"
-import std/sync { Channel, channel }
+from std.sync import Channel, channel
 
 fun main() {
     let done = channel()
-    spawn(fun() -> Unit {
-        let i = 0
+    spawn(() -> Unit => {
+        var i = 0
         while i < 5000000 {
             i = i + 1
         }
         done.send(i / 1000000)
     })
-    spawn(fun() -> Unit {
-        let k = 0
+    spawn(() -> Unit => {
+        var k = 0
         while k < 20000 {
             let items = [k, k + 1]
             k = k + items.len()
@@ -139,7 +139,7 @@ fn run_program(binary: &Path, threshold: &str, timeout: Duration) -> Result<Stri
 
 fn read_example(name: &str) -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("examples/v2")
+        .join("examples")
         .join(name);
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }

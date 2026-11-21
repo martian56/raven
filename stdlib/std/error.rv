@@ -3,42 +3,42 @@
 // `?` operator; this module adds a carryable error with a message and
 // optional kind, context chaining, and a few free functions over Result.
 
-import std/string
+import std.string
 
-struct Error {
-    kind: String,
-    message: String,
+class Error {
+    kind: str
+    message: str
 }
 
 // Construct an error with an empty kind.
-fun error(msg: String) -> Error {
-    return Error { kind: "", message: msg }
+fun error(msg: str) -> Error {
+    return Error(kind: "", message: msg)
 }
 
 // Construct an error tagged with a kind (for example "io" or "parse").
-fun error_kind(kind: String, msg: String) -> Error {
-    return Error { kind: kind, message: msg }
+fun error_kind(kind: str, msg: str) -> Error {
+    return Error(kind: kind, message: msg)
 }
 
 impl Error {
-    fun message(self) -> String {
+    fun message(self) -> str {
         return self.message
     }
 
-    fun kind(self) -> String {
+    fun kind(self) -> str {
         return self.kind
     }
 
     // A new error whose message is `ctx + ": " + message`, preserving the
     // kind. Use it to add a higher-level explanation to a lower-level
     // failure as it propagates.
-    fun with_context(self, ctx: String) -> Error {
-        return Error { kind: self.kind, message: ctx.concat(": ").concat(self.message) }
+    fun with_context(self, ctx: str) -> Error {
+        return Error(kind: self.kind, message: ctx.concat(": ").concat(self.message))
     }
 }
 
 impl ToString for Error {
-    fun to_string(self) -> String {
+    fun to_string(self) -> str {
         if self.kind.length() == 0 {
             return self.message
         }
@@ -46,65 +46,65 @@ impl ToString for Error {
     }
 }
 
-fun is_ok<T, E>(r: Result<T, E>) -> Bool {
+fun is_ok[T, E](r: Result[T, E]) -> bool {
     return match r {
-        Ok(v) -> true,
-        Err(e) -> false,
+        case Ok(v) { true }
+        case Err(e) { false }
     }
 }
 
-fun is_err<T, E>(r: Result<T, E>) -> Bool {
+fun is_err[T, E](r: Result[T, E]) -> bool {
     return match r {
-        Ok(v) -> false,
-        Err(e) -> true,
+        case Ok(v) { false }
+        case Err(e) { true }
     }
 }
 
 // The Ok value, or `default` when the Result is an Err.
-fun unwrap_or<T, E>(r: Result<T, E>, default: T) -> T {
+fun unwrap_or[T, E](r: Result[T, E], default: T) -> T {
     return match r {
-        Ok(v) -> v,
-        Err(e) -> default,
+        case Ok(v) { v }
+        case Err(e) { default }
     }
 }
 
 // Discard the error, mapping Ok to Some and Err to None.
-fun ok<T, E>(r: Result<T, E>) -> Option<T> {
+fun ok[T, E](r: Result[T, E]) -> Option[T] {
     return match r {
-        Ok(v) -> Some(v),
-        Err(e) -> None,
+        case Ok(v) { Some(v) }
+        case Err(e) { None }
     }
 }
 
 // Keep the error, mapping Err to Some and Ok to None.
-fun err<T, E>(r: Result<T, E>) -> Option<E> {
+fun err[T, E](r: Result[T, E]) -> Option[E] {
     return match r {
-        Ok(v) -> None,
-        Err(e) -> Some(e),
+        case Ok(v) { None }
+        case Err(e) { Some(e) }
     }
 }
 
 // Transform the `Ok` value with `f`, passing an `Err` through unchanged.
-fun map_ok<T, U, E>(r: Result<T, E>, f: fun(T) -> U) -> Result<U, E> {
+fun map_ok[T, U, E](r: Result[T, E], f: fun(T) -> U) -> Result[U, E] {
     return match r {
-        Ok(v) -> Ok(f(v)),
-        Err(e) -> Err(e),
+        case Ok(v) { Ok(f(v)) }
+        case Err(e) { Err(e) }
     }
 }
 
 // Transform the `Err` value with `f`, passing an `Ok` through unchanged.
-fun map_err<T, E, F>(r: Result<T, E>, f: fun(E) -> F) -> Result<T, F> {
+fun map_err[T, E, F](r: Result[T, E], f: fun(E) -> F) -> Result[T, F] {
     return match r {
-        Ok(v) -> Ok(v),
-        Err(e) -> Err(f(e)),
+        case Ok(v) { Ok(v) }
+        case Err(e) { Err(f(e)) }
     }
 }
 
 // The `Ok` value, or the result of applying `f` to the error. The lazy
 // counterpart to `unwrap_or`, useful when the fallback is expensive.
-fun unwrap_or_else<T, E>(r: Result<T, E>, f: fun(E) -> T) -> T {
+fun unwrap_or_else[T, E](r: Result[T, E], f: fun(E) -> T) -> T {
     return match r {
-        Ok(v) -> v,
-        Err(e) -> f(e),
+        case Ok(v) { v }
+        case Err(e) { f(e) }
     }
 }

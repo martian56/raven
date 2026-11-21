@@ -1,0 +1,15 @@
+import std.string
+
+fun greet(name: str) -> str {
+    return "hi ".concat(name)
+}
+
+class Counter {
+    value: int
+}
+
+impl Counter {
+    fun bumped(self) -> Counter {
+        return Counter(value: self.value + 1)
+    }
+}

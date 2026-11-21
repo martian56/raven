@@ -1,7 +1,7 @@
 (file
   (fn "map" generics=("T" "U") params=("xs":List<T> "f":fun(T) -> U) ret=List<U>
     (body
-      (let-stmt "out": List<U>
+      (const-stmt "out": List<U>
         (call
           (ident "empty" generics=(U))
         )
@@ -9,7 +9,9 @@
       (expr-stmt
         (for
           (pattern ident:"x")
-          (ident "xs")
+          (method-call "__for_iter"
+            (ident "xs")
+          )
           (body
             (trailing
               (method-call "push"

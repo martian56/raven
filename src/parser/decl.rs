@@ -30,19 +30,37 @@ impl Parser {
         {
             return self.parse_macro_def();
         }
+        if self.peek_word("pub")
+            && !matches!(self.peek_kind_at(1), TokenKind::LParen | TokenKind::Eq)
+        {
+            self.advance();
+        }
+        if self.peek_word("class") && matches!(self.peek_kind_at(1), TokenKind::Identifier(_)) {
+            return self.parse_class_decl(derives, repr_c);
+        }
+        if matches!(self.peek_kind(), TokenKind::Struct) {
+            return Err(self.legacy("`struct`", "declare it with `class Name { ... }`"));
+        }
+        if matches!(self.peek_kind(), TokenKind::Const) {
+            return Err(self.legacy("`const`", "declare it with `let`"));
+        }
+        if self.peek_word("from") {
+            return self.parse_from_import();
+        }
+        if self.peek_word("var") && matches!(self.peek_kind_at(1), TokenKind::Identifier(_)) {
+            return self.parse_let_decl();
+        }
         match self.peek_kind() {
-            TokenKind::Struct => self.parse_struct_decl(derives, repr_c),
             TokenKind::Enum if !repr_c => self.parse_enum_decl(derives),
-            _ if repr_c => Err(self.unexpected("`struct` after `@repr(C)`")),
+            _ if repr_c => Err(self.unexpected("`class` after `@repr(C)`")),
             _ if !derives.is_empty() => {
-                Err(self.unexpected("`struct` or `enum` after `@derive(...)`"))
+                Err(self.unexpected("`class` or `enum` after `@derive(...)`"))
             }
             TokenKind::Fun => self.parse_function_decl(),
             TokenKind::Trait => self.parse_trait_decl(),
             TokenKind::Impl => self.parse_impl_decl(),
             TokenKind::Extern => self.parse_extern_decl(),
             TokenKind::Import => self.parse_import_decl(),
-            TokenKind::Const => self.parse_const_decl(),
             TokenKind::Let => self.parse_let_decl(),
             _ => Err(self.unexpected("top level item")),
         }
@@ -169,14 +187,12 @@ impl Parser {
         })
     }
 
-    fn parse_generic_params_opt(&mut self) -> ParseResult<Vec<GenericParam>> {
-        if !matches!(self.peek_kind(), TokenKind::Lt) {
-            return Ok(Vec::new());
-        }
-        self.advance(); // <
+    /// `[T, U: Eq + Hash]`
+    fn parse_bracket_generic_params(&mut self) -> ParseResult<Vec<GenericParam>> {
+        self.advance();
         let mut params = Vec::new();
-        loop {
-            self.skip_newlines();
+        self.skip_newlines();
+        while !matches!(self.peek_kind(), TokenKind::RBracket) {
             let (name, name_span) = self.expect_ident("generic parameter name")?;
             let mut bounds = Vec::new();
             let mut span = name_span;
@@ -196,40 +212,19 @@ impl Parser {
                 break;
             }
             self.skip_newlines();
-            if matches!(self.peek_kind(), TokenKind::Gt | TokenKind::Shr) {
-                break;
-            }
         }
-        // Close angle: same as type args.
-        match self.peek_kind() {
-            TokenKind::Gt => {
-                self.advance();
-            }
-            TokenKind::Shr => {
-                // Split into two `>` and consume the first half.
-                self.split_shr_close_first();
-            }
-            _ => return Err(self.unexpected("`>`")),
-        }
+        self.expect(&TokenKind::RBracket, "`]`")?;
         Ok(params)
     }
 
-    /// Split a `>>` at the cursor into two `>` and consume the first.
-    /// Mirror of the type args closer; kept here because generic
-    /// parameters can also nest (e.g. `fun foo<T: Box<U>>(...)`).
-    fn split_shr_close_first(&mut self) {
-        let tok = self.tokens[self.pos].clone();
-        let second_half = crate::span::Span::new(
-            tok.span.file.clone(),
-            tok.span.start + 1,
-            tok.span.end,
-            tok.span.line,
-            tok.span.col.saturating_add(1),
-        );
-        self.tokens[self.pos] = crate::lexer::Token {
-            kind: TokenKind::Gt,
-            span: second_half,
-        };
+    fn parse_generic_params_opt(&mut self) -> ParseResult<Vec<GenericParam>> {
+        if matches!(self.peek_kind(), TokenKind::LBracket) {
+            return self.parse_bracket_generic_params();
+        }
+        if matches!(self.peek_kind(), TokenKind::Lt) {
+            return Err(self.legacy("`<T>` generics", "write `[T]`"));
+        }
+        Ok(Vec::new())
     }
 
     fn parse_param_list(&mut self) -> ParseResult<Vec<Param>> {
@@ -256,6 +251,7 @@ impl Parser {
             params.push(Param {
                 name: "self".to_string(),
                 ty: self_ty,
+                default: None,
                 span,
             });
             self.skip_newlines();
@@ -269,7 +265,17 @@ impl Parser {
             self.expect(&TokenKind::Colon, "`:`")?;
             let ty = self.parse_type()?;
             let span = merge_spans(&name_span, &ty.span);
-            params.push(Param { name, ty, span });
+            let default = if self.eat(&TokenKind::Eq) {
+                Some(self.parse_expr()?)
+            } else {
+                None
+            };
+            params.push(Param {
+                name,
+                ty,
+                default,
+                span,
+            });
             self.skip_newlines();
             if !self.eat(&TokenKind::Comma) {
                 break;
@@ -280,47 +286,6 @@ impl Parser {
             }
         }
         Ok(params)
-    }
-
-    fn parse_struct_decl(&mut self, derives: Vec<String>, repr_c: bool) -> ParseResult<Decl> {
-        let start = self.advance().span; // struct
-        let (name, _) = self.expect_ident("struct name")?;
-        let generics = self.parse_generic_params_opt()?;
-        self.expect(&TokenKind::LBrace, "`{`")?;
-        self.skip_separators();
-        let mut fields: Vec<StructField> = Vec::new();
-        while !matches!(self.peek_kind(), TokenKind::RBrace) {
-            let (fname, fspan) = self.expect_ident("field name")?;
-            self.expect(&TokenKind::Colon, "`:`")?;
-            let ty = self.parse_type()?;
-            let span = merge_spans(&fspan, &ty.span);
-            if fields.iter().any(|f| f.name == fname) {
-                return Err(RavenError::parse(ParseError::DuplicateField(fname), fspan));
-            }
-            fields.push(StructField {
-                name: fname,
-                ty,
-                span,
-            });
-            // Separator: `,`, newline, or both.
-            if !self.eat(&TokenKind::Comma) && !matches!(self.peek_kind(), TokenKind::Newline) {
-                break;
-            }
-            self.skip_separators();
-        }
-        let rb = self.expect(&TokenKind::RBrace, "`}`")?;
-        let span = merge_spans(&start, &rb.span);
-        Ok(Decl {
-            kind: DeclKind::Struct(Struct {
-                name,
-                generics,
-                fields,
-                derives,
-                repr_c,
-                span: span.clone(),
-            }),
-            span,
-        })
     }
 
     fn parse_trait_decl(&mut self) -> ParseResult<Decl> {
@@ -380,6 +345,7 @@ impl Parser {
                 trait_or_type,
                 for_type,
                 items,
+                from_class: false,
                 span: span.clone(),
             }),
             span,
@@ -417,6 +383,7 @@ impl Parser {
                             ));
                         }
                         fields.push(StructField {
+                            default: None,
                             name: fname,
                             ty,
                             span: s,
@@ -517,6 +484,7 @@ impl Parser {
                     let ty = self.parse_type()?;
                     let span = merge_spans(&name_span, &ty.span);
                     params.push(Param {
+                        default: None,
                         name: pname,
                         ty,
                         span,
@@ -567,6 +535,12 @@ impl Parser {
             None
         };
         let mut selectors = Vec::new();
+        if matches!(self.peek_kind(), TokenKind::LBrace) {
+            return Err(self.legacy(
+                "`import path { names }`",
+                "write `from path import name, other`",
+            ));
+        }
         if self.eat(&TokenKind::LBrace) {
             self.skip_separators();
             while !matches!(self.peek_kind(), TokenKind::RBrace) {
@@ -615,8 +589,11 @@ impl Parser {
                 let mut span = self.peek().span.clone();
                 self.advance(); // std
                 let mut parts: Vec<String> = Vec::new();
-                while matches!(self.peek_kind(), TokenKind::Slash) {
-                    self.advance(); // /
+                while matches!(self.peek_kind(), TokenKind::Slash | TokenKind::Dot) {
+                    if matches!(self.peek_kind(), TokenKind::Slash) {
+                        return Err(self.legacy("`import std/...`", "write `import std.name`"));
+                    }
+                    self.advance(); // .
                     let (name, sp) = self.expect_ident("identifier")?;
                     parts.push(name);
                     span = merge_spans(&span, &sp);
@@ -630,25 +607,112 @@ impl Parser {
         }
     }
 
-    fn parse_const_decl(&mut self) -> ParseResult<Decl> {
-        let start = self.advance().span; // const
-        let (name, _) = self.expect_ident("identifier")?;
-        // The type annotation is optional: an unannotated `const` infers its
-        // type from a literal initializer, like a module-level `let`.
-        let ty = if self.eat(&TokenKind::Colon) {
-            Some(self.parse_type()?)
-        } else {
-            None
-        };
-        self.expect(&TokenKind::Eq, "`=`")?;
-        self.skip_newlines();
-        let value = self.parse_expr()?;
-        let span = merge_spans(&start, &value.span);
+    /// `class Name[T]: Trait, Other { field: T = default  fun method(self) {..} }`.
+    /// Emits the struct, one inherent impl holding every method, and an empty
+    /// impl per listed trait; expansion moves each trait's methods over.
+    fn parse_class_decl(&mut self, derives: Vec<String>, repr_c: bool) -> ParseResult<Decl> {
+        let is_class = self.peek_word("class");
+        let start = self.advance().span;
+        let (name, name_span) = self.expect_ident("class name")?;
+        let generics = self.parse_generic_params_opt()?;
+        let mut traits = Vec::new();
+        if self.eat(&TokenKind::Colon) {
+            loop {
+                traits.push(self.parse_type_path()?);
+                if !self.eat(&TokenKind::Comma) {
+                    break;
+                }
+            }
+        }
+        self.expect(&TokenKind::LBrace, "`{`")?;
+        self.skip_separators();
+        let mut fields: Vec<StructField> = Vec::new();
+        let mut methods = Vec::new();
+        while !matches!(self.peek_kind(), TokenKind::RBrace) {
+            if self.peek_word("pub") {
+                self.advance();
+            }
+            if matches!(self.peek_kind(), TokenKind::Fun) {
+                methods.push(self.parse_function(false)?);
+            } else {
+                let (fname, fspan) = self.expect_ident("field name or `fun`")?;
+                self.expect(&TokenKind::Colon, "`:`")?;
+                let ty = self.parse_type()?;
+                let default = if self.eat(&TokenKind::Eq) {
+                    self.skip_newlines();
+                    Some(self.parse_expr()?)
+                } else {
+                    None
+                };
+                if fields.iter().any(|f| f.name == fname) {
+                    return Err(RavenError::parse(ParseError::DuplicateField(fname), fspan));
+                }
+                let span = merge_spans(&fspan, &ty.span);
+                fields.push(StructField {
+                    name: fname,
+                    ty,
+                    default,
+                    span,
+                });
+                self.eat(&TokenKind::Comma);
+            }
+            self.skip_separators();
+        }
+        let rb = self.expect(&TokenKind::RBrace, "`}`")?;
+        let span = merge_spans(&start, &rb.span);
         Ok(Decl {
-            kind: DeclKind::Const(Const {
+            kind: DeclKind::Struct(Struct {
                 name,
-                ty,
-                value,
+                generics,
+                fields,
+                derives,
+                repr_c,
+                is_class,
+                methods,
+                implements: traits,
+                name_span,
+                span: span.clone(),
+            }),
+            span,
+        })
+    }
+
+    /// `from std.json import parse, stringify as s` and
+    /// `from "./models" import User`.
+    fn parse_from_import(&mut self) -> ParseResult<Decl> {
+        let start = self.advance().span;
+        let (source, mut span) = self.parse_import_source(&start)?;
+        if !self.peek_word("import") && !matches!(self.peek_kind(), TokenKind::Import) {
+            return Err(self.unexpected("`import`"));
+        }
+        self.advance();
+        let mut selectors = Vec::new();
+        let paren = self.eat(&TokenKind::LParen);
+        loop {
+            self.skip_newlines();
+            let (n, sp) = self.expect_ident("name to import")?;
+            span = merge_spans(&span, &sp);
+            let alias = if self.eat(&TokenKind::As) {
+                let (a, sp) = self.expect_ident("alias name")?;
+                span = merge_spans(&span, &sp);
+                Some(a)
+            } else {
+                None
+            };
+            selectors.push(crate::ast::ImportSelector { name: n, alias });
+            if !self.eat(&TokenKind::Comma) {
+                break;
+            }
+        }
+        if paren {
+            self.skip_newlines();
+            self.expect(&TokenKind::RParen, "`)`")?;
+        }
+        Ok(Decl {
+            kind: DeclKind::Import(Import {
+                source,
+                alias: None,
+                selectors,
                 span: span.clone(),
             }),
             span,
@@ -656,6 +720,7 @@ impl Parser {
     }
 
     fn parse_let_decl(&mut self) -> ParseResult<Decl> {
+        let immutable = matches!(self.peek_kind(), TokenKind::Let);
         let start = self.advance().span; // let
         let (name, _) = self.expect_ident("identifier")?;
         let ty = if self.eat(&TokenKind::Colon) {
@@ -675,6 +740,19 @@ impl Parser {
             .or_else(|| ty.as_ref().map(|t| t.span.clone()))
             .unwrap_or_else(|| start.clone());
         let span = merge_spans(&start, &end_span);
+        // A module `let` bound to a constant expression is a compile-time
+        // constant, folded and inlined at each use.
+        if let Some(value) = init.as_ref().filter(|e| immutable && is_constant_expr(e)) {
+            return Ok(Decl {
+                kind: DeclKind::Const(Const {
+                    name,
+                    ty,
+                    value: value.clone(),
+                    span: span.clone(),
+                }),
+                span,
+            });
+        }
         Ok(Decl {
             kind: DeclKind::Let(LetDecl {
                 name,
@@ -684,5 +762,21 @@ impl Parser {
             }),
             span,
         })
+    }
+}
+
+/// Literals combined with operators: a value known at compile time.
+fn is_constant_expr(e: &crate::ast::Expr) -> bool {
+    use crate::ast::ExprKind;
+    match &e.kind {
+        ExprKind::Int(_)
+        | ExprKind::Float(_)
+        | ExprKind::Bool(_)
+        | ExprKind::Str(_)
+        | ExprKind::Char(_) => true,
+        ExprKind::Unary { operand, .. } => is_constant_expr(operand),
+        ExprKind::Binary { lhs, rhs, .. } => is_constant_expr(lhs) && is_constant_expr(rhs),
+        ExprKind::Paren(inner) => is_constant_expr(inner),
+        _ => false,
     }
 }

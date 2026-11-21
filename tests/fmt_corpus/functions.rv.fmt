@@ -1,12 +1,12 @@
 // free functions: block body, expression body, generics with bounds
 
-fun add(a: Int, b: Int) -> Int {
+fun add(a: int, b: int) -> int {
     return a + b
 }
 
-fun double(x: Int) -> Int = x * 2
+fun double(x: int) -> int = x * 2
 
-fun id<T: Ord + Clone>(x: T) -> T {
+fun id[T: Ord + Clone](x: T) -> T {
     return x
 }
 

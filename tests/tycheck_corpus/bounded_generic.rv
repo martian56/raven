@@ -1,7 +1,7 @@
 trait Display {
-    fun render() -> String
+    fun render() -> str
 }
 
-fun show<T: Display>(x: T) -> T = x
+fun show[T: Display](x: T) -> T = x
 
-fun multi<T: Display>(a: T, b: T) -> T = a
+fun multi[T: Display](a: T, b: T) -> T = a

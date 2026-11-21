@@ -3,7 +3,7 @@
 // `Rng.new(seed)` is deterministic: the same seed yields the same
 // sequence, which is the reproducibility guarantee. `Rng.from_entropy()`
 // seeds from a runtime time/pid source for a non-reproducible stream.
-// See docs/v2/specs/std-random.md.
+// See docs/specs/std-random.md.
 //
 // Raven Int is i64 and arithmetic wraps two's-complement, so splitmix64's
 // unsigned add and multiply map directly onto `+` and `*`. The `>>`
@@ -11,32 +11,32 @@
 // right shifts go through `ushr` below.
 
 extern "C" {
-    fun raven_int_to_float(x: Int) -> Float
-    fun raven_random_entropy() -> Int
+    fun raven_int_to_float(x: int) -> float
+    fun raven_random_entropy() -> int
 }
 
 // Logical (zero-filling) right shift of a 64-bit value by `n` in 1..63.
 // Masks off the high `n` bits the arithmetic `>>` would sign-fill.
-fun ushr(x: Int, n: Int) -> Int {
+fun ushr(x: int, n: int) -> int {
     let mask = (1 << (64 - n)) - 1
     return (x >> n) & mask
 }
 
-struct Rng {
-    state: Int,
+class Rng {
+    state: int
 }
 
 impl Rng {
-    fun new(seed: Int) -> Rng {
-        return Rng { state: seed }
+    fun new(seed: int) -> Rng {
+        return Rng(state: seed)
     }
 
     fun from_entropy() -> Rng {
-        return Rng { state: raven_random_entropy() }
+        return Rng(state: raven_random_entropy())
     }
 
     // splitmix64: advance the state, then finalize the old sum.
-    fun next_int(self) -> Int {
+    fun next_int(self) -> int {
         self.state = self.state + -7046029254386353131
         let z = self.state
         let a = (z ^ ushr(z, 30)) * -4658895280553007687
@@ -48,7 +48,7 @@ impl Rng {
     // which carries a small bias when (hi - lo) does not divide the 2^63
     // value range; for typical small ranges the bias is negligible.
     // Assumes lo < hi; if lo >= hi the result is lo.
-    fun gen_range(self, lo: Int, hi: Int) -> Int {
+    fun gen_range(self, lo: int, hi: int) -> int {
         if lo >= hi {
             return lo
         }
@@ -62,8 +62,8 @@ impl Rng {
         // modulo above would divide by a wrapped, non-positive span (returning
         // only `lo`). Draw a full-width value and reject those outside [lo, hi);
         // for a range this large most draws land in range, so this is quick.
-        let v = self.next_int()
-        while v < lo || v >= hi {
+        var v = self.next_int()
+        while v < lo or v >= hi {
             v = self.next_int()
         }
         return v
@@ -71,29 +71,29 @@ impl Rng {
 
     // In [0.0, 1.0): the top 53 bits of a draw scaled by 2^-53, which is
     // the full f64 mantissa precision.
-    fun next_float(self) -> Float {
+    fun next_float(self) -> float {
         let bits = ushr(self.next_int(), 11)
         return raven_int_to_float(bits) / raven_int_to_float(9007199254740992)
     }
 
-    fun next_bool(self) -> Bool {
+    fun next_bool(self) -> bool {
         return (self.next_int() & 1) == 1
     }
 
-    fun choice<T>(self, xs: List<T>) -> Option<T> {
+    fun choice[T](self, xs: list[T]) -> Option[T] {
         let n = xs.len()
         if n == 0 {
             return None
         }
-        let i = self.gen_range(0, n)
+        var i = self.gen_range(0, n)
         return Some(xs.get(i))
     }
 
     // In-place Fisher-Yates shuffle.
-    fun shuffle<T>(self, xs: List<T>) {
-        let i = xs.len() - 1
+    fun shuffle[T](self, xs: list[T]) {
+        var i = xs.len() - 1
         while i > 0 {
-            let j = self.gen_range(0, i + 1)
+            var j = self.gen_range(0, i + 1)
             let tmp = xs[i]
             xs[i] = xs[j]
             xs[j] = tmp
@@ -109,11 +109,11 @@ impl Rng {
     // with high probability, so this resolves in a draw or two; the loop is
     // bounded so it always terminates, falling back to lo (the one value an empty
     // or inverted range can yield).
-    fun gen_range_float(self, lo: Float, hi: Float) -> Float {
+    fun gen_range_float(self, lo: float, hi: float) -> float {
         if hi <= lo {
             return lo
         }
-        let attempts = 0
+        var attempts = 0
         while attempts < 64 {
             let t = self.next_float()
             let r = lo * (1.0 - t) + hi * t
@@ -127,20 +127,20 @@ impl Rng {
 
     // `n` elements drawn from `xs` without replacement, in random order. If
     // `n` exceeds the list length, every element is returned (shuffled).
-    fun sample<T>(self, xs: List<T>, n: Int) -> List<T> {
-        let pool: List<T> = []
-        let i = 0
+    fun sample[T](self, xs: list[T], n: int) -> list[T] {
+        let pool: list[T] = []
+        var i = 0
         while i < xs.len() {
             pool.push(xs.get(i))
             i = i + 1
         }
         self.shuffle(pool)
-        let limit = n
+        var limit = n
         if limit > pool.len() {
             limit = pool.len()
         }
-        let out: List<T> = []
-        let k = 0
+        let out: list[T] = []
+        var k = 0
         while k < limit {
             out.push(pool.get(k))
             k = k + 1
@@ -151,20 +151,20 @@ impl Rng {
     // Choose an element of `xs` with probability proportional to the matching
     // entry of `weights`. Returns `None` when the lists are empty or the total
     // positive weight is zero.
-    fun weighted_choice<T>(self, xs: List<T>, weights: List<Int>) -> Option<T> {
+    fun weighted_choice[T](self, xs: list[T], weights: list[int]) -> Option[T] {
         // Only items that have a matching weight can be drawn, so the total
         // must ignore any extra weights past the shorter list. Counting them
         // would leave a slice of the range that a draw can land in but the
         // selection loop never assigns, returning None for a valid list.
-        let count = xs.len()
+        var count = xs.len()
         if weights.len() < count {
             count = weights.len()
         }
         // A non-positive weight contributes nothing and is never drawn. Sum as
         // Float so very large positive Int weights do not saturate the cumulative
         // range and make later positive items unreachable.
-        let total = 0.0
-        let i = 0
+        var total = 0.0
+        var i = 0
         while i < count {
             let w = weights.get(i)
             if w > 0 {
@@ -176,9 +176,9 @@ impl Rng {
             return None
         }
         let r = self.next_float() * total
-        let acc = 0.0
-        let fallback = -1
-        let j = 0
+        var acc = 0.0
+        var fallback = -1
+        var j = 0
         while j < count {
             let w = weights.get(j)
             if w > 0 {

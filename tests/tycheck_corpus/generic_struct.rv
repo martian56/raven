@@ -1,6 +1,6 @@
-struct Box<T> {
-    value: T,
+class Box[T] {
+    value: T
 }
 
-fun make_int_box() -> Box<Int> = Box { value: 1 }
-fun read(b: Box<Int>) -> Int = b.value
+fun make_int_box() -> Box[int] = Box(value: 1)
+fun read(b: Box[int]) -> int = b.value

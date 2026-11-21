@@ -1,0 +1,39 @@
+// The base64 and base32 decoders reject malformed padding: padding before the
+// final group, data after padding, impossible base32 final groups, and a
+// partial (non-aligned) group, while valid encodings still round-trip.
+from std.encoding import base64_encode, base64_decode, base32_encode, base32_decode
+fun rt64(s: str) -> bool {
+    return match base64_decode(base64_encode(s)) {
+        case Ok(d) { d == s }
+        case Err(_) { false }
+    }
+}
+fun rt32(s: str) -> bool {
+    return match base32_decode(base32_encode(s)) {
+        case Ok(d) { d == s }
+        case Err(_) { false }
+    }
+}
+fun rej64(s: str) -> bool {
+    return match base64_decode(s) {
+        case Ok(_) { false }
+        case Err(_) { true }
+    }
+}
+fun rej32(s: str) -> bool {
+    return match base32_decode(s) {
+        case Ok(_) { false }
+        case Err(_) { true }
+    }
+}
+fun main() {
+    print("rt64 hello: ${rt64("hello")}")
+    print("rt64 abc: ${rt64("abc")}")
+    print("rt32 hello: ${rt32("hello")}")
+    print("rt32 abcd: ${rt32("abcd")}")
+    print("b64 midpad rejected: ${rej64("QQ==QQ==")}")
+    print("b32 after-pad rejected: ${rej32("AA======AA======")}")
+    print("b32 padding-only rejected: ${rej32("========")}")
+    print("b32 one-symbol rejected: ${rej32("M=======")}")
+    print("b32 partial rejected: ${rej32("AAA")}")
+}

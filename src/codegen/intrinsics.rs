@@ -11,7 +11,7 @@ pub const PRINT: &str = "print";
 /// Internal stdlib I/O intrinsics. The bundled `std/io` source calls
 /// these to reach the runtime's byte-level I/O symbols; the leading
 /// `__io_` marks them internal (a user uses `std/io`'s exported
-/// functions instead). See `docs/v2/specs/stdlib.md`.
+/// functions instead). See `docs/specs/stdlib.md`.
 ///
 /// `__io_print_str(s: String)` writes the bytes of `s` with no newline.
 pub const IO_PRINT_STR: &str = "__io_print_str";
@@ -30,7 +30,7 @@ pub const PANIC_FN: &str = "__panic";
 /// calls these byte-level primitives to build the higher-level utilities
 /// (case mapping, search, trim, ...) in pure Raven. The leading `__str_`
 /// marks them internal; a user calls the exported `std/string` functions
-/// instead. See `docs/v2/specs/std-string.md`.
+/// instead. See `docs/specs/std-string.md`.
 ///
 /// `__str_len(s: String) -> Int` returns the byte length of `s`.
 pub const STR_LEN: &str = "__str_len";
@@ -51,13 +51,13 @@ pub const STR_CONCAT_FN: &str = "__str_concat";
 /// thunk closure capturing what `expr` needs, then emits
 /// `__defer_push(thunk)`, which lowers to the runtime's
 /// `raven_defer_push`. The function epilogue runs the parked thunks at
-/// each return. See `docs/v2/specs/defer.md`.
+/// each return. See `docs/specs/defer.md`.
 pub const DEFER_PUSH_FN: &str = "__defer_push";
 
 /// Internal spawn intrinsic. MIR lowering of a `spawn expr` evaluates
 /// `expr` to a `fun() -> Unit` closure and emits `__go_spawn(closure)`,
 /// which lowers to the runtime's `raven_go_spawn`. The runtime starts a
-/// goroutine running the closure. See `docs/v2/specs/concurrency.md`.
+/// goroutine running the closure. See `docs/specs/concurrency.md`.
 pub const GO_SPAWN_FN: &str = "__go_spawn";
 
 /// Runtime C symbol the `print` intrinsic dispatches to.
@@ -139,11 +139,9 @@ pub const RUNTIME_STRUCT_REGISTER: &str = "raven_struct_register";
 /// tracing the union of every variant's pointers.
 pub const RUNTIME_ENUM_REGISTER: &str = "raven_enum_register";
 
-/// Runtime C symbol entering a GC root frame.
-pub const RUNTIME_GC_ENTER_FRAME: &str = "raven_gc_enter_frame";
-
-/// Runtime C symbol leaving the most recent GC root frame.
-pub const RUNTIME_GC_LEAVE_FRAME: &str = "raven_gc_leave_frame";
+/// Runtime C symbol registering the program's accessor for its thread-local
+/// root record chain head.
+pub const RUNTIME_GC_SET_CHAIN_ACCESSOR: &str = "raven_gc_set_chain_accessor";
 
 /// Runtime C symbol registering a single root slot. Used to keep a heap
 /// temporary that an rvalue builds across further allocations reachable
@@ -165,6 +163,9 @@ pub const RUNTIME_GC_EXIT_RUNNING: &str = "raven_gc_exit_running";
 /// back-edges. A single atomic load when no collection is pending; otherwise it
 /// parks the thread until the world resumes.
 pub const RUNTIME_GC_SAFEPOINT: &str = "raven_gc_safepoint";
+/// A generated wrapper around [`RUNTIME_GC_SAFEPOINT`] that preserves every
+/// register, which loops call.
+pub const SAFEPOINT_THUNK: &str = "__raven_safepoint";
 
 /// Runtime C symbol opening a per-call defer frame.
 pub const RUNTIME_DEFER_ENTER_FRAME: &str = "raven_defer_enter_frame";
@@ -187,7 +188,7 @@ pub const RUNTIME_GO_SPAWN: &str = "raven_go_spawn";
 /// element_align == 8`), the same slot width struct and enum fields use,
 /// and sets `elements_are_gc_ptrs` from the static element type so the
 /// collector traces pointer elements and leaves scalar buffers opaque.
-/// See `docs/v2/specs/codegen.md` and `docs/v2/specs/object-layout.md`.
+/// See `docs/specs/codegen.md` and `docs/specs/object-layout.md`.
 ///
 /// `raven_list_new(element_size, element_align, cap, gc_ptrs) -> List`.
 pub const RUNTIME_LIST_NEW: &str = "raven_list_new";
@@ -197,6 +198,8 @@ pub const RUNTIME_LIST_LEN: &str = "raven_list_len";
 pub const RUNTIME_LIST_ELEMENTS: &str = "raven_list_elements";
 /// `raven_list_push(List, payload_ptr)` appends one eight-byte slot.
 pub const RUNTIME_LIST_PUSH: &str = "raven_list_push";
+/// `raven_list_reserve(List, additional: i64)` grows capacity ahead of pushes.
+pub const RUNTIME_LIST_RESERVE: &str = "raven_list_reserve";
 /// `raven_list_pop(List, out_ptr) -> u32` removes the last element into
 /// `out_ptr`, returning `1` on success and `0` when the list is empty.
 pub const RUNTIME_LIST_POP: &str = "raven_list_pop";
@@ -224,7 +227,7 @@ pub const RUNTIME_FFI_ALLOC: &str = "raven_ffi_alloc";
 /// Runtime symbol: `raven_ffi_free(p: ptr)`. Backs the `__ptr_free` builtin.
 pub const RUNTIME_FFI_FREE: &str = "raven_ffi_free";
 
-/// Runtime reflection symbols. See `docs/v2/specs/runtime-reflection.md`.
+/// Runtime reflection symbols. See `docs/specs/runtime-reflection.md`.
 ///
 /// `raven_type_register(type_id, name, is_struct, field_count, field_names,
 /// field_type_ids, field_is_gc_ptr)` registers one type's metadata.

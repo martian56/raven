@@ -1,0 +1,36 @@
+// @derive(Ord) gives a type a `compare(self, other) -> Int` method: structs
+// compare field by field in declaration order, enums by variant order and then
+// by payload. That is enough to sort a list of either with std/cmp.
+from std.io import println
+from std.cmp import sort
+
+@derive(Ord, ToString)
+class Version {
+    major: int
+    minor: int
+    patch: int
+}
+
+@derive(Ord)
+enum Level {
+    Low,
+    Mid(int),
+    High(int, int),
+}
+
+fun main() {
+    let vs = sort(
+        [
+            Version(major: 1, minor: 2, patch: 0),
+            Version(major: 1, minor: 0, patch: 9),
+            Version(major: 0, minor: 9, patch: 9),
+            Version(major: 1, minor: 2, patch: 0),
+        ],
+    )
+    for v in vs {
+        println(v.to_string())
+    }
+    println(Level.Low.compare(Level.High(1, 1)).to_string())
+    println(Level.High(2, 1).compare(Level.High(2, 5)).to_string())
+    println(Level.Mid(7).compare(Level.Mid(7)).to_string())
+}

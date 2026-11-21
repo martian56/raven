@@ -1,0 +1,48 @@
+// Match on the `self` receiver of an enum method and read its payload.
+// Regression for issue #186: the receiver carries a `SelfTy` wrapper, so
+// the match scrutinee must resolve to the underlying enum before payload
+// projection. Covers a scalar payload and heap payloads (String, List).
+
+enum Bag {
+    Num(int),
+    Text(str),
+    Items(list[int]),
+}
+
+impl Bag {
+    fun num(self) -> int {
+        return match self {
+            case Num(n) { n }
+            case Text(s) { -1 }
+            case Items(xs) { -1 }
+        }
+    }
+
+    fun text(self) -> str {
+        return match self {
+            case Text(s) { s }
+            case Num(n) { "none" }
+            case Items(xs) { "none" }
+        }
+    }
+
+    fun count(self) -> int {
+        return match self {
+            case Items(xs) { xs.len() }
+            case Num(n) { 0 }
+            case Text(s) { 0 }
+        }
+    }
+}
+
+fun main() {
+    let a = Bag.Num(42)
+    print(a.num())
+
+    let b = Bag.Text("hello")
+    print(b.text())
+
+    let xs: list[int] = [1, 2, 3]
+    let c = Bag.Items(xs)
+    print(c.count())
+}

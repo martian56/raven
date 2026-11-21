@@ -17,7 +17,7 @@
 //! * `pattern` and `match_check` validate pattern matching and
 //!   exhaustiveness.
 //!
-//! See `docs/v2/specs/tycheck.md` for the design.
+//! See `docs/specs/tycheck.md` for the design.
 
 pub mod builtin;
 pub mod collect;
@@ -34,7 +34,7 @@ pub mod wf;
 #[cfg(test)]
 mod tests;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use crate::ast::File;
 use crate::error::RavenError;
@@ -74,21 +74,29 @@ pub struct TypeMap {
     /// `UseKey` (file path plus byte range). Statements that introduce
     /// a binding store the binding's type under the introducing span as
     /// well so downstream passes can look it up.
-    pub types: HashMap<UseKey, Ty>,
+    pub types: rustc_hash::FxHashMap<UseKey, Ty>,
     /// `dyn Trait` coercions keyed by the coerced expression's span.
-    pub coercions: HashMap<UseKey, DynCoercion>,
+    pub coercions: rustc_hash::FxHashMap<UseKey, DynCoercion>,
     /// Resolved explicit type arguments of a generic call, keyed by the
     /// callee's span. Recorded only when a call writes them (`f<Int>()`).
     /// MIR uses them to bind a callee's generic parameters that the value
     /// arguments and result type do not pin down (for example a
     /// `type_name<T>()` inside a generic body, or any `f<T>()` with no
     /// argument carrying `T`).
-    pub type_args: HashMap<UseKey, Vec<Ty>>,
+    pub type_args: rustc_hash::FxHashMap<UseKey, Vec<Ty>>,
     /// Spans of top-level function names passed where a `CFnPtr` is
     /// expected (a C-FFI callback). Such a name lowers to the function's
     /// raw C address rather than a Raven closure object. Every other
     /// function-typed name used as a value is a Raven closure value.
     pub callback_fns: HashSet<UseKey>,
+    /// `for` heads that iterate through the value's `iter()` method rather
+    /// than the value itself.
+    pub for_iter_calls: HashSet<UseKey>,
+    /// Operators on class values that call the class's operator method.
+    pub operator_calls: HashSet<UseKey>,
+    /// `?` sites in `main` with nowhere to propagate to: an `Err` or `None`
+    /// stops the program with a message instead, like an uncaught error.
+    pub try_panics: HashSet<UseKey>,
     /// Spans of closure values passed where a `CFnPtr` is expected. The site
     /// lowers to a generated trampoline (userdata-last) the closure is
     /// invoked through, rather than the closure object pointer.
@@ -133,6 +141,36 @@ impl TypeMap {
     /// Look up a `dyn Trait` coercion recorded at `span`, if any.
     pub fn lookup_coercion(&self, span: &Span) -> Option<&DynCoercion> {
         self.coercions.get(&UseKey::from_span(span))
+    }
+
+    /// Record that the operator at `span` calls its operand's method.
+    pub fn record_operator(&mut self, span: &Span) {
+        self.operator_calls.insert(UseKey::from_span(span));
+    }
+
+    /// True when the operator at `span` calls its operand's method.
+    pub fn is_operator(&self, span: &Span) -> bool {
+        self.operator_calls.contains(&UseKey::from_span(span))
+    }
+
+    /// Record that the `?` at `span` panics instead of propagating.
+    pub fn record_try_panic(&mut self, span: &Span) {
+        self.try_panics.insert(UseKey::from_span(span));
+    }
+
+    /// True when the `?` at `span` panics instead of propagating.
+    pub fn is_try_panic(&self, span: &Span) -> bool {
+        self.try_panics.contains(&UseKey::from_span(span))
+    }
+
+    /// Record that the `for` head at `span` calls `iter()`.
+    pub fn record_for_iter(&mut self, span: &Span) {
+        self.for_iter_calls.insert(UseKey::from_span(span));
+    }
+
+    /// True when the `for` head at `span` calls `iter()`.
+    pub fn is_for_iter(&self, span: &Span) -> bool {
+        self.for_iter_calls.contains(&UseKey::from_span(span))
     }
 
     /// Record that the function name at `span` is a C-FFI callback (passed
@@ -202,8 +240,12 @@ pub struct TypedFile<'a> {
 pub fn check_file_all<'a>(
     resolved: &'a ResolvedFile<'a>,
 ) -> Result<TypedFile<'a>, Vec<RavenError>> {
+    let t0 = std::time::Instant::now();
     let mut env = TypeEnv::new();
     collect::collect_declarations(resolved, &mut env).map_err(|e| vec![e])?;
+    if std::env::var_os("RAVEN_TIMINGS").is_some() {
+        eprintln!("  (collect {:.1} ms)", t0.elapsed().as_secs_f64() * 1000.0);
+    }
     // Reject declared types whose generic arguments do not satisfy the
     // declaration's bounds (for example a `Map<K, V>` key without `Hash`), with
     // a clear error here rather than an unresolved callee at codegen.
@@ -212,7 +254,11 @@ pub fn check_file_all<'a>(
         return Err(wf_errors);
     }
     let mut types = TypeMap::new();
+    let t1 = std::time::Instant::now();
     expr::check_bodies(resolved, &env, &mut types)?;
+    if std::env::var_os("RAVEN_TIMINGS").is_some() {
+        eprintln!("  (bodies {:.1} ms)", t1.elapsed().as_secs_f64() * 1000.0);
+    }
     Ok(TypedFile {
         file: resolved.file,
         resolved,

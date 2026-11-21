@@ -53,6 +53,80 @@ pub enum StmtKind {
     /// A bare expression evaluated for its side effects (or returned as
     /// the trailing value of a block).
     Expr(Expr),
+    /// `let (a, b) = e`; desugared after parsing.
+    LetTuple {
+        pattern: super::pattern::Pattern,
+        init: Expr,
+        mutable: bool,
+    },
+    /// `assert cond` or `assert cond, message`; desugared after parsing.
+    /// `text` is the condition as written, for the failure message.
+    Assert {
+        cond: Expr,
+        message: Option<Expr>,
+        text: String,
+    },
+    /// `let P = e else { .. }`; desugared after parsing.
+    LetElse {
+        pattern: super::pattern::Pattern,
+        init: Expr,
+        else_block: super::expr::Block,
+        mutable: bool,
+    },
+}
+
+/// `target[index] = value` on a class, as the call `target.set_index(index,
+/// value)`. A compound `op=` passes `target[index] op value`.
+pub fn set_index_call(
+    target: &Expr,
+    op: AssignOp,
+    value: &Expr,
+    span: &crate::span::Span,
+) -> Option<Expr> {
+    use super::expr::ExprKind;
+    let ExprKind::Index { receiver, index } = &target.kind else {
+        return None;
+    };
+    let value = match op.binary() {
+        None => value.clone(),
+        Some(bin) => Expr {
+            kind: ExprKind::Binary {
+                op: bin,
+                lhs: Box::new(target.clone()),
+                rhs: Box::new(value.clone()),
+            },
+            span: span.in_copy(crate::span::COMPOUND_INDEX_COPY),
+        },
+    };
+    Some(Expr {
+        kind: ExprKind::MethodCall {
+            receiver: receiver.clone(),
+            name: "set_index".into(),
+            generics: Vec::new(),
+            args: vec![(**index).clone(), value],
+        },
+        span: span.clone(),
+    })
+}
+
+impl AssignOp {
+    /// The binary operator a compound assignment applies, `None` for `=`.
+    pub fn binary(self) -> Option<super::expr::BinaryOp> {
+        use super::expr::BinaryOp;
+        Some(match self {
+            AssignOp::Assign => return None,
+            AssignOp::Add => BinaryOp::Add,
+            AssignOp::Sub => BinaryOp::Sub,
+            AssignOp::Mul => BinaryOp::Mul,
+            AssignOp::Div => BinaryOp::Div,
+            AssignOp::Mod => BinaryOp::Mod,
+            AssignOp::BitAnd => BinaryOp::BitAnd,
+            AssignOp::BitOr => BinaryOp::BitOr,
+            AssignOp::BitXor => BinaryOp::BitXor,
+            AssignOp::Shl => BinaryOp::Shl,
+            AssignOp::Shr => BinaryOp::Shr,
+        })
+    }
 }
 
 /// Compound assignment operators. The plain `=` form is also represented

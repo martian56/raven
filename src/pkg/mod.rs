@@ -11,7 +11,7 @@
 //! branch and fetches it. The lock file (`rv.lock`) is built on top in
 //! `raven::lock`.
 //!
-//! See `docs/v2/specs/rvpm.md` for the cache layout and fetch strategy.
+//! See `docs/specs/rvpm.md` for the cache layout and fetch strategy.
 
 use std::fmt;
 use std::path::{Path, PathBuf};

@@ -15,7 +15,36 @@ pub struct Span {
     pub col: u32,
 }
 
+static NEXT_COPY: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
+const COPY_SHIFT: u32 = 40;
+
+/// A fresh id for a compiler-made copy of source nodes.
+/// Copy id of the `x[i] op v` value that `x[i] op= v` on a class builds. It
+/// is fixed so the type checker and HIR lowering derive the same span.
+pub const COMPOUND_INDEX_COPY: usize = (1 << 23) + 1;
+
+pub fn next_copy_id() -> usize {
+    NEXT_COPY.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 impl Span {
+    /// This span as part of copy `id`. Later passes key on byte offsets, so a
+    /// copied node needs offsets no other node has; the copy id replaces the
+    /// high bits, which keeps nested copies distinct.
+    /// The copy id this span belongs to; 0 for a span from source.
+    pub fn copy_id(&self) -> usize {
+        self.start >> COPY_SHIFT
+    }
+
+    pub fn in_copy(&self, id: usize) -> Span {
+        let low = (1usize << COPY_SHIFT) - 1;
+        Span {
+            start: (self.start & low) | (id << COPY_SHIFT),
+            end: (self.end & low) | (id << COPY_SHIFT),
+            ..self.clone()
+        }
+    }
+
     pub fn new(file: Arc<PathBuf>, start: usize, end: usize, line: u32, col: u32) -> Self {
         Span {
             file,

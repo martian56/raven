@@ -2,6 +2,81 @@
 
 All notable changes to Raven are documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- New surface syntax ("Python with braces"), the only syntax Raven accepts. The old forms (`struct`, `const`, `<T>` generics, `Int`/`String`, `&&`/`||`/`!`, `[k: v]`, `Name { field: value }`, `pattern -> value` arms, `{ x -> .. }` and `fun(..) { .. }` lambdas, `import std/x`, `import path { names }`) are errors that name their replacement.
+  - `let` bindings are immutable; `var` declares a reassignable one.
+  - Built-in type names are lowercase: `int`, `float`, `bool`, `str`, `char`, `list[T]`, `dict[K, V]`, `set[T]`.
+  - Generic parameters and arguments use square brackets: `fun first[T](xs: list[T]) -> Option[T]`.
+  - `class Name: Trait { field: T = default  fun method(self) { .. } }` declares fields, defaults, methods, and implemented traits in one place.
+  - Values are built with call syntax and named arguments: `Point(1.0, 2.0)`, `Point(x: 1.0)`, `Point(..p, y: 2.0)`.
+  - Functions take default parameter values and named arguments.
+  - Lambdas are written `x => x * 2`, `(a, b) => a + b`, `() => { .. }`.
+  - `match` cases are `case Pattern { .. }`, and variants may be written qualified: `case Shape.Circle(r) { .. }`.
+  - `and`, `or`, and `not`; `a if cond else b` for a conditional value.
+  - A module-level `let` bound to a constant expression is a compile-time constant; `var` declares a mutable global.
+  - Diagnostics and `type_name` print types in this syntax: `int`, `list[int]`, `dict[str, int]`, `(int, str)`.
+  - Floats print with their point (`5.0`), and lists, dicts, sets, tuples, `Option`, and derived class printing quote strings (`["a"]`).
+  - Python-style imports: `import std.fs`, `from std.json import parse, stringify`, `from "./models" import User`.
+  - Collection literals: `{"a": 1}` dict, `{1, 2}` set, `{}` empty dict, `set()` empty set.
+  - `spawn { .. }` starts a goroutine without a wrapping closure.
+  - `std/string`, `std/collections`, and `std/error` are part of the prelude.
+
+### Added
+
+- Tuples: `(int, str)` types, `(a, b)` values, `t.0` fields, `let (a, b) = ..` and `for (k, v) in ..` destructuring, `(a, b) = (b, a)`, tuple patterns, and equality, hashing, ordering, and printing.
+- Comprehensions: `[v for x in xs if c]`, `{v for x in xs}`, `{k: v for x in xs}`.
+- Patterns nest to any depth (`case Some(Ok(0))`), with exhaustiveness checked through them.
+- Python builtins: `len`, `sum`, `min`, `max`, `sorted`, `reversed`, `enumerate`, `zip`, `range`, `int`, `float`, `str`, `abs`, `round`, and multi-argument `print`.
+- `x in xs` and `x not in xs`; `for` loops over dicts (pairs), sets, strings (characters), and any value with an `iter()` method.
+- Format specs in interpolation: `"${x:.2}"`, `"${name:>10}"`, `"${n:05}"`.
+- Operator overloading through methods: `add`, `sub`, `mul`, `div`, `mod`, `neg`, `index`, `set_index`, and `<` `<=` `>` `>=` from `Ord`. `d[k]`, `d[k] = v`, and `d[k] += 1` on dicts; `str * n`, `list * n`, `list + list`.
+- `xs[-1]`, slices `xs[1..3]` and `s[0..5]`, stepped ranges `(0..n).step(k)`, and `x as int` / `x as float` / `x as str`.
+- `Channel[T]` carries any type, and `let task = spawn { .. }` returns a handle with `join()`.
+- A user class may reuse the name of a bundled type such as `Entry` or `Task`.
+- `raven run file.rv`, `raven check file.rv`, and `raven fmt file.rv [--write]`.
+- `RAVEN_TIMINGS=1` prints how long each compiler phase took; `RAVEN_DUMP_OBJ=path` writes the object file.
+
+### Performance
+
+- Small objects come from per-thread size-class pages; payload-less enum variants are shared; GC root records are linked inline through a thread-local chain and hold GC pointers in place.
+- MIR inlining of small functions, copy propagation, and dict probing that keeps nearby integer keys together; counted `for` loops test their bound once per iteration.
+- Linking uses `rust-lld` when available.
+
+- `if let`, `while let`, and `let ... else` pattern forms.
+- `panic(msg)` aborts with a message. It, `return`, `break`, and `continue` diverge, so they fit anywhere a value is expected: a `match` arm that returns, an `if` branch that returns, or `None -> panic(...)` all type check now.
+- `loop` evaluates to the value its `break` carries.
+- `Option` and `Result` methods in the prelude: `unwrap`, `expect`, `unwrap_or`, `unwrap_or_else`, `map`, `and_then`, `or_else`, `map_err`, `ok_or`, `ok`, `err`, and the `is_*` tests.
+- `List` methods in the prelude: `map`, `filter`, `fold`, `each`, `any`, `all`, `find`, `position`, `count`, `first`, `last`, `slice`, `take`, `skip`, `reversed`, `extend`, `concat`, `sorted_by`, `contains`, `index_of`, `sorted`, `sort`, `min`, `max`, `sum`, and `join`.
+- `+` and `+=` join strings.
+- Lambda parameter types are inferred from the function or method the lambda is passed to: `xs.map(fun(x) = x * 2)`.
+- An empty `[]` infers its element type from later use.
+- Structs and enums whose fields can be compared get `==` by value automatically.
+- Default trait methods work: an impl that does not define a method inherits the trait's body, through direct calls, generic bounds, and `dyn`.
+- Unused functions are dropped before code generation, so a program only compiles the library code it calls.
+
+### Performance
+
+- Cranelift's optimizer is enabled (`RAVEN_OPT=none` turns it off).
+- Scalar locals live in registers instead of stack slots.
+- List indexing, length, and `push` are inlined instead of calling into the runtime, and the GC safepoint poll in loops is a single flag load.
+- The runtime allocates through mimalloc, collects less often for small heaps (16 MiB floor), and registers GC root frames with less overhead; functions that cannot trigger a collection skip the root frame entirely.
+- Struct and enum field addresses are computed inline.
+- `dict` and `set` keep items in dense insertion-ordered lists with an open-addressed index, so lookups allocate nothing and iteration follows insertion order.
+- `list[bool]` stores one byte per element.
+- Compilation: functions are lowered only when reachable from `main`, Cranelift compiles functions on every core, and the type checker indexes impls by method name and receiver type. The 10k-line compile benchmark builds about ten times faster than 2.26.2.
+
+### Fixed
+
+- Trait impls are checked against the trait. A missing method, an extra method, or a parameter or return type that differs from the trait is a compile error; before, a mismatched return type could segfault at run time.
+- A block-bodied lambda's `return` leaves the lambda instead of being checked against the enclosing function.
+- A function that can reach its end without returning a value is a compile error instead of a code generation failure.
+- A misspelled variant in a pattern, or a payload variant written without its payload, is an error instead of a silent catch-all binding. Unknown variant errors suggest the closest name.
+- `==` on a struct or enum that cannot be compared is a compile error instead of comparing object identity.
+- `Ok(x)` and `Err(e)` infer the other half of the `Result` instead of leaving it unchecked.
+
 ## [2.26.2] - 2026-09-12
 
 ### Fixed
@@ -76,7 +151,7 @@ All notable changes to Raven are documented in this file.
 
 ### Added
 
-- `rvpm dist` packages the built application into distributable artifacts: `tar`, `zip`, `deb`, `rpm`, `msi` (WiX 3), and `inno` (Inno Setup), configured by an optional `[dist]` manifest section (metadata, extra assets, Linux dependencies, installer icon and upgrade GUID) with `--target` and `--out-dir` overrides. Control characters are rejected in `[dist]` metadata and the package version so generated packaging files cannot be injected. See `docs/v2/specs/rvpm-dist.md`. (#857)
+- `rvpm dist` packages the built application into distributable artifacts: `tar`, `zip`, `deb`, `rpm`, `msi` (WiX 3), and `inno` (Inno Setup), configured by an optional `[dist]` manifest section (metadata, extra assets, Linux dependencies, installer icon and upgrade GUID) with `--target` and `--out-dir` overrides. Control characters are rejected in `[dist]` metadata and the package version so generated packaging files cannot be injected. See `docs/specs/rvpm-dist.md`. (#857)
 
 ## [2.19.17] - 2026-07-03
 
@@ -186,7 +261,7 @@ All notable changes to Raven are documented in this file.
 
 ### Added
 
-- `std/tls`: client-side TLS. `connect(addr, server_name)` opens a connection verified against the bundled Mozilla root store, and `TlsStream` reads and writes encrypted bytes with the same `String` buffer and `Result`/`Error` model as `std/net`. A `TlsConfig` builder covers private CAs (`add_ca_file`), mutual TLS client certificates (`client_cert`), and a development-only `insecure_skip_verify`. `upgrade(stream, server_name)` turns an already-connected `std/net` TCP stream into TLS on the same socket, for protocols that negotiate in plaintext first and then start TLS (Postgres SSLRequest, MySQL, SMTP STARTTLS). Backed by rustls with the ring provider in the runtime; no compiler changes. This is the transport layer for upcoming database and cache client libraries (Redis, Postgres, MySQL). Outbound `https://` through the `std/http` client already worked (it is backed by ureq) and is unchanged. See `docs/v2/specs/std-tls.md`. (#828)
+- `std/tls`: client-side TLS. `connect(addr, server_name)` opens a connection verified against the bundled Mozilla root store, and `TlsStream` reads and writes encrypted bytes with the same `String` buffer and `Result`/`Error` model as `std/net`. A `TlsConfig` builder covers private CAs (`add_ca_file`), mutual TLS client certificates (`client_cert`), and a development-only `insecure_skip_verify`. `upgrade(stream, server_name)` turns an already-connected `std/net` TCP stream into TLS on the same socket, for protocols that negotiate in plaintext first and then start TLS (Postgres SSLRequest, MySQL, SMTP STARTTLS). Backed by rustls with the ring provider in the runtime; no compiler changes. This is the transport layer for upcoming database and cache client libraries (Redis, Postgres, MySQL). Outbound `https://` through the `std/http` client already worked (it is backed by ureq) and is unchanged. See `docs/specs/std-tls.md`. (#828)
 
 ## [2.18.225] - 2026-06-26
 
@@ -559,7 +634,7 @@ All notable changes to Raven are documented in this file.
 
 ### Fixed
 
-- Removed stray `</content>` and `</invoke>` wrapper tags accidentally left at the end of `docs/v2/guide/stdlib/io.md`, `docs/v2/guide/stdlib/net.md`, and `docs/v2/migration.md`, which MkDocs copied verbatim into the published HTML (#658).
+- Removed stray `</content>` and `</invoke>` wrapper tags accidentally left at the end of `docs/guide/stdlib/io.md`, `docs/guide/stdlib/net.md`, and `docs/migration.md`, which MkDocs copied verbatim into the published HTML (#658).
 
 ## [2.18.164] - 2026-06-24
 

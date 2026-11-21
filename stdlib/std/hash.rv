@@ -1,14 +1,14 @@
 // std/hash: non-cryptographic hashing building blocks. NOT for security.
 // `Int` is i64 and arithmetic wraps in two's complement, which is the
-// intended behavior for these hashes. See docs/v2/specs/std-hash.md.
+// intended behavior for these hashes. See docs/specs/std-hash.md.
 
 // FNV-1a over the bytes of `s`, 64-bit variant. The offset basis
 // 14695981039346656037 and prime 1099511628211 are the standard FNV-64
 // constants; the basis is written as its i64 two's-complement value.
-fun fnv1a(s: String) -> Int {
+fun fnv1a(s: str) -> int {
     let n = __str_len(s)
-    let h = -3750763034362895579
-    let i = 0
+    var h = -3750763034362895579
+    var i = 0
     while i < n {
         h = h ^ __str_byte_at(s, i)
         h = h * 1099511628211
@@ -18,10 +18,10 @@ fun fnv1a(s: String) -> Int {
 }
 
 // Classic djb2 string hash: hash = hash * 33 + byte, seeded at 5381.
-fun djb2(s: String) -> Int {
+fun djb2(s: str) -> int {
     let n = __str_len(s)
-    let h = 5381
-    let i = 0
+    var h = 5381
+    var i = 0
     while i < n {
         h = h * 33 + __str_byte_at(s, i)
         i = i + 1
@@ -30,8 +30,8 @@ fun djb2(s: String) -> Int {
 }
 
 // splitmix64-style integer bit-mix so sequential ints scatter.
-fun hash_int(n: Int) -> Int {
-    let x = n + -7046029254386353131
+fun hash_int(n: int) -> int {
+    var x = n + -7046029254386353131
     x = (x ^ (x >> 30)) * -4658895280553007687
     x = (x ^ (x >> 27)) * -7723592293110705685
     x = x ^ (x >> 31)
@@ -40,16 +40,16 @@ fun hash_int(n: Int) -> Int {
 
 // Combine two hashes into one (boost hash_combine). The constant
 // 2654435769 is the 32-bit golden ratio.
-fun combine(seed: Int, value: Int) -> Int {
+fun combine(seed: int, value: int) -> int {
     seed ^ (value + 2654435769 + (seed << 6) + (seed >> 2))
 }
 
 // Simple additive checksum over the bytes of `s`. Cheaper than the hashes
 // above and weaker; for quick change detection only.
-fun checksum(s: String) -> Int {
+fun checksum(s: str) -> int {
     let n = __str_len(s)
-    let sum = 0
-    let i = 0
+    var sum = 0
+    var i = 0
     while i < n {
         sum = sum + __str_byte_at(s, i)
         i = i + 1
@@ -60,13 +60,13 @@ fun checksum(s: String) -> Int {
 // CRC-32 (IEEE 802.3) over the bytes of `s`, computed bitwise with the
 // reflected polynomial 0xEDB88320. Returns a value in [0, 2^32). Suitable as
 // a checksum, not for security.
-fun crc32(s: String) -> Int {
+fun crc32(s: str) -> int {
     let n = __str_len(s)
-    let crc = 4294967295
-    let i = 0
+    var crc = 4294967295
+    var i = 0
     while i < n {
         crc = crc ^ __str_byte_at(s, i)
-        let k = 0
+        var k = 0
         while k < 8 {
             if (crc & 1) == 1 {
                 crc = (crc >> 1) ^ 3988292384

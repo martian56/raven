@@ -6,35 +6,35 @@
 // wrapper runs the op and turns a non-empty last error into an Err. The
 // non-fallible queries (exists, is_file, is_dir) treat a missing path as a
 // normal false. Path manipulation is pure Raven string work on `/`. See
-// docs/v2/specs/std-fs.md.
+// docs/specs/std-fs.md.
 
-import std/error { error_kind }
-import std/string
+from std.error import error_kind
+import std.string
 
 extern "C" {
-    fun raven_fs_last_error() -> String
-    fun raven_fs_read(path: String) -> String
-    fun raven_fs_write(path: String, contents: String) -> Bool
-    fun raven_fs_append(path: String, contents: String) -> Bool
-    fun raven_fs_remove_file(path: String) -> Bool
-    fun raven_fs_create_dir(path: String) -> Bool
-    fun raven_fs_remove_dir(path: String) -> Bool
-    fun raven_fs_list(path: String) -> String
-    fun raven_fs_size(path: String) -> Int
-    fun raven_fs_exists(path: String) -> Bool
-    fun raven_fs_is_file(path: String) -> Bool
-    fun raven_fs_is_dir(path: String) -> Bool
-    fun raven_fs_is_symlink(path: String) -> Bool
+    fun raven_fs_last_error() -> str
+    fun raven_fs_read(path: str) -> str
+    fun raven_fs_write(path: str, contents: str) -> bool
+    fun raven_fs_append(path: str, contents: str) -> bool
+    fun raven_fs_remove_file(path: str) -> bool
+    fun raven_fs_create_dir(path: str) -> bool
+    fun raven_fs_remove_dir(path: str) -> bool
+    fun raven_fs_list(path: str) -> str
+    fun raven_fs_size(path: str) -> int
+    fun raven_fs_exists(path: str) -> bool
+    fun raven_fs_is_file(path: str) -> bool
+    fun raven_fs_is_dir(path: str) -> bool
+    fun raven_fs_is_symlink(path: str) -> bool
 }
 
 // An Error tagged with kind "io" (the IoError realization), its message a
 // context prefix joined to the runtime's last-error text.
-fun io_error(ctx: String) -> Error {
+fun io_error(ctx: str) -> Error {
     return error_kind("io", ctx.concat(": ").concat(raven_fs_last_error()))
 }
 
 // Whole file at `path` as a String.
-fun read(path: String) -> Result<String, Error> {
+fun read(path: str) -> Result[str, Error] {
     let out = raven_fs_read(path)
     if raven_fs_last_error().length() > 0 {
         return Err(io_error("read"))
@@ -45,7 +45,7 @@ fun read(path: String) -> Result<String, Error> {
 // Create or truncate `path` and write `contents`. Returns Ok(true) on
 // success; the Bool payload is always true and exists only because the
 // surface uses Result<Bool, Error> rather than a Unit payload.
-fun write(path: String, contents: String) -> Result<Bool, Error> {
+fun write(path: str, contents: str) -> Result[bool, Error] {
     raven_fs_write(path, contents)
     if raven_fs_last_error().length() > 0 {
         return Err(io_error("write"))
@@ -54,7 +54,7 @@ fun write(path: String, contents: String) -> Result<Bool, Error> {
 }
 
 // Append `contents` to `path`, creating it when absent. Ok(true) on success.
-fun append(path: String, contents: String) -> Result<Bool, Error> {
+fun append(path: str, contents: str) -> Result[bool, Error] {
     raven_fs_append(path, contents)
     if raven_fs_last_error().length() > 0 {
         return Err(io_error("append"))
@@ -63,7 +63,7 @@ fun append(path: String, contents: String) -> Result<Bool, Error> {
 }
 
 // Remove the file at `path`. Ok(true) on success.
-fun remove_file(path: String) -> Result<Bool, Error> {
+fun remove_file(path: str) -> Result[bool, Error] {
     raven_fs_remove_file(path)
     if raven_fs_last_error().length() > 0 {
         return Err(io_error("remove_file"))
@@ -73,7 +73,7 @@ fun remove_file(path: String) -> Result<Bool, Error> {
 
 // Create the directory at `path`, including any missing parents. Ok(true)
 // on success.
-fun create_dir(path: String) -> Result<Bool, Error> {
+fun create_dir(path: str) -> Result[bool, Error] {
     raven_fs_create_dir(path)
     if raven_fs_last_error().length() > 0 {
         return Err(io_error("create_dir"))
@@ -83,7 +83,7 @@ fun create_dir(path: String) -> Result<Bool, Error> {
 
 // Remove the directory at `path` and all of its contents. Ok(true) on
 // success.
-fun remove_dir(path: String) -> Result<Bool, Error> {
+fun remove_dir(path: str) -> Result[bool, Error] {
     raven_fs_remove_dir(path)
     if raven_fs_last_error().length() > 0 {
         return Err(io_error("remove_dir"))
@@ -93,7 +93,7 @@ fun remove_dir(path: String) -> Result<Bool, Error> {
 
 // Entry names (not full paths) of the directory at `path`. An empty
 // directory yields an empty list.
-fun list_dir(path: String) -> Result<List<String>, Error> {
+fun list_dir(path: str) -> Result[list[str], Error] {
     let joined = raven_fs_list(path)
     if raven_fs_last_error().length() > 0 {
         return Err(io_error("list_dir"))
@@ -101,14 +101,14 @@ fun list_dir(path: String) -> Result<List<String>, Error> {
     // Names are joined by a NUL byte, which cannot appear in a filename, so a
     // name containing a newline is not split and a non-UTF-8 name is preserved.
     if joined.length() == 0 {
-        let empty: List<String> = []
+        let empty: list[str] = []
         return Ok(empty)
     }
     return Ok(joined.split(__str_from_byte(0)))
 }
 
 // File size at `path` in bytes.
-fun size(path: String) -> Result<Int, Error> {
+fun size(path: str) -> Result[int, Error] {
     let n = raven_fs_size(path)
     if raven_fs_last_error().length() > 0 {
         return Err(io_error("size"))
@@ -117,23 +117,23 @@ fun size(path: String) -> Result<Int, Error> {
 }
 
 // Whether anything exists at `path`. A missing path is a normal false.
-fun exists(path: String) -> Bool {
+fun exists(path: str) -> bool {
     return raven_fs_exists(path)
 }
 
 // Whether `path` is a regular file. A missing path is false.
-fun is_file(path: String) -> Bool {
+fun is_file(path: str) -> bool {
     return raven_fs_is_file(path)
 }
 
 // Whether `path` is a directory. A missing path is false.
-fun is_dir(path: String) -> Bool {
+fun is_dir(path: str) -> bool {
     return raven_fs_is_dir(path)
 }
 
 // True when `path` itself is a symbolic link. This does not follow the link, so
 // unlike `is_dir` it reports on the link rather than its target.
-fun is_symlink(path: String) -> Bool {
+fun is_symlink(path: str) -> bool {
     return raven_fs_is_symlink(path)
 }
 
@@ -143,37 +143,37 @@ fun is_symlink(path: String) -> Bool {
 // (`//server/share`), rebuilding it as `/server/share` rooted on the current
 // drive, so the whole path is handed to `create_dir`, which already creates
 // every missing parent.
-fun create_dir_all(path: String) -> Result<Bool, Error> {
+fun create_dir_all(path: str) -> Result[bool, Error] {
     return create_dir(path)
 }
 
 // Read a whole file and split it into lines (handling CRLF).
-fun read_lines(path: String) -> Result<List<String>, Error> {
+fun read_lines(path: str) -> Result[list[str], Error] {
     let content = read(path)?
     return Ok(content.lines())
 }
 
 // Copy the contents of `src` to `dst`, creating or truncating `dst`.
-fun copy(src: String, dst: String) -> Result<Bool, Error> {
+fun copy(src: str, dst: str) -> Result[bool, Error] {
     let content = read(src)?
     return write(dst, content)
 }
 
 // Recursively list every path under `path`, directories included, in
 // depth-first order. Each entry is the full path joined from `path`.
-fun walk(path: String) -> Result<List<String>, Error> {
-    let out: List<String> = []
+fun walk(path: str) -> Result[list[str], Error] {
+    let out: list[str] = []
     let entries = list_dir(path)?
-    let i = 0
+    var i = 0
     while i < entries.len() {
         let full = join(path, entries.get(i))
         out.push(full)
         // Descend into real subdirectories only. A symlinked directory is
         // listed but not followed, so a link that points back up the tree
         // cannot send the walk into an endless loop.
-        if is_dir(full) && !is_symlink(full) {
+        if is_dir(full) and not is_symlink(full) {
             let sub = walk(full)?
-            let j = 0
+            var j = 0
             while j < sub.len() {
                 out.push(sub.get(j))
                 j = j + 1
@@ -187,14 +187,14 @@ fun walk(path: String) -> Result<List<String>, Error> {
 // Split `s` on `\n` into a list of lines. An empty string yields an empty
 // list (not a one-element list of ""), so an empty directory listing maps
 // to an empty list.
-fun split_lines(s: String) -> List<String> {
-    let out: List<String> = []
+fun split_lines(s: str) -> list[str] {
+    let out: list[str] = []
     if s.length() == 0 {
         return out
     }
     let n = s.length()
-    let start = 0
-    let i = 0
+    var start = 0
+    var i = 0
     while i < n {
         if s.char_at(i).starts_with("\n") {
             out.push(s.substring(start, i))
@@ -212,8 +212,8 @@ fun split_lines(s: String) -> List<String> {
 // import.
 
 // Byte index of the last `/`, or -1 when none.
-fun last_slash(p: String) -> Int {
-    let i = p.length() - 1
+fun last_slash(p: str) -> int {
+    var i = p.length() - 1
     while i >= 0 {
         if p.char_at(i).starts_with("/") {
             return i
@@ -223,7 +223,7 @@ fun last_slash(p: String) -> Int {
     return -1
 }
 
-fun join(a: String, b: String) -> String {
+fun join(a: str, b: str) -> str {
     if a.length() == 0 {
         return b
     }
@@ -244,16 +244,16 @@ fun join(a: String, b: String) -> String {
     return a.concat("/").concat(b)
 }
 
-fun basename(p: String) -> String {
-    let i = last_slash(p)
+fun basename(p: str) -> str {
+    var i = last_slash(p)
     if i < 0 {
         return p
     }
     return p.substring(i + 1, p.length())
 }
 
-fun dirname(p: String) -> String {
-    let i = last_slash(p)
+fun dirname(p: str) -> str {
+    var i = last_slash(p)
     if i < 0 {
         return "."
     }
@@ -265,11 +265,11 @@ fun dirname(p: String) -> String {
 
 // Split `p` on `/` into its components, dropping empty pieces produced by
 // leading, trailing, or repeated separators.
-fun split(p: String) -> List<String> {
-    let out: List<String> = []
+fun split(p: str) -> list[str] {
+    let out: list[str] = []
     let n = p.length()
-    let start = 0
-    let i = 0
+    var start = 0
+    var i = 0
     while i < n {
         if p.char_at(i).starts_with("/") {
             if i > start {

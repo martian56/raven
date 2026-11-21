@@ -1,0 +1,19 @@
+// golden:skip
+from std.time import from_timestamp, format_timestamp, parse_timestamp, now
+from std.io import println
+
+fun main() {
+    println(format_timestamp(0, "%Y-%m-%d %H:%M:%S"))
+    let dt = from_timestamp(86400)
+    println("${dt.date.year}-${dt.date.month}-${dt.date.day}")
+    println(format_timestamp(1700000000, "%Y-%m-%d"))
+    match parse_timestamp("2000-01-01 00:00:00", "%Y-%m-%d %H:%M:%S") {
+        case Ok(ts) { println("${ts}") }
+        case Err(e) { println("parse failed") }
+    }
+    match parse_timestamp("not a date", "%Y-%m-%d %H:%M:%S") {
+        case Ok(ts) { println("ok") }
+        case Err(e) { println("parse failed") }
+    }
+    println("${now() > 1700000000}")
+}

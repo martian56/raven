@@ -1,8 +1,0 @@
-id: Int
-name: String
-active: Bool
---
-Int
-String
---
-value: Int

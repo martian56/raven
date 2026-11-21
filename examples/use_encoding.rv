@@ -1,0 +1,23 @@
+// golden:skip
+from std.encoding import hex_encode, hex_decode, base64_encode, base64_decode
+from std.io import println
+
+fun main() {
+    println(hex_encode("abc"))
+    println(base64_encode("abc"))
+    println(base64_encode("Man"))
+    println(base64_encode("Ma"))
+    println(base64_encode("M"))
+    match hex_decode("616263") {
+        case Ok(d) { println((d == "abc").to_string()) }
+        case Err(e) { println("err") }
+    }
+    match base64_decode("YWJj") {
+        case Ok(d) { println((d == "abc").to_string()) }
+        case Err(e) { println("err") }
+    }
+    match base64_decode(base64_encode("hello, world")) {
+        case Ok(d) { println((d == "hello, world").to_string()) }
+        case Err(e) { println("err") }
+    }
+}

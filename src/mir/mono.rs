@@ -112,7 +112,45 @@ pub fn monomorphize(hir: &HirProgram) -> Result<MirProgram, RavenError> {
     let decls = collect_decls(hir, fn_index, method_index);
 
     let mut seen: HashSet<(DeclId, Vec<MangleKey>)> = HashSet::new();
-    let mut worklist: Vec<Item> = roots;
+    let symbol_of = |decl: DeclId, subst: &SubstMap, hir_name: &str| -> String {
+        let generic_params = generics.get(&decl).cloned().unwrap_or_default();
+        match method_symbols.get(&decl) {
+            Some(entry) => {
+                let concrete_self = super::lower::substitute(&entry.self_ty, subst);
+                let concrete_self_mangle = super::ty::MirType::from_ty(&concrete_self).mangle();
+                super::lower::method_mono_symbol(
+                    &concrete_self_mangle,
+                    &entry.method,
+                    &entry.method_params,
+                    subst,
+                )
+            }
+            None => {
+                let base = symbols
+                    .get(&decl)
+                    .cloned()
+                    .unwrap_or_else(|| hir_name.to_string());
+                mono_symbol(&base, &generic_params, subst)
+            }
+        }
+    };
+    // Non-generic functions are lowered only once something reachable from
+    // `main` refers to them, so unused library code costs nothing.
+    let has_main = roots
+        .iter()
+        .any(|(d, _)| index.get(d).is_some_and(|f| f.name == "main"));
+    let mut lazy: HashMap<String, Item> = HashMap::new();
+    let mut worklist: Vec<Item> = Vec::new();
+    for item in roots {
+        let Some(f) = index.get(&item.0) else {
+            continue;
+        };
+        if !has_main || f.name == "main" || f.name == crate::hir::GLOBALS_INIT_FN {
+            worklist.push(item);
+        } else {
+            lazy.insert(symbol_of(item.0, &item.1, &f.name), item);
+        }
+    }
 
     while let Some((decl, subst)) = worklist.pop() {
         let generic_params = generics.get(&decl).cloned().unwrap_or_default();
@@ -158,26 +196,20 @@ pub fn monomorphize(hir: &HirProgram) -> Result<MirProgram, RavenError> {
         // instantiations of the same method at different method-level type
         // arguments get distinct symbols (`Box_Int$mapped$Int` and
         // `Box_Int$mapped$Bool`).
-        let mangled = match method_symbols.get(&decl) {
-            Some(entry) => {
-                let concrete_self = super::lower::substitute(&entry.self_ty, &subst);
-                let concrete_self_mangle = super::ty::MirType::from_ty(&concrete_self).mangle();
-                super::lower::method_mono_symbol(
-                    &concrete_self_mangle,
-                    &entry.method,
-                    &entry.method_params,
-                    &subst,
-                )
-            }
-            None => {
-                let base = symbols
-                    .get(&decl)
-                    .cloned()
-                    .unwrap_or_else(|| hir_fn.name.clone());
-                mono_symbol(&base, &generic_params, &subst)
-            }
-        };
+        let mangled = symbol_of(decl, &subst, &hir_fn.name);
         let lowered = lower_function(mangled, hir_fn, &subst, &decls);
+        if !lazy.is_empty() {
+            let mut refs = Vec::new();
+            super::shake::collect_refs(&lowered.func, &mut refs);
+            for lifted in &lowered.lifted {
+                super::shake::collect_refs(lifted, &mut refs);
+            }
+            for name in refs {
+                if let Some(item) = lazy.remove(&name) {
+                    worklist.push(item);
+                }
+            }
+        }
         program.functions.push(lowered.func);
         // Lifted closure bodies are already monomorphic standalone
         // functions; add them directly so codegen can resolve each

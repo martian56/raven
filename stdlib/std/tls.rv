@@ -9,49 +9,49 @@
 // The default connect verifies the server against the bundled Mozilla root
 // store and sends `server_name` for SNI. For a private CA, a client certificate
 // (mTLS), or a dev-only skip of verification, build a TlsConfig and use
-// connect_with. See docs/v2/specs/std-tls.md.
+// connect_with. See docs/specs/std-tls.md.
 
-import std/error { error_kind }
-import std/net { TcpStream }
-import std/string
+from std.error import error_kind
+from std.net import TcpStream
+import std.string
 
 // An established TLS connection. The id keys the runtime's TLS registry.
-struct TlsStream {
-    id: Int,
+class TlsStream {
+    id: int
 }
 
 // A client TLS configuration, built up with the methods below and handed to
 // connect_with. The id keys the runtime's TLS config registry.
-struct TlsConfig {
-    id: Int,
+class TlsConfig {
+    id: int
 }
 
 extern "C" {
-    fun raven_tls_last_error() -> String
-    fun raven_tls_config_new() -> Int
-    fun raven_tls_config_add_ca_file(cfg: Int, path: String) -> Int
-    fun raven_tls_config_client_cert(cfg: Int, cert_path: String, key_path: String) -> Int
-    fun raven_tls_config_insecure_skip_verify(cfg: Int, on: Bool)
-    fun raven_tls_config_free(cfg: Int)
-    fun raven_tls_connect(addr: String, server_name: String, cfg: Int) -> Int
-    fun raven_tls_upgrade(net_stream_id: Int, server_name: String, cfg: Int) -> Int
-    fun raven_tls_read(stream_id: Int, max: Int) -> String
-    fun raven_tls_write(stream_id: Int, data: String) -> Int
-    fun raven_tls_close(stream_id: Int)
-    fun raven_tls_set_read_timeout_ms(stream_id: Int, ms: Int)
-    fun raven_tls_set_write_timeout_ms(stream_id: Int, ms: Int)
+    fun raven_tls_last_error() -> str
+    fun raven_tls_config_new() -> int
+    fun raven_tls_config_add_ca_file(cfg: int, path: str) -> int
+    fun raven_tls_config_client_cert(cfg: int, cert_path: str, key_path: str) -> int
+    fun raven_tls_config_insecure_skip_verify(cfg: int, on: bool)
+    fun raven_tls_config_free(cfg: int)
+    fun raven_tls_connect(addr: str, server_name: str, cfg: int) -> int
+    fun raven_tls_upgrade(net_stream_id: int, server_name: str, cfg: int) -> int
+    fun raven_tls_read(stream_id: int, max: int) -> str
+    fun raven_tls_write(stream_id: int, data: str) -> int
+    fun raven_tls_close(stream_id: int)
+    fun raven_tls_set_read_timeout_ms(stream_id: int, ms: int)
+    fun raven_tls_set_write_timeout_ms(stream_id: int, ms: int)
 }
 
 // An Error tagged with kind "tls", its message a context prefix joined to the
 // runtime's last-error text.
-fun tls_error(ctx: String) -> Error {
+fun tls_error(ctx: str) -> Error {
     return error_kind("tls", ctx.concat(": ").concat(raven_tls_last_error()))
 }
 
 // Connect a verified TLS stream to `addr` ("host:port"), presenting
 // `server_name` for SNI and certificate verification against the bundled root
 // store. For most public services `server_name` is the host part of `addr`.
-fun connect(addr: String, server_name: String) -> Result<TlsStream, Error> {
+fun connect(addr: str, server_name: str) -> Result[TlsStream, Error] {
     let id = raven_tls_connect(addr, server_name, 0)
     if id == 0 {
         return Err(tls_error("connect"))
@@ -59,12 +59,12 @@ fun connect(addr: String, server_name: String) -> Result<TlsStream, Error> {
     if raven_tls_last_error().length() > 0 {
         return Err(tls_error("connect"))
     }
-    return Ok(TlsStream { id })
+    return Ok(TlsStream(id: id))
 }
 
 // Connect using a custom TlsConfig (private CA, client certificate, or a
 // dev-only skip of verification).
-fun connect_with(addr: String, server_name: String, cfg: TlsConfig) -> Result<TlsStream, Error> {
+fun connect_with(addr: str, server_name: str, cfg: TlsConfig) -> Result[TlsStream, Error] {
     let id = raven_tls_connect(addr, server_name, cfg.id)
     if id == 0 {
         return Err(tls_error("connect"))
@@ -72,7 +72,7 @@ fun connect_with(addr: String, server_name: String, cfg: TlsConfig) -> Result<Tl
     if raven_tls_last_error().length() > 0 {
         return Err(tls_error("connect"))
     }
-    return Ok(TlsStream { id })
+    return Ok(TlsStream(id: id))
 }
 
 // Upgrade an already-connected plaintext TCP stream to a verified TLS stream on
@@ -80,7 +80,7 @@ fun connect_with(addr: String, server_name: String, cfg: TlsConfig) -> Result<Tl
 // (Postgres SSLRequest, MySQL, SMTP STARTTLS): connect with std/net, exchange
 // the protocol's start-TLS step, then call this. `server_name` is the host for
 // SNI and verification. The original stream is consumed: do not use it again.
-fun upgrade(stream: TcpStream, server_name: String) -> Result<TlsStream, Error> {
+fun upgrade(stream: TcpStream, server_name: str) -> Result[TlsStream, Error] {
     let id = raven_tls_upgrade(stream.id, server_name, 0)
     if id == 0 {
         return Err(tls_error("upgrade"))
@@ -88,16 +88,12 @@ fun upgrade(stream: TcpStream, server_name: String) -> Result<TlsStream, Error> 
     if raven_tls_last_error().length() > 0 {
         return Err(tls_error("upgrade"))
     }
-    return Ok(TlsStream { id })
+    return Ok(TlsStream(id: id))
 }
 
 // Upgrade using a custom TlsConfig (private CA, client certificate, or a
 // dev-only skip of verification). See upgrade.
-fun upgrade_with(
-    stream: TcpStream,
-    server_name: String,
-    cfg: TlsConfig,
-) -> Result<TlsStream, Error> {
+fun upgrade_with(stream: TcpStream, server_name: str, cfg: TlsConfig) -> Result[TlsStream, Error] {
     let id = raven_tls_upgrade(stream.id, server_name, cfg.id)
     if id == 0 {
         return Err(tls_error("upgrade"))
@@ -105,27 +101,27 @@ fun upgrade_with(
     if raven_tls_last_error().length() > 0 {
         return Err(tls_error("upgrade"))
     }
-    return Ok(TlsStream { id })
+    return Ok(TlsStream(id: id))
 }
 
 // Start a new client TLS configuration. It verifies against the bundled root
 // store until you change that with a builder method below.
 fun config() -> TlsConfig {
-    return TlsConfig { id: raven_tls_config_new() }
+    return TlsConfig(id: raven_tls_config_new())
 }
 
 impl TlsConfig {
     // Trust the PEM certificate(s) in `path` in addition to the bundled roots,
     // for a server signed by a private CA. Returns self so calls can chain;
     // use add_ca_file_checked when the load failure must be handled.
-    fun add_ca_file(self, path: String) -> TlsConfig {
+    fun add_ca_file(self, path: str) -> TlsConfig {
         let _ = self.add_ca_file_checked(path)
         return self
     }
 
     // Checked variant of add_ca_file. Missing, unreadable, or malformed files
     // return an Error instead of being hidden until a later connect.
-    fun add_ca_file_checked(self, path: String) -> Result<TlsConfig, Error> {
+    fun add_ca_file_checked(self, path: str) -> Result[TlsConfig, Error] {
         let ok = raven_tls_config_add_ca_file(self.id, path)
         if ok == 0 {
             return Err(tls_error("add_ca_file"))
@@ -139,14 +135,14 @@ impl TlsConfig {
     // Present a client certificate for mutual TLS. `cert_path` is the PEM
     // certificate chain, `key_path` the PEM private key. Returns self; use
     // client_cert_checked when the load failure must be handled.
-    fun client_cert(self, cert_path: String, key_path: String) -> TlsConfig {
+    fun client_cert(self, cert_path: str, key_path: str) -> TlsConfig {
         let _ = self.client_cert_checked(cert_path, key_path)
         return self
     }
 
     // Checked variant of client_cert. Missing, unreadable, or malformed files
     // return an Error instead of being hidden until a later connect.
-    fun client_cert_checked(self, cert_path: String, key_path: String) -> Result<TlsConfig, Error> {
+    fun client_cert_checked(self, cert_path: str, key_path: str) -> Result[TlsConfig, Error] {
         let ok = raven_tls_config_client_cert(self.id, cert_path, key_path)
         if ok == 0 {
             return Err(tls_error("client_cert"))
@@ -174,7 +170,7 @@ impl TlsConfig {
 impl TlsStream {
     // Read up to `max` decrypted bytes, returning them as a String byte buffer.
     // A clean close yields Ok("").
-    fun read(self, max: Int) -> Result<String, Error> {
+    fun read(self, max: int) -> Result[str, Error] {
         let data = raven_tls_read(self.id, max)
         if raven_tls_last_error().length() > 0 {
             return Err(tls_error("read"))
@@ -184,9 +180,9 @@ impl TlsStream {
 
     // Read until the peer closes the connection, accumulating every decrypted
     // byte into one String. Reads in 4 KiB chunks.
-    fun read_all(self) -> Result<String, Error> {
-        let out = ""
-        let chunk = self.read(4096)?
+    fun read_all(self) -> Result[str, Error] {
+        var out = ""
+        var chunk = self.read(4096)?
         while chunk.length() > 0 {
             out = out.concat(chunk)
             chunk = self.read(4096)?
@@ -195,7 +191,7 @@ impl TlsStream {
     }
 
     // Encrypt and write all bytes of `data`, returning the count written.
-    fun write(self, data: String) -> Result<Int, Error> {
+    fun write(self, data: str) -> Result[int, Error] {
         let n = raven_tls_write(self.id, data)
         if n < 0 {
             return Err(tls_error("write"))
@@ -207,12 +203,12 @@ impl TlsStream {
     }
 
     // Set the read timeout in milliseconds. A value of 0 means no timeout.
-    fun set_read_timeout_ms(self, ms: Int) {
+    fun set_read_timeout_ms(self, ms: int) {
         raven_tls_set_read_timeout_ms(self.id, ms)
     }
 
     // Set the write timeout in milliseconds. A value of 0 means no timeout.
-    fun set_write_timeout_ms(self, ms: Int) {
+    fun set_write_timeout_ms(self, ms: int) {
         raven_tls_set_write_timeout_ms(self.id, ms)
     }
 

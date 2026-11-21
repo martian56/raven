@@ -13,14 +13,16 @@
 //! re exported here for convenience.
 //!
 //! The grammar this AST encodes is documented in
-//! `docs/v2/specs/parser.md`.
+//! `docs/specs/parser.md`.
 
 pub mod decl;
 pub mod expr;
 pub mod pattern;
 pub mod pretty;
+pub mod respan;
 pub mod stmt;
 pub mod ty;
+pub mod visit;
 
 pub use decl::*;
 pub use expr::*;

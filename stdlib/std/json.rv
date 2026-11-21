@@ -2,15 +2,15 @@
 // intrinsics. `parse` is a recursive descent parser returning
 // Result<JsonValue, Error>; `stringify` is a compact serializer. All JSON
 // numbers parse to Float, so integers beyond the 53-bit mantissa lose
-// precision. See docs/v2/specs/std-json.md.
+// precision. See docs/specs/std-json.md.
 
-import std/collections
-import std/error
-import std/string
+import std.collections
+import std.error
+import std.string
 
 extern "C" {
-    fun raven_int_to_float(x: Int) -> Float
-    fun raven_float_to_int(x: Float) -> Int
+    fun raven_int_to_float(x: int) -> float
+    fun raven_float_to_int(x: float) -> int
 }
 
 // The JSON value tree. Construct variants with the qualified form
@@ -19,36 +19,36 @@ extern "C" {
 // Map's parallel key and value lists.
 enum JsonValue {
     Null,
-    Bool(Bool),
-    Number(Float),
-    Str(String),
-    Array(List<JsonValue>),
-    Object(Map<String, JsonValue>),
+    Bool(bool),
+    Number(float),
+    Str(str),
+    Array(list[JsonValue]),
+    Object(dict[str, JsonValue]),
 }
 
 // A JsonError is an std/error `Error` tagged with kind "json". Raven has
 // no type alias and a bundled module cannot call another bundled module's
 // free functions, so the struct literal is built directly here.
-fun json_error(msg: String) -> Error {
-    return Error { kind: "json", message: msg }
+fun json_error(msg: str) -> Error {
+    return Error(kind: "json", message: msg)
 }
 
 // Parser cursor: the input bytes and the current byte offset. A shared
 // Cursor is threaded through the recursive helpers, which advance it by
 // mutating `pos`.
-struct Cursor {
-    text: String,
-    pos: Int,
-    depth: Int,
+class Cursor {
+    text: str
+    pos: int
+    depth: int
 }
 
 impl Cursor {
-    fun at_end(self) -> Bool {
+    fun at_end(self) -> bool {
         return self.pos >= __str_len(self.text)
     }
 
     // Current byte, or -1 at end of input.
-    fun peek(self) -> Int {
+    fun peek(self) -> int {
         if self.pos >= __str_len(self.text) {
             return -1
         }
@@ -60,7 +60,7 @@ impl Cursor {
     }
 
     fun skip_ws(self) {
-        let scanning = true
+        var scanning = true
         while scanning {
             let b = self.peek()
             if b == 32 {
@@ -78,12 +78,12 @@ impl Cursor {
     }
 }
 
-fun is_digit(b: Int) -> Bool {
-    return b >= 48 && b <= 57
+fun is_digit(b: int) -> bool {
+    return b >= 48 and b <= 57
 }
 
 // Append the UTF-8 encoding of a Unicode code point to `out`.
-fun encode_utf8(out: String, cp: Int) -> String {
+fun encode_utf8(out: str, cp: int) -> str {
     if cp < 128 {
         return __str_concat(out, __str_from_byte(cp))
     }
@@ -96,7 +96,7 @@ fun encode_utf8(out: String, cp: Int) -> String {
         let b0 = 224 | (cp >> 12)
         let b1 = 128 | ((cp >> 6) & 63)
         let b2 = 128 | (cp & 63)
-        let r = __str_concat(out, __str_from_byte(b0))
+        var r = __str_concat(out, __str_from_byte(b0))
         r = __str_concat(r, __str_from_byte(b1))
         return __str_concat(r, __str_from_byte(b2))
     }
@@ -104,21 +104,21 @@ fun encode_utf8(out: String, cp: Int) -> String {
     let b1 = 128 | ((cp >> 12) & 63)
     let b2 = 128 | ((cp >> 6) & 63)
     let b3 = 128 | (cp & 63)
-    let r = __str_concat(out, __str_from_byte(b0))
+    var r = __str_concat(out, __str_from_byte(b0))
     r = __str_concat(r, __str_from_byte(b1))
     r = __str_concat(r, __str_from_byte(b2))
     return __str_concat(r, __str_from_byte(b3))
 }
 
 // Value of one hex digit byte, or -1 when it is not a hex digit.
-fun hex_nibble(b: Int) -> Int {
-    if b >= 48 && b <= 57 {
+fun hex_nibble(b: int) -> int {
+    if b >= 48 and b <= 57 {
         return b - 48
     }
-    if b >= 97 && b <= 102 {
+    if b >= 97 and b <= 102 {
         return b - 87
     }
-    if b >= 65 && b <= 70 {
+    if b >= 65 and b <= 70 {
         return b - 55
     }
     return -1
@@ -127,9 +127,9 @@ fun hex_nibble(b: Int) -> Int {
 // Read four hex digits starting at the cursor, returning the 16-bit code
 // unit or -1 on a non-hex digit or short input. Advances the cursor over
 // the digits read.
-fun read_hex4(c: Cursor) -> Int {
-    let value = 0
-    let i = 0
+fun read_hex4(c: Cursor) -> int {
+    var value = 0
+    var i = 0
     while i < 4 {
         let n = hex_nibble(c.peek())
         if n < 0 {
@@ -145,9 +145,9 @@ fun read_hex4(c: Cursor) -> Int {
 // Parse the body of a string literal after the opening quote. Returns the
 // decoded String, or an Err on a bad escape or unterminated input. The
 // cursor ends just past the closing quote.
-fun parse_string(c: Cursor) -> Result<String, Error> {
-    let out = ""
-    let scanning = true
+fun parse_string(c: Cursor) -> Result[str, Error] {
+    var out = ""
+    var scanning = true
     while scanning {
         if c.at_end() {
             return Err(json_error("unterminated string"))
@@ -180,7 +180,7 @@ fun parse_string(c: Cursor) -> Result<String, Error> {
                 if cp < 0 {
                     return Err(json_error("bad unicode escape"))
                 }
-                if cp >= 55296 && cp <= 56319 {
+                if cp >= 55296 and cp <= 56319 {
                     // High surrogate: decode an astral code point when a
                     // low surrogate follows. Unpaired surrogates are invalid
                     // JSON strings for this parser.
@@ -189,7 +189,7 @@ fun parse_string(c: Cursor) -> Result<String, Error> {
                         if c.peek() == 117 {
                             c.advance()
                             let low = read_hex4(c)
-                            if low >= 56320 && low <= 57343 {
+                            if low >= 56320 and low <= 57343 {
                                 let astral = 65536 + ((cp - 55296) << 10) + (low - 56320)
                                 out = encode_utf8(out, astral)
                             } else {
@@ -201,7 +201,7 @@ fun parse_string(c: Cursor) -> Result<String, Error> {
                     } else {
                         return Err(json_error("unpaired high surrogate in \\u escape"))
                     }
-                } else if cp >= 56320 && cp <= 57343 {
+                } else if cp >= 56320 and cp <= 57343 {
                     return Err(json_error("lone low surrogate in \\u escape"))
                 } else {
                     out = encode_utf8(out, cp)
@@ -223,7 +223,7 @@ fun parse_string(c: Cursor) -> Result<String, Error> {
                 if len == 0 {
                     return Err(json_error("invalid UTF-8 in string"))
                 }
-                let j = 0
+                var j = 0
                 while j < len {
                     out = __str_concat(out, __str_from_byte(__str_byte_at(c.text, start + j)))
                     j = j + 1
@@ -239,18 +239,18 @@ fun parse_string(c: Cursor) -> Result<String, Error> {
 // byte of the number (an optional minus or a digit). Integer digits build
 // a Float through raven_int_to_float; fraction digits divide by powers of
 // ten; an exponent scales the result.
-fun parse_number(c: Cursor) -> Result<Float, Error> {
-    let negative = false
+fun parse_number(c: Cursor) -> Result[float, Error] {
+    var negative = false
     if c.peek() == 45 {
         negative = true
         c.advance()
     }
-    if !is_digit(c.peek()) {
+    if not is_digit(c.peek()) {
         return Err(json_error("invalid number"))
     }
     let lead = c.peek()
-    let int_value = 0.0
-    let int_digits = 0
+    var int_value = 0.0
+    var int_digits = 0
     while is_digit(c.peek()) {
         let d = c.peek() - 48
         int_value = int_value * 10.0 + raven_int_to_float(d)
@@ -259,17 +259,17 @@ fun parse_number(c: Cursor) -> Result<Float, Error> {
     }
     // JSON forbids a leading zero in the integer part (`01`, `00`); a lone `0`
     // is fine.
-    if lead == 48 && int_digits > 1 {
+    if lead == 48 and int_digits > 1 {
         return Err(json_error("number has a leading zero"))
     }
-    let value = int_value
+    var value = int_value
     if c.peek() == 46 {
         c.advance()
-        if !is_digit(c.peek()) {
+        if not is_digit(c.peek()) {
             return Err(json_error("invalid fraction"))
         }
-        let scale = 1.0
-        let frac = 0.0
+        var scale = 1.0
+        var frac = 0.0
         while is_digit(c.peek()) {
             let d = c.peek() - 48
             frac = frac * 10.0 + raven_int_to_float(d)
@@ -279,16 +279,16 @@ fun parse_number(c: Cursor) -> Result<Float, Error> {
         value = value + frac / scale
     }
     let e = c.peek()
-    if e == 101 || e == 69 {
+    if e == 101 or e == 69 {
         c.advance()
-        let exp_negative = false
+        var exp_negative = false
         if c.peek() == 43 {
             c.advance()
         } else if c.peek() == 45 {
             exp_negative = true
             c.advance()
         }
-        if !is_digit(c.peek()) {
+        if not is_digit(c.peek()) {
             return Err(json_error("invalid exponent"))
         }
         // f64 saturates to infinity past about 1e308, so an exponent beyond a
@@ -296,19 +296,19 @@ fun parse_number(c: Cursor) -> Result<Float, Error> {
         // exponent) as any larger one. Stop accumulating once the value is well
         // past that point so the digits of a huge exponent like 1e999999999
         // cannot overflow Int and wrap into a small or negative step count.
-        let exp = 0
+        var exp = 0
         while is_digit(c.peek()) {
             if exp <= 400 {
                 exp = exp * 10 + (c.peek() - 48)
             }
             c.advance()
         }
-        let steps = exp
+        var steps = exp
         if steps > 400 {
             steps = 400
         }
-        let factor = 1.0
-        let i = 0
+        var factor = 1.0
+        var i = 0
         while i < steps {
             factor = factor * 10.0
             i = i + 1
@@ -328,9 +328,9 @@ fun parse_number(c: Cursor) -> Result<Float, Error> {
 }
 
 // True when the next bytes spell `word`; advances over them on a match.
-fun match_keyword(c: Cursor, word: String) -> Bool {
+fun match_keyword(c: Cursor, word: str) -> bool {
     let n = __str_len(word)
-    let i = 0
+    var i = 0
     while i < n {
         if __str_byte_at(c.text, c.pos + i) != __str_byte_at(word, i) {
             return false
@@ -341,7 +341,7 @@ fun match_keyword(c: Cursor, word: String) -> Bool {
     return true
 }
 
-fun parse_value(c: Cursor) -> Result<JsonValue, Error> {
+fun parse_value(c: Cursor) -> Result[JsonValue, Error] {
     c.skip_ws()
     let b = c.peek()
     // Containers recurse, so bound the nesting depth to keep untrusted input
@@ -353,7 +353,7 @@ fun parse_value(c: Cursor) -> Result<JsonValue, Error> {
         if c.depth > 256 {
             return Err(json_error("maximum nesting depth exceeded"))
         }
-        let v = parse_object(c)?
+        var v = parse_object(c)?
         c.depth = c.depth - 1
         return Ok(v)
     }
@@ -362,7 +362,7 @@ fun parse_value(c: Cursor) -> Result<JsonValue, Error> {
         if c.depth > 256 {
             return Err(json_error("maximum nesting depth exceeded"))
         }
-        let v = parse_array(c)?
+        var v = parse_array(c)?
         c.depth = c.depth - 1
         return Ok(v)
     }
@@ -389,24 +389,24 @@ fun parse_value(c: Cursor) -> Result<JsonValue, Error> {
         }
         return Err(json_error("invalid token"))
     }
-    if b == 45 || is_digit(b) {
+    if b == 45 or is_digit(b) {
         let n = parse_number(c)?
         return Ok(JsonValue.Number(n))
     }
     return Err(json_error("unexpected byte at offset ".concat(offset_str(c.pos))))
 }
 
-fun parse_array(c: Cursor) -> Result<JsonValue, Error> {
+fun parse_array(c: Cursor) -> Result[JsonValue, Error] {
     c.advance()
-    let items: List<JsonValue> = []
+    let items: list[JsonValue] = []
     c.skip_ws()
     if c.peek() == 93 {
         c.advance()
         return Ok(JsonValue.Array(items))
     }
-    let scanning = true
+    var scanning = true
     while scanning {
-        let v = parse_value(c)?
+        var v = parse_value(c)?
         items.push(v)
         c.skip_ws()
         let b = c.peek()
@@ -422,15 +422,15 @@ fun parse_array(c: Cursor) -> Result<JsonValue, Error> {
     return Ok(JsonValue.Array(items))
 }
 
-fun parse_object(c: Cursor) -> Result<JsonValue, Error> {
+fun parse_object(c: Cursor) -> Result[JsonValue, Error] {
     c.advance()
-    let map: Map<String, JsonValue> = Map.new()
+    let map: dict[str, JsonValue] = Map.new()
     c.skip_ws()
     if c.peek() == 125 {
         c.advance()
         return Ok(JsonValue.Object(map))
     }
-    let scanning = true
+    var scanning = true
     while scanning {
         c.skip_ws()
         if c.peek() != 34 {
@@ -443,7 +443,7 @@ fun parse_object(c: Cursor) -> Result<JsonValue, Error> {
             return Err(json_error("expected : in object"))
         }
         c.advance()
-        let v = parse_value(c)?
+        var v = parse_value(c)?
         map.set(key, v)
         c.skip_ws()
         let b = c.peek()
@@ -460,12 +460,12 @@ fun parse_object(c: Cursor) -> Result<JsonValue, Error> {
 }
 
 // Render a non-negative byte offset as decimal.
-fun offset_str(n: Int) -> String {
+fun offset_str(n: int) -> str {
     if n == 0 {
         return "0"
     }
-    let digits = ""
-    let v = n
+    var digits = ""
+    var v = n
     while v > 0 {
         digits = __str_concat(__str_from_byte(48 + (v - (v / 10) * 10)), digits)
         v = v / 10
@@ -475,11 +475,11 @@ fun offset_str(n: Int) -> String {
 
 // Parse `text` as a single JSON value. Trailing content other than
 // whitespace after the top-level value is rejected.
-fun parse(text: String) -> Result<JsonValue, Error> {
-    let c = Cursor { text, pos: 0, depth: 0 }
-    let v = parse_value(c)?
+fun parse(text: str) -> Result[JsonValue, Error] {
+    let c = Cursor(text: text, pos: 0, depth: 0)
+    var v = parse_value(c)?
     c.skip_ws()
-    if !c.at_end() {
+    if not c.at_end() {
         return Err(json_error("trailing content at offset ".concat(offset_str(c.pos))))
     }
     return Ok(v)
@@ -488,10 +488,10 @@ fun parse(text: String) -> Result<JsonValue, Error> {
 // Append the JSON string escaping of `s` (without surrounding quotes) to
 // `out`. Control bytes below 0x20 become \uXXXX; quote and backslash are
 // escaped; every other byte passes through unchanged.
-fun escape_string(out: String, s: String) -> String {
+fun escape_string(out: str, s: str) -> str {
     let n = __str_len(s)
-    let i = 0
-    let r = out
+    var i = 0
+    var r = out
     while i < n {
         let b = __str_byte_at(s, i)
         if b == 34 {
@@ -523,7 +523,7 @@ fun escape_string(out: String, s: String) -> String {
             if len == 0 {
                 r = __str_concat(r, "\\uFFFD")
             } else {
-                let j = 0
+                var j = 0
                 while j < len {
                     r = __str_concat(r, __str_from_byte(__str_byte_at(s, i + j)))
                     j = j + 1
@@ -539,55 +539,55 @@ fun escape_string(out: String, s: String) -> String {
 // The length (1..4) of the valid UTF-8 sequence starting at byte `i` of `s`, or
 // 0 when the byte cannot begin a valid sequence (an invalid lead byte or a
 // truncated/ill-formed continuation).
-fun utf8_seq_len(s: String, i: Int, n: Int) -> Int {
+fun utf8_seq_len(s: str, i: int, n: int) -> int {
     let b = __str_byte_at(s, i)
     if b < 128 {
         return 1
     }
-    if b >= 194 && b <= 223 {
-        if i + 1 < n && is_utf8_cont(__str_byte_at(s, i + 1)) {
+    if b >= 194 and b <= 223 {
+        if i + 1 < n and is_utf8_cont(__str_byte_at(s, i + 1)) {
             return 2
         }
         return 0
     }
     if b == 224 {
-        if i + 2 < n && utf8_in_range(__str_byte_at(s, i + 1), 160, 191) && is_utf8_cont(
+        if i + 2 < n and utf8_in_range(__str_byte_at(s, i + 1), 160, 191) and is_utf8_cont(
             __str_byte_at(s, i + 2),
         ) {
             return 3
         }
         return 0
     }
-    if b >= 225 && b <= 236 {
-        if i + 2 < n && is_utf8_cont(__str_byte_at(s, i + 1)) && is_utf8_cont(__str_byte_at(s, i + 2)) {
+    if b >= 225 and b <= 236 {
+        if i + 2 < n and is_utf8_cont(__str_byte_at(s, i + 1)) and is_utf8_cont(__str_byte_at(s, i + 2)) {
             return 3
         }
         return 0
     }
     if b == 237 {
-        if i + 2 < n && utf8_in_range(__str_byte_at(s, i + 1), 128, 159) && is_utf8_cont(
+        if i + 2 < n and utf8_in_range(__str_byte_at(s, i + 1), 128, 159) and is_utf8_cont(
             __str_byte_at(s, i + 2),
         ) {
             return 3
         }
         return 0
     }
-    if b >= 238 && b <= 239 {
-        if i + 2 < n && is_utf8_cont(__str_byte_at(s, i + 1)) && is_utf8_cont(__str_byte_at(s, i + 2)) {
+    if b >= 238 and b <= 239 {
+        if i + 2 < n and is_utf8_cont(__str_byte_at(s, i + 1)) and is_utf8_cont(__str_byte_at(s, i + 2)) {
             return 3
         }
         return 0
     }
     if b == 240 {
-        if i + 3 < n && utf8_in_range(__str_byte_at(s, i + 1), 144, 191) && is_utf8_cont(
+        if i + 3 < n and utf8_in_range(__str_byte_at(s, i + 1), 144, 191) and is_utf8_cont(
             __str_byte_at(s, i + 2),
-        ) && is_utf8_cont(__str_byte_at(s, i + 3)) {
+        ) and is_utf8_cont(__str_byte_at(s, i + 3)) {
             return 4
         }
         return 0
     }
-    if b >= 241 && b <= 243 {
-        if i + 3 < n && is_utf8_cont(__str_byte_at(s, i + 1)) && is_utf8_cont(__str_byte_at(s, i + 2)) && is_utf8_cont(
+    if b >= 241 and b <= 243 {
+        if i + 3 < n and is_utf8_cont(__str_byte_at(s, i + 1)) and is_utf8_cont(__str_byte_at(s, i + 2)) and is_utf8_cont(
             __str_byte_at(s, i + 3),
         ) {
             return 4
@@ -595,9 +595,9 @@ fun utf8_seq_len(s: String, i: Int, n: Int) -> Int {
         return 0
     }
     if b == 244 {
-        if i + 3 < n && utf8_in_range(__str_byte_at(s, i + 1), 128, 143) && is_utf8_cont(
+        if i + 3 < n and utf8_in_range(__str_byte_at(s, i + 1), 128, 143) and is_utf8_cont(
             __str_byte_at(s, i + 2),
-        ) && is_utf8_cont(__str_byte_at(s, i + 3)) {
+        ) and is_utf8_cont(__str_byte_at(s, i + 3)) {
             return 4
         }
         return 0
@@ -605,15 +605,15 @@ fun utf8_seq_len(s: String, i: Int, n: Int) -> Int {
     return 0
 }
 
-fun utf8_in_range(b: Int, lo: Int, hi: Int) -> Bool {
-    return b >= lo && b <= hi
+fun utf8_in_range(b: int, lo: int, hi: int) -> bool {
+    return b >= lo and b <= hi
 }
 
-fun is_utf8_cont(b: Int) -> Bool {
-    return b >= 128 && b <= 191
+fun is_utf8_cont(b: int) -> bool {
+    return b >= 128 and b <= 191
 }
 
-fun hex_digit(v: Int) -> Int {
+fun hex_digit(v: int) -> int {
     if v < 10 {
         return 48 + v
     }
@@ -624,33 +624,32 @@ fun hex_digit(v: Int) -> Int {
 // so it is written as `null`, the way mainstream JSON encoders handle it. A
 // value is finite exactly when `n - n` is zero; for an infinity or a NaN that
 // subtraction is NaN.
-fun number_to_json(n: Float) -> String {
+fun number_to_json(n: float) -> str {
     if n - n == 0.0 {
-        return n.to_string()
+        let text = n.to_string()
+        // A whole number is written without a fraction: `1`, not `1.0`.
+        if text.ends_with(".0") {
+            return text.substring(0, text.len() - 2)
+        }
+        return text
     }
     return "null"
 }
 
 // Compact (non-pretty) serialization. A whole-number Float renders the way
 // the runtime's Float-to-string does (for example 1 prints as `1`).
-fun stringify(value: JsonValue) -> String {
+fun stringify(value: JsonValue) -> str {
     return match value {
-        Null -> "null",
-        Bool(b) -> {
-            if b {
-                "true"
-            } else {
-                "false"
-            }
-        },
-        Number(n) -> number_to_json(n),
-        Str(s) -> {
+        case Null { "null" }
+        case Bool(b) { "true" if b else "false" }
+        case Number(n) { number_to_json(n) }
+        case Str(s) {
             let q = __str_concat("\"", escape_string("", s))
             __str_concat(q, "\"")
-        },
-        Array(items) -> {
-            let out = "["
-            let i = 0
+        }
+        case Array(items) {
+            var out = "["
+            var i = 0
             let n = items.len()
             while i < n {
                 if i > 0 {
@@ -660,12 +659,12 @@ fun stringify(value: JsonValue) -> String {
                 i = i + 1
             }
             __str_concat(out, "]")
-        },
-        Object(map) -> {
-            let out = "{"
+        }
+        case Object(map) {
+            var out = "{"
             let keys = map.keys()
             let values = map.values()
-            let i = 0
+            var i = 0
             let n = keys.len()
             while i < n {
                 if i > 0 {
@@ -677,14 +676,14 @@ fun stringify(value: JsonValue) -> String {
                 i = i + 1
             }
             __str_concat(out, "}")
-        },
+        }
     }
 }
 
 // `n` spaces, for pretty-printing indentation.
-fun pretty_indent(n: Int) -> String {
-    let out = ""
-    let i = 0
+fun pretty_indent(n: int) -> str {
+    var out = ""
+    var i = 0
     while i < n {
         out = __str_concat(out, " ")
         i = i + 1
@@ -692,30 +691,24 @@ fun pretty_indent(n: Int) -> String {
     return out
 }
 
-fun stringify_pretty_at(value: JsonValue, indent: Int, depth: Int) -> String {
+fun stringify_pretty_at(value: JsonValue, indent: int, depth: int) -> str {
     return match value {
-        Null -> "null",
-        Bool(b) -> {
-            if b {
-                "true"
-            } else {
-                "false"
-            }
-        },
-        Number(n) -> number_to_json(n),
-        Str(s) -> {
+        case Null { "null" }
+        case Bool(b) { "true" if b else "false" }
+        case Number(n) { number_to_json(n) }
+        case Str(s) {
             let q = __str_concat("\"", escape_string("", s))
             __str_concat(q, "\"")
-        },
-        Array(items) -> {
+        }
+        case Array(items) {
             let n = items.len()
             if n == 0 {
                 "[]"
             } else {
                 let pad = pretty_indent((depth + 1) * indent)
                 let closepad = pretty_indent(depth * indent)
-                let out = "[\n"
-                let i = 0
+                var out = "[\n"
+                var i = 0
                 while i < n {
                     if i > 0 {
                         out = __str_concat(out, ",\n")
@@ -728,8 +721,8 @@ fun stringify_pretty_at(value: JsonValue, indent: Int, depth: Int) -> String {
                 out = __str_concat(out, closepad)
                 __str_concat(out, "]")
             }
-        },
-        Object(map) -> {
+        }
+        case Object(map) {
             let keys = map.keys()
             let values = map.values()
             let n = keys.len()
@@ -738,8 +731,8 @@ fun stringify_pretty_at(value: JsonValue, indent: Int, depth: Int) -> String {
             } else {
                 let pad = pretty_indent((depth + 1) * indent)
                 let closepad = pretty_indent(depth * indent)
-                let out = "{\n"
-                let i = 0
+                var out = "{\n"
+                var i = 0
                 while i < n {
                     if i > 0 {
                         out = __str_concat(out, ",\n")
@@ -754,13 +747,13 @@ fun stringify_pretty_at(value: JsonValue, indent: Int, depth: Int) -> String {
                 out = __str_concat(out, closepad)
                 __str_concat(out, "}")
             }
-        },
+        }
     }
 }
 
 // Like `stringify`, but multi-line with `indent` spaces per nesting level.
 // Empty arrays and objects stay on one line as `[]` / `{}`.
-fun stringify_pretty(value: JsonValue, indent: Int) -> String {
+fun stringify_pretty(value: JsonValue, indent: int) -> str {
     return stringify_pretty_at(value, indent, 0)
 }
 
@@ -769,92 +762,92 @@ fun stringify_pretty(value: JsonValue, indent: Int) -> String {
 // payload hits a back-end limitation that corrupts the extracted value, so
 // every payload-reading accessor goes through a free helper.
 impl JsonValue {
-    fun is_null(self) -> Bool {
+    fun is_null(self) -> bool {
         return value_is_null(self)
     }
 
-    fun as_bool(self) -> Option<Bool> {
+    fun as_bool(self) -> Option[bool] {
         return value_as_bool(self)
     }
 
-    fun as_number(self) -> Option<Float> {
+    fun as_number(self) -> Option[float] {
         return value_as_number(self)
     }
 
-    fun as_string(self) -> Option<String> {
+    fun as_string(self) -> Option[str] {
         return value_as_string(self)
     }
 
     // Object member by key, or None when the value is not an object or the
     // key is absent.
-    fun get(self, key: String) -> Option<JsonValue> {
+    fun get(self, key: str) -> Option[JsonValue] {
         return object_get(self, key)
     }
 
     // Array element by index, or None when out of range or not an array.
-    fun at(self, i: Int) -> Option<JsonValue> {
+    fun at(self, i: int) -> Option[JsonValue] {
         return array_at(self, i)
     }
 
     // The number truncated to an Int, or None when not a number.
-    fun as_int(self) -> Option<Int> {
+    fun as_int(self) -> Option[int] {
         return value_as_int(self)
     }
 
     // The keys of an object (empty for any other value).
-    fun keys(self) -> List<String> {
+    fun keys(self) -> list[str] {
         return value_keys(self)
     }
 
     // The element count of an array or object (0 for any other value).
-    fun length(self) -> Int {
+    fun length(self) -> int {
         return value_length(self)
     }
 }
 
-fun value_is_null(value: JsonValue) -> Bool {
+fun value_is_null(value: JsonValue) -> bool {
     return match value {
-        Null -> true,
-        _ -> false,
+        case Null { true }
+        case _ { false }
     }
 }
 
-fun value_as_bool(value: JsonValue) -> Option<Bool> {
+fun value_as_bool(value: JsonValue) -> Option[bool] {
     return match value {
-        Bool(b) -> Some(b),
-        _ -> None,
+        case Bool(b) { Some(b) }
+        case _ { None }
     }
 }
 
-fun value_as_number(value: JsonValue) -> Option<Float> {
+fun value_as_number(value: JsonValue) -> Option[float] {
     return match value {
-        Number(n) -> Some(n),
-        _ -> None,
+        case Number(n) { Some(n) }
+        case _ { None }
     }
 }
 
-fun value_as_int(value: JsonValue) -> Option<Int> {
+fun value_as_int(value: JsonValue) -> Option[int] {
     return match value {
-        Number(n) -> Some(raven_float_to_int(n)),
-        _ -> None,
+        case Number(n) { Some(raven_float_to_int(n)) }
+        case _ { None }
     }
 }
 
-fun value_keys(value: JsonValue) -> List<String> {
+fun value_keys(value: JsonValue) -> list[str] {
     return match value {
-        Object(map) -> map.keys(),
-        _ -> {
-            let empty: List<String> = []
+        case Object(map) { map.keys() }
+        case _ {
+            let empty: list[str] = []
             empty
-        },
+        }
     }
 }
 
-fun value_length(value: JsonValue) -> Int {
+fun value_length(value: JsonValue) -> int {
     return match value {
-        Array(items) -> items.len(),
-        Object(map) -> map.len(),
-        _ -> 0,
+        case Array(items) { items.len() }
+        case Object(map) { map.len() }
+        case _ { 0 }
     }
 }
 
@@ -864,47 +857,47 @@ fun json_null() -> JsonValue {
     return JsonValue.Null
 }
 
-fun json_bool(b: Bool) -> JsonValue {
+fun json_bool(b: bool) -> JsonValue {
     return JsonValue.Bool(b)
 }
 
-fun json_number(n: Float) -> JsonValue {
+fun json_number(n: float) -> JsonValue {
     return JsonValue.Number(n)
 }
 
-fun json_int(n: Int) -> JsonValue {
+fun json_int(n: int) -> JsonValue {
     return JsonValue.Number(raven_int_to_float(n))
 }
 
-fun json_string(s: String) -> JsonValue {
+fun json_string(s: str) -> JsonValue {
     return JsonValue.Str(s)
 }
 
-fun json_array(items: List<JsonValue>) -> JsonValue {
+fun json_array(items: list[JsonValue]) -> JsonValue {
     return JsonValue.Array(items)
 }
 
-fun json_object(map: Map<String, JsonValue>) -> JsonValue {
+fun json_object(map: dict[str, JsonValue]) -> JsonValue {
     return JsonValue.Object(map)
 }
 
-fun value_as_string(value: JsonValue) -> Option<String> {
+fun value_as_string(value: JsonValue) -> Option[str] {
     return match value {
-        Str(s) -> Some(s),
-        _ -> None,
+        case Str(s) { Some(s) }
+        case _ { None }
     }
 }
 
-fun object_get(value: JsonValue, key: String) -> Option<JsonValue> {
+fun object_get(value: JsonValue, key: str) -> Option[JsonValue] {
     return match value {
-        Object(map) -> map.get(key),
-        _ -> None,
+        case Object(map) { map.get(key) }
+        case _ { None }
     }
 }
 
-fun array_at(value: JsonValue, i: Int) -> Option<JsonValue> {
+fun array_at(value: JsonValue, i: int) -> Option[JsonValue] {
     return match value {
-        Array(items) -> {
+        case Array(items) {
             if i < 0 {
                 None
             } else if i >= items.len() {
@@ -912,8 +905,8 @@ fun array_at(value: JsonValue, i: Int) -> Option<JsonValue> {
             } else {
                 Some(items[i])
             }
-        },
-        _ -> None,
+        }
+        case _ { None }
     }
 }
 
@@ -926,21 +919,21 @@ fun array_at(value: JsonValue, i: Int) -> Option<JsonValue> {
 // `from_json_value` helper so the type parameter selects the impl.
 //
 // `@derive(ToJson, FromJson)` synthesizes these for user structs and enums.
-// See docs/v2/specs/derive.md for the struct/enum JSON encodings.
+// See docs/specs/derive.md for the struct/enum JSON encodings.
 
 trait ToJson {
     fun to_json(self) -> JsonValue
 }
 
 trait FromJson {
-    fun from_json(j: JsonValue) -> Result<Self, Error>
+    fun from_json(j: JsonValue) -> Result[Self, Error]
 }
 
 // Decode `j` as a `T`, with `T` chosen by the expected result type, so
 // scalar, List, Option, and user-type members decode uniformly through one
 // call (`T.from_json` dispatches on the type parameter). The built-in List
 // and Option impls use it; a hand-written FromJson impl can too.
-fun from_json_value<T: FromJson>(j: JsonValue) -> Result<T, Error> {
+fun from_json_value[T: FromJson](j: JsonValue) -> Result[T, Error] {
     return T.from_json(j)
 }
 
@@ -948,17 +941,17 @@ fun from_json_value<T: FromJson>(j: JsonValue) -> Result<T, Error> {
 // chosen by the call, so `decode<Point>(text)` or a `Result<Point, Error>`
 // annotation selects the impl. Returns an Err for malformed JSON or a shape that
 // does not match `T`.
-fun decode<T: FromJson>(s: String) -> Result<T, Error> {
+fun decode[T: FromJson](s: str) -> Result[T, Error] {
     return from_json_value(parse(s)?)
 }
 
 // Read object member `key`, or an Err when `j` is not an object or the key
 // is absent. Useful in a hand-written `from_json` to fetch a field before
 // decoding it (`@derive(FromJson)` emits its own equivalent helper).
-fun json_field(j: JsonValue, key: String) -> Result<JsonValue, Error> {
+fun json_field(j: JsonValue, key: str) -> Result[JsonValue, Error] {
     return match object_get(j, key) {
-        Some(v) -> Ok(v),
-        None -> Err(json_error("missing field ".concat(key))),
+        case Some(v) { Ok(v) }
+        case None { Err(json_error("missing field ".concat(key))) }
     }
 }
 
@@ -969,70 +962,70 @@ fun json_field(j: JsonValue, key: String) -> Result<JsonValue, Error> {
 // (the IEEE 754 double mantissa). Bool maps to a JSON bool, String to a JSON
 // string, List<T> to a JSON array, and Option<T> to null or the inner value.
 
-impl ToJson for Int {
+impl ToJson for int {
     fun to_json(self) -> JsonValue {
         return JsonValue.Number(raven_int_to_float(self))
     }
 }
 
-impl FromJson for Int {
-    fun from_json(j: JsonValue) -> Result<Int, Error> {
+impl FromJson for int {
+    fun from_json(j: JsonValue) -> Result[int, Error] {
         return match j {
-            Number(n) -> Ok(raven_float_to_int(n)),
-            _ -> Err(json_error("expected a number")),
+            case Number(n) { Ok(raven_float_to_int(n)) }
+            case _ { Err(json_error("expected a number")) }
         }
     }
 }
 
-impl ToJson for Float {
+impl ToJson for float {
     fun to_json(self) -> JsonValue {
         return JsonValue.Number(self)
     }
 }
 
-impl FromJson for Float {
-    fun from_json(j: JsonValue) -> Result<Float, Error> {
+impl FromJson for float {
+    fun from_json(j: JsonValue) -> Result[float, Error] {
         return match j {
-            Number(n) -> Ok(n),
-            _ -> Err(json_error("expected a number")),
+            case Number(n) { Ok(n) }
+            case _ { Err(json_error("expected a number")) }
         }
     }
 }
 
-impl ToJson for Bool {
+impl ToJson for bool {
     fun to_json(self) -> JsonValue {
         return JsonValue.Bool(self)
     }
 }
 
-impl FromJson for Bool {
-    fun from_json(j: JsonValue) -> Result<Bool, Error> {
+impl FromJson for bool {
+    fun from_json(j: JsonValue) -> Result[bool, Error] {
         return match j {
-            Bool(b) -> Ok(b),
-            _ -> Err(json_error("expected a bool")),
+            case Bool(b) { Ok(b) }
+            case _ { Err(json_error("expected a bool")) }
         }
     }
 }
 
-impl ToJson for String {
+impl ToJson for str {
     fun to_json(self) -> JsonValue {
         return JsonValue.Str(self)
     }
 }
 
-impl FromJson for String {
-    fun from_json(j: JsonValue) -> Result<String, Error> {
+impl FromJson for str {
+    fun from_json(j: JsonValue) -> Result[str, Error] {
         return match j {
-            Str(s) -> Ok(s),
-            _ -> Err(json_error("expected a string")),
+            case Str(s) { Ok(s) }
+            case _ { Err(json_error("expected a string")) }
         }
     }
 }
 
-impl<T: ToJson> ToJson for List<T> {
+impl[T: ToJson] ToJson for list[T] {
     fun to_json(self) -> JsonValue {
-        let items: List<JsonValue> = []
-        let i = 0
+        let items: list[JsonValue] = []
+        var i = 0
         let n = self.len()
         while i < n {
             items.push(self[i].to_json())
@@ -1042,8 +1035,8 @@ impl<T: ToJson> ToJson for List<T> {
     }
 }
 
-impl<T: FromJson> FromJson for List<T> {
-    fun from_json(j: JsonValue) -> Result<List<T>, Error> {
+impl[T: FromJson] FromJson for list[T] {
+    fun from_json(j: JsonValue) -> Result[list[T], Error] {
         return list_from_json(j)
     }
 }
@@ -1051,11 +1044,11 @@ impl<T: FromJson> FromJson for List<T> {
 // The List FromJson body lives in a free function: matching a `self`-less
 // JsonValue payload and pushing decoded elements through the generic helper
 // keeps the element type inference straightforward.
-fun list_from_json<T: FromJson>(j: JsonValue) -> Result<List<T>, Error> {
+fun list_from_json[T: FromJson](j: JsonValue) -> Result[list[T], Error] {
     return match j {
-        Array(items) -> {
-            let out: List<T> = []
-            let i = 0
+        case Array(items) {
+            var out: list[T] = []
+            var i = 0
             let n = items.len()
             while i < n {
                 let elem: T = from_json_value(items[i])?
@@ -1063,32 +1056,32 @@ fun list_from_json<T: FromJson>(j: JsonValue) -> Result<List<T>, Error> {
                 i = i + 1
             }
             Ok(out)
-        },
-        _ -> Err(json_error("expected an array")),
+        }
+        case _ { Err(json_error("expected an array")) }
     }
 }
 
-impl<T: ToJson> ToJson for Option<T> {
+impl[T: ToJson] ToJson for Option[T] {
     fun to_json(self) -> JsonValue {
         return match self {
-            Some(v) -> v.to_json(),
-            None -> JsonValue.Null,
+            case Some(v) { v.to_json() }
+            case None { JsonValue.Null }
         }
     }
 }
 
-impl<T: FromJson> FromJson for Option<T> {
-    fun from_json(j: JsonValue) -> Result<Option<T>, Error> {
+impl[T: FromJson] FromJson for Option[T] {
+    fun from_json(j: JsonValue) -> Result[Option[T], Error] {
         return option_from_json(j)
     }
 }
 
-fun option_from_json<T: FromJson>(j: JsonValue) -> Result<Option<T>, Error> {
+fun option_from_json[T: FromJson](j: JsonValue) -> Result[Option[T], Error] {
     return match j {
-        Null -> Ok(None),
-        _ -> {
-            let v: T = from_json_value(j)?
+        case Null { Ok(None) }
+        case _ {
+            var v: T = from_json_value(j)?
             Ok(Some(v))
-        },
+        }
     }
 }

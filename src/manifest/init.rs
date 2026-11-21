@@ -62,7 +62,7 @@ pub fn manifest_template(name: &str) -> String {
         "[package]\n\
          name = \"{name}\"\n\
          version = \"{STARTER_VERSION}\"\n\
-         edition = \"v2\"\n\
+         edition = \"v3\"\n\
          \n\
          [dependencies]\n"
     )
@@ -79,16 +79,14 @@ pub fn lib_rv_template(name: &str) -> String {
     format!(
         "// lib.rv is the entry point of the `{name}` package: the items declared\n\
          // here are what other projects import, for example:\n\
-         //   import \"github.com/<user>/{name}\" {{ greet, Greeting }}\n\
+         //   from \"github.com/<user>/{name}\" import greet, Greeting\n\
          //\n\
          // A sub-path import like `github.com/<user>/{name}/util` loads `util.rv`\n\
          // next to this file.\n\
          \n\
-         import std/string\n\
+         class Greeting {{\n    who: str\n}}\n\
          \n\
-         struct Greeting {{\n    who: String,\n}}\n\
-         \n\
-         fun greet(who: String) -> String {{\n    return \"hello, \".concat(who)\n}}\n"
+         fun greet(who: str) -> str {{\n    return \"hello, ${{who}}\"\n}}\n"
     )
 }
 
@@ -178,7 +176,7 @@ mod tests {
         let m = Manifest::from_toml_str(&manifest_text).expect("generated manifest parses");
         assert_eq!(m.package.name, "demo_pkg");
         assert_eq!(m.package.version, STARTER_VERSION);
-        assert_eq!(m.package.edition, "v2");
+        assert_eq!(m.package.edition, "v3");
         assert!(m.dependencies.is_empty());
 
         let main_rv = std::fs::read_to_string(dir.join("src").join("main.rv")).unwrap();

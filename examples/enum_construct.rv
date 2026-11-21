@@ -1,0 +1,36 @@
+// Construct user enum variants in expression position and match them.
+// Unit variants build with `EnumName.Variant`, payload variants with
+// `EnumName.Variant(args)`.
+
+enum Color {
+    Red,
+    Green,
+    Blue,
+}
+
+enum Shape {
+    Circle(float),
+    Square(float),
+}
+
+fun name(c: Color) -> str {
+    return match c {
+        case Red { "red" }
+        case Green { "green" }
+        case Blue { "blue" }
+    }
+}
+
+fun area(s: Shape) -> float {
+    return match s {
+        case Circle(r) { r * r * 3.0 }
+        case Square(w) { w * w }
+    }
+}
+
+fun main() {
+    let c = Color.Green
+    print(name(c))
+    print(area(Shape.Circle(2.0)))
+    print(area(Shape.Square(3.0)))
+}

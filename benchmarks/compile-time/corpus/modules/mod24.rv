@@ -1,27 +1,37 @@
-import std/string
+import std.string
 
-struct Vec2_24 { x: Int, y: Int }
+class Vec2_24 {
+    x: int
+    y: int
+}
 
 impl Vec2_24 {
     fun add(self, o: Vec2_24) -> Vec2_24 {
-        return Vec2_24 { x: self.x + o.x, y: self.y + o.y }
+        return Vec2_24(x: self.x + o.x, y: self.y + o.y)
     }
-    fun scale(self, k: Int) -> Vec2_24 {
-        return Vec2_24 { x: self.x * k, y: self.y * k }
+
+    fun scale(self, k: int) -> Vec2_24 {
+        return Vec2_24(x: self.x * k, y: self.y * k)
     }
-    fun magnitude_sq(self) -> Int {
+
+    fun magnitude_sq(self) -> int {
         return self.x * self.x + self.y * self.y
     }
 }
 
-struct Node_24 { id: Int, weight: Int, label: String }
+class Node_24 {
+    id: int
+    weight: int
+    label: str
+}
 
 impl Node_24 {
-    fun heavier(self, other: Node_24) -> Bool {
+    fun heavier(self, other: Node_24) -> bool {
         return self.weight > other.weight
     }
-    fun retag(self, n: String) -> Node_24 {
-        return Node_24 { id: self.id, weight: self.weight, label: n }
+
+    fun retag(self, n: str) -> Node_24 {
+        return Node_24(id: self.id, weight: self.weight, label: n)
     }
 }
 
@@ -32,12 +42,12 @@ enum Shape_24 {
     Hexagon,
 }
 
-fun classify_24(s: Shape_24) -> Int {
+fun classify_24(s: Shape_24) -> int {
     return match s {
-        Circle -> 8,
-        Square -> 8 * 2,
-        Triangle -> 8 * 3,
-        Hexagon -> 8 * 6,
+        case Circle { 8 }
+        case Square { 8 * 2 }
+        case Triangle { 8 * 3 }
+        case Hexagon { 8 * 6 }
     }
 }
 
@@ -47,7 +57,7 @@ enum Outcome_24 {
     Skip,
 }
 
-fun grade_24(score: Int) -> Outcome_24 {
+fun grade_24(score: int) -> Outcome_24 {
     if score >= 60 {
         return Outcome_24.Pass
     }
@@ -57,61 +67,68 @@ fun grade_24(score: Int) -> Outcome_24 {
     return Outcome_24.Fail
 }
 
-fun grade_points_24(o: Outcome_24) -> Int {
+fun grade_points_24(o: Outcome_24) -> int {
     return match o {
-        Pass -> 100,
-        Fail -> 0,
-        Skip -> 50,
+        case Pass { 100 }
+        case Fail { 0 }
+        case Skip { 50 }
     }
 }
 
-struct Pair_24<T> { first: T, second: T }
+class Pair_24[T] {
+    first: T
+    second: T
+}
 
-impl<T> Pair_24<T> {
+impl[T] Pair_24[T] {
     fun left(self) -> T = self.first
+
     fun right(self) -> T = self.second
 }
 
-struct Wrap_24<T> { inner: T }
+class Wrap_24[T] {
+    inner: T
+}
 
-impl<T> Wrap_24<T> {
+impl[T] Wrap_24[T] {
     fun get(self) -> T = self.inner
-    fun mapped<U>(self, f: fun(T) -> U) -> U = f(self.inner)
+
+    fun mapped[U](self, f: fun(T) -> U) -> U = f(self.inner)
 }
 
 trait Score_24 {
-    fun score(self) -> Int
+    fun score(self) -> int
 }
 
 impl Score_24 for Node_24 {
-    fun score(self) -> Int = self.id * 10 + self.weight
+    fun score(self) -> int = self.id * 10 + self.weight
 }
 
 impl Score_24 for Vec2_24 {
-    fun score(self) -> Int = self.magnitude_sq()
+    fun score(self) -> int = self.magnitude_sq()
 }
 
-fun ranked_24<T: Score_24>(x: T) -> Int = x.score()
+fun ranked_24[T: Score_24](x: T) -> int = x.score()
 
-fun identity_24<T>(x: T) -> T = x
+fun identity_24[T](x: T) -> T = x
 
-fun maybe_24(n: Int) -> Option<Int> {
+fun maybe_24(n: int) -> Option[int] {
     if n > 8 {
         return Some(n * 2)
     }
     return None
 }
 
-fun unwrap_or_24(x: Option<Int>, fallback: Int) -> Int {
+fun unwrap_or_24(x: Option[int], fallback: int) -> int {
     return match x {
-        None -> fallback,
-        Some(v) -> v,
+        case None { fallback }
+        case Some(v) { v }
     }
 }
 
-fun accumulate_24(limit: Int) -> Int {
-    let total = 0
-    let i = 0
+fun accumulate_24(limit: int) -> int {
+    var total = 0
+    var i = 0
     while i < limit {
         if i % 2 == 0 {
             total = total + i
@@ -123,37 +140,36 @@ fun accumulate_24(limit: Int) -> Int {
     return total
 }
 
-fun sweep_24(limit: Int) -> Int {
-    let total = 0
+fun sweep_24(limit: int) -> int {
+    var total = 0
     for k in 0..limit {
         total = total + classify_24(Shape_24.Triangle) + k
     }
     return total
 }
 
-fun fib_24(n: Int) -> Int {
+fun fib_24(n: int) -> int {
     if n < 2 {
         return n
     }
     return fib_24(n - 1) + fib_24(n - 2)
 }
 
-fun compute_24(seed: Int) -> Int {
-    let v = Vec2_24 { x: seed, y: seed + 8 }
-    let w = v.add(Vec2_24 { x: 2, y: 3 }).scale(2)
-    let node = Node_24 { id: seed, weight: 8, label: "n" }
+fun compute_24(seed: int) -> int {
+    let v = Vec2_24(x: seed, y: seed + 8)
+    let w = v.add(Vec2_24(x: 2, y: 3)).scale(2)
+    let node = Node_24(id: seed, weight: 8, label: "n")
     let tagged = node.retag("tagged")
-    let p = Pair_24 { first: w.x, second: w.y }
-    let q = Pair_24 { first: tagged.label, second: "z" }
-    let boxed = Wrap_24 { inner: seed }
-    let doubled = boxed.mapped(fun(x: Int) -> Int = x * 2)
-    let big = boxed.mapped(fun(x: Int) -> Bool = x > 8)
+    let p = Pair_24(first: w.x, second: w.y)
+    let q = Pair_24(first: tagged.label, second: "z")
+    let boxed = Wrap_24(inner: seed)
+    let doubled = boxed.mapped((x: int) -> int => x * 2)
+    let big = boxed.mapped((x: int) -> bool => x > 8)
     let m = unwrap_or_24(maybe_24(seed), 0)
     let g = grade_points_24(grade_24(seed))
     let r = ranked_24(tagged) + ranked_24(v)
-    let extra = if big { 1 } else { 0 }
-    return p.left() + p.right() + w.magnitude_sq() + identity_24(doubled) +
-        m + g + r + accumulate_24(8) + sweep_24(8) +
-        fib_24(8) + classify_24(Shape_24.Hexagon) + extra +
-        q.left().length()
+    let extra = 1 if big else 0
+    return p.left() + p.right() + w.magnitude_sq() + identity_24(doubled) + m + g + r + accumulate_24(
+        8,
+    ) + sweep_24(8) + fib_24(8) + classify_24(Shape_24.Hexagon) + extra + q.left().length()
 }

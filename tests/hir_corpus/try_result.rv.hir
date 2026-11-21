@@ -1,32 +1,32 @@
 (hir
-  (fn "parse" params=("s":String) ret=Result<Int, String>
+  (fn "parse" params=("s":str) ret=Result[int, str]
     (body ty=()
       (stmt-expr
         (return ty=<error>
-          (ok ty=Result<Int, <error>>
-            (int 1 ty=Int)
+          (ok ty=Result[int, str]
+            (int 1 ty=int)
           )
         )
       )
     )
   )
-  (fn "caller" params=("s":String) ret=Result<Int, String>
+  (fn "caller" params=("s":str) ret=Result[int, str]
     (body ty=()
-      (let "v" ty=Int
-        (match ty=Int
-          (call ty=Result<Int, String>
-            (fn-ref "parse" ty=fun(String) -> Result<Int, String>)
-            (ident "s" ty=String)
+      (let "v" ty=int
+        (match ty=int
+          (call ty=Result[int, str]
+            (fn-ref "parse" ty=fun(str) -> Result[int, str])
+            (ident "s" ty=str)
           )
           (arm
             (pat Ok(__hir_try_v_0))
-            (ident "__hir_try_v_0" ty=Int)
+            (ident "__hir_try_v_0" ty=int)
           )
           (arm
             (pat Err(__hir_try_e_1))
             (return ty=<error>
-              (err ty=Result<Int, String>
-                (ident "__hir_try_e_1" ty=String)
+              (err ty=Result[int, str]
+                (ident "__hir_try_e_1" ty=str)
               )
             )
           )
@@ -34,10 +34,10 @@
       )
       (stmt-expr
         (return ty=<error>
-          (ok ty=Result<Int, <error>>
-            (binary + ty=Int
-              (ident "v" ty=Int)
-              (int 1 ty=Int)
+          (ok ty=Result[int, str]
+            (binary + ty=int
+              (ident "v" ty=int)
+              (int 1 ty=int)
             )
           )
         )

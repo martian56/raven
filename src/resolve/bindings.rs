@@ -6,9 +6,8 @@
 //! than direct pointers so the resolved file can be passed across module
 //! boundaries without lifetime knots.
 //!
-//! See `docs/v2/specs/resolver.md` for the full catalog of variants.
+//! See `docs/specs/resolver.md` for the full catalog of variants.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -132,7 +131,7 @@ pub struct ResolvedImport {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ResolutionMap {
     /// Map from identifier use site key to its bound declaration.
-    pub uses: HashMap<UseKey, Binding>,
+    pub uses: rustc_hash::FxHashMap<UseKey, Binding>,
     /// Resolved imports in declaration order. Indexed by [`ImportId`].
     pub imports: Vec<ResolvedImport>,
 }

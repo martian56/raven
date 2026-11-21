@@ -11,7 +11,7 @@
 //! values, trait objects, closures, and `defer` are tracked by issues
 //! #65, #66, #67, and #68.
 //!
-//! See `docs/v2/specs/codegen.md` for the full design.
+//! See `docs/specs/codegen.md` for the full design.
 
 pub mod context;
 pub mod function;
@@ -82,6 +82,14 @@ pub fn host_isa() -> Result<Arc<dyn TargetIsa>, CodegenError> {
     // does not cost anything on x86_64; we set it unconditionally.
     flag_builder
         .set("is_pic", "true")
+        .map_err(|e| CodegenError::Target(e.to_string()))?;
+    let opt = std::env::var("RAVEN_OPT").unwrap_or_else(|_| "speed".into());
+    flag_builder
+        .set("opt_level", &opt)
+        .map_err(|e| CodegenError::Target(e.to_string()))?;
+    let tls_model = if cfg!(windows) { "coff" } else { "elf_gd" };
+    flag_builder
+        .set("tls_model", tls_model)
         .map_err(|e| CodegenError::Target(e.to_string()))?;
     let flags = settings::Flags::new(flag_builder);
     let isa_builder = cranelift_native::builder()

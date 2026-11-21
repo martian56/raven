@@ -1,10 +1,12 @@
-struct Counter { n: Int }
-
-impl Counter {
-    fun bump(self) -> Int = self.n + 1
+class Counter {
+    n: int
 }
 
-fun go() -> Int {
-    let c = Counter { n: 41 };
+impl Counter {
+    fun bump(self) -> int = self.n + 1
+}
+
+fun go() -> int {
+    let c = Counter(n: 41)
     return c.bump()
 }

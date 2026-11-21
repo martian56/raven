@@ -1,5 +1,5 @@
-import std/io { println }
-import std/math
+from std.io import println
+import std.math
 
 fun main() {
     println("hi")

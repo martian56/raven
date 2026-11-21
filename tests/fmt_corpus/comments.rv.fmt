@@ -1,7 +1,7 @@
 // a leading file comment
 
 // describes the constant
-const N: Int = 3
+let N: int = 3
 
 fun first() {
     let x = 1 // trailing on a statement

@@ -1,0 +1,15 @@
+// golden:skip
+from std.http import get
+from std.env import get_env
+from std.io import println
+
+fun main() {
+    let url = get_env("RAVEN_HTTP_URL")
+    match get(url) {
+        case Ok(resp) {
+            println("${resp.status_code}")
+            println(resp.body)
+        }
+        case Err(e) { println("request failed") }
+    }
+}

@@ -1,50 +1,50 @@
 // Sample Raven v2 program for exercising the VS Code extension grammar.
 
-import std/io { println }
-import std/sync { channel, channel_buffered, yield_now }
-import std/ffi { alloc, free, load, store, offset }
+from std.io import println
+from std.sync import channel, channel_buffered, yield_now
+from std.ffi import alloc, free, load, store, offset
 
 @derive(Eq, Hash, ToString, Debug)
-struct User {
-    id: Int,
-    name: String,
+class User {
+    id: int
+    name: str
 }
 
 @repr(C)
 struct Header {
-    tag: CInt,
-    len: CInt,
+    tag: CInt
+    len: CInt
 }
 
 // Declarative macro plus a call site below.
 macro twice { ($x:expr) => { ($x) + ($x) } }
 
 extern "C" {
-    fun raven_ffi_qsort_i32(p: CPtr<CInt>, n: CSize, cmp: CFnPtr)
+    fun raven_ffi_qsort_i32(p: CPtr[CInt], n: CSize, cmp: CFnPtr)
 }
 
-struct Point<T> {
-    x: T,
-    y: T,
+class Point[T] {
+    x: T
+    y: T
 }
 
 enum Shape {
-    Circle(Float),
-    Square(Float),
+    Circle(float),
+    Square(float),
 }
 
 trait Area {
-    fun area(self) -> Float
+    fun area(self) -> float
 }
 
 impl Area for Shape {
-    fun area(self) -> Float = match self {
-        Circle(r) -> r * r * 3.14159,
-        Square(w) -> w * w,
+    fun area(self) -> float = match self {
+        case Circle(r) { r * r * 3.14159 }
+        case Square(w) { w * w }
     }
 }
 
-fun describe<T: ToString>(value: T) -> String = value.to_string()
+fun describe[T: ToString](value: T) -> str = value.to_string()
 
 extern "C" {
     fun strlen(s: CStr) -> CSize
@@ -52,11 +52,11 @@ extern "C" {
 
 fun main() {
     let name = "Raven"
-    let count = 0x2a
+    let count = 42
     println("Hello, ${name}! count = ${count}")
 
     let nums = [1, 2, 3, 4, 5]
-    let total = 0
+    var total = 0
     for n in nums {
         total += n
     }
@@ -77,19 +77,19 @@ fun main() {
 
     print(twice!(n + 1))
 
-    let u = User { id: 7, name: "ada" }
-    let a = to_any<User>(u)
+    let u = User(id: 7, name: "ada")
+    let a = to_any[User](u)
     print(type_name_of(a))
 
     let ch = channel()
-    spawn(fun() -> Unit {
+    spawn {
         ch.send(1)
         yield_now()
-    })
+    }
     print(ch.recv())
 
-    let buf = alloc<CInt>(4)
-    store<CInt>(buf, 10)
-    print(load<CInt>(offset<CInt>(buf, 0)))
-    free<CInt>(buf)
+    let buf = alloc[CInt](4)
+    store[CInt](buf, 10)
+    print(load[CInt](offset[CInt](buf, 0)))
+    free[CInt](buf)
 }

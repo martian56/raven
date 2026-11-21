@@ -1,7 +1,7 @@
-fun bool_to_int(b: Bool) -> Int {
+fun bool_to_int(b: bool) -> int {
     let n = match b {
-        true -> 1,
-        false -> 0,
-    };
+        case true { 1 }
+        case false { 0 }
+    }
     return n
 }

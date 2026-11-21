@@ -9,7 +9,7 @@
 //! dependencies, resolving version constraints, and wiring `[ffi]` into
 //! the link step are handled by later rvpm work.
 //!
-//! See `docs/v2/specs/rv-toml.md` for the full field reference.
+//! See `docs/specs/rv-toml.md` for the full field reference.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -23,10 +23,13 @@ pub mod init;
 
 /// The default edition stamped into a freshly initialized manifest and
 /// assumed when `[package].edition` is absent.
-pub const DEFAULT_EDITION: &str = "v2";
+pub const DEFAULT_EDITION: &str = "v3";
 
 /// The accepted `[package].edition` values.
-pub const ACCEPTED_EDITIONS: &[&str] = &["v2", "2026"];
+pub const ACCEPTED_EDITIONS: &[&str] = &["v3"];
+
+/// Editions written in the Raven 2 syntax, which Raven 3 no longer reads.
+const RAVEN2_EDITIONS: &[&str] = &["v2", "2026"];
 
 /// Whether `name` is a valid package name: a non-empty run of ASCII letters,
 /// digits, `-`, and `_` that does not start with `-`. The name is interpolated
@@ -174,7 +177,7 @@ pub const DEFAULT_DIST_OUT_DIR: &str = "target/dist";
 /// The optional `[dist]` section: how `rvpm dist` packages the built
 /// application. Every field has a default derived from `[package]`, so the
 /// section can be omitted entirely and `rvpm dist` still produces the host's
-/// native archive. See `docs/v2/specs/rvpm-dist.md`.
+/// native archive. See `docs/specs/rvpm-dist.md`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Dist {
     /// Artifact formats to produce when `--target` is not given. Empty means
@@ -746,6 +749,16 @@ impl Manifest {
         }
         let edition = match raw_pkg.edition {
             Some(e) => {
+                if RAVEN2_EDITIONS.contains(&e.as_str()) {
+                    return Err(ManifestError::InvalidValue {
+                        section: "package".to_string(),
+                        field: "edition".to_string(),
+                        message: format!(
+                            "'{}' is Raven 2 syntax, which Raven 3 does not compile; convert the code to the Raven 3 syntax and set edition = \"v3\"",
+                            e
+                        ),
+                    });
+                }
                 if !ACCEPTED_EDITIONS.contains(&e.as_str()) {
                     return Err(ManifestError::InvalidValue {
                         section: "package".to_string(),
@@ -966,7 +979,7 @@ mod tests {
 name = "demo"
 version = "0.1.0"
 authors = ["Ada", "Grace"]
-edition = "v2"
+edition = "v3"
 
 [dependencies]
 "github.com/martian56/raven-http" = "1.0"
@@ -984,7 +997,7 @@ wrap_width = 80
         assert_eq!(m.package.name, "demo");
         assert_eq!(m.package.version, "0.1.0");
         assert_eq!(m.package.authors, vec!["Ada", "Grace"]);
-        assert_eq!(m.package.edition, "v2");
+        assert_eq!(m.package.edition, "v3");
         assert_eq!(m.dependencies.len(), 2);
         let http = m
             .dependencies
@@ -1130,6 +1143,17 @@ version = "0.1.0"
             other => panic!("expected Toml, got {:?}", other),
         }
         assert!(err.to_string().starts_with("invalid rv.toml:"));
+    }
+
+    #[test]
+    fn raven2_edition_is_rejected_with_a_clear_message() {
+        let src = "[package]
+name = \"x\"
+version = \"0.1.0\"
+edition = \"v2\"
+";
+        let err = Manifest::from_toml_str(src).unwrap_err();
+        assert!(err.to_string().contains("Raven 2 syntax"), "got: {}", err);
     }
 
     #[test]

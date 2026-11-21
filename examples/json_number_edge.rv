@@ -1,0 +1,20 @@
+// stringify never emits inf or NaN (those are not valid JSON), it writes null
+// instead; and a huge exponent is parsed in bounded time rather than looping a
+// billion times.
+from std.io import println
+from std.json import parse, stringify
+
+fun show(s: str) {
+    match parse(s) {
+        case Ok(v) { println("${s} -> ${stringify(v)}") }
+        case Err(e) { println("${s} -> err: ${e.message()}") }
+    }
+}
+
+fun main() {
+    show("42")
+    show("3.14")
+    show("1e400")
+    show("-1e400")
+    show("1e999999999")
+}

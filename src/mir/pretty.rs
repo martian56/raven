@@ -237,6 +237,7 @@ fn pretty_rvalue(buf: &mut String, r: &MirRvalue) {
                 crate::mir::ir::ListMethodOp::Len => "len",
                 crate::mir::ir::ListMethodOp::IsEmpty => "is_empty",
                 crate::mir::ir::ListMethodOp::Push => "push",
+                crate::mir::ir::ListMethodOp::Reserve => "reserve",
                 crate::mir::ir::ListMethodOp::Pop => "pop",
                 crate::mir::ir::ListMethodOp::Get => "get",
             };

@@ -1,0 +1,38 @@
+// Macro hygiene for template-introduced bindings beyond let/const/for: a macro
+// that generates a closure must let the closure's parameter resolve in its body,
+// a macro that generates a match must let each arm's pattern bindings resolve in
+// the arm body, and a binding in a nested block must not rename a free use in an
+// outer scope (scope-aware renaming).
+fun helper() -> int = 99
+
+macro identity { () => { (arg: int) -> int => arg } }
+
+enum Shape {
+    Circle(int),
+    Square(int),
+}
+
+macro size { ($s:expr) => { match ($s) { case Circle(r) { r } case Square(side) { side } } } }
+
+class Pair {
+    a: int
+    b: int
+}
+
+// A shorthand struct pattern field is both the field name and the binding, so
+// the binding must keep its spelling and still resolve in the arm body.
+macro first { ($p:expr) => { match ($p) { case Pair { a, b } { a } } } }
+
+// The outer `helper()` is a free call; the nested `let helper` is a separate
+// local that must not rename it.
+macro call_then_bind { () => { { let value = helper() { let helper = 1} value} } }
+
+fun main() {
+    let id = identity!()
+    print(id(7))
+    print(size!(Shape.Circle(3)))
+    print(size!(Shape.Square(9)))
+    let pair = Pair(a: 4, b: 8)
+    print(first!(pair))
+    print(call_then_bind!())
+}

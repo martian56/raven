@@ -1,9 +1,0 @@
-// golden:skip
-// Importing std/string merges its `impl String` block; the method is
-// resolved by the receiver type, not by an imported name.
-import std/string
-import std/io { println }
-
-fun main() {
-    println("hi".to_upper())
-}

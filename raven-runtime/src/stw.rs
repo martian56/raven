@@ -4,7 +4,7 @@
 //! where no other thread is mutating the heap or a shadow stack, so it sees a
 //! quiescent heap and a consistent set of roots. This module is that
 //! coordination, built and tested on its own before it guards real memory (see
-//! `docs/v2/specs/concurrency-parallelism.md`).
+//! `docs/specs/concurrency-parallelism.md`).
 //!
 //! # The model: short unsafe regions, not a poll-and-park barrier
 //!
@@ -39,7 +39,12 @@
 //! touched only to park (a stop is pending) or to wake (a region drained while a
 //! collector waits, or the world resumes).
 
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+
+/// Nonzero while a stop-the-world is requested. Compiled loops read it inline
+/// and call `raven_gc_safepoint` only when it is set.
+#[no_mangle]
+pub static RAVEN_GC_STOP_PENDING: AtomicU8 = AtomicU8::new(0);
 use std::sync::{Condvar, Mutex};
 
 /// Coordinates a stop-the-world pause across mutator threads.
@@ -217,6 +222,7 @@ impl StopTheWorld {
         }
         inner.stopping = true;
         self.stop_requested.store(true, Ordering::SeqCst);
+        RAVEN_GC_STOP_PENDING.store(1, Ordering::SeqCst);
         // Wait until no thread is mutating a shadow stack (unsafe regions
         // drained) and every in-Raven thread has parked at a safepoint. New
         // unsafe entries and safepoint arrivals park rather than proceeding, so
@@ -243,6 +249,7 @@ impl StopTheWorld {
         inner.stopping = false;
         inner.epoch = inner.epoch.wrapping_add(1);
         self.stop_requested.store(false, Ordering::SeqCst);
+        RAVEN_GC_STOP_PENDING.store(0, Ordering::SeqCst);
         self.cv.notify_all();
     }
 }

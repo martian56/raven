@@ -15,7 +15,7 @@
 //! impl carries the per-parameter bound for the trait being derived, for
 //! example `impl<A: Eq, B: Eq> Eq for Pair<A, B>`.
 //!
-//! See `docs/v2/specs/derive.md` for the syntax, the generated-impl shapes,
+//! See `docs/specs/derive.md` for the syntax, the generated-impl shapes,
 //! and the formatting conventions.
 
 use crate::ast::{
@@ -194,8 +194,8 @@ fn impl_head(name: &str, generics: &[GenericParam], trait_name: &str) -> (String
         .collect();
     let args: Vec<String> = generics.iter().map(|g| g.name.clone()).collect();
     (
-        format!("<{}>", bounds.join(", ")),
-        format!("{name}<{}>", args.join(", ")),
+        format!("[{}]", bounds.join(", ")),
+        format!("{name}[{}]", args.join(", ")),
     )
 }
 
@@ -219,7 +219,7 @@ fn struct_eq_body(s: &Struct, self_ty: &str) -> String {
     // than `Self`: the type checker does not yet accept `Self` as a non
     // receiver parameter type in a method signature.
     if s.fields.is_empty() {
-        return format!("    fun equals(self, other: {self_ty}) -> Bool {{ return true }}\n");
+        return format!("    fun equals(self, other: {self_ty}) -> bool {{ return true }}\n");
     }
     let parts: Vec<String> = s
         .fields
@@ -227,8 +227,8 @@ fn struct_eq_body(s: &Struct, self_ty: &str) -> String {
         .map(|f| format!("self.{0}.equals(other.{0})", f.name))
         .collect();
     format!(
-        "    fun equals(self, other: {self_ty}) -> Bool {{ return {} }}\n",
-        parts.join(" && ")
+        "    fun equals(self, other: {self_ty}) -> bool {{ return {} }}\n",
+        parts.join(" and ")
     )
 }
 
@@ -237,11 +237,11 @@ fn struct_eq_body(s: &Struct, self_ty: &str) -> String {
 /// must implement `Ord`.
 fn struct_ord_body(s: &Struct, self_ty: &str) -> String {
     if s.fields.is_empty() {
-        return format!("    fun compare(self, other: {self_ty}) -> Int {{ return 0 }}\n");
+        return format!("    fun compare(self, other: {self_ty}) -> int {{ return 0 }}\n");
     }
-    let mut body = format!("    fun compare(self, other: {self_ty}) -> Int {{\n");
+    let mut body = format!("    fun compare(self, other: {self_ty}) -> int {{\n");
     for (i, f) in s.fields.iter().enumerate() {
-        let decl = if i == 0 { "let c" } else { "c" };
+        let decl = if i == 0 { "var c" } else { "c" };
         body.push_str(&format!(
             "        {decl} = self.{0}.compare(other.{0})\n        if c != 0 {{ return c }}\n",
             f.name
@@ -252,7 +252,7 @@ fn struct_ord_body(s: &Struct, self_ty: &str) -> String {
 }
 
 fn struct_hash_body(s: &Struct) -> String {
-    let mut body = String::from("    fun hash(self) -> Int {\n        let h = 17\n");
+    let mut body = String::from("    fun hash(self) -> int {\n        var h = 17\n");
     for f in &s.fields {
         body.push_str(&format!("        h = h * 31 + self.{}.hash()\n", f.name));
     }
@@ -271,16 +271,21 @@ fn struct_to_string_body(s: &Struct, method: &str) -> String {
     };
     if s.fields.is_empty() {
         return format!(
-            "    fun {fn_name}(self) -> String {{ return \"{}\" }}\n",
+            "    fun {fn_name}(self) -> str {{ return \"{}\" }}\n",
             s.name
         );
     }
     let mut parts = Vec::new();
     for f in &s.fields {
-        parts.push(format!("{0}: ${{self.{0}.{method}()}}", f.name));
+        let inner = if method == "to_string" {
+            "repr"
+        } else {
+            method
+        };
+        parts.push(format!("{0}: ${{self.{0}.{inner}()}}", f.name));
     }
     format!(
-        "    fun {fn_name}(self) -> String {{ return \"{} {{ {} }}\" }}\n",
+        "    fun {fn_name}(self) -> str {{ return \"{} {{ {} }}\" }}\n",
         s.name,
         parts.join(", ")
     )
@@ -329,13 +334,13 @@ fn variant_arity(v: &EnumVariant) -> usize {
 
 fn enum_eq_body(e: &Enum, self_ty: &str) -> String {
     let mut body = format!(
-        "    fun equals(self, other: {self_ty}) -> Bool {{\n        return match self {{\n"
+        "    fun equals(self, other: {self_ty}) -> bool {{\n        return match self {{\n"
     );
     for v in &e.variants {
         let n = variant_arity(v);
         if n == 0 {
             body.push_str(&format!(
-                "            {0} -> match other {{ {0} -> true, _ -> false }},\n",
+                "            case {0} {{ match other {{ case {0} {{ true }} case _ {{ false }} }} }}\n",
                 v.name
             ));
         } else {
@@ -343,11 +348,11 @@ fn enum_eq_body(e: &Enum, self_ty: &str) -> String {
             let b_binds: Vec<String> = (0..n).map(|i| format!("b{i}")).collect();
             let cmp: Vec<String> = (0..n).map(|i| format!("a{i}.equals(b{i})")).collect();
             body.push_str(&format!(
-                "            {0}({1}) -> match other {{ {0}({2}) -> {3}, _ -> false }},\n",
+                "            case {0}({1}) {{ match other {{ case {0}({2}) {{ {3} }} case _ {{ false }} }} }}\n",
                 v.name,
                 a_binds.join(", "),
                 b_binds.join(", "),
-                cmp.join(" && ")
+                cmp.join(" and ")
             ));
         }
     }
@@ -362,7 +367,7 @@ fn enum_eq_body(e: &Enum, self_ty: &str) -> String {
 /// stays exhaustive.
 fn enum_ord_body(e: &Enum, self_ty: &str) -> String {
     let mut body = format!(
-        "    fun compare(self, other: {self_ty}) -> Int {{\n        return match self {{\n"
+        "    fun compare(self, other: {self_ty}) -> int {{\n        return match self {{\n"
     );
     for (i, v) in e.variants.iter().enumerate() {
         let n = variant_arity(v);
@@ -372,7 +377,7 @@ fn enum_ord_body(e: &Enum, self_ty: &str) -> String {
             let binds: Vec<String> = (0..n).map(|k| format!("a{k}")).collect();
             format!("{}({})", v.name, binds.join(", "))
         };
-        body.push_str(&format!("            {self_pat} -> match other {{\n"));
+        body.push_str(&format!("            case {self_pat} {{ match other {{\n"));
         for (j, w) in e.variants.iter().enumerate() {
             let m = variant_arity(w);
             let other_pat = if m == 0 {
@@ -385,35 +390,39 @@ fn enum_ord_body(e: &Enum, self_ty: &str) -> String {
                 format!("{}({})", w.name, wilds.join(", "))
             };
             if j < i {
-                body.push_str(&format!("                {other_pat} -> 1,\n"));
+                body.push_str(&format!("                case {other_pat} {{ 1 }}\n"));
             } else if j > i {
-                body.push_str(&format!("                {other_pat} -> -1,\n"));
+                body.push_str(&format!("                case {other_pat} {{ -1 }}\n"));
             } else if n == 0 {
-                body.push_str(&format!("                {other_pat} -> 0,\n"));
+                body.push_str(&format!("                case {other_pat} {{ 0 }}\n"));
             } else {
                 let mut blk = String::from("{\n");
                 for k in 0..n {
-                    let decl = if k == 0 { "let c" } else { "c" };
+                    let decl = if k == 0 { "var c" } else { "c" };
                     blk.push_str(&format!(
                         "                    {decl} = a{k}.compare(b{k})\n                    if c != 0 {{ return c }}\n"
                     ));
                 }
                 blk.push_str("                    0\n                }");
-                body.push_str(&format!("                {other_pat} -> {blk},\n"));
+                body.push_str(&format!("                case {other_pat} {blk}\n"));
             }
         }
-        body.push_str("            },\n");
+        body.push_str("            } }\n");
     }
     body.push_str("        }\n    }\n");
     body
 }
 
 fn enum_hash_body(e: &Enum) -> String {
-    let mut body = String::from("    fun hash(self) -> Int {\n        return match self {\n");
+    let mut body = String::from("    fun hash(self) -> int {\n        return match self {\n");
     for (idx, v) in e.variants.iter().enumerate() {
         let n = variant_arity(v);
         if n == 0 {
-            body.push_str(&format!("            {} -> {},\n", v.name, idx * 17 + 1));
+            body.push_str(&format!(
+                "            case {} {{ {} }}\n",
+                v.name,
+                idx * 17 + 1
+            ));
         } else {
             let binds: Vec<String> = (0..n).map(|i| format!("a{i}")).collect();
             let mut acc = format!("{}", idx * 17 + 1);
@@ -421,7 +430,7 @@ fn enum_hash_body(e: &Enum) -> String {
                 acc = format!("({acc}) * 31 + a{i}.hash()");
             }
             body.push_str(&format!(
-                "            {}({}) -> {},\n",
+                "            case {}({}) {{ {} }}\n",
                 v.name,
                 binds.join(", "),
                 acc
@@ -441,16 +450,21 @@ fn enum_to_string_body(e: &Enum, method: &str) -> String {
     } else {
         "to_string"
     };
-    let mut body = format!("    fun {fn_name}(self) -> String {{\n        return match self {{\n");
+    let mut body = format!("    fun {fn_name}(self) -> str {{\n        return match self {{\n");
     for v in &e.variants {
         let n = variant_arity(v);
         if n == 0 {
-            body.push_str(&format!("            {0} -> \"{0}\",\n", v.name));
+            body.push_str(&format!("            case {0} {{ \"{0}\" }}\n", v.name));
         } else {
             let binds: Vec<String> = (0..n).map(|i| format!("a{i}")).collect();
-            let parts: Vec<String> = (0..n).map(|i| format!("${{a{i}.{method}()}}")).collect();
+            let inner = if method == "to_string" {
+                "repr"
+            } else {
+                method
+            };
+            let parts: Vec<String> = (0..n).map(|i| format!("${{a{i}.{inner}()}}")).collect();
             body.push_str(&format!(
-                "            {0}({1}) -> \"{0}({2})\",\n",
+                "            case {0}({1}) {{ \"{0}({2})\" }}\n",
                 v.name,
                 binds.join(", "),
                 parts.join(", ")
@@ -476,42 +490,44 @@ fn enum_to_string_body(e: &Enum, method: &str) -> String {
 /// and so unreachable by its bare name from generated source. The names are
 /// prefixed to avoid
 /// colliding with a user declaration.
-const JSON_HELPERS: &str = r#"fun raven_derive_json_decode<T: FromJson>(j: JsonValue) -> Result<T, Error> {
+const JSON_HELPERS: &str = r#"fun raven_derive_json_decode[T: FromJson](j: JsonValue) -> Result[T, Error] {
     return T.from_json(j)
 }
-fun raven_derive_json_field(j: JsonValue, key: String) -> Result<JsonValue, Error> {
+fun raven_derive_json_field(j: JsonValue, key: str) -> Result[JsonValue, Error] {
     return match j.get(key) {
-        Some(v) -> Ok(v),
-        None -> Err(Error { kind: "json", message: "missing field ".concat(key) }),
+        case Some(v) { Ok(v) }
+        case None { Err(Error(kind: "json", message: "missing field ".concat(key))) }
     }
 }
-fun raven_derive_json_index(j: JsonValue, i: Int) -> Result<JsonValue, Error> {
+fun raven_derive_json_index(j: JsonValue, i: int) -> Result[JsonValue, Error] {
     return match j.at(i) {
-        Some(v) -> Ok(v),
-        None -> Err(Error { kind: "json", message: "missing payload element" }),
+        case Some(v) { Ok(v) }
+        case None { Err(Error(kind: "json", message: "missing payload element")) }
     }
 }
-fun raven_derive_json_arity(vals: JsonValue, n: Int) -> Result<Bool, Error> {
+fun raven_derive_json_arity(vals: JsonValue, n: int) -> Result[bool, Error] {
     return match vals {
-        Array(items) -> if items.len() == n { Ok(true) } else { Err(Error { kind: "json", message: "wrong number of payload values for variant" }) },
-        _ -> Err(Error { kind: "json", message: "enum payload values is not an array" }),
+        case Array(items) {
+            Ok(true) if items.len() == n else Err(Error(kind: "json", message: "wrong number of payload values for variant"))
+        }
+        case _ { Err(Error(kind: "json", message: "enum payload values is not an array")) }
     }
 }
-fun raven_derive_json_tag(j: JsonValue) -> Result<String, Error> {
+fun raven_derive_json_tag(j: JsonValue) -> Result[str, Error] {
     let t = raven_derive_json_field(j, "tag")?
     return match t {
-        Str(s) -> Ok(s),
-        _ -> Err(Error { kind: "json", message: "enum tag is not a string" }),
+        case Str(s) { Ok(s) }
+        case _ { Err(Error(kind: "json", message: "enum tag is not a string")) }
     }
 }
-fun raven_derive_tagged(tag: String, values: List<JsonValue>) -> JsonValue {
-    let m: Map<String, JsonValue> = Map.new()
+fun raven_derive_tagged(tag: str, values: list[JsonValue]) -> JsonValue {
+    let m: dict[str, JsonValue] = Map.new()
     m.set("tag", JsonValue.Str(tag))
     m.set("values", JsonValue.Array(values))
     return JsonValue.Object(m)
 }
-fun raven_derive_tagged_unit(tag: String) -> JsonValue {
-    let values: List<JsonValue> = []
+fun raven_derive_tagged_unit(tag: str) -> JsonValue {
+    let values: list[JsonValue] = []
     return raven_derive_tagged(tag, values)
 }
 "#;
@@ -525,7 +541,7 @@ fun raven_derive_tagged_unit(tag: String) -> JsonValue {
 fn render_type(ty: &Type) -> String {
     match &ty.kind {
         TypeKind::Path(p) => render_type_path(p),
-        TypeKind::Optional(inner) => format!("Option<{}>", render_type(inner)),
+        TypeKind::Optional(inner) => format!("Option[{}]", render_type(inner)),
         TypeKind::Unit => "()".to_string(),
         TypeKind::Dyn(p) => format!("dyn {}", render_type_path(p)),
         TypeKind::Function { .. } => "_".to_string(),
@@ -537,11 +553,22 @@ fn render_type_path(p: &TypePath) -> String {
         .segments
         .iter()
         .map(|s| {
+            let name = match s.name.as_str() {
+                "Int" => "int",
+                "Float" => "float",
+                "Bool" => "bool",
+                "String" => "str",
+                "Char" => "char",
+                "List" => "list",
+                "Map" => "dict",
+                "Set" => "set",
+                other => other,
+            };
             if s.generics.is_empty() {
-                s.name.clone()
+                name.to_string()
             } else {
                 let args: Vec<String> = s.generics.iter().map(render_type).collect();
-                format!("{}<{}>", s.name, args.join(", "))
+                format!("{}[{}]", name, args.join(", "))
             }
         })
         .collect();
@@ -553,7 +580,7 @@ fn render_type_path(p: &TypePath) -> String {
 /// object.
 fn struct_to_json_body(s: &Struct) -> String {
     let mut body = String::from(
-        "    fun to_json(self) -> JsonValue {\n        let m: Map<String, JsonValue> = Map.new()\n",
+        "    fun to_json(self) -> JsonValue {\n        let m: dict[str, JsonValue] = Map.new()\n",
     );
     for f in &s.fields {
         body.push_str(&format!(
@@ -569,7 +596,7 @@ fn struct_to_json_body(s: &Struct) -> String {
 /// decode it to the field's declared type, propagating a missing or wrong
 /// typed field as an `Err`, then construct the struct.
 fn struct_from_json_body(s: &Struct, self_ty: &str) -> String {
-    let mut body = format!("    fun from_json(j: JsonValue) -> Result<{self_ty}, Error> {{\n");
+    let mut body = format!("    fun from_json(j: JsonValue) -> Result[{self_ty}, Error] {{\n");
     for f in &s.fields {
         body.push_str(&format!(
             "        let f_{0}: {1} = raven_derive_json_decode(raven_derive_json_field(j, \"{0}\")?)?\n",
@@ -583,10 +610,10 @@ fn struct_from_json_body(s: &Struct, self_ty: &str) -> String {
         .map(|f| format!("{0}: f_{0}", f.name))
         .collect();
     if inits.is_empty() {
-        body.push_str(&format!("        return Ok({} {{}})\n    }}\n", s.name));
+        body.push_str(&format!("        return Ok({}())\n    }}\n", s.name));
     } else {
         body.push_str(&format!(
-            "        return Ok({} {{ {} }})\n    }}\n",
+            "        return Ok({}({}))\n    }}\n",
             s.name,
             inits.join(", ")
         ));
@@ -613,14 +640,14 @@ fn enum_to_json_body(e: &Enum) -> String {
         let n = variant_arity(v);
         if n == 0 {
             body.push_str(&format!(
-                "            {0} -> raven_derive_tagged_unit(\"{0}\"),\n",
+                "            case {0} {{ raven_derive_tagged_unit(\"{0}\") }}\n",
                 v.name
             ));
         } else {
             let binds: Vec<String> = (0..n).map(|i| format!("a{i}")).collect();
             let vals: Vec<String> = (0..n).map(|i| format!("a{i}.to_json()")).collect();
             body.push_str(&format!(
-                "            {0}({1}) -> raven_derive_tagged(\"{0}\", [{2}]),\n",
+                "            case {0}({1}) {{ raven_derive_tagged(\"{0}\", [{2}]) }}\n",
                 v.name,
                 binds.join(", "),
                 vals.join(", ")
@@ -635,7 +662,7 @@ fn enum_to_json_body(e: &Enum) -> String {
 /// decode each payload slot positionally, and error on an unknown tag.
 fn enum_from_json_body(e: &Enum, self_ty: &str) -> String {
     let mut body = format!(
-        "    fun from_json(j: JsonValue) -> Result<{self_ty}, Error> {{\n        let tag = raven_derive_json_tag(j)?\n        let vals = raven_derive_json_field(j, \"values\")?\n"
+        "    fun from_json(j: JsonValue) -> Result[{self_ty}, Error] {{\n        let tag = raven_derive_json_tag(j)?\n        let vals = raven_derive_json_field(j, \"values\")?\n"
     );
     for v in &e.variants {
         body.push_str(&format!("        if tag.equals(\"{}\") {{\n", v.name));
@@ -668,7 +695,7 @@ fn enum_from_json_body(e: &Enum, self_ty: &str) -> String {
         body.push_str("        }\n");
     }
     body.push_str(
-        "        return Err(Error { kind: \"json\", message: \"unknown tag \".concat(tag) })\n    }\n",
+        "        return Err(Error(kind: \"json\", message: \"unknown tag \".concat(tag)))\n    }\n",
     );
     body
 }
@@ -716,7 +743,7 @@ mod tests {
     #[test]
     fn struct_derive_generates_one_impl_per_trait() {
         let impls =
-            derived_impls("@derive(Eq, Hash, ToString, Debug)\nstruct Point { x: Int, y: Int }\n");
+            derived_impls("@derive(Eq, Hash, ToString, Debug)\nclass Point { x: int, y: int }\n");
         let traits: Vec<String> = impls
             .iter()
             .map(|i| i.trait_or_type.segments[0].name.clone())
@@ -731,7 +758,7 @@ mod tests {
 
     #[test]
     fn generic_derive_carries_per_param_bound() {
-        let impls = derived_impls("@derive(Eq)\nstruct Pair<A, B> { first: A, second: B }\n");
+        let impls = derived_impls("@derive(Eq)\nclass Pair[A, B] { first: A, second: B }\n");
         let eq = &impls[0];
         // The impl is generic with the derived trait as each param's bound.
         let bounds: Vec<(String, String)> = eq
@@ -755,7 +782,7 @@ mod tests {
     #[test]
     fn enum_payload_derive_generates_eq_and_to_string() {
         let impls = derived_impls(
-            "@derive(Eq, ToString)\nenum Shape { Dot, Circle(Int), Rect(Int, Int) }\n",
+            "@derive(Eq, ToString)\nenum Shape { Dot, Circle(int), Rect(int, int) }\n",
         );
         assert_eq!(impls.len(), 2);
         for i in &impls {
@@ -765,13 +792,13 @@ mod tests {
 
     #[test]
     fn no_derive_generates_nothing() {
-        let impls = derived_impls("struct Point { x: Int }\n");
+        let impls = derived_impls("class Point { x: int }\n");
         assert!(impls.is_empty());
     }
 
     #[test]
     fn unsupported_trait_is_rejected() {
-        let file = parse_src("@derive(Clone)\nstruct Point { x: Int }\n");
+        let file = parse_src("@derive(Clone)\nclass Point { x: int }\n");
         let mut out = Vec::new();
         let err =
             expand_derives(&file.items, &mut out, "<derive>").expect_err("Clone is not derivable");
@@ -780,7 +807,7 @@ mod tests {
 
     #[test]
     fn ord_is_derivable() {
-        let impls = derived_impls("@derive(Ord)\nstruct P { x: Int, y: Int }\n");
+        let impls = derived_impls("@derive(Ord)\nclass P { x: int, y: int }\n");
         let traits: Vec<String> = impls
             .iter()
             .map(|i| i.trait_or_type.segments[0].name.clone())
@@ -792,20 +819,16 @@ mod tests {
     }
 
     #[test]
-    fn struct_variant_enum_is_rejected() {
-        let file = parse_src("@derive(Eq)\nenum E { V(a: Int) }\n");
+    fn named_variant_enum_derives() {
+        let file = parse_src("@derive(Eq)\nenum E { V(a: int) }\n");
         let mut out = Vec::new();
-        let err = expand_derives(&file.items, &mut out, "<derive>")
-            .expect_err("struct variant not supported");
-        assert!(
-            format!("{err}").contains("struct-style variant"),
-            "got: {err}"
-        );
+        expand_derives(&file.items, &mut out, "<derive>").expect("derive");
+        assert_eq!(out.len(), 1);
     }
 
     #[test]
     fn json_derive_generates_to_and_from_json_impls() {
-        let impls = derived_impls("@derive(ToJson, FromJson)\nstruct Point { x: Int, y: Int }\n");
+        let impls = derived_impls("@derive(ToJson, FromJson)\nclass Point { x: int, y: int }\n");
         let traits: Vec<String> = impls
             .iter()
             .map(|i| i.trait_or_type.segments[0].name.clone())
@@ -829,7 +852,7 @@ mod tests {
         // caller emits them once for the whole program. Emitting them per
         // derive call declared them several times in a multi-module project.
         let file = parse_src(
-            "@derive(ToJson)\nstruct A { x: Int }\n@derive(FromJson)\nstruct B { y: Int }\n",
+            "@derive(ToJson)\nclass A { x: int }\n@derive(FromJson)\nclass B { y: int }\n",
         );
         let mut out = Vec::new();
         let needs = expand_derives(&file.items, &mut out, "<derive>").expect("expand");
@@ -861,7 +884,7 @@ mod tests {
 
     #[test]
     fn non_json_derive_reports_no_helpers_needed() {
-        let file = parse_src("@derive(Eq)\nstruct Point { x: Int }\n");
+        let file = parse_src("@derive(Eq)\nclass Point { x: int }\n");
         let mut out = Vec::new();
         let needs = expand_derives(&file.items, &mut out, "<derive>").expect("expand");
         assert!(!needs, "no JSON helpers without a JSON derive");
@@ -873,7 +896,7 @@ mod tests {
 
     #[test]
     fn json_derive_on_generic_carries_per_param_bound() {
-        let impls = derived_impls("@derive(ToJson)\nstruct Pair<A, B> { first: A, second: B }\n");
+        let impls = derived_impls("@derive(ToJson)\nclass Pair[A, B] { first: A, second: B }\n");
         let to_json = &impls[0];
         let bounds: Vec<(String, String)> = to_json
             .generics
@@ -890,14 +913,148 @@ mod tests {
     }
 
     #[test]
-    fn json_derive_rejects_struct_variant_enum() {
-        let file = parse_src("@derive(ToJson)\nenum E { V(a: Int) }\n");
+    fn json_derive_accepts_named_variant_enum() {
+        let file = parse_src("@derive(ToJson)\nenum E { V(a: int) }\n");
         let mut out = Vec::new();
-        let err = expand_derives(&file.items, &mut out, "<derive>")
-            .expect_err("struct variant not supported");
-        assert!(
-            format!("{err}").contains("struct-style variant"),
-            "got: {err}"
-        );
+        expand_derives(&file.items, &mut out, "<derive>").expect("derive");
+        assert_eq!(out.len(), 1);
+    }
+}
+
+/// Derive `Eq`, `Hash`, and `ToString` for every type whose fields support them.
+pub fn add_implicit_derives(items: &mut [Decl]) {
+    if std::env::var_os("RAVEN_EXPERIMENT_NO_IMPLICIT").is_some() {
+        return;
+    }
+    for trait_name in ["Eq", "Hash", "ToString"] {
+        add_implicit(items, trait_name);
+    }
+}
+
+fn add_implicit(items: &mut [Decl], trait_name: &str) {
+    use std::collections::{HashMap, HashSet};
+    let mut has: HashSet<String> = HashSet::new();
+    let method = match trait_name {
+        "Eq" => "equals",
+        "Hash" => "hash",
+        _ => "to_string",
+    };
+    for d in items.iter() {
+        // A type that defines the trait's method itself keeps its own.
+        if let DeclKind::Impl(i) = &d.kind {
+            if i.for_type.is_none() && i.items.iter().any(|f| f.name == method) {
+                if let Some(seg) = i.trait_or_type.segments.last() {
+                    has.insert(seg.name.clone());
+                }
+            }
+        }
+        if let DeclKind::Impl(i) = &d.kind {
+            let is_trait = i
+                .trait_or_type
+                .segments
+                .last()
+                .is_some_and(|s| s.name == trait_name);
+            if let (true, Some(target)) = (is_trait, &i.for_type) {
+                if let Some(seg) = target.segments.last() {
+                    has.insert(seg.name.clone());
+                }
+            }
+        }
+    }
+    let mut fields: HashMap<String, (Vec<String>, Vec<Type>)> = HashMap::new();
+    for d in items.iter() {
+        match &d.kind {
+            DeclKind::Struct(s) => {
+                if s.derives.iter().any(|t| t == trait_name) {
+                    has.insert(s.name.clone());
+                } else if !s.repr_c {
+                    let gens = s.generics.iter().map(|g| g.name.clone()).collect();
+                    let tys = s.fields.iter().map(|f| f.ty.clone()).collect();
+                    fields.insert(s.name.clone(), (gens, tys));
+                }
+            }
+            DeclKind::Enum(e) => {
+                if e.derives.iter().any(|t| t == trait_name) {
+                    has.insert(e.name.clone());
+                    continue;
+                }
+                let mut tys = Vec::new();
+                let mut ok = true;
+                for v in &e.variants {
+                    match &v.payload {
+                        VariantPayload::Unit => {}
+                        VariantPayload::Tuple(ts) => tys.extend(ts.iter().cloned()),
+                        VariantPayload::Struct(_) => ok = false,
+                    }
+                }
+                if ok {
+                    let gens = e.generics.iter().map(|g| g.name.clone()).collect();
+                    fields.insert(e.name.clone(), (gens, tys));
+                }
+            }
+            _ => {}
+        }
+    }
+    for name in &has {
+        fields.remove(name);
+    }
+    let mut eligible: HashSet<String> = fields.keys().cloned().collect();
+    loop {
+        let before = eligible.len();
+        let snapshot = eligible.clone();
+        eligible.retain(|name| {
+            let (gens, tys) = &fields[name];
+            tys.iter()
+                .all(|t| type_supports(t, trait_name, gens, &snapshot, &has))
+        });
+        if eligible.len() == before {
+            break;
+        }
+    }
+    for d in items.iter_mut() {
+        match &mut d.kind {
+            DeclKind::Struct(s) if eligible.contains(&s.name) => s.derives.push(trait_name.into()),
+            DeclKind::Enum(e) if eligible.contains(&e.name) => e.derives.push(trait_name.into()),
+            _ => {}
+        }
+    }
+}
+
+fn type_supports(
+    t: &Type,
+    trait_name: &str,
+    gens: &[String],
+    eligible: &std::collections::HashSet<String>,
+    has: &std::collections::HashSet<String>,
+) -> bool {
+    match &t.kind {
+        TypeKind::Optional(inner) => {
+            trait_name != "Hash" && type_supports(inner, trait_name, gens, eligible, has)
+        }
+        TypeKind::Path(p) if p.segments.len() == 1 => {
+            let seg = &p.segments[0];
+            let args_ok = || {
+                seg.generics
+                    .iter()
+                    .all(|g| type_supports(g, trait_name, gens, eligible, has))
+            };
+            let builtin: &[&str] = match trait_name {
+                "Hash" => &["Int", "Bool", "Char", "String"],
+                _ => &["Int", "Float", "Bool", "Char", "String"],
+            };
+            let containers: &[&str] = match trait_name {
+                "Hash" => &[],
+                "ToString" => &["List", "Option", "Result"],
+                _ => &["List", "Option", "Result", "Map", "Set"],
+            };
+            match seg.name.as_str() {
+                n if builtin.contains(&n) => true,
+                n if containers.contains(&n) => args_ok(),
+                n if gens.iter().any(|g| g == n) => true,
+                n if eligible.contains(n) || has.contains(n) => args_ok(),
+                _ => false,
+            }
+        }
+        _ => false,
     }
 }

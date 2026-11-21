@@ -1,0 +1,8 @@
+id: int
+name: str
+active: bool
+--
+int
+str
+--
+value: int

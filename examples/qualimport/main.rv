@@ -1,0 +1,6 @@
+from std.io import println
+from "./lib" import banner
+
+fun main() {
+    println(banner("hi"))
+}

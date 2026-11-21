@@ -1,0 +1,22 @@
+// weighted_choice ignores weights past the item list and saturates the total
+// so a valid draw is never lost. Both results below are independent of the
+// RNG: the only item must win, and the near-maximum weight must win. Prints:
+//   Some(only)
+//   Some(first)
+import std.random
+from std.io import println
+
+fun show(picked: Option[str]) {
+    println(
+        match picked {
+            case Some(value) { "Some(${value})" }
+            case None { "None" }
+        },
+    )
+}
+
+fun main() {
+    let rng = Rng.new(0)
+    show(rng.weighted_choice(["only"], [1, 100]))
+    show(rng.weighted_choice(["first", "second"], [9223372036854775807, 1]))
+}

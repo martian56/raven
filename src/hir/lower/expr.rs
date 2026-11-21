@@ -83,6 +83,9 @@ pub(crate) fn lower_expr(
         return Ok(make_expr(HirExprKind::FnTrampoline, ty, span));
     }
     let kind = match &expr.kind {
+        ExprKind::IfLet { .. } | ExprKind::WhileLet { .. } => {
+            unreachable!("surface syntax is desugared after parsing")
+        }
         // A macro call should have been expanded before HIR lowering; reaching
         // here means the token pre-pass was skipped (only the formatter parses
         // un-expanded source, and it never lowers to HIR).
@@ -175,11 +178,51 @@ pub(crate) fn lower_expr(
                 &span,
             ));
         }
+        ExprKind::NamedArg { value, .. } => return lower_expr(value, _hint, cx),
+        ExprKind::Cast { .. } | ExprKind::Comprehension { .. } => {
+            unreachable!("surface syntax is desugared after parsing")
+        }
         ExprKind::Paren(inner) => {
             let lowered = lower_expr(inner, &ty, cx)?;
             HirExprKind::Paren(Box::new(lowered))
         }
         ExprKind::Block(b) => HirExprKind::Block(lower_block_to_block(b, &ty, cx)?),
+        ExprKind::Unary { operand, .. } if cx.typed.types.is_operator(&span) => {
+            let call = Expr {
+                kind: ExprKind::MethodCall {
+                    receiver: operand.clone(),
+                    name: "neg".into(),
+                    generics: Vec::new(),
+                    args: Vec::new(),
+                },
+                span: span.clone(),
+            };
+            return lower_expr(&call, _hint, cx);
+        }
+        ExprKind::Binary { op, lhs, rhs } if cx.typed.types.is_operator(&span) => {
+            let call = Expr {
+                kind: ExprKind::MethodCall {
+                    receiver: lhs.clone(),
+                    name: op.method_name().unwrap_or("add").into(),
+                    generics: Vec::new(),
+                    args: vec![(**rhs).clone()],
+                },
+                span: span.clone(),
+            };
+            return lower_expr(&call, _hint, cx);
+        }
+        ExprKind::Index { receiver, index } if cx.typed.types.is_operator(&span) => {
+            let call = Expr {
+                kind: ExprKind::MethodCall {
+                    receiver: receiver.clone(),
+                    name: "index".into(),
+                    generics: Vec::new(),
+                    args: vec![(**index).clone()],
+                },
+                span: span.clone(),
+            };
+            return lower_expr(&call, _hint, cx);
+        }
         ExprKind::Unary { op, operand } => {
             let lowered = lower_expr(operand, &Ty::Error, cx)?;
             HirExprKind::Unary {
@@ -190,6 +233,22 @@ pub(crate) fn lower_expr(
         ExprKind::Binary { op, lhs, rhs } => {
             let l = lower_expr(lhs, &Ty::Error, cx)?;
             let r = lower_expr(rhs, &Ty::Error, cx)?;
+            if matches!(op, BinaryOp::Eq | BinaryOp::Ne)
+                && matches!(l.ty.strip_self(), Ty::Struct { .. } | Ty::Enum { .. })
+                && !type_has_equals(cx.env, l.ty.strip_self())
+            {
+                return Err(RavenError::ty(
+                    crate::error::TypeError::Custom(format!(
+                        "`{}` cannot be compared with `{}`: it does not implement `Eq`",
+                        l.ty.strip_self(),
+                        op.symbol()
+                    )),
+                    span.clone(),
+                )
+                .with_hint(
+                    "plain data types get `==` automatically; a type holding a function, trait object, or pointer needs a hand-written `impl Eq`",
+                ));
+            }
             // `==`/`!=` on a struct or enum that implements `Eq` (a derived or
             // hand-written `equals` method) dispatch to that method, so
             // equality is by value rather than object identity. The
@@ -350,6 +409,15 @@ pub(crate) fn lower_expr(
                     cx.ty_at(&callee.span),
                     callee.span.clone(),
                 ),
+                (ExprKind::Ident { name, .. }, None)
+                    if name == "panic" && cx.is_unbound_builtin(&callee.span) =>
+                {
+                    make_expr(
+                        HirExprKind::Ident("__panic".into()),
+                        cx.ty_at(&callee.span),
+                        callee.span.clone(),
+                    )
+                }
                 _ => lower_expr(callee, &Ty::Error, cx)?,
             };
             let mut lowered = Vec::with_capacity(args.len());
@@ -837,6 +905,7 @@ fn lower_binop(op: BinaryOp) -> HirBinaryOp {
         BinaryOp::BitXor => HirBinaryOp::BitXor,
         BinaryOp::Shl => HirBinaryOp::Shl,
         BinaryOp::Shr => HirBinaryOp::Shr,
+        BinaryOp::In | BinaryOp::NotIn => unreachable!("membership is desugared after parsing"),
     }
 }
 
@@ -852,6 +921,27 @@ fn lower_try(
     let inner_ty = inner_lowered.ty.clone();
     let temp_v = cx.fresh("try_v");
     let temp_e = cx.fresh("try_e");
+    // In `main` with nothing to propagate to, a failure stops the program.
+    let in_main = cx.typed.types.is_try_panic(span);
+    let panic_with = |message: HirExpr| {
+        let callee = make_expr(
+            HirExprKind::Ident("__panic".into()),
+            Ty::Function {
+                params: vec![Ty::Str],
+                ret: Box::new(Ty::Unit),
+            },
+            span.clone(),
+        );
+        make_expr(
+            HirExprKind::Call {
+                callee: Box::new(callee),
+                args: vec![message],
+                type_args: Vec::new(),
+            },
+            Ty::Error,
+            span.clone(),
+        )
+    };
 
     let (ok_arm, err_arm) = match &inner_ty {
         Ty::Result(t, e) => {
@@ -862,11 +952,30 @@ fn lower_try(
                 inner_ty.clone(),
                 span.clone(),
             );
-            let return_expr = make_expr(
-                HirExprKind::Return(Some(Box::new(err_ctor))),
-                Ty::Error,
-                span.clone(),
-            );
+            let return_expr = if in_main {
+                let e_ty = (**e).clone();
+                let payload = ident_expr(&temp_e, e_ty.clone(), span.clone());
+                let text = if matches!(e_ty.strip_self(), Ty::Str) {
+                    payload
+                } else {
+                    make_expr(
+                        HirExprKind::MethodCall {
+                            receiver: Box::new(payload),
+                            name: "to_string".into(),
+                            args: Vec::new(),
+                        },
+                        Ty::Str,
+                        span.clone(),
+                    )
+                };
+                panic_with(text)
+            } else {
+                make_expr(
+                    HirExprKind::Return(Some(Box::new(err_ctor))),
+                    Ty::Error,
+                    span.clone(),
+                )
+            };
             let ok_arm = HirArm {
                 pattern: ctor_pat("Ok", vec![bind_pat(&temp_v, span.clone())], span.clone()),
                 guard: None,
@@ -884,11 +993,19 @@ fn lower_try(
         Ty::Option(t) => {
             let some_body = ident_expr(&temp_v, (**t).clone(), span.clone());
             let none_ctor = make_expr(HirExprKind::NoneCtor, inner_ty.clone(), span.clone());
-            let return_expr = make_expr(
-                HirExprKind::Return(Some(Box::new(none_ctor))),
-                Ty::Error,
-                span.clone(),
-            );
+            let return_expr = if in_main {
+                panic_with(make_expr(
+                    HirExprKind::Str("`?` found None".into()),
+                    Ty::Str,
+                    span.clone(),
+                ))
+            } else {
+                make_expr(
+                    HirExprKind::Return(Some(Box::new(none_ctor))),
+                    Ty::Error,
+                    span.clone(),
+                )
+            };
             let ok_arm = HirArm {
                 pattern: ctor_pat("Some", vec![bind_pat(&temp_v, span.clone())], span.clone()),
                 guard: None,
@@ -1003,6 +1120,7 @@ fn lower_for(
             end_lowered,
             *inclusive,
             None,
+            None,
             Ty::Int,
             body,
             span,
@@ -1010,6 +1128,85 @@ fn lower_for(
         ));
     }
 
+    let via_iter;
+    let iter = match &iter.kind {
+        ExprKind::MethodCall { receiver, name, .. } if name == "__for_iter" => {
+            if cx.typed.types.is_for_iter(&iter.span) {
+                via_iter = Expr {
+                    kind: ExprKind::MethodCall {
+                        receiver: receiver.clone(),
+                        name: "iter".into(),
+                        generics: Vec::new(),
+                        args: Vec::new(),
+                    },
+                    span: iter.span.clone(),
+                };
+                &via_iter
+            } else {
+                &**receiver
+            }
+        }
+        _ => iter,
+    };
+    if let ExprKind::Range {
+        start,
+        end,
+        inclusive,
+    } = &iter.kind
+    {
+        let start_lowered = lower_expr(start, &Ty::Int, cx)?;
+        let end_lowered = lower_expr(end, &Ty::Int, cx)?;
+        return Ok(lower_counter_for(
+            pat,
+            start_lowered,
+            end_lowered,
+            *inclusive,
+            None,
+            None,
+            Ty::Int,
+            body,
+            span,
+            cx,
+        ));
+    }
+    if let ExprKind::MethodCall {
+        receiver,
+        name,
+        args,
+        ..
+    } = &iter.kind
+    {
+        let mut range = &**receiver;
+        while let ExprKind::Paren(inner) = &range.kind {
+            range = inner;
+        }
+        if let (
+            "step",
+            [k],
+            ExprKind::Range {
+                start,
+                end,
+                inclusive,
+            },
+        ) = (name.as_str(), args.as_slice(), &range.kind)
+        {
+            let start_lowered = lower_expr(start, &Ty::Int, cx)?;
+            let end_lowered = lower_expr(end, &Ty::Int, cx)?;
+            let step = lower_expr(k, &Ty::Int, cx)?;
+            return Ok(lower_counter_for(
+                pat,
+                start_lowered,
+                end_lowered,
+                *inclusive,
+                Some(step),
+                None,
+                Ty::Int,
+                body,
+                span,
+                cx,
+            ));
+        }
+    }
     let source_expr = lower_expr(iter, &Ty::Error, cx)?;
     // A non-range, non-list iterable is any value whose type implements
     // `Iterator<T>`. Drive it through repeated `next()` calls.
@@ -1042,6 +1239,7 @@ fn lower_for(
         start_lowered,
         end_lowered,
         false,
+        None,
         Some(&list_name),
         element_ty,
         body,
@@ -1182,11 +1380,13 @@ fn lower_iterator_for(
 /// `Some`) makes the per-iteration binding `__list[__i]` instead of the
 /// raw counter `__i`. `element_ty` is the loop variable's type.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn lower_counter_for(
     pat: &crate::ast::Pattern,
     start: HirExpr,
     end: HirExpr,
     inclusive: bool,
+    step: Option<HirExpr>,
     list_name: Option<&str>,
     element_ty: Ty,
     body: &AstBlock,
@@ -1195,129 +1395,126 @@ fn lower_counter_for(
 ) -> HirExpr {
     let i_name = cx.fresh("i");
     let end_name = cx.fresh("end");
-    let first_name = cx.fresh("first");
+    let stop_name = cx.fresh("stop");
+    let int = |n: i64| make_expr(HirExprKind::Int(n), Ty::Int, span.clone());
+    let var = |name: &str, ty: Ty| ident_expr(name, ty, span.clone());
+    let bin = |op: HirBinaryOp, l: HirExpr, r: HirExpr, ty: Ty| {
+        make_expr(
+            HirExprKind::Binary {
+                op,
+                lhs: Box::new(l),
+                rhs: Box::new(r),
+            },
+            ty,
+            span.clone(),
+        )
+    };
+    let stmt = |e: HirExpr| HirStmt {
+        kind: HirStmtKind::Expr(e),
+        span: span.clone(),
+    };
+    let if_then = |cond: HirExpr, then: Vec<HirStmt>, otherwise: Option<HirBlock>| {
+        make_expr(
+            HirExprKind::If {
+                cond: Box::new(cond),
+                then_block: HirBlock {
+                    stmts: then,
+                    tail: None,
+                    ty: Ty::Unit,
+                    span: span.clone(),
+                },
+                else_block: otherwise,
+            },
+            Ty::Unit,
+            span.clone(),
+        )
+    };
+    let brk = || stmt(make_expr(HirExprKind::Break(None), Ty::Error, span.clone()));
 
-    let end_let = let_stmt(&end_name, Ty::Int, end, span.clone());
-    let i_let = let_stmt(&i_name, Ty::Int, start, span.clone());
-    let first_let = let_stmt(
-        &first_name,
+    // A literal negative step counts down.
+    let down = matches!(&step, Some(HirExpr { kind: HirExprKind::Int(n), .. }) if *n < 0)
+        || matches!(&step, Some(HirExpr {
+            kind: HirExprKind::Unary { operand, .. },
+            ..
+        }) if matches!(operand.kind, HirExprKind::Int(n) if n > 0));
+    let mut setup = vec![
+        let_stmt(&i_name, Ty::Int, start, span.clone()),
+        let_stmt(&end_name, Ty::Int, end, span.clone()),
+    ];
+    let step_expr = match step {
+        None => int(1),
+        Some(
+            e @ HirExpr {
+                kind: HirExprKind::Int(_),
+                ..
+            },
+        ) => e,
+        Some(e) => {
+            let step_name = cx.fresh("step");
+            setup.push(let_stmt(&step_name, Ty::Int, e, span.clone()));
+            var(&step_name, Ty::Int)
+        }
+    };
+    if inclusive {
+        setup.push(let_stmt(
+            &stop_name,
+            Ty::Bool,
+            make_expr(HirExprKind::Bool(false), Ty::Bool, span.clone()),
+            span.clone(),
+        ));
+    }
+
+    // Stop once the counter passes `end` (or reaches it, for `..`).
+    let past = match (inclusive, down) {
+        (false, false) => HirBinaryOp::Ge,
+        (false, true) => HirBinaryOp::Le,
+        (true, false) => HirBinaryOp::Gt,
+        (true, true) => HirBinaryOp::Lt,
+    };
+    let mut cond = bin(
+        past,
+        var(&i_name, Ty::Int),
+        var(&end_name, Ty::Int),
         Ty::Bool,
-        make_expr(HirExprKind::Bool(true), Ty::Bool, span.clone()),
-        span.clone(),
     );
+    if inclusive {
+        cond = bin(HirBinaryOp::Or, var(&stop_name, Ty::Bool), cond, Ty::Bool);
+    }
+    let break_guard = if_then(cond, vec![brk()], None);
 
-    // if __first { __first = false } else { __i = __i + 1 }
-    let set_first_false = assign_stmt(
-        HirAssignTarget::Ident {
-            name: first_name.clone(),
-            span: span.clone(),
-        },
-        make_expr(HirExprKind::Bool(false), Ty::Bool, span.clone()),
-        span.clone(),
-    );
+    // Advance before the body so `continue` still steps. An inclusive range
+    // stops at `end` instead of stepping past it, which could overflow.
     let inc = assign_stmt(
         HirAssignTarget::Ident {
             name: i_name.clone(),
             span: span.clone(),
         },
-        make_expr(
-            HirExprKind::Binary {
-                op: HirBinaryOp::Add,
-                lhs: Box::new(ident_expr(&i_name, Ty::Int, span.clone())),
-                rhs: Box::new(make_expr(HirExprKind::Int(1), Ty::Int, span.clone())),
-            },
-            Ty::Int,
-            span.clone(),
-        ),
+        bin(HirBinaryOp::Add, var(&i_name, Ty::Int), step_expr, Ty::Int),
         span.clone(),
     );
-    // For an inclusive range the counter must not be incremented past `end`:
-    // a loop to `i64::MAX` would wrap to `i64::MIN` and run forever. Once `__i`
-    // has reached `end`, break instead of incrementing. This sits in the
-    // advance step at the top of the loop, so it also holds when the body uses
-    // `continue`. An exclusive range stops at `end` before ever incrementing
-    // into it, so it keeps the plain increment.
-    let step_block = if inclusive {
-        let at_end = make_expr(
-            HirExprKind::Binary {
-                op: HirBinaryOp::Eq,
-                lhs: Box::new(ident_expr(&i_name, Ty::Int, span.clone())),
-                rhs: Box::new(ident_expr(&end_name, Ty::Int, span.clone())),
-            },
+    let advance = if inclusive {
+        let at_end = bin(
+            HirBinaryOp::Eq,
+            var(&i_name, Ty::Int),
+            var(&end_name, Ty::Int),
             Ty::Bool,
-            span.clone(),
         );
-        let break_at_end = HirStmt {
-            kind: HirStmtKind::Expr(make_expr(HirExprKind::Break(None), Ty::Error, span.clone())),
-            span: span.clone(),
-        };
-        let guarded = make_expr(
-            HirExprKind::If {
-                cond: Box::new(at_end),
-                then_block: HirBlock {
-                    stmts: vec![break_at_end],
-                    tail: None,
-                    ty: Ty::Unit,
-                    span: span.clone(),
-                },
-                else_block: Some(block_of_stmt(inc, span)),
-            },
-            Ty::Unit,
-            span.clone(),
-        );
-        block_of_stmt(
-            HirStmt {
-                kind: HirStmtKind::Expr(guarded),
+        let set_stop = assign_stmt(
+            HirAssignTarget::Ident {
+                name: stop_name.clone(),
                 span: span.clone(),
             },
-            span,
-        )
+            make_expr(HirExprKind::Bool(true), Ty::Bool, span.clone()),
+            span.clone(),
+        );
+        stmt(if_then(
+            at_end,
+            vec![set_stop],
+            Some(block_of_stmt(inc, span)),
+        ))
     } else {
-        block_of_stmt(inc, span)
+        inc
     };
-    let advance = make_expr(
-        HirExprKind::If {
-            cond: Box::new(ident_expr(&first_name, Ty::Bool, span.clone())),
-            then_block: block_of_stmt(set_first_false, span),
-            else_block: Some(step_block),
-        },
-        Ty::Unit,
-        span.clone(),
-    );
-
-    // if __i >= __end { break }   (or `>` for an inclusive range)
-    let break_op = if inclusive {
-        HirBinaryOp::Gt
-    } else {
-        HirBinaryOp::Ge
-    };
-    let break_cond = make_expr(
-        HirExprKind::Binary {
-            op: break_op,
-            lhs: Box::new(ident_expr(&i_name, Ty::Int, span.clone())),
-            rhs: Box::new(ident_expr(&end_name, Ty::Int, span.clone())),
-        },
-        Ty::Bool,
-        span.clone(),
-    );
-    let break_stmt = HirStmt {
-        kind: HirStmtKind::Expr(make_expr(HirExprKind::Break(None), Ty::Error, span.clone())),
-        span: span.clone(),
-    };
-    let break_guard = make_expr(
-        HirExprKind::If {
-            cond: Box::new(break_cond),
-            then_block: HirBlock {
-                stmts: vec![break_stmt],
-                tail: None,
-                ty: Ty::Unit,
-                span: span.clone(),
-            },
-            else_block: None,
-        },
-        Ty::Unit,
-        span.clone(),
-    );
 
     // The per-iteration element: `__list[__i]` for a list, else `__i`.
     let element_init = match list_name {
@@ -1423,16 +1620,10 @@ fn lower_counter_for(
         Err(_) => simple_let(&cx.fresh("loopvar"), element_ty, element_init, body_expr),
     };
 
-    let mut loop_stmts = vec![
-        HirStmt {
-            kind: HirStmtKind::Expr(advance),
-            span: span.clone(),
-        },
-        HirStmt {
-            kind: HirStmtKind::Expr(break_guard),
-            span: span.clone(),
-        },
-    ];
+    let mut loop_stmts = vec![stmt(break_guard)];
+    let mut bind_and_body = bind_and_body.into_iter();
+    loop_stmts.extend(bind_and_body.next());
+    loop_stmts.push(advance);
     loop_stmts.extend(bind_and_body);
     let loop_block = HirBlock {
         stmts: loop_stmts,
@@ -1445,7 +1636,7 @@ fn lower_counter_for(
     let block = HirBlock {
         // `i_let` (the start bound) before `end_let` so a `start..end` range
         // evaluates its bounds left to right, matching source order.
-        stmts: vec![i_let, end_let, first_let],
+        stmts: setup,
         tail: Some(Box::new(loop_expr)),
         ty: Ty::Unit,
         span: span.clone(),
@@ -1896,7 +2087,7 @@ fn fold_binary(op: BinaryOp, l: HirExprKind, r: HirExprKind) -> Option<HirExprKi
             Le => Some(Bool(a <= b)),
             Gt => Some(Bool(a > b)),
             Ge => Some(Bool(a >= b)),
-            And | Or => None,
+            And | Or | In | NotIn => None,
         },
         (Float(a), Float(b)) => match op {
             Add => Some(Float(a + b)),

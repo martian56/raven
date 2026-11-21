@@ -1,0 +1,28 @@
+// A trait used as a type holds any value whose class implements it.
+trait Shape {
+    fun area(self) -> float
+}
+
+class Sq: Shape {
+    s: float
+
+    fun area(self) -> float = self.s * self.s
+}
+
+class Circ: Shape {
+    r: float
+
+    fun area(self) -> float = 3.0 * self.r * self.r
+}
+
+fun describe(s: Shape) -> str = "area ${s.area()}"
+
+fun total(shapes: list[Shape]) -> float = sum([s.area() for s in shapes])
+
+fun main() {
+    print(describe(Sq(2.0)))
+    print(total([Sq(1.0), Circ(1.0)]))
+    let shapes: list[Shape] = []
+    shapes.push(Circ(2.0))
+    print(len(shapes))
+}

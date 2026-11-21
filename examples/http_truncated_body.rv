@@ -1,0 +1,17 @@
+// golden:skip - GETs a loopback server (URL in RAVEN_HTTP_URL) that
+// advertises a larger Content-Length than it sends and then closes; the
+// truncation handling is checked in codegen_smoke.rs
+// (http_detects_truncated_body). A truncated response is an error, so this
+// prints:
+//   truncated
+from std.http import get
+from std.env import get_env
+from std.io import println
+
+fun main() {
+    let url = get_env("RAVEN_HTTP_URL")
+    match get(url) {
+        case Ok(resp) { println("ok ${resp.status_code}") }
+        case Err(e) { println("truncated") }
+    }
+}

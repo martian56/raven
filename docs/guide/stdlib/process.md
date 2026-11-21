@@ -1,0 +1,281 @@
+# std/process
+
+Run external programs either to completion or as a live child. `run` waits and
+returns captured output; `start` returns a `Child` that can exchange stdin,
+drain stdout and stderr incrementally, poll or wait for exit, and be killed.
+
+```rust
+from std.process import run
+
+fun main() {
+    let args = ["--version"]
+    match run("git", args) {
+        case Ok(out) { print(out.stdout) }
+        case Err(e) { print("could not run git: ${e.message}") }
+    }
+}
+```
+
+## Importing
+
+```rust
+from std.process import run, run_with_input, start
+```
+
+Bring in just the functions you call. `Output`, `Child`, and their methods
+come in with the module and need no separate selectors.
+
+## The `Output` type
+
+```rust
+class Output {
+    code: int
+    stdout: str
+    stderr: str
+}
+```
+
+A finished child's captured result.
+
+| Field | Meaning |
+|-------|---------|
+| `code` | The exit code. `0` is a clean exit; any other value is the program's own status. A child killed by a signal with no exit code reports `-1`. |
+| `stdout` | Everything the child wrote to standard output, captured in full. |
+| `stderr` | Everything the child wrote to standard error, captured in full. |
+
+### `success(self) -> bool`
+
+True when `code` is `0`.
+
+```rust
+from std.process import run
+
+fun main() {
+    let no_args: list[str] = []
+    match run("true", no_args) {
+        case Ok(out) { print(out.success()) } // true
+        case Err(e) { print(e.message) }
+    }
+}
+```
+
+## The `Child` type
+
+```rust
+class Child {
+    id: int
+}
+```
+
+`start` returns a handle to a child that may still be running. Its opaque
+`id` is managed by the runtime; use the methods below instead of inspecting
+the field.
+
+### `read_stdout(self) -> str` and `read_stderr(self) -> str`
+
+Drain all bytes accumulated on that stream since the previous read. An empty
+string means nothing new is available. Each stream retains at most 8 MiB; keep
+draining a noisy long-running child if every byte matters.
+
+### `write_stdin(self, data: str) -> bool`
+
+Write and flush `data` to the child's stdin. It returns `false` if stdin was
+closed, the child exited, the pipe broke, or the handle is no longer valid.
+Raven strings are byte buffers, so binary data is passed through unchanged.
+
+### `close_stdin(self)`
+
+Close stdin and send EOF. Call this after the final write when the child waits
+for end of input before producing output or exiting.
+
+### `poll(self) -> Option[int]` and `running(self) -> bool`
+
+`poll` returns `None` while the child runs and `Some(code)` once it exits.
+`running` is the boolean form. A signal termination without an OS exit code is
+reported as `-1`.
+
+### `wait(self) -> int`
+
+Wait for exit and return the code. Waiting polls with a short scheduler-aware
+sleep, so other Raven goroutines continue to run.
+
+### `kill(self) -> bool`
+
+Stop the child. It returns `true` when the kill was delivered or the process
+had already exited.
+
+### `free(self)`
+
+Release the handle after collecting the final output and status. `free` does
+not kill a running process, although the runtime still guarantees it will be
+reaped after exit.
+
+## Running a program
+
+### `start(program: str, args: list[str]) -> Result[Child, Error]`
+
+Start a child without waiting. Runtime reader threads continuously collect
+stdout and stderr so the process does not block on full pipes. Drain the
+buffers while it runs and call `free` when finished.
+
+```rust
+from std.process import start
+from std.sync import sleep_millis
+
+fun main() {
+    let args = ["--version"]
+    match start("git", args) {
+        case Ok(child) {
+            while child.running() {
+                let chunk = child.read_stdout()
+                if chunk.length() > 0 {
+                    print(chunk)
+                }
+                sleep_millis(10)
+            }
+            print(child.read_stdout()) // drain bytes written before exit
+            let code = child.wait()
+            child.free()
+            print("exit ${code}")
+        }
+        case Err(e) { print("could not start git: ${e.message}") }
+    }
+}
+```
+
+For an interactive child, call `write_stdin` as needed and then
+`close_stdin` to send EOF:
+
+```rust
+from std.process import start
+
+fun main() {
+    let no_args: list[str] = []
+    match start("cat", no_args) {
+        case Ok(child) {
+            child.write_stdin("hello\n")
+            child.close_stdin()
+            let code = child.wait()
+            print(child.read_stdout())
+            child.free()
+            print("exit ${code}")
+        }
+        case Err(e) { print(e.message) }
+    }
+}
+```
+
+### `run(program: str, args: list[str]) -> Result[Output, Error]`
+
+Spawn `program` with `args`, feed it no stdin, and wait for it to finish. On
+success returns `Ok(Output)` with the captured code, stdout, and stderr.
+
+`args` is the argument list with no leading program name (that is `program`).
+When a program takes no arguments, pass an explicitly typed empty list so the
+element type is known:
+
+```rust
+let no_args: list[str] = []
+```
+
+A bare `[]` has no element type the checker can infer here, so the annotation
+is required.
+
+```rust
+from std.process import run
+
+fun main() {
+    let args = ["-l", "/tmp"]
+    match run("ls", args) {
+        case Ok(out) { print(out.stdout) }
+        case Err(e) { print("spawn failed: ${e.message}") }
+    }
+}
+```
+
+### `run_with_input(program: str, args: list[str], input: str) -> Result[Output, Error]`
+
+Like `run`, but writes `input` to the child's stdin and then closes it. Use
+this for programs that read from standard input.
+
+```rust
+from std.process import run_with_input
+
+fun main() {
+    let no_args: list[str] = []
+    match run_with_input("cat", no_args, "hello\n") {
+        case Ok(out) { print(out.stdout) } // hello
+        case Err(e) { print(e.message) }
+    }
+}
+```
+
+## A non-zero exit is not an error
+
+A program that spawns and runs but exits with a non-zero code is a normal,
+successful run: its code and output are captured and `run` returns
+`Ok(Output)`. You decide what a non-zero exit means by inspecting `code` (or
+calling `success()`).
+
+The `Err` path is taken only on a spawn failure, for example when the program
+is not found or cannot be executed. The error is
+`Err(Error { kind: "process", message })`, where `message` is the OS error
+text. The `Error` type comes from [std/error](error.md).
+
+```rust
+from std.process import run
+
+fun main() {
+    let args = ["status", "--short"]
+    match run("git", args) {
+        case Ok(out) {
+            if out.success() {
+                print(out.stdout)
+            } else {
+                // The program ran but reported a non-zero status.
+                print("git exited with ${out.code}")
+                print(out.stderr)
+            }
+        }
+        case Err(e) { print("could not start git: ${e.message}") }
+    }
+}
+```
+
+## Worked example: read the current branch
+
+Run `git` to print the current branch name, falling back to a label when the
+command is missing or reports a failure.
+
+```rust
+from std.process import run
+import std.string
+
+fun current_branch() -> str {
+    let args = ["rev-parse", "--abbrev-ref", "HEAD"]
+    return match run("git", args) {
+        case Ok(out) { out.stdout.trim() if out.success() else "unknown" }
+        case Err(_) { "no git" }
+    }
+}
+
+fun main() {
+    print(current_branch())
+}
+```
+
+## Notes
+
+- `run` and `run_with_input` capture stdout and stderr in full before
+  returning. Use `start` for incremental output or interactive stdin.
+- An argument that itself contains a NUL byte (`\0`) is not supported.
+- A child that reads no stdin under `run` sees end of input immediately.
+  Under `run_with_input`, a broken pipe (the child exits without reading) is
+  ignored and you still get its captured output.
+
+## See also
+
+- [std/error](error.md) for the `Error` type and the `Result` model used by
+  `run`, `run_with_input`, and `start`.
+- [std/sync](sync.md) for scheduler-aware sleeps while polling a child.
+- [std/string](string.md) for trimming and inspecting captured output.

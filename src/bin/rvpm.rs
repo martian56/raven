@@ -749,6 +749,28 @@ fn cmd_test(args: &[String]) -> ExitCode {
         println!("{}", test_usage());
         return ExitCode::SUCCESS;
     }
+    let mut filter: Option<String> = None;
+    let mut rest: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        let a = &args[i];
+        if a == "-p" || a == "--package" {
+            rest.push(a.clone());
+            if let Some(v) = args.get(i + 1) {
+                rest.push(v.clone());
+            }
+            i += 2;
+            continue;
+        }
+        if !a.starts_with('-') && filter.is_none() {
+            filter = Some(a.clone());
+        } else {
+            rest.push(a.clone());
+        }
+        i += 1;
+    }
+    let args = &rest[..];
+    let filter = filter.as_deref();
     let selection = match parse_package_selection(args, "test", true) {
         Ok(selection) => selection,
         Err(e) => {
@@ -778,7 +800,7 @@ fn cmd_test(args: &[String]) -> ExitCode {
         let mut failed = 0usize;
         for member in workspace.members() {
             println!("package {}", member.name);
-            match ops::test(&member.root) {
+            match ops::test(&member.root, filter) {
                 Ok(report) => {
                     failed += report.failed;
                     for line in report.outcome_lines {
@@ -804,7 +826,7 @@ fn cmd_test(args: &[String]) -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    match ops::test(&project) {
+    match ops::test(&project, filter) {
         Ok(report) => {
             for line in &report.outcome_lines {
                 println!("{}", line);
@@ -1124,7 +1146,7 @@ fn dist_usage() -> String {
         "Without --target, the manifest's [dist].targets applies; without a",
         "[dist] section, the host default does (zip on Windows, tar elsewhere).",
         "Metadata, extra files, and installer settings live in the optional",
-        "[dist] section of rv.toml; see docs/v2/specs/rvpm-dist.md.",
+        "[dist] section of rv.toml; see docs/specs/rvpm-dist.md.",
     ]
     .join("\n")
 }
@@ -1134,7 +1156,10 @@ fn run_usage() -> String {
 }
 
 fn test_usage() -> String {
-    "Usage: rvpm test [-p <package> | --workspace]".to_string()
+    "Usage: rvpm test [NAME] [-p <package> | --workspace]
+
+Runs `fun test_*` functions in `*_test.rv` files; with NAME, only tests whose name contains it."
+        .to_string()
 }
 
 fn workspace_usage() -> String {
@@ -1172,7 +1197,7 @@ fn print_usage() {
     println!("  build          Compile src/main.rv to a binary, or type-check a lib.rv library");
     println!("  dist           Package the built application (tar, zip, deb, rpm, msi, inno)");
     println!("  run [args]     Build the application then run it, forwarding args");
-    println!("  test           Run fun test_*() tests in *_test.rv files");
+    println!("  test [NAME]    Run fun test_*() tests in *_test.rv files (NAME filters)");
     println!("  doc            Generate Markdown API docs into target/doc");
     println!("  fmt [paths]    Format .rv files in place (--check to verify only)");
     println!("  fetch <pkg>    Fetch 'github.com/<user>/<repo>@<version>' into the shared cache");

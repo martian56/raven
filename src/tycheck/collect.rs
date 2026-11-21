@@ -225,7 +225,196 @@ pub fn collect_declarations(
             }
         }
     }
+    check_trait_impls(env)?;
     Ok(())
+}
+
+/// Check each trait impl's methods against the trait's signatures.
+fn check_trait_impls(env: &TypeEnv) -> Result<(), RavenError> {
+    for imp in &env.impls {
+        let Some(trait_name) = &imp.trait_name else {
+            continue;
+        };
+        let mut found = env.traits.values().filter(|t| &t.name == trait_name);
+        let (Some(tr), None) = (found.next(), found.next()) else {
+            continue;
+        };
+        let self_ty = imp.self_ty.strip_self().clone();
+        let mut names: Vec<&String> = imp.methods.keys().collect();
+        names.sort();
+        for name in names {
+            if !tr.methods.contains_key(name) {
+                let m = &imp.methods[name];
+                return Err(RavenError::ty(
+                    TypeError::Custom(format!(
+                        "method `{name}` is not a member of trait `{trait_name}`"
+                    )),
+                    m.span.clone(),
+                ));
+            }
+        }
+        for name in &tr.method_order {
+            let want = &tr.methods[name];
+            let Some(have) = imp.methods.get(name) else {
+                return Err(RavenError::ty(
+                    TypeError::Custom(format!(
+                        "`impl {trait_name} for {self_ty}` is missing method `{name}`"
+                    )),
+                    imp.span.clone(),
+                ));
+            };
+            let mut subst: HashMap<ParamId, Ty> = HashMap::new();
+            for (g, a) in tr.generics.iter().zip(imp.trait_args.iter()) {
+                subst.insert(g.id.clone(), a.clone());
+            }
+            if want.generics.len() != have.generics.len() {
+                return Err(sig_mismatch(
+                    trait_name,
+                    name,
+                    have,
+                    format!(
+                        "the trait declares {} type parameter(s), the impl {}",
+                        want.generics.len(),
+                        have.generics.len()
+                    ),
+                ));
+            }
+            for (g, h) in want.generics.iter().zip(have.generics.iter()) {
+                subst.insert(g.id.clone(), Ty::Param(h.id.clone()));
+            }
+            if want.has_self != have.has_self {
+                let detail = if want.has_self {
+                    "the trait method takes `self`, the impl method does not"
+                } else {
+                    "the impl method takes `self`, the trait method does not"
+                };
+                return Err(sig_mismatch(trait_name, name, have, detail.into()));
+            }
+            if want.params.len() != have.params.len() {
+                return Err(sig_mismatch(
+                    trait_name,
+                    name,
+                    have,
+                    format!(
+                        "the trait method takes {} parameter(s), the impl method {}",
+                        want.params.len(),
+                        have.params.len()
+                    ),
+                ));
+            }
+            let norm = |t: &Ty| substitute_self(&super::infer::substitute(t, &subst), &self_ty);
+            let skip = usize::from(want.has_self);
+            for (i, (w, h)) in want
+                .params
+                .iter()
+                .zip(have.params.iter())
+                .enumerate()
+                .skip(skip)
+            {
+                let (w, h) = (norm(w), norm(h));
+                if !sig_ty_eq(&w, &h) {
+                    return Err(sig_mismatch(
+                        trait_name,
+                        name,
+                        have,
+                        format!(
+                            "parameter {} should be `{w}`, but it is `{h}`",
+                            i + 1 - skip
+                        ),
+                    ));
+                }
+            }
+            let (w, h) = (norm(&want.ret), norm(&have.ret));
+            if !sig_ty_eq(&w, &h) {
+                return Err(sig_mismatch(
+                    trait_name,
+                    name,
+                    have,
+                    format!("the return type should be `{w}`, but it is `{h}`"),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn sig_mismatch(trait_name: &str, name: &str, have: &FnSig, detail: String) -> RavenError {
+    RavenError::ty(
+        TypeError::Custom(format!(
+            "method `{name}` does not match its declaration in trait `{trait_name}`: {detail}"
+        )),
+        have.span.clone(),
+    )
+}
+
+fn sig_ty_eq(a: &Ty, b: &Ty) -> bool {
+    match (a, b) {
+        (Ty::Error, _) | (_, Ty::Error) => true,
+        (Ty::SelfTy(x), y) | (y, Ty::SelfTy(x)) => sig_ty_eq(x, y),
+        (Ty::Option(x), Ty::Option(y)) | (Ty::List(x), Ty::List(y)) => sig_ty_eq(x, y),
+        (Ty::Result(a1, b1), Ty::Result(a2, b2)) => sig_ty_eq(a1, a2) && sig_ty_eq(b1, b2),
+        (
+            Ty::Struct {
+                id: i1, args: a1, ..
+            },
+            Ty::Struct {
+                id: i2, args: a2, ..
+            },
+        )
+        | (
+            Ty::Enum {
+                id: i1, args: a1, ..
+            },
+            Ty::Enum {
+                id: i2, args: a2, ..
+            },
+        ) => i1 == i2 && a1.len() == a2.len() && a1.iter().zip(a2).all(|(x, y)| sig_ty_eq(x, y)),
+        (
+            Ty::Function {
+                params: p1,
+                ret: r1,
+            },
+            Ty::Function {
+                params: p2,
+                ret: r2,
+            },
+        ) => {
+            p1.len() == p2.len()
+                && p1.iter().zip(p2).all(|(x, y)| sig_ty_eq(x, y))
+                && sig_ty_eq(r1, r2)
+        }
+        (Ty::Ffi(FfiTy::CPtr(x)), Ty::Ffi(FfiTy::CPtr(y))) => sig_ty_eq(x, y),
+        (Ty::Dyn { name: n1, .. }, Ty::Dyn { name: n2, .. }) => n1 == n2,
+        _ => a == b,
+    }
+}
+
+fn substitute_self(ty: &Ty, target: &Ty) -> Ty {
+    match ty {
+        Ty::SelfTy(_) => target.clone(),
+        Ty::Option(t) => Ty::Option(Box::new(substitute_self(t, target))),
+        Ty::List(t) => Ty::List(Box::new(substitute_self(t, target))),
+        Ty::Result(a, b) => Ty::Result(
+            Box::new(substitute_self(a, target)),
+            Box::new(substitute_self(b, target)),
+        ),
+        Ty::Struct { id, name, args } => Ty::Struct {
+            id: *id,
+            name: name.clone(),
+            args: args.iter().map(|a| substitute_self(a, target)).collect(),
+        },
+        Ty::Enum { id, name, args } => Ty::Enum {
+            id: *id,
+            name: name.clone(),
+            args: args.iter().map(|a| substitute_self(a, target)).collect(),
+        },
+        Ty::Function { params, ret } => Ty::Function {
+            params: params.iter().map(|a| substitute_self(a, target)).collect(),
+            ret: Box::new(substitute_self(ret, target)),
+        },
+        Ty::Ffi(FfiTy::CPtr(t)) => Ty::Ffi(FfiTy::CPtr(Box::new(substitute_self(t, target)))),
+        other => other.clone(),
+    }
 }
 
 /// The type of a literal initializer expression, or `None` when it is not a
@@ -390,7 +579,7 @@ fn fill_struct(
 /// `CFloat`, `CDouble`, `CStr`, `CPtr<T>`, `CFnPtr`) or a nested `@repr(C)`
 /// struct. There is no size limit: up to 16 bytes the struct crosses in
 /// registers, and a larger one in memory (the System V MEMORY class) or by
-/// reference (Windows x64, AArch64). See `docs/v2/specs/ffi-extensions.md`.
+/// reference (Windows x64, AArch64). See `docs/specs/ffi-extensions.md`.
 fn validate_repr_c(id: DeclId, span: &Span, env: &TypeEnv) -> Result<(), RavenError> {
     repr_c_struct_layout(id, span, env, &mut Vec::new())?;
     Ok(())
@@ -434,7 +623,7 @@ fn repr_c_struct_layout(
             Ty::Ffi(ffi) => ffi.c_scalar_layout().ok_or_else(|| {
                 ty_custom(
                     &format!(
-                        "field `{}` of `@repr(C)` struct `{}` has type `{}`, which cannot cross the FFI by value; use a C scalar (CInt, CLong, CSize, CFloat, CDouble, CStr, CPtr<T>) or a `@repr(C)` struct",
+                        "field `{}` of `@repr(C)` struct `{}` has type `{}`, which cannot cross the FFI by value; use a C scalar (CInt, CLong, CSize, CFloat, CDouble, CStr, CPtr[T]) or a `@repr(C)` struct",
                         f.name, name, f.ty
                     ),
                     &f.span,
@@ -647,6 +836,14 @@ fn fill_impl(i: &Impl, resolved: &ResolvedFile<'_>, env: &mut TypeEnv) -> Result
         None => (&i.trait_or_type, None),
     };
     let self_ty = resolve_type_path(impl_path, resolved, env, None, &scope)?;
+    let trait_args = match (&trait_name, i.trait_or_type.segments.last()) {
+        (Some(_), Some(seg)) => seg
+            .generics
+            .iter()
+            .map(|g| resolve_ty(g, resolved, env, Some(&self_ty), &scope).unwrap_or(Ty::Error))
+            .collect(),
+        _ => Vec::new(),
+    };
 
     let mut methods = HashMap::new();
     for f in &i.items {
@@ -669,6 +866,7 @@ fn fill_impl(i: &Impl, resolved: &ResolvedFile<'_>, env: &mut TypeEnv) -> Result
         generics: impl_generics,
         self_ty,
         trait_name,
+        trait_args,
         methods,
         span: i.span.clone(),
     });
@@ -922,13 +1120,9 @@ fn resolve_type_path(
                 args,
             })
         }
-        Binding::Trait(_) => Err(RavenError::ty(
-            TypeError::Custom(format!(
-                "`{}` is a trait; bare trait types are not yet supported (use `dyn Trait` in a future release)",
-                name
-            )),
-            head.span.clone(),
-        )),
+        // A trait used as a type is a trait object, as `dyn Trait`: any
+        // value whose type implements the trait fits.
+        Binding::Trait(_) => resolve_dyn(path, resolved, env),
         Binding::SelfType => self_ty
             .cloned()
             .map(|t| Ty::SelfTy(Box::new(t)))
@@ -1145,7 +1339,7 @@ mod tests {
 
     #[test]
     fn collects_function_signature() {
-        let env = check_source("fun add(a: Int, b: Int) -> Int = a + b\n").unwrap();
+        let env = check_source("fun add(a: int, b: int) -> int = a + b\n").unwrap();
         let sig = env.functions.values().next().expect("one function");
         assert_eq!(sig.params, vec![Ty::Int, Ty::Int]);
         assert_eq!(sig.ret, Ty::Int);
@@ -1153,7 +1347,7 @@ mod tests {
 
     #[test]
     fn collects_struct_fields() {
-        let env = check_source("struct Point { x: Int, y: Int }\n").unwrap();
+        let env = check_source("class Point { x: int, y: int }\n").unwrap();
         let s = env.structs.values().next().expect("one struct");
         assert_eq!(s.fields.len(), 2);
         assert_eq!(s.fields[0].name, "x");
@@ -1162,7 +1356,7 @@ mod tests {
 
     #[test]
     fn collects_generic_function_signature() {
-        let env = check_source("fun id<T>(x: T) -> T = x\n").unwrap();
+        let env = check_source("fun id[T](x: T) -> T = x\n").unwrap();
         let sig = env.functions.values().next().expect("one function");
         assert_eq!(sig.generics.len(), 1);
         assert_eq!(sig.generics[0].id.name, "T");
@@ -1174,7 +1368,7 @@ mod tests {
 
     #[test]
     fn collects_generic_struct_field_types() {
-        let env = check_source("struct Box<T> { value: T }\n").unwrap();
+        let env = check_source("class Box[T] { value: T }\n").unwrap();
         let s = env.structs.values().next().expect("one struct");
         assert_eq!(s.generics.len(), 1);
         match &s.fields[0].ty {
@@ -1185,14 +1379,14 @@ mod tests {
 
     #[test]
     fn option_type_path_resolves() {
-        let env = check_source("fun takes(x: Option<Int>) -> Int = 0\n").unwrap();
+        let env = check_source("fun takes(x: Option[int]) -> int = 0\n").unwrap();
         let sig = env.functions.values().next().unwrap();
         assert_eq!(sig.params, vec![Ty::Option(Box::new(Ty::Int))]);
     }
 
     #[test]
     fn result_type_path_resolves() {
-        let env = check_source("fun work(x: Result<Int, String>) -> Int = 0\n").unwrap();
+        let env = check_source("fun work(x: Result[int, str]) -> int = 0\n").unwrap();
         let sig = env.functions.values().next().unwrap();
         assert_eq!(
             sig.params,
@@ -1203,7 +1397,7 @@ mod tests {
     #[test]
     fn struct_and_impl_collected() {
         let env = check_source(
-            "struct Point { x: Int }\nimpl Point { fun get_x(self) -> Int = self.x }\n",
+            "class Point { x: int }\nimpl Point { fun get_x(self) -> int = self.x }\n",
         )
         .unwrap();
         assert_eq!(env.structs.len(), 1);
@@ -1215,7 +1409,7 @@ mod tests {
 
     #[test]
     fn enum_variants_collected() {
-        let env = check_source("enum Color { Red, Green, Rgb(Int, Int, Int) }\n").unwrap();
+        let env = check_source("enum Color { Red, Green, Rgb(int, int, int) }\n").unwrap();
         let e = env.enums.values().next().expect("one enum");
         assert_eq!(e.variants.len(), 3);
         assert_eq!(e.variants[0].name, "Red");

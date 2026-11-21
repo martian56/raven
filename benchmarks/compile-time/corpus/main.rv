@@ -1,68 +1,68 @@
-import "./modules/mod0" { compute_0 }
-import "./modules/mod1" { compute_1 }
-import "./modules/mod2" { compute_2 }
-import "./modules/mod3" { compute_3 }
-import "./modules/mod4" { compute_4 }
-import "./modules/mod5" { compute_5 }
-import "./modules/mod6" { compute_6 }
-import "./modules/mod7" { compute_7 }
-import "./modules/mod8" { compute_8 }
-import "./modules/mod9" { compute_9 }
-import "./modules/mod10" { compute_10 }
-import "./modules/mod11" { compute_11 }
-import "./modules/mod12" { compute_12 }
-import "./modules/mod13" { compute_13 }
-import "./modules/mod14" { compute_14 }
-import "./modules/mod15" { compute_15 }
-import "./modules/mod16" { compute_16 }
-import "./modules/mod17" { compute_17 }
-import "./modules/mod18" { compute_18 }
-import "./modules/mod19" { compute_19 }
-import "./modules/mod20" { compute_20 }
-import "./modules/mod21" { compute_21 }
-import "./modules/mod22" { compute_22 }
-import "./modules/mod23" { compute_23 }
-import "./modules/mod24" { compute_24 }
-import "./modules/mod25" { compute_25 }
-import "./modules/mod26" { compute_26 }
-import "./modules/mod27" { compute_27 }
-import "./modules/mod28" { compute_28 }
-import "./modules/mod29" { compute_29 }
-import "./modules/mod30" { compute_30 }
-import "./modules/mod31" { compute_31 }
-import "./modules/mod32" { compute_32 }
-import "./modules/mod33" { compute_33 }
-import "./modules/mod34" { compute_34 }
-import "./modules/mod35" { compute_35 }
-import "./modules/mod36" { compute_36 }
-import "./modules/mod37" { compute_37 }
-import "./modules/mod38" { compute_38 }
-import "./modules/mod39" { compute_39 }
-import "./modules/mod40" { compute_40 }
-import "./modules/mod41" { compute_41 }
-import "./modules/mod42" { compute_42 }
-import "./modules/mod43" { compute_43 }
-import "./modules/mod44" { compute_44 }
-import "./modules/mod45" { compute_45 }
-import "./modules/mod46" { compute_46 }
-import "./modules/mod47" { compute_47 }
-import "./modules/mod48" { compute_48 }
-import "./modules/mod49" { compute_49 }
-import "./modules/mod50" { compute_50 }
-import "./modules/mod51" { compute_51 }
-import "./modules/mod52" { compute_52 }
-import "./modules/mod53" { compute_53 }
-import "./modules/mod54" { compute_54 }
-import "./modules/mod55" { compute_55 }
-import "./modules/mod56" { compute_56 }
-import "./modules/mod57" { compute_57 }
-import "./modules/mod58" { compute_58 }
-import "./modules/mod59" { compute_59 }
-import "./modules/mod60" { compute_60 }
-import "./modules/mod61" { compute_61 }
+from "./modules/mod0" import compute_0
+from "./modules/mod1" import compute_1
+from "./modules/mod2" import compute_2
+from "./modules/mod3" import compute_3
+from "./modules/mod4" import compute_4
+from "./modules/mod5" import compute_5
+from "./modules/mod6" import compute_6
+from "./modules/mod7" import compute_7
+from "./modules/mod8" import compute_8
+from "./modules/mod9" import compute_9
+from "./modules/mod10" import compute_10
+from "./modules/mod11" import compute_11
+from "./modules/mod12" import compute_12
+from "./modules/mod13" import compute_13
+from "./modules/mod14" import compute_14
+from "./modules/mod15" import compute_15
+from "./modules/mod16" import compute_16
+from "./modules/mod17" import compute_17
+from "./modules/mod18" import compute_18
+from "./modules/mod19" import compute_19
+from "./modules/mod20" import compute_20
+from "./modules/mod21" import compute_21
+from "./modules/mod22" import compute_22
+from "./modules/mod23" import compute_23
+from "./modules/mod24" import compute_24
+from "./modules/mod25" import compute_25
+from "./modules/mod26" import compute_26
+from "./modules/mod27" import compute_27
+from "./modules/mod28" import compute_28
+from "./modules/mod29" import compute_29
+from "./modules/mod30" import compute_30
+from "./modules/mod31" import compute_31
+from "./modules/mod32" import compute_32
+from "./modules/mod33" import compute_33
+from "./modules/mod34" import compute_34
+from "./modules/mod35" import compute_35
+from "./modules/mod36" import compute_36
+from "./modules/mod37" import compute_37
+from "./modules/mod38" import compute_38
+from "./modules/mod39" import compute_39
+from "./modules/mod40" import compute_40
+from "./modules/mod41" import compute_41
+from "./modules/mod42" import compute_42
+from "./modules/mod43" import compute_43
+from "./modules/mod44" import compute_44
+from "./modules/mod45" import compute_45
+from "./modules/mod46" import compute_46
+from "./modules/mod47" import compute_47
+from "./modules/mod48" import compute_48
+from "./modules/mod49" import compute_49
+from "./modules/mod50" import compute_50
+from "./modules/mod51" import compute_51
+from "./modules/mod52" import compute_52
+from "./modules/mod53" import compute_53
+from "./modules/mod54" import compute_54
+from "./modules/mod55" import compute_55
+from "./modules/mod56" import compute_56
+from "./modules/mod57" import compute_57
+from "./modules/mod58" import compute_58
+from "./modules/mod59" import compute_59
+from "./modules/mod60" import compute_60
+from "./modules/mod61" import compute_61
 
 fun main() {
-    let total = 0
+    var total = 0
     total = total + compute_0(0 + 1)
     total = total + compute_1(1 + 1)
     total = total + compute_2(2 + 1)

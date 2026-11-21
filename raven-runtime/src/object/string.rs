@@ -1,6 +1,6 @@
 //! In-memory layout, constructors, and accessors for Raven `String`.
 //!
-//! See `docs/v2/specs/object-layout.md` for the byte-exact field
+//! See `docs/specs/object-layout.md` for the byte-exact field
 //! offsets the back-end relies on.
 
 use super::{ObjectHeader, OBJECT_ALIGN, TAG_STRING};
@@ -27,6 +27,14 @@ pub struct String {
 /// `cap = cap`. The byte buffer is zero-filled.
 ///
 /// Returns null when the allocation fails.
+// Codegen emits string literals as static objects with this exact layout.
+const _: () = {
+    assert!(TAG_STRING == 0x01);
+    assert!(std::mem::offset_of!(String, header) == 0);
+    assert!(std::mem::offset_of!(String, bytes) == 16);
+    assert!(std::mem::size_of::<String>() == 24);
+};
+
 #[no_mangle]
 pub extern "C" fn raven_string_new(cap: u32) -> *mut String {
     // Allocate the owned byte buffer first so a body-allocation failure
@@ -303,11 +311,22 @@ pub extern "C" fn raven_bool_to_string(value: i8) -> *mut String {
     raven_string_from_bytes(s.as_ptr(), s.len())
 }
 
-/// Allocate a GC `String` rendering of an `f64`, matching Rust's
-/// default `{}` float formatting (so `7.0` renders as `7`).
+/// Allocate a GC `String` rendering of an `f64`. A whole number keeps its
+/// `.0` (`7.0`, not `7`) so a float never prints like an int.
 #[no_mangle]
 pub extern "C" fn raven_float_to_string(value: f64) -> *mut String {
-    let rendered = format!("{}", value);
+    let mut rendered = format!("{}", value);
+    if value.is_finite() && !rendered.contains(['.', 'e', 'E']) {
+        rendered.push_str(".0");
+    }
+    raven_string_from_bytes(rendered.as_ptr(), rendered.len())
+}
+
+/// Allocate a GC `String` rendering `value` with exactly `places` digits
+/// after the decimal point (clamped to 0..=64), for `"${x:.2}"`.
+#[no_mangle]
+pub extern "C" fn raven_float_fixed(value: f64, places: i64) -> *mut String {
+    let rendered = format!("{:.*}", places.clamp(0, 64) as usize, value);
     raven_string_from_bytes(rendered.as_ptr(), rendered.len())
 }
 
@@ -552,11 +571,11 @@ mod tests {
     }
 
     #[test]
-    fn float_to_string_matches_default_formatting() {
+    fn float_to_string_keeps_a_point() {
         let whole = raven_float_to_string(7.0);
         let frac = raven_float_to_string(3.5);
         let neg = raven_float_to_string(-0.25);
-        assert_eq!(read(whole), "7");
+        assert_eq!(read(whole), "7.0");
         assert_eq!(read(frac), "3.5");
         assert_eq!(read(neg), "-0.25");
         unsafe {
@@ -714,8 +733,7 @@ mod tests {
         if s.is_null() {
             return;
         }
-        // SAFETY: matches the construction layout.
-        unsafe { free_buffers(s) };
-        raven_dealloc(s as *mut u8, size_of_string(), align_of_string());
+        // SAFETY: `s` is a live collector-allocated string.
+        unsafe { crate::gc::free_for_test(s as *mut crate::object::ObjectHeader) };
     }
 }

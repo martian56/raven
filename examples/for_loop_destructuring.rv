@@ -1,0 +1,25 @@
+// A for loop can destructure its element with a pattern: a struct binds its
+// fields, and a refutable enum pattern skips elements that do not match.
+// Prints:
+//   5
+//   30
+//   1
+//   3
+from std.io import println
+
+class Point {
+    x: int
+    y: int
+}
+
+fun main() {
+    let points: list[Point] = [Point(x: 2, y: 3), Point(x: 10, y: 20)]
+    for Point { x, y } in points {
+        println((x + y).to_string())
+    }
+
+    let values: list[Option[int]] = [Some(1), None, Some(3)]
+    for Some(x) in values {
+        println(x.to_string())
+    }
+}

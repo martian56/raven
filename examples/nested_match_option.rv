@@ -1,0 +1,36 @@
+// Regression for #515: a nested match where the inner match returns Option and
+// both the inner and outer matches have a None arm. The inner None arms must
+// infer their Option<String> type from the sibling Some arm.
+from std.io import println
+
+enum V {
+    Str(str),
+    Int(int),
+    Bool(bool),
+}
+
+fun as_string(o: Option[V]) -> Option[str] {
+    return match o {
+        case Some(v) {
+            match v {
+                case Str(s) { Some(s) }
+                case Int(n) { None }
+                case Bool(b) { None }
+            }
+        }
+        case None { None }
+    }
+}
+
+fun show(o: Option[str]) -> str {
+    return match o {
+        case Some(s) { s }
+        case None { "(none)" }
+    }
+}
+
+fun main() {
+    println(show(as_string(Some(V.Str("hello")))))
+    println(show(as_string(Some(V.Int(5)))))
+    println(show(as_string(None)))
+}

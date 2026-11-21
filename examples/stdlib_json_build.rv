@@ -1,0 +1,40 @@
+// std/json enrichment: build a value programmatically, read it back with the
+// typed accessors, and pretty-print it. Prints:
+//   7
+//   ok
+//   2
+//   {
+//     "n": 7,
+//     "name": "ok"
+//   }
+from std.json import stringify_pretty, json_object, json_int, json_string, parse
+import std.collections
+
+fun main() {
+    let doc = json_object({"n": json_int(7), "name": json_string("ok")})
+
+    match doc.get("n") {
+        case Some(v) {
+            match v.as_int() {
+                case Some(n) {
+                    print(n) // 7
+                }
+                case None { print(-1) }
+            }
+        }
+        case None { print(-1) }
+    }
+    match doc.get("name") {
+        case Some(v) {
+            match v.as_string() {
+                case Some(s) {
+                    print(s) // ok
+                }
+                case None { print("?") }
+            }
+        }
+        case None { print("?") }
+    }
+    print(doc.length()) // 2
+    print(stringify_pretty(doc, 2))
+}

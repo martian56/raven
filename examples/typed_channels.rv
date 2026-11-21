@@ -1,0 +1,38 @@
+from std.sync import channel, Channel
+
+class Job {
+    name: str
+    size: int
+}
+
+fun main() {
+    let jobs: Channel[Job] = channel()
+    let results: Channel[(str, int)] = channel()
+    var w = 0
+    while w < 4 {
+        spawn {
+            var k = 0
+            while k < 5 {
+                let j = jobs.recv()
+                results.send((j.name, j.size * 2))
+                k += 1
+            }
+        }
+        w += 1
+    }
+    spawn {
+        var i = 0
+        while i < 20 {
+            jobs.send(Job("job${i}", i))
+            i += 1
+        }
+    }
+    var total = 0
+    var n = 0
+    while n < 20 {
+        let (name, doubled) = results.recv()
+        total += doubled
+        n += 1
+    }
+    print(total)
+}

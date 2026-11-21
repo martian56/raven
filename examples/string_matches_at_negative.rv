@@ -1,0 +1,24 @@
+// matches_at rejects a negative offset rather than matching an empty needle
+// there. Prints:
+//   false
+//   false
+//   true
+//   true
+import std.string
+from std.io import println
+
+fun show(b: bool) {
+    println(
+        match b {
+            case true { "true" }
+            case false { "false" }
+        },
+    )
+}
+
+fun main() {
+    show("abc".matches_at("", -1)) // negative offset is not a position
+    show("abc".matches_at("a", -1))
+    show("abc".matches_at("a", 0))
+    show("abc".matches_at("", 3)) // empty needle at the end still matches
+}

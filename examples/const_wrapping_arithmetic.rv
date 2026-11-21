@@ -1,0 +1,16 @@
+// Constant folding matches the runtime: integer add/sub/mul wrap two's
+// complement and shifts saturate, so an expression that evaluates fine at
+// runtime also folds in a `const` rather than being rejected as overflow.
+let WRAPPED: int = 9223372036854775807 + 1
+let MUL_WRAP: int = 9223372036854775807 * 2
+let SHIFTED: int = 1 << 64
+let SHL_NEG: int = 1 << (0 - 1)
+let SHR_BIG: int = (0 - 1) >> 100
+
+fun main() {
+    print(WRAPPED)
+    print(MUL_WRAP)
+    print(SHIFTED)
+    print(SHL_NEG)
+    print(SHR_BIG)
+}

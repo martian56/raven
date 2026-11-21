@@ -2,39 +2,33 @@
 // Raven program whose `main` calls these assertions; a failed assertion
 // calls the runtime panic, aborting with a message and a nonzero exit.
 // There is no discovery or registration framework. See
-// docs/v2/specs/std-test.md.
+// docs/specs/std-test.md.
 
-fun assert(cond: Bool) {
-    if !cond {
-        __panic("assertion failed")
-    }
-}
-
-fun assert_msg(cond: Bool, msg: String) {
-    if !cond {
+fun assert_msg(cond: bool, msg: str) {
+    if not cond {
         __panic(msg)
     }
 }
 
-fun assert_true(cond: Bool) {
-    if !cond {
+fun assert_true(cond: bool) {
+    if not cond {
         __panic("assertion failed: expected true")
     }
 }
 
-fun assert_false(cond: Bool) {
+fun assert_false(cond: bool) {
     if cond {
         __panic("assertion failed: expected false")
     }
 }
 
-fun assert_eq_int(a: Int, b: Int) {
+fun assert_eq_int(a: int, b: int) {
     if a != b {
         __panic("assertion failed: ${a} != ${b}")
     }
 }
 
-fun assert_eq_str(a: String, b: String) {
+fun assert_eq_str(a: str, b: str) {
     if a != b {
         __panic("assertion failed: ${a} != ${b}")
     }
@@ -42,14 +36,14 @@ fun assert_eq_str(a: String, b: String) {
 
 // Assert two values of any `Eq + ToString` type are equal, with both values
 // shown in the failure message.
-fun assert_eq<T: Eq + ToString>(a: T, b: T) {
+fun assert_eq[T: Eq + ToString](a: T, b: T) {
     if a.equals(b) == false {
         __panic("assertion failed: ${a} != ${b}")
     }
 }
 
 // Assert two values of any `Eq + ToString` type are not equal.
-fun assert_ne<T: Eq + ToString>(a: T, b: T) {
+fun assert_ne[T: Eq + ToString](a: T, b: T) {
     if a.equals(b) {
         __panic("assertion failed: ${a} == ${b}")
     }
@@ -57,14 +51,14 @@ fun assert_ne<T: Eq + ToString>(a: T, b: T) {
 
 // Assert two floats are within `eps` of each other (the right way to compare
 // floats).
-fun assert_eq_float(a: Float, b: Float, eps: Float) {
+fun assert_eq_float(a: float, b: float, eps: float) {
     // A NaN operand makes every comparison false, so `d > eps` would not catch
     // it and the assertion would silently pass. NaN is never equal to anything
     // (including itself), so reject it explicitly. `v != v` is true only for NaN.
-    if a != a || b != b {
+    if a != a or b != b {
         __panic("assertion failed: ${a} != ${b} within ${eps}")
     }
-    let d = a - b
+    var d = a - b
     if d < 0.0 {
         d = 0.0 - d
     }
@@ -74,33 +68,33 @@ fun assert_eq_float(a: Float, b: Float, eps: Float) {
 }
 
 // Assert an option holds a value.
-fun assert_some<T>(o: Option<T>) {
+fun assert_some[T](o: Option[T]) {
     match o {
-        Some(v) -> {}
-        None -> __panic("assertion failed: expected Some, got None"),
+        case Some(v) {}
+        case None { __panic("assertion failed: expected Some, got None") }
     }
 }
 
 // Assert an option is empty.
-fun assert_none<T>(o: Option<T>) {
+fun assert_none[T](o: Option[T]) {
     match o {
-        Some(v) -> __panic("assertion failed: expected None, got Some"),
-        None -> {}
+        case Some(v) { __panic("assertion failed: expected None, got Some") }
+        case None {}
     }
 }
 
 // Assert a result is `Ok`.
-fun assert_ok<T, E>(r: Result<T, E>) {
+fun assert_ok[T, E](r: Result[T, E]) {
     match r {
-        Ok(v) -> {}
-        Err(e) -> __panic("assertion failed: expected Ok, got Err"),
+        case Ok(v) {}
+        case Err(e) { __panic("assertion failed: expected Ok, got Err") }
     }
 }
 
 // Assert a result is `Err`.
-fun assert_err<T, E>(r: Result<T, E>) {
+fun assert_err[T, E](r: Result[T, E]) {
     match r {
-        Ok(v) -> __panic("assertion failed: expected Err, got Ok"),
-        Err(e) -> {}
+        case Ok(v) { __panic("assertion failed: expected Err, got Ok") }
+        case Err(e) {}
     }
 }

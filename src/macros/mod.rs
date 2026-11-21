@@ -7,7 +7,7 @@
 //! against a rule and splicing the captured token runs into a copy of the
 //! template. The rewritten stream is then parsed normally.
 //!
-//! Scope of this slice (see `docs/v2/specs/macros.md`):
+//! Scope of this slice (see `docs/specs/macros.md`):
 //!
 //! * Definition: `macro <name> { (<matcher>) => { <template> } ... }`, one
 //!   or more rules, first matching rule wins.
@@ -1149,6 +1149,11 @@ fn collect_binding_indices(
                         j += 1;
                     }
                 }
+                // An arrow lambda: `x => ...`, `(a, b) => ...`, or
+                // `(a: int) -> int => ...`.
+                TokenKind::FatArrow => {
+                    collect_arrow_params(tokens, from_template, i, &mut bindings)
+                }
                 // Find the `{` that opens the arms (after the scrutinee) and
                 // collect each arm pattern's bindings.
                 TokenKind::Match => {
@@ -1167,6 +1172,86 @@ fn collect_binding_indices(
         i += 1;
     }
     bindings
+}
+
+/// Record the parameters of the arrow lambda whose `=>` is at `arrow`.
+fn collect_arrow_params(
+    tokens: &[Token],
+    from_template: &[bool],
+    arrow: usize,
+    bindings: &mut HashMap<usize, (String, BindKind)>,
+) {
+    let is_t = |i: usize| from_template.get(i).copied().unwrap_or(false);
+    if arrow == 0 {
+        return;
+    }
+    let mut j = arrow - 1;
+    if let TokenKind::Identifier(s) = &tokens[j].kind {
+        let before = j.checked_sub(1).map(|b| &tokens[b].kind);
+        if is_t(j) && !matches!(before, Some(TokenKind::Arrow | TokenKind::Colon)) {
+            bindings.insert(j, (s.clone(), BindKind::Param));
+            return;
+        }
+    }
+    // Skip a `-> Type` return annotation back to the parameter list.
+    let mut k = j;
+    loop {
+        if matches!(tokens[k].kind, TokenKind::Arrow) {
+            match k.checked_sub(1) {
+                Some(b) => j = b,
+                None => return,
+            }
+            break;
+        }
+        if matches!(tokens[k].kind, TokenKind::RParen) && k == j {
+            break;
+        }
+        match k.checked_sub(1) {
+            Some(b) if arrow - b < 16 => k = b,
+            _ => break,
+        }
+    }
+    if !matches!(tokens[j].kind, TokenKind::RParen) {
+        return;
+    }
+    let mut depth = 0i32;
+    let mut open = j;
+    loop {
+        match tokens[open].kind {
+            TokenKind::RParen => depth += 1,
+            TokenKind::LParen => {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+            _ => {}
+        }
+        match open.checked_sub(1) {
+            Some(b) => open = b,
+            None => return,
+        }
+    }
+    let mut depth = 0i32;
+    for k in open..=j {
+        match &tokens[k].kind {
+            TokenKind::LParen => depth += 1,
+            TokenKind::RParen => depth -= 1,
+            TokenKind::Identifier(s) if depth == 1 && is_t(k) => {
+                let next = tokens.get(k + 1).map(|t| &t.kind);
+                let prev = &tokens[k - 1].kind;
+                if matches!(prev, TokenKind::LParen | TokenKind::Comma)
+                    && matches!(
+                        next,
+                        Some(TokenKind::Colon | TokenKind::Comma | TokenKind::RParen)
+                    )
+                {
+                    bindings.insert(k, (s.clone(), BindKind::Param));
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Record the parameter names of a function or closure whose parameter list

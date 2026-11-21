@@ -60,7 +60,7 @@ fn empty_program_lowers() {
 
 #[test]
 fn simple_function_lowered() {
-    let p = lower("fun add(a: Int, b: Int) -> Int { return a + b }");
+    let p = lower("fun add(a: int, b: int) -> int { return a + b }");
     let f = only_fn(&p, "add");
     assert_eq!(f.params.len(), 2);
     assert!(f.body.is_some());
@@ -68,7 +68,7 @@ fn simple_function_lowered() {
 
 #[test]
 fn single_expression_body_becomes_block() {
-    let p = lower("fun id(x: Int) -> Int = x");
+    let p = lower("fun id(x: int) -> int = x");
     let f = only_fn(&p, "id");
     let body = f.body.as_ref().expect("body");
     assert!(body.tail.is_some(), "single-expr body has tail");
@@ -76,7 +76,7 @@ fn single_expression_body_becomes_block() {
 
 #[test]
 fn unit_function_tail_is_lowered_as_a_discarded_statement() {
-    let p = lower("fun setup() -> Bool = true\nfun main() { setup() }");
+    let p = lower("fun setup() -> bool = true\nfun main() { setup() }");
     let body = only_fn(&p, "main").body.as_ref().expect("body");
     assert!(body.tail.is_none(), "a unit function must return Unit");
     assert!(matches!(
@@ -88,7 +88,7 @@ fn unit_function_tail_is_lowered_as_a_discarded_statement() {
 #[test]
 fn no_else_if_discards_the_then_branch_tail() {
     let p =
-        lower("fun apply(n: Int) -> Bool = n > 0\nfun run(ready: Bool) { if ready { apply(1) } }");
+        lower("fun apply(n: int) -> bool = n > 0\nfun run(ready: bool) { if ready { apply(1) } }");
     let body = only_fn(&p, "run").body.as_ref().expect("body");
     let HirStmtKind::Expr(if_expr) = &body.stmts.last().expect("discarded if").kind else {
         panic!("expected the unit if as an expression statement");
@@ -246,7 +246,7 @@ fn hir_uses_iterator_intrinsics(p: &HirProgram) -> bool {
 
 #[test]
 fn compound_assign_ident_desugars_to_plain() {
-    let src = "fun f() -> () { let x = 1; x += 2; }";
+    let src = "fun f() -> () { var x = 1; x += 2; }";
     let p = lower(src);
     let f = only_fn(&p, "f");
     let body = f.body.as_ref().expect("body");
@@ -262,8 +262,8 @@ fn compound_assign_ident_desugars_to_plain() {
 #[test]
 fn try_on_result_lowers_to_match() {
     let src = "
-fun src() -> Result<Int, String> { return Ok(1) }
-fun caller() -> Result<Int, String> {
+fun src() -> Result[int, str] { return Ok(1) }
+fun caller() -> Result[int, str] {
     let x = src()?;
     return Ok(x + 1)
 }
@@ -283,7 +283,7 @@ fn string_with_interpolation_lowers_to_parts() {
     // An interpolated string with an `Int` fragment runs the full
     // pipeline and lowers to a structured `Interpolate` HIR node whose
     // parts alternate literal text and the embedded expression.
-    let src = "fun s() -> String { let n = 7; return \"hi ${n}!\" }";
+    let src = "fun s() -> str { let n = 7; return \"hi ${n}!\" }";
     let p = lower(src);
     let f = only_fn(&p, "s");
     let body = f.body.as_ref().expect("function body");
@@ -319,7 +319,7 @@ fn string_with_interpolation_lowers_to_parts() {
 
 #[test]
 fn if_as_expression_in_let_works() {
-    let src = "fun pick(b: Bool) -> Int { let x = if b { 1 } else { 2 }; return x }";
+    let src = "fun pick(b: bool) -> int { let x = if b { 1 } else { 2 }; return x }";
     let p = lower(src);
     let f = only_fn(&p, "pick");
     let body = f.body.as_ref().expect("body");
@@ -334,11 +334,11 @@ fn if_as_expression_in_let_works() {
 fn match_in_let_position_lowers() {
     let src = "
 enum Color { Red, Green, Blue }
-fun name(c: Color) -> Int {
+fun name(c: Color) -> int {
     let n = match c {
-        Color.Red -> 1,
-        Color.Green -> 2,
-        Color.Blue -> 3,
+        case Color.Red { 1 }
+        case Color.Green { 2 }
+        case Color.Blue { 3 }
     };
     return n
 }
@@ -354,7 +354,7 @@ fun name(c: Color) -> Int {
 
 #[test]
 fn struct_decl_lowers() {
-    let p = lower("struct Point { x: Int, y: Int }");
+    let p = lower("class Point { x: int, y: int }");
     assert!(p.items.iter().any(|i| matches!(
         &i.kind,
         HirItemKind::Struct(s) if s.name == "Point"
@@ -363,7 +363,7 @@ fn struct_decl_lowers() {
 
 #[test]
 fn enum_decl_lowers() {
-    let p = lower("enum Shape { Circle, Square(Int) }");
+    let p = lower("enum Shape { Circle, Square(int) }");
     let e = p
         .items
         .iter()
@@ -396,7 +396,7 @@ fn unused_for_silences_dead_code() {
 fn computed_const_folds_and_inlines() {
     // A const with a computed initializer folds to a literal and inlines at
     // the use site: `get` returns the folded value `14`, not a reference.
-    let p = lower("const N: Int = 2 + 3 * 4\nfun get() -> Int = N\n");
+    let p = lower("let N: int = 2 + 3 * 4\nfun get() -> int = N\n");
     let f = only_fn(&p, "get");
     let body = f.body.as_ref().expect("body");
     let tail = body.tail.as_ref().expect("trailing expr");
@@ -412,7 +412,7 @@ fn module_let_becomes_a_global_with_an_init_function() {
     // A module-level `let` is a mutable global: a reference reads its slot
     // (a `GlobalGet`, not an inlined literal) and the synthesized
     // `__raven_init_globals` function is emitted to set it before `main`.
-    let p = lower("let g: Int = 5\nfun read() -> Int = g\n");
+    let p = lower("var g: int = 5\nfun read() -> int = g\n");
     assert!(
         p.items.iter().any(|i| matches!(
             &i.kind,
@@ -433,7 +433,7 @@ fn module_let_becomes_a_global_with_an_init_function() {
 fn module_const_still_inlines_and_has_no_init_function() {
     // A `const` is unchanged: its reference inlines to the folded literal and
     // no initializer function is synthesized.
-    let p = lower("const C: Int = 5\nfun read() -> Int = C\n");
+    let p = lower("let C: int = 5\nfun read() -> int = C\n");
     assert!(
         !p.items.iter().any(|i| matches!(
             &i.kind,
@@ -445,15 +445,19 @@ fn module_const_still_inlines_and_has_no_init_function() {
     let tail = f.body.as_ref().unwrap().tail.as_ref().unwrap();
     assert!(
         matches!(tail.kind, HirExprKind::Int(5)),
-        "a const reference inlines, got {:?}",
+        "a let reference inlines, got {:?}",
         tail.kind
     );
 }
 
 #[test]
-fn non_constant_const_initializer_is_an_error() {
-    let err = lower_result("fun side() -> Int = 1\nconst X: Int = side()\nfun get() -> Int = X\n")
-        .expect_err("a non-constant const initializer must be rejected");
-    let msg = format!("{}", err);
-    assert!(msg.contains("constant expression"), "got: {}", msg);
+fn non_constant_module_let_is_a_global() {
+    let p = lower("fun side() -> int = 1\nlet X: int = side()\nfun get() -> int = X\n");
+    let f = only_fn(&p, "get");
+    let tail = f.body.as_ref().unwrap().tail.as_ref().unwrap();
+    assert!(
+        matches!(tail.kind, HirExprKind::GlobalGet(_)),
+        "got {:?}",
+        tail.kind
+    );
 }

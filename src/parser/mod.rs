@@ -16,7 +16,7 @@
 //! The cursor and helper machinery live in this module on the `Parser`
 //! struct; the category modules implement methods on it.
 //!
-//! See `docs/v2/specs/parser.md` for the full grammar and the design
+//! See `docs/specs/parser.md` for the full grammar and the design
 //! notes on disambiguation rules.
 
 use crate::ast::File;
@@ -25,6 +25,7 @@ use crate::lexer::{Token, TokenKind};
 use crate::span::Span;
 
 mod decl;
+mod desugar;
 mod expr;
 mod pattern;
 mod stmt;
@@ -73,6 +74,8 @@ pub struct Parser {
     /// `parse_with_macros`/`parse_with_macros_all` so the resolver resolves them
     /// at the macro's module scope, not against a call-site local.
     def_sites: crate::macros::DefSites,
+    /// Parsing a `case` pattern, where `{` opens the arm body.
+    pub(crate) in_case_pattern: bool,
 }
 
 impl Parser {
@@ -90,6 +93,7 @@ impl Parser {
             errors: Vec::new(),
             token_edits: Vec::new(),
             def_sites: crate::macros::DefSites::new(),
+            in_case_pattern: false,
         }
     }
 
@@ -107,6 +111,7 @@ impl Parser {
             errors: Vec::new(),
             token_edits: Vec::new(),
             def_sites: crate::macros::DefSites::new(),
+            in_case_pattern: false,
         }
     }
 
@@ -143,7 +148,9 @@ impl Parser {
         self.skip_separators();
         while !self.is_at_end() {
             match self.parse_decl() {
-                Ok(item) => items.push(item),
+                Ok(item) => {
+                    items.push(item);
+                }
                 Err(e) => {
                     self.errors.push(e);
                     self.recover_to_next_item();
@@ -357,6 +364,13 @@ impl Parser {
 
 /// Parse a complete source file from its token slice.
 pub fn parse(tokens: &[Token]) -> ParseResult<File> {
+    let mut file = parse_syntax(tokens)?;
+    desugar::desugar(&mut file)?;
+    Ok(file)
+}
+
+/// Parse without lowering surface syntax, for tools that print source back.
+pub fn parse_syntax(tokens: &[Token]) -> ParseResult<File> {
     let mut p = Parser::new(tokens);
     p.parse_file()
 }
@@ -368,7 +382,8 @@ pub fn parse_with_macros(
     macros: crate::macros::MacroTable,
 ) -> ParseResult<(File, crate::macros::DefSites)> {
     let mut p = Parser::new_with_macros(tokens, macros);
-    let file = p.parse_file()?;
+    let mut file = p.parse_file()?;
+    desugar::desugar(&mut file)?;
     Ok((file, p.def_sites))
 }
 
@@ -380,7 +395,8 @@ pub fn parse_with_macros_all(
     macros: crate::macros::MacroTable,
 ) -> Result<(File, crate::macros::DefSites), Vec<RavenError>> {
     let mut p = Parser::new_with_macros(tokens, macros);
-    let file = p.parse_file_recover()?;
+    let mut file = p.parse_file_recover()?;
+    desugar::desugar(&mut file).map_err(|e| vec![e])?;
     Ok((file, p.def_sites))
 }
 
@@ -425,7 +441,7 @@ pub(crate) fn merge_spans(a: &Span, b: &Span) -> Span {
 }
 
 /// Human readable label for a token kind, used in error messages.
-pub(crate) fn describe_token(kind: &TokenKind) -> String {
+pub fn describe_token(kind: &TokenKind) -> String {
     match kind {
         TokenKind::Identifier(s) => format!("identifier `{}`", s),
         TokenKind::IntLit(n) => format!("integer `{}`", n),
@@ -477,8 +493,8 @@ pub(crate) fn describe_token(kind: &TokenKind) -> String {
         TokenKind::Gt => "`>`".to_string(),
         TokenKind::LtEq => "`<=`".to_string(),
         TokenKind::GtEq => "`>=`".to_string(),
-        TokenKind::AndAnd => "`&&`".to_string(),
-        TokenKind::OrOr => "`||`".to_string(),
+        TokenKind::AndAnd => "`and`".to_string(),
+        TokenKind::OrOr => "`or`".to_string(),
         TokenKind::Bang => "`!`".to_string(),
         TokenKind::Amp => "`&`".to_string(),
         TokenKind::Pipe => "`|`".to_string(),
@@ -513,5 +529,15 @@ pub(crate) fn describe_token(kind: &TokenKind) -> String {
         TokenKind::Dollar => "`$`".to_string(),
         TokenKind::Newline => "newline".to_string(),
         TokenKind::Eof => "end of file".to_string(),
+    }
+}
+
+impl Parser {
+    /// An error for syntax Raven no longer accepts, naming what replaced it.
+    pub(crate) fn legacy(&self, old: &str, new: &str) -> RavenError {
+        RavenError::parse(
+            ParseError::Custom(format!("{old} is not Raven syntax; {new}")),
+            self.peek().span.clone(),
+        )
     }
 }

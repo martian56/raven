@@ -1,27 +1,37 @@
-import std/string
+import std.string
 
-struct Vec2_30 { x: Int, y: Int }
+class Vec2_30 {
+    x: int
+    y: int
+}
 
 impl Vec2_30 {
     fun add(self, o: Vec2_30) -> Vec2_30 {
-        return Vec2_30 { x: self.x + o.x, y: self.y + o.y }
+        return Vec2_30(x: self.x + o.x, y: self.y + o.y)
     }
-    fun scale(self, k: Int) -> Vec2_30 {
-        return Vec2_30 { x: self.x * k, y: self.y * k }
+
+    fun scale(self, k: int) -> Vec2_30 {
+        return Vec2_30(x: self.x * k, y: self.y * k)
     }
-    fun magnitude_sq(self) -> Int {
+
+    fun magnitude_sq(self) -> int {
         return self.x * self.x + self.y * self.y
     }
 }
 
-struct Node_30 { id: Int, weight: Int, label: String }
+class Node_30 {
+    id: int
+    weight: int
+    label: str
+}
 
 impl Node_30 {
-    fun heavier(self, other: Node_30) -> Bool {
+    fun heavier(self, other: Node_30) -> bool {
         return self.weight > other.weight
     }
-    fun retag(self, n: String) -> Node_30 {
-        return Node_30 { id: self.id, weight: self.weight, label: n }
+
+    fun retag(self, n: str) -> Node_30 {
+        return Node_30(id: self.id, weight: self.weight, label: n)
     }
 }
 
@@ -32,12 +42,12 @@ enum Shape_30 {
     Hexagon,
 }
 
-fun classify_30(s: Shape_30) -> Int {
+fun classify_30(s: Shape_30) -> int {
     return match s {
-        Circle -> 4,
-        Square -> 4 * 2,
-        Triangle -> 4 * 3,
-        Hexagon -> 4 * 6,
+        case Circle { 4 }
+        case Square { 4 * 2 }
+        case Triangle { 4 * 3 }
+        case Hexagon { 4 * 6 }
     }
 }
 
@@ -47,7 +57,7 @@ enum Outcome_30 {
     Skip,
 }
 
-fun grade_30(score: Int) -> Outcome_30 {
+fun grade_30(score: int) -> Outcome_30 {
     if score >= 60 {
         return Outcome_30.Pass
     }
@@ -57,61 +67,68 @@ fun grade_30(score: Int) -> Outcome_30 {
     return Outcome_30.Fail
 }
 
-fun grade_points_30(o: Outcome_30) -> Int {
+fun grade_points_30(o: Outcome_30) -> int {
     return match o {
-        Pass -> 100,
-        Fail -> 0,
-        Skip -> 50,
+        case Pass { 100 }
+        case Fail { 0 }
+        case Skip { 50 }
     }
 }
 
-struct Pair_30<T> { first: T, second: T }
+class Pair_30[T] {
+    first: T
+    second: T
+}
 
-impl<T> Pair_30<T> {
+impl[T] Pair_30[T] {
     fun left(self) -> T = self.first
+
     fun right(self) -> T = self.second
 }
 
-struct Wrap_30<T> { inner: T }
+class Wrap_30[T] {
+    inner: T
+}
 
-impl<T> Wrap_30<T> {
+impl[T] Wrap_30[T] {
     fun get(self) -> T = self.inner
-    fun mapped<U>(self, f: fun(T) -> U) -> U = f(self.inner)
+
+    fun mapped[U](self, f: fun(T) -> U) -> U = f(self.inner)
 }
 
 trait Score_30 {
-    fun score(self) -> Int
+    fun score(self) -> int
 }
 
 impl Score_30 for Node_30 {
-    fun score(self) -> Int = self.id * 10 + self.weight
+    fun score(self) -> int = self.id * 10 + self.weight
 }
 
 impl Score_30 for Vec2_30 {
-    fun score(self) -> Int = self.magnitude_sq()
+    fun score(self) -> int = self.magnitude_sq()
 }
 
-fun ranked_30<T: Score_30>(x: T) -> Int = x.score()
+fun ranked_30[T: Score_30](x: T) -> int = x.score()
 
-fun identity_30<T>(x: T) -> T = x
+fun identity_30[T](x: T) -> T = x
 
-fun maybe_30(n: Int) -> Option<Int> {
+fun maybe_30(n: int) -> Option[int] {
     if n > 4 {
         return Some(n * 2)
     }
     return None
 }
 
-fun unwrap_or_30(x: Option<Int>, fallback: Int) -> Int {
+fun unwrap_or_30(x: Option[int], fallback: int) -> int {
     return match x {
-        None -> fallback,
-        Some(v) -> v,
+        case None { fallback }
+        case Some(v) { v }
     }
 }
 
-fun accumulate_30(limit: Int) -> Int {
-    let total = 0
-    let i = 0
+fun accumulate_30(limit: int) -> int {
+    var total = 0
+    var i = 0
     while i < limit {
         if i % 2 == 0 {
             total = total + i
@@ -123,37 +140,36 @@ fun accumulate_30(limit: Int) -> Int {
     return total
 }
 
-fun sweep_30(limit: Int) -> Int {
-    let total = 0
+fun sweep_30(limit: int) -> int {
+    var total = 0
     for k in 0..limit {
         total = total + classify_30(Shape_30.Triangle) + k
     }
     return total
 }
 
-fun fib_30(n: Int) -> Int {
+fun fib_30(n: int) -> int {
     if n < 2 {
         return n
     }
     return fib_30(n - 1) + fib_30(n - 2)
 }
 
-fun compute_30(seed: Int) -> Int {
-    let v = Vec2_30 { x: seed, y: seed + 4 }
-    let w = v.add(Vec2_30 { x: 2, y: 3 }).scale(2)
-    let node = Node_30 { id: seed, weight: 4, label: "n" }
+fun compute_30(seed: int) -> int {
+    let v = Vec2_30(x: seed, y: seed + 4)
+    let w = v.add(Vec2_30(x: 2, y: 3)).scale(2)
+    let node = Node_30(id: seed, weight: 4, label: "n")
     let tagged = node.retag("tagged")
-    let p = Pair_30 { first: w.x, second: w.y }
-    let q = Pair_30 { first: tagged.label, second: "z" }
-    let boxed = Wrap_30 { inner: seed }
-    let doubled = boxed.mapped(fun(x: Int) -> Int = x * 2)
-    let big = boxed.mapped(fun(x: Int) -> Bool = x > 4)
+    let p = Pair_30(first: w.x, second: w.y)
+    let q = Pair_30(first: tagged.label, second: "z")
+    let boxed = Wrap_30(inner: seed)
+    let doubled = boxed.mapped((x: int) -> int => x * 2)
+    let big = boxed.mapped((x: int) -> bool => x > 4)
     let m = unwrap_or_30(maybe_30(seed), 0)
     let g = grade_points_30(grade_30(seed))
     let r = ranked_30(tagged) + ranked_30(v)
-    let extra = if big { 1 } else { 0 }
-    return p.left() + p.right() + w.magnitude_sq() + identity_30(doubled) +
-        m + g + r + accumulate_30(4) + sweep_30(4) +
-        fib_30(8) + classify_30(Shape_30.Hexagon) + extra +
-        q.left().length()
+    let extra = 1 if big else 0
+    return p.left() + p.right() + w.magnitude_sq() + identity_30(doubled) + m + g + r + accumulate_30(
+        4,
+    ) + sweep_30(4) + fib_30(8) + classify_30(Shape_30.Hexagon) + extra + q.left().length()
 }

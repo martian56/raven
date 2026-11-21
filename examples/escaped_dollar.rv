@@ -1,0 +1,17 @@
+// An escaped `\$` is a literal dollar sign. It must survive as a plain `$` in a
+// c-string (which is not interpolated) and in a string match pattern, not leak
+// the internal escape sentinel.
+from std.io import println
+
+extern "C" {
+    fun strlen(s: CStr) -> int
+}
+
+fun main() {
+    println(strlen(c"price$5").to_string())
+    let s = "$"
+    match s {
+        case "$" { println("matched dollar") }
+        case other { println("no match") }
+    }
+}

@@ -1,13 +1,13 @@
-import std/io
-import std/collections { Map, Set }
+import std.io
+from std.collections import Map, Set
 import "github.com/example/http" as http
 import "./helpers"
 
 extern "C" {
-    fun puts(s: CString) -> Int
-    fun strlen(s: CString) -> Int
+    fun puts(s: CString) -> int
+    fun strlen(s: CString) -> int
 }
 
-const MAX: Int = 100
+let MAX: int = 100
 
-let greeting: String = "hi"
+let greeting: str = "hi"

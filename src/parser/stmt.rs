@@ -1,6 +1,6 @@
 //! Statement parsing inside block bodies.
 
-use crate::ast::{AssignOp, Expr, ExprKind, Stmt, StmtKind};
+use crate::ast::{AssignOp, Block, Expr, ExprKind, MatchArm, Pattern, PatternKind, Stmt, StmtKind};
 use crate::error::{ParseError, RavenError};
 use crate::lexer::TokenKind;
 
@@ -11,8 +11,51 @@ impl Parser {
     pub(crate) fn parse_stmt(&mut self) -> ParseResult<Stmt> {
         let start_span = self.peek().span.clone();
         match self.peek_kind() {
-            TokenKind::Let => self.parse_let_stmt(true),
-            TokenKind::Const => self.parse_let_stmt(false),
+            TokenKind::Let => self.parse_let_stmt(false),
+            TokenKind::Identifier(w)
+                if w == "var"
+                    && matches!(
+                        self.peek_kind_at(1),
+                        TokenKind::Identifier(_) | TokenKind::LParen
+                    ) =>
+            {
+                self.parse_let_stmt(true)
+            }
+            TokenKind::Const => Err(self.legacy("`const`", "declare it with `let`")),
+            TokenKind::Identifier(w)
+                if w == "assert"
+                    && !matches!(
+                        self.peek_kind_at(1),
+                        TokenKind::Eq
+                            | TokenKind::Dot
+                            | TokenKind::Newline
+                            | TokenKind::Semi
+                            | TokenKind::RBrace
+                            | TokenKind::Eof
+                    ) =>
+            {
+                self.advance();
+                let cond = self.parse_expr()?;
+                let message = if matches!(self.peek_kind(), TokenKind::Comma) {
+                    self.advance();
+                    Some(self.parse_expr()?)
+                } else {
+                    None
+                };
+                let end = message.as_ref().unwrap_or(&cond).span.clone();
+                let text = match &cond.kind {
+                    crate::ast::ExprKind::Paren(inner) => crate::format::expr_text(inner),
+                    _ => crate::format::expr_text(&cond),
+                };
+                Ok(Stmt {
+                    span: merge_spans(&start_span, &end),
+                    kind: StmtKind::Assert {
+                        cond,
+                        message,
+                        text,
+                    },
+                })
+            }
             TokenKind::Return => {
                 self.advance();
                 if matches!(
@@ -56,9 +99,17 @@ impl Parser {
                     span: tok.span,
                 })
             }
+            TokenKind::LBrace => {
+                let value = self.parse_block_or_expr()?;
+                let span = value.span.clone();
+                Ok(Stmt {
+                    kind: StmtKind::Expr(value),
+                    span,
+                })
+            }
             TokenKind::Defer => {
                 self.advance();
-                let value = self.parse_expr()?;
+                let value = self.parse_block_or_expr()?;
                 let span = merge_spans(&start_span, &value.span);
                 Ok(Stmt {
                     kind: StmtKind::Defer(value),
@@ -67,7 +118,21 @@ impl Parser {
             }
             TokenKind::Spawn => {
                 self.advance();
-                let value = self.parse_expr()?;
+                let value = if matches!(self.peek_kind(), TokenKind::LBrace) {
+                    let block = self.parse_block()?;
+                    let span = block.span.clone();
+                    Expr {
+                        kind: ExprKind::Lambda {
+                            params: Vec::new(),
+                            ret: None,
+                            body: crate::ast::LambdaBody::Block(block),
+                            params_inferred: false,
+                        },
+                        span,
+                    }
+                } else {
+                    self.parse_expr()?
+                };
                 let span = merge_spans(&start_span, &value.span);
                 Ok(Stmt {
                     kind: StmtKind::Spawn(value),
@@ -81,6 +146,9 @@ impl Parser {
     /// Parse a `let` (`mutable = true`) or `const` (`mutable = false`) local
     /// binding statement. Both require an initializer inside a function body.
     fn parse_let_stmt(&mut self, mutable: bool) -> ParseResult<Stmt> {
+        if !matches!(self.peek_kind_at(2), TokenKind::Colon | TokenKind::Eq) {
+            return self.parse_let_else(mutable);
+        }
         let start = self.advance().span;
         let (name, _name_span) = self.expect_ident("identifier")?;
         let ty = if self.eat(&TokenKind::Colon) {
@@ -111,6 +179,130 @@ impl Parser {
             },
             span,
         })
+    }
+
+    /// `let P = e else { .. }` as `let x = match e { P -> x, _ -> { .. } }`.
+    fn parse_let_else(&mut self, mutable: bool) -> ParseResult<Stmt> {
+        let start = self.advance().span;
+        let pattern = self.parse_pattern()?;
+        self.expect(&TokenKind::Eq, "`=`")?;
+        self.skip_newlines();
+        if matches!(pattern.kind, PatternKind::Tuple { name: None, .. }) {
+            let init = self.parse_expr()?;
+            if !matches!(self.peek_kind(), TokenKind::Else) {
+                let span = merge_spans(&start, &init.span);
+                return Ok(Stmt {
+                    kind: StmtKind::LetTuple {
+                        pattern,
+                        init,
+                        mutable,
+                    },
+                    span,
+                });
+            }
+            return Err(RavenError::parse(
+                ParseError::Custom("a tuple pattern always matches; drop the `else`".into()),
+                self.peek().span.clone(),
+            ));
+        }
+        let init = self.parse_expr_no_struct()?;
+        if !self.eat(&TokenKind::Else) {
+            return Err(RavenError::parse(
+                ParseError::UnexpectedToken {
+                    expected: "`else` after a pattern `let`".to_string(),
+                    found: super::describe_token(self.peek_kind()),
+                },
+                self.peek().span.clone(),
+            ));
+        }
+        let else_block = self.parse_block()?;
+        let span = merge_spans(&start, &else_block.span);
+        let mut names = Vec::new();
+        pattern_bindings(&pattern, &mut names);
+        let else_span = else_block.span.clone();
+        let else_arm = MatchArm {
+            pattern: Pattern {
+                kind: PatternKind::Wildcard,
+                span: start.clone(),
+            },
+            guard: None,
+            span: else_span.clone(),
+            body: Expr {
+                kind: ExprKind::Block(else_block),
+                span: else_span,
+            },
+        };
+        match names.len() {
+            0 => {
+                let unit = Expr {
+                    kind: ExprKind::Block(Block {
+                        stmts: Vec::new(),
+                        trailing: None,
+                        span: pattern.span.clone(),
+                    }),
+                    span: pattern.span.clone(),
+                };
+                let m = Expr {
+                    kind: ExprKind::Match {
+                        scrutinee: Box::new(init),
+                        arms: vec![
+                            MatchArm {
+                                span: pattern.span.clone(),
+                                pattern,
+                                guard: None,
+                                body: unit,
+                            },
+                            else_arm,
+                        ],
+                    },
+                    span: span.clone(),
+                };
+                Ok(Stmt {
+                    kind: StmtKind::Expr(m),
+                    span,
+                })
+            }
+            1 => {
+                let name = names.remove(0);
+                let value = Expr {
+                    kind: ExprKind::Ident {
+                        name: name.clone(),
+                        generics: Vec::new(),
+                    },
+                    span: start.clone(),
+                };
+                let m = Expr {
+                    kind: ExprKind::Match {
+                        scrutinee: Box::new(init),
+                        arms: vec![
+                            MatchArm {
+                                span: pattern.span.clone(),
+                                pattern,
+                                guard: None,
+                                body: value,
+                            },
+                            else_arm,
+                        ],
+                    },
+                    span: span.clone(),
+                };
+                Ok(Stmt {
+                    kind: StmtKind::Let {
+                        name,
+                        ty: None,
+                        init: Some(m),
+                        mutable,
+                    },
+                    span,
+                })
+            }
+            _ => Err(RavenError::parse(
+                ParseError::Custom(
+                    "a pattern `let ... else` can bind one name; match the value instead".into(),
+                ),
+                pattern.span.clone(),
+            )),
+        }
     }
 
     fn parse_expr_or_assign_stmt(&mut self) -> ParseResult<Stmt> {
@@ -172,6 +364,31 @@ fn is_valid_lvalue(expr: &Expr) -> bool {
         ExprKind::Field { receiver, .. } => is_valid_lvalue(receiver),
         ExprKind::Index { receiver, .. } => is_valid_lvalue(receiver),
         ExprKind::Paren(inner) => is_valid_lvalue(inner),
+        ExprKind::Tuple(items) => !items.is_empty() && items.iter().all(is_valid_lvalue),
         _ => false,
+    }
+}
+
+fn pattern_bindings(p: &Pattern, out: &mut Vec<String>) {
+    match &p.kind {
+        PatternKind::Ident(n) => {
+            if !n.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+                out.push(n.clone());
+            }
+        }
+        PatternKind::Tuple { elements, .. } => {
+            for e in elements {
+                pattern_bindings(e, out);
+            }
+        }
+        PatternKind::Struct { fields, .. } => {
+            for f in fields {
+                match &f.pattern {
+                    Some(sub) => pattern_bindings(sub, out),
+                    None => out.push(f.name.clone()),
+                }
+            }
+        }
+        _ => {}
     }
 }

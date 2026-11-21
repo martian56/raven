@@ -14,7 +14,7 @@
 //! `import std/io { println }` then binds the bare name `println` to the
 //! `std.io.println` function (see `imports.rs`).
 //!
-//! See `docs/v2/specs/stdlib.md` for the full mechanism.
+//! See `docs/specs/stdlib.md` for the full mechanism.
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -24,8 +24,8 @@ use std::sync::Arc;
 
 use crate::ast::{
     Block, Decl, DeclKind, ElseBranch, Expr, ExprKind, File, Function, FunctionBody, GenericParam,
-    ImportSource, LambdaBody, MatchArm, Pattern, PatternKind, Stmt, StmtKind, StrFragment, Type,
-    TypeKind, TypePath, VariantPayload,
+    ImportSource, LambdaBody, MatchArm, Pattern, PatternKind, Stmt, StmtKind, StrFragment, Trait,
+    Type, TypeKind, TypePath, VariantPayload,
 };
 use crate::error::{RavenError, ResolveError};
 use crate::lexer::Lexer;
@@ -75,7 +75,7 @@ pub const BUNDLED_MODULES: &[(&str, &str)] = &[
 /// Its traits (`ToString`, `Eq`, `Ord`, `Hash`, `Iterator`) and their
 /// built-in impls are always in scope, so a user writes neither an
 /// `import std/core` line nor an explicit `impl` for the built-in types.
-/// See `docs/v2/specs/core-traits.md`.
+/// See `docs/specs/core-traits.md`.
 pub const PRELUDE_MODULE: &str = "core";
 
 /// The separator used when namespacing a bundled function name. The
@@ -312,6 +312,9 @@ pub fn expand_with_stdlib_ctx(
     // module order stable and deduplicates against any later import of the
     // same module (so the prelude never merges twice).
     wanted.insert(PRELUDE_MODULE.to_string());
+    wanted.insert("string".to_string());
+    wanted.insert("collections".to_string());
+    wanted.insert("error".to_string());
     collect_std_module_imports(user, &mut wanted);
 
     // `@derive(Debug)` synthesizes an `impl Debug`, whose trait lives in
@@ -356,6 +359,7 @@ pub fn expand_with_stdlib_ctx(
     // A worklist over the not-yet-scanned modules terminates because every
     // discovered module is added to `wanted` (a set) at most once and only
     // unscanned modules are pushed.
+    let t_std = std::time::Instant::now();
     let mut to_scan: Vec<String> = wanted.iter().cloned().collect();
     while let Some(module) = to_scan.pop() {
         let module_file = parse_bundled_module(&module)?;
@@ -366,6 +370,36 @@ pub fn expand_with_stdlib_ctx(
             for m in &wanted {
                 if !to_scan.contains(m) {
                     to_scan.push(m.clone());
+                }
+            }
+        }
+    }
+
+    // A struct or enum the user's file declares under a bundled type's name
+    // takes that name; the bundled one moves to its namespaced name. The
+    // names the compiler builds directly stay reserved.
+    let user_types: BTreeSet<String> = user
+        .items
+        .iter()
+        .filter_map(|d| match &d.kind {
+            DeclKind::Struct(s) => Some(s.name.clone()),
+            DeclKind::Enum(e) => Some(e.name.clone()),
+            _ => None,
+        })
+        .filter(|n| !matches!(n.as_str(), "Map" | "Set") && !n.starts_with("Tuple"))
+        .collect();
+    let mut shadowed: HashMap<String, String> = HashMap::new();
+    if !user_types.is_empty() {
+        for module in &wanted {
+            let module_file = parse_bundled_module(module)?;
+            for d in &module_file.items {
+                let name = match &d.kind {
+                    DeclKind::Struct(s) => &s.name,
+                    DeclKind::Enum(e) => &e.name,
+                    _ => continue,
+                };
+                if user_types.contains(name) {
+                    shadowed.insert(name.clone(), mangle_stdlib_fn(module, name));
                 }
             }
         }
@@ -383,6 +417,7 @@ pub fn expand_with_stdlib_ctx(
         for name in top_level_fn_names(&module_file) {
             rename.insert(name.clone(), mangle_stdlib_fn(module, &name));
         }
+        rename.extend(shadowed.iter().map(|(k, v)| (k.clone(), v.clone())));
         merge_module_items(module_file.items, &rename, &mut combined_items);
     }
 
@@ -391,13 +426,25 @@ pub fn expand_with_stdlib_ctx(
     // module and the user's own items have had their derives expanded. Track
     // whether any of those expansions needs them.
     let mut needs_json_helpers = false;
+    if std::env::var_os("RAVEN_TIMINGS").is_some() {
+        eprintln!(
+            "  (stdlib modules {:.1} ms)",
+            t_std.elapsed().as_secs_f64() * 1000.0
+        );
+    }
+    let t_local = std::time::Instant::now();
+    let mut t_derive_sum = std::time::Duration::ZERO;
+    let mut t_rename_sum = std::time::Duration::ZERO;
+    let mut t_merge_sum = std::time::Duration::ZERO;
 
     // Merge the local modules loaded above through the same merge core,
     // with a path derived namespace instead of the `std.<module>.` one.
     for module_file in local_modules {
         let importing = (*module_file.span.file).clone();
         let key = local_module_key(&importing);
+        let t0 = std::time::Instant::now();
         let mut rename = import_rename_map(&module_file, &importing, &mut loader);
+        t_rename_sum += t0.elapsed();
         // A local module may itself import an external (github) package. Map
         // those selectors to their `ext.<...>` symbols too, the same as an
         // external module does, so a free function the local module imports
@@ -443,11 +490,29 @@ pub fn expand_with_stdlib_ctx(
         }
         // A per-module label keeps the generated source's use-site spans from
         // colliding with another module's `<derive>` source.
+        let t1 = std::time::Instant::now();
         let (items, needs) = expand_module_derives(module_file.items, &format!("<derive:{key}>"))?;
         needs_json_helpers |= needs;
+        let t2 = std::time::Instant::now();
         merge_module_items(items, &rename, &mut combined_items);
+        t_derive_sum += t2 - t1;
+        t_merge_sum += t2.elapsed();
+    }
+    if std::env::var_os("RAVEN_TIMINGS").is_some() {
+        eprintln!(
+            "  (module derives {:.1} ms, merges {:.1} ms, import renames {:.1} ms)",
+            t_derive_sum.as_secs_f64() * 1000.0,
+            t_merge_sum.as_secs_f64() * 1000.0,
+            t_rename_sum.as_secs_f64() * 1000.0
+        );
     }
 
+    if std::env::var_os("RAVEN_TIMINGS").is_some() {
+        eprintln!(
+            "  (local modules {:.1} ms)",
+            t_local.elapsed().as_secs_f64() * 1000.0
+        );
+    }
     // Merge the external package sources through the same merge core, with
     // an `ext.<host>.<user>.<repo>.<hash>` namespace. Each module's rename
     // map carries its own functions plus the names it selectively imports
@@ -498,16 +563,25 @@ pub fn expand_with_stdlib_ctx(
     // fixed, known amount but otherwise keep their relative order. The
     // combined file's span borrows the user's file path for diagnostics
     // that key off the top level file.
-    combined_items.extend(user.items.iter().cloned());
+    let mut user_items = user.items.clone();
+    super::derive::add_implicit_derives(&mut user_items);
+    combined_items.extend(user_items);
 
     // Synthesize trait impls for every `@derive(...)` attribute. The user's
     // own types carry the attributes, so this runs over the full combined
     // item list (a stdlib type never carries a derive, so scanning all of it
     // is harmless). The generated impls append after the user items and flow
     // through resolve, type checking, and codegen like hand written ones.
+    let t_derive = std::time::Instant::now();
     let mut derived_impls = Vec::new();
     needs_json_helpers |=
         super::derive::expand_derives(&combined_items, &mut derived_impls, "<derive>")?;
+    if std::env::var_os("RAVEN_TIMINGS").is_some() {
+        eprintln!(
+            "  (derive {:.1} ms)",
+            t_derive.elapsed().as_secs_f64() * 1000.0
+        );
+    }
     combined_items.append(&mut derived_impls);
 
     // Emit the shared JSON derive helpers exactly once for the whole program,
@@ -516,6 +590,16 @@ pub fn expand_with_stdlib_ctx(
     // declared them several times in a multi-file project.
     if needs_json_helpers {
         combined_items.extend(super::derive::json_helper_decls()?);
+    }
+
+    let t_sugar = std::time::Instant::now();
+    super::sugar::expand(&mut combined_items)?;
+    inject_default_methods(&mut combined_items);
+    if std::env::var_os("RAVEN_TIMINGS").is_some() {
+        eprintln!(
+            "  (sugar {:.1} ms)",
+            t_sugar.elapsed().as_secs_f64() * 1000.0
+        );
     }
 
     Ok((
@@ -583,6 +667,8 @@ fn expand_module_derives(
     mut items: Vec<Decl>,
     source_label: &str,
 ) -> Result<(Vec<Decl>, bool), RavenError> {
+    super::derive::add_implicit_derives(&mut items);
+    super::sugar::expand_calls(&mut items, false)?;
     let mut derived = Vec::new();
     let needs_json = super::derive::expand_derives(&items, &mut derived, source_label)?;
     strip_derives(&mut items);
@@ -815,11 +901,11 @@ fn import_rename_map(
                     continue;
                 }
                 if let Some(loaded) = loader.load(importing, path) {
-                    if let Some(target) = parse_loaded(&loaded.source, &loaded.canonical_path) {
+                    if let Some(names) =
+                        module_top_level_names(&loaded.source, &loaded.canonical_path)
+                    {
+                        let (fns, types, globals) = &*names;
                         let key = local_module_key(&loaded.canonical_path);
-                        let fns = top_level_fn_names(&target);
-                        let types = top_level_type_names(&target);
-                        let globals = top_level_global_names(&target);
                         for sel in &import.selectors {
                             if fns.contains(&sel.name)
                                 || types.contains(&sel.name)
@@ -902,7 +988,7 @@ fn whole_module_stdlib_alias_renames(file: &File) -> Vec<(String, String)> {
         let Some(module) = segments.first() else {
             continue;
         };
-        if parse_bundled_module(module).is_err() {
+        if bundled_source(module).is_none() {
             continue;
         }
         let alias = import.alias.clone().unwrap_or_else(|| {
@@ -1399,6 +1485,31 @@ fn rewrite_pattern(pat: &mut Pattern, rename: &HashMap<String, String>) {
     }
 }
 
+type TopLevelNames = (BTreeSet<String>, BTreeSet<String>, BTreeSet<String>);
+
+thread_local! {
+    static NAMES_CACHE: std::cell::RefCell<HashMap<(PathBuf, usize), Option<std::rc::Rc<TopLevelNames>>>> =
+        std::cell::RefCell::new(HashMap::new());
+}
+
+/// The function, type, and global names a local module declares, parsed once
+/// per file however many modules import it.
+fn module_top_level_names(source: &str, path: &Path) -> Option<std::rc::Rc<TopLevelNames>> {
+    let key = (path.to_path_buf(), source.len());
+    if let Some(hit) = NAMES_CACHE.with(|c| c.borrow().get(&key).cloned()) {
+        return hit;
+    }
+    let names = parse_loaded(source, path).map(|f| {
+        std::rc::Rc::new((
+            top_level_fn_names(&f),
+            top_level_type_names(&f),
+            top_level_global_names(&f),
+        ))
+    });
+    NAMES_CACHE.with(|c| c.borrow_mut().insert(key, names.clone()));
+    names
+}
+
 /// Lex and parse a loaded local source, returning `None` on any error
 /// (the import resolution pass reports the precise diagnostic).
 fn parse_loaded(source: &str, canonical_path: &Path) -> Option<File> {
@@ -1439,6 +1550,19 @@ fn local_error(path: &Path, detail: String) -> RavenError {
 
 /// Lex and parse one bundled module's embedded source.
 fn parse_bundled_module(module: &str) -> Result<File, RavenError> {
+    thread_local! {
+        static BUNDLED: std::cell::RefCell<HashMap<String, File>> =
+            std::cell::RefCell::new(HashMap::new());
+    }
+    if let Some(f) = BUNDLED.with(|c| c.borrow().get(module).cloned()) {
+        return Ok(f);
+    }
+    let file = parse_bundled_module_uncached(module)?;
+    BUNDLED.with(|c| c.borrow_mut().insert(module.to_string(), file.clone()));
+    Ok(file)
+}
+
+fn parse_bundled_module_uncached(module: &str) -> Result<File, RavenError> {
     let source = bundled_source(module).expect("module presence checked by caller");
     let virtual_path = PathBuf::from(format!("<bundled>/std/{module}.rv"));
     let tokens = Lexer::new(source.to_string(), virtual_path)
@@ -1487,6 +1611,9 @@ fn rewrite_block(block: &mut Block, rename: &HashMap<String, String>) {
 
 fn rewrite_stmt(stmt: &mut Stmt, rename: &HashMap<String, String>) {
     match &mut stmt.kind {
+        StmtKind::LetElse { .. } | StmtKind::LetTuple { .. } | StmtKind::Assert { .. } => {
+            unreachable!("surface syntax is desugared after parsing")
+        }
         StmtKind::Let { ty, init, .. } => {
             if let Some(t) = ty {
                 rewrite_type(t, rename);
@@ -1588,6 +1715,7 @@ fn rewrite_expr(expr: &mut Expr, rename: &HashMap<String, String>) {
         return;
     }
     match &mut expr.kind {
+        ExprKind::IfLet { .. } | ExprKind::WhileLet { .. } => unreachable!("surface syntax is desugared after parsing"),
         ExprKind::Ident { name, generics } => {
             if let Some(replacement) = rename.get(name) {
                 *name = replacement.clone();
@@ -1629,7 +1757,12 @@ fn rewrite_expr(expr: &mut Expr, rename: &HashMap<String, String>) {
                 rewrite_expr(&mut f.value, rename);
             }
         }
-        ExprKind::Paren(inner) | ExprKind::Try(inner) => rewrite_expr(inner, rename),
+        ExprKind::Cast { .. } | ExprKind::Comprehension { .. } => {
+                unreachable!("surface syntax is desugared after parsing")
+            }
+        ExprKind::Paren(inner) | ExprKind::Try(inner) | ExprKind::NamedArg { value: inner, .. } => {
+            rewrite_expr(inner, rename)
+        }
         ExprKind::Block(block) => rewrite_block(block, rename),
         ExprKind::Unary { operand, .. } => rewrite_expr(operand, rename),
         ExprKind::Binary { lhs, rhs, .. } => {
@@ -1898,7 +2031,7 @@ mod tests {
         // module's free helper `is_space_byte`. After expansion the call
         // site inside the method body must reference the namespaced name so
         // it resolves to the renamed free declaration.
-        let user = parse_src("import std/string\nfun main() {}\n");
+        let user = parse_src("import std.string\nfun main() {}\n");
         let combined = expand_with_stdlib(&user).expect("expand");
         let trim_fn = combined
             .items
@@ -1988,7 +2121,7 @@ mod tests {
 
     #[test]
     fn expand_prepends_namespaced_io_functions() {
-        let user = parse_src("import std/io { println }\nfun main() {}\n");
+        let user = parse_src("from std.io import println\nfun main() {}\n");
         let combined = expand_with_stdlib(&user).expect("expand");
         let names: Vec<String> = combined
             .items
@@ -2036,7 +2169,7 @@ mod tests {
         // `error_kind(...)` inside `io_error`. After expansion that call
         // site must reference the dependency's namespaced symbol
         // (`std.error.error_kind`), not the bare name (issue #178).
-        let user = parse_src("import std/fs { read }\nfun main() {}\n");
+        let user = parse_src("from std.fs import read\nfun main() {}\n");
         let combined = expand_with_stdlib(&user).expect("expand");
         let io_error = combined
             .items
@@ -2064,7 +2197,7 @@ mod tests {
         // `std/path` imports `std/string`. A user importing only `std/path`
         // must still get `std/string`'s items merged (so path's `String`
         // method calls resolve), and exactly once.
-        let user = parse_src("import std/path { basename }\nfun main() {}\n");
+        let user = parse_src("from std.path import basename\nfun main() {}\n");
         let combined = expand_with_stdlib(&user).expect("expand");
 
         // `std/string` declares the free helper `is_space_byte`; it must be
@@ -2105,7 +2238,8 @@ mod tests {
 
     #[test]
     fn duplicate_imports_load_module_once() {
-        let user = parse_src("import std/io { println }\nimport std/io { print }\nfun main() {}\n");
+        let user =
+            parse_src("from std.io import println\nfrom std.io import print\nfun main() {}\n");
         let combined = expand_with_stdlib(&user).expect("expand");
         let println_count = combined
             .items
@@ -2207,10 +2341,10 @@ mod tests {
         ));
         let pkg_dir = cache.join("github.com").join("acme").join("pkg@v1.0.0");
         std::fs::create_dir_all(&pkg_dir).expect("mkdir package");
-        std::fs::write(pkg_dir.join("lib.rv"), "fun inside() -> Int { return 1 }\n")
+        std::fs::write(pkg_dir.join("lib.rv"), "fun inside() -> int { return 1 }\n")
             .expect("write lib");
         let outside = pkg_dir.parent().expect("package parent").join("escape.rv");
-        std::fs::write(&outside, "fun outside() -> Int { return 2 }\n").expect("write escape");
+        std::fs::write(&outside, "fun outside() -> int { return 2 }\n").expect("write escape");
 
         let lock = crate::lock::LockFile {
             version: crate::lock::LOCK_VERSION,
@@ -2250,7 +2384,7 @@ mod tests {
         std::fs::create_dir_all(&outside_dir).expect("mkdir outside");
         std::fs::write(
             outside_dir.join("util.rv"),
-            "fun outside() -> Int { return 2 }\n",
+            "fun outside() -> int { return 2 }\n",
         )
         .expect("write outside");
         symlink(outside_dir.join("util.rv"), pkg_dir.join("util.rv")).expect("create symlink");
@@ -2292,7 +2426,7 @@ mod tests {
         let src_path = pkg_dir.join("lib.rv");
         std::fs::write(
             &src_path,
-            "fun shout(s: String) -> String { return s.concat(\"!\") }\n",
+            "fun shout(s: str) -> str { return s.concat(\"!\") }\n",
         )
         .expect("write src");
 
@@ -2307,7 +2441,7 @@ mod tests {
         let ctx = PackageContext::new(cache.clone(), &lock);
 
         let user = parse_src(
-            "import \"github.com/acme/greet/lib\" { shout }\nfun main() { print(shout(\"hi\")) }\n",
+            "from \"github.com/acme/greet/lib\" import shout\nfun main() { print(shout(\"hi\")) }\n",
         );
         let (combined, _sites) = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
 
@@ -2346,7 +2480,7 @@ mod tests {
         let src_path = pkg_dir.join("lib.rv");
         std::fs::write(
             &src_path,
-            "fun shout(s: String) -> String { return s.concat(\"!\") }\n",
+            "fun shout(s: str) -> str { return s.concat(\"!\") }\n",
         )
         .expect("src");
 
@@ -2364,19 +2498,19 @@ mod tests {
             &[
                 (
                     "helper.rv",
-                    "import \"github.com/acme/greet/lib\" { shout }\n\
-                     fun loud(s: String) -> String { return shout(s) }\n",
+                    "from \"github.com/acme/greet/lib\" import shout\n\
+                     fun loud(s: str) -> str { return shout(s) }\n",
                 ),
                 (
                     "main.rv",
-                    "import \"./helper\" { loud }\nfun main() { print(loud(\"hi\")) }\n",
+                    "from \"./helper\" import loud\nfun main() { print(loud(\"hi\")) }\n",
                 ),
             ],
             "main.rv",
         );
         let canon = proj.join("helper.rv").canonicalize().expect("canon");
         let user = parse_at(
-            "import \"./helper\" { loud }\nfun main() { print(loud(\"hi\")) }\n",
+            "from \"./helper\" import loud\nfun main() { print(loud(\"hi\")) }\n",
             &entry,
         );
         let (combined, _sites) = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
@@ -2425,12 +2559,12 @@ mod tests {
         .expect("toml");
         std::fs::write(
             pkg_dir.join("lib.rv"),
-            "import \"./util\" { value }\nfun answer() -> Int { return value() }\n",
+            "from \"./util\" import value\nfun answer() -> int { return value() }\n",
         )
         .expect("lib");
         std::fs::write(
             pkg_dir.join("util.rv"),
-            "fun value() -> Int { return 42 }\n",
+            "fun value() -> int { return 42 }\n",
         )
         .expect("util");
 
@@ -2444,7 +2578,7 @@ mod tests {
         };
         let ctx = PackageContext::new(cache.clone(), &lock);
         let user = parse_src(
-            "import \"github.com/acme/calc\" { answer }\nfun main() { print(answer()) }\n",
+            "from \"github.com/acme/calc\" import answer\nfun main() { print(answer()) }\n",
         );
         let (combined, _sites) = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
 
@@ -2507,10 +2641,10 @@ mod tests {
         .expect("dep toml");
         std::fs::write(
             app_dir.join("lib.rv"),
-            "import \"github.com/acme/dep\"\nfun answer() -> Int { return dep.value() }\n",
+            "import \"github.com/acme/dep\"\nfun answer() -> int { return dep.value() }\n",
         )
         .expect("app lib");
-        std::fs::write(dep_dir.join("lib.rv"), "fun value() -> Int { return 7 }\n")
+        std::fs::write(dep_dir.join("lib.rv"), "fun value() -> int { return 7 }\n")
             .expect("dep lib");
 
         let lock = crate::lock::LockFile {
@@ -2530,7 +2664,7 @@ mod tests {
         };
         let ctx = PackageContext::new(cache.clone(), &lock);
         let user = parse_src(
-            "import \"github.com/acme/app\" { answer }\nfun main() { print(answer()) }\n",
+            "from \"github.com/acme/app\" import answer\nfun main() { print(answer()) }\n",
         );
         let (combined, _sites) = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
 
@@ -2582,7 +2716,7 @@ mod tests {
             "[package]\nname = \"dep\"\nversion = \"0.1.0\"\n",
         )
         .expect("dep toml");
-        std::fs::write(dep_dir.join("lib.rv"), "fun value() -> Int { return 9 }\n")
+        std::fs::write(dep_dir.join("lib.rv"), "fun value() -> int { return 9 }\n")
             .expect("dep lib");
 
         let lock = crate::lock::LockFile {
@@ -2599,18 +2733,18 @@ mod tests {
             &[
                 (
                     "helper.rv",
-                    "import \"github.com/acme/dep\"\nfun via() -> Int { return dep.value() }\n",
+                    "import \"github.com/acme/dep\"\nfun via() -> int { return dep.value() }\n",
                 ),
                 (
                     "main.rv",
-                    "import \"./helper\" { via }\nfun main() { print(via()) }\n",
+                    "from \"./helper\" import via\nfun main() { print(via()) }\n",
                 ),
             ],
             "main.rv",
         );
         let canon = proj.join("helper.rv").canonicalize().expect("canon");
         let user = parse_at(
-            "import \"./helper\" { via }\nfun main() { print(via()) }\n",
+            "from \"./helper\" import via\nfun main() { print(via()) }\n",
             &entry,
         );
         let (combined, _sites) = expand_with_stdlib_ctx(&user, Some(&ctx)).expect("expand");
@@ -2655,7 +2789,7 @@ mod tests {
         };
         let ctx = PackageContext::new(PathBuf::from("/cache"), &lock);
         let file = parse_src(
-            "import std/time { now_millis }\nfun stamp() -> Int { return now_millis() }\n",
+            "from std.time import now_millis\nfun stamp() -> int { return now_millis() }\n",
         );
         let map = external_import_rename_map(&file, &ctx, None);
         assert_eq!(
@@ -2704,16 +2838,13 @@ mod tests {
     fn local_module_functions_are_merged_and_namespaced() {
         let (dir, entry) = write_temp_project(
             &[
-                (
-                    "helper.rv",
-                    "fun greet(name: String) -> String { return name }\n",
-                ),
-                ("main.rv", "import \"./helper\" { greet }\nfun main() {}\n"),
+                ("helper.rv", "fun greet(name: str) -> str { return name }\n"),
+                ("main.rv", "from \"./helper\" import greet\nfun main() {}\n"),
             ],
             "main.rv",
         );
         let canon = dir.join("helper.rv").canonicalize().expect("canon");
-        let user = parse_at("import \"./helper\" { greet }\nfun main() {}\n", &entry);
+        let user = parse_at("from \"./helper\" import greet\nfun main() {}\n", &entry);
         let combined = expand_with_stdlib(&user).expect("expand");
         let key = local_module_key(&canon);
         let mangled = mangle_local_fn(&key, "greet");
@@ -2727,10 +2858,11 @@ mod tests {
 
     #[test]
     fn selectively_imported_local_const_resolves() {
-        let main_src = "import \"./limits\" { MAX_WIDTH }\nfun main() {\n    print(MAX_WIDTH)\n}\n";
+        let main_src =
+            "from \"./limits\" import MAX_WIDTH\nfun main() {\n    print(MAX_WIDTH)\n}\n";
         let (dir, entry) = write_temp_project(
             &[
-                ("limits.rv", "const MAX_WIDTH: Int = 120\n"),
+                ("limits.rv", "let MAX_WIDTH: int = 120\n"),
                 ("main.rv", main_src),
             ],
             "main.rv",
@@ -2739,30 +2871,29 @@ mod tests {
         let combined = expand_with_stdlib(&user).expect("expand");
         let mut loader = FsLoader;
         let resolved = super::super::resolve_file(&combined, &mut loader)
-            .expect("imported const should resolve");
+            .expect("imported let should resolve");
         assert!(
             resolved
                 .map
                 .uses
                 .values()
                 .any(|binding| matches!(binding, super::super::Binding::Const(_))),
-            "MAX_WIDTH should bind to the merged const declaration"
+            "MAX_WIDTH should bind to the merged let declaration"
         );
-        let typed =
-            crate::tycheck::check_file(&resolved).expect("imported const should type check");
-        crate::hir::lower_file(&typed).expect("imported const should lower");
+        let typed = crate::tycheck::check_file(&resolved).expect("imported let should type check");
+        crate::hir::lower_file(&typed).expect("imported let should lower");
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn local_module_can_import_const_from_another_local_module() {
-        let main_src = "import \"./width\" { width }\nfun main() { print(width()) }\n";
+        let main_src = "from \"./width\" import width\nfun main() { print(width()) }\n";
         let (dir, entry) = write_temp_project(
             &[
-                ("limits.rv", "const MAX_WIDTH: Int = 120\n"),
+                ("limits.rv", "let MAX_WIDTH: int = 120\n"),
                 (
                     "width.rv",
-                    "import \"./limits\" { MAX_WIDTH }\nfun width() -> Int = MAX_WIDTH\n",
+                    "from \"./limits\" import MAX_WIDTH\nfun width() -> int = MAX_WIDTH\n",
                 ),
                 ("main.rv", main_src),
             ],
@@ -2772,10 +2903,9 @@ mod tests {
         let combined = expand_with_stdlib(&user).expect("expand");
         let mut loader = FsLoader;
         let resolved = super::super::resolve_file(&combined, &mut loader)
-            .expect("const import inside a merged module should resolve");
-        let typed =
-            crate::tycheck::check_file(&resolved).expect("imported const should type check");
-        crate::hir::lower_file(&typed).expect("imported const should lower");
+            .expect("let import inside a merged module should resolve");
+        let typed = crate::tycheck::check_file(&resolved).expect("imported let should type check");
+        crate::hir::lower_file(&typed).expect("imported let should lower");
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -2786,14 +2916,14 @@ mod tests {
         // the rename pass. Without that, resolution fails with
         // "cannot find `T` in scope" for the lambda signature even though the
         // same type resolves fine as a plain parameter, return, or let type.
-        let main_src = "import \"./widget\" { Widget, make }\n\
+        let main_src = "from \"./widget\" import Widget, make\n\
              fun apply(w: Widget, f: fun(Widget) -> Widget) -> Widget { return f(w) }\n\
-             fun main() {\n    let id = fun(x: Widget) -> Widget = x\n    print(apply(make(), id).n)\n}\n";
+             fun main() {\n    let id = (x: Widget) -> Widget => x\n    print(apply(make(), id).n)\n}\n";
         let (dir, entry) = write_temp_project(
             &[
                 (
                     "widget.rv",
-                    "struct Widget { n: Int }\nfun make() -> Widget { return Widget { n: 7 } }\n",
+                    "class Widget { n: int }\nfun make() -> Widget { return Widget(n: 7) }\n",
                 ),
                 ("main.rv", main_src),
             ],
@@ -2816,13 +2946,13 @@ mod tests {
         // modules can both declare a `Point` without colliding at merge.
         let (dir, entry) = write_temp_project(
             &[
-                ("shapes.rv", "struct Point { x: Int }\n"),
-                ("main.rv", "import \"./shapes\" { Point }\nfun main() {}\n"),
+                ("shapes.rv", "class Point { x: int }\n"),
+                ("main.rv", "from \"./shapes\" import Point\nfun main() {}\n"),
             ],
             "main.rv",
         );
         let canon = dir.join("shapes.rv").canonicalize().expect("canon");
-        let user = parse_at("import \"./shapes\" { Point }\nfun main() {}\n", &entry);
+        let user = parse_at("from \"./shapes\" import Point\nfun main() {}\n", &entry);
         let combined = expand_with_stdlib(&user).expect("expand");
         let mangled = mangle_local_fn(&local_module_key(&canon), "Point");
         let present = combined
@@ -2840,12 +2970,12 @@ mod tests {
 
     #[test]
     fn imported_trait_impl_satisfies_a_generic_bound() {
-        let main_src = "import \"./t_def\" { Speak, Dog }\n\nfun call<T: Speak>(x: T) -> Int {\n    return x.sound()\n}\n\nfun main() {\n    print(call(Dog {}))\n}\n";
+        let main_src = "from \"./t_def\" import Speak, Dog\n\nfun call[T: Speak](x: T) -> int {\n    return x.sound()\n}\n\nfun main() {\n    print(call(Dog()))\n}\n";
         let (dir, entry) = write_temp_project(
             &[
                 (
                     "t_def.rv",
-                    "trait Speak {\n    fun sound(self) -> Int\n}\n\nstruct Dog {}\n\nimpl Speak for Dog {\n    fun sound(self) -> Int {\n        return 1\n    }\n}\n",
+                    "trait Speak {\n    fun sound(self) -> int\n}\n\nclass Dog {}\n\nimpl Speak for Dog {\n    fun sound(self) -> int {\n        return 1\n    }\n}\n",
                 ),
                 ("t_main.rv", main_src),
             ],
@@ -2868,11 +2998,11 @@ mod tests {
         // exactly once in the combined program. Emitting them per module
         // declared `raven_derive_json_decode` several times, which resolve
         // rejected as "declared multiple times" in a multi-file project.
-        let main_src = "import \"./a\" { A }\nimport \"./b\" { B }\nfun main() {}\n";
+        let main_src = "from \"./a\" import A\nfrom \"./b\" import B\nfun main() {}\n";
         let (dir, entry) = write_temp_project(
             &[
-                ("a.rv", "@derive(FromJson)\nstruct A { x: Int }\n"),
-                ("b.rv", "@derive(ToJson)\nstruct B { y: Int }\n"),
+                ("a.rv", "@derive(FromJson)\nclass A { x: int }\n"),
+                ("b.rv", "@derive(ToJson)\nclass B { y: int }\n"),
                 ("main.rv", main_src),
             ],
             "main.rv",
@@ -2897,11 +3027,11 @@ mod tests {
         // namespaced per module like functions, so merging them does not report
         // `value` as declared multiple times even though the importer selects
         // only the uniquely named functions.
-        let main_src = "import \"./a\" { get_a }\nimport \"./b\" { get_b }\nfun main() {}\n";
+        let main_src = "from \"./a\" import get_a\nfrom \"./b\" import get_b\nfun main() {}\n";
         let (dir, entry) = write_temp_project(
             &[
-                ("a.rv", "let value: Int = 1\nfun get_a() -> Int = value\n"),
-                ("b.rv", "let value: Int = 10\nfun get_b() -> Int = value\n"),
+                ("a.rv", "var value: int = 1\nfun get_a() -> int = value\n"),
+                ("b.rv", "var value: int = 10\nfun get_b() -> int = value\n"),
                 ("main.rv", main_src),
             ],
             "main.rv",
@@ -2926,7 +3056,7 @@ mod tests {
         // A user declaration that uses the reserved `raven_derive_` prefix is
         // rejected with a clear message, since it would otherwise collide with a
         // generated JSON derive helper.
-        let src = "fun raven_derive_json_decode() -> Int = 1\nfun main() {}\n";
+        let src = "fun raven_derive_json_decode() -> int = 1\nfun main() {}\n";
         let user = parse_at(src, Path::new("main.rv"));
         let err = expand_with_stdlib(&user).expect_err("reserved name must be rejected");
         let msg = format!("{err}");
@@ -2941,13 +3071,13 @@ mod tests {
         // `a` imports `b` and initializes a global from `b`'s function at load
         // time. `b` must be merged ahead of `a`, so its global initializer runs
         // first and `a` reads the initialized value rather than zero.
-        let main_src = "import \"./a\" { get_result }\nfun main() {}\n";
+        let main_src = "from \"./a\" import get_result\nfun main() {}\n";
         let (dir, entry) = write_temp_project(
             &[
-                ("b.rv", "let b_value: Int = 42\nfun get_b() -> Int = b_value\n"),
+                ("b.rv", "var b_value: int = 42\nfun get_b() -> int = b_value\n"),
                 (
                     "a.rv",
-                    "import \"./b\" { get_b }\nlet a_result: Int = get_b()\nfun get_result() -> Int = a_result\n",
+                    "from \"./b\" import get_b\nlet a_result: int = get_b()\nfun get_result() -> int = a_result\n",
                 ),
                 ("main.rv", main_src),
             ],
@@ -2974,17 +3104,17 @@ mod tests {
     fn transitive_local_imports_merge_and_rewrite_calls() {
         let (dir, entry) = write_temp_project(
             &[
-                ("b.rv", "fun base() -> Int { return 1 }\n"),
+                ("b.rv", "fun base() -> int { return 1 }\n"),
                 (
                     "a.rv",
-                    "import \"./b\" { base }\nfun via() -> Int { return base() }\n",
+                    "from \"./b\" import base\nfun via() -> int { return base() }\n",
                 ),
-                ("main.rv", "import \"./a\" { via }\nfun main() {}\n"),
+                ("main.rv", "from \"./a\" import via\nfun main() {}\n"),
             ],
             "main.rv",
         );
         let canon_b = dir.join("b.rv").canonicalize().expect("canon b");
-        let user = parse_at("import \"./a\" { via }\nfun main() {}\n", &entry);
+        let user = parse_at("from \"./a\" import via\nfun main() {}\n", &entry);
         let combined = expand_with_stdlib(&user).expect("expand");
 
         // `a::via` calls `base`, imported from `./b`. The merged `via` body
@@ -3017,17 +3147,17 @@ mod tests {
         // namespaced symbol rather than left as an unresolved `dep`.
         let (dir, entry) = write_temp_project(
             &[
-                ("b.rv", "fun base() -> Int { return 1 }\n"),
+                ("b.rv", "fun base() -> int { return 1 }\n"),
                 (
                     "a.rv",
-                    "import \"./b\" as dep\nfun via() -> Int { return dep.base() }\n",
+                    "import \"./b\" as dep\nfun via() -> int { return dep.base() }\n",
                 ),
-                ("main.rv", "import \"./a\" { via }\nfun main() {}\n"),
+                ("main.rv", "from \"./a\" import via\nfun main() {}\n"),
             ],
             "main.rv",
         );
         let canon_b = dir.join("b.rv").canonicalize().expect("canon b");
-        let user = parse_at("import \"./a\" { via }\nfun main() {}\n", &entry);
+        let user = parse_at("from \"./a\" import via\nfun main() {}\n", &entry);
         let combined = expand_with_stdlib(&user).expect("expand");
 
         let key_b = local_module_key(&canon_b);
@@ -3059,14 +3189,14 @@ mod tests {
             &[
                 (
                     "module.rv",
-                    "let value: Int = 1\nfun echo(value: Int) -> Int { return value }\n",
+                    "let value: int = 1\nfun echo(value: int) -> int { return value }\n",
                 ),
-                ("main.rv", "import \"./module\" { echo }\nfun main() {}\n"),
+                ("main.rv", "from \"./module\" import echo\nfun main() {}\n"),
             ],
             "main.rv",
         );
         let canon = dir.join("module.rv").canonicalize().expect("canon");
-        let user = parse_at("import \"./module\" { echo }\nfun main() {}\n", &entry);
+        let user = parse_at("from \"./module\" import echo\nfun main() {}\n", &entry);
         let combined = expand_with_stdlib(&user).expect("expand");
 
         let key = local_module_key(&canon);
@@ -3096,6 +3226,58 @@ mod tests {
     fn collect_fn_body_idents(body: &FunctionBody, out: &mut Vec<String>) {
         if let FunctionBody::Block(b) = body {
             collect_block_idents(b, out);
+        }
+    }
+}
+
+/// Copy default trait methods into impls that do not override them.
+fn inject_default_methods(items: &mut [Decl]) {
+    use crate::ast::respan::Respan;
+    let mut traits: HashMap<String, Option<Trait>> = HashMap::new();
+    for decl in items.iter() {
+        if let DeclKind::Trait(t) = &decl.kind {
+            if !t
+                .members
+                .iter()
+                .any(|m| !matches!(m.body, FunctionBody::None))
+            {
+                continue;
+            }
+            traits
+                .entry(t.name.clone())
+                .and_modify(|e| *e = None)
+                .or_insert_with(|| Some(t.clone()));
+        }
+    }
+    if traits.is_empty() {
+        return;
+    }
+    for decl in items.iter_mut() {
+        let DeclKind::Impl(imp) = &mut decl.kind else {
+            continue;
+        };
+        if imp.for_type.is_none() {
+            continue;
+        }
+        let Some(seg) = imp.trait_or_type.segments.last() else {
+            continue;
+        };
+        let Some(Some(tr)) = traits.get(&seg.name) else {
+            continue;
+        };
+        let mut subst = HashMap::new();
+        for (g, arg) in tr.generics.iter().zip(seg.generics.iter()) {
+            subst.insert(g.name.clone(), arg.clone());
+        }
+        for member in &tr.members {
+            if matches!(member.body, FunctionBody::None)
+                || imp.items.iter().any(|f| f.name == member.name)
+            {
+                continue;
+            }
+            let mut f = member.clone();
+            Respan::new(crate::span::next_copy_id(), &subst).function(&mut f);
+            imp.items.push(f);
         }
     }
 }

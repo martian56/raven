@@ -24,7 +24,7 @@ pub fn bind(
     pat: &Pattern,
     scrut_ty: &Ty,
     env: &TypeEnv,
-    locals: &mut HashMap<BindingKey, Ty>,
+    locals: &mut rustc_hash::FxHashMap<BindingKey, Ty>,
 ) -> Result<(), RavenError> {
     match &pat.kind {
         PatternKind::Wildcard => Ok(()),
@@ -46,7 +46,7 @@ pub fn bind(
                 return Err(RavenError::ty(
                     TypeError::TypeMismatch {
                         expected: format!("{}", scrut_ty),
-                        actual: "Int range".into(),
+                        actual: "int range".into(),
                     },
                     pat.span.clone(),
                 ));
@@ -60,6 +60,7 @@ pub fn bind(
             if is_nullary_constructor(name, scrut_ty, env) {
                 return Ok(());
             }
+            check_not_constructor_typo(name, scrut_ty, env, &pat.span)?;
             locals.insert(BindingKey::pattern(&pat.span), scrut_ty.clone());
             Ok(())
         }
@@ -162,8 +163,14 @@ pub fn bind(
             }
         },
         PatternKind::Struct { name, fields } => {
-            if let Ty::Struct { id, .. } = scrut_ty.strip_self() {
+            if let Ty::Struct { id, args, .. } = scrut_ty.strip_self() {
                 if let Some(sig) = env.structs.get(id) {
+                    let subst: HashMap<ParamId, Ty> = sig
+                        .generics
+                        .iter()
+                        .zip(args.iter())
+                        .map(|(p, a)| (p.id.clone(), a.clone()))
+                        .collect();
                     if sig.name != *name {
                         return Err(RavenError::ty(
                             TypeError::TypeMismatch {
@@ -176,7 +183,7 @@ pub fn bind(
                     for fpat in fields {
                         let field_ty =
                             sig.field(&fpat.name)
-                                .map(|(_, t)| t.clone())
+                                .map(|(_, t)| substitute(t, &subst))
                                 .ok_or_else(|| {
                                     RavenError::ty(
                                         TypeError::UndefinedField {
@@ -265,4 +272,58 @@ fn is_nullary_constructor(name: &str, scrut_ty: &Ty, env: &TypeEnv) -> bool {
         }
     }
     false
+}
+
+/// A capitalized pattern name must be a unit variant, not a new binding.
+fn check_not_constructor_typo(
+    name: &str,
+    scrut_ty: &Ty,
+    env: &TypeEnv,
+    span: &crate::span::Span,
+) -> Result<(), RavenError> {
+    if !name.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+        return Ok(());
+    }
+    let (type_name, variants): (String, Vec<(String, usize)>) = match scrut_ty.strip_self() {
+        Ty::Option(_) => (
+            "Option".into(),
+            vec![("Some".into(), 1), ("None".into(), 0)],
+        ),
+        Ty::Result(_, _) => ("Result".into(), vec![("Ok".into(), 1), ("Err".into(), 1)]),
+        Ty::Enum { id, .. } => match env.enums.get(id) {
+            Some(sig) => (
+                sig.name.clone(),
+                sig.variants
+                    .iter()
+                    .map(|v| {
+                        let n = match &v.payload {
+                            VariantPayloadSig::Unit => 0,
+                            VariantPayloadSig::Tuple(t) => t.len(),
+                            VariantPayloadSig::Struct(f) => f.len(),
+                        };
+                        (v.name.clone(), n)
+                    })
+                    .collect(),
+            ),
+            None => return Ok(()),
+        },
+        _ => return Ok(()),
+    };
+    if let Some((_, n)) = variants.iter().find(|(v, _)| v == name) {
+        let holes = vec!["_"; *n].join(", ");
+        return Err(RavenError::ty(
+            TypeError::Custom(format!(
+                "variant `{name}` carries a payload; match it as `{name}({holes})`"
+            )),
+            span.clone(),
+        ));
+    }
+    let mut err = RavenError::ty(
+        TypeError::Custom(format!("`{type_name}` has no variant `{name}`")),
+        span.clone(),
+    );
+    if let Some(s) = crate::error::closest_match(name, variants.iter().map(|(v, _)| v.as_str())) {
+        err = err.with_hint(format!("did you mean `{s}`?"));
+    }
+    Err(err)
 }

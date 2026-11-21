@@ -1,0 +1,33 @@
+// golden:skip - connects to a loopback server (address in RAVEN_NET_ADDR);
+// the read-limit validation is checked in codegen_smoke.rs
+// (net_read_rejects_bad_limits).
+//
+// TcpStream.read validates its limit: a negative size is an error (not Ok("")
+// that looks like EOF), and a size too large to allocate fails gracefully
+// instead of aborting the process. Prints:
+//   neg err
+//   huge err
+//   alive
+from std.net import connect
+from std.env import get_env
+from std.io import println
+
+fun main() {
+    let addr = get_env("RAVEN_NET_ADDR")
+    match connect(addr) {
+        case Ok(s) {
+            s.set_read_timeout_ms(2000)
+            match s.read(0 - 1) {
+                case Ok(data) { println("neg unexpectedly ok") }
+                case Err(e) { println("neg err") }
+            }
+            match s.read(9000000000000000000) {
+                case Ok(data) { println("huge unexpectedly ok") }
+                case Err(e) { println("huge err") }
+            }
+            println("alive")
+            s.close()
+        }
+        case Err(e) { println("connect failed") }
+    }
+}

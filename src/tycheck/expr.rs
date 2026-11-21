@@ -73,7 +73,11 @@ fn check_decl_body(
         DeclKind::Function(f) => check_function(f, None, &[], resolved, env, types),
         DeclKind::Impl(i) => {
             let mut errors: Vec<RavenError> = Vec::new();
-            let impl_sig = env.impls.iter().find(|s| s.span == i.span).cloned();
+            let impl_sig = env
+                .impls
+                .iter()
+                .find(|s| s.span.start == i.span.start && s.span.end == i.span.end && s.span == i.span)
+                .cloned();
             let impl_generics = impl_sig
                 .as_ref()
                 .map(|s| s.generics.clone())
@@ -112,13 +116,12 @@ fn check_decl_body(
             errors
         }
         DeclKind::Trait(t) => {
-            // Default bodies in trait declarations: walk them without
-            // a concrete Self because we treat `Self` as an error
-            // marker for now; trait default bodies that reference Self
-            // remain limited in this release.
+            // A default body is checked in each impl that receives a copy,
+            // where `Self` is the implementing type. One that mentions `Self`
+            // cannot be checked on its own.
             let mut errors: Vec<RavenError> = Vec::new();
             for m in &t.members {
-                if matches!(m.body, FunctionBody::None) {
+                if matches!(m.body, FunctionBody::None) || mentions_self(m) {
                     continue;
                 }
                 errors.extend(check_function(m, None, &[], resolved, env, types));
@@ -222,6 +225,7 @@ fn check_function(
     let mut cx =
         Checker::new(resolved, env, types, self_ty.cloned(), ret_ty.clone()).with_scope(full_scope);
     cx.errors = setup_errors;
+    cx.in_main = self_ty.is_none() && f.name == "main" && ret_ty == Ty::Unit;
     // Record the trait bounds of every in-scope generic parameter (the
     // enclosing impl's plus this function's own) so a method call on a
     // `Ty::Param` value can resolve through its bound.
@@ -251,12 +255,20 @@ fn check_function(
     match &f.body {
         FunctionBody::Block(b) => {
             let body_ty = cx.check_block(b).unwrap_or(Ty::Error);
-            if b.trailing.is_some() && !matches!(ret_ty.strip_self(), Ty::Unit | Ty::Error) {
+            let tail_is_unit = matches!(cx.infer.resolve(&body_ty), Ty::Unit);
+            if b.trailing.is_some()
+                && tail_is_unit
+                && !cx.diverges
+                && !matches!(ret_ty.strip_self(), Ty::Unit | Ty::Error)
+            {
+                cx.push_error(missing_return(&ret_ty, &f.span));
+            } else if b.trailing.is_some() && !matches!(ret_ty.strip_self(), Ty::Unit | Ty::Error) {
                 cx.unify_recover(&ret_ty, &body_ty, &b.span);
-            } else if !matches!(ret_ty, Ty::Unit | Ty::Error) {
-                // No trailing expression and a non unit return type.
-                // Acceptable as long as the body contains explicit
-                // returns; we do not analyze control flow here.
+            } else if !matches!(ret_ty.strip_self(), Ty::Unit | Ty::Error)
+                && !cx.diverges
+                && cx.errors.is_empty()
+            {
+                cx.push_error(missing_return(&ret_ty, &f.span));
             }
         }
         FunctionBody::Expr(e) => {
@@ -279,7 +291,7 @@ struct Checker<'a, 'b> {
     /// The current function's declared return type.
     return_ty: Ty,
     /// Local variable types keyed by the binding's declaration span.
-    locals: HashMap<BindingKey, Ty>,
+    locals: rustc_hash::FxHashMap<BindingKey, Ty>,
     /// Lexical scope of generic parameters from the enclosing
     /// declaration (impl + method).
     generic_scope: GenericScope,
@@ -298,7 +310,7 @@ struct Checker<'a, 'b> {
     /// Accumulated diagnostics for this body. Statement and item checking
     /// recover at their boundaries (binding a failed value to `Ty::Error`)
     /// and push the error here instead of returning it, so one compile can
-    /// report many independent errors. See `docs/v2/specs/tycheck.md`.
+    /// report many independent errors. See `docs/specs/tycheck.md`.
     errors: Vec<RavenError>,
     /// Binding keys of `const` locals in this body, used to reject a
     /// reassignment of an immutable local.
@@ -313,6 +325,19 @@ struct Checker<'a, 'b> {
     /// Reset to empty when checking a lambda body, since a loop does not extend
     /// across a nested function.
     loop_kinds: Vec<bool>,
+    /// Control cannot reach the current point.
+    diverges: bool,
+    /// Per enclosing loop: whether it is broken out of, and the break value type.
+    loop_breaks: Vec<(bool, Option<Ty>)>,
+    /// Types of diverging expressions; unsolved ones default to `Unit`.
+    never_vars: Vec<super::ty::InferVarId>,
+    /// Operators whose operands were both unsolved when checked, as in the
+    /// lambda `(a, b) => a + b`; judged once the body's calls pin the types.
+    deferred_ops: Vec<(Ty, Ty, BinaryOp, Span)>,
+    /// Checking the program's `main`, where `?` may stop the program.
+    in_main: bool,
+    /// Expected parameter types for the lambda argument being checked.
+    lambda_hint: Option<Vec<Ty>>,
 }
 
 /// Keys used by the locals map. Mirrors the resolver's `Binding`
@@ -353,23 +378,14 @@ impl<'a, 'b> Checker<'a, 'b> {
         // bound is verified the moment its variable resolves to a concrete
         // type (catches, for example, an inferred `Map` key with no `Hash`).
         let mut infer = InferCtx::new();
-        infer.set_trait_impls(
-            env.impls
-                .iter()
-                .filter_map(|i| {
-                    i.trait_name
-                        .as_ref()
-                        .map(|t| (t.clone(), i.self_ty.clone()))
-                })
-                .collect(),
-        );
+        infer.set_trait_impls(env.trait_impl_pairs());
         Self {
             resolved,
             env,
             types,
             self_ty,
             return_ty,
-            locals: HashMap::new(),
+            locals: Default::default(),
             generic_scope: GenericScope::new(),
             param_bounds: HashMap::new(),
             infer,
@@ -378,7 +394,86 @@ impl<'a, 'b> Checker<'a, 'b> {
             const_locals: std::collections::HashSet::new(),
             recorded: Vec::new(),
             loop_kinds: Vec::new(),
+            diverges: false,
+            loop_breaks: Vec::new(),
+            never_vars: Vec::new(),
+            deferred_ops: Vec::new(),
+            in_main: false,
+            lambda_hint: None,
         }
+    }
+
+    fn check_arg(&mut self, arg: &Expr, expected: &Ty) -> Result<Ty, RavenError> {
+        if let ExprKind::Lambda { .. } = &arg.kind {
+            if let Ty::Function { params, .. } = self.infer.resolve(expected) {
+                self.lambda_hint = Some(params);
+            }
+        }
+        // A list literal passed for `list[Trait]` converts each element.
+        let prev_hint = self.array_hint.take();
+        if let ExprKind::Array(_) = &arg.kind {
+            if let Ty::List(elem) = self.infer.resolve(expected) {
+                if matches!(*elem, Ty::Dyn { .. }) {
+                    self.array_hint = Some(*elem);
+                }
+            }
+        }
+        let r = self.check_expr(arg);
+        self.array_hint = prev_hint;
+        self.lambda_hint = None;
+        r
+    }
+
+    /// An unsolved operand takes the other operand's type.
+    fn binary(&mut self, l: &Ty, r: &Ty, op: BinaryOp, span: &Span) -> Result<Ty, RavenError> {
+        let l = self.infer.resolve(l);
+        let r = self.infer.resolve(r);
+        let want = match op {
+            BinaryOp::And | BinaryOp::Or => Some(Ty::Bool),
+            _ => None,
+        };
+        for side in [&l, &r] {
+            if let Ty::Var(_) = side {
+                let other = if std::ptr::eq(side, &l) { &r } else { &l };
+                let target = match (&want, other) {
+                    (Some(t), _) => Some(t.clone()),
+                    (None, Ty::Var(_)) => None,
+                    (None, o) => Some(o.strip_self().clone()),
+                };
+                if let Some(t) = target {
+                    self.unify(side, &t, span)?;
+                }
+            }
+        }
+        let l = self.infer.resolve(&l);
+        let r = self.infer.resolve(&r);
+        if let (Ty::Var(_), Ty::Var(_)) = (&l, &r) {
+            use BinaryOp::*;
+            match op {
+                Add | Sub | Mul | Div | Mod | Lt | Le | Gt | Ge | Eq | Ne => {
+                    self.unify(&l, &r, span)?;
+                    self.deferred_ops
+                        .push((l.clone(), r.clone(), op, span.clone()));
+                    return Ok(match op {
+                        Add | Sub | Mul | Div | Mod => l,
+                        _ => Ty::Bool,
+                    });
+                }
+                BitAnd | BitOr | BitXor | Shl | Shr => {
+                    self.unify(&l, &Ty::Int, span)?;
+                    self.unify(&r, &Ty::Int, span)?;
+                    return Ok(Ty::Int);
+                }
+                _ => {}
+            }
+        }
+        check_binary(&l, &r, op, span)
+    }
+
+    fn never_ty(&mut self, span: &Span) -> Ty {
+        let v = self.infer.fresh(span.clone());
+        self.never_vars.push(v);
+        Ty::Var(v)
     }
 
     fn with_scope(mut self, scope: GenericScope) -> Self {
@@ -525,13 +620,7 @@ impl<'a, 'b> Checker<'a, 'b> {
     /// the implementing type's identity (ignoring `Self` wrappers) and the
     /// impl's recorded trait name.
     fn implements_trait(&self, concrete: &Ty, trait_name: &str) -> bool {
-        if concrete.is_error() {
-            return true;
-        }
-        self.env.impls.iter().any(|imp| {
-            imp.trait_name.as_deref() == Some(trait_name)
-                && super::env::tys_equal(&imp.self_ty, concrete)
-        })
+        implements_trait_in(self.env, concrete, trait_name, 0)
     }
 
     /// Require that a value of type `ty` can be rendered to a `String`
@@ -601,13 +690,45 @@ impl<'a, 'b> Checker<'a, 'b> {
     /// `CannotInferType` errors. Also resolves locals so subsequent
     /// stages see concrete types.
     fn finalize_types(&mut self) -> Result<(), RavenError> {
+        for v in std::mem::take(&mut self.never_vars) {
+            if self.infer.resolve(&Ty::Var(v)).has_var() {
+                let span = Span::new(std::sync::Arc::new(Default::default()), 0, 0, 1, 1);
+                let _ = self.infer.unify(&Ty::Var(v), &Ty::Unit, &span);
+            }
+        }
+        for (l, r, op, span) in std::mem::take(&mut self.deferred_ops) {
+            let l = self.infer.resolve(&l);
+            let r = self.infer.resolve(&r);
+            if l.has_var() || r.has_var() {
+                continue;
+            }
+            // A class operator dispatches to its method, which needs the type
+            // while checking; an untyped operand cannot use one.
+            if matches!(l.strip_self(), Ty::Struct { .. } | Ty::Enum { .. }) {
+                self.push_error(
+                    RavenError::ty(
+                        TypeError::Custom(format!(
+                            "`{}` on `{}` needs the operand types written out",
+                            op.symbol(),
+                            l
+                        )),
+                        span.clone(),
+                    )
+                    .with_hint("annotate the lambda parameters, as in `(a: T, b: T) => ...`"),
+                );
+                continue;
+            }
+            if let Err(e) = check_binary(&l, &r, op, &span) {
+                self.push_error(e);
+            }
+        }
         // First settle any deferred `Iterator<T>` element links: a call
         // such as `collect(pipeline)` leaves the element type `T` to be
         // inferred from the concrete argument bound to `S: Iterator<T>`.
         // Map each concrete source type to its iterator element by
         // structurally matching the `next` method's `Option<T>` return.
-        let impls = self.env.impls.clone();
-        let elem_of = move |ty: &Ty| -> Option<Ty> { iterator_elem_concrete(&impls, ty) };
+        let env = self.env;
+        let elem_of = move |ty: &Ty| -> Option<Ty> { iterator_elem_concrete(&env.impls, ty) };
         self.infer.solve_iterator_links(&elem_of)?;
 
         // Resolve only the entries this body recorded, replacing each value
@@ -764,6 +885,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         // Each statement recovers at its own boundary: a failed statement
         // records its error and the block continues, so unrelated errors in
         // later statements are still reported in one compile.
+        let outer = std::mem::take(&mut self.diverges);
         for stmt in &block.stmts {
             self.check_stmt(stmt);
         }
@@ -771,6 +893,12 @@ impl<'a, 'b> Checker<'a, 'b> {
             Some(e) => self.check_expr_recover(e),
             None => Ty::Unit,
         };
+        let ty = if self.diverges && block.trailing.is_none() {
+            self.never_ty(&block.span)
+        } else {
+            ty
+        };
+        self.diverges |= outer;
         self.record(&block.span, ty.clone());
         Ok(ty)
     }
@@ -781,6 +909,9 @@ impl<'a, 'b> Checker<'a, 'b> {
     /// later references do not cascade into spurious "undefined" errors.
     fn check_stmt(&mut self, stmt: &Stmt) {
         match &stmt.kind {
+            StmtKind::LetElse { .. } | StmtKind::LetTuple { .. } | StmtKind::Assert { .. } => {
+                unreachable!("surface syntax is desugared after parsing")
+            }
             StmtKind::Let {
                 name: _,
                 ty,
@@ -843,6 +974,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                 };
                 let ret = self.return_ty.clone();
                 self.unify_recover(&ret, &actual, &stmt.span);
+                self.diverges = true;
             }
             StmtKind::Break(e) => {
                 match self.loop_kinds.last() {
@@ -862,9 +994,23 @@ impl<'a, 'b> Checker<'a, 'b> {
                     )),
                     _ => {}
                 }
-                if let Some(expr) = e {
-                    self.check_expr_recover(expr);
+                let value_ty = e.as_ref().map(|expr| self.check_expr_recover(expr));
+                if let Some(entry) = self.loop_breaks.last_mut() {
+                    entry.0 = true;
+                    let prev = entry.1.take();
+                    let next = match (prev, value_ty) {
+                        (None, v) => v.or(Some(Ty::Unit)),
+                        (Some(p), v) => {
+                            let v = v.unwrap_or(Ty::Unit);
+                            self.unify_recover(&p, &v, &stmt.span);
+                            Some(p)
+                        }
+                    };
+                    if let Some(entry) = self.loop_breaks.last_mut() {
+                        entry.1 = next;
+                    }
                 }
+                self.diverges = true;
             }
             StmtKind::Continue => {
                 if self.loop_kinds.is_empty() {
@@ -873,6 +1019,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                         stmt.span.clone(),
                     ));
                 }
+                self.diverges = true;
             }
             StmtKind::Defer(e) => {
                 self.check_expr_recover(e);
@@ -890,22 +1037,46 @@ impl<'a, 'b> Checker<'a, 'b> {
                 // Reassigning a `const` local is rejected: the binding is
                 // immutable. Only a direct `name = ...` is guarded here.
                 if let ExprKind::Ident { name, .. } = &target.kind {
-                    let is_const = matches!(
-                        self.resolved.map.lookup(&target.span),
-                        Some(crate::resolve::Binding::Local(decl))
-                            if self.const_locals.contains(&BindingKey::local(decl))
-                    );
+                    let is_const = match self.resolved.map.lookup(&target.span) {
+                        Some(crate::resolve::Binding::Local(decl)) => {
+                            self.const_locals.contains(&BindingKey::local(decl))
+                        }
+                        Some(crate::resolve::Binding::Const(_)) => true,
+                        _ => false,
+                    };
                     if is_const {
-                        self.push_error(RavenError::ty(
-                            TypeError::Custom(format!(
-                                "cannot assign to `{}` because it is a `const` binding",
-                                name
-                            )),
-                            target.span.clone(),
-                        ));
+                        self.push_error(
+                            RavenError::ty(
+                                TypeError::Custom(format!(
+                                    "cannot assign to `{name}`: it is declared with `let`"
+                                )),
+                                target.span.clone(),
+                            )
+                            .with_hint(format!("declare it with `var {name}` to reassign it")),
+                        );
                     }
                 }
                 let target_ty = self.check_expr_recover(target);
+                let class_receiver = match &target.kind {
+                    ExprKind::Index { receiver, .. } => self
+                        .types
+                        .lookup(&receiver.span)
+                        .map(|t| self.infer.resolve(t))
+                        .filter(|t| {
+                            matches!(t.strip_self(), Ty::Struct { .. } | Ty::Enum { .. })
+                                && self.type_has_method(t.strip_self(), "set_index")
+                        }),
+                    _ => None,
+                };
+                if class_receiver.is_some() {
+                    let call = crate::ast::set_index_call(target, *op, value, &stmt.span)
+                        .expect("index target");
+                    if let Err(e) = self.check_expr(&call) {
+                        self.push_error(e);
+                    }
+                    self.types.record_operator(&stmt.span);
+                    return;
+                }
                 let value_ty = self.check_expr_recover(value);
                 match op {
                     AssignOp::Assign => {
@@ -916,9 +1087,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                         // target = target op value. Reuse the binary
                         // op checker to pin the rule down.
                         let bin = compound_binary_op(*op);
-                        if let Err(e) =
-                            super::expr::check_binary(&target_ty, &value_ty, bin, &stmt.span)
-                        {
+                        if let Err(e) = self.binary(&target_ty, &value_ty, bin, &stmt.span) {
                             self.push_error(e);
                         }
                     }
@@ -938,6 +1107,9 @@ impl<'a, 'b> Checker<'a, 'b> {
 
     fn check_expr_inner(&mut self, expr: &Expr) -> Result<Ty, RavenError> {
         match &expr.kind {
+            ExprKind::IfLet { .. } | ExprKind::WhileLet { .. } => {
+                unreachable!("surface syntax is desugared after parsing")
+            }
             // A macro call only appears in formatter-parsed source; the
             // compile pipeline expands macros before type checking.
             ExprKind::MacroCall(_) => Ok(Ty::Error),
@@ -961,7 +1133,11 @@ impl<'a, 'b> Checker<'a, 'b> {
                 .clone()
                 .map(|t| Ty::SelfTy(Box::new(t)))
                 .unwrap_or(Ty::Error)),
+            ExprKind::Cast { .. } | ExprKind::Comprehension { .. } => {
+                unreachable!("surface syntax is desugared after parsing")
+            }
             ExprKind::Paren(inner) => self.check_expr(inner),
+            ExprKind::NamedArg { value, .. } => self.check_expr(value),
             ExprKind::Ident { name, generics } => self.check_ident(name, generics, &expr.span),
             ExprKind::Array(items) => self.check_array(items, &expr.span),
             ExprKind::SetLit(items) => self.check_set_lit(items, &expr.span),
@@ -971,23 +1147,45 @@ impl<'a, 'b> Checker<'a, 'b> {
                 expr.span.clone(),
             )),
             ExprKind::Block(b) => self.check_block(b),
-            ExprKind::Unary { op, operand } => self.check_unary(*op, operand),
+            ExprKind::Unary { op, operand } => self.check_unary(*op, operand, &expr.span),
             ExprKind::Binary { op, lhs, rhs } => {
                 let l = self.check_expr(lhs)?;
+                if let Some(name) = op.method_name() {
+                    let lr = self.infer.resolve(&l);
+                    let overloadable = match lr.strip_self() {
+                        Ty::Struct { .. } | Ty::Enum { .. } => true,
+                        Ty::Str => *op == BinaryOp::Mul,
+                        Ty::List(_) => matches!(op, BinaryOp::Add | BinaryOp::Mul),
+                        _ => false,
+                    };
+                    if overloadable && self.type_has_method(lr.strip_self(), name) {
+                        let t = self.check_method_call(
+                            lhs,
+                            name,
+                            &[],
+                            std::slice::from_ref(&**rhs),
+                            &expr.span,
+                        )?;
+                        self.types.record_operator(&expr.span);
+                        return Ok(t);
+                    }
+                }
+                let before_rhs = self.diverges;
                 let r = self.check_expr(rhs)?;
+                if matches!(op, BinaryOp::And | BinaryOp::Or) {
+                    self.diverges = before_rhs;
+                }
                 // Resolve both operands through the inference table so
                 // arithmetic on `?N` after a generic call sees the
                 // solved type when one is available.
-                let l = self.infer.resolve(&l);
-                let r = self.infer.resolve(&r);
-                check_binary(&l, &r, *op, &expr.span)
+                self.binary(&l, &r, *op, &expr.span)
             }
             ExprKind::Range { start, end, .. } => {
                 let s = self.check_expr(start)?;
                 let e = self.check_expr(end)?;
                 if !assignable(&Ty::Int, &s) || !assignable(&Ty::Int, &e) {
                     return Err(RavenError::ty(
-                        TypeError::Custom("range bounds must be `Int`".into()),
+                        TypeError::Custom("range bounds must be `int`".into()),
                         expr.span.clone(),
                     ));
                 }
@@ -1014,6 +1212,16 @@ impl<'a, 'b> Checker<'a, 'b> {
                                 self.unify(&ret_e, &e, &expr.span)?;
                             }
                             Ty::Error => {}
+                            Ty::Unit
+                                if self.in_main
+                                    && (matches!(self.infer.resolve(&e), Ty::Str)
+                                        || self.type_has_method(
+                                            &self.infer.resolve(&e),
+                                            "to_string",
+                                        )) =>
+                            {
+                                self.types.record_try_panic(&expr.span);
+                            }
                             other => {
                                 return Err(RavenError::ty(
                                     TypeError::Custom(format!(
@@ -1032,6 +1240,9 @@ impl<'a, 'b> Checker<'a, 'b> {
                         // must return an Option.
                         match self.infer.resolve(&self.return_ty) {
                             Ty::Option(_) | Ty::Error => {}
+                            Ty::Unit if self.in_main => {
+                                self.types.record_try_panic(&expr.span);
+                            }
                             other => {
                                 return Err(RavenError::ty(
                                     TypeError::Custom(format!(
@@ -1062,27 +1273,69 @@ impl<'a, 'b> Checker<'a, 'b> {
             } => self.check_if(cond, then_branch, else_branch.as_deref(), &expr.span),
             ExprKind::Match { scrutinee, arms } => self.check_match(scrutinee, arms, &expr.span),
             ExprKind::Loop(b) => {
+                let outer = self.diverges;
                 self.loop_kinds.push(true);
+                self.loop_breaks.push((false, None));
                 let r = self.check_block(b);
                 self.loop_kinds.pop();
+                let (broke, value) = self.loop_breaks.pop().unwrap_or((false, None));
                 r?;
-                Ok(Ty::Unit)
+                if broke {
+                    self.diverges = outer;
+                    Ok(value.unwrap_or(Ty::Unit))
+                } else {
+                    self.diverges = true;
+                    Ok(self.never_ty(&expr.span))
+                }
             }
             ExprKind::While { cond, body } => {
+                let outer = self.diverges;
                 let c = self.check_expr(cond)?;
                 self.unify(&Ty::Bool, &c, &cond.span)?;
                 self.loop_kinds.push(false);
+                self.loop_breaks.push((false, None));
                 let r = self.check_block(body);
                 self.loop_kinds.pop();
+                let (broke, _) = self.loop_breaks.pop().unwrap_or((false, None));
                 r?;
-                Ok(Ty::Unit)
+                if !broke && matches!(cond.kind, ExprKind::Bool(true)) {
+                    self.diverges = true;
+                    Ok(self.never_ty(&expr.span))
+                } else {
+                    self.diverges = outer;
+                    Ok(Ty::Unit)
+                }
             }
             ExprKind::For {
                 pattern: pat,
                 iter,
                 body,
             } => {
-                let iter_ty = self.check_expr(iter)?;
+                let iter_ty = match &iter.kind {
+                    ExprKind::MethodCall {
+                        receiver,
+                        name,
+                        args,
+                        ..
+                    } if name == "__for_iter" && args.is_empty() => {
+                        let rt = self.check_expr(receiver)?;
+                        let r = self.infer.resolve(&rt);
+                        let direct =
+                            matches!(r.strip_self(), Ty::List(_) | Ty::Param(_) | Ty::Error)
+                                || self.iterator_elem_ty(r.strip_self(), &iter.span).is_some();
+                        let t = if direct {
+                            r
+                        } else {
+                            let t =
+                                self.check_method_call(receiver, "iter", &[], &[], &iter.span)?;
+                            self.types.record_for_iter(&iter.span);
+                            self.infer.resolve(&t)
+                        };
+                        self.record(&iter.span, t.clone());
+                        t
+                    }
+                    _ => self.check_expr(iter)?,
+                };
                 let resolved = self.infer.resolve(&iter_ty);
                 let elem = match resolved.strip_self() {
                     Ty::List(t) => *t.clone(),
@@ -1095,7 +1348,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                         None => {
                             return Err(RavenError::ty(
                                 TypeError::Custom(format!(
-                                    "cannot iterate over `{}`; add an `Iterator<T>` bound to it",
+                                    "cannot iterate over `{}`; add an `Iterator[T]` bound to it",
                                     p.name
                                 )),
                                 iter.span.clone(),
@@ -1112,7 +1365,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                             None => {
                                 return Err(RavenError::ty(
                                     TypeError::Custom(format!(
-                                        "cannot iterate over `{}`; expected a `List<T>` or a type implementing `Iterator<T>`",
+                                        "cannot iterate over `{}`; expected a `list[T]` or a type implementing `Iterator[T]`",
                                         other
                                     )),
                                     iter.span.clone(),
@@ -1127,9 +1380,13 @@ impl<'a, 'b> Checker<'a, 'b> {
                 // method resolution (used by the iterator-driven path).
                 self.record(&pat.span, elem.clone());
                 pattern::bind(pat, &elem, self.env, &mut self.locals)?;
+                let outer = self.diverges;
                 self.loop_kinds.push(false);
+                self.loop_breaks.push((false, None));
                 let r = self.check_block(body);
                 self.loop_kinds.pop();
+                self.loop_breaks.pop();
+                self.diverges = outer;
                 r?;
                 Ok(Ty::Unit)
             }
@@ -1377,12 +1634,17 @@ impl<'a, 'b> Checker<'a, 'b> {
             if let Some(elem) = self.array_hint.clone() {
                 return Ok(Ty::List(Box::new(elem)));
             }
-            return Err(RavenError::ty(
-                TypeError::Custom(
-                    "empty array literals require a context type; annotate the binding".into(),
-                ),
-                span.clone(),
-            ));
+            let v = self.infer.fresh(span.clone());
+            return Ok(Ty::List(Box::new(Ty::Var(v))));
+        }
+        // Elements of a list of trait objects each convert on their own, so
+        // `[Circle(1.0), Rect(2.0, 3.0)]` fits `list[Shape]`.
+        if let Some(hint @ Ty::Dyn { .. }) = self.array_hint.clone() {
+            for it in items {
+                let t = self.check_expr(it)?;
+                self.unify(&hint, &t, &it.span)?;
+            }
+            return Ok(Ty::List(Box::new(hint)));
         }
         let first = self.check_expr(&items[0])?;
         for it in &items[1..] {
@@ -1459,8 +1721,17 @@ impl<'a, 'b> Checker<'a, 'b> {
         })
     }
 
-    fn check_unary(&mut self, op: UnaryOp, operand: &Expr) -> Result<Ty, RavenError> {
+    fn check_unary(&mut self, op: UnaryOp, operand: &Expr, span: &Span) -> Result<Ty, RavenError> {
         let t = self.check_expr(operand)?;
+        let t = self.infer.resolve(&t);
+        if op == UnaryOp::Neg
+            && matches!(t.strip_self(), Ty::Struct { .. } | Ty::Enum { .. })
+            && self.type_has_method(t.strip_self(), "neg")
+        {
+            let r = self.check_method_call(operand, "neg", &[], &[], span)?;
+            self.types.record_operator(span);
+            return Ok(r);
+        }
         match op {
             UnaryOp::Neg => match t.strip_self() {
                 Ty::Int => Ok(Ty::Int),
@@ -1468,7 +1739,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                 Ty::Error => Ok(Ty::Error),
                 other => Err(RavenError::ty(
                     TypeError::TypeMismatch {
-                        expected: "Int or Float".into(),
+                        expected: "int or float".into(),
                         actual: format!("{}", other),
                     },
                     operand.span.clone(),
@@ -1560,7 +1831,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             if !is_variadic_ffi_arg(ra.strip_self()) {
                 return Err(ty_custom(
                     &format!(
-                        "a variadic C argument must be a C-FFI integer or pointer type (CInt, CLong, CSize, CStr, CPtr<T>) or a native Int; got `{ra}`. Float varargs are not supported (wrap the call in a C shim)"
+                        "a variadic C argument must be a C-FFI integer or pointer type (CInt, CLong, CSize, CStr, CPtr[T]) or a native int; got `{ra}`. float varargs are not supported (wrap the call in a C shim)"
                     ),
                     &arg.span,
                 ));
@@ -1573,7 +1844,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             Some(Binding::Extern { .. })
         );
         for (param_ty, arg) in params.iter().zip(args.iter()) {
-            let a = self.check_expr(arg)?;
+            let a = self.check_arg(arg, param_ty)?;
             // An integer C FFI parameter (`CInt`, `CLong`, `CSize`)
             // accepts a native `Int`, so an integer literal or expression
             // can be passed to a C function (for example `abs(-7)`). The
@@ -1605,7 +1876,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             // function is passed as its C-ABI address; the signature match
             // is the programmer's responsibility, like C. A captured local
             // (a closure value) or a function with a non-FFI signature is
-            // rejected. See `docs/v2/specs/std-ffi.md`.
+            // rejected. See `docs/specs/std-ffi.md`.
             if matches!(resolved_param.strip_self(), Ty::Ffi(FfiTy::CFnPtr)) {
                 self.check_callback_arg(arg, resolved_arg.strip_self())?;
                 continue;
@@ -1666,7 +1937,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             if !is_ffi_abi_ty(rp.strip_self()) {
                 return Err(ty_custom(
                     &format!(
-                        "a `CFnPtr` callback parameter must be a C-FFI type (CInt, CLong, CSize, CFloat, CDouble, CStr, CPtr<T>), got `{}`",
+                        "a `CFnPtr` callback parameter must be a C-FFI type (CInt, CLong, CSize, CFloat, CDouble, CStr, CPtr[T]), got `{}`",
                         rp
                     ),
                     &arg.span,
@@ -1688,7 +1959,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         // a captured closure) lowers to a generated trampoline whose last
         // argument is a `userdata` pointer C threads back to it; the closure
         // itself must be passed to the C function's `userdata` slot (a
-        // `CPtr<Unit>` parameter). See `docs/v2/specs/std-ffi.md`.
+        // `CPtr<Unit>` parameter). See `docs/specs/std-ffi.md`.
         let is_top_level_fn = matches!(&arg.kind, ExprKind::Ident { .. })
             && matches!(
                 self.resolved.map.lookup(&arg.span),
@@ -1751,7 +2022,8 @@ impl<'a, 'b> Checker<'a, 'b> {
                     ));
                 }
                 let t = self.check_expr(&args[0])?;
-                Ok(Ty::Result(Box::new(t), Box::new(Ty::Error)))
+                let e = Ty::Var(self.infer.fresh(span.clone()));
+                Ok(Ty::Result(Box::new(t), Box::new(e)))
             }
             "Err" => {
                 if args.len() != 1 {
@@ -1765,7 +2037,8 @@ impl<'a, 'b> Checker<'a, 'b> {
                     ));
                 }
                 let e = self.check_expr(&args[0])?;
-                Ok(Ty::Result(Box::new(Ty::Error), Box::new(e)))
+                let t = Ty::Var(self.infer.fresh(span.clone()));
+                Ok(Ty::Result(Box::new(t), Box::new(e)))
             }
             "print" => {
                 // The built-in `print` accepts any value whose type
@@ -1810,16 +2083,12 @@ impl<'a, 'b> Checker<'a, 'b> {
                 self.unify(&Ty::Str, &arg_ty, &args[0].span)?;
                 Ok(Ty::Unit)
             }
-            "__panic" => {
-                // Internal `__panic(msg: String)` intrinsic. The bundled
-                // `std/test` source calls it to abort on a failed assertion;
-                // the back end lowers it to the runtime `raven_panic`. It
-                // never returns at runtime, but is typed as `Unit` so a call
-                // is a valid statement.
+            "__panic" | "panic" => {
                 self.check_intrinsic_arity(name, args, 1, span)?;
                 let arg_ty = self.check_expr(&args[0])?;
                 self.unify(&Ty::Str, &arg_ty, &args[0].span)?;
-                Ok(Ty::Unit)
+                self.diverges = true;
+                Ok(self.never_ty(span))
             }
             "__io_read_line" => {
                 if !args.is_empty() {
@@ -1890,7 +2159,7 @@ impl<'a, 'b> Checker<'a, 'b> {
     /// arguments. The resolved type argument is recorded under the callee
     /// span so HIR lowering can carry it (a generic parameter `T` resolves
     /// to `Ty::Param`, grounded per monomorphization in MIR). See
-    /// `docs/v2/specs/reflection.md`.
+    /// `docs/specs/reflection.md`.
     fn check_reflection_builtin(
         &mut self,
         name: &str,
@@ -1960,7 +2229,7 @@ impl<'a, 'b> Checker<'a, 'b> {
     /// Both carry the type argument `T` at the callee span so MIR grounds it
     /// per monomorphization (the box site knows the static tag, the cast site
     /// knows the tag to compare). The other three take an `Any` value and no
-    /// type argument. See `docs/v2/specs/runtime-reflection.md`.
+    /// type argument. See `docs/specs/runtime-reflection.md`.
     fn check_runtime_reflection_builtin(
         &mut self,
         name: &str,
@@ -2102,7 +2371,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         if !is_ptr_pointee(pointee.strip_self()) {
             return Err(ty_custom(
                 &format!(
-                    "`{}` pointee must be a C scalar (CInt, CLong, CSize, CFloat, CDouble, CStr) or Int/Float, got `{}`",
+                    "`{}` pointee must be a C scalar (CInt, CLong, CSize, CFloat, CDouble, CStr) or int/float, got `{}`",
                     name, pointee
                 ),
                 span,
@@ -2225,7 +2494,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                 ));
             }
             for (param_ty, arg) in params.iter().zip(args.iter()) {
-                let a = self.check_expr(arg)?;
+                let a = self.check_arg(arg, param_ty)?;
                 self.unify(param_ty, &a, &arg.span)?;
             }
             return Ok(ret);
@@ -2300,10 +2569,18 @@ impl<'a, 'b> Checker<'a, 'b> {
         // unify the substituted self_ty against the receiver type. An
         // impl is a candidate when unification succeeds and the method
         // name exists in its method table.
-        let impls_snapshot = self.env.impls.clone();
+        let env = self.env;
+        let impls_snapshot = &env.impls;
         let mut inherent_matches: Vec<(usize, FnSig, HashMap<ParamId, Ty>)> = Vec::new();
         let mut trait_matches: Vec<(usize, FnSig, HashMap<ParamId, Ty>, String)> = Vec::new();
-        for (idx, imp) in impls_snapshot.iter().enumerate() {
+        let recv_head = type_head(&self.infer.resolve(&recv_stripped));
+        for &idx in env.impls_with_method(name) {
+            let imp = &impls_snapshot[idx];
+            if let (Some(want), Some(have)) = (recv_head, type_head(imp.self_ty.strip_self())) {
+                if want != have {
+                    continue;
+                }
+            }
             // Skip impls without this method before allocating inference
             // variables or unifying. A rejected impl whose self type still
             // unifies (for example `impl Eq for Map<K, V: Eq>`, which has no
@@ -2357,7 +2634,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                     ));
                 }
                 for (pt, arg) in params.iter().zip(args.iter()) {
-                    let a = self.check_expr(arg)?;
+                    let a = self.check_arg(arg, pt)?;
                     self.unify(pt, &a, &arg.span)?;
                 }
                 return Ok(ret);
@@ -2483,7 +2760,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             ));
         }
         for (param_ty, arg) in params.iter().zip(args.iter()) {
-            let a = self.check_expr(arg)?;
+            let a = self.check_arg(arg, param_ty)?;
             self.unify(param_ty, &a, &arg.span)?;
         }
         Ok(Some(*ret))
@@ -2559,9 +2836,11 @@ impl<'a, 'b> Checker<'a, 'b> {
         args: &[Expr],
         span: &Span,
     ) -> Result<Ty, RavenError> {
-        let impls_snapshot = self.env.impls.clone();
+        let env = self.env;
+        let impls_snapshot = &env.impls;
         let mut matches: Vec<(FnSig, HashMap<ParamId, Ty>)> = Vec::new();
-        for imp in impls_snapshot.iter() {
+        for &idx in env.impls_with_method(name) {
+            let imp = &impls_snapshot[idx];
             // Skip impls that do not provide this associated function before
             // allocating inference variables or unifying. A rejected impl whose
             // self type still unifies (for example `impl Eq for Map<K, V: Eq>`,
@@ -2654,7 +2933,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         let user_params: Vec<Ty> = sig
             .params
             .iter()
-            .filter(|t| !matches!(t, Ty::SelfTy(_)))
+            .skip(usize::from(sig.has_self))
             .map(|t| substitute(t, &full))
             .collect();
         if user_params.len() != args.len() {
@@ -2668,10 +2947,36 @@ impl<'a, 'b> Checker<'a, 'b> {
             ));
         }
         for (pt, arg) in user_params.iter().zip(args.iter()) {
-            let a = self.check_expr(arg)?;
+            let a = self.check_arg(arg, pt)?;
             self.unify(pt, &a, &arg.span)?;
         }
         Ok(substitute(&sig.ret, &full))
+    }
+
+    /// Whether some impl for `ty`'s declared type has a method `name`.
+    fn type_has_method(&self, ty: &Ty, name: &str) -> bool {
+        if matches!(ty.strip_self(), Ty::Str | Ty::List(_)) {
+            let list = matches!(ty.strip_self(), Ty::List(_));
+            return self.env.impls_with_method(name).iter().any(|&i| {
+                match self.env.impls[i].self_ty.strip_self() {
+                    Ty::List(_) => list,
+                    Ty::Str => !list,
+                    _ => false,
+                }
+            });
+        }
+        let head = |t: &Ty| match t.strip_self() {
+            Ty::Struct { id, .. } => Some((0, id.clone())),
+            Ty::Enum { id, .. } => Some((1, id.clone())),
+            _ => None,
+        };
+        let Some(want) = head(ty) else {
+            return false;
+        };
+        self.env
+            .impls_with_method(name)
+            .iter()
+            .any(|&i| head(&self.env.impls[i].self_ty) == Some(want.clone()))
     }
 
     /// If `recv` has a `next(self) -> Option<T>` method (from any impl,
@@ -2681,8 +2986,10 @@ impl<'a, 'b> Checker<'a, 'b> {
     /// adapter structs implement it. Returns `None` when no matching
     /// `next` method resolves to an `Option`.
     fn iterator_elem_ty(&mut self, recv: &Ty, span: &Span) -> Option<Ty> {
-        let impls_snapshot = self.env.impls.clone();
-        for imp in impls_snapshot.iter() {
+        let env = self.env;
+        let impls_snapshot = &env.impls;
+        for &idx in env.impls_with_method("next") {
+            let imp = &impls_snapshot[idx];
             let Some(msig) = imp.methods.get("next") else {
                 continue;
             };
@@ -2753,7 +3060,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         let user_params: Vec<Ty> = sig
             .params
             .iter()
-            .filter(|t| !matches!(t, Ty::SelfTy(_)))
+            .skip(usize::from(sig.has_self))
             .cloned()
             .collect();
         if user_params.len() != args.len() {
@@ -2767,7 +3074,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             ));
         }
         for (pt, arg) in user_params.iter().zip(args.iter()) {
-            let a = self.check_expr(arg)?;
+            let a = self.check_arg(arg, pt)?;
             self.unify(pt, &a, &arg.span)?;
         }
         Ok(sig.ret.clone())
@@ -2875,7 +3182,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             ));
         }
         for (pt, arg) in user_params.iter().zip(args.iter()) {
-            let a = self.check_expr(arg)?;
+            let a = self.check_arg(arg, pt)?;
             self.unify(pt, &a, &arg.span)?;
         }
         Ok(substitute(
@@ -3011,6 +3318,15 @@ impl<'a, 'b> Checker<'a, 'b> {
         span: &Span,
     ) -> Result<Ty, RavenError> {
         let recv = self.check_expr(receiver)?;
+        let rt = self.infer.resolve(&recv);
+        if matches!(rt.strip_self(), Ty::Struct { .. } | Ty::Enum { .. })
+            && self.type_has_method(rt.strip_self(), "index")
+        {
+            let t =
+                self.check_method_call(receiver, "index", &[], std::slice::from_ref(index), span)?;
+            self.types.record_operator(span);
+            return Ok(t);
+        }
         let idx = self.check_expr(index)?;
         self.unify(&Ty::Int, &idx, &index.span)?;
         let recv_resolved = self.infer.resolve(&recv);
@@ -3025,13 +3341,13 @@ impl<'a, 'b> Checker<'a, 'b> {
             // header as a list header, segfaulting at run time. Point at the
             // byte-oriented accessors, which are unambiguous.
             Ty::Str => Err(RavenError::ty(
-                TypeError::Custom("cannot index into a `String`".to_string()),
+                TypeError::Custom("cannot index into a `str`".to_string()),
                 span.clone(),
             )
             .with_hint(
-                "a String is a byte string: use `char_at(i)` for the one-byte \
+                "a str is a byte string: use `char_at(i)` for the one-byte \
                  substring at byte offset `i`, or `byte_at(i)` for that byte \
-                 as an `Int`; both come from `std/string`",
+                 as an `int`; both come from `std/string`",
             )),
             Ty::Error => Ok(Ty::Error),
             Ty::Var(_) => {
@@ -3057,15 +3373,22 @@ impl<'a, 'b> Checker<'a, 'b> {
     ) -> Result<Ty, RavenError> {
         let c = self.check_expr(cond)?;
         self.unify(&Ty::Bool, &c, &cond.span)?;
+        let outer = std::mem::take(&mut self.diverges);
         let t = self.check_block(then_branch)?;
+        let then_div = std::mem::take(&mut self.diverges);
         let e = match else_branch {
             // An `if` without `else` cannot produce a value on every path, so
             // it is a unit expression. The then branch is still checked and
             // evaluated for side effects, but its trailing value is discarded.
-            None => return Ok(Ty::Unit),
+            None => {
+                self.diverges = outer;
+                return Ok(Ty::Unit);
+            }
             Some(ElseBranch::If(expr)) => self.check_expr(expr)?,
             Some(ElseBranch::Block(b)) => self.check_block(b)?,
         };
+        let else_div = self.diverges;
+        self.diverges = outer || (then_div && else_div);
         self.unify(&t, &e, span)?;
         Ok(self.infer.resolve(&t))
     }
@@ -3089,20 +3412,10 @@ impl<'a, 'b> Checker<'a, 'b> {
 
         let mut result_ty: Option<Ty> = None;
         let mut pattern_names: Vec<super::match_check::PatternHead> = Vec::new();
+        let outer = std::mem::take(&mut self.diverges);
+        let mut all_div = !arms.is_empty();
 
         for arm in arms {
-            // A constructor pattern whose element is itself a constructor,
-            // literal, or range (`Some(Ok(x))`, `Some(0)`) is not supported:
-            // the lowering binds only one level and would miscompile. Reject it
-            // rather than silently mis-binding.
-            if let Some(nested) = unsupported_nesting_span(&arm.pattern) {
-                return Err(RavenError::ty(
-                    TypeError::Custom(
-                        "a nested pattern inside a constructor is not supported yet; bind the inner value and match it separately".into(),
-                    ),
-                    nested,
-                ));
-            }
             // Each arm gets its own pattern bindings.
             let mut arm_locals = self.locals.clone();
             pattern::bind(&arm.pattern, &scrut_stripped, self.env, &mut arm_locals)?;
@@ -3113,7 +3426,9 @@ impl<'a, 'b> Checker<'a, 'b> {
                 self.unify(&Ty::Bool, &gt, &g.span)?;
             }
 
+            self.diverges = false;
             let body_ty = self.check_expr(&arm.body)?;
+            all_div &= self.diverges;
             self.locals = saved_locals;
 
             result_ty = Some(match result_ty.take() {
@@ -3126,7 +3441,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             // A guarded arm only matches when its guard holds, so it neither
             // covers its pattern for exhaustiveness nor shadows a later arm with
             // the same pattern. Treat it as a non-covering specific head.
-            let head = if arm.guard.is_some() {
+            let head = if arm.guard.is_some() || has_refutable_subpattern(&arm.pattern) {
                 super::match_check::PatternHead::Other
             } else {
                 super::match_check::pattern_head(&arm.pattern)
@@ -3134,7 +3449,28 @@ impl<'a, 'b> Checker<'a, 'b> {
             pattern_names.push(head);
         }
 
-        super::match_check::check(&scrut_stripped, &pattern_names, span, self.env)?;
+        self.diverges = outer || all_div;
+        if arms
+            .iter()
+            .any(|a| a.guard.is_none() && has_refutable_subpattern(&a.pattern))
+        {
+            let rows: Vec<&crate::ast::Pattern> = arms
+                .iter()
+                .filter(|a| a.guard.is_none())
+                .map(|a| &a.pattern)
+                .collect();
+            let scrut = self.infer.resolve(&scrut_stripped);
+            if !super::match_check::rows_cover(&rows, &scrut, self.env) {
+                return Err(RavenError::ty(
+                    TypeError::NonExhaustiveMatch {
+                        missing: vec!["some values (add a `_` arm)".into()],
+                    },
+                    span.clone(),
+                ));
+            }
+        } else {
+            super::match_check::check(&scrut_stripped, &pattern_names, span, self.env)?;
+        }
         Ok(result_ty.unwrap_or(Ty::Unit))
     }
 
@@ -3146,31 +3482,16 @@ impl<'a, 'b> Checker<'a, 'b> {
         params_inferred: bool,
         _span: &Span,
     ) -> Result<Ty, RavenError> {
-        // Lambdas require parameter type annotations in this release;
-        // shorthand `{ x, y -> body }` syntax is parsed but not typed.
-        if params_inferred {
-            return Err(RavenError::ty(
-                TypeError::Custom(
-                    "shorthand lambdas without parameter annotations require a context type; \
-                     full inference lands with issue #59"
-                        .into(),
-                ),
-                _span.clone(),
-            ));
-        }
+        let _ = params_inferred;
+        let hint = self.lambda_hint.take().filter(|h| h.len() == params.len());
         let mut param_tys = Vec::with_capacity(params.len());
-        for p in params {
+        for (i, p) in params.iter().enumerate() {
             let t = match &p.ty {
                 Some(t) => self.resolve_ast_ty(t)?,
-                None => {
-                    return Err(RavenError::ty(
-                        TypeError::Custom(format!(
-                            "lambda parameter `{}` needs a type annotation",
-                            p.name
-                        )),
-                        p.span.clone(),
-                    ));
-                }
+                None => match hint.as_ref().map(|h| self.infer.resolve(&h[i])) {
+                    Some(h) => h,
+                    None => Ty::Var(self.infer.fresh(p.span.clone())),
+                },
             };
             self.locals.insert(BindingKey::param(&p.span), t.clone());
             param_tys.push(t);
@@ -3183,30 +3504,47 @@ impl<'a, 'b> Checker<'a, 'b> {
         // it, so `break`/`continue` in the body are outside any loop. Check the
         // body with a fresh loop stack, then restore the caller's.
         let saved_loops = std::mem::take(&mut self.loop_kinds);
+        let saved_breaks = std::mem::take(&mut self.loop_breaks);
+        let saved_div = std::mem::take(&mut self.diverges);
+        let ret_ty = match &declared_ret {
+            Some(d) => d.clone(),
+            None => Ty::Var(self.infer.fresh(_span.clone())),
+        };
+        let saved_ret = std::mem::replace(&mut self.return_ty, ret_ty.clone());
         let body_ty = match body {
             LambdaBody::Block(b) => self.check_block(b),
             LambdaBody::Expr(e) => self.check_expr(e),
         };
         self.loop_kinds = saved_loops;
+        self.loop_breaks = saved_breaks;
+        self.return_ty = saved_ret;
+        let body_div = std::mem::replace(&mut self.diverges, saved_div);
         let body_ty = body_ty?;
-        let final_ret = match declared_ret {
-            Some(d) => {
-                let discards_block_tail =
-                    matches!(body, LambdaBody::Block(_)) && matches!(d.strip_self(), Ty::Unit);
-                if !discards_block_tail {
-                    self.unify(
-                        &d,
-                        &body_ty,
-                        match body {
-                            LambdaBody::Block(b) => &b.span,
-                            LambdaBody::Expr(e) => &e.span,
-                        },
-                    )?;
-                }
-                d
-            }
-            None => body_ty,
+        let body_span = match body {
+            LambdaBody::Block(b) => &b.span,
+            LambdaBody::Expr(e) => &e.span,
         };
+        let block_without_tail = matches!(body, LambdaBody::Block(b) if b.trailing.is_none());
+        let unit_block = matches!(body, LambdaBody::Block(_))
+            && matches!(
+                declared_ret.as_ref().map(|d| d.strip_self()),
+                Some(Ty::Unit)
+            );
+        if !unit_block {
+            let unit_tail = matches!(body, LambdaBody::Block(_))
+                && matches!(self.infer.resolve(&body_ty), Ty::Unit);
+            if (block_without_tail || unit_tail) && !body_div {
+                let resolved = self.infer.resolve(&ret_ty);
+                if !matches!(resolved, Ty::Unit | Ty::Var(_) | Ty::Error) {
+                    self.errors.push(missing_return(&resolved, body_span));
+                } else {
+                    self.unify(&ret_ty, &Ty::Unit, body_span)?;
+                }
+            } else {
+                self.unify(&ret_ty, &body_ty, body_span)?;
+            }
+        }
+        let final_ret = self.infer.resolve(&ret_ty);
         Ok(Ty::Function {
             params: param_tys,
             ret: Box::new(final_ret),
@@ -3391,7 +3729,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                 e.span.clone(),
             )
             .with_hint(format!(
-                "implement `ToString` for `{}` to interpolate it, or convert it to a `String` first",
+                "implement `ToString` for `{}` to interpolate it, or convert it to a `str` first",
                 resolved
             )));
         }
@@ -3448,8 +3786,10 @@ pub fn check_binary(l: &Ty, r: &Ty, op: BinaryOp, span: &Span) -> Result<Ty, Rav
     let ls = l.strip_self();
     let rs = r.strip_self();
     match op {
+        In | NotIn => unreachable!("membership is desugared after parsing"),
         Add | Sub | Mul | Div | Mod => match (ls, rs) {
             (Ty::Int, Ty::Int) => Ok(Ty::Int),
+            (Ty::Str, Ty::Str) if op == Add => Ok(Ty::Str),
             (Ty::Float, Ty::Float) => Ok(Ty::Float),
             // Arithmetic on two equal integer C FFI types stays in that
             // type (the back end emits the op at the type's machine
@@ -3460,7 +3800,7 @@ pub fn check_binary(l: &Ty, r: &Ty, op: BinaryOp, span: &Span) -> Result<Ty, Rav
                 op,
                 ls,
                 rs,
-                "Int, Float, and two matching C integer types",
+                "int, float, and two matching C integer types",
                 span,
             )),
         },
@@ -3486,17 +3826,17 @@ pub fn check_binary(l: &Ty, r: &Ty, op: BinaryOp, span: &Span) -> Result<Ty, Rav
                 op,
                 ls,
                 rs,
-                "Int, Float, Char, and String",
+                "int, float, char, and str",
                 span,
             )),
         },
         And | Or => match (ls, rs) {
             (Ty::Bool, Ty::Bool) => Ok(Ty::Bool),
-            _ => Err(binary_op_error(op, ls, rs, "Bool", span)),
+            _ => Err(binary_op_error(op, ls, rs, "bool", span)),
         },
         BitAnd | BitOr | BitXor | Shl | Shr => match (ls, rs) {
             (Ty::Int, Ty::Int) => Ok(Ty::Int),
-            _ => Err(binary_op_error(op, ls, rs, "Int", span)),
+            _ => Err(binary_op_error(op, ls, rs, "int", span)),
         },
     }
 }
@@ -3529,10 +3869,10 @@ fn binary_op_error(op: BinaryOp, ls: &Ty, rs: &Ty, accepts: &str, span: &Span) -
         // logical operators want `Bool`, so no numeric conversion helps there.
         (Ty::Int, Ty::Float) | (Ty::Float, Ty::Int) => match op {
             Add | Sub | Mul | Div | Mod | Lt | Le | Gt | Ge => {
-                err.with_hint("convert the `Int` with `.to_float()` so both sides are `Float`")
+                err.with_hint("convert the `int` with `.to_float()` so both sides are `float`")
             }
             BitAnd | BitOr | BitXor | Shl | Shr => {
-                err.with_hint("convert the `Float` with `.to_int()` so both sides are `Int`")
+                err.with_hint("convert the `float` with `.to_int()` so both sides are `int`")
             }
             _ => err,
         },
@@ -3545,17 +3885,15 @@ fn binary_op_error(op: BinaryOp, ls: &Ty, rs: &Ty, accepts: &str, span: &Span) -
     }
 }
 
-/// Advice for an operator applied to two values of the same user-declared
-/// type. Raven has no operator overloading, so each case names the method
-/// that does the job instead of the operator.
+/// Advice for an operator applied to two values of a user-declared type
+/// that does not overload it: the method that would.
 fn user_type_operator_hint(op: BinaryOp, ty: &Ty) -> String {
     use BinaryOp::*;
     match op {
         // `Ord` already models comparison and is derivable, so point at it
         // rather than asking for a hand-written method.
         Lt | Le | Gt | Ge => format!(
-            "Raven has no operator overloading; `@derive(Ord)` on `{}` synthesizes \
-             `compare(self, other) -> Int`, so write `a.compare(b) {} 0`",
+            "implement `Ord` for `{}` (its `compare` method, or `@derive(Ord)`) to use `{}`",
             ty,
             op.symbol()
         ),
@@ -3565,18 +3903,18 @@ fn user_type_operator_hint(op: BinaryOp, ty: &Ty) -> String {
                 Sub => "sub",
                 Mul => "mul",
                 Div => "div",
-                _ => "rem",
+                _ => "mod",
             };
             format!(
-                "Raven has no operator overloading; give `{}` a method such as \
-                 `fun {}(self, other: {}) -> {}` and call it",
-                ty, method, ty, ty
+                "define `fun {}(self, other: {}) -> {}` on `{}` to use `{}`",
+                method,
+                ty,
+                ty,
+                ty,
+                op.symbol()
             )
         }
-        _ => format!(
-            "Raven has no operator overloading; give `{}` a named method and call it",
-            ty
-        ),
+        _ => format!("`{}` does not support `{}`", ty, op.symbol()),
     }
 }
 
@@ -3600,21 +3938,23 @@ fn compound_binary_op(op: AssignOp) -> BinaryOp {
 /// constructor, literal, or range (an unsupported nested pattern), or `None`
 /// when the pattern nests only wildcards and bindings. A bare identifier is
 /// allowed because it lowers to a simple binding.
-fn unsupported_nesting_span(pat: &crate::ast::Pattern) -> Option<Span> {
+/// Whether a constructor pattern constrains one of its parts (`Some(0)`,
+/// `Some(Ok(x))`). Such an arm does not cover its constructor, so it counts
+/// like a guarded arm for exhaustiveness.
+fn has_refutable_subpattern(pat: &crate::ast::Pattern) -> bool {
     use crate::ast::PatternKind;
-    let trivial =
-        |p: &crate::ast::Pattern| matches!(p.kind, PatternKind::Wildcard | PatternKind::Ident(_));
+    let refutable = |p: &crate::ast::Pattern| match &p.kind {
+        PatternKind::Wildcard => false,
+        PatternKind::Ident(n) => n.chars().next().is_some_and(|c| c.is_ascii_uppercase()),
+        _ => true,
+    };
     match &pat.kind {
-        PatternKind::Tuple { elements, .. } => elements
-            .iter()
-            .find(|e| !trivial(e))
-            .map(|e| e.span.clone()),
+        PatternKind::Tuple { elements, .. } => elements.iter().any(refutable),
         PatternKind::Struct { fields, .. } => fields
             .iter()
             .filter_map(|f| f.pattern.as_ref())
-            .find(|p| !trivial(p))
-            .map(|p| p.span.clone()),
-        _ => None,
+            .any(refutable),
+        _ => false,
     }
 }
 
@@ -3795,4 +4135,134 @@ fn structural_match(decl: &Ty, concrete: &Ty, out: &mut HashMap<ParamId, Ty>) ->
         }
         (a, b) => a == b,
     }
+}
+
+fn missing_return(ret: &Ty, span: &Span) -> RavenError {
+    RavenError::ty(
+        TypeError::Custom(format!(
+            "this function must return `{ret}`, but control can reach the end without a `return`"
+        )),
+        span.clone(),
+    )
+    .with_hint("add a `return` on every path, or end the body with a value")
+}
+
+/// Whether some impl of `trait_name` covers `concrete`, binding the impl's
+/// type parameters and checking their bounds in turn.
+pub(crate) fn implements_trait_in(
+    env: &TypeEnv,
+    concrete: &Ty,
+    trait_name: &str,
+    depth: u32,
+) -> bool {
+    let concrete = concrete.strip_self();
+    if concrete.is_error() || depth > 16 {
+        return true;
+    }
+    env.impls.iter().any(|imp| {
+        if imp.trait_name.as_deref() != Some(trait_name) {
+            return false;
+        }
+        let params: Vec<&ParamId> = imp.generics.iter().map(|g| &g.id).collect();
+        let mut subst: HashMap<ParamId, Ty> = HashMap::new();
+        if !match_impl_ty(imp.self_ty.strip_self(), concrete, &params, &mut subst) {
+            return false;
+        }
+        imp.generics.iter().all(|g| match subst.get(&g.id) {
+            Some(t) => g
+                .bounds
+                .iter()
+                .all(|b| implements_trait_in(env, t, b, depth + 1)),
+            None => true,
+        })
+    })
+}
+
+fn match_impl_ty(pat: &Ty, ty: &Ty, params: &[&ParamId], subst: &mut HashMap<ParamId, Ty>) -> bool {
+    match (pat, ty) {
+        (Ty::Param(p), _) if params.contains(&p) => match subst.get(p) {
+            Some(bound) => super::env::tys_equal(bound, ty),
+            None => {
+                subst.insert(p.clone(), ty.clone());
+                true
+            }
+        },
+        (Ty::SelfTy(a), b) => match_impl_ty(a, b, params, subst),
+        (a, Ty::SelfTy(b)) => match_impl_ty(a, b, params, subst),
+        (Ty::Option(a), Ty::Option(b)) | (Ty::List(a), Ty::List(b)) => {
+            match_impl_ty(a, b, params, subst)
+        }
+        (Ty::Result(a1, b1), Ty::Result(a2, b2)) => {
+            match_impl_ty(a1, a2, params, subst) && match_impl_ty(b1, b2, params, subst)
+        }
+        (
+            Ty::Struct {
+                id: i1, args: a1, ..
+            },
+            Ty::Struct {
+                id: i2, args: a2, ..
+            },
+        )
+        | (
+            Ty::Enum {
+                id: i1, args: a1, ..
+            },
+            Ty::Enum {
+                id: i2, args: a2, ..
+            },
+        ) => {
+            i1 == i2
+                && a1.len() == a2.len()
+                && a1
+                    .iter()
+                    .zip(a2)
+                    .all(|(x, y)| match_impl_ty(x, y, params, subst))
+        }
+        _ => super::env::tys_equal(pat, ty),
+    }
+}
+
+/// The outermost type constructor of a concrete type, used to skip impls
+/// that cannot match a receiver without unifying. `None` for a type that
+/// could match anything (a parameter or an unsolved variable).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Head {
+    Prim(u8),
+    Decl(crate::resolve::DeclId),
+}
+
+fn type_head(t: &Ty) -> Option<Head> {
+    Some(match t {
+        Ty::Unit => Head::Prim(0),
+        Ty::Bool => Head::Prim(1),
+        Ty::Int => Head::Prim(2),
+        Ty::Float => Head::Prim(3),
+        Ty::Char => Head::Prim(4),
+        Ty::Str => Head::Prim(5),
+        Ty::Option(_) => Head::Prim(6),
+        Ty::Result(..) => Head::Prim(7),
+        Ty::List(_) => Head::Prim(8),
+        Ty::Function { .. } => Head::Prim(9),
+        Ty::Any => Head::Prim(10),
+        Ty::Struct { id, .. } | Ty::Enum { id, .. } => Head::Decl(*id),
+        Ty::SelfTy(inner) => return type_head(inner),
+        _ => return None,
+    })
+}
+
+/// Whether a function's signature names `Self`.
+fn mentions_self(f: &crate::ast::Function) -> bool {
+    fn ty(t: &crate::ast::Type) -> bool {
+        use crate::ast::TypeKind;
+        match &t.kind {
+            TypeKind::Path(p) | TypeKind::Dyn(p) => p
+                .segments
+                .iter()
+                .any(|s| s.name == "Self" || s.generics.iter().any(ty)),
+            TypeKind::Optional(i) => ty(i),
+            TypeKind::Function { params, ret } => params.iter().any(ty) || ty(ret),
+            TypeKind::Unit => false,
+        }
+    }
+    f.params.iter().any(|p| ty(&p.ty)) || f.ret.as_ref().is_some_and(ty)
 }

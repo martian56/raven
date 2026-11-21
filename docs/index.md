@@ -22,7 +22,7 @@ raven build hello.rv -o hello
 
 - **Native compilation.** Cranelift backend, single static binary, no VM and no interpreter.
 - **A real type system.** Generics with trait bounds, traits for polymorphism, and sum types (`enum` with payloads) checked by an exhaustive `match`.
-- **Errors in the open.** `Result<T, E>` and `Option<T>` with the `?` operator instead of exceptions or `null`. There is no `null` in the language.
+- **Errors in the open.** `Result[T, E]` and `Option[T]` with the `?` operator instead of exceptions or `null`. There is no `null` in the language.
 - **Garbage collected.** A tracing collector manages the heap. You allocate freely and never write a destructor.
 - **Concurrency.** Lightweight goroutines with `spawn` and channels for passing values between them.
 - **C FFI.** Declare `extern "C"` functions and call into native libraries, with C numeric types, pointers, callbacks, and small structs by value.
@@ -34,59 +34,52 @@ raven build hello.rv -o hello
 ## A fuller taste
 
 ```rust
-import std/io { println }
-
 trait Shape {
-    fun area(self) -> Float
+    fun area(self) -> float
 }
 
-struct Circle { radius: Float }
-struct Rect { width: Float, height: Float }
+class Circle: Shape {
+    radius: float
 
-impl Shape for Circle {
-    fun area(self) -> Float = 3.14159 * self.radius * self.radius
+    fun area(self) -> float = 3.14159 * self.radius * self.radius
 }
 
-impl Shape for Rect {
-    fun area(self) -> Float = self.width * self.height
+class Rect: Shape {
+    width: float
+    height: float
+
+    fun area(self) -> float = self.width * self.height
 }
 
 enum Expr {
-    Lit(Int),
-    Add(List<Expr>),
+    Lit(int),
+    Add(list[Expr]),
 }
 
-impl Expr {
-    fun eval(self) -> Int {
-        return match self {
-            Lit(n) -> n,
-            Add(parts) -> {
-                let total = 0
-                for p in parts {
-                    total = total + p.eval()
-                }
-                total
-            },
-        }
+fun eval(e: Expr) -> int {
+    match e {
+        case Expr.Lit(n) { return n }
+        case Expr.Add(parts) { return sum([eval(p) for p in parts]) }
     }
 }
 
 fun main() {
-    let c = Circle { radius: 2.0 }
-    println("area = ${c.area()}")
-
+    let shapes: list[Shape] = [Circle(2.0), Rect(width: 3.0, height: 4.0)]
+    for s in shapes {
+        print("area = ${s.area():.2}")
+    }
     let tree = Expr.Add([Expr.Lit(2), Expr.Lit(3), Expr.Lit(5)])
-    println("eval = ${tree.eval()}")
+    print("eval =", eval(tree))
 }
 ```
 
 ## Get started
 
-- New here? Start with [Getting Started](v2/guide/getting-started.md). It takes you from a single file to a managed project.
-- Want the whole surface of the language? See the [Language Reference](v2/guide/language-reference.md).
-- Looking for what the standard library gives you? The [Standard Library](v2/guide/standard-library.md) page walks through every module.
-- Managing dependencies and builds? Read the [rvpm guide](v2/guide/rvpm.md).
-- Shipping an application? See [rvpm dist](v2/specs/rvpm-dist.md) for archives
+- New here? Start with [Getting Started](guide/getting-started.md). It takes you from a single file to a managed project.
+- Want the whole surface of the language? See the [Language Reference](guide/language-reference.md).
+- Looking for what the standard library gives you? The [Standard Library](guide/standard-library.md) page walks through every module.
+- Managing dependencies and builds? Read the [rvpm guide](guide/rvpm.md).
+- Shipping an application? See [rvpm dist](specs/rvpm-dist.md) for archives
   and native Linux and Windows packages.
 
 ## Install
@@ -107,4 +100,4 @@ The [VS Code extension](https://marketplace.visualstudio.com/items?itemName=mart
 
 ## A note on versions
 
-This site documents **Raven v2**, the compiled language. Raven v1 was the original tree walking interpreter with a different syntax; it is no longer developed and its source is kept only on the `v1.x-maintenance` branch for anyone still maintaining old code.
+This site documents **Raven 3**, which reads like Python with braces. Raven 2 used an older syntax that Raven 3 no longer compiles, and Raven 1 was a tree walking interpreter; neither is developed any more.

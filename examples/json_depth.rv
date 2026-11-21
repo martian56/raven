@@ -1,0 +1,38 @@
+// The JSON parser bounds nesting depth so untrusted input cannot overflow the
+// stack. Genuinely nested data still parses, and a flat collection of many
+// siblings is fine because depth is only counted while descending.
+from std.io import println
+from std.json import parse, stringify
+
+fun main() {
+    match parse("{\"a\": {\"b\": {\"c\": [1, 2, 3]}}}") {
+        case Ok(v) { println("nested ok: ${stringify(v)}") }
+        case Err(e) { println("nested err: ${e.message()}") }
+    }
+
+    var deep = ""
+    var i = 0
+    while i < 1000 {
+        deep = deep.concat("[")
+        i = i + 1
+    }
+    match parse(deep) {
+        case Ok(v) { println("deep ok (unexpected)") }
+        case Err(e) { println("deep rejected: ${e.message()}") }
+    }
+
+    var flat = "["
+    var j = 0
+    while j < 500 {
+        if j > 0 {
+            flat = flat.concat(",")
+        }
+        flat = flat.concat("{}")
+        j = j + 1
+    }
+    flat = flat.concat("]")
+    match parse(flat) {
+        case Ok(v) { println("flat ok (500 objects)") }
+        case Err(e) { println("flat err: ${e.message()}") }
+    }
+}

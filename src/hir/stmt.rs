@@ -42,7 +42,7 @@ pub enum HirStmtKind {
     Defer(HirExpr),
     /// `spawn expr`. Starts a goroutine running the `fun() -> Unit`
     /// closure `expr` produces; MIR lowering emits a `raven_go_spawn`
-    /// call. See `docs/v2/specs/concurrency.md`.
+    /// call. See `docs/specs/concurrency.md`.
     Spawn(HirExpr),
 }
 

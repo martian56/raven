@@ -1,0 +1,11 @@
+int
+str
+Point
+2
+x
+y
+int
+Point
+introspect Point
+field x
+field y

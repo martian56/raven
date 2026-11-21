@@ -122,6 +122,21 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             }
             let l = lower_expr(cx, lhs);
             let r = lower_expr(cx, rhs);
+            if matches!(op, HirBinaryOp::Add) && mir_ty(&lhs.ty, cx.subst) == MirType::Str {
+                let dst = cx.builder.fresh_temp("concat", MirType::Str);
+                cx.builder.assign(
+                    cx.current,
+                    dst,
+                    MirRvalue::Call {
+                        callee: MirFnRef {
+                            mangled: super::super::intrinsics::STR_CONCAT.into(),
+                            origin: None,
+                        },
+                        args: vec![l, r],
+                    },
+                );
+                return MirOperand::Copy(dst);
+            }
             let dst = cx.builder.fresh_temp("bin", ty);
             cx.builder
                 .assign(cx.current, dst, MirRvalue::BinaryOp(map_binary(*op), l, r));
@@ -224,7 +239,7 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             // The return value is evaluated above. Deferred thunks run in
             // the function epilogue codegen emits at the `Return`
             // terminator (after the value, before leaving the GC frame),
-            // so no defer work is emitted here. See `docs/v2/specs/defer.md`.
+            // so no defer work is emitted here. See `docs/specs/defer.md`.
             if !cx.builder.is_closed(cx.current) {
                 cx.builder
                     .close_block(cx.current, MirTerminator::Return(op));
@@ -277,22 +292,68 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             end,
             inclusive,
         } => {
+            // A range used as a value is the list of its integers.
             let s = lower_expr(cx, start);
             let e = lower_expr(cx, end);
-            let inc = MirOperand::Const(MirConstant::Bool(*inclusive));
-            let dst = cx.builder.fresh_temp("range", ty);
+            let list = cx.builder.fresh_temp("range", ty.clone());
             cx.builder.assign(
                 cx.current,
-                dst,
-                MirRvalue::Call {
-                    callee: MirFnRef {
-                        mangled: "__range_new".into(),
-                        origin: None,
-                    },
-                    args: vec![s, e, inc],
+                list,
+                MirRvalue::ArrayLit {
+                    ty,
+                    elements: Vec::new(),
                 },
             );
-            MirOperand::Copy(dst)
+            let i = cx.builder.fresh_temp("range_i", MirType::Int);
+            cx.builder.assign(cx.current, i, MirRvalue::Use(s));
+            let header = cx.builder.new_block();
+            let body = cx.builder.new_block();
+            let exit = cx.builder.new_block();
+            cx.builder.mark_loop_header(header);
+            cx.builder
+                .close_block(cx.current, MirTerminator::Goto(header));
+            let more = cx.builder.fresh_temp("range_more", MirType::Bool);
+            let op = if *inclusive {
+                MirBinOp::Le
+            } else {
+                MirBinOp::Lt
+            };
+            cx.builder.assign(
+                header,
+                more,
+                MirRvalue::BinaryOp(op, MirOperand::Copy(i), e),
+            );
+            cx.builder.close_block(
+                header,
+                MirTerminator::SwitchInt {
+                    discriminant: MirOperand::Copy(more),
+                    targets: vec![(1, body)],
+                    otherwise: exit,
+                },
+            );
+            let unit = cx.builder.fresh_temp("range_push", MirType::Unit);
+            cx.builder.assign(
+                body,
+                unit,
+                MirRvalue::ListMethod {
+                    op: ListMethodOp::Push,
+                    receiver: MirOperand::Copy(list),
+                    arg: Some(MirOperand::Copy(i)),
+                    elem_ty: MirType::Int,
+                },
+            );
+            cx.builder.assign(
+                body,
+                i,
+                MirRvalue::BinaryOp(
+                    MirBinOp::Add,
+                    MirOperand::Copy(i),
+                    MirOperand::Const(MirConstant::Int(1)),
+                ),
+            );
+            cx.builder.close_block(body, MirTerminator::Goto(header));
+            cx.current = exit;
+            MirOperand::Copy(list)
         }
         HirExprKind::IterNew(inner) => {
             let v = lower_expr(cx, inner);
@@ -480,7 +541,7 @@ fn record_reflect_type(cx: &mut LowerCx<'_>, mty: &MirType) {
 /// Lower a runtime reflection builtin. The boxed/target type argument is
 /// grounded under the current substitution; reflection metadata for it is
 /// recorded so the back end registers the runtime type record. See
-/// `docs/v2/specs/runtime-reflection.md`.
+/// `docs/specs/runtime-reflection.md`.
 fn lower_reflect_builtin(
     cx: &mut LowerCx<'_>,
     op: ReflectBuiltinOp,
@@ -573,7 +634,7 @@ fn lower_reflect_builtin(
 /// Lower `type_name<T>()`. The carried type argument is grounded under the
 /// current substitution (so a generic parameter becomes the concrete type
 /// for this monomorphization), then rendered to its source spelling as a
-/// `String` constant. See `docs/v2/specs/reflection.md`.
+/// `String` constant. See `docs/specs/reflection.md`.
 fn lower_type_name(cx: &mut LowerCx<'_>, arg: &crate::tycheck::Ty, ty: MirType) -> MirOperand {
     let concrete = super::substitute(arg, cx.subst);
     let rendered = format!("{}", concrete.strip_self());
@@ -771,7 +832,7 @@ fn lower_variant_field_types(
 
 /// Lower a raw-pointer FFI builtin. The pointee is grounded under the
 /// current substitution so its machine width is known; the resulting MIR
-/// rvalue or statement carries it to codegen. See `docs/v2/specs/std-ffi.md`.
+/// rvalue or statement carries it to codegen. See `docs/specs/std-ffi.md`.
 fn lower_ptr_builtin(
     cx: &mut LowerCx<'_>,
     op: PtrBuiltinOp,
@@ -1971,6 +2032,7 @@ fn list_method_op(name: &str) -> Option<ListMethodOp> {
         "len" => ListMethodOp::Len,
         "is_empty" => ListMethodOp::IsEmpty,
         "push" => ListMethodOp::Push,
+        "reserve" => ListMethodOp::Reserve,
         "pop" => ListMethodOp::Pop,
         "get" => ListMethodOp::Get,
         _ => return None,

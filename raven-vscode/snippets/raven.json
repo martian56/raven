@@ -1,315 +1,217 @@
 {
   "Variable Binding": {
     "prefix": "let",
-    "body": [
-      "let ${1:name}: ${2:Int} = ${3:value}"
-    ],
-    "description": "Bind a variable with a type annotation"
+    "body": ["let ${1:name}: ${2:int} = ${3:value}"],
+    "description": "Bind a name with a type annotation"
   },
   "Variable Binding (inferred)": {
     "prefix": "leti",
-    "body": [
-      "let ${1:name} = ${2:value}"
-    ],
-    "description": "Bind a variable with an inferred type"
+    "body": ["let ${1:name} = ${2:value}"],
+    "description": "Bind a name with an inferred type"
   },
-  "Constant Binding": {
-    "prefix": "const",
-    "body": [
-      "const ${1:NAME}: ${2:Int} = ${3:value}"
-    ],
-    "description": "Bind a constant with a type annotation"
+  "Mutable Binding": {
+    "prefix": "var",
+    "body": ["var ${1:name} = ${2:value}"],
+    "description": "Declare a reassignable variable"
   },
   "Function Declaration": {
     "prefix": "fun",
-    "body": [
-      "fun ${1:name}(${2:params}) -> ${3:Unit} {",
-      "\t${4:body}",
-      "}"
-    ],
+    "body": ["fun ${1:name}(${2:params}) -> ${3:int} {", "\t${4:body}", "}"],
     "description": "Declare a function with parameters and a return type"
   },
   "Expression Function": {
     "prefix": "fune",
-    "body": [
-      "fun ${1:name}(${2:params}) -> ${3:Int} = ${4:expr}"
-    ],
+    "body": ["fun ${1:name}(${2:params}) -> ${3:int} = ${4:expr}"],
     "description": "Declare an expression-bodied function"
   },
   "Generic Function": {
     "prefix": "fung",
-    "body": [
-      "fun ${1:name}<${2:T}: ${3:ToString}>(${4:x}: ${2:T}) -> ${5:String} {",
-      "\t${6:body}",
-      "}"
-    ],
+    "body": ["fun ${1:name}[${2:T}: ${3:ToString}](${4:x}: ${2:T}) -> ${5:str} {", "\t${6:body}", "}"],
     "description": "Declare a generic function with a trait bound"
   },
   "Main Function": {
     "prefix": "main",
-    "body": [
-      "fun main() {",
-      "\t${1:body}",
-      "}"
-    ],
+    "body": ["fun main() {", "\t${1:body}", "}"],
     "description": "Program entry point"
   },
   "If Statement": {
     "prefix": "if",
-    "body": [
-      "if ${1:condition} {",
-      "\t${2:body}",
-      "}"
-    ],
-    "description": "If statement"
+    "body": ["if ${1:condition} {", "\t${2:body}", "}"],
+    "description": "Conditional block"
   },
   "If-Else Statement": {
     "prefix": "ifelse",
-    "body": [
-      "if ${1:condition} {",
-      "\t${2:body}",
-      "} else {",
-      "\t${3:elseBody}",
-      "}"
-    ],
-    "description": "If / else statement"
+    "body": ["if ${1:condition} {", "\t${2:then}", "} else {", "\t${3:otherwise}", "}"],
+    "description": "Conditional with an else branch"
   },
   "Else-If Chain": {
     "prefix": "elseif",
-    "body": [
-      "if ${1:condition} {",
-      "\t${2:body}",
-      "} else if ${3:condition2} {",
-      "\t${4:body2}",
-      "} else {",
-      "\t${5:elseBody}",
-      "}"
-    ],
-    "description": "If / else if / else chain"
+    "body": ["else if ${1:condition} {", "\t${2:body}", "}"],
+    "description": "Another condition in an if chain"
+  },
+  "Conditional Value": {
+    "prefix": "ifv",
+    "body": ["${1:a} if ${2:condition} else ${3:b}"],
+    "description": "A value chosen by a condition"
   },
   "While Loop": {
     "prefix": "while",
-    "body": [
-      "while ${1:condition} {",
-      "\t${2:body}",
-      "}"
-    ],
-    "description": "While loop"
+    "body": ["while ${1:condition} {", "\t${2:body}", "}"],
+    "description": "Loop while a condition holds"
   },
   "Infinite Loop": {
     "prefix": "loop",
-    "body": [
-      "loop {",
-      "\t${1:body}",
-      "}"
-    ],
-    "description": "Infinite loop (exit with break)"
+    "body": ["loop {", "\t${1:body}", "}"],
+    "description": "Loop until break"
   },
   "For Loop (range)": {
     "prefix": "for",
-    "body": [
-      "for ${1:i} in ${2:0}..${3:n} {",
-      "\t${4:body}",
-      "}"
-    ],
-    "description": "For loop over a range"
+    "body": ["for ${1:i} in ${2:0}..${3:n} {", "\t${4:body}", "}"],
+    "description": "Loop over a range"
   },
   "For Loop (collection)": {
     "prefix": "foreach",
-    "body": [
-      "for ${1:item} in ${2:items} {",
-      "\t${3:body}",
-      "}"
-    ],
-    "description": "For loop over a collection"
+    "body": ["for ${1:item} in ${2:items} {", "\t${3:body}", "}"],
+    "description": "Loop over a list, set, dict, or string"
   },
-  "Match Expression": {
+  "For Loop (enumerate)": {
+    "prefix": "forenum",
+    "body": ["for (${1:i}, ${2:item}) in enumerate(${3:items}) {", "\t${4:body}", "}"],
+    "description": "Loop with each item's position"
+  },
+  "List Comprehension": {
+    "prefix": "comp",
+    "body": ["[${1:x} for ${2:x} in ${3:items} if ${4:condition}]"],
+    "description": "Build a list from a loop"
+  },
+  "Dict Comprehension": {
+    "prefix": "dcomp",
+    "body": ["{${1:k}: ${2:v} for ${3:k} in ${4:items}}"],
+    "description": "Build a dict from a loop"
+  },
+  "Match": {
     "prefix": "match",
-    "body": [
-      "match ${1:value} {",
-      "\t${2:Pattern} -> ${3:result},",
-      "\t_ -> ${4:fallback},",
-      "}"
-    ],
-    "description": "Match expression with arms"
+    "body": ["match ${1:value} {", "\tcase ${2:Pattern} {", "\t\t${3:body}", "\t}", "\tcase _ {", "\t\t${4:fallback}", "\t}", "}"],
+    "description": "Match a value against patterns"
   },
-  "Struct Definition": {
-    "prefix": "struct",
-    "body": [
-      "struct ${1:Name} {",
-      "\t${2:field}: ${3:Int},",
-      "}"
-    ],
-    "description": "Define a struct"
+  "Class": {
+    "prefix": "class",
+    "body": ["class ${1:Name} {", "\t${2:field}: ${3:int}", "", "\tfun ${4:method}(self) -> ${5:int} {", "\t\t${6:body}", "\t}", "}"],
+    "description": "Define a class with fields and a method"
   },
-  "Generic Struct": {
-    "prefix": "structg",
-    "body": [
-      "struct ${1:Name}<${2:T}> {",
-      "\t${3:value}: ${2:T},",
-      "}"
-    ],
-    "description": "Define a generic struct"
+  "Generic Class": {
+    "prefix": "classg",
+    "body": ["class ${1:Name}[${2:T}] {", "\t${3:value}: ${2:T}", "}"],
+    "description": "Define a generic class"
   },
-  "Enum Definition": {
+  "Enum": {
     "prefix": "enum",
-    "body": [
-      "enum ${1:Name} {",
-      "\t${2:Variant1},",
-      "\t${3:Variant2}(${4:Int}),",
-      "}"
-    ],
-    "description": "Define an enum with unit and payload variants"
+    "body": ["enum ${1:Name} {", "\t${2:Variant1},", "\t${3:Variant2}(${4:int}),", "}"],
+    "description": "Define an enum"
   },
-  "Trait Definition": {
+  "Trait": {
     "prefix": "trait",
-    "body": [
-      "trait ${1:Name} {",
-      "\tfun ${2:method}(self) -> ${3:Unit}",
-      "}"
-    ],
+    "body": ["trait ${1:Name} {", "\tfun ${2:method}(self) -> ${3:int}", "}"],
     "description": "Define a trait"
+  },
+  "Trait With Method Body": {
+    "prefix": "traitm",
+    "body": ["trait ${1:Name} {", "\tfun ${2:method}(self) -> ${3:str} {", "\t\t${4:body}", "\t}", "}"],
+    "description": "Define a trait with a default method"
   },
   "Impl Block": {
     "prefix": "impl",
-    "body": [
-      "impl ${1:Type} {",
-      "\tfun ${2:method}(self) -> ${3:Unit} {",
-      "\t\t${4:body}",
-      "\t}",
-      "}"
-    ],
-    "description": "Implement methods on a type"
+    "body": ["impl ${1:Type} {", "\tfun ${2:method}(self) -> ${3:int} {", "\t\t${4:body}", "\t}", "}"],
+    "description": "Add methods to a type declared elsewhere"
   },
   "Impl Trait For Type": {
     "prefix": "implfor",
-    "body": [
-      "impl ${1:Trait} for ${2:Type} {",
-      "\tfun ${3:method}(self) -> ${4:Unit} {",
-      "\t\t${5:body}",
-      "\t}",
-      "}"
-    ],
-    "description": "Implement a trait for a type"
+    "body": ["impl ${1:Trait} for ${2:Type} {", "\tfun ${3:method}(self) -> ${4:int} {", "\t\t${5:body}", "\t}", "}"],
+    "description": "Implement a trait for a type declared elsewhere"
   },
   "Extern Block": {
     "prefix": "extern",
-    "body": [
-      "extern \"C\" {",
-      "\tfun ${1:name}(${2:arg}: ${3:CInt}) -> ${4:CInt}",
-      "}"
-    ],
-    "description": "Declare external C functions"
+    "body": ["extern \"C\" {", "\tfun ${1:name}(${2:params}) -> ${3:CInt}", "}"],
+    "description": "Declare C functions"
   },
   "Import Module": {
     "prefix": "import",
-    "body": [
-      "import ${1:std/io}"
-    ],
+    "body": ["import std.${1:fs}"],
     "description": "Import a module"
   },
   "Import Selective": {
-    "prefix": "imports",
-    "body": [
-      "import ${1:std/io} { ${2:println} }"
-    ],
-    "description": "Import selected items from a module"
+    "prefix": "from",
+    "body": ["from std.${1:json} import ${2:parse}"],
+    "description": "Import names from a module"
   },
-  "Closure": {
-    "prefix": "closure",
-    "body": [
-      "fun(${1:x}: ${2:Int}) -> ${3:Int} = ${4:expr}"
-    ],
-    "description": "Closure expression"
+  "Lambda": {
+    "prefix": "lambda",
+    "body": ["(${1:x}) => ${2:x * 2}"],
+    "description": "Anonymous function"
+  },
+  "Assert": {
+    "prefix": "assert",
+    "body": ["assert ${1:condition}, \"${2:message}\""],
+    "description": "Stop with a message when a condition is false"
   },
   "Defer": {
     "prefix": "defer",
-    "body": [
-      "defer ${1:expr}"
-    ],
-    "description": "Defer an expression until the function returns"
+    "body": ["defer ${1:cleanup()}"],
+    "description": "Run an expression when the function returns"
   },
   "Print": {
     "prefix": "print",
-    "body": [
-      "print(${1:message})"
-    ],
-    "description": "Print a string"
+    "body": ["print(${1:value})"],
+    "description": "Print values separated by spaces"
   },
   "Print Interpolated": {
     "prefix": "printi",
-    "body": [
-      "print(\"${1:label}: ${${2:value}}\")"
-    ],
-    "description": "Print with string interpolation"
+    "body": ["print(\"${1:label}: \\${${2:value}}\")"],
+    "description": "Print an interpolated string"
   },
   "Spawn Goroutine": {
     "prefix": "spawn",
-    "body": [
-      "spawn(fun() -> Unit {",
-      "\t$0",
-      "})"
-    ],
-    "description": "Spawn a goroutine running a closure (std/sync)"
+    "body": ["spawn {", "\t${1:body}", "}"],
+    "description": "Run a block on another goroutine"
+  },
+  "Spawn Task": {
+    "prefix": "task",
+    "body": ["let ${1:task} = spawn {", "\t${2:body}", "}", "${1:task}.join()"],
+    "description": "Run a block and wait for it"
   },
   "Channel": {
     "prefix": "channel",
-    "body": [
-      "let ${1:ch} = channel()"
-    ],
-    "description": "Create an unbuffered channel (import std/sync { channel })"
+    "body": ["let ${1:ch}: Channel[${2:int}] = channel()"],
+    "description": "Create an unbuffered channel"
   },
   "Buffered Channel": {
     "prefix": "channelb",
-    "body": [
-      "let ${1:ch} = channel_buffered(${2:8})"
-    ],
-    "description": "Create a buffered channel (import std/sync { channel_buffered })"
+    "body": ["let ${1:ch}: Channel[${2:int}] = channel_buffered(${3:16})"],
+    "description": "Create a buffered channel"
   },
   "Derive Attribute": {
     "prefix": "derive",
-    "body": [
-      "@derive(${1:Eq, Hash, ToString, Debug})"
-    ],
-    "description": "Derive core trait impls for the type below"
+    "body": ["@derive(${1:Ord})"],
+    "description": "Generate trait implementations"
   },
   "Repr C Attribute": {
     "prefix": "repr",
-    "body": [
-      "@repr(C)"
-    ],
-    "description": "Give the struct below C memory layout"
+    "body": ["@repr(C)", "class ${1:Name} {", "\t${2:field}: ${3:CInt}", "}"],
+    "description": "A class laid out like a C struct"
   },
   "Macro Definition": {
     "prefix": "macro",
-    "body": [
-      "macro ${1:name} { (${2:matcher}) => { ${3:template} } }"
-    ],
+    "body": ["macro ${1:name} { (${2:\\$x:expr}) => { ${3:body} } }"],
     "description": "Define a declarative macro"
   },
   "To Any": {
     "prefix": "toany",
-    "body": [
-      "to_any<${1:T}>(${2:value})"
-    ],
-    "description": "Box a value into Any for runtime reflection"
+    "body": ["to_any[${1:T}](${2:value})"],
+    "description": "Box a value as Any"
   },
   "Cast From Any": {
     "prefix": "cast",
-    "body": [
-      "cast<${1:T}>(${2:value})"
-    ],
-    "description": "Downcast an Any to T, returning Option<T>"
-  },
-  "Trait With Method Body": {
-    "prefix": "traitm",
-    "body": [
-      "trait ${1:Name} {",
-      "\tfun ${2:method}(self) -> ${3:Unit} {",
-      "\t\t${4:body}",
-      "\t}",
-      "}"
-    ],
-    "description": "Define a trait with a default method body"
+    "body": ["cast[${1:T}](${2:any})"],
+    "description": "Recover a typed value from Any"
   }
 }

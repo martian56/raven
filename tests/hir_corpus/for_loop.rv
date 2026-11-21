@@ -1,7 +1,7 @@
-fun sum(xs: List<Int>) -> Int {
-    let total = 0;
+fun sum(xs: list[int]) -> int {
+    var total = 0
     for x in xs {
-        total += x;
+        total += x
     }
     return total
 }

@@ -1,0 +1,28 @@
+// std/string enrichment: split, parse_int/parse_float, trim sides, reverse,
+// count. Prints:
+//   3
+//   200
+//   3.5
+//   trimmed
+//   level
+//   3
+import std.string
+
+fun main() {
+    print("a,b,c".split(",").len()) // 3
+    match "100".parse_int() {
+        case Some(n) {
+            print(n * 2) // 200
+        }
+        case None { print(0) }
+    }
+    match "3.5".parse_float() {
+        case Some(f) {
+            print(f) // 3.5
+        }
+        case None { print(0.0) }
+    }
+    print("  trimmed  ".trim_start().trim_end()) // trimmed
+    print("level".reverse()) // level
+    print("a.b.c.d".count(".")) // 3
+}

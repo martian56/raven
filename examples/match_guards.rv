@@ -1,0 +1,31 @@
+// A guard runs after the pattern matches: the arm is taken only when the guard
+// is true, otherwise the match falls through to the next arm. Several arms may
+// share a pattern with different guards.
+from std.io import println
+
+fun classify(n: int) -> str {
+    return match n {
+        case x if x > 10 { "big" }
+        case x if x > 0 { "small" }
+        case _ { "non-positive" }
+    }
+}
+
+fun sign(o: Option[int]) -> str {
+    return match o {
+        case Some(n) if n > 0 { "positive" }
+        case Some(n) if n < 0 { "negative" }
+        case Some(n) { "zero" }
+        case None { "none" }
+    }
+}
+
+fun main() {
+    println(classify(20))
+    println(classify(5))
+    println(classify(0 - 1))
+    println(sign(Some(7)))
+    println(sign(Some(0 - 3)))
+    println(sign(Some(0)))
+    println(sign(None))
+}

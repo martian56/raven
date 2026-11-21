@@ -1,0 +1,33 @@
+// golden:skip - POSTs to a loopback echo server (URL in RAVEN_HTTP_URL); the
+// binary-body round-trip is checked in codegen_smoke.rs
+// (http_sends_binary_body).
+//
+// An HTTP request body is sent as raw bytes, so a body containing non-UTF-8
+// bytes is delivered intact. The server echoes the body back. Prints:
+//   200
+//   len 3
+//   65
+//   255
+//   66
+from std.http import post
+from std.env import get_env
+from std.io import println
+import std.string
+
+fun main() {
+    let url = get_env("RAVEN_HTTP_URL")
+    // bytes: A(65) 0xFF(255) B(66)
+    let body = "A".concat(__str_from_byte(255)).concat("B")
+    match post(url, body) {
+        case Ok(resp) {
+            println("${resp.status_code}")
+            println("len ${resp.body.length()}")
+            var i = 0
+            while i < resp.body.length() {
+                println("${__str_byte_at(resp.body, i)}")
+                i = i + 1
+            }
+        }
+        case Err(e) { println("request failed") }
+    }
+}

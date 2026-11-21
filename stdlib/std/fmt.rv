@@ -2,15 +2,15 @@
 // count UTF-8 bytes, matching the byte-oriented String model. There is no
 // printf-style format function: string interpolation "${expr}" is the
 // placeholder mechanism, and these are the building blocks. See
-// docs/v2/specs/std-fmt.md.
+// docs/specs/std-fmt.md.
 
-import std/string
-import std/math { floor, fabs }
+import std.string
+from std.math import floor, fabs
 
 // `s` repeated `n` times. A non-positive `n` yields the empty string.
-fun repeat(s: String, n: Int) -> String {
-    let out = ""
-    let i = 0
+fun repeat(s: str, n: int) -> str {
+    var out = ""
+    var i = 0
     while i < n {
         out = __str_concat(out, s)
         i = i + 1
@@ -21,7 +21,7 @@ fun repeat(s: String, n: Int) -> String {
 // Repeat `fill` just enough whole times to span at least `width` bytes. A
 // non-positive width or an empty fill yields the empty string. The result
 // overshoots `width` by at most fill.len() - 1 bytes.
-fun fill_span(width: Int, fill: String) -> String {
+fun fill_span(width: int, fill: str) -> str {
     if width <= 0 {
         return ""
     }
@@ -29,7 +29,7 @@ fun fill_span(width: Int, fill: String) -> String {
     if flen == 0 {
         return ""
     }
-    let copies = width / flen
+    var copies = width / flen
     if copies * flen < width {
         copies = copies + 1
     }
@@ -39,7 +39,7 @@ fun fill_span(width: Int, fill: String) -> String {
 // Left-pad `s` with `fill` until its byte length is at least `width`. A
 // multi-byte `fill` overshoots by at most its length minus one. `width` is
 // compared before any subtraction so a very negative width cannot wrap.
-fun pad_left(s: String, width: Int, fill: String) -> String {
+fun pad_left(s: str, width: int, fill: str) -> str {
     let len = __str_len(s)
     if width <= len {
         return s
@@ -48,7 +48,7 @@ fun pad_left(s: String, width: Int, fill: String) -> String {
 }
 
 // Right-pad `s` with `fill` until its byte length is at least `width`.
-fun pad_right(s: String, width: Int, fill: String) -> String {
+fun pad_right(s: str, width: int, fill: str) -> str {
     let len = __str_len(s)
     if width <= len {
         return s
@@ -58,7 +58,7 @@ fun pad_right(s: String, width: Int, fill: String) -> String {
 
 // Center `s` in a field of byte width `width`, padding with `fill`. An
 // odd amount of padding puts the extra byte on the right.
-fun center(s: String, width: Int, fill: String) -> String {
+fun center(s: str, width: int, fill: str) -> str {
     let len = __str_len(s)
     if width <= len {
         return s
@@ -70,10 +70,10 @@ fun center(s: String, width: Int, fill: String) -> String {
 }
 
 // Join `parts` with `sep` between adjacent elements.
-fun join(parts: List<String>, sep: String) -> String {
+fun join(parts: list[str], sep: str) -> str {
     let n = parts.len()
-    let out = ""
-    let i = 0
+    var out = ""
+    var i = 0
     while i < n {
         if i > 0 {
             out = __str_concat(out, sep)
@@ -85,7 +85,7 @@ fun join(parts: List<String>, sep: String) -> String {
 }
 
 // Map a 0..15 digit value to its lowercase digit byte (0-9, a-f).
-fun radix_digit(v: Int) -> Int {
+fun radix_digit(v: int) -> int {
     if v < 10 {
         return 48 + v
     }
@@ -96,7 +96,7 @@ fun radix_digit(v: Int) -> Int {
 // in 2..=16; out of range returns the empty string. Zero is "0". The most
 // negative i64 is handled by accumulating the negative magnitude so no
 // overflow occurs on negation.
-fun to_radix(n: Int, base: Int) -> String {
+fun to_radix(n: int, base: int) -> str {
     if base < 2 {
         return ""
     }
@@ -106,13 +106,13 @@ fun to_radix(n: Int, base: Int) -> String {
     if n == 0 {
         return "0"
     }
-    let neg = n < 0
+    var neg = n < 0
     // Work in the negative domain so INT_MIN has no overflowing negation.
-    let m = n
+    var m = n
     if m > 0 {
         m = 0 - m
     }
-    let out = ""
+    var out = ""
     while m < 0 {
         let d = 0 - (m % base)
         out = __str_concat(__str_from_byte(radix_digit(d)), out)
@@ -124,21 +124,21 @@ fun to_radix(n: Int, base: Int) -> String {
     return out
 }
 
-fun to_binary(n: Int) -> String {
+fun to_binary(n: int) -> str {
     return to_radix(n, 2)
 }
 
-fun to_octal(n: Int) -> String {
+fun to_octal(n: int) -> str {
     return to_radix(n, 8)
 }
 
-fun to_hex(n: Int) -> String {
+fun to_hex(n: int) -> str {
     return to_radix(n, 16)
 }
 
 // The numeric value of a base digit byte (0-9, a-f, A-F), or -1 when it is
 // not a digit.
-fun radix_value(b: Int) -> Int {
+fun radix_value(b: int) -> int {
     if b >= 48 {
         if b <= 57 {
             return b - 48
@@ -160,7 +160,7 @@ fun radix_value(b: Int) -> Int {
 // Parse `s` as an integer in `base` (2..=16), with an optional leading sign.
 // Returns `None` on an empty string, a bad digit, or an out-of-range `base`.
 // The inverse of `to_radix`.
-fun from_radix(s: String, base: Int) -> Option<Int> {
+fun from_radix(s: str, base: int) -> Option[int] {
     if base < 2 {
         return None
     }
@@ -171,8 +171,8 @@ fun from_radix(s: String, base: Int) -> Option<Int> {
     if n == 0 {
         return None
     }
-    let i = 0
-    let neg = false
+    var i = 0
+    var neg = false
     let b0 = __str_byte_at(s, 0)
     if b0 == 45 {
         neg = true
@@ -191,7 +191,7 @@ fun from_radix(s: String, base: Int) -> Option<Int> {
     // never has to leave it. A negative number builds down toward min, which
     // also lets the most negative i64 parse. Each step checks for overflow
     // before it happens and returns None instead of wrapping.
-    let acc = 0
+    var acc = 0
     while i < n {
         let v = radix_value(__str_byte_at(s, i))
         if v < 0 {
@@ -217,12 +217,12 @@ fun from_radix(s: String, base: Int) -> Option<Int> {
 }
 
 // Parse a hexadecimal string into an integer. The inverse of `to_hex`.
-fun from_hex(s: String) -> Option<Int> {
+fun from_hex(s: str) -> Option[int] {
     return from_radix(s, 16)
 }
 
 // Map a float digit (0.0..9.0) to its character, with no Int conversion.
-fun float_digit_char(d: Float) -> String {
+fun float_digit_char(d: float) -> str {
     if d < 0.5 {
         return "0"
     }
@@ -257,7 +257,7 @@ fun float_digit_char(d: Float) -> String {
 // requested scale stays finite, rounded half up. `format_float(3.14159, 2)` is
 // "3.14"; `format_float(-2.5, 0)` is "-3". Excessive precision is clamped
 // before the scale or scaled value would become infinite.
-fun format_float(x: Float, decimals: Int) -> String {
+fun format_float(x: float, decimals: int) -> str {
     // Non-finite values have no decimal form: NaN compares false everywhere
     // (so the scaling loop would never run and pad to "0.00") and infinity
     // never falls below 1.0 (so the digit loop would spin forever). `x != x`
@@ -271,14 +271,14 @@ fun format_float(x: Float, decimals: Int) -> String {
         }
         return "inf"
     }
-    let neg = x < 0.0
+    var neg = x < 0.0
     let v = fabs(x)
-    let places = decimals
+    var places = decimals
     if places < 0 {
         places = 0
     }
-    let scale = 1.0
-    let i = 0
+    var scale = 1.0
+    var i = 0
     while i < places {
         let next = scale * 10.0
         if next * 0.0 != 0.0 {
@@ -291,13 +291,13 @@ fun format_float(x: Float, decimals: Int) -> String {
         }
     }
     let scaled = floor(v * scale + 0.5)
-    let digits = ""
-    let count = 0
+    var digits = ""
+    var count = 0
     if scaled < 1.0 {
         digits = "0"
         count = 1
     } else {
-        let w = scaled
+        var w = scaled
         while w >= 1.0 {
             let last = w - floor(w / 10.0) * 10.0
             digits = __str_concat(float_digit_char(last), digits)
@@ -309,7 +309,7 @@ fun format_float(x: Float, decimals: Int) -> String {
         digits = __str_concat("0", digits)
         count = count + 1
     }
-    let result = ""
+    var result = ""
     if places <= 0 {
         result = digits
     } else {
@@ -327,44 +327,44 @@ fun format_float(x: Float, decimals: Int) -> String {
 // Decimal `n` zero-padded to byte width `width`. For a negative `n` the
 // '-' stays leftmost and the zero fill goes between the sign and the
 // digits, so pad_int(-7, 4) is "-007".
-fun pad_int(n: Int, width: Int) -> String {
+fun pad_int(n: int, width: int) -> str {
     if n < 0 {
         // Render through `to_string` and strip the leading '-' rather than
         // negating, which overflows (and stays negative) at Int::MIN, producing
         // a doubled minus sign.
         let s = n.to_string()
-        let digits = s.substring(1, s.length())
+        var digits = s.substring(1, s.length())
         return __str_concat("-", pad_left(digits, width - 1, "0"))
     }
     return pad_left(n.to_string(), width, "0")
 }
 
 trait Debug {
-    fun debug(self) -> String
+    fun debug(self) -> str
 }
 
-impl Debug for Int {
-    fun debug(self) -> String = self.to_string()
+impl Debug for int {
+    fun debug(self) -> str = self.to_string()
 }
 
-impl Debug for Float {
-    fun debug(self) -> String = self.to_string()
+impl Debug for float {
+    fun debug(self) -> str = self.to_string()
 }
 
-impl Debug for Bool {
-    fun debug(self) -> String = self.to_string()
+impl Debug for bool {
+    fun debug(self) -> str = self.to_string()
 }
 
 // Quoted with single quotes. Inner quotes are not escaped.
-impl Debug for Char {
-    fun debug(self) -> String {
+impl Debug for char {
+    fun debug(self) -> str {
         return __str_concat(__str_concat("'", self.to_string()), "'")
     }
 }
 
 // Quoted with double quotes. Inner quotes are not escaped.
-impl Debug for String {
-    fun debug(self) -> String {
+impl Debug for str {
+    fun debug(self) -> str {
         return __str_concat(__str_concat("\"", self), "\"")
     }
 }

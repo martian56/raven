@@ -1,0 +1,17 @@
+import std.collections
+
+fun main() {
+    let m: dict[int, int] = Map.new()
+    var i = 0
+    while i < 1000000 {
+        m.set(i, i * 2)
+        i += 1
+    }
+    var sum = 0
+    var j = 0
+    while j < 1000000 {
+        sum += m.get_or(j, 0)
+        j += 1
+    }
+    print(sum)
+}

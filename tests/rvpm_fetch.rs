@@ -24,7 +24,7 @@ fn make_source_repo(dir: &Path) -> String {
     .unwrap();
     std::fs::write(
         dir.join("src").join("lib.rv"),
-        "fun answer() -> Int { 42 }\n",
+        "fun answer() -> int { 42 }\n",
     )
     .unwrap();
     git(dir, &["add", "."]);

@@ -1,0 +1,17 @@
+// golden:skip
+// Helper for type_namespacing.rv: declares a type named Item.
+import std.string
+
+class Item {
+    id: int
+}
+
+impl Item {
+    fun new(n: int) -> Item {
+        return Item(id: n)
+    }
+
+    fun show(self) -> str {
+        return "A#".concat(self.id.to_string())
+    }
+}

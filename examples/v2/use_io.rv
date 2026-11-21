@@ -1,7 +1,0 @@
-// golden:skip
-import std/io { println }
-
-fun main() {
-    println("Hello from std/io!")
-    println("${40 + 2}")
-}

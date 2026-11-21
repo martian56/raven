@@ -1,0 +1,34 @@
+// Match arms tell a constructor from a binding by the scrutinee's real variant
+// names, not by letter case. A lowercase enum variant is a constructor, so
+// leaving one out is a non-exhaustive match; an uppercase name that is not a
+// variant is a binding.
+from std.io import println
+
+enum Sign {
+    pos,
+    zero,
+    neg,
+}
+
+fun describe(s: Sign) -> str {
+    return match s {
+        case pos { "positive" }
+        case zero { "zero" }
+        case neg { "negative" }
+    }
+}
+
+fun pick(n: int) -> int {
+    return match n {
+        case 0 { 100 }
+        case Other { Other }
+    }
+}
+
+fun main() {
+    println(describe(Sign.pos))
+    println(describe(Sign.neg))
+    println(describe(Sign.zero))
+    println(pick(0).to_string())
+    println(pick(42).to_string())
+}

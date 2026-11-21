@@ -1,6 +1,6 @@
 //! Compile-and-run golden suite for the v2 examples.
 //!
-//! Walks every runnable example under `examples/v2/`, compiles it with the
+//! Walks every runnable example under `examples/`, compiles it with the
 //! driver pipeline, links it against the `raven-runtime` staticlib, runs the
 //! binary, and diffs its stdout against a committed `<name>.rv.out` baseline.
 //! Set `RAVEN_UPDATE_GOLDEN=1` to (re)write the baselines instead of asserting.
@@ -141,19 +141,17 @@ struct Example {
     label: String,
 }
 
-/// Gather the runnable examples. Top-level `examples/v2/*.rv` files that are
+/// Gather the runnable examples. Top-level `examples/*.rv` files that are
 /// not marked `// golden:skip` are entries, plus the multi-file program at
 /// `multifile/main.rv` (its sibling `helper.rv` is merged at resolve time and
 /// is not a standalone entry). Helper sources in subdirectories are never
 /// walked as entries, so the `*.rv` walk stays flat.
 fn collect_examples() -> Vec<Example> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("examples")
-        .join("v2");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
     let mut examples = Vec::new();
 
     let mut entries: Vec<PathBuf> = std::fs::read_dir(&dir)
-        .expect("read examples/v2")
+        .expect("read examples")
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.extension().map(|x| x == "rv").unwrap_or(false))
         .collect();

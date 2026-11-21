@@ -1,4 +1,4 @@
-fun pick(flag: Bool, a: Int, b: Int) -> Int {
-    let x = if flag { a } else { b };
+fun pick(flag: bool, a: int, b: int) -> int {
+    let x = a if flag else b
     return x
 }

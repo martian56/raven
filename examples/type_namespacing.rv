@@ -1,0 +1,10 @@
+// Two modules both declare a type named `Item`. Type namespacing at merge keeps
+// the two distinct, and the importer renames them to tell them apart.
+from std.io import println
+from "./type_namespacing_a" import Item as ItemA
+from "./type_namespacing_b" import Item as ItemB
+
+fun main() {
+    println(ItemA.new(7).show())
+    println(ItemB.new("hi").show())
+}

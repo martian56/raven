@@ -8,8 +8,8 @@
 //! advance, dispatching on the `tag` field only when it needs the
 //! payload shape.
 //!
-//! See `docs/v2/specs/runtime.md` for the contract and
-//! `docs/v2/specs/object-layout.md` for per-kind payload layouts.
+//! See `docs/specs/runtime.md` for the contract and
+//! `docs/specs/object-layout.md` for per-kind payload layouts.
 
 pub mod boxed;
 pub mod closure;
@@ -74,7 +74,7 @@ pub const TAG_STRUCT: u32 = 0x07;
 /// Bit 0 of `ObjectHeader.gc_bits`: the mark bit the tracing collector
 /// sets during the mark phase and clears during sweep. The remaining
 /// `gc_bits` holds the mark epoch the collector stamps (see `gc.rs`). See
-/// `docs/v2/specs/gc.md`.
+/// `docs/specs/gc.md`.
 ///
 /// Canonical 16-byte object header.
 ///

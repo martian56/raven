@@ -1,9 +1,9 @@
 trait Display {
-    fun render() -> String
+    fun render() -> str
 }
 
 trait Clone {
-    fun copy() -> Int
+    fun copy() -> int
 }
 
-fun util<T: Display + Clone>(x: T) -> T = x
+fun util[T: Display + Clone](x: T) -> T = x

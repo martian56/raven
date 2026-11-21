@@ -9,11 +9,11 @@
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::types;
 use cranelift_codegen::ir::{
-    Function, InstBuilder, MemFlags, Signature, StackSlot, StackSlotData, StackSlotKind,
+    Function, InstBuilder, MemFlagsData, Signature, StackSlot, StackSlotData, StackSlotKind,
     Type as CType, Value,
 };
 use cranelift_codegen::isa::CallConv;
-use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
+use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::Module;
 
 use crate::mir::{
@@ -57,7 +57,7 @@ pub fn cranelift_ty(ty: &MirType, ptr: CType) -> Option<CType> {
         // the 64-bit targets Raven supports. `CLong` is C `long`, which is
         // 64-bit under LP64 (Linux) but 32-bit under LLP64 (Windows); Raven
         // compiles for the host, so the host OS decides its width. See
-        // `docs/v2/specs/ffi.md`.
+        // `docs/specs/ffi.md`.
         MirType::Ffi(ffi) => Some(match ffi {
             MirFfiTy::CInt => types::I32,
             MirFfiTy::CLong => {
@@ -77,8 +77,15 @@ pub fn cranelift_ty(ty: &MirType, ptr: CType) -> Option<CType> {
 /// Per local lowering record.
 #[derive(Clone, Copy)]
 struct LocalSlot {
-    /// Cranelift stack slot, `None` for `Unit` locals.
+    /// The root record slot holding a GC pointer local, and the local's byte
+    /// offset in it. Every store writes it; reads use `var`, which is safe
+    /// because the collector never moves objects.
     slot: Option<StackSlot>,
+    offset: i32,
+    /// SSA variable holding the local's current value.
+    var: Option<Variable>,
+    /// The local is a `list[bool]`, whose elements are one byte.
+    byte_list: bool,
     /// Cranelift type, `None` for `Unit` locals.
     ty: Option<CType>,
 }
@@ -90,6 +97,8 @@ struct LocalSlot {
 struct RootFrame {
     array: StackSlot,
     count: usize,
+    /// Holds the address of the thread-local chain head.
+    head: Variable,
 }
 
 /// Lowering driver for a single function.
@@ -119,6 +128,7 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
     pub fn lower(&mut self) -> Result<(), CodegenError> {
         let ptr = self.cx.pointer_type();
         // Borrow the cranelift function exclusively for builder use.
+        let frontend = self.cx.module().isa().frontend_config();
         let mut builder = FunctionBuilder::new(self.cranelift_func, &mut self.builder_ctx);
 
         // Allocate one Cranelift block per MIR block.
@@ -133,41 +143,74 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
         // Allocate one stack slot per local with a machine type, and note
         // which locals hold GC pointers the collector must trace.
         let mut slots: Vec<LocalSlot> = Vec::with_capacity(self.func.locals.len());
-        let mut gc_locals: Vec<MirLocal> = Vec::new();
-        for (i, decl) in self.func.locals.iter().enumerate() {
-            let ty = cranelift_ty(&decl.ty, ptr);
-            let slot = ty.map(|t| {
-                builder.create_sized_stack_slot(StackSlotData::new(
-                    StackSlotKind::ExplicitSlot,
-                    t.bytes(),
-                ))
-            });
-            if layout::is_gc_pointer(&decl.ty) && slot.is_some() {
-                gc_locals.push(MirLocal(i as u32));
-            }
-            slots.push(LocalSlot { slot, ty });
-        }
+        let used = referenced_locals(self.func);
+        let gc_locals: Vec<MirLocal> = if may_collect(self.func) {
+            (0..self.func.locals.len())
+                .filter(|&i| {
+                    let ty = &self.func.locals[i].ty;
+                    used[i] && cranelift_ty(ty, ptr).is_some() && layout::is_gc_pointer(ty)
+                })
+                .map(|i| MirLocal(i as u32))
+                .collect()
+        } else {
+            Vec::new()
+        };
 
-        // Allocate the root array slot once when the function holds any
-        // GC pointer locals. It is one pointer-sized slot per GC local.
+        // The root record: the chain link, the count, then the GC pointer
+        // locals themselves, which the collector reads in place.
         let root_frame = if gc_locals.is_empty() {
             None
         } else {
-            let bytes = (gc_locals.len() as u32) * (ptr.bytes());
-            let array = builder
-                .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, bytes));
+            let bytes = (gc_locals.len() as u32 + 2) * (ptr.bytes());
+            let array = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                bytes,
+                3,
+            ));
+            let head = builder.declare_var(ptr);
             Some(RootFrame {
                 array,
                 count: gc_locals.len(),
+                head,
             })
         };
+        let mut offsets = vec![None; self.func.locals.len()];
+        for (k, l) in gc_locals.iter().enumerate() {
+            offsets[l.0 as usize] = Some((k as i32 + 2) * ptr.bytes() as i32);
+        }
+
+        for (i, decl) in self.func.locals.iter().enumerate() {
+            let ty = cranelift_ty(&decl.ty, ptr);
+            let (slot, offset) = match (offsets[i], root_frame) {
+                (Some(off), Some(frame)) => (Some(frame.array), off),
+                _ => (None, 0),
+            };
+            let var = ty.map(|t| builder.declare_var(t));
+            let byte_list = is_byte_list(&decl.ty);
+            slots.push(LocalSlot {
+                slot,
+                offset,
+                var,
+                ty,
+                byte_list,
+            });
+        }
 
         // Lower each block. The entry block first spills incoming
         // parameters, then sets up the GC root frame, then runs the MIR.
         let entry_idx = self.func.entry.0 as usize;
+        let has_loop = self.func.blocks.iter().any(|b| b.is_loop_header);
+        // The safepoint flag's address, computed once in the entry block so
+        // loops poll with a single load instead of reloading the address.
+        let mut stop_flag: Option<Value> = None;
         for (idx, mir_block) in self.func.blocks.iter().enumerate() {
             builder.switch_to_block(blocks[idx]);
             if idx == entry_idx {
+                if has_loop {
+                    let flag = self.cx.gc_stop_flag()?;
+                    let gv = self.cx.module().declare_data_in_func(flag, builder.func);
+                    stop_flag = Some(builder.ins().symbol_value(self.cx.pointer_type(), gv));
+                }
                 Self::spill_params(&mut builder, self.func, &slots, entry);
                 Self::enter_root_frame(
                     self.cx,
@@ -190,9 +233,27 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
             // parked for a stop-the-world collection (allocating loops poll at
             // the allocator). A single atomic load when no collection is pending.
             if mir_block.is_loop_header {
-                if let Some(sp) = self.cx.runtime_id(intrinsics::RUNTIME_GC_SAFEPOINT) {
+                if let Some(sp) = self.cx.runtime_id(intrinsics::SAFEPOINT_THUNK) {
+                    let addr = match stop_flag {
+                        Some(a) => a,
+                        None => {
+                            let flag = self.cx.gc_stop_flag()?;
+                            let gv = self.cx.module().declare_data_in_func(flag, builder.func);
+                            builder.ins().symbol_value(self.cx.pointer_type(), gv)
+                        }
+                    };
+                    let pending = builder
+                        .ins()
+                        .load(types::I8, MemFlagsData::trusted(), addr, 0);
+                    let park = builder.create_block();
+                    let cont = builder.create_block();
+                    builder.ins().brif(pending, park, &[], cont, &[]);
+                    builder.set_cold_block(park);
+                    builder.switch_to_block(park);
                     let sp_ref = self.cx.module().declare_func_in_func(sp, builder.func);
                     builder.ins().call(sp_ref, &[]);
+                    builder.ins().jump(cont, &[]);
+                    builder.switch_to_block(cont);
                 }
             }
             lower_block(
@@ -208,7 +269,7 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
         }
 
         builder.seal_all_blocks();
-        builder.finalize();
+        builder.finalize(frontend);
         Ok(())
     }
 
@@ -224,15 +285,39 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
         let mut iter = entry_params.into_iter();
         for (i, param_local) in func.params.iter().enumerate() {
             let slot_info = slots[param_local.0 as usize];
-            if let (Some(slot), Some(_)) = (slot_info.slot, slot_info.ty) {
-                let v = iter.next().unwrap_or_else(|| {
-                    unreachable!(
-                        "parameter count and block param count differ at index {}",
-                        i
-                    )
-                });
-                builder.ins().stack_store(v, slot, 0);
+            if slot_info.ty.is_none() {
+                continue;
             }
+            let v = iter.next().unwrap_or_else(|| {
+                unreachable!(
+                    "parameter count and block param count differ at index {}",
+                    i
+                )
+            });
+            if let Some(slot) = slot_info.slot {
+                builder
+                    .ins()
+                    .stack_store(types::I64, v, slot, slot_info.offset);
+            }
+            if let Some(var) = slot_info.var {
+                builder.def_var(var, v);
+            }
+        }
+        for (i, info) in slots.iter().enumerate() {
+            let (Some(var), Some(ty)) = (info.var, info.ty) else {
+                continue;
+            };
+            if func.local_decl(MirLocal(i as u32)).is_param {
+                continue;
+            }
+            let zero = if ty == types::F64 {
+                builder.ins().f64const(0.0)
+            } else if ty == types::F32 {
+                builder.ins().f32const(0.0)
+            } else {
+                builder.ins().iconst(ty, 0)
+            };
+            builder.def_var(var, zero);
         }
     }
 
@@ -241,9 +326,8 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
     /// Every GC pointer local is first zeroed so a collection triggered
     /// before the body assigns it never reads an uninitialized slot.
     /// Parameter locals already hold their incoming pointer and are not
-    /// re-zeroed. The slot address of each GC local is then written into
-    /// the contiguous root array, and `raven_gc_enter_frame` registers
-    /// the array. A matching `raven_gc_leave_frame` runs at every return.
+    /// re-zeroed. The record is then pushed onto the thread-local chain the
+    /// collector walks. Every return pops it.
     fn enter_root_frame(
         cx: &mut ModuleCx,
         builder: &mut FunctionBuilder<'_>,
@@ -257,7 +341,7 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
             return;
         };
         let zero = builder.ins().iconst(ptr, 0);
-        for (i, local) in gc_locals.iter().enumerate() {
+        for local in gc_locals {
             let info = slots[local.0 as usize];
             let slot = info.slot.expect("gc local has a stack slot");
             // Non-parameter GC locals start null so a collection that
@@ -265,22 +349,23 @@ impl<'cx, 'func> FunctionLowering<'cx, 'func> {
             // pointer. Parameters already hold their spilled incoming
             // pointer and must not be clobbered.
             if !func.local_decl(*local).is_param {
-                builder.ins().stack_store(zero, slot, 0);
+                builder
+                    .ins()
+                    .stack_store(types::I64, zero, slot, info.offset);
             }
-            // Record the slot's address in the contiguous root array; the
-            // collector dereferences it to read the live pointer.
-            let slot_addr = builder.ins().stack_addr(ptr, slot, 0);
-            builder
-                .ins()
-                .stack_store(slot_addr, frame.array, (i as i32) * ptr.bytes() as i32);
         }
-        let array_addr = builder.ins().stack_addr(ptr, frame.array, 0);
         let count = builder.ins().iconst(ptr, frame.count as i64);
-        let enter = cx
-            .runtime_id(intrinsics::RUNTIME_GC_ENTER_FRAME)
-            .expect("gc enter frame declared at module init");
-        let enter_ref = cx.module().declare_func_in_func(enter, builder.func);
-        builder.ins().call(enter_ref, &[array_addr, count]);
+        builder
+            .ins()
+            .stack_store(types::I64, count, frame.array, ptr.bytes() as i32);
+        let rec = builder.ins().stack_addr(ptr, frame.array, 0);
+        let chain = cx.frame_chain().expect("frame chain defines");
+        let gv = cx.module().declare_data_in_func(chain, builder.func);
+        let head = builder.ins().tls_value(ptr, gv);
+        builder.def_var(frame.head, head);
+        let prev = builder.ins().load(ptr, MemFlagsData::trusted(), head, 0);
+        builder.ins().stack_store(types::I64, prev, frame.array, 0);
+        builder.ins().store(MemFlagsData::trusted(), rec, head, 0);
     }
 }
 
@@ -343,7 +428,7 @@ fn lower_stmt(
                 let gv = cx.module().declare_data_in_func(data_id, builder.func);
                 let ptr = cx.pointer_type();
                 let addr = builder.ins().symbol_value(ptr, gv);
-                builder.ins().store(MemFlags::new(), v, addr, 0);
+                builder.ins().store(MemFlagsData::new(), v, addr, 0);
             }
             Ok(())
         }
@@ -376,7 +461,7 @@ fn lower_store_field(
     let fields = call_struct_fields(cx, builder, base_ptr, ptr);
     builder
         .ins()
-        .store(MemFlags::new(), v, fields, layout::slot_offset(index));
+        .store(MemFlagsData::new(), v, fields, layout::slot_offset(index));
     Ok(())
 }
 
@@ -398,7 +483,7 @@ fn lower_ptr_store(
     )?;
     let v = require_value(lower_operand(cx, builder, value, slots)?, "ptr_store value")?;
     let v = coerce_to_param(builder, v, pointee, ptr);
-    builder.ins().store(MemFlags::new(), v, a, 0);
+    builder.ins().store(MemFlagsData::new(), v, a, 0);
     Ok(())
 }
 
@@ -441,8 +526,14 @@ fn lower_store_index(
         lower_operand(cx, builder, index, slots)?,
         "index store value",
     )?;
+    let byte = operand_is_byte_list(base, slots);
     let v = lower_operand(cx, builder, value, slots)?;
-    let v = widen_to_slot(builder, v, ptr);
+    let v = if byte {
+        let v = require_value(v, "index store value")?;
+        coerce_to(builder, v, types::I8)
+    } else {
+        widen_to_slot(builder, v, ptr)
+    };
     // The index is a native `Int` (i64); take it to pointer width for the
     // address arithmetic and the unsigned bounds compare.
     let idx = to_pointer_width(builder, idx, ptr);
@@ -451,10 +542,11 @@ fn lower_store_index(
     emit_bounds_check(cx, builder, idx, len, "list index out of bounds");
 
     let elements = call_list_elements(cx, builder, list);
-    let slot_size = builder.ins().iconst(ptr, ELEMENT_SLOT);
-    let offset = builder.ins().imul(idx, slot_size);
+    let offset = builder
+        .ins()
+        .imul_imm_s(idx, if byte { 1 } else { ELEMENT_SLOT });
     let addr = builder.ins().iadd(elements, offset);
-    builder.ins().store(MemFlags::new(), v, addr, 0);
+    builder.ins().store(MemFlagsData::new(), v, addr, 0);
     Ok(())
 }
 
@@ -478,7 +570,7 @@ fn lower_rvalue(
             let ptr = cx.pointer_type();
             let addr = builder.ins().symbol_value(ptr, gv);
             match cranelift_ty(ty, ptr) {
-                Some(cty) => Ok(Some(builder.ins().load(cty, MemFlags::new(), addr, 0))),
+                Some(cty) => Ok(Some(builder.ins().load(cty, MemFlagsData::new(), addr, 0))),
                 None => Ok(None),
             }
         }
@@ -623,7 +715,7 @@ fn lower_ptr_load(
     let ptr = cx.pointer_type();
     let a = require_value(lower_operand(cx, builder, addr, slots)?, "ptr_load address")?;
     let (ty, _) = pointee_machine_ty(pointee, ptr);
-    let v = builder.ins().load(ty, MemFlags::new(), a, 0);
+    let v = builder.ins().load(ty, MemFlagsData::new(), a, 0);
     Ok(Some(v))
 }
 
@@ -665,7 +757,7 @@ fn lower_ptr_is_null(
         "ptr_is_null address",
     )?;
     // `icmp` yields an i8, the representation Raven uses for `Bool`.
-    Ok(Some(builder.ins().icmp_imm(IntCC::Equal, a, 0)))
+    Ok(Some(builder.ins().icmp_imm_s(IntCC::Equal, a, 0)))
 }
 
 /// Lower `__ptr_alloc<T>(count)`: call `raven_ffi_alloc(count * sizeof(T))`.
@@ -688,7 +780,7 @@ fn lower_ptr_alloc(
     // buffer far smaller than requested, so force the request to the maximum
     // and let the allocator reject it and return null.
     let hi = builder.ins().umulhi(n, stride);
-    let overflow = builder.ins().icmp_imm(IntCC::NotEqual, hi, 0);
+    let overflow = builder.ins().icmp_imm_s(IntCC::NotEqual, hi, 0);
     let max_bytes = builder.ins().iconst(ptr, -1);
     let bytes = builder.ins().select(overflow, max_bytes, bytes);
     let func_id = cx
@@ -702,7 +794,7 @@ fn lower_ptr_alloc(
 /// Lower `to_any<T>(v)`: box `value` into a fresh `Any` tagged with `T`'s
 /// runtime type id. A scalar payload is widened into the eight-byte slot; a
 /// GC-pointer payload sets the box's traced flag so the collector keeps it
-/// alive through the `Any`. See `docs/v2/specs/runtime-reflection.md`.
+/// alive through the `Any`. See `docs/specs/runtime-reflection.md`.
 fn lower_any_box(
     cx: &mut ModuleCx,
     builder: &mut FunctionBuilder<'_>,
@@ -764,7 +856,7 @@ fn lower_any_runtime_call(
 /// whose discriminant and payload are chosen by the comparison: `Some` with
 /// the payload reinterpreted as `T` on a match, `None` (with a null
 /// payload) otherwise. The branch-free `select` keeps the rvalue a single
-/// value. See `docs/v2/specs/runtime-reflection.md`.
+/// value. See `docs/specs/runtime-reflection.md`.
 fn lower_any_cast(
     cx: &mut ModuleCx,
     builder: &mut FunctionBuilder<'_>,
@@ -807,7 +899,7 @@ fn lower_any_cast(
     let disc = builder.ins().select(matches, some_disc, none_disc);
     builder
         .ins()
-        .store(MemFlags::new(), disc, base, layout::slot_offset(0));
+        .store(MemFlagsData::new(), disc, base, layout::slot_offset(0));
 
     // payload: the boxed payload word narrowed to the slot on match, else 0.
     let payload_slot = if ptr == types::I64 {
@@ -819,13 +911,13 @@ fn lower_any_cast(
     let stored = builder.ins().select(matches, payload_slot, zero);
     builder
         .ins()
-        .store(MemFlags::new(), stored, base, layout::slot_offset(1));
+        .store(MemFlagsData::new(), stored, base, layout::slot_offset(1));
     Ok(Some(obj))
 }
 
 /// Lower `get_field(a, name)`: call the runtime to read the named field as
 /// an `Any` (or null), then wrap it into `Option<Any>` (`Some(any)` when
-/// non-null, `None` when null). See `docs/v2/specs/runtime-reflection.md`.
+/// non-null, `None` when null). See `docs/specs/runtime-reflection.md`.
 fn lower_any_get_field(
     cx: &mut ModuleCx,
     builder: &mut FunctionBuilder<'_>,
@@ -858,16 +950,16 @@ fn lower_any_get_field(
     let field_any = pop_temp_root(cx, builder, field_root, ptr);
     let base = call_struct_fields(cx, builder, obj, ptr);
 
-    let is_some = builder.ins().icmp_imm(IntCC::NotEqual, field_any, 0);
+    let is_some = builder.ins().icmp_imm_s(IntCC::NotEqual, field_any, 0);
     let some_disc = builder.ins().iconst(ptr, 0);
     let none_disc = builder.ins().iconst(ptr, 1);
     let disc = builder.ins().select(is_some, some_disc, none_disc);
     builder
         .ins()
-        .store(MemFlags::new(), disc, base, layout::slot_offset(0));
+        .store(MemFlagsData::new(), disc, base, layout::slot_offset(0));
     builder
         .ins()
-        .store(MemFlags::new(), field_any, base, layout::slot_offset(1));
+        .store(MemFlagsData::new(), field_any, base, layout::slot_offset(1));
     Ok(Some(obj))
 }
 
@@ -923,6 +1015,11 @@ fn lower_constant(
             // reaches here, so a bare literal print stays allocation
             // free.
             let bytes = s.as_bytes();
+            if !bytes.is_empty() {
+                let id = cx.intern_static_string(bytes)?;
+                let gv = cx.module().declare_data_in_func(id, builder.func);
+                return Ok(Some(builder.ins().symbol_value(cx.pointer_type(), gv)));
+            }
             let id = cx.intern_string(bytes)?;
             let local_id = cx.module().declare_data_in_func(id, builder.func);
             let ptr = cx.pointer_type();
@@ -950,11 +1047,14 @@ fn lower_constant(
 
 fn load_local(builder: &mut FunctionBuilder<'_>, slots: &[LocalSlot], local: MirLocal) -> RValue {
     let info = slots[local.0 as usize];
+    if let Some(var) = info.var {
+        return Some(builder.use_var(var));
+    }
     let (slot, ty) = match (info.slot, info.ty) {
         (Some(s), Some(t)) => (s, t),
         _ => return None,
     };
-    Some(builder.ins().stack_load(ty, slot, 0))
+    Some(builder.ins().stack_load(types::I64, ty, slot, info.offset))
 }
 
 fn store_local(
@@ -964,20 +1064,28 @@ fn store_local(
     value: RValue,
 ) {
     let info = slots[local.0 as usize];
-    let (slot, want) = match (info.slot, info.ty) {
-        (Some(s), Some(t)) => (s, t),
-        _ => return,
+    let (Some(want), Some(v)) = (info.ty, value) else {
+        return;
     };
-    let v = match value {
-        Some(v) => v,
-        None => return,
+    if info.slot.is_none() {
+        if let Some(var) = info.var {
+            let v = coerce_to(builder, v, want);
+            builder.def_var(var, v);
+        }
+        return;
+    }
+    let Some(slot) = info.slot else {
+        return;
     };
     // Reconcile the produced value's type with the slot's declared type.
     // A field read hands back a pointer-width slot value; storing it into
     // a `Float` or narrow scalar local needs a bitcast or reduce so the
     // Cranelift store type checks.
     let v = narrow_from_slot(builder, v, want);
-    builder.ins().stack_store(v, slot, 0);
+    builder.ins().stack_store(types::I64, v, slot, info.offset);
+    if let Some(var) = info.var {
+        builder.def_var(var, v);
+    }
 }
 
 fn require_value(v: RValue, what: &'static str) -> Result<Value, CodegenError> {
@@ -1152,7 +1260,7 @@ fn widen_to_slot(builder: &mut FunctionBuilder<'_>, value: RValue, ptr: CType) -
                 v
             } else if ty == types::F64 {
                 // Reinterpret the float's bits as an integer slot value.
-                builder.ins().bitcast(ptr, MemFlags::new(), v)
+                builder.ins().bitcast(ptr, MemFlagsData::new(), v)
             } else if ty.is_int() && ty.bytes() < ptr.bytes() {
                 builder.ins().uextend(ptr, v)
             } else {
@@ -1165,13 +1273,46 @@ fn widen_to_slot(builder: &mut FunctionBuilder<'_>, value: RValue, ptr: CType) -
 
 /// Narrow a pointer-sized slot value back to a field's machine type when
 /// the field is a scalar smaller than a pointer or a float.
+/// Convert `v` to the machine type `want` of the local it is stored in.
+fn coerce_to(builder: &mut FunctionBuilder<'_>, v: Value, want: CType) -> Value {
+    let got = builder.func.dfg.value_type(v);
+    if got == want {
+        return v;
+    }
+    match (got.is_int(), want.is_int()) {
+        (true, true) if want.bytes() < got.bytes() => builder.ins().ireduce(want, v),
+        (true, true) => builder.ins().uextend(want, v),
+        (true, false) => {
+            let int = if got.bytes() == want.bytes() {
+                v
+            } else if got.bytes() > want.bytes() {
+                builder.ins().ireduce(types::I32, v)
+            } else {
+                builder.ins().uextend(types::I64, v)
+            };
+            builder.ins().bitcast(want, MemFlagsData::new(), int)
+        }
+        (false, true) => {
+            let same = if got == types::F64 {
+                types::I64
+            } else {
+                types::I32
+            };
+            let int = builder.ins().bitcast(same, MemFlagsData::new(), v);
+            coerce_to(builder, int, want)
+        }
+        (false, false) if want == types::F32 => builder.ins().fdemote(types::F32, v),
+        (false, false) => builder.ins().fpromote(types::F64, v),
+    }
+}
+
 fn narrow_from_slot(builder: &mut FunctionBuilder<'_>, raw: Value, want: CType) -> Value {
     let got = builder.func.dfg.value_type(raw);
     if got == want {
         return raw;
     }
     if want == types::F64 {
-        return builder.ins().bitcast(types::F64, MemFlags::new(), raw);
+        return builder.ins().bitcast(types::F64, MemFlagsData::new(), raw);
     }
     if want.is_int() && got.is_int() && want.bytes() < got.bytes() {
         return builder.ins().ireduce(want, raw);
@@ -1212,16 +1353,31 @@ fn lower_struct_create(
     // must stay reachable across it. Each field value is unrooted only
     // between its production and its immediate store into the rooted struct,
     // with no allocation in between.
+    if !fields.iter().any(operand_allocates) {
+        let values = fields
+            .iter()
+            .map(|f| lower_operand(cx, builder, f, slots))
+            .collect::<Result<Vec<_>, _>>()?;
+        let obj = call_struct_new(cx, builder, fields.len() as i64, type_id, ptr);
+        let base = call_struct_fields(cx, builder, obj, ptr);
+        for (i, v) in values.into_iter().enumerate() {
+            let v = widen_to_slot(builder, v, ptr);
+            builder
+                .ins()
+                .store(MemFlagsData::new(), v, base, layout::slot_offset(i));
+        }
+        return Ok(Some(obj));
+    }
     let obj = call_struct_new(cx, builder, fields.len() as i64, type_id, ptr);
     let root = push_temp_root(cx, builder, obj, ptr);
     for (i, f) in fields.iter().enumerate() {
         let v = lower_operand(cx, builder, f, slots)?;
         let v = widen_to_slot(builder, v, ptr);
-        let obj = builder.ins().stack_load(ptr, root, 0);
+        let obj = builder.ins().stack_load(types::I64, ptr, root, 0);
         let base = call_struct_fields(cx, builder, obj, ptr);
         builder
             .ins()
-            .store(MemFlags::new(), v, base, layout::slot_offset(i));
+            .store(MemFlagsData::new(), v, base, layout::slot_offset(i));
     }
     let obj = pop_temp_root(cx, builder, root, ptr);
     Ok(Some(obj))
@@ -1266,6 +1422,53 @@ fn lower_enum_create(
     // operand can allocate and trigger a collection, and the partially
     // built value must stay reachable across it.
     let field_count = 1 + payload.len() as i64;
+    if payload.is_empty() {
+        // A payload-less variant is immutable, so every use shares one value,
+        // built on first use and kept in a rooted static slot.
+        let slot = cx.unit_variant_slot(&key, variant)?;
+        let gv = cx.module().declare_data_in_func(slot, builder.func);
+        let addr = builder.ins().symbol_value(ptr, gv);
+        let cached = builder.ins().load(ptr, MemFlagsData::trusted(), addr, 0);
+        let make = builder.create_block();
+        let done = builder.create_block();
+        builder.append_block_param(done, ptr);
+        builder
+            .ins()
+            .brif(cached, done, &[cached.into()], make, &[]);
+        builder.set_cold_block(make);
+        builder.switch_to_block(make);
+        builder.seal_block(make);
+        let obj = call_struct_new(cx, builder, field_count, type_id, ptr);
+        let base = call_struct_fields(cx, builder, obj, ptr);
+        let disc = builder.ins().iconst(ptr, variant as i64);
+        builder
+            .ins()
+            .store(MemFlagsData::new(), disc, base, layout::slot_offset(0));
+        builder.ins().store(MemFlagsData::trusted(), obj, addr, 0);
+        builder.ins().jump(done, &[obj.into()]);
+        builder.switch_to_block(done);
+        builder.seal_block(done);
+        return Ok(Some(builder.block_params(done)[0]));
+    }
+    if !payload.iter().any(operand_allocates) {
+        let values = payload
+            .iter()
+            .map(|p| lower_operand(cx, builder, p, slots))
+            .collect::<Result<Vec<_>, _>>()?;
+        let obj = call_struct_new(cx, builder, field_count, type_id, ptr);
+        let base = call_struct_fields(cx, builder, obj, ptr);
+        let disc = builder.ins().iconst(ptr, variant as i64);
+        builder
+            .ins()
+            .store(MemFlagsData::new(), disc, base, layout::slot_offset(0));
+        for (i, v) in values.into_iter().enumerate() {
+            let v = widen_to_slot(builder, v, ptr);
+            builder
+                .ins()
+                .store(MemFlagsData::new(), v, base, layout::slot_offset(i + 1));
+        }
+        return Ok(Some(obj));
+    }
     let obj = call_struct_new(cx, builder, field_count, type_id, ptr);
     let root = push_temp_root(cx, builder, obj, ptr);
     // Slot 0: the discriminant.
@@ -1273,16 +1476,16 @@ fn lower_enum_create(
     let disc = builder.ins().iconst(ptr, variant as i64);
     builder
         .ins()
-        .store(MemFlags::new(), disc, base, layout::slot_offset(0));
+        .store(MemFlagsData::new(), disc, base, layout::slot_offset(0));
     // Slots 1..: the payload.
     for (i, p) in payload.iter().enumerate() {
         let v = lower_operand(cx, builder, p, slots)?;
         let v = widen_to_slot(builder, v, ptr);
-        let obj = builder.ins().stack_load(ptr, root, 0);
+        let obj = builder.ins().stack_load(types::I64, ptr, root, 0);
         let base = call_struct_fields(cx, builder, obj, ptr);
         builder
             .ins()
-            .store(MemFlags::new(), v, base, layout::slot_offset(i + 1));
+            .store(MemFlagsData::new(), v, base, layout::slot_offset(i + 1));
     }
     let obj = pop_temp_root(cx, builder, root, ptr);
     Ok(Some(obj))
@@ -1305,8 +1508,14 @@ fn lower_field_access(
     // field is reinterpreted there).
     let raw = builder
         .ins()
-        .load(ptr, MemFlags::new(), fields, layout::slot_offset(index));
+        .load(ptr, MemFlagsData::new(), fields, layout::slot_offset(index));
     Ok(Some(raw))
+}
+
+/// Whether lowering `op` can allocate: a string literal becomes a heap
+/// `String`. Locals and scalar constants never allocate.
+fn operand_allocates(op: &MirOperand) -> bool {
+    matches!(op, MirOperand::Const(MirConstant::Str(_)))
 }
 
 /// Spill a freshly allocated heap object into a one-pointer stack slot and
@@ -1320,9 +1529,12 @@ fn push_temp_root(
     obj: Value,
     ptr: CType,
 ) -> StackSlot {
-    let slot = builder
-        .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, ptr.bytes()));
-    builder.ins().stack_store(obj, slot, 0);
+    let slot = builder.create_sized_stack_slot(StackSlotData::new(
+        StackSlotKind::ExplicitSlot,
+        ptr.bytes(),
+        3,
+    ));
+    builder.ins().stack_store(types::I64, obj, slot, 0);
     let slot_addr = builder.ins().stack_addr(ptr, slot, 0);
     let push_id = cx
         .runtime_id(intrinsics::RUNTIME_GC_PUSH_ROOT)
@@ -1346,7 +1558,7 @@ fn pop_temp_root(
     let pop_ref = cx.module().declare_func_in_func(pop_id, builder.func);
     let one = builder.ins().iconst(ptr, 1);
     builder.ins().call(pop_ref, &[one]);
-    builder.ins().stack_load(ptr, slot, 0)
+    builder.ins().stack_load(types::I64, ptr, slot, 0)
 }
 
 /// Spill `obj` to a one-pointer stack slot and register it as a single GC
@@ -1355,9 +1567,12 @@ fn pop_temp_root(
 /// roots at once (with [`pop_n_roots`]) and does not need to reload the
 /// pointer (the value is non-moving, so the register stays valid).
 fn root_temp(cx: &mut ModuleCx, builder: &mut FunctionBuilder<'_>, obj: Value, ptr: CType) {
-    let slot = builder
-        .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, ptr.bytes()));
-    builder.ins().stack_store(obj, slot, 0);
+    let slot = builder.create_sized_stack_slot(StackSlotData::new(
+        StackSlotKind::ExplicitSlot,
+        ptr.bytes(),
+        3,
+    ));
+    builder.ins().stack_store(types::I64, obj, slot, 0);
     let slot_addr = builder.ins().stack_addr(ptr, slot, 0);
     let push_id = cx
         .runtime_id(intrinsics::RUNTIME_GC_PUSH_ROOT)
@@ -1396,7 +1611,7 @@ fn operand_allocates_heap(op: &MirOperand) -> bool {
 /// widened on store and narrowed on load; a GC pointer is already this
 /// wide. Keeping a single slot width means indexing is a plain
 /// `base + i * ELEMENT_SLOT` and the collector's element tracing walks
-/// pointer-sized slots. See `docs/v2/specs/object-layout.md`.
+/// pointer-sized slots. See `docs/specs/object-layout.md`.
 const ELEMENT_SLOT: i64 = 8;
 
 /// Lower a `List<T>` literal `[a, b, c]`.
@@ -1435,7 +1650,13 @@ fn lower_array_lit(
     // alive transitively. Each element value is unrooted only between its
     // own production and its immediate push, with no allocation in between,
     // so it is never live across a collection on its own.
-    let list = call_list_new(cx, builder, elements.len() as i64, gc_ptrs);
+    let list = call_list_new(
+        cx,
+        builder,
+        elements.len() as i64,
+        gc_ptrs,
+        elem_size(elem_ty),
+    );
     let root = push_temp_root(cx, builder, list, ptr);
 
     // One reusable scratch slot the size of a single element; each push
@@ -1443,6 +1664,7 @@ fn lower_array_lit(
     let scratch = builder.create_sized_stack_slot(StackSlotData::new(
         StackSlotKind::ExplicitSlot,
         ELEMENT_SLOT as u32,
+        3,
     ));
     let scratch_addr = builder.ins().stack_addr(ptr, scratch, 0);
     let push_id = cx
@@ -1451,10 +1673,10 @@ fn lower_array_lit(
     for e in elements {
         let v = lower_operand(cx, builder, e, slots)?;
         let v = widen_to_slot(builder, v, ptr);
-        builder.ins().stack_store(v, scratch, 0);
+        builder.ins().stack_store(types::I64, v, scratch, 0);
         // Reload the rooted list so the push targets the authoritative
         // pointer the collector observes through the slot.
-        let list = builder.ins().stack_load(ptr, root, 0);
+        let list = builder.ins().stack_load(types::I64, ptr, root, 0);
         let push_ref = cx.module().declare_func_in_func(push_id, builder.func);
         builder.ins().call(push_ref, &[list, scratch_addr]);
     }
@@ -1488,11 +1710,14 @@ fn lower_index_access(
     let len = call_list_len(cx, builder, list, ptr);
     emit_bounds_check(cx, builder, idx, len, "list index out of bounds");
 
+    let byte = operand_is_byte_list(base, slots);
     let elements = call_list_elements(cx, builder, list);
-    let slot_size = builder.ins().iconst(ptr, ELEMENT_SLOT);
-    let offset = builder.ins().imul(idx, slot_size);
+    let offset = builder
+        .ins()
+        .imul_imm_s(idx, if byte { 1 } else { ELEMENT_SLOT });
     let addr = builder.ins().iadd(elements, offset);
-    let raw = builder.ins().load(ptr, MemFlags::new(), addr, 0);
+    let width = if byte { types::I8 } else { ptr };
+    let raw = builder.ins().load(width, MemFlagsData::new(), addr, 0);
     Ok(Some(raw))
 }
 
@@ -1538,23 +1763,78 @@ fn lower_list_method(
                 "list push value",
             )?;
             let value = widen_to_slot(builder, Some(value), ptr);
+            let len =
+                builder
+                    .ins()
+                    .load(types::I32, MemFlagsData::trusted(), list, LIST_LEN_OFFSET);
+            let cap =
+                builder
+                    .ins()
+                    .load(types::I32, MemFlagsData::trusted(), list, LIST_CAP_OFFSET);
+            let has_room = builder.ins().icmp(IntCC::UnsignedLessThan, len, cap);
+            let fast = builder.create_block();
+            let slow = builder.create_block();
+            let done = builder.create_block();
+            builder.ins().brif(has_room, fast, &[], slow, &[]);
+
+            builder.switch_to_block(fast);
+            let byte = is_byte_elem(_elem_ty);
+            let elements = call_list_elements(cx, builder, list);
+            let wide_len = builder.ins().uextend(ptr, len);
+            let offset = builder
+                .ins()
+                .imul_imm_s(wide_len, if byte { 1 } else { ELEMENT_SLOT });
+            let addr = builder.ins().iadd(elements, offset);
+            let stored = if byte {
+                coerce_to(builder, value, types::I8)
+            } else {
+                value
+            };
+            builder
+                .ins()
+                .store(MemFlagsData::trusted(), stored, addr, 0);
+            let next = builder.ins().iadd_imm_s(len, 1);
+            builder
+                .ins()
+                .store(MemFlagsData::trusted(), next, list, LIST_LEN_OFFSET);
+            builder.ins().jump(done, &[]);
+
+            builder.switch_to_block(slow);
+            builder.set_cold_block(slow);
             let scratch = builder.create_sized_stack_slot(StackSlotData::new(
                 StackSlotKind::ExplicitSlot,
                 ELEMENT_SLOT as u32,
+                3,
             ));
-            builder.ins().stack_store(value, scratch, 0);
+            builder.ins().stack_store(types::I64, value, scratch, 0);
             let scratch_addr = builder.ins().stack_addr(ptr, scratch, 0);
             let push_id = cx
                 .runtime_id(intrinsics::RUNTIME_LIST_PUSH)
                 .expect("list push declared at module init");
             let push_ref = cx.module().declare_func_in_func(push_id, builder.func);
             builder.ins().call(push_ref, &[list, scratch_addr]);
+            builder.ins().jump(done, &[]);
+
+            builder.switch_to_block(done);
+            Ok(None)
+        }
+        ListMethodOp::Reserve => {
+            let n = require_value(
+                lower_operand(cx, builder, arg.expect("reserve has one argument"), slots)?,
+                "list reserve count",
+            )?;
+            let id = cx
+                .runtime_id(intrinsics::RUNTIME_LIST_RESERVE)
+                .expect("list reserve declared at module init");
+            let f = cx.module().declare_func_in_func(id, builder.func);
+            builder.ins().call(f, &[list, n]);
             Ok(None)
         }
         ListMethodOp::Pop => {
             let scratch = builder.create_sized_stack_slot(StackSlotData::new(
                 StackSlotKind::ExplicitSlot,
                 ELEMENT_SLOT as u32,
+                3,
             ));
             let scratch_addr = builder.ins().stack_addr(ptr, scratch, 0);
             let pop_id = cx
@@ -1564,7 +1844,7 @@ fn lower_list_method(
             let inst = builder.ins().call(pop_ref, &[list, scratch_addr]);
             let ok = builder.inst_results(inst)[0];
             emit_status_check(cx, builder, ok, "pop from empty list");
-            let raw = builder.ins().stack_load(ptr, scratch, 0);
+            let raw = builder.ins().stack_load(types::I64, ptr, scratch, 0);
             Ok(Some(raw))
         }
         ListMethodOp::Get => {
@@ -1580,6 +1860,7 @@ fn lower_list_method(
             let scratch = builder.create_sized_stack_slot(StackSlotData::new(
                 StackSlotKind::ExplicitSlot,
                 ELEMENT_SLOT as u32,
+                3,
             ));
             let scratch_addr = builder.ins().stack_addr(ptr, scratch, 0);
             let get_id = cx
@@ -1589,7 +1870,7 @@ fn lower_list_method(
             let inst = builder.ins().call(get_ref, &[list, idx32, scratch_addr]);
             let ok = builder.inst_results(inst)[0];
             emit_status_check(cx, builder, ok, "list index out of bounds");
-            let raw = builder.ins().stack_load(ptr, scratch, 0);
+            let raw = builder.ins().stack_load(types::I64, ptr, scratch, 0);
             Ok(Some(raw))
         }
     }
@@ -1602,13 +1883,14 @@ fn call_list_new(
     builder: &mut FunctionBuilder<'_>,
     cap: i64,
     gc_ptrs: bool,
+    elem_bytes: i64,
 ) -> Value {
     let new_id = cx
         .runtime_id(intrinsics::RUNTIME_LIST_NEW)
         .expect("list new declared at module init");
     let new_ref = cx.module().declare_func_in_func(new_id, builder.func);
-    let size = builder.ins().iconst(types::I32, ELEMENT_SLOT);
-    let align = builder.ins().iconst(types::I32, ELEMENT_SLOT);
+    let size = builder.ins().iconst(types::I32, elem_bytes);
+    let align = builder.ins().iconst(types::I32, elem_bytes);
     let cap = builder.ins().iconst(types::I32, cap);
     let flag = builder
         .ins()
@@ -1625,23 +1907,24 @@ fn call_list_len(
     list: Value,
     ptr: CType,
 ) -> Value {
-    let len_id = cx
-        .runtime_id(intrinsics::RUNTIME_LIST_LEN)
-        .expect("list len declared at module init");
-    let len_ref = cx.module().declare_func_in_func(len_id, builder.func);
-    let inst = builder.ins().call(len_ref, &[list]);
-    let len_u32 = builder.inst_results(inst)[0];
+    let _ = cx;
+    let len_u32 = builder
+        .ins()
+        .load(types::I32, MemFlagsData::trusted(), list, LIST_LEN_OFFSET);
     builder.ins().uextend(ptr, len_u32)
 }
 
+// Field offsets of the runtime `List` object (raven-runtime/src/object/list.rs).
+const LIST_LEN_OFFSET: i32 = 8;
+const LIST_CAP_OFFSET: i32 = 12;
+const LIST_ELEMENTS_OFFSET: i32 = 32;
+
 /// Emit `raven_list_elements(list) -> ptr` and return the buffer base.
 fn call_list_elements(cx: &mut ModuleCx, builder: &mut FunctionBuilder<'_>, list: Value) -> Value {
-    let id = cx
-        .runtime_id(intrinsics::RUNTIME_LIST_ELEMENTS)
-        .expect("list elements declared at module init");
-    let fref = cx.module().declare_func_in_func(id, builder.func);
-    let inst = builder.ins().call(fref, &[list]);
-    builder.inst_results(inst)[0]
+    let ptr = cx.pointer_type();
+    builder
+        .ins()
+        .load(ptr, MemFlagsData::trusted(), list, LIST_ELEMENTS_OFFSET)
 }
 
 /// Branch on an unsigned `index < len` check, calling `raven_panic` with
@@ -1719,7 +2002,7 @@ fn emit_status_check(
     emit_panic(cx, builder, message);
     builder
         .ins()
-        .trap(cranelift_codegen::ir::TrapCode::UnreachableCodeReached);
+        .trap(cranelift_codegen::ir::TrapCode::unwrap_user(1));
 
     builder.switch_to_block(continue_block);
     builder.seal_block(continue_block);
@@ -1868,7 +2151,7 @@ fn lower_closure_create(
         for (i, v) in capture_vals.into_iter().enumerate() {
             builder
                 .ins()
-                .store(MemFlags::new(), v, env_base, (i as i32) * CAPTURE_SLOT);
+                .store(MemFlagsData::new(), v, env_base, (i as i32) * CAPTURE_SLOT);
         }
     }
 
@@ -1891,9 +2174,12 @@ fn lower_env_load(
 ) -> Result<RValue, CodegenError> {
     let ptr = cx.pointer_type();
     let env_base = require_value(lower_operand(cx, builder, env, slots)?, "env load base")?;
-    let raw = builder
-        .ins()
-        .load(ptr, MemFlags::new(), env_base, (slot as i32) * CAPTURE_SLOT);
+    let raw = builder.ins().load(
+        ptr,
+        MemFlagsData::new(),
+        env_base,
+        (slot as i32) * CAPTURE_SLOT,
+    );
     Ok(Some(raw))
 }
 
@@ -2008,10 +2294,13 @@ fn lower_dyn_coerce(
     let base = call_struct_fields(cx, builder, obj, ptr);
     builder
         .ins()
-        .store(MemFlags::new(), data, base, layout::slot_offset(0));
-    builder
-        .ins()
-        .store(MemFlags::new(), vtable_ptr, base, layout::slot_offset(1));
+        .store(MemFlagsData::new(), data, base, layout::slot_offset(0));
+    builder.ins().store(
+        MemFlagsData::new(),
+        vtable_ptr,
+        base,
+        layout::slot_offset(1),
+    );
     Ok(Some(obj))
 }
 
@@ -2040,14 +2329,14 @@ fn lower_virtual_call(
     // Slot 0: the data pointer (the erased receiver). Slot 1: the vtable.
     let data = builder
         .ins()
-        .load(ptr, MemFlags::new(), base, layout::slot_offset(0));
+        .load(ptr, MemFlagsData::new(), base, layout::slot_offset(0));
     let vtable = builder
         .ins()
-        .load(ptr, MemFlags::new(), base, layout::slot_offset(1));
+        .load(ptr, MemFlagsData::new(), base, layout::slot_offset(1));
     // Load the method pointer from the vtable's slot.
     let method_ptr = builder.ins().load(
         ptr,
-        MemFlags::new(),
+        MemFlagsData::new(),
         vtable,
         (slot as i32) * (ptr.bytes() as i32),
     );
@@ -2102,13 +2391,13 @@ fn call_struct_fields(
     obj: Value,
     _ptr: CType,
 ) -> Value {
-    let id = cx
-        .runtime_id(intrinsics::RUNTIME_STRUCT_FIELDS)
-        .expect("struct fields declared at module init");
-    let fref = cx.module().declare_func_in_func(id, builder.func);
-    let inst = builder.ins().call(fref, &[obj]);
-    builder.inst_results(inst)[0]
+    let _ = cx;
+    builder.ins().iadd_imm_s(obj, STRUCT_FIELDS_OFFSET)
 }
+
+// Size of the runtime `ObjectHeader` (raven-runtime/src/object.rs), which the
+// field slots of a struct or enum object follow.
+const STRUCT_FIELDS_OFFSET: i64 = 16;
 
 fn lower_call(
     cx: &mut ModuleCx,
@@ -2219,7 +2508,7 @@ fn lower_call(
                         for s in slots {
                             arg_vals.push(builder.ins().load(
                                 s.ty,
-                                MemFlags::new(),
+                                MemFlagsData::new(),
                                 addr,
                                 s.offset as i32,
                             ));
@@ -2281,7 +2570,9 @@ fn lower_call(
                 let size = cx.repr_c_layout(&ret_ty.mangle()).unwrap().size;
                 let (slot, addr) = struct_image_slot(cx, builder, size);
                 for (s, r) in slots.iter().zip(results.iter()) {
-                    builder.ins().stack_store(*r, slot, s.offset as i32);
+                    builder
+                        .ins()
+                        .stack_store(types::I64, *r, slot, s.offset as i32);
                 }
                 image_to_struct(cx, builder, addr, ret_ty)
             }
@@ -2415,7 +2706,7 @@ fn aarch64_hfa(layout: &ReprCLayout) -> Option<Vec<RegSlot>> {
 }
 
 /// The register plan for a by-value `@repr(C)` struct under the target ABI.
-/// See `docs/v2/specs/ffi-extensions.md`.
+/// See `docs/specs/ffi-extensions.md`.
 pub(crate) fn repr_c_register_plan(layout: &ReprCLayout, conv: CallConv) -> RegPlan {
     match conv {
         // Windows x64: sizes 1/2/4/8 in one integer register (a float-field
@@ -2487,6 +2778,7 @@ fn struct_to_image(
     let slot = builder.create_sized_stack_slot(StackSlotData::new(
         StackSlotKind::ExplicitSlot,
         image_slot_bytes(layout.size),
+        3,
     ));
     write_image_fields(cx, builder, obj, &layout, slot, 0);
     builder.ins().stack_addr(ptr, slot, 0)
@@ -2510,21 +2802,23 @@ fn write_image_fields(
         let off = (base_off + f.offset) as i32;
         match &f.kind {
             ReprCFieldKind::Scalar(ffi) => {
-                let raw =
-                    builder
-                        .ins()
-                        .load(types::I64, MemFlags::new(), base, layout::slot_offset(i));
+                let raw = builder.ins().load(
+                    types::I64,
+                    MemFlagsData::new(),
+                    base,
+                    layout::slot_offset(i),
+                );
                 // A float field is stored in the heap as f64 bits: the C
                 // image wants f32 for `CFloat` (narrowed with fdemote) and
                 // f64 for `CDouble` (the same 8 bytes).
                 match ffi {
                     MirFfiTy::CFloat => {
-                        let f64v = builder.ins().bitcast(types::F64, MemFlags::new(), raw);
+                        let f64v = builder.ins().bitcast(types::F64, MemFlagsData::new(), raw);
                         let f32v = builder.ins().fdemote(types::F32, f64v);
-                        builder.ins().stack_store(f32v, slot, off);
+                        builder.ins().stack_store(types::I64, f32v, slot, off);
                     }
                     MirFfiTy::CDouble => {
-                        builder.ins().stack_store(raw, slot, off);
+                        builder.ins().stack_store(types::I64, raw, slot, off);
                     }
                     _ => {
                         let (fsize, _) = ffi
@@ -2535,7 +2829,7 @@ fn write_image_fields(
                         } else {
                             builder.ins().ireduce(int_type_for_size(fsize), raw)
                         };
-                        builder.ins().stack_store(v, slot, off);
+                        builder.ins().stack_store(types::I64, v, slot, off);
                     }
                 }
             }
@@ -2543,7 +2837,7 @@ fn write_image_fields(
                 let nested_ptr =
                     builder
                         .ins()
-                        .load(ptr, MemFlags::new(), base, layout::slot_offset(i));
+                        .load(ptr, MemFlagsData::new(), base, layout::slot_offset(i));
                 write_image_fields(cx, builder, nested_ptr, nested, slot, base_off + f.offset);
             }
         }
@@ -2596,19 +2890,25 @@ fn read_image_into_struct(
         let value = match &f.kind {
             ReprCFieldKind::Scalar(ffi) => match ffi {
                 MirFfiTy::CFloat => {
-                    let f32v = builder.ins().load(types::F32, MemFlags::new(), addr, off);
+                    let f32v = builder
+                        .ins()
+                        .load(types::F32, MemFlagsData::new(), addr, off);
                     let f64v = builder.ins().fpromote(types::F64, f32v);
-                    builder.ins().bitcast(types::I64, MemFlags::new(), f64v)
+                    builder.ins().bitcast(types::I64, MemFlagsData::new(), f64v)
                 }
-                MirFfiTy::CDouble => builder.ins().load(types::I64, MemFlags::new(), addr, off),
+                MirFfiTy::CDouble => builder
+                    .ins()
+                    .load(types::I64, MemFlagsData::new(), addr, off),
                 _ => {
                     let (fsize, _) = ffi
                         .c_scalar_layout()
                         .expect("repr(C) field has a scalar layout");
-                    let raw =
-                        builder
-                            .ins()
-                            .load(int_type_for_size(fsize), MemFlags::new(), addr, off);
+                    let raw = builder.ins().load(
+                        int_type_for_size(fsize),
+                        MemFlagsData::new(),
+                        addr,
+                        off,
+                    );
                     if fsize >= 8 {
                         raw
                     } else {
@@ -2630,11 +2930,11 @@ fn read_image_into_struct(
         };
         // Re-load the rooted parent (the nested reconstruction allocated) and
         // store the field.
-        let obj = builder.ins().stack_load(ptr, root, 0);
+        let obj = builder.ins().stack_load(types::I64, ptr, root, 0);
         let base = call_struct_fields(cx, builder, obj, ptr);
         builder
             .ins()
-            .store(MemFlags::new(), value, base, layout::slot_offset(i));
+            .store(MemFlagsData::new(), value, base, layout::slot_offset(i));
     }
     pop_temp_root(cx, builder, root, ptr)
 }
@@ -2650,6 +2950,7 @@ fn struct_image_slot(
     let slot = builder.create_sized_stack_slot(StackSlotData::new(
         StackSlotKind::ExplicitSlot,
         image_slot_bytes(size),
+        3,
     ));
     let addr = builder.ins().stack_addr(ptr, slot, 0);
     (slot, addr)
@@ -3109,27 +3410,26 @@ fn lower_terminator(
         MirTerminator::Unreachable => {
             builder
                 .ins()
-                .trap(cranelift_codegen::ir::TrapCode::UnreachableCodeReached);
+                .trap(cranelift_codegen::ir::TrapCode::unwrap_user(1));
             Ok(())
         }
     }
 }
 
-/// Emit the matching `raven_gc_leave_frame` for a function that entered
+/// Pop the root record for a function that entered
 /// a root frame. A no-op when the function has no GC pointer locals.
 fn leave_root_frame(
     cx: &mut ModuleCx,
     builder: &mut FunctionBuilder<'_>,
     root_frame: Option<RootFrame>,
 ) {
-    if root_frame.is_none() {
+    let Some(frame) = root_frame else {
         return;
-    }
-    let leave = cx
-        .runtime_id(intrinsics::RUNTIME_GC_LEAVE_FRAME)
-        .expect("gc leave frame declared at module init");
-    let leave_ref = cx.module().declare_func_in_func(leave, builder.func);
-    builder.ins().call(leave_ref, &[]);
+    };
+    let ptr = cx.pointer_type();
+    let prev = builder.ins().stack_load(types::I64, ptr, frame.array, 0);
+    let head = builder.use_var(frame.head);
+    builder.ins().store(MemFlagsData::trusted(), prev, head, 0);
 }
 
 /// Open the per-call defer frame at function entry.
@@ -3171,7 +3471,7 @@ fn lower_switch_enum(
     // The discriminant is stored in slot 0 as a pointer-width integer.
     let disc = builder
         .ins()
-        .load(ptr, MemFlags::new(), fields, layout::slot_offset(0));
+        .load(ptr, MemFlagsData::new(), fields, layout::slot_offset(0));
 
     // Split the targets into a cascade and a fall-through block. With an
     // explicit otherwise every target is compared and the otherwise block
@@ -3184,7 +3484,7 @@ fn lower_switch_enum(
             None => {
                 builder
                     .ins()
-                    .trap(cranelift_codegen::ir::TrapCode::UnreachableCodeReached);
+                    .trap(cranelift_codegen::ir::TrapCode::unwrap_user(1));
                 return Ok(());
             }
         },
@@ -3219,9 +3519,27 @@ fn lower_switch_int(
         "switch discriminant",
     )?;
     let disc_ty = builder.func.dfg.value_type(disc);
-    // Widen i8 discriminants (typically Bool) to i64 so all comparisons
-    // share a single integer type; this matches the conventional
-    // expansion of an if into a switch_int with two integer targets.
+    let block = |b: MirBlockId| blocks[b.0 as usize];
+    let is_bool = disc_ty == types::I8;
+    let two_way = match targets {
+        [(0, f), (1, t)] | [(1, t), (0, f)] if is_bool => Some((*t, *f)),
+        [(1, t)] if is_bool => Some((*t, otherwise)),
+        [(0, f)] => Some((otherwise, *f)),
+        _ => None,
+    };
+    if let Some((on_true, on_false)) = two_way {
+        builder
+            .ins()
+            .brif(disc, block(on_true), &[], block(on_false), &[]);
+        return Ok(());
+    }
+    if let [(v, t)] = targets {
+        let cmp = builder.ins().icmp_imm_s(IntCC::Equal, disc, *v);
+        builder
+            .ins()
+            .brif(cmp, block(*t), &[], block(otherwise), &[]);
+        return Ok(());
+    }
     let disc_wide = if disc_ty == types::I64 {
         disc
     } else {
@@ -3264,4 +3582,86 @@ pub fn build_signature(func: &MirFunction, ptr: CType, base: Signature) -> Signa
         sig.returns.push(cranelift_codegen::ir::AbiParam::new(t));
     }
     sig
+}
+
+/// Whether a collection can run while `func` executes: it calls something,
+/// allocates, defers, or loops (a loop polls the safepoint). Without any of
+/// those its GC locals need no root frame.
+fn may_collect(func: &MirFunction) -> bool {
+    if func.has_defer {
+        return true;
+    }
+    func.blocks.iter().any(|b| {
+        b.is_loop_header
+            || b.statements.iter().any(|st| match st {
+                MirStatement::Assign { rvalue, .. } => !matches!(
+                    rvalue,
+                    MirRvalue::Use(_)
+                        | MirRvalue::BinaryOp(..)
+                        | MirRvalue::UnaryOp(..)
+                        | MirRvalue::GlobalLoad { .. }
+                        | MirRvalue::FieldAccess { .. }
+                        | MirRvalue::IndexAccess { .. }
+                        | MirRvalue::Cast { .. }
+                        | MirRvalue::EnvLoad { .. }
+                        | MirRvalue::PtrLoad { .. }
+                        | MirRvalue::PtrOffset { .. }
+                        | MirRvalue::PtrIsNull { .. }
+                        | MirRvalue::PtrNull
+                        | MirRvalue::FnAddr { .. }
+                ),
+                _ => false,
+            })
+    })
+}
+
+/// Elements of a `list[bool]` take one byte; every other element type takes
+/// an eight-byte slot.
+fn is_byte_elem(elem: &MirType) -> bool {
+    matches!(elem, MirType::Bool)
+}
+
+fn is_byte_list(ty: &MirType) -> bool {
+    matches!(ty, MirType::List(inner) if is_byte_elem(inner))
+}
+
+fn elem_size(elem: &MirType) -> i64 {
+    if is_byte_elem(elem) {
+        1
+    } else {
+        ELEMENT_SLOT
+    }
+}
+
+fn operand_is_byte_list(op: &MirOperand, slots: &[LocalSlot]) -> bool {
+    match op {
+        MirOperand::Copy(l) => slots.get(l.0 as usize).is_some_and(|s| s.byte_list),
+        _ => false,
+    }
+}
+
+/// Which locals the body mentions. Locals left unused by MIR passes get no
+/// root slot.
+fn referenced_locals(func: &MirFunction) -> Vec<bool> {
+    let mut used = vec![false; func.locals.len()];
+    for p in &func.params {
+        used[p.0 as usize] = true;
+    }
+    let mut assigned = Vec::new();
+    let mut mark = |op: &MirOperand| {
+        if let MirOperand::Copy(l) = op {
+            used[l.0 as usize] = true;
+        }
+    };
+    for b in &func.blocks {
+        for st in &b.statements {
+            crate::mir::visit::statement_operands(st, &mut mark);
+            assigned.extend(crate::mir::visit::assigned_local(st));
+        }
+        crate::mir::visit::terminator_operands(&b.terminator, &mut mark);
+    }
+    for l in assigned {
+        used[l.0 as usize] = true;
+    }
+    used
 }

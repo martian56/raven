@@ -38,7 +38,7 @@ fn compile(src: &str) -> MirProgram {
 
 #[test]
 fn compiles_function_returning_int_constant() {
-    let prog = compile("fun answer() -> Int { return 42 }");
+    let prog = compile("fun answer() -> int { return 42 }");
     let object = compile_program(&prog).expect("codegen");
     assert!(
         !object.is_empty(),
@@ -52,14 +52,14 @@ fn compiles_function_returning_int_constant() {
 
 #[test]
 fn compiles_arithmetic_function() {
-    let prog = compile("fun sum(a: Int, b: Int) -> Int { return a + b }");
+    let prog = compile("fun sum(a: int, b: int) -> int { return a + b }");
     let object = compile_program(&prog).expect("codegen sum");
     assert!(object.len() > 64);
 }
 
 #[test]
 fn compiles_if_expression_with_value() {
-    let prog = compile("fun pick(c: Bool) -> Int { return if c { 1 } else { 2 } }");
+    let prog = compile("fun pick(c: bool) -> int { return if c { 1 } else { 2 } }");
     let object = compile_program(&prog).expect("codegen if");
     assert!(object.len() > 64);
 }
@@ -67,8 +67,8 @@ fn compiles_if_expression_with_value() {
 #[test]
 fn compiles_call_between_two_functions() {
     let src = r#"
-        fun helper(x: Int) -> Int { return x * 2 }
-        fun caller() -> Int { return helper(21) }
+        fun helper(x: int) -> int { return x * 2 }
+        fun caller() -> int { return helper(21) }
     "#;
     let prog = compile(src);
     let object = compile_program(&prog).expect("codegen call");
@@ -208,11 +208,11 @@ fn compiles_ptr_alloc_store_load_free() {
     // load/store emission.
     let src = r#"
         fun main() {
-            let p = __ptr_alloc<CInt>(2)
-            __ptr_store<CInt>(p, 42)
-            let v = __ptr_load<CInt>(p)
+            let p = __ptr_alloc[CInt](2)
+            __ptr_store[CInt](p, 42)
+            let v = __ptr_load[CInt](p)
             print(v)
-            __ptr_free<CInt>(p)
+            __ptr_free[CInt](p)
         }
     "#;
     let prog = compile(src);
@@ -271,12 +271,12 @@ fn compiles_ptr_offset_and_null_check() {
     // flow out as a return rather than `print`, which would require the
     // prelude's `ToString` impl (unavailable under the test's NoLoader).
     let src = r#"
-        fun probe() -> Bool {
-            let p = __ptr_null<CLong>()
-            let b = __ptr_is_null<CLong>(p)
-            let q = __ptr_offset<CLong>(p, 3)
-            let b2 = __ptr_is_null<CLong>(q)
-            return b && b2
+        fun probe() -> bool {
+            let p = __ptr_null[CLong]()
+            let b = __ptr_is_null[CLong](p)
+            let q = __ptr_offset[CLong](p, 3)
+            let b2 = __ptr_is_null[CLong](q)
+            return b and b2
         }
     "#;
     let prog = compile(src);
@@ -319,14 +319,14 @@ fn compiles_ptr_offset_and_null_check() {
 
 #[test]
 fn compiles_float_arithmetic() {
-    let prog = compile("fun mix(x: Float, y: Float) -> Float { return x * y + 1.0 }");
+    let prog = compile("fun mix(x: float, y: float) -> float { return x * y + 1.0 }");
     let object = compile_program(&prog).expect("codegen float");
     assert!(object.len() > 64);
 }
 
 #[test]
 fn compiles_bool_logical_ops() {
-    let prog = compile("fun nand(a: Bool, b: Bool) -> Bool { return !(a && b) }");
+    let prog = compile("fun nand(a: bool, b: bool) -> bool { return not (a and b) }");
     let object = compile_program(&prog).expect("codegen bool");
     assert!(object.len() > 64);
 }
@@ -341,8 +341,8 @@ fn compiles_unit_returning_function() {
 #[test]
 fn compiles_while_loop() {
     let src = r#"
-        fun count() -> Int {
-            let i = 0
+        fun count() -> int {
+            var i = 0
             while i < 10 {
                 i = i + 1
             }

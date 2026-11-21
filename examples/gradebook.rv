@@ -1,0 +1,70 @@
+class Student {
+    name: str
+    grades: list[int] = []
+
+    fun average(self) -> float {
+        if len(self.grades) == 0 {
+            return 0.0
+        }
+        return sum(self.grades) as float / len(self.grades) as float
+    }
+
+    fun add(self, g: int) {
+        self.grades.push(g)
+    }
+}
+
+fun letter(avg: float) -> str {
+    if avg >= 90.0 {
+        return "A"
+    } else if avg >= 80.0 {
+        return "B"
+    }
+    return "C"
+}
+
+fun parse_line(line: str) -> Result[(str, int), str] {
+    let parts = line.split(",")
+    if len(parts) != 2 {
+        return Err("bad line: ${line}")
+    }
+    let score = parts[1].strip().parse_int()
+    match score {
+        case Some(n) {
+            return Ok((parts[0].strip(), n))
+        }
+        case None {
+            return Err("bad score in: ${line}")
+        }
+    }
+}
+
+fun main() {
+    let data = "ada, 95\nalan, 82\nada, 88\ngrace, 71\nbad line\nalan, x"
+    var students: dict[str, Student] = {}
+    var errors: list[str] = []
+    for line in data.split("\n") {
+        match parse_line(line) {
+            case Ok((name, score)) {
+                if name not in students {
+                    students[name] = Student(name)
+                }
+                students[name].add(score)
+            }
+            case Err(e) { errors.push(e) }
+        }
+    }
+    for (name, s) in students {
+        let avg = s.average()
+        print("${name:6} ${avg:6.1} ${letter(avg)}")
+    }
+    let best = max([s.average() for s in students.values()])
+    print("errors: ${len(errors)}")
+    for e in errors {
+        print("  ${e}")
+    }
+    let names = sorted([n for n in students.keys()])
+    print(names)
+    let squares = [x * x for x in range(5) if x % 2 == 0]
+    print(squares)
+}

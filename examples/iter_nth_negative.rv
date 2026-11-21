@@ -1,0 +1,22 @@
+// nth rejects a negative index without consuming the iterator. Prints:
+//   None
+//   10
+//   20
+from std.iter import nth
+from std.io import println
+
+fun show(value: Option[int]) {
+    println(
+        match value {
+            case None { "None" }
+            case Some(v) { v.to_string() }
+        },
+    )
+}
+
+fun main() {
+    let it = [10, 20, 30].iter()
+    show(nth(it, -1)) // negative index: None, iterator untouched
+    show(it.next()) // still yields the first element
+    show(nth([10, 20, 30].iter(), 1))
+}

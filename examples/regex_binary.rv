@@ -1,0 +1,28 @@
+// std/regex operates on raw bytes: a Raven String is a byte buffer, so a
+// pattern matches against text that is not valid UTF-8, and a replacement
+// preserves the non-UTF-8 bytes instead of discarding the input.
+from std.regex import compile
+import std.string
+from std.io import println
+
+fun main() {
+    match compile("X") {
+        case Ok(re) {
+            // The text is the bytes A(65) 0xFF(255) X(88) 0xFE(254) B(66); the
+            // 0xFF and 0xFE bytes are not valid UTF-8 on their own.
+            let text = "A".concat(__str_from_byte(255)).concat("X").concat(__str_from_byte(254)).concat(
+                "B",
+            )
+            println("match ${re.is_match(text)}")
+            // Replacing X with Y keeps the surrounding non-UTF-8 bytes.
+            let out = re.replace_all(text, "Y")
+            println("len ${out.length()}")
+            var i = 0
+            while i < out.length() {
+                println("${__str_byte_at(out, i)}")
+                i = i + 1
+            }
+        }
+        case Err(e) { println("compile failed") }
+    }
+}

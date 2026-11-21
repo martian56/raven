@@ -13,7 +13,7 @@
 //! * [`Ty::Var`] is an inference variable, solved by the union-find
 //!   table in [`super::infer::InferCtx`].
 //!
-//! See `docs/v2/specs/generics.md` for the design rationale.
+//! See `docs/specs/generics.md` for the design rationale.
 
 use crate::resolve::DeclId;
 use crate::span::Span;
@@ -81,7 +81,7 @@ pub struct InferVarId(pub u32);
 /// kept distinct from the native Raven types (`Int`, `String`) so a
 /// program cannot accidentally pass a native value where the C ABI
 /// expects a foreign one. The codegen back end maps each to a concrete
-/// Cranelift ABI type. See `docs/v2/specs/ffi.md`.
+/// Cranelift ABI type. See `docs/specs/ffi.md`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FfiTy {
     /// C `int`, 32-bit on the ABIs Raven targets. Maps to `i32`.
@@ -105,13 +105,13 @@ pub enum FfiTy {
     /// A typed raw pointer `CPtr<T>`. Maps to a pointer-width int. The
     /// pointee type drives the raw load/store width and the offset/alloc
     /// element stride of the `std/ffi` pointer surface. See
-    /// `docs/v2/specs/std-ffi.md`.
+    /// `docs/specs/std-ffi.md`.
     CPtr(Box<Ty>),
     /// An untyped C function pointer. Maps to a pointer-width int. A
     /// non-capturing top-level Raven function whose parameters and return
     /// are all C-FFI types can be passed where a `CFnPtr` is expected; the
     /// signature match is the programmer's responsibility, like C. See
-    /// `docs/v2/specs/std-ffi.md`.
+    /// `docs/specs/std-ffi.md`.
     CFnPtr,
 }
 
@@ -194,7 +194,7 @@ pub enum Ty {
     /// identity. The runtime reflection builtins (`to_any`, `cast`,
     /// `type_name_of`, `field_names_of`, `get_field`) produce and consume
     /// it. Represented at runtime as a single GC pointer to an `Any` box.
-    /// See `docs/v2/specs/runtime-reflection.md`.
+    /// See `docs/specs/runtime-reflection.md`.
     Any,
     /// A C FFI primitive type (`CInt`, `CStr`, `CPtr<T>`, ...). Used in
     /// `extern "C"` signatures and `c"..."` literals.
@@ -243,28 +243,44 @@ impl fmt::Display for Ty {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Ty::Unit => f.write_str("()"),
-            Ty::Bool => f.write_str("Bool"),
-            Ty::Int => f.write_str("Int"),
-            Ty::Float => f.write_str("Float"),
-            Ty::Char => f.write_str("Char"),
-            Ty::Str => f.write_str("String"),
+            Ty::Bool => f.write_str("bool"),
+            Ty::Int => f.write_str("int"),
+            Ty::Float => f.write_str("float"),
+            Ty::Char => f.write_str("char"),
+            Ty::Str => f.write_str("str"),
             Ty::Struct { name, args, .. } | Ty::Enum { name, args, .. } => {
-                f.write_str(name)?;
-                if !args.is_empty() {
-                    f.write_str("<")?;
+                let list = |f: &mut fmt::Formatter<'_>| -> fmt::Result {
                     for (i, a) in args.iter().enumerate() {
                         if i > 0 {
                             f.write_str(", ")?;
                         }
                         write!(f, "{}", a)?;
                     }
-                    f.write_str(">")?;
+                    Ok(())
+                };
+                // Module-qualified names show only the type's own name.
+                let bare = name.rsplit('.').next().unwrap_or(name);
+                let shown = match bare {
+                    "Map" => "dict",
+                    "Set" => "set",
+                    n if n.starts_with("Tuple") && n[5..].parse::<usize>() == Ok(args.len()) => {
+                        f.write_str("(")?;
+                        list(f)?;
+                        return f.write_str(")");
+                    }
+                    n => n,
+                };
+                f.write_str(shown)?;
+                if !args.is_empty() {
+                    f.write_str("[")?;
+                    list(f)?;
+                    f.write_str("]")?;
                 }
                 Ok(())
             }
-            Ty::Option(inner) => write!(f, "Option<{}>", inner),
-            Ty::Result(t, e) => write!(f, "Result<{}, {}>", t, e),
-            Ty::List(inner) => write!(f, "List<{}>", inner),
+            Ty::Option(inner) => write!(f, "Option[{}]", inner),
+            Ty::Result(t, e) => write!(f, "Result[{}, {}]", t, e),
+            Ty::List(inner) => write!(f, "list[{}]", inner),
             Ty::Function { params, ret } => {
                 f.write_str("fun(")?;
                 for (i, p) in params.iter().enumerate() {
@@ -292,19 +308,19 @@ mod tests {
 
     #[test]
     fn display_primitive_types() {
-        assert_eq!(format!("{}", Ty::Int), "Int");
-        assert_eq!(format!("{}", Ty::Bool), "Bool");
+        assert_eq!(format!("{}", Ty::Int), "int");
+        assert_eq!(format!("{}", Ty::Bool), "bool");
         assert_eq!(format!("{}", Ty::Unit), "()");
     }
 
     #[test]
     fn display_built_in_generics() {
         let opt_int = Ty::Option(Box::new(Ty::Int));
-        assert_eq!(format!("{}", opt_int), "Option<Int>");
+        assert_eq!(format!("{}", opt_int), "Option[int]");
         let res = Ty::Result(Box::new(Ty::Int), Box::new(Ty::Str));
-        assert_eq!(format!("{}", res), "Result<Int, String>");
+        assert_eq!(format!("{}", res), "Result[int, str]");
         let list = Ty::List(Box::new(Ty::Bool));
-        assert_eq!(format!("{}", list), "List<Bool>");
+        assert_eq!(format!("{}", list), "list[bool]");
     }
 
     #[test]
@@ -313,7 +329,7 @@ mod tests {
             params: vec![Ty::Int, Ty::Int],
             ret: Box::new(Ty::Bool),
         };
-        assert_eq!(format!("{}", fty), "fun(Int, Int) -> Bool");
+        assert_eq!(format!("{}", fty), "fun(int, int) -> bool");
     }
 
     #[test]
@@ -323,7 +339,7 @@ mod tests {
             name: "Box".into(),
             args: vec![Ty::Int],
         };
-        assert_eq!(format!("{}", s), "Box<Int>");
+        assert_eq!(format!("{}", s), "Box[int]");
     }
 
     #[test]

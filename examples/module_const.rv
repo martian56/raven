@@ -1,0 +1,34 @@
+// Module-level constants, usable from any function and in expressions.
+// Initializers may be literals or constant expressions (arithmetic,
+// comparison, boolean), which are folded and inlined at each use site
+// (issue #278). An unannotated `let` infers its type from its value. Prints:
+//   100
+//   hello
+//   -7
+//   200
+//   12.56636
+//   3600
+//   true
+//   19
+let MAX: int = 100
+let PI: float = 3.14159
+let GREETING = "hello"
+let NEG = -7
+
+// Computed compile-time constants.
+let SECS_PER_HOUR: int = 60 * 60
+let ENABLED: bool = true and (1 < 2)
+let COMBO: int = (2 + 3) * 4 - 1
+
+fun area(r: float) -> float = PI * r * r
+
+fun main() {
+    print(MAX)
+    print(GREETING)
+    print(NEG)
+    print(MAX * 2)
+    print(area(2.0))
+    print(SECS_PER_HOUR)
+    print(ENABLED)
+    print(COMBO)
+}

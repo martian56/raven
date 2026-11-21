@@ -1,6 +1,6 @@
 // if-expression, match with guards, while, loop, for, defer, break/continue
 
-fun classify(x: Int) -> String {
+fun classify(x: int) -> str {
     let label = if x < 0 {
         "neg"
     } else if x == 0 {
@@ -11,23 +11,23 @@ fun classify(x: Int) -> String {
     return label
 }
 
-fun sign(x: Int) -> Int {
+fun sign(x: int) -> int {
     return match x {
-        0 -> 0,
-        n if n > 0 -> 1,
-        _ -> -1,
+        case 0 { 0 }
+        case n if n > 0 { 1 }
+        case _ { -1 }
     }
 }
 
-fun count() -> Int {
-    let total = 0
+fun count() -> int {
+    var total = 0
     for i in 0..10 {
         if i == 5 {
             continue
         }
         total += i
     }
-    let n = 0
+    var n = 0
     while n < 3 {
         n += 1
     }

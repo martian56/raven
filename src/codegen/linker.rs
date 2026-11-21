@@ -475,7 +475,29 @@ fn link_msvc(
     output: &Path,
 ) -> Result<LinkOutput, CodegenError> {
     let triple = host_triple_string();
-    if let Some(mut cmd) = msvc_link_tool(&triple) {
+    let t0 = std::time::Instant::now();
+    let tool = cc::windows_registry::find_tool(&triple, "link.exe");
+    if std::env::var_os("RAVEN_TIMINGS").is_some() {
+        eprintln!(
+            "  (find link tool {:.1} ms)",
+            t0.elapsed().as_secs_f64() * 1000.0
+        );
+    }
+    let prefer_lld = std::env::var("RAVEN_LINKER").map_or(true, |v| v != "link");
+    if let (Some(tool), Some(lld), true) = (&tool, locate_rust_lld(), prefer_lld) {
+        // lld links several times faster than link.exe; it reads the same
+        // command line and takes the SDK and CRT library paths from the
+        // environment the registry lookup found.
+        let mut cmd = Command::new(&lld);
+        cmd.arg("-flavor").arg("link");
+        for (key, value) in tool.env() {
+            cmd.env(key, value);
+        }
+        push_msvc_args(&mut cmd, object_path, runtime, native, output);
+        return run_linker(cmd, "rust-lld", output);
+    }
+    if let Some(tool) = tool {
+        let mut cmd = tool.to_command();
         push_msvc_args(&mut cmd, object_path, runtime, native, output);
         run_linker(cmd, "link.exe", output)
     } else if let Some(lld) = locate_rust_lld() {

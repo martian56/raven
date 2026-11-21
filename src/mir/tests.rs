@@ -66,7 +66,7 @@ fn recursive_generic_instantiation_is_rejected_not_hung() {
     // A generic function that instantiates itself at an ever larger type would
     // give the monomorphizer a new key every round and loop forever. It must
     // instead report a clean depth-limit error.
-    let src = "struct Box<T> { value: T }\nfun deep<T>(x: T) {\n    deep(Box { value: x })\n}\nfun main() {\n    deep(0)\n}\n";
+    let src = "class Box[T] { value: T }\nfun deep[T](x: T) {\n    deep(Box(value: x))\n}\nfun main() {\n    deep(0)\n}\n";
     let tokens = Lexer::new(src.to_string(), PathBuf::from("t.rv"))
         .tokenize()
         .expect("lex");
@@ -142,7 +142,7 @@ fn builder_double_close_panics() {
 
 #[test]
 fn arithmetic_lowers_to_binop() {
-    let prog = compile("fun add(a: Int, b: Int) -> Int { return a + b }");
+    let prog = compile("fun add(a: int, b: int) -> int { return a + b }");
     let f = find_fn(&prog, "add");
     assert_eq!(f.params.len(), 2);
     let saw_binop = f.blocks.iter().flat_map(|b| b.statements.iter()).any(|s| {
@@ -159,7 +159,7 @@ fn arithmetic_lowers_to_binop() {
 
 #[test]
 fn if_branches_become_switch_int() {
-    let prog = compile("fun pick(c: Bool) -> Int { return if c { 1 } else { 2 } }");
+    let prog = compile("fun pick(c: bool) -> int { return if c { 1 } else { 2 } }");
     let f = find_fn(&prog, "pick");
     let switches = f
         .blocks
@@ -184,7 +184,7 @@ fn while_loop_has_back_edge() {
 
 #[test]
 fn return_terminates_block() {
-    let prog = compile("fun zero() -> Int { return 0 }");
+    let prog = compile("fun zero() -> int { return 0 }");
     let f = find_fn(&prog, "zero");
     let returns = f
         .blocks
@@ -197,8 +197,8 @@ fn return_terminates_block() {
 #[test]
 fn struct_create_emitted_for_struct_literal() {
     let src = r#"
-        struct Point { x: Int, y: Int }
-        fun mk() -> Point { return Point { x: 1, y: 2 } }
+        class Point { x: int, y: int }
+        fun mk() -> Point { return Point(x: 1, y: 2) }
     "#;
     let prog = compile(src);
     let f = find_fn(&prog, "mk");
@@ -220,7 +220,7 @@ fn option_some_lowers_to_enum_create() {
     // constructor and lowers to an `EnumCreate`, so codegen can build the
     // heap value directly rather than calling an undefined `Some` symbol.
     let src = r#"
-        fun maybe() -> Option<Int> { return Some(42) }
+        fun maybe() -> Option[int] { return Some(42) }
     "#;
     let prog = compile(src);
     let f = find_fn(&prog, "maybe");
@@ -239,7 +239,7 @@ fn option_some_lowers_to_enum_create() {
 #[test]
 fn try_operator_emits_enum_create_via_some_ctor() {
     let src = r#"
-        fun take(o: Option<Int>) -> Option<Int> {
+        fun take(o: Option[int]) -> Option[int] {
             let v = o?;
             return Some(v)
         }
@@ -260,7 +260,7 @@ fn try_operator_emits_enum_create_via_some_ctor() {
 
 #[test]
 fn non_generic_function_kept_as_root() {
-    let prog = compile("fun a() -> Int { return 1 } fun b() -> Int { return 2 }");
+    let prog = compile("fun a() -> int { return 1 } fun b() -> int { return 2 }");
     assert!(prog.functions.iter().any(|f| f.origin == "a"));
     assert!(prog.functions.iter().any(|f| f.origin == "b"));
 }
@@ -271,7 +271,7 @@ fn monomorphize_dedupes_repeated_instantiations() {
     // worklist seen-set must still treat a repeated insertion of the
     // same root as a no-op. We exercise that by compiling a file with
     // two identical functions and counting outputs.
-    let prog = compile("fun a() -> Int { return 1 } fun a2() -> Int { return 1 }");
+    let prog = compile("fun a() -> int { return 1 } fun a2() -> int { return 1 }");
     let names: Vec<&str> = prog.functions.iter().map(|f| f.origin.as_str()).collect();
     assert!(names.contains(&"a"));
     assert!(names.contains(&"a2"));
@@ -343,7 +343,7 @@ fn defer_lowers_to_a_push_per_statement() {
     // function so codegen wires the runtime defer frame.
     let prog = compile_with_prelude(
         r#"
-        fun demo() -> Int {
+        fun demo() -> int {
             defer print(1)
             defer print(2)
             return 0
@@ -367,7 +367,7 @@ fn nested_block_defer_pushes_inside_the_inner_block() {
     // thunk runs at the function return rather than the inner block exit.
     let prog = compile_with_prelude(
         r#"
-        fun f() -> Int {
+        fun f() -> int {
             print(1)
             if true {
                 defer print(2)
@@ -402,7 +402,7 @@ fn reached_only_defers_register_on_their_branch() {
     // the entry block, so a branch not taken never schedules its thunk.
     let prog = compile_with_prelude(
         r#"
-        fun f(taken: Bool) -> Int {
+        fun f(taken: bool) -> int {
             if taken {
                 defer print(100)
             } else {
@@ -430,7 +430,7 @@ fn reached_only_defers_register_on_their_branch() {
 fn function_without_defer_is_not_marked() {
     let prog = compile_with_prelude(
         r#"
-        fun plain() -> Int {
+        fun plain() -> int {
             return 0
         }
     "#,
@@ -461,8 +461,8 @@ fn capturing_lambda_records_captured_local() {
     // records exactly one capture and emits a ClosureCreate carrying it.
     let prog = compile(
         r#"
-        fun make_adder(n: Int) -> fun(Int) -> Int {
-            return fun(x: Int) -> Int = x + n
+        fun make_adder(n: int) -> fun(int) -> int {
+            return (x: int) -> int => x + n
         }
     "#,
     );
@@ -486,8 +486,8 @@ fn non_capturing_lambda_has_no_captures() {
     // nothing and the ClosureCreate carries an empty capture list.
     let prog = compile(
         r#"
-        fun make() -> fun(Int) -> Int {
-            return fun(x: Int) -> Int = x + 1
+        fun make() -> fun(int) -> int {
+            return (x: int) -> int => x + 1
         }
     "#,
     );
@@ -506,8 +506,8 @@ fn lambda_body_is_lifted_to_standalone_function() {
     // parameter is the capture environment.
     let prog = compile(
         r#"
-        fun make_adder(n: Int) -> fun(Int) -> Int {
-            return fun(x: Int) -> Int = x + n
+        fun make_adder(n: int) -> fun(int) -> int {
+            return (x: int) -> int => x + n
         }
     "#,
     );
@@ -543,7 +543,7 @@ fn invoking_a_closure_value_emits_closure_call() {
     // Closure object via a ClosureCall rvalue, not a direct Call.
     let prog = compile(
         r#"
-        fun apply(f: fun(Int) -> Int, x: Int) -> Int {
+        fun apply(f: fun(int) -> int, x: int) -> int {
             return f(x)
         }
     "#,
@@ -574,14 +574,14 @@ fn generic_call_inside_closure_body_is_monomorphized() {
     // dropped and no instance was emitted, leaving an unresolved callee.
     let prog = compile_with_prelude(
         r#"
-        fun identity<T>(x: T) -> T = x
+        fun identity[T](x: T) -> T = x
 
-        fun apply(f: fun(Int) -> Int, x: Int) -> Int {
+        fun apply(f: fun(int) -> int, x: int) -> int {
             return f(x)
         }
 
         fun main() {
-            let f = fun(x: Int) -> Int = identity(x) + 1
+            let f = (x: int) -> int => identity(x) + 1
             print(apply(f, 41))
         }
     "#,
@@ -630,8 +630,8 @@ fn gc_pointer_captures_are_ordered_first() {
     // String capture ahead of the Int.
     let prog = compile(
         r#"
-        fun build(k: Int, s: String) -> fun() -> String {
-            return fun() -> String = "${k}${s}"
+        fun build(k: int, s: str) -> fun() -> str {
+            return () -> str => "${k}${s}"
         }
     "#,
     );
@@ -678,11 +678,11 @@ fn str_constants(f: &MirFunction) -> Vec<String> {
 
 #[test]
 fn type_name_on_scalar_lowers_to_name_constant() {
-    let prog = compile("fun f() -> String = type_name<Int>()\n");
+    let prog = compile("fun f() -> str = type_name[int]()\n");
     let f = find_fn(&prog, "f");
     assert!(
-        str_constants(f).contains(&"Int".to_string()),
-        "type_name<Int>() should lower to the constant \"Int\""
+        str_constants(f).contains(&"int".to_string()),
+        "type_name[int]() should lower to the constant \"int\""
     );
 }
 
@@ -690,8 +690,8 @@ fn type_name_on_scalar_lowers_to_name_constant() {
 fn type_name_on_struct_lowers_to_name_constant() {
     let prog = compile(
         r#"
-        struct Point { x: Int, y: Int }
-        fun f() -> String = type_name<Point>()
+        class Point { x: int, y: int }
+        fun f() -> str = type_name[Point]()
     "#,
     );
     let f = find_fn(&prog, "f");
@@ -702,8 +702,8 @@ fn type_name_on_struct_lowers_to_name_constant() {
 fn field_names_on_struct_lowers_to_field_constants() {
     let prog = compile(
         r#"
-        struct Point { x: Int, y: Int }
-        fun f() -> List<String> = field_names<Point>()
+        class Point { x: int, y: int }
+        fun f() -> list[str] = field_names[Point]()
     "#,
     );
     let f = find_fn(&prog, "f");
@@ -718,11 +718,11 @@ fn type_name_on_generic_param_resolves_per_monomorphization() {
     // name, so the two specialized functions carry different constants.
     let prog = compile(
         r#"
-        struct Point { x: Int, y: Int }
-        fun describe<T>() -> String = type_name<T>()
+        class Point { x: int, y: int }
+        fun describe[T]() -> str = type_name[T]()
         fun main() {
-            let a = describe<Int>()
-            let b = describe<Point>()
+            let a = describe[int]()
+            let b = describe[Point]()
         }
     "#,
     );
@@ -733,8 +733,8 @@ fn type_name_on_generic_param_resolves_per_monomorphization() {
         .flat_map(str_constants)
         .collect();
     assert!(
-        names.contains(&"Int".to_string()),
-        "an instantiation should render Int, got {:?}",
+        names.contains(&"int".to_string()),
+        "an instantiation should render int, got {:?}",
         names
     );
     assert!(
@@ -754,8 +754,8 @@ fn top_level_fn_as_cfnptr_lowers_to_fn_addr() {
         extern "C" {
             fun takes_cb(cmp: CFnPtr)
         }
-        fun compare(a: CPtr<CInt>, b: CPtr<CInt>) -> CInt {
-            return __ptr_load<CInt>(a) - __ptr_load<CInt>(b)
+        fun compare(a: CPtr[CInt], b: CPtr[CInt]) -> CInt {
+            return __ptr_load[CInt](a) - __ptr_load[CInt](b)
         }
         fun main() {
             takes_cb(compare)
@@ -790,8 +790,8 @@ fn top_level_fn_as_closure_value_lowers_to_closure_create() {
     // for the named-function-as-closure crash.
     let prog = compile(
         r#"
-        fun inc(x: Int) -> Int = x + 1
-        fun apply(f: fun(Int) -> Int, v: Int) -> Int = f(v)
+        fun inc(x: int) -> int = x + 1
+        fun apply(f: fun(int) -> int, v: int) -> int = f(v)
         fun main() {
             let r = apply(inc, 41)
         }
@@ -839,7 +839,7 @@ fn repr_c_struct_layout_is_recorded() {
     let prog = compile(
         r#"
         @repr(C)
-        struct Point {
+        class Point {
             x: CInt
             y: CInt
         }
@@ -847,7 +847,7 @@ fn repr_c_struct_layout_is_recorded() {
             fun f(p: Point) -> Point
         }
         fun main() {
-            let q = f(Point { x: 1, y: 2 })
+            let q = f(Point(x: 1, y: 2))
         }
         "#,
     );
@@ -867,12 +867,12 @@ fn plain_struct_has_no_repr_c_layout() {
     // FFI layout.
     let prog = compile(
         r#"
-        struct Point {
-            x: Int
-            y: Int
+        class Point {
+            x: int
+            y: int
         }
         fun main() {
-            let p = Point { x: 1, y: 2 }
+            let p = Point(x: 1, y: 2)
         }
         "#,
     );

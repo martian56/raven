@@ -2,7 +2,7 @@
 //!
 //! Compiled v2 binaries link against this crate as a `staticlib`. The
 //! exported `extern "C"` symbols below form the entire ABI surface the
-//! back-end is allowed to call. See `docs/v2/specs/runtime.md` for the
+//! back-end is allowed to call. See `docs/specs/runtime.md` for the
 //! full contract and what is intentionally deferred.
 
 #![deny(unsafe_op_in_unsafe_fn)]
@@ -48,6 +48,9 @@ pub use sched::{
     raven_channel_new, raven_channel_new_buffered, raven_channel_recv, raven_channel_send,
     raven_go_spawn, raven_go_yield,
 };
+
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use std::alloc::{self, Layout};
 use std::cell::RefCell;
@@ -795,7 +798,7 @@ pub extern "C" fn raven_ffi_free(p: usize) {
 /// Test helper: write `val` into the first `n` 32-bit slots at `p`.
 ///
 /// Proves a pointer Raven hands to a C function refers to the same memory
-/// the C side writes through. Used by `examples/v2/ffi_pointers.rv`.
+/// the C side writes through. Used by `examples/ffi_pointers.rv`.
 ///
 /// # Safety
 ///
@@ -818,7 +821,7 @@ pub extern "C" fn raven_ffi_fill_i32(p: *mut i32, n: i32, val: i32) {
 ///
 /// Proves a non-capturing top-level Raven function passed as a `CFnPtr`
 /// is invoked correctly by C: the C `qsort` calls back into the Raven
-/// comparator for each pair. Used by `examples/v2/ffi_callback.rv`.
+/// comparator for each pair. Used by `examples/ffi_callback.rv`.
 ///
 /// # Safety
 ///
@@ -857,7 +860,7 @@ pub extern "C" fn raven_ffi_qsort_i32(
 ///
 /// Two `int` fields, eight bytes, the by-value struct shape Raven's
 /// `@repr(C)` slice supports. `repr(C)` here matches the C ABI both sides
-/// agree on. Used by `examples/v2/ffi_struct.rv`.
+/// agree on. Used by `examples/ffi_struct.rv`.
 #[repr(C)]
 pub struct RavenFfiPoint {
     pub x: i32,

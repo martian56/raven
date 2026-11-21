@@ -1,6 +1,6 @@
 //! In-memory layout and constructor for Raven `Map<K, V>`.
 //!
-//! See `docs/v2/specs/object-layout.md` for the byte-exact field
+//! See `docs/specs/object-layout.md` for the byte-exact field
 //! offsets the back-end relies on. The bucket array is laid out
 //! contiguously as `bucket_count` `MapEntry` slots.
 

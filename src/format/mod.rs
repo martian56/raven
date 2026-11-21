@@ -7,7 +7,7 @@
 //! The pipeline lexes and parses the input, then walks the AST emitting
 //! canonical text. Line comments are recovered from the source separately
 //! (the lexer drops them) and woven back in by source position. See
-//! `docs/v2/specs/formatter.md` for the full set of rules.
+//! `docs/specs/formatter.md` for the full set of rules.
 
 use std::fmt::Write as _;
 
@@ -19,7 +19,7 @@ use crate::ast::{
     UnaryOp, VariantPayload,
 };
 use crate::lexer::{Lexer, Token, TokenKind};
-use crate::parser::parse;
+use crate::parser::parse_syntax as parse;
 
 mod comments;
 
@@ -103,6 +103,15 @@ struct Printer<'a> {
     /// The column an argument list, collection literal, or function signature
     /// is wrapped at when its single-line form would overflow.
     wrap_width: usize,
+    /// Names assigned after their declaration in the function being printed
+    /// (or anywhere in the file, for module-level bindings); these print as
+    /// `var`.
+    assigned: std::collections::HashSet<String>,
+}
+
+/// One expression on one line, as `raven fmt` would print it.
+pub fn expr_text(e: &Expr) -> String {
+    Printer::new("", Vec::new(), "    ".to_string(), usize::MAX).render_expr(e)
 }
 
 impl<'a> Printer<'a> {
@@ -115,6 +124,7 @@ impl<'a> Printer<'a> {
             comments,
             next_comment: 0,
             wrap_width,
+            assigned: Default::default(),
         }
     }
 
@@ -224,6 +234,20 @@ impl<'a> Printer<'a> {
         // a single blank between top level entities when the source had a
         // gap, and collapses larger gaps to one.
         let mut prev_end_line: Option<usize> = None;
+        let mut all = std::collections::HashSet::new();
+        for item in &file.items {
+            collect_assigned_decl(item, &mut all);
+        }
+        let globals: std::collections::HashSet<String> = file
+            .items
+            .iter()
+            .filter_map(|d| match &d.kind {
+                DeclKind::Let(l) => Some(l.name.clone()),
+                _ => None,
+            })
+            .collect();
+        all.retain(|n| globals.contains(n));
+        self.assigned = all;
         for item in &file.items {
             // Emit any own-line comments that precede this item, each with a
             // gap-preserving blank, then the item itself.
@@ -331,8 +355,25 @@ impl Printer<'_> {
     }
 
     /// The exact source text of a token.
-    fn tok_src(&self, t: &Token) -> &str {
-        self.src.get(t.span.start..t.span.end).unwrap_or("")
+    fn tok_src(&self, t: &Token) -> String {
+        if t.span.file.to_string_lossy() == "<fmt>" {
+            return self
+                .src
+                .get(t.span.start..t.span.end)
+                .unwrap_or("")
+                .to_string();
+        }
+        match &t.kind {
+            TokenKind::Identifier(n) => n.clone(),
+            TokenKind::IntLit(n) => n.to_string(),
+            TokenKind::FloatLit(v) => render_float(*v),
+            TokenKind::StringLit(v) => render_string_lit(v),
+            TokenKind::CharLit(c) => format!("'{}'", render_char(*c)),
+            other => {
+                let d = crate::parser::describe_token(other);
+                d.trim_matches('`').to_string()
+            }
+        }
     }
 
     /// Render a macro matcher, template, or call-argument token run with
@@ -368,14 +409,14 @@ impl Printer<'_> {
                 // `$name`, optionally with a `:fragment` annotation.
                 if i < toks.len() {
                     if let TokenKind::Identifier(_) = toks[i].kind {
-                        out.push_str(self.tok_src(toks[i]));
+                        out.push_str(&self.tok_src(toks[i]));
                         i += 1;
                         if i + 1 < toks.len()
                             && matches!(toks[i].kind, TokenKind::Colon)
                             && matches!(toks[i + 1].kind, TokenKind::Identifier(_))
                         {
                             out.push(':');
-                            out.push_str(self.tok_src(toks[i + 1]));
+                            out.push_str(&self.tok_src(toks[i + 1]));
                             i += 2;
                         }
                         // A metavariable behaves like an atom for spacing.
@@ -391,7 +432,7 @@ impl Printer<'_> {
                     out.push(' ');
                 }
             }
-            out.push_str(self.tok_src(t));
+            out.push_str(&self.tok_src(t));
             prev = Some(t.kind.clone());
             i += 1;
         }
@@ -399,6 +440,15 @@ impl Printer<'_> {
     }
 
     fn function(&mut self, f: &Function, prefix: &str) -> Option<String> {
+        let mut local = self.assigned.clone();
+        collect_assigned_fn(f, &mut local);
+        let saved = std::mem::replace(&mut self.assigned, local);
+        let r = self.function_inner(f, prefix);
+        self.assigned = saved;
+        r
+    }
+
+    fn function_inner(&mut self, f: &Function, prefix: &str) -> Option<String> {
         let ret_suffix = match &f.ret {
             Some(ret) => format!(" -> {}", render_type(ret)),
             None => String::new(),
@@ -406,7 +456,8 @@ impl Printer<'_> {
         // The single-line signature, and the marker that would follow it on the
         // same line (a body brace or `=`), to size the wrap decision.
         let open = format!("{}fun {}{}(", prefix, f.name, render_generics(&f.generics));
-        let single = format!("{}{}){}", open, render_params(&f.params), ret_suffix);
+        let params_text: Vec<String> = f.params.iter().map(|p| self.param_text(p)).collect();
+        let single = format!("{}{}){}", open, params_text.join(", "), ret_suffix);
         let body_marker = match &f.body {
             FunctionBody::Block(b) if b.stmts.is_empty() && b.trailing.is_none() => " {}",
             FunctionBody::Block(_) => " {",
@@ -423,8 +474,8 @@ impl Printer<'_> {
         let mut head = if wrap {
             self.line(&open);
             self.indent += 1;
-            for p in &f.params {
-                self.line(&format!("{},", render_param(p)));
+            for p in &params_text {
+                self.line(&format!("{},", p));
             }
             self.indent -= 1;
             format!("){}", ret_suffix)
@@ -463,6 +514,17 @@ impl Printer<'_> {
         }
     }
 
+    fn param_text(&mut self, p: &Param) -> String {
+        let base = render_param(p);
+        match &p.default {
+            Some(d) => {
+                let v = self.render_expr_col(d, base.chars().count() + 3);
+                format!("{base} = {v}")
+            }
+            None => base,
+        }
+    }
+
     fn struct_decl(&mut self, s: &Struct) -> Option<String> {
         if s.repr_c {
             self.line("@repr(C)");
@@ -470,10 +532,15 @@ impl Printer<'_> {
         if !s.derives.is_empty() {
             self.line(&format!("@derive({})", s.derives.join(", ")));
         }
-        let mut head = String::from("struct ");
+        let mut head = String::from(if s.repr_c { "struct " } else { "class " });
         head.push_str(&s.name);
         head.push_str(&render_generics(&s.generics));
-        if s.fields.is_empty() {
+        if !s.implements.is_empty() {
+            let traits: Vec<String> = s.implements.iter().map(render_type_path).collect();
+            head.push_str(": ");
+            head.push_str(&traits.join(", "));
+        }
+        if s.fields.is_empty() && s.methods.is_empty() {
             head.push_str(" {}");
             self.line(&head);
             return None;
@@ -484,6 +551,13 @@ impl Printer<'_> {
         for field in &s.fields {
             self.struct_field_line(field);
         }
+        for m in &s.methods {
+            self.blank();
+            self.emit_indented_comments_before(m.span.start, self.line_of(m.span.start));
+            if let Some(tr) = self.function(m, "") {
+                self.attach_trailing(&tr);
+            }
+        }
         self.indent -= 1;
         self.line("}");
         None
@@ -492,7 +566,12 @@ impl Printer<'_> {
     fn struct_field_line(&mut self, field: &StructField) {
         let line = self.line_of(field.span.start);
         self.emit_indented_comments_before(field.span.start, line);
-        let text = format!("{}: {},", field.name, render_type(&field.ty));
+        let mut text = format!("{}: {}", field.name, render_type(&field.ty));
+        if let Some(d) = &field.default {
+            let v = self.render_expr_col(d, text.chars().count() + 3);
+            text.push_str(" = ");
+            text.push_str(&v);
+        }
         self.line(&text);
         if let Some(t) = self.take_trailing_comment(self.line_of(field.span.end)) {
             self.attach_trailing(&t);
@@ -621,6 +700,9 @@ impl Printer<'_> {
         text.push_str(&it.name);
         text.push('(');
         text.push_str(&render_params(&it.params));
+        if it.variadic {
+            text.push_str(if it.params.is_empty() { "..." } else { ", ..." });
+        }
         text.push(')');
         if let Some(ret) = &it.ret {
             text.push_str(" -> ");
@@ -633,26 +715,18 @@ impl Printer<'_> {
     }
 
     fn import_decl(&mut self, im: &Import) -> Option<String> {
-        let mut text = String::from("import ");
-        match &im.source {
-            ImportSource::Std(parts) => {
-                text.push_str("std");
-                for part in parts {
-                    text.push('/');
-                    text.push_str(part);
-                }
+        let source = match &im.source {
+            ImportSource::Std(parts) => format!("std.{}", parts.join(".")),
+            ImportSource::Quoted(s) => render_string_lit(s),
+        };
+        let text = if im.selectors.is_empty() {
+            let mut t = format!("import {source}");
+            if let Some(alias) = &im.alias {
+                t.push_str(" as ");
+                t.push_str(alias);
             }
-            ImportSource::Quoted(s) => {
-                // Re-escape the path body so a `"` or `\` in it stays valid (and
-                // round-trips), rather than emitting it raw between the quotes.
-                text.push_str(&render_string_lit(s));
-            }
-        }
-        if let Some(alias) = &im.alias {
-            text.push_str(" as ");
-            text.push_str(alias);
-        }
-        if !im.selectors.is_empty() {
+            t
+        } else {
             let sels: Vec<String> = im
                 .selectors
                 .iter()
@@ -661,18 +735,16 @@ impl Printer<'_> {
                     None => s.name.clone(),
                 })
                 .collect();
-            text.push_str(" { ");
-            text.push_str(&sels.join(", "));
-            text.push_str(" }");
-        }
+            format!("from {source} import {}", sels.join(", "))
+        };
         self.line(&text);
         self.take_trailing_comment(self.line_of(im.span.end))
     }
 
     fn const_decl(&mut self, c: &Const) -> Option<String> {
         let prefix = match &c.ty {
-            Some(t) => format!("const {}: {} = ", c.name, render_type(t)),
-            None => format!("const {} = ", c.name),
+            Some(t) => format!("let {}: {} = ", c.name, render_type(t)),
+            None => format!("let {} = ", c.name),
         };
         let value = self.render_expr_col(&c.value, prefix.chars().count());
         self.line(&format!("{}{}", prefix, value));
@@ -680,8 +752,8 @@ impl Printer<'_> {
     }
 
     fn let_decl(&mut self, l: &LetDecl) -> Option<String> {
-        // A module-level `let` declaration is always mutable in spelling.
-        let text = self.render_let(&l.name, &l.ty, &l.init, true);
+        let mutable = self.assigned.contains(&l.name);
+        let text = self.render_let(&l.name, &l.ty, &l.init, mutable);
         self.line(&text);
         self.take_trailing_comment(self.line_of(l.span.end))
     }
@@ -693,7 +765,8 @@ impl Printer<'_> {
         init: &Option<Expr>,
         mutable: bool,
     ) -> String {
-        let mut text = String::from(if mutable { "let " } else { "const " });
+        let mutable = mutable || self.assigned.contains(name);
+        let mut text = String::from(if mutable { "var " } else { "let " });
         text.push_str(name);
         if let Some(t) = ty {
             text.push_str(": ");
@@ -827,16 +900,55 @@ impl Printer<'_> {
                 self.emit_multiline(&text);
             }
             StmtKind::Spawn(e) => {
-                // `spawn` reads as a call: no space before the argument and a
-                // single layer of parentheses. Unwrap an explicit paren so the
-                // canonical form `spawn(<closure>)` is stable under repeated
-                // formatting.
                 let inner = match &e.kind {
                     ExprKind::Paren(inner) => inner.as_ref(),
                     _ => e,
                 };
-                let text = format!("spawn({})", self.render_expr_col(inner, "spawn(".len()));
+                let text = match &inner.kind {
+                    ExprKind::Lambda {
+                        params,
+                        body: LambdaBody::Block(b),
+                        ..
+                    } if params.is_empty() => format!("spawn {}", self.render_block(b, 0)),
+                    _ => format!("spawn({})", self.render_expr_col(inner, "spawn(".len())),
+                };
                 self.emit_multiline(&text);
+            }
+            StmtKind::Assert { cond, message, .. } => {
+                let cond = match &cond.kind {
+                    ExprKind::Paren(inner) => inner,
+                    _ => cond,
+                };
+                let c = self.render_expr_col(cond, "assert ".len());
+                let text = match message {
+                    Some(m) => {
+                        let m = self.render_expr_col(m, "assert ".len() + c.len() + 2);
+                        format!("assert {c}, {m}")
+                    }
+                    None => format!("assert {c}"),
+                };
+                self.emit_multiline(&text);
+            }
+            StmtKind::LetElse {
+                pattern,
+                init,
+                else_block,
+                ..
+            } => {
+                let head = format!("let {} = ", render_pattern(pattern));
+                let init = self.render_expr_col(init, head.len());
+                let b = self.render_block(else_block, 0);
+                self.emit_multiline(&format!("{head}{init} else {b}"));
+            }
+            StmtKind::LetTuple {
+                pattern,
+                init,
+                mutable,
+            } => {
+                let kw = if *mutable { "var" } else { "let" };
+                let head = format!("{kw} {} = ", render_pattern(pattern));
+                let init = self.render_expr_col(init, head.len());
+                self.emit_multiline(&format!("{head}{init}"));
             }
             StmtKind::Assign { target, op, value } => {
                 let target = self.render_expr_col(target, 0);
@@ -847,7 +959,14 @@ impl Printer<'_> {
                 self.emit_multiline(&text);
             }
             StmtKind::Expr(e) => {
-                let text = self.render_expr(e);
+                let text = match &e.kind {
+                    ExprKind::If {
+                        cond,
+                        then_branch,
+                        else_branch,
+                    } => self.render_if(cond, then_branch, else_branch, 0, 0),
+                    _ => self.render_expr(e),
+                };
                 self.emit_multiline(&text);
             }
         }
@@ -913,6 +1032,15 @@ impl Printer<'_> {
     /// `wrap_width` is broken onto multiple lines.
     fn expr_at(&mut self, e: &Expr, base: usize, col: usize) -> String {
         match &e.kind {
+            ExprKind::NamedArg { name, value } if name == ".." => {
+                format!("..{}", self.expr_at(value, base, col + 2))
+            }
+            ExprKind::NamedArg { name, value } => {
+                format!(
+                    "{name}: {}",
+                    self.expr_at(value, base, col + name.len() + 2)
+                )
+            }
             ExprKind::MacroCall(m) => {
                 let (open, close) = macro_delim_chars(m.delim);
                 format!(
@@ -938,6 +1066,31 @@ impl Printer<'_> {
                 if !generics.is_empty() {
                     s.push_str(&render_type_args(generics));
                 }
+                s
+            }
+            ExprKind::StructLit {
+                name,
+                generics,
+                fields,
+            } if !name.contains('.') => {
+                let mut s = name.clone();
+                if !generics.is_empty() {
+                    s.push_str(&render_type_args(generics));
+                }
+                let args: Vec<Expr> = fields
+                    .iter()
+                    .map(|f| Expr {
+                        span: f.span.clone(),
+                        kind: ExprKind::NamedArg {
+                            name: f.name.clone(),
+                            value: Box::new(f.value.clone()),
+                        },
+                    })
+                    .collect();
+                let open_col = self.after(col, &s);
+                let list =
+                    self.delimited("(", ")", &args, (e.span.start, e.span.end), base, open_col);
+                s.push_str(&list);
                 s
             }
             ExprKind::StructLit {
@@ -1007,15 +1160,13 @@ impl Printer<'_> {
             }
             ExprKind::SetLit(items) => {
                 if items.is_empty() {
-                    return "{}".to_string();
+                    return "set()".to_string();
                 }
                 if self.pending_comment_within(e.span.start, e.span.end) {
                     return self.bracketed_multiline("{", "}", items, e.span.end, base);
                 }
                 let saved = self.next_comment;
                 let parts = self.expr_list_at(items, col + 1, base);
-                // A single-element set keeps a trailing comma so it does not
-                // re-parse as a one-expression block `{ x }`.
                 let flat = if parts.len() == 1 {
                     format!("{{{},}}", parts[0])
                 } else {
@@ -1029,7 +1180,7 @@ impl Printer<'_> {
             }
             ExprKind::MapLit(pairs) => {
                 if pairs.is_empty() {
-                    return "[:]".to_string();
+                    return "{}".to_string();
                 }
                 if self.pending_comment_within(e.span.start, e.span.end) {
                     return self.map_multiline(pairs, e.span.end, base);
@@ -1045,7 +1196,7 @@ impl Printer<'_> {
                     c = self.after(c, &part) + 2;
                     parts.push(part);
                 }
-                let flat = format!("[{}]", parts.join(", "));
+                let flat = format!("{{{}}}", parts.join(", "));
                 if self.fits(col, &flat) {
                     return flat;
                 }
@@ -1056,17 +1207,67 @@ impl Printer<'_> {
                 let inner = self.expr_at(inner, base, col + 1);
                 format!("({})", inner)
             }
+            ExprKind::Cast { value, ty } => {
+                let v = self.expr_at(value, base, col);
+                format!("{} as {}", v, render_type(ty))
+            }
+            ExprKind::Comprehension {
+                kind,
+                key,
+                value,
+                pattern,
+                iter,
+                cond,
+            } => {
+                let (open, close) = match kind {
+                    crate::ast::CompKind::List => ("[", "]"),
+                    _ => ("{", "}"),
+                };
+                let mut out = String::from(open);
+                if let Some(k) = key {
+                    out.push_str(&self.expr_at(k, base, col));
+                    out.push_str(": ");
+                }
+                out.push_str(&self.expr_at(value, base, col));
+                out.push_str(" for ");
+                out.push_str(&render_pattern(pattern));
+                out.push_str(" in ");
+                out.push_str(&self.expr_at(iter, base, col));
+                if let Some(c) = cond {
+                    out.push_str(" if ");
+                    out.push_str(&self.expr_at(c, base, col));
+                }
+                out.push_str(close);
+                out
+            }
             ExprKind::Block(b) => self.render_block(b, base),
             ExprKind::Unary { op, operand } => {
                 let op_s = unary_op(*op);
+                let op_s = if op_s == "!" { "not " } else { op_s };
                 let operand = self.expr_at(operand, base, col + op_s.len());
                 format!("{}{}", op_s, operand)
             }
             ExprKind::Binary { op, lhs, rhs } => {
+                let wraps_not = |x: &Expr| {
+                    !matches!(op, BinaryOp::And | BinaryOp::Or)
+                        && matches!(
+                            x.kind,
+                            ExprKind::Unary {
+                                op: UnaryOp::Not,
+                                ..
+                            }
+                        )
+                };
                 let l = self.expr_at(lhs, base, col);
-                let op_s = binary_op(*op);
+                let l = if wraps_not(lhs) { format!("({l})") } else { l };
+                let op_s = match op {
+                    BinaryOp::And => "and",
+                    BinaryOp::Or => "or",
+                    _ => binary_op(*op),
+                };
                 let rcol = self.after(col, &l) + op_s.len() + 2;
                 let r = self.expr_at(rhs, base, rcol);
+                let r = if wraps_not(rhs) { format!("({r})") } else { r };
                 format!("{} {} {}", l, op_s, r)
             }
             ExprKind::Range {
@@ -1075,10 +1276,45 @@ impl Printer<'_> {
                 inclusive,
             } => {
                 let sep = if *inclusive { "..=" } else { ".." };
-                let s = self.expr_at(start, base, col);
-                let ecol = self.after(col, &s) + sep.len();
-                let e = self.expr_at(end, base, ecol);
+                // The parser fills an omitted bound (`xs[..b]`, `xs[a..]`)
+                // with a compiler-made literal; print it omitted again.
+                let implied = |e: &Expr, v: i64| {
+                    e.span.copy_id() != 0 && matches!(e.kind, ExprKind::Int(n) if n == v)
+                };
+                let s = if implied(start, 0) {
+                    String::new()
+                } else {
+                    self.expr_at(start, base, col)
+                };
+                let e = if implied(end, i64::MAX) {
+                    String::new()
+                } else {
+                    let ecol = self.after(col, &s) + sep.len();
+                    self.expr_at(end, base, ecol)
+                };
                 format!("{}{}{}", s, sep, e)
+            }
+            ExprKind::Call { callee, args }
+                if matches!(&callee.kind, ExprKind::Ident { name, .. } if name == "__spawn_task")
+                    && matches!(
+                        args.as_slice(),
+                        [Expr {
+                            kind: ExprKind::Lambda {
+                                body: crate::ast::LambdaBody::Block(_),
+                                ..
+                            },
+                            ..
+                        }]
+                    ) =>
+            {
+                let ExprKind::Lambda {
+                    body: crate::ast::LambdaBody::Block(b),
+                    ..
+                } = &args[0].kind
+                else {
+                    unreachable!()
+                };
+                format!("spawn {}", self.render_block(b, base))
             }
             ExprKind::Call { callee, args } => {
                 let callee = self.expr_at(callee, base, col);
@@ -1110,6 +1346,10 @@ impl Printer<'_> {
             }
             ExprKind::Field { receiver, name } => {
                 let r = self.expr_at(receiver, base, col);
+                let name = match name.strip_prefix('_') {
+                    Some(d) if !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()) => d,
+                    _ => name.as_str(),
+                };
                 format!("{}.{}", r, name)
             }
             ExprKind::Index { receiver, index } => {
@@ -1126,7 +1366,49 @@ impl Printer<'_> {
                 cond,
                 then_branch,
                 else_branch,
-            } => self.render_if(cond, then_branch, else_branch, base, col),
+            } => match (then_branch, else_branch.as_deref()) {
+                (t, Some(ElseBranch::Block(f)))
+                    if t.stmts.is_empty()
+                        && f.stmts.is_empty()
+                        && t.trailing.is_some()
+                        && f.trailing.is_some() =>
+                {
+                    let a = self.expr_at(t.trailing.as_ref().unwrap(), base, col);
+                    let c = self.expr_at(cond, base, col);
+                    let b = self.expr_at(f.trailing.as_ref().unwrap(), base, col);
+                    format!("{a} if {c} else {b}")
+                }
+                _ => self.render_if(cond, then_branch, else_branch, base, col),
+            },
+            ExprKind::IfLet {
+                pattern,
+                scrutinee,
+                then_branch,
+                else_branch,
+            } => {
+                let head = format!("if let {} = ", render_pattern(pattern));
+                let scrut = self.expr_at(scrutinee, base, col + head.len());
+                let then_block = self.render_block(then_branch, base);
+                let mut s = format!("{head}{scrut} {then_block}");
+                if let Some(eb) = else_branch {
+                    s.push_str(" else ");
+                    match eb.as_ref() {
+                        ElseBranch::If(x) => s.push_str(&self.expr_at(x, base, col)),
+                        ElseBranch::Block(b) => s.push_str(&self.render_block(b, base)),
+                    }
+                }
+                s
+            }
+            ExprKind::WhileLet {
+                pattern,
+                scrutinee,
+                body,
+            } => {
+                let head = format!("while let {} = ", render_pattern(pattern));
+                let scrut = self.expr_at(scrutinee, base, col + head.len());
+                let body = self.render_block(body, base);
+                format!("{head}{scrut} {body}")
+            }
             ExprKind::Match { scrutinee, arms } => {
                 self.render_match(scrutinee, arms, e.span.end, base, col)
             }
@@ -1301,7 +1583,7 @@ impl Printer<'_> {
     /// Render a map literal multi-line, weaving interior comments at their
     /// source positions. `close_byte` is the position of the closing `]`.
     fn map_multiline(&mut self, pairs: &[(Expr, Expr)], close_byte: usize, base: usize) -> String {
-        let mut s = String::from("[\n");
+        let mut s = String::from("{\n");
         for (k, v) in pairs {
             self.weave_own_line_comments(&mut s, k.span.start, base + 1);
             self.push_indent(&mut s, base + 1);
@@ -1317,7 +1599,7 @@ impl Printer<'_> {
         }
         self.weave_own_line_comments(&mut s, close_byte, base + 1);
         self.push_indent(&mut s, base);
-        s.push(']');
+        s.push('}');
         s
     }
 
@@ -1358,9 +1640,14 @@ impl Printer<'_> {
             match frag {
                 StrFragment::Literal(text) => s.push_str(&escape_str_body(text)),
                 StrFragment::Expr(e) => {
-                    let inner = self.render_expr(e);
+                    let (value, spec) = split_formatted(e);
+                    let inner = self.render_expr(value);
                     s.push_str("${");
                     s.push_str(&inner);
+                    if let Some(spec) = spec {
+                        s.push(':');
+                        s.push_str(&spec);
+                    }
                     s.push('}');
                 }
             }
@@ -1410,7 +1697,14 @@ impl Printer<'_> {
         if let Some(eb) = else_branch {
             match eb.as_ref() {
                 ElseBranch::If(e) => {
-                    let e = self.expr_at(e, base, col + "else ".len());
+                    let e = match &e.kind {
+                        ExprKind::If {
+                            cond,
+                            then_branch,
+                            else_branch,
+                        } => self.render_if(cond, then_branch, else_branch, base, col),
+                        _ => self.expr_at(e, base, col + "else ".len()),
+                    };
                     s.push_str(" else ");
                     s.push_str(&e);
                 }
@@ -1438,7 +1732,7 @@ impl Printer<'_> {
             // Own-line comments that precede this arm.
             self.weave_own_line_comments(&mut s, arm.span.start, base + 1);
             self.push_indent(&mut s, base + 1);
-            let pat = render_pattern(&arm.pattern);
+            let pat = format!("case {}", render_pattern(&arm.pattern));
             let mut c = self.cont_col(base + 1) + pat.chars().count();
             s.push_str(&pat);
             if let Some(g) = arm.guard.as_ref() {
@@ -1447,10 +1741,46 @@ impl Printer<'_> {
                 s.push_str(&g);
                 c = self.after(c + " if ".len(), &g);
             }
-            s.push_str(" -> ");
-            let body = self.expr_at(&arm.body, base + 1, c + " -> ".len());
+            s.push(' ');
+            let inline_tail = match &arm.body.kind {
+                ExprKind::Block(b)
+                    if b.stmts.is_empty()
+                        && !self.pending_comment_within(b.span.start, b.span.end) =>
+                {
+                    b.trailing.as_deref()
+                }
+                _ => None,
+            };
+            let body = match (&arm.body.kind, inline_tail) {
+                (_, Some(t)) => {
+                    let inner = self.expr_at(t, base + 2, c + 3);
+                    if inner.contains('\n') {
+                        let blk = Block {
+                            stmts: Vec::new(),
+                            trailing: Some(Box::new(t.clone())),
+                            span: arm.body.span.clone(),
+                        };
+                        self.render_block(&blk, base + 1)
+                    } else {
+                        format!("{{ {inner} }}")
+                    }
+                }
+                (ExprKind::Block(b), None) => self.render_block(b, base + 1),
+                (_, None) => {
+                    let inner = self.expr_at(&arm.body, base + 2, c + 3);
+                    if inner.contains('\n') {
+                        let blk = Block {
+                            stmts: Vec::new(),
+                            trailing: Some(Box::new(arm.body.clone())),
+                            span: arm.body.span.clone(),
+                        };
+                        self.render_block(&blk, base + 1)
+                    } else {
+                        format!("{{ {inner} }}")
+                    }
+                }
+            };
             s.push_str(&body);
-            s.push(',');
             if let Some(t) = self.take_trailing_comment(self.line_of(arm.span.end)) {
                 s.push(' ');
                 s.push_str(&t);
@@ -1473,7 +1803,7 @@ impl Printer<'_> {
         base: usize,
         col: usize,
     ) -> String {
-        if params_inferred {
+        if params_inferred && params.iter().any(|p| p.ty.is_some()) {
             // Shorthand `{ x, y -> body }`. The parser always stores the body
             // as a block. When that block is a single trailing expression
             // with no statements, render it inline; otherwise render the
@@ -1513,7 +1843,6 @@ impl Printer<'_> {
                 s
             }
         } else {
-            let mut s = String::from("fun(");
             let parts: Vec<String> = params
                 .iter()
                 .map(|p| match &p.ty {
@@ -1521,17 +1850,32 @@ impl Printer<'_> {
                     None => p.name.clone(),
                 })
                 .collect();
-            s.push_str(&parts.join(", "));
-            s.push(')');
+            let bare = params.len() == 1 && params[0].ty.is_none() && ret.is_none();
+            let mut s = if bare {
+                parts[0].clone()
+            } else {
+                format!("({})", parts.join(", "))
+            };
             if let Some(r) = ret {
-                s.push_str(" -> ");
-                s.push_str(&render_type(r));
+                if !matches!(r.kind, TypeKind::Unit)
+                    && !matches!(&r.kind, TypeKind::Path(p) if p.segments.len() == 1 && p.segments[0].name == "Unit")
+                {
+                    s.push_str(" -> ");
+                    s.push_str(&render_type(r));
+                }
             }
+            s.push_str(" =>");
             match body {
                 LambdaBody::Expr(e) => {
-                    let ecol = self.after(col, &s) + " = ".len();
+                    let ecol = self.after(col, &s) + 1;
                     let e = self.expr_at(e, base, ecol);
-                    s.push_str(" = ");
+                    s.push(' ');
+                    s.push_str(&e);
+                }
+                LambdaBody::Block(b) if b.stmts.is_empty() && b.trailing.is_some() => {
+                    let ecol = self.after(col, &s) + 1;
+                    let e = self.expr_at(b.trailing.as_ref().unwrap(), base, ecol);
+                    s.push(' ');
                     s.push_str(&e);
                 }
                 LambdaBody::Block(b) => {
@@ -1566,7 +1910,7 @@ fn render_generics(gens: &[GenericParam]) -> String {
             }
         })
         .collect();
-    format!("<{}>", parts.join(", "))
+    format!("[{}]", parts.join(", "))
 }
 
 fn render_params(params: &[Param]) -> String {
@@ -1721,12 +2065,23 @@ fn render_type(ty: &Type) -> String {
 }
 
 fn render_type_path(p: &TypePath) -> String {
+    if let [seg] = p.segments.as_slice() {
+        if seg
+            .name
+            .strip_prefix("Tuple")
+            .and_then(|n| n.parse::<usize>().ok())
+            == Some(seg.generics.len())
+        {
+            let parts: Vec<String> = seg.generics.iter().map(render_type).collect();
+            return format!("({})", parts.join(", "));
+        }
+    }
     let mut out = String::new();
     for (i, seg) in p.segments.iter().enumerate() {
         if i > 0 {
             out.push('.');
         }
-        out.push_str(&seg.name);
+        out.push_str(lowercase_type_name(&seg.name));
         if !seg.generics.is_empty() {
             out.push_str(&render_type_args(&seg.generics));
         }
@@ -1736,7 +2091,48 @@ fn render_type_path(p: &TypePath) -> String {
 
 fn render_type_args(args: &[Type]) -> String {
     let parts: Vec<String> = args.iter().map(render_type).collect();
-    format!("<{}>", parts.join(", "))
+    format!("[{}]", parts.join(", "))
+}
+
+fn lowercase_type_name(name: &str) -> &str {
+    match name {
+        "Int" => "int",
+        "Float" => "float",
+        "Bool" => "bool",
+        "String" => "str",
+        "Char" => "char",
+        "List" => "list",
+        "Map" => "dict",
+        "Set" => "set",
+        other => other,
+    }
+}
+
+fn collect_assigned_decl(d: &Decl, out: &mut std::collections::HashSet<String>) {
+    let mut d = d.clone();
+    crate::ast::visit::walk_decl(&mut d, &mut |_| {}, &mut |b: &mut Block| {
+        assigned_in_block(b, out)
+    });
+}
+
+fn collect_assigned_fn(f: &Function, out: &mut std::collections::HashSet<String>) {
+    let mut d = Decl {
+        span: f.span.clone(),
+        kind: DeclKind::Function(f.clone()),
+    };
+    crate::ast::visit::walk_decl(&mut d, &mut |_| {}, &mut |b: &mut Block| {
+        assigned_in_block(b, out)
+    });
+}
+
+fn assigned_in_block(b: &Block, out: &mut std::collections::HashSet<String>) {
+    for s in &b.stmts {
+        if let StmtKind::Assign { target, .. } = &s.kind {
+            if let ExprKind::Ident { name, .. } = &target.kind {
+                out.insert(name.clone());
+            }
+        }
+    }
 }
 
 fn render_pattern(pat: &Pattern) -> String {
@@ -1863,3 +2259,78 @@ fn assign_op(op: AssignOp) -> &'static str {
 
 #[cfg(test)]
 mod tests;
+
+/// The value and format spec of a `${value:spec}` fragment, which the parser
+/// expands into calls to the prelude formatting helpers.
+fn split_formatted(e: &Expr) -> (&Expr, Option<String>) {
+    fn float(e: &Expr) -> Option<(&Expr, i64)> {
+        let ExprKind::Call { callee, args } = &e.kind else {
+            return None;
+        };
+        let ExprKind::Ident { name, .. } = &callee.kind else {
+            return None;
+        };
+        match (name.as_str(), args.as_slice()) {
+            ("__fmt_float", [value, places]) => match places.kind {
+                ExprKind::Int(p) => Some((value, p)),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    fn helper<'a>(e: &'a Expr, name: &str) -> Option<&'a [Expr]> {
+        match &e.kind {
+            ExprKind::Call { callee, args } => match &callee.kind {
+                ExprKind::Ident { name: n, .. } if n == name => Some(args),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    let int = |e: &Expr| match e.kind {
+        ExprKind::Int(n) => Some(n),
+        _ => None,
+    };
+    let text = |e: &Expr| match &e.kind {
+        ExprKind::Str(s) => s.chars().next(),
+        _ => None,
+    };
+
+    if let Some(args) = helper(e, "__fmt_pad").filter(|a| a.len() == 4) {
+        let (Some(w), Some(align), Some(fill)) = (int(&args[1]), text(&args[2]), text(&args[3]))
+        else {
+            return (e, None);
+        };
+        let (value, precision) = match float(&args[0]) {
+            Some((v, p)) => (v, Some(p)),
+            None => match &args[0].kind {
+                ExprKind::MethodCall {
+                    receiver,
+                    name,
+                    args: a,
+                    ..
+                } if name == "to_string" && a.is_empty() => (&**receiver, None),
+                _ => return (e, None),
+            },
+        };
+        let default_align = if precision.is_some() { '>' } else { '<' };
+        let mut spec = if fill == '0' && align == '>' {
+            "0".to_string()
+        } else if fill == ' ' && align == default_align {
+            String::new()
+        } else if fill == ' ' {
+            align.to_string()
+        } else {
+            format!("{fill}{align}")
+        };
+        spec.push_str(&w.to_string());
+        if let Some(p) = precision {
+            spec.push_str(&format!(".{p}"));
+        }
+        return (value, Some(spec));
+    }
+    if let Some((value, p)) = float(e) {
+        return (value, Some(format!(".{p}")));
+    }
+    (e, None)
+}

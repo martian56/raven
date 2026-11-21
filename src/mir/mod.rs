@@ -6,15 +6,19 @@
 //! distinct concrete type-argument tuple reachable from the program
 //! roots.
 //!
-//! See `docs/v2/specs/mir.md` for the full design.
+//! See `docs/specs/mir.md` for the full design.
 
 pub mod builder;
+pub mod copyprop;
+pub mod inline;
 pub mod intrinsics;
 pub mod ir;
 pub mod lower;
 pub mod mono;
 pub mod pretty;
+pub mod shake;
 pub mod ty;
+pub mod visit;
 
 #[cfg(test)]
 mod tests;
@@ -33,5 +37,7 @@ use crate::hir::HirProgram;
 /// Lower an entire HIR program to MIR, monomorphizing every reachable
 /// generic function.
 pub fn lower_program(hir: &HirProgram) -> Result<MirProgram, RavenError> {
-    mono::monomorphize(hir)
+    let mut program = mono::monomorphize(hir)?;
+    shake::remove_unreachable(&mut program);
+    Ok(program)
 }

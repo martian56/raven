@@ -5,7 +5,7 @@
 //! its target. The output is a [`ResolvedFile`] that pairs the
 //! original AST with a [`ResolutionMap`] and the resolved import list.
 //!
-//! See `docs/v2/specs/resolver.md` for the full design.
+//! See `docs/specs/resolver.md` for the full design.
 
 pub mod bindings;
 pub mod derive;
@@ -13,6 +13,7 @@ pub mod imports;
 pub mod items;
 pub mod scope;
 pub mod stdlib;
+pub(crate) mod sugar;
 pub mod walk;
 
 #[cfg(test)]

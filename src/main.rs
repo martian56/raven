@@ -76,6 +76,9 @@ fn run() -> ExitCode {
                 ExitCode::from(1)
             }
         },
+        Some("fmt") => run_fmt(&args[2..]),
+        Some("check") => run_check(&args[2..]),
+        Some("run") => run_program(&args[2..]),
         _ => {
             eprintln!("raven: unknown subcommand '{}'", first.to_string_lossy());
             eprintln!("Run 'raven help' for usage.");
@@ -96,6 +99,9 @@ fn print_usage() {
     println!();
     println!("Commands:");
     println!("  build <file.rv> [-o <output>]   Compile a source file to a native executable");
+    println!("  run <file.rv> [args...]         Compile and run a source file");
+    println!("  check <file.rv>                 Type-check a source file without building it");
+    println!("  fmt <file.rv>... [--write]      Print formatted source, or rewrite files in place");
     println!("  help                            Print this message");
     println!();
     println!("Options:");
@@ -241,5 +247,106 @@ mod tests {
         let input = OsString::from_vec(b"bad-\xff.rv".to_vec());
         let opts = parse_build_args(&[input.clone()]).expect("non-UTF-8 path parses");
         assert_eq!(opts.input.as_os_str(), input.as_os_str());
+    }
+}
+
+fn report(e: DriverError) -> ExitCode {
+    match e {
+        DriverError::Diagnostic(s) => eprint!("{}", s),
+        other => eprintln!("raven: {}", other),
+    }
+    ExitCode::from(1)
+}
+
+fn run_fmt(args: &[OsString]) -> ExitCode {
+    let write = args.iter().any(|a| a == "--write" || a == "-w");
+    let files: Vec<&OsString> = args
+        .iter()
+        .filter(|a| !a.to_string_lossy().starts_with('-'))
+        .collect();
+    if files.is_empty() {
+        eprintln!("raven: fmt needs at least one file");
+        return ExitCode::from(2);
+    }
+    let mut failed = false;
+    for f in files {
+        let path = Path::new(f);
+        let src = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("raven: read {}: {}", path.display(), e);
+                failed = true;
+                continue;
+            }
+        };
+        match raven::format::format_source(&src) {
+            Ok(out) if write => {
+                if out != src {
+                    if let Err(e) = std::fs::write(path, out) {
+                        eprintln!("raven: write {}: {}", path.display(), e);
+                        failed = true;
+                    }
+                }
+            }
+            Ok(out) => print!("{}", out),
+            Err(e) => {
+                eprintln!("raven: {}: {}", path.display(), e);
+                failed = true;
+            }
+        }
+    }
+    if failed {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+fn run_check(args: &[OsString]) -> ExitCode {
+    let Some(file) = args.first() else {
+        eprintln!("raven: check needs a file");
+        return ExitCode::from(2);
+    };
+    let path = Path::new(file);
+    let src = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("raven: read {}: {}", path.display(), e);
+            return ExitCode::from(1);
+        }
+    };
+    match driver::check(&src, path, None) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => report(e),
+    }
+}
+
+fn run_program(args: &[OsString]) -> ExitCode {
+    let Some(file) = args.first() else {
+        eprintln!("raven: run needs a file");
+        return ExitCode::from(2);
+    };
+    let input = Path::new(file);
+    let stem = input
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "main".into());
+    let exe = std::env::temp_dir().join(format!(
+        "raven-run-{}-{}{}",
+        stem,
+        std::process::id(),
+        std::env::consts::EXE_SUFFIX
+    ));
+    if let Err(e) = driver::build_binary(input, &exe, None) {
+        return report(e);
+    }
+    let status = std::process::Command::new(&exe).args(&args[1..]).status();
+    let _ = std::fs::remove_file(&exe);
+    match status {
+        Ok(s) => ExitCode::from(u8::try_from(s.code().unwrap_or(1)).unwrap_or(1)),
+        Err(e) => {
+            eprintln!("raven: run {}: {}", exe.display(), e);
+            ExitCode::from(1)
+        }
     }
 }

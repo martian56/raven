@@ -1,0 +1,19 @@
+fun main() {
+    let counts: dict[str, int] = {}
+    for w in "the cat and the hat and the bat".split(" ") {
+        if w in counts {
+            counts[w] += 1
+        } else {
+            counts[w] = 1
+        }
+    }
+    print(counts["the"])
+    print(counts["and"])
+    let ages = {"ada": 36}
+    ages["alan"] = 41
+    print("${ages["ada"]} ${ages["alan"]} ${len(ages)}")
+    let xs = [1, 2, 3]
+    xs[0] = 10
+    xs[1] += 5
+    print(xs)
+}

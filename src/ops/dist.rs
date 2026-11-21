@@ -8,7 +8,7 @@
 //! (`tar`, `zip`) need nothing beyond tar or zip. A missing tool fails with
 //! an install hint rather than a raw spawn error.
 //!
-//! See `docs/v2/specs/rvpm-dist.md` for the manifest surface.
+//! See `docs/specs/rvpm-dist.md` for the manifest surface.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

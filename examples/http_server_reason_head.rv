@@ -1,0 +1,82 @@
+// Starts an HTTP server in a goroutine and probes it over a raw TCP socket to
+// check two things: an unusual status code gets the right reason phrase (not a
+// blanket "OK"), and a HEAD response carries the headers but no body.
+// golden:skip (binds a port and depends on timing, so it is not diffed by the
+// golden suite; run it directly to verify the server response path).
+from std.http import Server, Response, Request, Method
+from std.net import connect, TcpStream
+from std.time import sleep_millis
+from std.io import println
+
+fun down(req: Request) -> Response {
+    return Response.with_body(503, "unavailable")
+}
+
+fun first_line(s: str) -> str {
+    let idx = s.index_of("\r\n")
+    if idx < 0 {
+        return s
+    }
+    return s.substring(0, idx)
+}
+
+fun body_after_headers(s: str) -> str {
+    let idx = s.index_of("\r\n\r\n")
+    if idx < 0 {
+        return ""
+    }
+    return s.substring(idx + 4, s.length())
+}
+
+// Connect with a few retries so a slow server bind does not race the probe.
+fun connect_retry(addr: str) -> Result[TcpStream, Error] {
+    var attempt = 0
+    while attempt < 50 {
+        match connect(addr) {
+            case Ok(s) {
+                return Ok(s)
+            }
+            case Err(_) { sleep_millis(20) }
+        }
+        attempt += 1
+    }
+    return connect(addr)
+}
+
+fun send(addr: str, request: str) -> str {
+    var result = ""
+    match connect_retry(addr) {
+        case Ok(s) {
+            let _ = s.write(request)
+            match s.read_all() {
+                case Ok(r) {
+                    result = r
+                }
+                case Err(_) {}
+            }
+            s.close()
+        }
+        case Err(_) {}
+    }
+    return result
+}
+
+fun main() {
+    let addr = "127.0.0.1:18642"
+    let app = Server.new()
+    app.get("/x", down)
+    app.route(Method.Head, "/x", down)
+    spawn {
+        app.listen(addr)
+    }
+
+    let get_resp = send(addr, "GET /x HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
+    println("GET status: ${first_line(get_resp)}")
+    println("GET body: ${body_after_headers(get_resp)}")
+
+    let head_resp = send(addr, "HEAD /x HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
+    println("HEAD status: ${first_line(head_resp)}")
+    println("HEAD body empty: ${body_after_headers(head_resp) == ""}")
+
+    app.shutdown()
+}

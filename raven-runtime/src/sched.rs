@@ -1,6 +1,6 @@
 //! M:N green-thread scheduler and channels for compiled Raven v2 programs.
 //!
-//! See `docs/v2/specs/mn-scheduler.md` for the model. Goroutines are
+//! See `docs/specs/mn-scheduler.md` for the model. Goroutines are
 //! `corosensei` coroutines multiplexed onto a pool of worker OS threads (one
 //! per available core), so they run in parallel; the main thread is goroutine 0
 //! and runs on its own stack. A goroutine yields at a full/empty channel, at an
@@ -251,7 +251,7 @@ impl Scheduler {
             0,
             Goroutine {
                 coro: None,
-                roots: (Vec::new(), Vec::new(), Vec::new()),
+                roots: (Vec::new(), Vec::new(), Vec::new(), std::ptr::null_mut()),
                 spawn_root: std::ptr::null_mut(),
                 yielder: std::ptr::null(),
             },
@@ -354,7 +354,7 @@ pub extern "C" fn raven_go_spawn(closure: *mut Closure) {
             id,
             Goroutine {
                 coro: Some(coro),
-                roots: (Vec::new(), Vec::new(), Vec::new()),
+                roots: (Vec::new(), Vec::new(), Vec::new(), std::ptr::null_mut()),
                 // Root the closure so it and its captures survive until and
                 // while the goroutine runs.
                 spawn_root: closure as *mut u8,

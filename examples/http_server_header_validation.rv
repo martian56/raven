@@ -1,0 +1,79 @@
+// Starts an HTTP server in a goroutine and probes it over a raw TCP socket to
+// check that the response builder rejects an invalid field name and strips
+// control bytes from a field value, so a handler cannot frame a malformed
+// response or inject extra headers.
+// golden:skip (binds a port and depends on timing, so it is not diffed by the
+// golden suite; run it directly to verify the server response path).
+from std.http import Server, Response, Request
+from std.net import connect, TcpStream
+from std.time import sleep_millis
+from std.io import println
+
+fun handler(req: Request) -> Response {
+    let r = Response.text("body").header("Bad Name", "dropped").header(
+        "X-Ctrl",
+        "a".concat(__str_from_byte(1)).concat("b"),
+    ).header("X-Good", "fine")
+    r.headers.set("Direct Bad", "dropped")
+    r.headers.set("X-Direct-Ctrl", "c".concat(__str_from_byte(1)).concat("d"))
+    return r
+}
+
+fun headers_block(s: str) -> str {
+    let idx = s.index_of("\r\n\r\n")
+    if idx < 0 {
+        return s
+    }
+    return s.substring(0, idx)
+}
+
+fun connect_retry(addr: str) -> Result[TcpStream, Error] {
+    var attempt = 0
+    while attempt < 50 {
+        match connect(addr) {
+            case Ok(s) {
+                return Ok(s)
+            }
+            case Err(_) { sleep_millis(20) }
+        }
+        attempt += 1
+    }
+    return connect(addr)
+}
+
+fun send(addr: str, request: str) -> str {
+    var result = ""
+    match connect_retry(addr) {
+        case Ok(s) {
+            let _ = s.write(request)
+            match s.read_all() {
+                case Ok(r) {
+                    result = r
+                }
+                case Err(_) {}
+            }
+            s.close()
+        }
+        case Err(_) {}
+    }
+    return result
+}
+
+fun main() {
+    let addr = "127.0.0.1:19478"
+    let app = Server.new()
+    app.get("/", handler)
+    spawn {
+        app.listen(addr)
+    }
+
+    let resp = send(addr, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
+    let block = headers_block(resp)
+    println("bad-name dropped: ${block.index_of("Bad Name") < 0}")
+    println("direct bad-name dropped: ${block.index_of("Direct Bad") < 0}")
+    println("good present: ${block.index_of("X-Good: fine") >= 0}")
+    println("control stripped: ${block.index_of("X-Ctrl: ab") >= 0}")
+    println("direct control stripped: ${block.index_of("X-Direct-Ctrl: cd") >= 0}")
+
+    app.shutdown()
+}

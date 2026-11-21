@@ -16,6 +16,9 @@ use super::LowerCtx;
 /// Lower one statement into one or more HIR statements.
 pub(crate) fn lower_stmt(stmt: &Stmt, cx: &LowerCtx<'_>) -> Result<Vec<HirStmt>, RavenError> {
     match &stmt.kind {
+        StmtKind::LetElse { .. } | StmtKind::LetTuple { .. } | StmtKind::Assert { .. } => {
+            unreachable!("surface syntax is desugared after parsing")
+        }
         StmtKind::Let {
             name,
             ty: _,
@@ -94,6 +97,15 @@ pub(crate) fn lower_stmt(stmt: &Stmt, cx: &LowerCtx<'_>) -> Result<Vec<HirStmt>,
             let lowered = lower_expr(e, &expected, cx)?;
             Ok(vec![HirStmt {
                 kind: HirStmtKind::Spawn(lowered),
+                span: stmt.span.clone(),
+            }])
+        }
+        StmtKind::Assign { target, op, value } if cx.typed.types.is_operator(&stmt.span) => {
+            let call =
+                crate::ast::set_index_call(target, *op, value, &stmt.span).expect("index target");
+            let lowered = lower_expr(&call, &Ty::Error, cx)?;
+            Ok(vec![HirStmt {
+                kind: HirStmtKind::Expr(lowered),
                 span: stmt.span.clone(),
             }])
         }

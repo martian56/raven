@@ -26,7 +26,9 @@
 
 ## Why Raven
 
-- Compiled to native machine code through Cranelift, into a single static binary.
+- Reads like Python with braces: classes, tuples, comprehensions, `x in xs`, f-string formatting, `len`/`sorted`/`enumerate` and the other builtins, named and default arguments, `x => x * 2` lambdas, inferred types.
+- Runs at native speed: compiled through Cranelift into a single static binary, ahead of Go on four of five benchmarks below and within reach of C and Rust.
+- Compiles a 10,000-line program in about 0.7 seconds.
 - Static typing with generics, traits, and sum types checked by an exhaustive `match`.
 - A tracing garbage collector and `Result`/`Option` instead of `null`.
 - Goroutines and channels that run in parallel across CPU cores (an M:N scheduler over a multi-threaded collector), with mutexes, wait groups, and `select`, and a C FFI for native libraries.
@@ -35,20 +37,32 @@
 ## Quick Example
 
 ```rust
-struct User {
-    name: String,
-    age: Int,
-}
-
-fun greet(user: User) -> String {
-    return "Hello ${user.name}, you are ${user.age}"
+class User {
+    name: str
+    age: int
 }
 
 fun main() {
-    let u = User { name: "Raven", age: 2 }
-    print(greet(u))
+    let users = [User("ada", 36), User("alan", 41), User("grace", 85)]
+    let names = [u.name for u in users if u.age > 40]
+    let ages = {u.name: u.age for u in users}
+    for (i, name) in enumerate(sorted(names)) {
+        print("${i + 1}. ${name:<6} ${ages[name]:>3}")
+    }
 }
 ```
+
+## Performance
+
+Best of seven runs in milliseconds on Windows x86_64 (`benchmarks/runtime`):
+
+| Benchmark | Raven | C (gcc -O2) | Go | Rust (-O) |
+|-----------|------:|------:|---:|-----:|
+| fib(35), recursion | 104 | 93 | 117 | 85 |
+| 1M dict inserts and lookups | 135 | 132 | 277 | 200 |
+| 20M sieve | 351 | 267 | 319 | 276 |
+| 200k string build | 90 | 101 | 93 | 87 |
+| binary trees, allocation | 215 | 465 | 272 | 437 |
 
 ## Install
 
@@ -79,7 +93,7 @@ rvpm dist         # package the application for distribution
 ```
 
 rvpm also supports multi-package workspaces, explicit package selection, and
-manifest-defined compiled commands. See the [rvpm guide](https://martian56.github.io/raven/v2/guide/rvpm/#workspaces).
+manifest-defined compiled commands. See the [rvpm guide](https://martian56.github.io/raven/guide/rvpm/#workspaces).
 
 ### Build from source
 
@@ -97,10 +111,10 @@ The `raven` and `rvpm` binaries land in `target/release/`.
 
 - Full docs: [https://martian56.github.io/raven/](https://martian56.github.io/raven/)
 - Project website: [https://raven.ufazien.com/](https://raven.ufazien.com/)
-- Getting started: [https://martian56.github.io/raven/v2/guide/getting-started/](https://martian56.github.io/raven/v2/guide/getting-started/)
-- Language reference: [https://martian56.github.io/raven/v2/guide/language-reference/](https://martian56.github.io/raven/v2/guide/language-reference/)
-- Standard library: [https://martian56.github.io/raven/v2/guide/standard-library/](https://martian56.github.io/raven/v2/guide/standard-library/)
-- rvpm: [https://martian56.github.io/raven/v2/guide/rvpm/](https://martian56.github.io/raven/v2/guide/rvpm/)
+- Getting started: [https://martian56.github.io/raven/guide/getting-started/](https://martian56.github.io/raven/guide/getting-started/)
+- Language reference: [https://martian56.github.io/raven/guide/language-reference/](https://martian56.github.io/raven/guide/language-reference/)
+- Standard library: [https://martian56.github.io/raven/guide/standard-library/](https://martian56.github.io/raven/guide/standard-library/)
+- rvpm: [https://martian56.github.io/raven/guide/rvpm/](https://martian56.github.io/raven/guide/rvpm/)
 
 ## Technologies Used
 
