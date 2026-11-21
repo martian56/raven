@@ -33,7 +33,22 @@ pub fn rewrite(decl: &mut Decl) {
     }
     let locals = crate::resolve::sugar::local_names(f);
     let params: Vec<String> = f.params.iter().map(|p| p.name.clone()).collect();
-    if locals.contains(&f.name) || !body_is_simple(decl) {
+    // The body's debug form names every binding: `Ident("n")` for a pattern
+    // and `Let { name: "n"` for a `let`. A body that rebinds a parameter, or
+    // has a `return` the rewrite would not visit, is left as written.
+    let text = format!("{:?}", body);
+    let rebinds = |n: &str| {
+        text.contains(&format!("Ident({:?})", n)) || text.contains(&format!("Let {{ name: {:?}", n))
+    };
+    let mut visited = 0usize;
+    each_return(body, &mut |_| visited += 1);
+    let all_visited = text.matches("Return(").count() == visited;
+    let mut prefix = "__tailrec".to_string();
+    while text.contains(&prefix) || params.iter().any(|p| p.starts_with(&prefix)) {
+        prefix.push('_');
+    }
+    let blocked = locals.contains(&f.name) || params.iter().any(|p| rebinds(p)) || !all_visited;
+    if blocked || !body_is_simple(decl) {
         return;
     }
     let DeclKind::Function(f) = &mut decl.kind else {
@@ -51,9 +66,9 @@ pub fn rewrite(decl: &mut Decl) {
         return;
     };
     let span = body.span.clone();
-    let acc = "__tailrec_acc".to_string();
+    let acc = format!("{prefix}_acc");
     let mut counter = 0usize;
-    rewrite_block(body, &name, &params, op, &acc, &mut counter);
+    rewrite_block(body, &name, &params, op, &acc, &prefix, &mut counter);
     let stmts = std::mem::take(&mut body.stmts);
     let loop_expr = expr(
         ExprKind::Loop(Block {
@@ -223,6 +238,7 @@ fn rewrite_block(
     params: &[String],
     op: Option<BinaryOp>,
     acc: &str,
+    prefix: &str,
     counter: &mut usize,
 ) {
     for s in &mut b.stmts {
@@ -230,9 +246,9 @@ fn rewrite_block(
             StmtKind::Return(Some(e)) => {
                 let span = s.span.clone();
                 let taken = std::mem::replace(e, expr(ExprKind::Int(0), &span));
-                s.kind = rewrite_return(taken, name, params, op, acc, counter, &span);
+                s.kind = rewrite_return(taken, name, params, op, acc, prefix, counter, &span);
             }
-            StmtKind::Expr(e) => rewrite_expr(e, name, params, op, acc, counter),
+            StmtKind::Expr(e) => rewrite_expr(e, name, params, op, acc, prefix, counter),
             _ => {}
         }
     }
@@ -244,30 +260,31 @@ fn rewrite_expr(
     params: &[String],
     op: Option<BinaryOp>,
     acc: &str,
+    prefix: &str,
     counter: &mut usize,
 ) {
     match &mut e.kind {
-        ExprKind::Block(b) => rewrite_block(b, name, params, op, acc, counter),
+        ExprKind::Block(b) => rewrite_block(b, name, params, op, acc, prefix, counter),
         ExprKind::If {
             then_branch,
             else_branch,
             ..
         } => {
-            rewrite_block(then_branch, name, params, op, acc, counter);
+            rewrite_block(then_branch, name, params, op, acc, prefix, counter);
             if let Some(eb) = else_branch {
                 match &mut **eb {
                     crate::ast::ElseBranch::If(x) => {
-                        rewrite_expr(x, name, params, op, acc, counter)
+                        rewrite_expr(x, name, params, op, acc, prefix, counter)
                     }
                     crate::ast::ElseBranch::Block(b) => {
-                        rewrite_block(b, name, params, op, acc, counter)
+                        rewrite_block(b, name, params, op, acc, prefix, counter)
                     }
                 }
             }
         }
         ExprKind::Match { arms, .. } => {
             for a in arms {
-                rewrite_expr(&mut a.body, name, params, op, acc, counter);
+                rewrite_expr(&mut a.body, name, params, op, acc, prefix, counter);
             }
         }
         _ => {}
@@ -280,6 +297,7 @@ fn rewrite_return(
     params: &[String],
     op: Option<BinaryOp>,
     acc: &str,
+    pfx: &str,
     counter: &mut usize,
     span: &Span,
 ) -> StmtKind {
@@ -315,7 +333,7 @@ fn rewrite_return(
     let mut temps = Vec::new();
     for a in args {
         *counter += 1;
-        let t = format!("__tailrec_arg{}", counter);
+        let t = format!("{pfx}_arg{counter}");
         stmts.push(stmt(
             StmtKind::Let {
                 name: t.clone(),
