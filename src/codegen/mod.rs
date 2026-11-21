@@ -1,4 +1,4 @@
-//! Cranelift backend for the Raven v2 compiler.
+//! Cranelift backend for the Raven compiler.
 //!
 //! The codegen module consumes a fully monomorphized [`MirProgram`]
 //! and produces a native relocatable object file. The object is then
@@ -10,8 +10,6 @@
 //! function calls, returns, and the `print` intrinsic. Heap allocated
 //! values, trait objects, closures, and `defer` are tracked by issues
 //! #65, #66, #67, and #68.
-//!
-//! See `docs/specs/codegen.md` for the full design.
 
 pub mod context;
 pub mod function;

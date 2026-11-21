@@ -1,4 +1,4 @@
-// std/list: free-function forms of common `list[T]` operations. Most are
+// std.list: free-function forms of common `list[T]` operations. Most are
 // also available as methods with no import (`xs.contains(x)`). Functions that
 // build a new list return a fresh one; they never mutate their input.
 
@@ -38,7 +38,7 @@ fun reverse[T](xs: list[T]) -> list[T] {
 }
 
 // The half-open range `[start, end)` of `xs` as a new list, clamped to the
-// list bounds.
+// `list` bounds.
 fun slice[T](xs: list[T], start: int, end: int) -> list[T] {
     let n = xs.len()
     var lo = start

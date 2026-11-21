@@ -1,11 +1,9 @@
-//! Name resolution for the v2 compiler.
+//! Name resolution for the Raven compiler.
 //!
 //! The resolver walks an [`crate::ast::File`], binds every identifier
 //! use to the declaration it refers to, and resolves every import to
 //! its target. The output is a [`ResolvedFile`] that pairs the
 //! original AST with a [`ResolutionMap`] and the resolved import list.
-//!
-//! See `docs/specs/resolver.md` for the full design.
 
 pub mod bindings;
 pub mod derive;

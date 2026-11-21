@@ -1,9 +1,9 @@
 // Compile-time `@derive(ToJson, FromJson)` for JSON serialization. Each
 // type round-trips through `to_json` -> `stringify` -> `parse` -> `from_json`
-// back to a value equal to the original. The struct encoding is a JSON
+// back to a value equal to the original. The class encoding is a JSON
 // object keyed by field name; the enum encoding is a tagged object
 // `{"tag": "Variant", "values": [...]}`. Object key order follows the Map
-// hash-bucket layout (see std/json), so the printed bytes are the
+// hash-bucket layout (see std.json), so the printed bytes are the
 // serializer's order, not source order.
 
 from std.json import JsonValue, stringify, parse
@@ -33,7 +33,7 @@ enum Shape {
     Rect(int, int),
 }
 
-// Round-trip a struct: serialize, print the bytes, parse back, decode, and
+// Round-trip a class: serialize, print the bytes, parse back, decode, and
 // report whether the decoded value equals the original.
 fun roundtrip_point(p: Point) {
     let s = stringify(p.to_json())

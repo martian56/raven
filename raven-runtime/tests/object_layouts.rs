@@ -1,7 +1,7 @@
 //! Cross-crate integration tests for the per-kind object layouts.
 //!
 //! These exercise the constructor and accessor surface through the
-//! public Rust API exactly as the v2 codegen and stdlib glue will. A
+//! public Rust API exactly as the codegen and stdlib glue do. A
 //! failure here means either a `crate-type` regression (the rlib no
 //! longer links) or a layout symbol stopped being reachable.
 //!

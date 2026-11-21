@@ -3,7 +3,7 @@
 // Eight goroutines each increment a shared counter 1000 times under the mutex;
 // the total is exactly 8000 because the mutex serializes the read-modify-write
 // (without it the parallel increments race and lose updates). See
-// docs/specs/concurrency.md.
+// docs/guide/tutorials/concurrency.md.
 
 from std.sync import wait_group, mutex, sleep_millis
 

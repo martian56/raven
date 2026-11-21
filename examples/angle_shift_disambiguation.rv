@@ -1,6 +1,6 @@
 // `a < b >> c` is a comparison of `a` with `b >> c`, not a generic. A failed
 // attempt to read `<...>` as type arguments must not leave the `>>` token split
-// into a single `>`. Nested generics like Map<K, Map<K, V>> still close on `>>`.
+// into a single `>`. Nested generics like dict[K, dict[K, V]] still close on `>>`.
 from std.io import println
 import std.collections
 

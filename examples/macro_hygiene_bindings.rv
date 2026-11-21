@@ -19,7 +19,7 @@ class Pair {
     b: int
 }
 
-// A shorthand struct pattern field is both the field name and the binding, so
+// A shorthand class pattern field is both the field name and the binding, so
 // the binding must keep its spelling and still resolve in the arm body.
 macro first { ($p:expr) => { match ($p) { case Pair { a, b } { a } } } }
 

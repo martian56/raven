@@ -1,4 +1,4 @@
-//! Compile-and-run golden suite for the v2 examples.
+//! Compile-and-run golden suite for the examples.
 //!
 //! Walks every runnable example under `examples/`, compiles it with the
 //! driver pipeline, links it against the `raven-runtime` staticlib, runs the
@@ -185,7 +185,7 @@ fn collect_examples() -> Vec<Example> {
 }
 
 /// An example opts out of the golden walk with `// golden:skip` in its first
-/// five lines, mirroring the v1 golden convention.
+/// five lines.
 fn is_skipped(path: &Path) -> bool {
     let Ok(source) = std::fs::read_to_string(path) else {
         return false;

@@ -2,7 +2,7 @@
 // mutable global with runtime storage: it can be reassigned and mutated from
 // any function, its initializer may be any expression (run before `main` in
 // declaration order, so a later global may read an earlier one), and a
-// heap-valued global (here a `List`) is rooted for the whole program so the
+// heap-valued global (here a `list`) is rooted for the whole program so the
 // collector keeps it alive. A `const` stays an inlined compile-time constant.
 //
 // Prints:

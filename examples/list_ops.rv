@@ -1,4 +1,4 @@
-// List literals, indexing, and the built-in List methods end to end.
+// list literals, indexing, and the built-in list methods end to end.
 // Compiling and running this prints 3, 20, 4, 40 on their own lines.
 fun main() {
     let xs = [10, 20, 30]

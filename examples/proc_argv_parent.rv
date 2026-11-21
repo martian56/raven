@@ -1,4 +1,4 @@
-// golden:skip - std/process argv parent, checked in codegen_smoke.rs
+// golden:skip - std.process argv parent, checked in codegen_smoke.rs
 // (proc_argv_preserves_empty_arg). Runs the child (path in RAVEN_PROC_CHILD)
 // with three argument lists and prints the child's reported argument count.
 // A single empty argument must not vanish, so the counts are:

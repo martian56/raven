@@ -1,4 +1,4 @@
-// A struct value built on the heap, passed by reference, and read back.
+// A class value built on the heap, passed by reference, and read back.
 // Compiling and running this prints 7.
 class Point {
     x: int

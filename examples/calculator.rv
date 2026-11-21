@@ -1,5 +1,4 @@
-// A non-interactive calculator over a fixed set of operations, mirroring
-// the v1 simple_calculator demo without the interactive input.
+// A non-interactive calculator over a fixed set of operations.
 fun apply(op: str, a: float, b: float) -> float {
     if op == "+" {
         a + b

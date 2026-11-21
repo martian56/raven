@@ -1,4 +1,4 @@
-//! Raven v2 compiler library.
+//! Raven compiler library.
 //!
 //! The pipeline (each stage gets its own module as it lands):
 //!

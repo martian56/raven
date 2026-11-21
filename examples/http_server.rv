@@ -1,9 +1,9 @@
-// An HTTP server built on std/http: typed JSON with @derive(ToJson)/decode, and
+// An HTTP server built on std.http: typed JSON with @derive(ToJson)/decode, and
 // static file serving. golden:skip (a server blocks forever, so it has no fixed
 // stdout to diff). Run it, then from another shell:
 //   curl localhost:8080/
 //   curl localhost:8080/greet/raven
-//   curl "localhost:8080/search?q=birds"            # JSON, serialized from a struct
+//   curl "localhost:8080/search?q=birds"            # JSON, serialized from a class
 //   curl -X POST -d '{"name":"Ada","age":36}' localhost:8080/users
 //   curl localhost:8080/static/style.css            # any file under public/
 // Each connection is handled on its own goroutine.

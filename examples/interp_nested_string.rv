@@ -1,4 +1,4 @@
-// String interpolation may contain a nested string literal, including in a
+// str interpolation may contain a nested string literal, including in a
 // call argument. Regression for issue #262, where the inner `"` ended the
 // outer string early. Prints:
 //   hello WORLD

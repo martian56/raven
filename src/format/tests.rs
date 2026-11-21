@@ -537,3 +537,9 @@ fn interpolation_with_nested_string_does_not_break_comment_scan() {
         "trailing comment after an interpolated string was lost: {out:?}"
     );
 }
+
+#[test]
+fn repr_c_class_stays_a_class() {
+    let out = fmt("@repr(C)\nclass P {\n    x: CInt\n}\n");
+    assert_eq!(out, "@repr(C)\nclass P {\n    x: CInt\n}\n");
+}

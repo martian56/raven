@@ -1,6 +1,6 @@
 // Regression for #515: a nested match where the inner match returns Option and
 // both the inner and outer matches have a None arm. The inner None arms must
-// infer their Option<String> type from the sibling Some arm.
+// infer their Option[str] type from the sibling Some arm.
 from std.io import println
 
 enum V {

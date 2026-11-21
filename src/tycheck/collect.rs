@@ -582,7 +582,7 @@ fn fill_struct(
 /// `CFloat`, `CDouble`, `CStr`, `CPtr<T>`, `CFnPtr`) or a nested `@repr(C)`
 /// struct. There is no size limit: up to 16 bytes the struct crosses in
 /// registers, and a larger one in memory (the System V MEMORY class) or by
-/// reference (Windows x64, AArch64). See `docs/specs/ffi-extensions.md`.
+/// reference (Windows x64, AArch64). See `docs/specs/ffi.md`.
 fn validate_repr_c(id: DeclId, span: &Span, env: &TypeEnv) -> Result<(), RavenError> {
     repr_c_struct_layout(id, span, env, &mut Vec::new())?;
     Ok(())
@@ -600,7 +600,7 @@ fn repr_c_struct_layout(
 ) -> Result<(u32, u32), RavenError> {
     if in_progress.contains(&id) {
         return Err(ty_custom(
-            "a `@repr(C)` struct cannot contain itself by value",
+            "a `@repr(C)` class cannot contain itself by value",
             span,
         ));
     }
@@ -611,7 +611,7 @@ fn repr_c_struct_layout(
     if sig.fields.is_empty() {
         return Err(ty_custom(
             &format!(
-                "`@repr(C)` struct `{}` must have at least one field",
+                "`@repr(C)` class `{}` must have at least one field",
                 sig.name
             ),
             span,
@@ -626,7 +626,7 @@ fn repr_c_struct_layout(
             Ty::Ffi(ffi) => ffi.c_scalar_layout().ok_or_else(|| {
                 ty_custom(
                     &format!(
-                        "field `{}` of `@repr(C)` struct `{}` has type `{}`, which cannot cross the FFI by value; use a C scalar (CInt, CLong, CSize, CFloat, CDouble, CStr, CPtr[T]) or a `@repr(C)` struct",
+                        "field `{}` of `@repr(C)` class `{}` has type `{}`, which cannot cross the FFI by value; use a C scalar (CInt, CLong, CSize, CFloat, CDouble, CStr, CPtr[T]) or a `@repr(C)` struct",
                         f.name, name, f.ty
                     ),
                     &f.span,
@@ -637,7 +637,7 @@ fn repr_c_struct_layout(
                 if !is_repr_c {
                     return Err(ty_custom(
                         &format!(
-                            "field `{}` of `@repr(C)` struct `{}` is `{}`, which is not `@repr(C)`; a struct field must itself be `@repr(C)` to cross the FFI by value",
+                            "field `{}` of `@repr(C)` class `{}` is `{}`, which is not `@repr(C)`; a field must itself be `@repr(C)` to cross the FFI by value",
                             f.name, name, nested_name
                         ),
                         &f.span,
@@ -648,7 +648,7 @@ fn repr_c_struct_layout(
             other => {
                 return Err(ty_custom(
                     &format!(
-                        "field `{}` of `@repr(C)` struct `{}` has type `{}`; a repr(C) struct field must be a C scalar or a `@repr(C)` struct",
+                        "field `{}` of `@repr(C)` class `{}` has type `{}`; a `@repr(C)` field must be a C scalar or a `@repr(C)` class",
                         f.name, name, other
                     ),
                     &f.span,

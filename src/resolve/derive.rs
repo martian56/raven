@@ -300,7 +300,7 @@ fn enum_impl(e: &Enum, trait_name: &str, span: &crate::span::Span) -> Result<Str
         if let VariantPayload::Struct(_) = v.payload {
             return Err(RavenError::resolve(
                 ResolveError::Other(format!(
-                    "cannot derive `{trait_name}` for enum `{}`: struct-style variant `{}` is not supported yet",
+                    "cannot derive `{trait_name}` for enum `{}`: named-field variant `{}` is not supported yet",
                     e.name, v.name
                 )),
                 span.clone(),

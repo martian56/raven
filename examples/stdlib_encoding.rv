@@ -1,4 +1,4 @@
-// std/encoding, std/path, std/hash enrichment: percent-encoding, base32,
+// std.encoding, std.path, std.hash enrichment: percent-encoding, base32,
 // path normalization, and CRC-32. Prints:
 //   a%20b%2Fc
 //   a b/c

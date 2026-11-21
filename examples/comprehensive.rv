@@ -1,5 +1,5 @@
 // A tour of core language features: variables, conditionals, loops,
-// functions, structs, and arithmetic, all with deterministic output.
+// functions, classes, and arithmetic, all with deterministic output.
 class Rect {
     w: int
     h: int

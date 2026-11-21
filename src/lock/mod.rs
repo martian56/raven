@@ -13,7 +13,7 @@
 //! it lands the lock will record the chosen ref while `rv.toml` carries
 //! the range.
 //!
-//! See `docs/specs/rvpm.md` for the lock format and the tree-hash
+//! See `docs/guide/rvpm.md` for the lock format and the tree-hash
 //! scheme.
 
 use std::collections::{BTreeMap, BTreeSet};

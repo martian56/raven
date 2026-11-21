@@ -1,6 +1,6 @@
-// std/encoding: hex and standard base64 over the bytes of a String.
-// Raven String is a byte buffer; input is treated as raw bytes. See
-// docs/specs/std-encoding.md.
+// std.encoding: hex and standard base64 over the bytes of a str.
+// Raven str is a byte buffer; input is treated as raw bytes. See
+// docs/guide/stdlib/encoding.md.
 
 import std.error
 

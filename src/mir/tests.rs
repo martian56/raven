@@ -32,7 +32,7 @@ fn dummy_span() -> Span {
     Span::new(Arc::new(PathBuf::from("t.rv")), 0, 0, 1, 1)
 }
 
-/// Run the full v2 pipeline on `src` and return the MIR program.
+/// Run the full pipeline on `src` and return the MIR program.
 fn compile(src: &str) -> MirProgram {
     let tokens = Lexer::new(src.to_string(), PathBuf::from("t.rv"))
         .tokenize()

@@ -5,7 +5,7 @@
 // `ty` captures a balanced type, including the brackets of a generic.
 macro name_of { ($t:ty) => { type_name[$t]() } }
 
-// `literal` matches exactly one literal token (here an Int), rejecting names.
+// `literal` matches exactly one literal token (here an int), rejecting names.
 macro doubled_lit { ($x:literal) => { ($x) + ($x) } }
 
 // `pat` captures a pattern, used here in the arm of a match.

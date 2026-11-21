@@ -1,4 +1,4 @@
-// match on String literal patterns compares by content. Regression for
+// match on str literal patterns compares by content. Regression for
 // issue #265, where string-literal arms compared heap-pointer identity and
 // always fell through to the wildcard. Prints:
 //   affirmative

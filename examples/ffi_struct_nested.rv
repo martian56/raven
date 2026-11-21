@@ -1,5 +1,5 @@
 // FFI: a @repr(C) struct with a nested @repr(C) struct field, by value. The
-// nested struct's bytes are inlined into the parent's C image (the back end
+// nested class's bytes are inlined into the parent's C image (the back end
 // follows the heap pointer recursively), and on a return the nested object is
 // rebuilt and traced by the GC. The runtime fixtures (raven_ffi_*) make the
 // test identical on every platform. Prints:
@@ -26,14 +26,14 @@ extern "C" {
 }
 
 fun main() {
-    // A nested struct passed by value.
+    // A nested class passed by value.
     print(raven_ffi_outer_sum(Outer(inner: Inner(a: 1, b: 2), c: 3))) // 6
 
-    // A nested struct returned by value, then passed back.
+    // A nested class returned by value, then passed back.
     let o = raven_ffi_make_outer(10, 20, 30)
     print(raven_ffi_outer_sum(o)) // 60
 
-    // GC guard: hold a returned nested struct, force collections, then read
+    // GC guard: hold a returned nested class, force collections, then read
     // it. A wrong descriptor mask would free the nested object.
     let kept = raven_ffi_make_outer(7, 8, 9)
     let junk: list[int] = []

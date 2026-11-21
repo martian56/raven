@@ -14,7 +14,7 @@
 //! `import std/io { println }` then binds the bare name `println` to the
 //! `std.io.println` function (see `imports.rs`).
 //!
-//! See `docs/specs/stdlib.md` for the full mechanism.
+//! See `docs/guide/standard-library.md` for the full mechanism.
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, BTreeSet, HashMap};

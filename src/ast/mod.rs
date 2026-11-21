@@ -1,4 +1,4 @@
-//! Abstract Syntax Tree for the Raven v2 grammar.
+//! Abstract Syntax Tree for the Raven grammar.
 //!
 //! Each submodule covers one category of node:
 //!
@@ -13,7 +13,7 @@
 //! re exported here for convenience.
 //!
 //! The grammar this AST encodes is documented in
-//! `docs/specs/parser.md`.
+//! `docs/guide/language-reference.md`.
 
 pub mod decl;
 pub mod expr;

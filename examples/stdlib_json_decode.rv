@@ -1,4 +1,4 @@
-// Decode a JSON string into a struct with std/json's `decode`, then re-serialize
+// Decode a JSON string into a class with std.json's `decode`, then re-serialize
 // it with the `@derive(ToJson)` impl. The two derives synthesize the conversions.
 from std.json import decode, stringify, ToJson
 from std.io import println

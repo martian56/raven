@@ -1,5 +1,5 @@
 // A deterministic tour of the standard library: integer math helpers and
-// String utilities. Avoids time and randomness so the output is fixed.
+// str utilities. Avoids time and randomness so the output is fixed.
 from std.math import abs_int, min_int, max_int, pow_int
 import std.string
 

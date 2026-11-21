@@ -1,12 +1,10 @@
-//! High level IR (HIR) for the Raven v2 compiler.
+//! High level IR (HIR) for the Raven compiler.
 //!
 //! The HIR is a desugared form of the AST. Source level sugar (`for`
 //! loops, `?` propagation, string interpolation, ranges, compound
 //! assignment, single expression function bodies) is rewritten into a
 //! smaller core. Every HIR node keeps the originating `Span` and, for
 //! expressions, the inferred `Ty` from the type checker.
-//!
-//! See `docs/specs/hir.md` for the full design.
 
 pub mod decl;
 pub mod expr;

@@ -1,4 +1,4 @@
-// Destructuring a struct in a match arm binds its fields, in declaration
+// Destructuring a class in a match arm binds its fields, in declaration
 // order regardless of how the pattern lists them, including renamed bindings
 // and guards. Prints:
 //   23

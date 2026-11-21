@@ -1,5 +1,5 @@
 // @derive(Eq) makes `==` and `!=` compare by value (through the generated
-// `equals` method), not by object identity. The struct comparison recurses
+// `equals` method), not by object identity. The class comparison recurses
 // into the enum field's derived equality. Prints:
 //   in progress
 //   not done

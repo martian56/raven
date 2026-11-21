@@ -1,4 +1,4 @@
-// std/core: the prelude, auto-imported into every program. See
+// std.core: the prelude, auto-imported into every program. See
 // docs/specs/core-traits.md.
 
 trait ToString {
@@ -97,7 +97,7 @@ impl ToString for char {
     fun repr(self) -> str = "'${self}'"
 }
 
-// `String` is already text: `to_string` is the identity.
+// `str` is already text: `to_string` is the identity.
 impl ToString for str {
     fun to_string(self) -> str = self
 
@@ -116,7 +116,7 @@ impl Eq for float {
             return true
         }
         // `Eq` is reflexive, but IEEE says NaN != NaN. Count two NaN as equal so
-        // a Float used as a map key or in a derived struct compares to itself.
+        // a float used as a map key or in a derived struct compares to itself.
         return self != self and other != other
     }
 }
@@ -301,7 +301,6 @@ impl Ord for str {
     }
 }
 
-// Hash for Char is deferred until a Char-to-Int primitive lands.
 impl Hash for int {
     fun hash(self) -> int = self
 }
@@ -459,7 +458,7 @@ impl[T, E] Result[T, E] {
     }
 }
 
-// ----- List methods -----
+// ----- list methods -----
 
 impl[T] list[T] {
     // Each item with its position: `for (i, x) in xs.enumerate()`.
@@ -1101,7 +1100,7 @@ impl[A: Ord, B: Ord, C: Ord, D: Ord, E: Ord, F: Ord] Ord for (A, B, C, D, E, F) 
     }
 }
 
-// `x as int`, `x as float`: numeric conversions. Float to int truncates
+// `x as int`, `x as float`: numeric conversions. A float converted to int truncates
 // toward zero; a bool is 1 or 0.
 impl int {
     fun as_int(self) -> int = self

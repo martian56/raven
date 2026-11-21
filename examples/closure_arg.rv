@@ -1,5 +1,5 @@
 // Passing a capturing closure as a function argument. `apply` takes a
-// closure parameter `f: fun(Int) -> Int` and invokes it indirectly. The
+// closure parameter `f: fun(int) -> int` and invokes it indirectly. The
 // closure `triple` captures the local `factor` by value. Prints 21.
 fun apply(f: fun(int) -> int, x: int) -> int {
     return f(x)

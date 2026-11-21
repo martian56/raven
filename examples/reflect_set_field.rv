@@ -1,4 +1,4 @@
-// Runtime reflection: write a struct field by name through `Any` with
+// Runtime reflection: write a class field by name through `Any` with
 // set_field, the write counterpart of get_field. A type-mismatched write is
 // ignored. Regression for issue #230. Prints:
 //   42

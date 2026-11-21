@@ -1,7 +1,7 @@
-// std/iter: lazy, single-pass iterator adapters over the Iterator trait.
+// std.iter: lazy, single-pass iterator adapters over the Iterator trait.
 // See docs/specs/std-iter.md.
 //
-// A bound that mentions a sibling parameter (`S: Iterator<T>`) must come
+// A bound that mentions a sibling parameter (`S: Iterator[T]`) must come
 // after it, so each adapter lists element types before its source type.
 
 class ListIter[T] {
@@ -40,8 +40,8 @@ impl[T] ListIter[T] {
     }
 }
 
-// Build a `ListIter<T>` over `xs`. The free-function form; the method
-// form `xs.iter()` is defined on `List<T>` below.
+// Build a `ListIter[T]` over `xs`. The free-function form; the method
+// form `xs.iter()` is defined on `list[T]` below.
 fun from_list[T](xs: list[T]) -> ListIter[T] {
     return ListIter(items: xs, pos: 0)
 }
@@ -216,8 +216,7 @@ impl[T, S: Iterator[T]] Skip[T, S] {
 
 // ----- Enumerate: pair each element with its running index -----
 
-// Raven has no tuples yet, so `Enumerate` yields this small record
-// instead of a `(Int, T)` pair. See the spec for the rationale.
+// `Enumerate` yields this record, so a loop reads `e.index` and `e.value`.
 class Indexed[T] {
     index: int
     value: T
@@ -243,14 +242,14 @@ impl[T, S: Iterator[T]] Enumerate[T, S] {
 
 // ----- Consumers: drive an iterator to completion -----
 //
-// These are free generic functions over any `S: Iterator<T>`. Raven has
+// These are free generic functions over any `S: Iterator[T]`. Raven has
 // no blanket trait impls, so a consumer cannot be a method shared by
 // every adapter. Writing them as free functions keeps a single
 // definition each: `collect(pipeline)` rather than a method per adapter
 // type. The pipeline is built with the adapter methods (`iter`, `map`,
 // `filter`, ...) and then handed to a consumer.
 
-// Gather every remaining element into a `List<T>`, in order.
+// Gather every remaining element into a `list[T]`, in order.
 fun collect[T, S: Iterator[T]](it: S) -> list[T] {
     let out: list[T] = []
     for x in it {
@@ -317,7 +316,7 @@ fun for_each[T, S: Iterator[T]](it: S, f: fun(T) -> Unit) {
     }
 }
 
-// Sum of all elements of an `Int` iterator (0 when empty).
+// Sum of all elements of an `int` iterator (0 when empty).
 fun sum[S: Iterator[int]](it: S) -> int {
     var total = 0
     for x in it {
@@ -326,7 +325,7 @@ fun sum[S: Iterator[int]](it: S) -> int {
     return total
 }
 
-// Product of all elements of an `Int` iterator (1 when empty).
+// Product of all elements of an `int` iterator (1 when empty).
 fun product[S: Iterator[int]](it: S) -> int {
     var p = 1
     for x in it {

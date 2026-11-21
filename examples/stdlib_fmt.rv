@@ -1,4 +1,4 @@
-// std/fmt enrichment: fixed-decimal float formatting and parsing an integer
+// std.fmt enrichment: fixed-decimal float formatting and parsing an integer
 // from a given base. Prints:
 //   3.14
 //   10.00

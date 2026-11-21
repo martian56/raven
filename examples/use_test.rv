@@ -1,5 +1,5 @@
 // golden:skip
-// std/test assertions in a passing test program: every assertion holds,
+// std.test assertions in a passing test program: every assertion holds,
 // so the program reaches the final line and exits zero. A failing
 // assertion would call the runtime panic and abort with a nonzero exit.
 from std.test import assert_msg, assert_true, assert_false, assert_eq_int, assert_eq_str

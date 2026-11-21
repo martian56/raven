@@ -1,9 +1,9 @@
-// Generic struct monomorphization end to end.
+// Generic class monomorphization end to end.
 //
-// `Box<T>` is instantiated at three concrete types: Int and String exercise
-// the per-instantiation struct layout and GC pointer descriptor, and the
-// generic method `unwrap` on `impl<T> Box<T>` is specialized at each call
-// site for the concrete type argument. A concrete `impl Box<Int>` method
+// `Box[T]` is instantiated at three concrete types: int and str exercise
+// the per-instantiation class layout and GC pointer descriptor, and the
+// generic method `unwrap` on `impl[T] Box[T]` is specialized at each call
+// site for the concrete type argument. A concrete `impl Box[int]` method
 // (`get`) shows the concrete-receiver impl path. Prints 42, 42, 7, raven.
 class Box[T] {
     value: T
@@ -19,12 +19,12 @@ impl[T] Box[T] {
 
 fun main() {
     let b = Box(value: 42)
-    print(b.get()) // 42 (concrete impl Box<Int>)
-    print(b.unwrap()) // 42 (generic impl<T> Box<T> at T = Int)
+    print(b.get()) // 42 (concrete impl Box[int])
+    print(b.unwrap()) // 42 (generic impl[T] Box[T] at T = int)
 
     let n = Box(value: 7)
     print(n.value) // 7 (direct field access)
 
     let s = Box(value: "raven")
-    print(s.unwrap()) // raven (generic impl<T> Box<T> at T = String)
+    print(s.unwrap()) // raven (generic impl[T] Box[T] at T = str)
 }

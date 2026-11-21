@@ -1,8 +1,7 @@
 //! Inline unit tests for the resolver public surface.
 //!
-//! These exercise the end to end pipeline (lex, parse, resolve) for
-//! the scenarios called out in `docs/specs/resolver.md`'s test
-//! coverage section. Module local tests (scope mechanics, item
+//! These exercise the end to end pipeline (lex, parse, resolve).
+//! Module local tests (scope mechanics, item
 //! collection, import resolution) live next to their modules.
 
 use std::collections::HashMap;

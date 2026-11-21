@@ -1,5 +1,5 @@
-// A struct literal is allowed inside a call argument in an if/while/match head.
-// The condition itself still forbids a bare struct literal (which would clash
+// A class literal is allowed inside a call argument in an if/while/match head.
+// The condition itself still forbids a bare class literal (which would clash
 // with the block brace), but inside the call's parentheses it is unambiguous.
 from std.io import println
 

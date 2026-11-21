@@ -69,7 +69,7 @@ pub fn lower_stmt(cx: &mut LowerCx<'_>, stmt: &HirStmt) {
 ///
 /// The operand evaluates to a `fun() -> Unit` closure value; the call
 /// hands it to the runtime, which starts a goroutine running it. See
-/// `docs/specs/concurrency.md`.
+/// `docs/guide/tutorials/concurrency.md`.
 fn lower_spawn(cx: &mut LowerCx<'_>, e: &HirExpr) {
     let closure_op = super::expr::lower_expr(cx, e);
     let closure_ty = MirType::Function {
@@ -101,7 +101,7 @@ fn lower_spawn(cx: &mut LowerCx<'_>, e: &HirExpr) {
 /// `__defer_push`. Pushing at the point the `defer` statement executes
 /// keeps the semantics reached-only and the order dynamic; the function
 /// epilogue runs the parked thunks in LIFO order at every return. See
-/// `docs/specs/defer.md`.
+/// `docs/guide/language-reference.md`.
 fn lower_defer(cx: &mut LowerCx<'_>, e: &HirExpr) {
     cx.builder.mark_has_defer();
 

@@ -1,8 +1,8 @@
-// std/test: assertions for writing test programs in Raven. A test is a
+// std.test: assertions for writing test programs in Raven. A test is a
 // Raven program whose `main` calls these assertions; a failed assertion
 // calls the runtime panic, aborting with a message and a nonzero exit.
 // There is no discovery or registration framework. See
-// docs/specs/std-test.md.
+// docs/guide/stdlib/test.md.
 
 fun assert_msg(cond: bool, msg: str) {
     if not cond {

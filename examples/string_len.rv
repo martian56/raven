@@ -1,5 +1,5 @@
-// Built-in String.len() and is_empty(), no import required, spelled the
-// same as List/Map/Set .len(). Regression for issue #266 (len() used to
+// Built-in str.len() and is_empty(), no import required, spelled the
+// same as list/Map/Set .len(). Regression for issue #266 (len() used to
 // type-check but fail in codegen). Prints 5, true, false.
 fun main() {
     let s = "hello"

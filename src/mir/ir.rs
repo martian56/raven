@@ -272,7 +272,7 @@ pub enum MirRvalue {
     /// tagging it with `value_ty`'s runtime type id. The back end interns
     /// the id, widens a scalar value into the eight-byte payload, and sets
     /// the GC-pointer flag from `value_ty`. See
-    /// `docs/specs/runtime-reflection.md`.
+    /// `docs/guide/language-reference.md`.
     AnyBox {
         value: MirOperand,
         value_ty: MirType,
@@ -444,7 +444,7 @@ pub struct MirFunction {
     pub span: Span,
     /// True when the function body registers at least one `defer`. Codegen
     /// opens a runtime defer frame on entry and runs it at every return
-    /// path only for such functions. See `docs/specs/defer.md`.
+    /// path only for such functions. See `docs/guide/language-reference.md`.
     pub has_defer: bool,
 }
 
@@ -544,7 +544,7 @@ pub struct ReflectField {
 /// Runtime reflection metadata for one monomorphic type. The back end
 /// emits one `raven_type_register` call per entry at program startup so a
 /// boxed value of the type can report its name and (for a struct) walk its
-/// fields. See `docs/specs/runtime-reflection.md`.
+/// fields. See `docs/guide/language-reference.md`.
 #[derive(Debug, Clone)]
 pub struct ReflectType {
     /// The rendered type name (`Point`, `Int`, `Pair<Int, String>`).

@@ -1,15 +1,15 @@
-// std/regex: regular expressions over the raven-runtime C ABI, backed by
+// std.regex: regular expressions over the raven-runtime C ABI, backed by
 // the Rust `regex` crate (RE2-style, no backreferences or lookaround). A
 // compiled pattern cannot cross the FFI, so the runtime keeps it in a
 // registry keyed by an opaque integer id and hands Raven that id; the
 // Regex struct wraps the id. compile is fallible and returns
-// Result<Regex, Error> tagged with kind "regex" via the runtime's
-// thread-local last-error slot. List results cross the FFI as a single
-// length-prefixed String decoded back into a List in Raven, so an element may
+// Result[Regex, Error] tagged with kind "regex" via the runtime's
+// thread-local last-error slot. `list` results cross the FFI as a single
+// length-prefixed str decoded back into a list in Raven, so an element may
 // contain any byte (a newline included). There is no destructor, so a
 // caller should `free` a pattern when done; not freeing leaks the
 // registry entry for the life of the process. See
-// docs/specs/std-regex.md.
+// docs/guide/stdlib/regex.md.
 
 import std.error
 
@@ -56,7 +56,7 @@ impl Regex {
     }
 
     // Every non-overlapping match in `text`. No matches yields an empty
-    // list.
+    // `list`.
     fun find_all(self, text: str) -> list[str] {
         return decode_list(raven_regex_find_all(self.id, text))
     }

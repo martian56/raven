@@ -1,11 +1,11 @@
-// std/random: a seeded pseudo-random generator using splitmix64.
+// std.random: a seeded pseudo-random generator using splitmix64.
 //
 // `Rng.new(seed)` is deterministic: the same seed yields the same
 // sequence, which is the reproducibility guarantee. `Rng.from_entropy()`
 // seeds from a runtime time/pid source for a non-reproducible stream.
-// See docs/specs/std-random.md.
+// See docs/guide/stdlib/random.md.
 //
-// Raven Int is i64 and arithmetic wraps two's-complement, so splitmix64's
+// Raven int is i64 and arithmetic wraps two's-complement, so splitmix64's
 // unsigned add and multiply map directly onto `+` and `*`. The `>>`
 // operator is arithmetic (sign-propagating), so the finalizer's logical
 // right shifts go through `ushr` below.
@@ -58,7 +58,7 @@ impl Rng {
             let r = ushr(self.next_int(), 1)
             return lo + (r % span)
         }
-        // `hi - lo` overflowed Int, so the range is wider than Int::MAX and the
+        // `hi - lo` overflowed int, so the range is wider than Int::MAX and the
         // modulo above would divide by a wrapped, non-positive span (returning
         // only `lo`). Draw a full-width value and reject those outside [lo, hi);
         // for a range this large most draws land in range, so this is quick.
@@ -161,7 +161,7 @@ impl Rng {
             count = weights.len()
         }
         // A non-positive weight contributes nothing and is never drawn. Sum as
-        // Float so very large positive Int weights do not saturate the cumulative
+        // `float` so very large positive int weights do not saturate the cumulative
         // range and make later positive items unreachable.
         var total = 0.0
         var i = 0

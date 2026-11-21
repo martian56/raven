@@ -5,8 +5,6 @@
 //! Bindings are intentionally loose references (indices and spans) rather
 //! than direct pointers so the resolved file can be passed across module
 //! boundaries without lifetime knots.
-//!
-//! See `docs/specs/resolver.md` for the full catalog of variants.
 
 use std::path::PathBuf;
 use std::sync::Arc;

@@ -1,12 +1,12 @@
-// std/fs: filesystem operations over the raven-runtime C ABI. Fallible
-// ops return Result<T, Error> where the error is an std/error `Error`
+// std.fs: filesystem operations over the raven-runtime C ABI. Fallible
+// ops return Result[T, Error] where the error is an std.error `Error`
 // tagged with kind "io" (Raven has no type alias, so IoError is realized
-// as that, built through std/error's `error_kind("io", ...)`).
+// as that, built through std.error's `error_kind("io", ...)`).
 // The runtime keeps a thread-local last-error string; each
 // wrapper runs the op and turns a non-empty last error into an Err. The
 // non-fallible queries (exists, is_file, is_dir) treat a missing path as a
 // normal false. Path manipulation is pure Raven string work on `/`. See
-// docs/specs/std-fs.md.
+// docs/guide/stdlib/fs.md.
 
 from std.error import error_kind
 import std.string
@@ -33,7 +33,7 @@ fun io_error(ctx: str) -> Error {
     return error_kind("io", ctx.concat(": ").concat(raven_fs_last_error()))
 }
 
-// Whole file at `path` as a String.
+// Whole file at `path` as a str.
 fun read(path: str) -> Result[str, Error] {
     let out = raven_fs_read(path)
     if raven_fs_last_error().length() > 0 {
@@ -43,8 +43,8 @@ fun read(path: str) -> Result[str, Error] {
 }
 
 // Create or truncate `path` and write `contents`. Returns Ok(true) on
-// success; the Bool payload is always true and exists only because the
-// surface uses Result<Bool, Error> rather than a Unit payload.
+// success; the bool payload is always true and exists only because the
+// surface uses Result[bool, Error] rather than a Unit payload.
 fun write(path: str, contents: str) -> Result[bool, Error] {
     raven_fs_write(path, contents)
     if raven_fs_last_error().length() > 0 {
@@ -185,7 +185,7 @@ fun walk(path: str) -> Result[list[str], Error] {
 }
 
 // Split `s` on `\n` into a list of lines. An empty string yields an empty
-// list (not a one-element list of ""), so an empty directory listing maps
+// `list` (not a one-element list of ""), so an empty directory listing maps
 // to an empty list.
 fun split_lines(s: str) -> list[str] {
     let out: list[str] = []
@@ -208,7 +208,7 @@ fun split_lines(s: str) -> list[str] {
 
 // Path manipulation on `/` separators. Forward slash works on Windows for
 // these std ops; the OS separator is not detected. These overlap with
-// std/path; they are duplicated here so std/fs is usable without a second
+// std.path; they are duplicated here so std.fs is usable without a second
 // import.
 
 // Byte index of the last `/`, or -1 when none.

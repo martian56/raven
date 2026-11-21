@@ -1,6 +1,6 @@
-// std/ffi: helpers for the C foreign-function interface. The C type set
-// (CInt, CLong, CSize, CStr, CPtr<T>, CFloat, CDouble) is built into the type
-// checker; this module adds runtime conversions between a Raven `String`
+// std.ffi: helpers for the C foreign-function interface. The C type set
+// (CInt, CLong, CSize, CStr, CPtr[T], CFloat, CDouble) is built into the type
+// checker; this module adds runtime conversions between a Raven `str`
 // and a C `CStr`. The primitives bind the raven-runtime C ABI through
 // `extern "C"`; the wrappers are pure Raven. See docs/specs/std-ffi.md.
 
@@ -28,7 +28,7 @@ fun free_cstr(p: CStr) {
     raven_cstr_free(p)
 }
 
-// Read the null-terminated bytes at `p` and build a Raven `String`. The
+// Read the null-terminated bytes at `p` and build a Raven `str`. The
 // length is taken up to the first NUL; the terminator is dropped.
 fun from_cstr(p: CStr) -> str {
     return raven_cstr_to_string(p)
@@ -36,7 +36,7 @@ fun from_cstr(p: CStr) -> str {
 
 // Raw pointer and buffer access. These wrap the `__ptr_*` compiler builtins,
 // which take the pointee type `T` (a C scalar such as CInt/CLong/CSize/
-// CFloat/CDouble/CStr, or a native Int/Float). The pointee width drives the
+// CFloat/CDouble/CStr, or a native int/float). The pointee width drives the
 // load/store size and the element stride for `offset`.
 //
 // Memory from `alloc` lives OUTSIDE the garbage collector: it is never
@@ -45,7 +45,7 @@ fun from_cstr(p: CStr) -> str {
 // null pointer is undefined behavior, exactly as in C. See
 // docs/specs/std-ffi.md.
 
-// Allocate room for `count` elements of type `T` and return a `CPtr<T>` to
+// Allocate room for `count` elements of type `T` and return a `CPtr[T]` to
 // the buffer (null on a zero count or allocation failure). The memory is
 // uninitialized. The caller must `free` it.
 fun alloc[T](count: int) -> CPtr[T] {
@@ -77,7 +77,7 @@ fun is_null[T](p: CPtr[T]) -> bool {
     return __ptr_is_null[T](p)
 }
 
-// The null `CPtr<T>`.
+// The null `CPtr[T]`.
 fun null_ptr[T]() -> CPtr[T] {
     return __ptr_null[T]()
 }
