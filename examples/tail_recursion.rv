@@ -1,0 +1,50 @@
+// Self-recursive returns run as loops: sum_to recurses ten million times
+// without growing the stack. Prints: 6765 6 3628800 50000005000000 111 small
+fun fib(n: int) -> int {
+    if n < 2 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+fun gcd(a: int, b: int) -> int {
+    if b == 0 {
+        return a
+    }
+    return gcd(b, a % b)
+}
+
+fun fact(n: int) -> int {
+    if n <= 1 {
+        return 1
+    }
+    return n * fact(n - 1)
+}
+
+fun sum_to(n: int, acc: int) -> int {
+    if n == 0 {
+        return acc
+    }
+    return sum_to(n - 1, acc + n)
+}
+
+fun collatz(n: int) -> int {
+    if n == 1 {
+        return 0
+    }
+    if n % 2 == 0 {
+        return 1 + collatz(n / 2)
+    }
+    return 1 + collatz(3 * n + 1)
+}
+
+fun label(n: int) -> str {
+    if n < 10 {
+        return "small"
+    }
+    return label(n / 10)
+}
+
+fun main() {
+    print(fib(20), gcd(48, 18), fact(10), sum_to(10000000, 0), collatz(27), label(98765))
+}

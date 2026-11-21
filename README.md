@@ -27,8 +27,8 @@
 ## Why Raven
 
 - Reads like Python with braces: classes, tuples, comprehensions, `x in xs`, f-string formatting, `len`/`sorted`/`enumerate` and the other builtins, named and default arguments, `x => x * 2` lambdas, inferred types.
-- Runs at native speed: compiled through Cranelift into a single static binary, ahead of Go on four of five benchmarks below and within reach of C and Rust.
-- Compiles a 10,000-line program in about 0.7 seconds.
+- Runs at native speed: compiled through Cranelift into a single static binary. On the benchmarks below it is ahead of Go on five of six and level on the sixth, level with C on recursion, dictionaries, and strings, and ahead of C, Go, and Rust on allocation-heavy code.
+- Compiles fast: a small program builds in about 0.25 seconds, and a 10,000-line program in about 0.75 seconds, roughly four times faster than `go build` on the same program.
 - Static typing with generics, traits, and sum types checked by an exhaustive `match`.
 - A tracing garbage collector and `Result`/`Option` instead of `null`.
 - Goroutines and channels that run in parallel across CPU cores (an M:N scheduler over a multi-threaded collector), with mutexes, wait groups, and `select`, and a C FFI for native libraries.
@@ -54,15 +54,23 @@ fun main() {
 
 ## Performance
 
-Best of seven runs in milliseconds on Windows x86_64 (`benchmarks/runtime`):
+Best runs in milliseconds on Windows x86_64 (`benchmarks/runtime`, run with
+`benchmarks/runtime/run.sh`). Times are for the whole process, so each
+includes process startup: a program that only prints one line takes about
+58 ms in both C and Raven on this machine.
 
-| Benchmark | Raven | C (gcc -O2) | Go | Rust (-O) |
+| Benchmark | Raven | C (clang -O2) | Go | Rust (-O) |
 |-----------|------:|------:|---:|-----:|
-| fib(35), recursion | 104 | 93 | 117 | 85 |
-| 1M dict inserts and lookups | 135 | 132 | 277 | 200 |
-| 20M sieve | 351 | 267 | 319 | 276 |
-| 200k string build | 90 | 101 | 93 | 87 |
-| binary trees, allocation | 215 | 465 | 272 | 437 |
+| fib(35), recursion | 86 | 87 | 113 | 82 |
+| 1M dict inserts and lookups | 120 | 131 | 280 | 201 |
+| 20M sieve | 309 | 297 | 335 | 281 |
+| 200k string build | 76 | 83 | 98 | 83 |
+| binary trees, allocation | 203 | 408 | 289 | 444 |
+| n-body, float math | 466 | 359 | 461 | 284 |
+
+Compile time for the same programs is about 250 ms with Raven. The
+`benchmarks/compile-time` corpus (10,000 lines across 62 modules) builds in
+about 0.77 s with Raven against 3.3 s for `go build`.
 
 ## Install
 

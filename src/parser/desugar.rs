@@ -100,6 +100,11 @@ pub fn desugar(file: &mut File) -> Result<(), RavenError> {
         return Err(e);
     }
     crate::resolve::sugar::expand_calls(&mut items, false)?;
+    if std::env::var_os("RAVEN_NO_TAILREC").is_none() {
+        for decl in &mut items {
+            super::tailrec::rewrite(decl);
+        }
+    }
     file.items = items;
     Ok(())
 }

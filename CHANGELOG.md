@@ -4,6 +4,14 @@ All notable changes to Raven are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- A self-recursive `return f(...)` runs as a loop, so deep tail recursion no longer overflows the stack; for an `int` result, `return x + f(...)` and `return x * f(...)` use an accumulator. Functions with lambdas, loops, `defer`, or `spawn` are left as written.
+
+### Fixed
+
+- A value-returning function whose body ends in a loop no longer fails code generation with a verifier error.
+
 ### Performance
 
 - A field read that repeats an earlier read or store of the same field, with no call or store to that field in between, reuses the known value instead of loading it again (about 3% on the nbody benchmark).
