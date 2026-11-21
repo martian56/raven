@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [3.0.1] - 2026-11-21
+
+### Fixed
+
+- On Windows, linking a program no longer fails with undefined `WaitOnAddress` and `WakeByAddressSingle`: the link line now includes `synchronization.lib`, plus `psapi.lib`, `shell32.lib`, and `user32.lib`, which the runtime needs with current Rust toolchains.
+
 ## [3.0.0] - 2026-11-21
 
 Raven 3 reads like Python with braces, compiles faster, and runs faster. It is not source compatible with Raven 2: the old syntax is rejected with errors that name the new form, and a package with `edition = "v2"` is rejected with a message that it needs converting.
