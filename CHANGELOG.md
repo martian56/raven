@@ -2,6 +2,15 @@
 
 All notable changes to Raven are documented in this file.
 
+## [Unreleased]
+
+### Performance
+
+- `if` and `while` conditions built from `and`, `or`, and `not` branch directly instead of computing a `bool` first, and loops are rotated only when their test has no arithmetic, so the body can reuse values the test computed (mandelbrot 375 ms to 283 ms against C's 275 ms).
+- Integer division and remainder by a constant skip the runtime zero and overflow checks the constant rules out.
+- `list[float]` elements load and store as floats directly.
+- New mandelbrot and spectral-norm benchmarks in all five languages.
+
 ## [3.2.0] - 2026-11-22
 
 ### Added
