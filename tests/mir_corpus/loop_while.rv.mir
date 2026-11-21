@@ -8,23 +8,25 @@
       (_3 Bool "bin_3" param=false)
       (_4 Int "bin_4" param=false)
       (_5 Int "bin_5" param=false)
+      (_6 Bool "bin_6" param=false)
     )
     (entry bb0)
     (bb0
       (assign _1 (use 0))
       (assign _2 (use 0))
-      (goto bb1)
+      (assign _3 (binop < _2 _0))
+      (switch-int _3 cases=(0:bb3 1:bb1) otherwise=bb3)
     )
     (bb1
-      (assign _3 (binop < _2 _0))
-      (switch-int _3 cases=(0:bb3 1:bb2) otherwise=bb3)
-    )
-    (bb2
       (assign _4 (binop + _1 _2))
       (assign _1 (use _4))
       (assign _5 (binop + _2 1))
       (assign _2 (use _5))
-      (goto bb1)
+      (goto bb2)
+    )
+    (bb2
+      (assign _6 (binop < _2 _0))
+      (switch-int _6 cases=(0:bb3 1:bb1) otherwise=bb3)
     )
     (bb3
       (return _1)

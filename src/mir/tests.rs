@@ -173,13 +173,19 @@ fn if_branches_become_switch_int() {
 fn while_loop_has_back_edge() {
     let prog = compile("fun spin() -> () { let i = 0; while i < 10 { } }");
     let f = find_fn(&prog, "spin");
-    // The while header should be reached by a Goto from the body.
-    let goto_count = f
+    // The loop's bottom test branches back to the loop header.
+    let header = f
         .blocks
         .iter()
-        .filter(|b| matches!(b.terminator, MirTerminator::Goto(_)))
-        .count();
-    assert!(goto_count >= 2, "expected at least two goto terminators");
+        .position(|b| b.is_loop_header)
+        .expect("a loop header");
+    let back_edge = f.blocks.iter().enumerate().skip(header).any(|(_, b)| {
+        b.terminator
+            .successors()
+            .iter()
+            .any(|s| s.0 as usize == header)
+    });
+    assert!(back_edge, "expected a branch back to the loop header");
 }
 
 #[test]
