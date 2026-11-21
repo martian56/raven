@@ -9,7 +9,10 @@
 use std::collections::HashMap;
 
 use super::ir::{MirFunction, MirLocal, MirOperand, MirProgram, MirRvalue, MirStatement};
-use super::visit::{assigned_local, statement_operands_mut, terminator_operands_mut};
+use super::visit::{
+    assigned_local, statement_operands, statement_operands_mut, terminator_operands,
+    terminator_operands_mut,
+};
 
 pub fn propagate_copies(program: &mut MirProgram) {
     for f in &mut program.functions {
@@ -18,6 +21,101 @@ pub fn propagate_copies(program: &mut MirProgram) {
 }
 
 fn propagate_in(f: &mut MirFunction) {
+    propagate_global(f);
+    propagate_local(f);
+}
+
+/// Within one block, a copy `d = s` stands for `s` until either is
+/// reassigned: `tmp = a; tmp.x = v` writes through `a` directly. A copy
+/// left with no reads anywhere is dropped, which saves its GC root slot.
+fn propagate_local(f: &mut MirFunction) {
+    let n = f.locals.len();
+    let mut defs = vec![0u32; n];
+    for b in &f.blocks {
+        for st in &b.statements {
+            if let Some(l) = assigned_local(st) {
+                defs[l.0 as usize] += 1;
+            }
+        }
+    }
+    let mut changed = false;
+    for b in &mut f.blocks {
+        let mut alias: HashMap<MirLocal, MirLocal> = HashMap::new();
+        for st in &mut b.statements {
+            if !alias.is_empty() {
+                statement_operands_mut(st, &mut |op: &mut MirOperand| {
+                    if let MirOperand::Copy(l) = op {
+                        if let Some(&s) = alias.get(l) {
+                            *l = s;
+                            changed = true;
+                        }
+                    }
+                });
+            }
+            if let Some(d) = assigned_local(st) {
+                alias.retain(|k, v| *k != d && *v != d);
+                if let MirStatement::Assign {
+                    rvalue: MirRvalue::Use(MirOperand::Copy(src)),
+                    ..
+                } = st
+                {
+                    let (di, si) = (d.0 as usize, src.0 as usize);
+                    if d != *src
+                        && !f.locals[di].is_param
+                        && defs[di] == 1
+                        && f.locals[di].ty == f.locals[si].ty
+                    {
+                        alias.insert(d, *src);
+                    }
+                }
+            }
+        }
+        if !alias.is_empty() {
+            terminator_operands_mut(&mut b.terminator, &mut |op: &mut MirOperand| {
+                if let MirOperand::Copy(l) = op {
+                    if let Some(&s) = alias.get(l) {
+                        *l = s;
+                        changed = true;
+                    }
+                }
+            });
+        }
+    }
+    if !changed {
+        return;
+    }
+    let mut used = vec![false; n];
+    for b in &f.blocks {
+        for st in &b.statements {
+            statement_operands(st, &mut |op: &MirOperand| {
+                if let MirOperand::Copy(l) = op {
+                    used[l.0 as usize] = true;
+                }
+            });
+        }
+        terminator_operands(&b.terminator, &mut |op: &MirOperand| {
+            if let MirOperand::Copy(l) = op {
+                used[l.0 as usize] = true;
+            }
+        });
+    }
+    for b in &mut f.blocks {
+        for st in &mut b.statements {
+            let dead = match st {
+                MirStatement::Assign {
+                    dst,
+                    rvalue: MirRvalue::Use(MirOperand::Copy(_)),
+                } => !used[dst.0 as usize] && !f.locals[dst.0 as usize].is_param,
+                _ => false,
+            };
+            if dead {
+                *st = MirStatement::Nop;
+            }
+        }
+    }
+}
+
+fn propagate_global(f: &mut MirFunction) {
     let n = f.locals.len();
     let mut defs = vec![0u32; n];
     let mut def_block = vec![usize::MAX; n];
