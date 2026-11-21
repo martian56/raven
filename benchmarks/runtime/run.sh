@@ -26,7 +26,7 @@ for f in "$here"/raven/*.rv; do
     rm -f "$out/$n-rv.exe" "$out/$n-c.exe" "$out/$n-go.exe" "$out/$n-rs.exe"
     rb=$(ms "$raven" build "$f" -o "$out/$n-rv.exe")
     [ -f "$out/$n-rv.exe" ] || rb=failed
-    "$cc" -O2 -o "$out/$n-c.exe" "$here/c/$n.c" -lm 2>/dev/null || "$cc" -O2 -o "$out/$n-c.exe" "$here/c/$n.c" 2>/dev/null
+    "$cc" -O2 -o "$out/$n-c.exe" "$here/c/$n.c" -lm 2>/dev/null || "$cc" -O2 -o "$out/$n-c.exe" "$here/c/$n.c" 2>/dev/null || rm -f "$out/$n-c.exe"
     (cd "$here/go" && go build -o "$out/$n-go.exe" "$n.go")
     rustc -C opt-level=3 -o "$out/$n-rs.exe" "$here/rust/$n.rs" 2>/dev/null
     r=$(best "$out/$n-rv.exe")
