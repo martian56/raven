@@ -22,7 +22,106 @@ pub fn propagate_copies(program: &mut MirProgram) {
 
 fn propagate_in(f: &mut MirFunction) {
     propagate_global(f);
+    if std::env::var_os("RAVEN_NO_FIELD_FORWARD").is_none() {
+        forward_field_loads(f);
+    }
     propagate_local(f);
+}
+
+/// Within one block, reuse a field's known value instead of loading it
+/// again: `t = b.m` after an earlier `u = b.m`, or after `b.m = v`, becomes
+/// a copy. Objects never overlap, so only a store to the same field index,
+/// a reassignment of a local involved, or a statement that may run user
+/// code or write through a raw pointer forgets a known field.
+fn forward_field_loads(f: &mut MirFunction) {
+    for b in &mut f.blocks {
+        // (base local, field index) -> operand holding the field's value.
+        let mut known: HashMap<(MirLocal, usize), MirOperand> = HashMap::new();
+        for st in &mut b.statements {
+            let mut learn: Option<((MirLocal, usize), MirOperand)> = None;
+            let mut clear = false;
+            match st {
+                MirStatement::Assign { dst, rvalue } => {
+                    if let MirRvalue::FieldAccess {
+                        base: MirOperand::Copy(base),
+                        index,
+                    } = rvalue
+                    {
+                        let key = (*base, *index);
+                        if let Some(op) = known.get(&key) {
+                            if !matches!(op, MirOperand::Copy(l) if l == dst) {
+                                *rvalue = MirRvalue::Use(op.clone());
+                            }
+                        } else if base != dst {
+                            learn = Some((key, MirOperand::Copy(*dst)));
+                        }
+                    } else if !field_safe(rvalue) {
+                        clear = true;
+                    }
+                }
+                MirStatement::StoreField {
+                    base: MirOperand::Copy(base),
+                    index,
+                    value,
+                } => {
+                    let i = *index;
+                    known.retain(|(_, k), _| *k != i);
+                    if matches!(value, MirOperand::Copy(_) | MirOperand::Const(_)) {
+                        learn = Some(((*base, i), value.clone()));
+                    }
+                }
+                MirStatement::StoreField { index, .. } => {
+                    let i = *index;
+                    known.retain(|(_, k), _| *k != i);
+                }
+                MirStatement::StoreIndex { .. }
+                | MirStatement::StoreGlobal { .. }
+                | MirStatement::StorageLive(_)
+                | MirStatement::Nop => {}
+                _ => clear = true,
+            }
+            if clear {
+                known.clear();
+            }
+            if let Some(d) = assigned_local(st) {
+                known.retain(|(base, _), op| {
+                    *base != d && !matches!(op, MirOperand::Copy(l) if *l == d)
+                });
+            }
+            if let MirStatement::StorageDead(d) = st {
+                let d = *d;
+                known.retain(|(base, _), op| {
+                    *base != d && !matches!(op, MirOperand::Copy(l) if *l == d)
+                });
+            }
+            if let Some((key, op)) = learn {
+                known.insert(key, op);
+            }
+        }
+    }
+}
+
+/// Whether evaluating `rv` leaves every object field as it was.
+fn field_safe(rv: &MirRvalue) -> bool {
+    matches!(
+        rv,
+        MirRvalue::Use(_)
+            | MirRvalue::BinaryOp(..)
+            | MirRvalue::UnaryOp(..)
+            | MirRvalue::GlobalLoad { .. }
+            | MirRvalue::StructCreate { .. }
+            | MirRvalue::EnumCreate { .. }
+            | MirRvalue::FieldAccess { .. }
+            | MirRvalue::IndexAccess { .. }
+            | MirRvalue::ArrayLit { .. }
+            | MirRvalue::Cast { .. }
+            | MirRvalue::EnvLoad { .. }
+            | MirRvalue::DynCoerce { .. }
+            | MirRvalue::PtrIsNull { .. }
+            | MirRvalue::PtrNull { .. }
+            | MirRvalue::PtrOffset { .. }
+            | MirRvalue::FnAddr { .. }
+    )
 }
 
 /// Within one block, a copy `d = s` stands for `s` until either is

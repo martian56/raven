@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [Unreleased]
+
+### Performance
+
+- A field read that repeats an earlier read or store of the same field, with no call or store to that field in between, reuses the known value instead of loading it again (about 3% on the nbody benchmark).
+
 ## [3.1.1] - 2026-11-21
 
 ### Performance
