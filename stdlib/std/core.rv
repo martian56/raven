@@ -58,14 +58,21 @@ fun __range_step(a: int, b: int, step: int) -> list[int] {
     }
     let out: list[int] = []
     var i = a
+    // Stop before `i + step` would pass the integer limit and wrap.
     if step > 0 {
         while i < b {
             out.push(i)
+            if i > 9223372036854775807 - step {
+                break
+            }
             i += step
         }
     } else {
         while i > b {
             out.push(i)
+            if i < -9223372036854775807 - 1 - step {
+                break
+            }
             i += step
         }
     }

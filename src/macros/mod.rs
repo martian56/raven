@@ -1370,6 +1370,8 @@ fn scope_aware_rename(tokens: &mut [Token], from_template: &[bool], spans: &mut 
                     scopes.pop();
                 }
             }
+            // A field or method name after `.` is never a binding use.
+            TokenKind::Identifier(_) if i > 0 && matches!(tokens[i - 1].kind, TokenKind::Dot) => {}
             TokenKind::Identifier(s) => {
                 if let Some((name, kind)) = bindings.get(&i).cloned() {
                     let fresh = match kind {

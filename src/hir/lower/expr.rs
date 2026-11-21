@@ -1509,7 +1509,14 @@ fn lower_counter_for(
             var(&step_name, Ty::Int)
         }
     };
-    if inclusive {
+    // A step other than ±1 can carry the counter past the integer limit;
+    // check before stepping rather than wrapping into an endless loop.
+    let unit_step = matches!(&step_expr.kind, HirExprKind::Int(1) | HirExprKind::Int(-1))
+        || (down
+            && matches!(&step_expr.kind, HirExprKind::Unary { operand, .. }
+                if matches!(operand.kind, HirExprKind::Int(1))));
+    let wrap_check = !unit_step;
+    if inclusive || wrap_check {
         setup.push(let_stmt(
             &stop_name,
             Ty::Bool,
@@ -1556,13 +1563,39 @@ fn lower_counter_for(
         );
         cond = bin(HirBinaryOp::Or, up, down_past, Ty::Bool);
     }
-    if inclusive {
+    if inclusive || wrap_check {
         cond = bin(HirBinaryOp::Or, var(&stop_name, Ty::Bool), cond, Ty::Bool);
     }
     let break_guard = if_then(cond, vec![brk()], None);
 
     // Advance before the body so `continue` still steps. An inclusive range
     // stops at `end` instead of stepping past it, which could overflow.
+    let overflow = wrap_check.then(|| {
+        let s = || step_expr.clone();
+        let up = bin(
+            HirBinaryOp::And,
+            bin(HirBinaryOp::Gt, s(), int(0), Ty::Bool),
+            bin(
+                HirBinaryOp::Gt,
+                var(&i_name, Ty::Int),
+                bin(HirBinaryOp::Sub, int(i64::MAX), s(), Ty::Int),
+                Ty::Bool,
+            ),
+            Ty::Bool,
+        );
+        let down_wrap = bin(
+            HirBinaryOp::And,
+            bin(HirBinaryOp::Lt, s(), int(0), Ty::Bool),
+            bin(
+                HirBinaryOp::Lt,
+                var(&i_name, Ty::Int),
+                bin(HirBinaryOp::Sub, int(i64::MIN), s(), Ty::Int),
+                Ty::Bool,
+            ),
+            Ty::Bool,
+        );
+        bin(HirBinaryOp::Or, up, down_wrap, Ty::Bool)
+    });
     let inc = assign_stmt(
         HirAssignTarget::Ident {
             name: i_name.clone(),
@@ -1571,6 +1604,24 @@ fn lower_counter_for(
         bin(HirBinaryOp::Add, var(&i_name, Ty::Int), step_expr, Ty::Int),
         span.clone(),
     );
+    let set_stop_now = || {
+        assign_stmt(
+            HirAssignTarget::Ident {
+                name: stop_name.clone(),
+                span: span.clone(),
+            },
+            make_expr(HirExprKind::Bool(true), Ty::Bool, span.clone()),
+            span.clone(),
+        )
+    };
+    let inc = match overflow {
+        Some(cond) => stmt(if_then(
+            cond,
+            vec![set_stop_now()],
+            Some(block_of_stmt(inc, span)),
+        )),
+        None => inc,
+    };
     let advance = if inclusive {
         let at_end = bin(
             HirBinaryOp::Eq,
