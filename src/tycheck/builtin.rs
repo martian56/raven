@@ -118,6 +118,11 @@ pub fn list_methods() -> Vec<BuiltinMethod> {
             ret: MethodSlot::Concrete(Ty::Unit),
         },
         BuiltinMethod {
+            name: "__repeat_last",
+            params: vec![MethodSlot::Concrete(Ty::Int)],
+            ret: MethodSlot::Concrete(Ty::Unit),
+        },
+        BuiltinMethod {
             name: "pop",
             params: vec![],
             ret: MethodSlot::Element,

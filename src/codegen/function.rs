@@ -1839,13 +1839,18 @@ fn lower_list_method(
             builder.switch_to_block(done);
             Ok(None)
         }
-        ListMethodOp::Reserve => {
+        ListMethodOp::Reserve | ListMethodOp::RepeatLast => {
             let n = require_value(
                 lower_operand(cx, builder, arg.expect("reserve has one argument"), slots)?,
                 "list reserve count",
             )?;
+            let name = if matches!(op, ListMethodOp::Reserve) {
+                intrinsics::RUNTIME_LIST_RESERVE
+            } else {
+                intrinsics::RUNTIME_LIST_REPEAT_LAST
+            };
             let id = cx
-                .runtime_id(intrinsics::RUNTIME_LIST_RESERVE)
+                .runtime_id(name)
                 .expect("list reserve declared at module init");
             let f = cx.module().declare_func_in_func(id, builder.func);
             builder.ins().call(f, &[list, n]);
