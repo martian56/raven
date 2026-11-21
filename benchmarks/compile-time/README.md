@@ -1,6 +1,6 @@
 # Compile-time benchmark
 
-A representative Raven v2 corpus and a runner that measures how long the
+A representative Raven corpus and a runner that measures how long the
 compiler takes to build it. The benchmark runs in CI on every push and
 pull request that touches the compiler or the corpus, so compile-time
 regressions surface early.
@@ -16,10 +16,10 @@ checker and monomorphizer do real work rather than re-checking one
 repeated shape:
 
 - Plain structs with methods (vectors, nodes).
-- Generic structs (`Pair<T>`, `Wrap<T>`) with generic methods, including
-  a method-level type parameter (`mapped<U>`).
+- Generic classes (`Pair[T]`, `Wrap[T]`) with generic methods, including
+  a method-level type parameter (`mapped[U]`).
 - Enums matched in `match` expressions, including a payload-carrying
-  `Option<Int>`.
+  `Option[int]`.
 - A trait with multiple impls and a trait-bounded generic function.
 - Free generic functions, recursion, `while` and `for` loops, and `if`
   expressions.
@@ -73,12 +73,11 @@ compile time, by reading the time the CI job prints and writing it here.
 When `baseline.txt` is absent or empty, the regression check is skipped
 and only the ceiling and the printed time apply.
 
-The GitHub-hosted runner is shared, so back to back runs of the same
-corpus have varied between roughly 3.3s and 5.8s in practice. The baseline
-is set to the slower end of that range, and the CI job widens the
-threshold to 60 percent (through `RAVEN_BENCH_THRESHOLD_PCT`) so normal
-runner variance does not flake the job while a genuine regression past
-roughly 9s still fails. The absolute ceiling backstops both.
+The GitHub-hosted runner is shared, and Linux CI runs of the corpus
+measure about 1.05 s. The baseline is 1100 ms, and the CI job widens the
+threshold to 60 percent (through `RAVEN_BENCH_THRESHOLD_PCT`), so the
+check fails past about 1760 ms: wide enough for runner variance, tight
+enough to catch a real regression. The absolute ceiling backstops both.
 
 ### Environment variables
 
@@ -105,3 +104,39 @@ benchmarks\compile-time\run.ps1
 
 Windows numbers run higher than CI because MSVC linking is slower than
 the gcc link on the Linux runner; the baseline tracks the Linux number.
+
+## Compared with Go
+
+`go_corpus.py` writes the same program in Go: one package per module with
+the same structs, methods, enums, generics, interface, loops, and recursion.
+To compare, give Go a fresh build cache that already holds its standard
+library, so it compiles and links every corpus package from scratch:
+
+```bash
+python benchmarks/compile-time/go_corpus.py 62 /tmp/go-corpus
+export GOCACHE=$(mktemp -d)
+go build std
+time (cd /tmp/go-corpus && go build -o corpus .)
+time raven build benchmarks/compile-time/corpus/main.rv -o corpus
+```
+
+On a Windows x86_64 desktop (best of 5), `go build` took 3327 ms and
+`raven build` 766 ms, with Raven also compiling its own standard library on
+every build.
+
+## Small programs
+
+Building each program in `benchmarks/runtime` (ms, best of 3, Windows
+x86_64). Go has its standard library cached and the program edited before
+each build, so it recompiles the program but not the library:
+
+| program | raven | go | rustc -O3 | clang -O2 |
+|---|---|---|---|---|
+| fib | 258 | 965 | 285 | 260 |
+| maps | 252 | 904 | 539 | 268 |
+| nbody | 249 | 937 | 367 | 277 |
+| sieve | 246 | 960 | 319 | 267 |
+| strings | 245 | 943 | 341 | 277 |
+| trees | 247 | 912 | 351 | 261 |
+
+About 145 ms of each Raven build is linking.

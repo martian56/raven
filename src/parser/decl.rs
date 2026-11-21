@@ -758,6 +758,7 @@ impl Parser {
                 name,
                 ty,
                 init,
+                mutable: !immutable,
                 span: span.clone(),
             }),
             span,

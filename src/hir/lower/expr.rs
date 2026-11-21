@@ -905,7 +905,9 @@ fn lower_binop(op: BinaryOp) -> HirBinaryOp {
         BinaryOp::BitXor => HirBinaryOp::BitXor,
         BinaryOp::Shl => HirBinaryOp::Shl,
         BinaryOp::Shr => HirBinaryOp::Shr,
-        BinaryOp::In | BinaryOp::NotIn => unreachable!("membership is desugared after parsing"),
+        BinaryOp::In | BinaryOp::NotIn | BinaryOp::Pow => {
+            unreachable!("membership and `**` are desugared after parsing")
+        }
     }
 }
 
@@ -1168,6 +1170,28 @@ fn lower_for(
             span,
             cx,
         ));
+    }
+    // `range(a, b, step)` counts without building the list.
+    if let ExprKind::Call { callee, args } = &iter.kind {
+        if let (ExprKind::Ident { name, .. }, [a, b, k]) = (&callee.kind, args.as_slice()) {
+            if name == "__range_step" {
+                let start_lowered = lower_expr(a, &Ty::Int, cx)?;
+                let end_lowered = lower_expr(b, &Ty::Int, cx)?;
+                let step = lower_expr(k, &Ty::Int, cx)?;
+                return Ok(lower_counter_for(
+                    pat,
+                    start_lowered,
+                    end_lowered,
+                    false,
+                    Some(step),
+                    None,
+                    Ty::Int,
+                    body,
+                    span,
+                    cx,
+                ));
+            }
+        }
     }
     if let ExprKind::MethodCall {
         receiver,
@@ -1441,21 +1465,58 @@ fn lower_counter_for(
         let_stmt(&i_name, Ty::Int, start, span.clone()),
         let_stmt(&end_name, Ty::Int, end, span.clone()),
     ];
+    let mut runtime_step: Option<String> = None;
     let step_expr = match step {
         None => int(1),
         Some(
             e @ HirExpr {
-                kind: HirExprKind::Int(_),
+                kind: HirExprKind::Int(n),
                 ..
             },
-        ) => e,
+        ) if n != 0 => e,
+        Some(e) if down => e,
         Some(e) => {
+            // A step known only at run time picks its direction then, and a
+            // zero step is an error rather than a loop that never ends.
             let step_name = cx.fresh("step");
             setup.push(let_stmt(&step_name, Ty::Int, e, span.clone()));
+            let panic = make_expr(
+                HirExprKind::Call {
+                    callee: Box::new(make_expr(
+                        HirExprKind::Ident("__panic".into()),
+                        Ty::Function {
+                            params: vec![Ty::Str],
+                            ret: Box::new(Ty::Unit),
+                        },
+                        span.clone(),
+                    )),
+                    args: vec![make_expr(
+                        HirExprKind::Str("range step must not be zero".into()),
+                        Ty::Str,
+                        span.clone(),
+                    )],
+                    type_args: Vec::new(),
+                },
+                Ty::Unit,
+                span.clone(),
+            );
+            setup.push(stmt(if_then(
+                bin(HirBinaryOp::Eq, var(&step_name, Ty::Int), int(0), Ty::Bool),
+                vec![stmt(panic)],
+                None,
+            )));
+            runtime_step = Some(step_name.clone());
             var(&step_name, Ty::Int)
         }
     };
-    if inclusive {
+    // A step other than ±1 can carry the counter past the integer limit;
+    // check before stepping rather than wrapping into an endless loop.
+    let unit_step = matches!(&step_expr.kind, HirExprKind::Int(1) | HirExprKind::Int(-1))
+        || (down
+            && matches!(&step_expr.kind, HirExprKind::Unary { operand, .. }
+                if matches!(operand.kind, HirExprKind::Int(1))));
+    let wrap_check = !unit_step;
+    if inclusive || wrap_check {
         setup.push(let_stmt(
             &stop_name,
             Ty::Bool,
@@ -1477,13 +1538,64 @@ fn lower_counter_for(
         var(&end_name, Ty::Int),
         Ty::Bool,
     );
-    if inclusive {
+    if let Some(step_name) = &runtime_step {
+        let back = if inclusive {
+            HirBinaryOp::Lt
+        } else {
+            HirBinaryOp::Le
+        };
+        let up = bin(
+            HirBinaryOp::And,
+            bin(HirBinaryOp::Gt, var(step_name, Ty::Int), int(0), Ty::Bool),
+            cond,
+            Ty::Bool,
+        );
+        let down_past = bin(
+            HirBinaryOp::And,
+            bin(HirBinaryOp::Lt, var(step_name, Ty::Int), int(0), Ty::Bool),
+            bin(
+                back,
+                var(&i_name, Ty::Int),
+                var(&end_name, Ty::Int),
+                Ty::Bool,
+            ),
+            Ty::Bool,
+        );
+        cond = bin(HirBinaryOp::Or, up, down_past, Ty::Bool);
+    }
+    if inclusive || wrap_check {
         cond = bin(HirBinaryOp::Or, var(&stop_name, Ty::Bool), cond, Ty::Bool);
     }
     let break_guard = if_then(cond, vec![brk()], None);
 
     // Advance before the body so `continue` still steps. An inclusive range
     // stops at `end` instead of stepping past it, which could overflow.
+    let overflow = wrap_check.then(|| {
+        let s = || step_expr.clone();
+        let up = bin(
+            HirBinaryOp::And,
+            bin(HirBinaryOp::Gt, s(), int(0), Ty::Bool),
+            bin(
+                HirBinaryOp::Gt,
+                var(&i_name, Ty::Int),
+                bin(HirBinaryOp::Sub, int(i64::MAX), s(), Ty::Int),
+                Ty::Bool,
+            ),
+            Ty::Bool,
+        );
+        let down_wrap = bin(
+            HirBinaryOp::And,
+            bin(HirBinaryOp::Lt, s(), int(0), Ty::Bool),
+            bin(
+                HirBinaryOp::Lt,
+                var(&i_name, Ty::Int),
+                bin(HirBinaryOp::Sub, int(i64::MIN), s(), Ty::Int),
+                Ty::Bool,
+            ),
+            Ty::Bool,
+        );
+        bin(HirBinaryOp::Or, up, down_wrap, Ty::Bool)
+    });
     let inc = assign_stmt(
         HirAssignTarget::Ident {
             name: i_name.clone(),
@@ -1492,6 +1604,24 @@ fn lower_counter_for(
         bin(HirBinaryOp::Add, var(&i_name, Ty::Int), step_expr, Ty::Int),
         span.clone(),
     );
+    let set_stop_now = || {
+        assign_stmt(
+            HirAssignTarget::Ident {
+                name: stop_name.clone(),
+                span: span.clone(),
+            },
+            make_expr(HirExprKind::Bool(true), Ty::Bool, span.clone()),
+            span.clone(),
+        )
+    };
+    let inc = match overflow {
+        Some(cond) => stmt(if_then(
+            cond,
+            vec![set_stop_now()],
+            Some(block_of_stmt(inc, span)),
+        )),
+        None => inc,
+    };
     let advance = if inclusive {
         let at_end = bin(
             HirBinaryOp::Eq,
@@ -2087,7 +2217,7 @@ fn fold_binary(op: BinaryOp, l: HirExprKind, r: HirExprKind) -> Option<HirExprKi
             Le => Some(Bool(a <= b)),
             Gt => Some(Bool(a > b)),
             Ge => Some(Bool(a >= b)),
-            And | Or | In | NotIn => None,
+            And | Or | In | NotIn | Pow => None,
         },
         (Float(a), Float(b)) => match op {
             Add => Some(Float(a + b)),
@@ -2133,12 +2263,21 @@ fn module_qualified_fn(receiver: &Expr, name: &str, cx: &LowerCtx<'_>) -> Option
     // alias call `alias.fn()` targets `<prefix>.fn`, for std, local, and
     // external sources alike.
     let prefix = import.mangled_prefix.as_ref()?;
-    Some(format!(
+    let mangled = format!(
         "{}{}{}",
         prefix,
         crate::resolve::stdlib::NAMESPACE_SEP,
         name
-    ))
+    );
+    if cx.env.functions.values().any(|s| s.name == mangled) {
+        return Some(mangled);
+    }
+    // A C function declared in the module's `extern "C"` block keeps its own
+    // name, so `math.sqrt(x)` calls `sqrt`.
+    if import.externs.iter().any(|e| e == name) {
+        return Some(name.to_string());
+    }
+    Some(mangled)
 }
 
 /// Wrap an interpolation part in a `to_string()` method call when its

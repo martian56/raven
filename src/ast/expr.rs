@@ -254,6 +254,8 @@ pub enum BinaryOp {
     In,
     /// `x not in xs`.
     NotIn,
+    /// `**`; desugared to a `pow` call after parsing.
+    Pow,
 }
 
 impl BinaryOp {
@@ -282,6 +284,7 @@ impl BinaryOp {
         match self {
             BinaryOp::In => "in",
             BinaryOp::NotIn => "not in",
+            BinaryOp::Pow => "**",
             BinaryOp::Add => "+",
             BinaryOp::Sub => "-",
             BinaryOp::Mul => "*",

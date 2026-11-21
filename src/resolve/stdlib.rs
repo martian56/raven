@@ -1549,6 +1549,21 @@ fn local_error(path: &Path, detail: String) -> RavenError {
 }
 
 /// Lex and parse one bundled module's embedded source.
+/// Names declared in a bundled module's `extern "C"` blocks.
+pub(crate) fn module_extern_names(module: &str) -> Vec<String> {
+    let Ok(file) = parse_bundled_module(module) else {
+        return Vec::new();
+    };
+    file.items
+        .iter()
+        .filter_map(|d| match &d.kind {
+            DeclKind::Extern(e) => Some(e.items.iter().map(|f| f.name.clone())),
+            _ => None,
+        })
+        .flatten()
+        .collect()
+}
+
 fn parse_bundled_module(module: &str) -> Result<File, RavenError> {
     thread_local! {
         static BUNDLED: std::cell::RefCell<HashMap<String, File>> =

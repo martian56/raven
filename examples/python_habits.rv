@@ -1,0 +1,36 @@
+// Python spellings Raven accepts as they are: elif, **, append, list(x),
+// unparenthesized for-loop tuples, range with a step, and sort(reverse:).
+let LIMIT = 2 ** 4
+
+fun grade(n: int) -> str {
+    if n >= 90 {
+        return "A"
+    } elif n >= 80 {
+        return "B"
+    } else {
+        return "C"
+    }
+}
+
+fun main() {
+    let xs = [3, 1, 2]
+    xs.append(5)
+    for i, v in enumerate(xs) {
+        print(i, v)
+    }
+    print(2 ** 10, -3 ** 2, 2.0 ** 0.5, list("abc"), list(xs))
+    xs.sort(reverse: true)
+    print(xs, grade(95), grade(85), grade(10), [k for k in range(0, 10, 4)])
+    xs.reverse()
+    print(xs)
+    let down = range(5, 0, -2)
+    let wide = 2
+        ** 3
+    print(down, LIMIT, wide, (1 if true else 2))
+    let label = ("high" if LIMIT > 10 else "low")
+    print(label)
+    print(range(9223372036854775806, 9223372036854775807, 2))
+    for i in range(9223372036854775805, 9223372036854775807, 2) {
+        print("near the limit", i)
+    }
+}

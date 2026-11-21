@@ -752,7 +752,7 @@ impl Printer<'_> {
     }
 
     fn let_decl(&mut self, l: &LetDecl) -> Option<String> {
-        let mutable = self.assigned.contains(&l.name);
+        let mutable = l.mutable || self.assigned.contains(&l.name);
         let text = self.render_let(&l.name, &l.ty, &l.init, mutable);
         self.line(&text);
         self.take_trailing_comment(self.line_of(l.span.end))

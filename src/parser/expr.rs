@@ -515,7 +515,29 @@ impl Parser {
                 span,
             });
         }
-        self.parse_postfix()
+        self.parse_power()
+    }
+
+    /// `a ** b`, right associative and tighter than unary minus on its left,
+    /// as in Python: `-x ** 2` is `-(x ** 2)` and `2 ** 3 ** 2` is `2 ** 9`.
+    fn parse_power(&mut self) -> ParseResult<Expr> {
+        let base = self.parse_postfix()?;
+        self.skip_newlines_at_continuation();
+        if !matches!(self.peek_kind(), TokenKind::StarStar) {
+            return Ok(base);
+        }
+        self.advance();
+        self.skip_newlines();
+        let exp = self.parse_unary()?;
+        let span = merge_spans(&base.span, &exp.span);
+        Ok(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::Pow,
+                lhs: Box::new(base),
+                rhs: Box::new(exp),
+            },
+            span,
+        })
     }
 
     fn parse_postfix(&mut self) -> ParseResult<Expr> {
@@ -623,8 +645,14 @@ impl Parser {
                 TokenKind::LBracket => {
                     self.advance();
                     self.skip_newlines();
+                    if matches!(self.peek_kind(), TokenKind::Colon) {
+                        return Err(self.python_form("a `[:b]` slice", "write `xs[..b]`"));
+                    }
                     let index = self.parse_expr()?;
                     self.skip_newlines();
+                    if matches!(self.peek_kind(), TokenKind::Colon) {
+                        return Err(self.python_form("a `[a:b]` slice", "write `xs[a..b]`"));
+                    }
                     let rb = self.expect(&TokenKind::RBracket, "`]`")?;
                     let span = merge_spans(&expr.span, &rb.span);
                     expr = Expr {
@@ -808,6 +836,20 @@ impl Parser {
             TokenKind::While => self.parse_while(),
             TokenKind::For => self.parse_for(),
             TokenKind::Fun => self.parse_lambda_fun(),
+            TokenKind::Identifier(w) if w == "True" || w == "False" => {
+                Err(self.python_form(&format!("`{w}`"), &format!("write `{}`", w.to_lowercase())))
+            }
+            // `f"..."` written next to the quote.
+            TokenKind::Identifier(w)
+                if w == "f"
+                    && matches!(self.peek_kind_at(1), TokenKind::StringLit(_))
+                    && self.peek_at(1).span.start == tok.span.end =>
+            {
+                Err(self.python_form(
+                    "an `f\"...\"` string",
+                    "every string interpolates: write \"${x}\"",
+                ))
+            }
             TokenKind::Identifier(_) => self.parse_ident_primary(),
             _ => Err(self.unexpected("expression")),
         }
@@ -1472,6 +1514,14 @@ impl Parser {
     fn eat_else(&mut self) -> bool {
         let saved = self.checkpoint();
         self.skip_newlines();
+        // Python's `elif` reads as `else if`.
+        if self.peek_word("elif") {
+            // Recorded so a speculative parse that rewinds sees `elif` again.
+            self.token_edits
+                .push((self.pos, self.tokens[self.pos].clone()));
+            self.tokens[self.pos].kind = TokenKind::If;
+            return true;
+        }
         if self.eat(&TokenKind::Else) {
             true
         } else {
@@ -1578,7 +1628,22 @@ impl Parser {
 
     fn parse_for(&mut self) -> ParseResult<Expr> {
         let f = self.advance();
-        let pattern = self.parse_pattern()?;
+        let mut pattern = self.parse_pattern()?;
+        // `for i, x in ...` without parentheses, as in Python.
+        if matches!(self.peek_kind(), TokenKind::Comma) {
+            let mut elements = vec![pattern];
+            while self.eat(&TokenKind::Comma) {
+                elements.push(self.parse_pattern()?);
+            }
+            let span = merge_spans(&elements[0].span, &elements[elements.len() - 1].span);
+            pattern = crate::ast::Pattern {
+                kind: crate::ast::PatternKind::Tuple {
+                    name: None,
+                    elements,
+                },
+                span,
+            };
+        }
         self.expect(&TokenKind::In, "`in`")?;
         let iter = self.parse_expr_no_struct()?;
         let body = self.parse_block()?;
@@ -1693,6 +1758,7 @@ impl Parser {
         matches!(
             self.peek_kind(),
             TokenKind::Star
+                | TokenKind::StarStar
                 | TokenKind::Slash
                 | TokenKind::Percent
                 | TokenKind::EqEq

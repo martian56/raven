@@ -404,6 +404,23 @@ fn lower_stmt(
 ) -> Result<(), CodegenError> {
     match stmt {
         MirStatement::Assign { dst, rvalue } => {
+            // A float field loads straight into a float register.
+            if let MirRvalue::FieldAccess { base, index } = rvalue {
+                if slots[dst.0 as usize].ty == Some(types::F64) {
+                    let ptr = cx.pointer_type();
+                    let base_ptr =
+                        require_value(lower_operand(cx, builder, base, slots)?, "field base")?;
+                    let fields = call_struct_fields(cx, builder, base_ptr, ptr);
+                    let v = builder.ins().load(
+                        types::F64,
+                        MemFlagsData::new(),
+                        fields,
+                        layout::slot_offset(*index),
+                    );
+                    store_local(builder, slots, *dst, Some(v));
+                    return Ok(());
+                }
+            }
             let value = lower_rvalue(cx, builder, rvalue, slots)?;
             store_local(builder, slots, *dst, value);
             Ok(())
@@ -457,7 +474,11 @@ fn lower_store_field(
     let ptr = cx.pointer_type();
     let base_ptr = require_value(lower_operand(cx, builder, base, slots)?, "field store base")?;
     let v = lower_operand(cx, builder, value, slots)?;
-    let v = widen_to_slot(builder, v, ptr);
+    // A float is stored as its own bits, without a trip through an integer.
+    let v = match v {
+        Some(f) if builder.func.dfg.value_type(f) == types::F64 => f,
+        other => widen_to_slot(builder, other, ptr),
+    };
     let fields = call_struct_fields(cx, builder, base_ptr, ptr);
     builder
         .ins()
@@ -1927,6 +1948,37 @@ fn call_list_elements(cx: &mut ModuleCx, builder: &mut FunctionBuilder<'_>, list
         .load(ptr, MemFlagsData::trusted(), list, LIST_ELEMENTS_OFFSET)
 }
 
+/// `sqrt`, `floor`, `ceil`, `trunc`, and `fabs` declared as C externs over
+/// one `float` lower to the matching instruction instead of a libm call.
+fn lower_float_builtin(
+    cx: &mut ModuleCx,
+    builder: &mut FunctionBuilder<'_>,
+    name: &str,
+    args: &[MirOperand],
+    slots: &[LocalSlot],
+) -> Result<Option<Value>, CodegenError> {
+    if !matches!(name, "sqrt" | "floor" | "ceil" | "trunc" | "fabs") || args.len() != 1 {
+        return Ok(None);
+    }
+    let float_sig = matches!(cx.extern_params(name), Some([MirType::Float]))
+        && matches!(cx.extern_ret(name), Some(MirType::Float));
+    if !float_sig {
+        return Ok(None);
+    }
+    let x = require_value(
+        lower_operand(cx, builder, &args[0], slots)?,
+        "float builtin",
+    )?;
+    let ins = builder.ins();
+    Ok(Some(match name {
+        "sqrt" => ins.sqrt(x),
+        "floor" => ins.floor(x),
+        "ceil" => ins.ceil(x),
+        "trunc" => ins.trunc(x),
+        _ => ins.fabs(x),
+    }))
+}
+
 /// Branch on an unsigned `index < len` check, calling `raven_panic` with
 /// `message` on the out-of-bounds path and continuing otherwise.
 fn emit_bounds_check(
@@ -2439,6 +2491,10 @@ fn lower_call(
         let inst = builder.ins().call(local_ref, &arg_vals);
         pop_n_roots(cx, builder, roots, ptr);
         return Ok(builder.inst_results(inst).first().copied());
+    }
+    // libm functions the CPU does in one instruction skip the call.
+    if let Some(v) = lower_float_builtin(cx, builder, &callee.mangled, args, slots)? {
+        return Ok(Some(v));
     }
     let func_id = cx.function_id(&callee.mangled).ok_or_else(|| {
         CodegenError::Unsupported(format!("unresolved callee: {}", callee.mangled))

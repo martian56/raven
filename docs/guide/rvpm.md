@@ -1,4 +1,4 @@
-# rvpm: the package manager (v2)
+# rvpm: the package manager
 
 `rvpm` owns a Raven project: its manifest, dependencies, lock file, and
 build. It drives the same compile pipeline as `raven build`, adding a
@@ -380,7 +380,7 @@ rvpm doc
 
 Generates Markdown API documentation from the package sources into
 `target/doc/<name>.md`. For each `.rv` file (excluding `*_test.rv`) it lists
-the top-level `fun`, `struct`, `enum`, `trait`, and `const` items with their
+the top-level `fun`, `class`, `enum`, `trait`, and constant `let` items with their
 signatures and the `//` comment block written directly above each. Raven has
 no separate doc-comment syntax, so any contiguous run of `//` lines above an
 item is its documentation; an attribute line such as `@derive(...)` between

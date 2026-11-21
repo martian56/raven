@@ -7,41 +7,30 @@ modules, then links to a reference page for each one.
 
 ## How modules are imported
 
-A module is imported by name. There are two import styles, and which one you
-use depends on what the module provides.
-
-**Selective import** brings named free functions into scope:
+Bring a module's functions into scope by name with `from`, or import the
+module and call through its name:
 
 ```rust
-from std.math import sqrt, pow_int
+from std.math import sqrt
+import std.fs
 
 fun main() {
-    print(sqrt(16.0)) // 4
+    print(sqrt(16.0)) // 4.0
+    print(fs.exists("missing.txt")) // false
 }
 ```
 
-**Bare import** brings in a module that adds methods or constructors to a
-type (it merges an `impl` block or registers a type):
+`str` methods (`split`, `strip`, `upper`, `replace`, ...), `dict` and `set`,
+and `Result`/`Option` helpers are part of the prelude, like the builtins
+`print`, `len`, `range`, and `sorted`, so they need no import:
 
 ```rust
-import std.string // adds methods to str
-import std.collections // registers Map.new() / Set.new()
-
 fun main() {
-    print("hi".to_upper()) // HI
-    let m: dict[str, int] = Map.new()
-    m.set("a", 1)
+    let counts = {"a": 1}
+    counts["b"] = 2
+    print("a,b".split(","), "  hi ".strip().upper(), len(counts))
 }
 ```
-
-Two rules are worth memorizing up front:
-
-- Import `std/string` and `std/collections` **whole** (bare), not with a
-  `{ ... }` list. Their methods and constructors come from `impl` blocks
-  that only the bare form merges.
-- `str.len()` and `str.is_empty()` are built into the compiler and
-  work with no import at all. The richer string methods need
-  `import std.string`.
 
 ## Core traits are always in scope
 
@@ -96,8 +85,8 @@ helpers.
 
 | Module | What it is for |
 |--------|----------------|
-| [std/collections](stdlib/collections.md) | hash-backed `Map` and `Set` |
-| [std/list](stdlib/list.md) | utility functions over the built-in `List` |
+| [std/collections](stdlib/collections.md) | hash-backed `dict` and `set` |
+| [std/list](stdlib/list.md) | utility functions over the built-in `list` |
 | [std/option](stdlib/option.md) | combinators over the built-in `Option` |
 | [std/iter](stdlib/iter.md) | lazy iterator adapters and consumers |
 | [std/cmp](stdlib/cmp.md) | sorting and comparison helpers |

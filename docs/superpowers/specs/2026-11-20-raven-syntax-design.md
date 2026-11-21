@@ -37,7 +37,7 @@ new form.
 | Literals | `[1, 2]`, `{"a": 1}`, `{1, 2}`, `{x}` a one-element set, `{}` an empty dict, `set()` an empty set, `(1, "a")` a tuple, `()` unit. Slices `xs[a..b]`, `xs[a..]`, `xs[..b]`, negative bounds from the end. |
 | Errors | `Result[T, E]` with `?`; in `main` a failing `?` stops the program with the error. `panic(msg)` aborts; `assert cond, msg` checks. |
 | Absence | `Option[T]` with `Some(x)` / `None`. |
-| Modules | `import std.fs`, `from std.json import parse, stringify`, `from "./models" import User`. Private by default, `pub` exports, `pub import` re-exports. |
+| Modules | `import std.fs`, `from std.json import parse, stringify`, `from "./models" import User`. `pub` is accepted on declarations; visibility is not enforced in 3.0, so every top-level item is importable. |
 | Operators | Classes overload operators through methods: `add sub mul div mod neg eq lt le gt ge index`. |
 | Equality etc. | Classes and enums whose fields allow it get `==`, hashing, and printing automatically. `@derive(Ord, Debug, ToJson, FromJson)` for the rest. |
 | Concurrency | `spawn { ... }` returns a handle; `Channel[T]` carries any type. |

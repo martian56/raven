@@ -1042,6 +1042,9 @@ impl<'a, 'b> Checker<'a, 'b> {
                             self.const_locals.contains(&BindingKey::local(decl))
                         }
                         Some(crate::resolve::Binding::Const(_)) => true,
+                        Some(crate::resolve::Binding::Static(id)) => {
+                            self.env.immutable_statics.contains(id)
+                        }
                         _ => false,
                     };
                     if is_const {
@@ -1843,6 +1846,19 @@ impl<'a, 'b> Checker<'a, 'b> {
             self.resolved.map.lookup(&callee.span),
             Some(Binding::Extern { .. })
         );
+        self.check_fixed_args(&params, args, callee_is_extern)?;
+        Ok(ret)
+    }
+
+    /// Check call arguments against fixed parameters. A call to a C function
+    /// accepts native ints and floats for C number types, functions for
+    /// `CFnPtr`, and only `@repr(C)` structs.
+    fn check_fixed_args(
+        &mut self,
+        params: &[Ty],
+        args: &[Expr],
+        callee_is_extern: bool,
+    ) -> Result<(), RavenError> {
         for (param_ty, arg) in params.iter().zip(args.iter()) {
             let a = self.check_arg(arg, param_ty)?;
             // An integer C FFI parameter (`CInt`, `CLong`, `CSize`)
@@ -1907,7 +1923,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             }
             self.unify(param_ty, &a, &arg.span)?;
         }
-        Ok(ret)
+        Ok(())
     }
 
     /// Validate an argument passed where a `CFnPtr` is expected. The
@@ -2739,13 +2755,32 @@ impl<'a, 'b> Checker<'a, 'b> {
             .iter()
             .find(|(_, s)| s.name == mangled)
             .map(|(d, _)| *d);
-        let Some(decl) = decl else {
-            return Err(ty_custom(
-                &format!("module `{}` has no function `{}`", alias, name),
-                span,
-            ));
+        // A C function the module declares in `extern "C"` keeps its own
+        // name: `import std.math` then `math.sqrt(x)`.
+        let extern_ty = match decl {
+            Some(_) => None,
+            None if import.externs.iter().any(|e| e == name) => self
+                .env
+                .externs
+                .values()
+                .find(|s| s.name == name && !s.variadic)
+                .map(|s| Ty::Function {
+                    params: s.params.clone(),
+                    ret: Box::new(s.ret.clone()),
+                }),
+            None => None,
         };
-        let fn_ty = self.type_of_binding(&Binding::Function(decl), span, &[])?;
+        let is_extern = extern_ty.is_some();
+        let fn_ty = match (decl, extern_ty) {
+            (Some(decl), _) => self.type_of_binding(&Binding::Function(decl), span, &[])?,
+            (None, Some(t)) => t,
+            (None, None) => {
+                return Err(ty_custom(
+                    &format!("module `{}` has no function `{}`", alias, name),
+                    span,
+                ))
+            }
+        };
         let Ty::Function { params, ret } = fn_ty else {
             return Ok(None);
         };
@@ -2759,10 +2794,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                 span.clone(),
             ));
         }
-        for (param_ty, arg) in params.iter().zip(args.iter()) {
-            let a = self.check_arg(arg, param_ty)?;
-            self.unify(param_ty, &a, &arg.span)?;
-        }
+        self.check_fixed_args(&params, args, is_extern)?;
         Ok(Some(*ret))
     }
 
@@ -3786,7 +3818,7 @@ pub fn check_binary(l: &Ty, r: &Ty, op: BinaryOp, span: &Span) -> Result<Ty, Rav
     let ls = l.strip_self();
     let rs = r.strip_self();
     match op {
-        In | NotIn => unreachable!("membership is desugared after parsing"),
+        In | NotIn | Pow => unreachable!("membership and `**` are desugared after parsing"),
         Add | Sub | Mul | Div | Mod => match (ls, rs) {
             (Ty::Int, Ty::Int) => Ok(Ty::Int),
             (Ty::Str, Ty::Str) if op == Add => Ok(Ty::Str),

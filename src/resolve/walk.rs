@@ -752,6 +752,7 @@ const PRELUDE_FUNCTIONS: &[(&str, &str)] = &[
     ("error", "error"),
     ("error_kind", "error"),
     ("__min2", "core"),
+    ("__range_step", "core"),
     ("__max2", "core"),
     ("__fmt_float", "string"),
     ("__fmt_pad", "string"),

@@ -81,6 +81,8 @@ pub enum TokenKind {
     PlusEq,
     MinusEq,
     StarEq,
+    /// `**`, the power operator.
+    StarStar,
     SlashEq,
     PercentEq,
 
@@ -976,6 +978,10 @@ impl Lexer {
             }
             '*' => {
                 self.bump();
+                if self.peek() == Some('*') {
+                    self.bump();
+                    return make(self, TokenKind::StarStar);
+                }
                 if self.peek() == Some('=') {
                     self.bump();
                     return make(self, TokenKind::StarEq);

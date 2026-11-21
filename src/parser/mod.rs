@@ -480,6 +480,7 @@ pub fn describe_token(kind: &TokenKind) -> String {
         TokenKind::Plus => "`+`".to_string(),
         TokenKind::Minus => "`-`".to_string(),
         TokenKind::Star => "`*`".to_string(),
+        TokenKind::StarStar => "`**`".to_string(),
         TokenKind::Slash => "`/`".to_string(),
         TokenKind::Percent => "`%`".to_string(),
         TokenKind::PlusEq => "`+=`".to_string(),
@@ -537,6 +538,14 @@ impl Parser {
     pub(crate) fn legacy(&self, old: &str, new: &str) -> RavenError {
         RavenError::parse(
             ParseError::Custom(format!("{old} is not Raven syntax; {new}")),
+            self.peek().span.clone(),
+        )
+    }
+
+    /// A Python spelling Raven writes differently: name both.
+    pub(crate) fn python_form(&self, python: &str, raven: &str) -> RavenError {
+        RavenError::parse(
+            ParseError::Custom(format!("{python} is Python; in Raven {raven}")),
             self.peek().span.clone(),
         )
     }

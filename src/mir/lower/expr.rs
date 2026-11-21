@@ -1059,7 +1059,11 @@ fn lower_loop(cx: &mut LowerCx<'_>, body: &HirBlock, ty: MirType) -> MirOperand 
     MirOperand::Copy(result)
 }
 
-fn lower_while(cx: &mut LowerCx<'_>, cond: &HirExpr, body: &HirBlock, _ty: MirType) -> MirOperand {
+fn lower_while(cx: &mut LowerCx<'_>, cond: &HirExpr, body: &HirBlock, ty: MirType) -> MirOperand {
+    let _ = ty;
+    if simple_cond(cond) {
+        return lower_while_rotated(cx, cond, body);
+    }
     let header = cx.builder.new_block();
     cx.builder.mark_loop_header(header);
     let body_bb = cx.builder.new_block();
@@ -1097,6 +1101,84 @@ fn lower_while(cx: &mut LowerCx<'_>, cond: &HirExpr, body: &HirBlock, _ty: MirTy
     cx.current = cont;
     cx.diverged = false;
     MirOperand::Const(MirConstant::Unit)
+}
+
+/// `while c { body }` as `if c { do { body } while c }`: the condition is
+/// tested once before the loop and once at the bottom of each iteration, so
+/// the loop runs one conditional branch per iteration instead of a test at
+/// the top plus a jump back. `continue` goes to the bottom test.
+fn lower_while_rotated(cx: &mut LowerCx<'_>, cond: &HirExpr, body: &HirBlock) -> MirOperand {
+    let body_bb = cx.builder.new_block();
+    cx.builder.mark_loop_header(body_bb);
+    let latch = cx.builder.new_block();
+    let cont = cx.builder.new_block();
+
+    if !cx.builder.is_closed(cx.current) {
+        let c = lower_expr(cx, cond);
+        cx.builder.close_block(
+            cx.current,
+            MirTerminator::SwitchInt {
+                discriminant: c,
+                targets: vec![(0, cont), (1, body_bb)],
+                otherwise: cont,
+            },
+        );
+    }
+
+    cx.current = body_bb;
+    cx.loops.push(LoopFrame {
+        header: latch,
+        continuation: cont,
+        result: None,
+    });
+    let _ = lower_block(cx, body);
+    if !cx.builder.is_closed(cx.current) {
+        cx.builder
+            .close_block(cx.current, MirTerminator::Goto(latch));
+    }
+    cx.loops.pop();
+
+    cx.current = latch;
+    let c = lower_expr(cx, cond);
+    cx.builder.close_block(
+        cx.current,
+        MirTerminator::SwitchInt {
+            discriminant: c,
+            targets: vec![(0, cont), (1, body_bb)],
+            otherwise: cont,
+        },
+    );
+
+    cx.current = cont;
+    cx.diverged = false;
+    MirOperand::Const(MirConstant::Unit)
+}
+
+/// A loop condition cheap and plain enough to lower twice: operators,
+/// names, literals, fields, indexing, and calls over those. Anything that
+/// could carry a closure, a block, or control flow keeps the one test.
+fn simple_cond(e: &HirExpr) -> bool {
+    match &e.kind {
+        HirExprKind::Int(_)
+        | HirExprKind::Float(_)
+        | HirExprKind::Bool(_)
+        | HirExprKind::Char(_)
+        | HirExprKind::Ident(_)
+        | HirExprKind::GlobalGet(_)
+        | HirExprKind::SelfValue => true,
+        HirExprKind::Paren(x) => simple_cond(x),
+        HirExprKind::Unary { operand, .. } => simple_cond(operand),
+        HirExprKind::Binary { lhs, rhs, .. } => simple_cond(lhs) && simple_cond(rhs),
+        HirExprKind::Field { receiver, .. } => simple_cond(receiver),
+        HirExprKind::Index { receiver, index } => simple_cond(receiver) && simple_cond(index),
+        HirExprKind::MethodCall { receiver, args, .. } => {
+            simple_cond(receiver) && args.iter().all(simple_cond)
+        }
+        HirExprKind::Call { callee, args, .. } => {
+            matches!(callee.kind, HirExprKind::Ident(_)) && args.iter().all(simple_cond)
+        }
+        _ => false,
+    }
 }
 
 /// Lower a `String` `==`/`!=` into a call to the runtime byte-equality

@@ -29,10 +29,17 @@ pub fn desugar(file: &mut File) -> Result<(), RavenError> {
         items.extend(extra);
     }
     let mut error = None;
+    // `xs.sort(reverse: true)` is rewritten for lists only when no type in the
+    // file declares its own `sort`, which would take the named argument.
+    let own_sort = items.iter().any(|d| match &d.kind {
+        DeclKind::Impl(i) => i.items.iter().any(|f| f.name == "sort"),
+        DeclKind::Struct(s) => s.methods.iter().any(|f| f.name == "sort"),
+        _ => false,
+    });
     for decl in &mut items {
         visit::walk_decl(
             decl,
-            &mut |e: &mut Expr| lower_expr(e),
+            &mut |e: &mut Expr| lower_expr(e, own_sort),
             &mut |b: &mut Block| {
                 if error.is_none() {
                     if let Err(e) = lower_let_tuple(b).and_then(|_| lower_let_else(b)) {
@@ -267,10 +274,32 @@ fn statement_block(mut b: Block) -> Block {
     b
 }
 
-fn lower_expr(e: &mut Expr) {
+fn lower_expr(e: &mut Expr, own_sort: bool) {
     let span = e.span.clone();
     let kind = std::mem::replace(&mut e.kind, ExprKind::Bool(false));
     e.kind = match kind {
+        ExprKind::Binary {
+            op: BinaryOp::Pow,
+            lhs,
+            rhs,
+        } => match (&lhs.kind, &rhs.kind) {
+            // Literal powers fold, so `let N = 2 ** 10` stays a constant.
+            (ExprKind::Int(b), ExprKind::Int(e))
+                if (0..=u32::MAX as i64).contains(e) && b.checked_pow(*e as u32).is_some() =>
+            {
+                ExprKind::Int(b.pow(*e as u32))
+            }
+            (ExprKind::Float(b), ExprKind::Float(e)) => ExprKind::Float(b.powf(*e)),
+            _ => {
+                method(
+                    *lhs,
+                    "pow",
+                    vec![*rhs],
+                    &span.in_copy(crate::span::next_copy_id()),
+                )
+                .kind
+            }
+        },
         ExprKind::Binary {
             op: op @ (BinaryOp::In | BinaryOp::NotIn),
             lhs,
@@ -289,6 +318,28 @@ fn lower_expr(e: &mut Expr) {
                     op: crate::ast::UnaryOp::Not,
                     operand: Box::new(call),
                 }
+            }
+        }
+        // `xs.sort(reverse: true)`, as in Python.
+        ExprKind::MethodCall {
+            receiver,
+            name,
+            generics,
+            args,
+        } if name == "sort"
+            && !own_sort
+            && matches!(args.as_slice(), [Expr { kind: ExprKind::NamedArg { name: n, value }, .. }]
+                if n == "reverse" && matches!(value.kind, ExprKind::Bool(_))) =>
+        {
+            let ExprKind::NamedArg { value, .. } = &args[0].kind else {
+                unreachable!()
+            };
+            let desc = matches!(value.kind, ExprKind::Bool(true));
+            ExprKind::MethodCall {
+                receiver,
+                name: if desc { "sort_desc" } else { "sort" }.to_string(),
+                generics,
+                args: Vec::new(),
             }
         }
         ExprKind::Index { receiver, index }
@@ -920,6 +971,7 @@ fn index_not_type_args(e: &mut Expr, values: &std::collections::HashSet<String>)
 const BUILTINS: &[&str] = &[
     "set",
     "dict",
+    "list",
     "len",
     "sum",
     "min",
@@ -966,6 +1018,28 @@ fn builtin_call(e: &mut Expr, values: &std::collections::HashSet<String>) {
     if !generics.is_empty() || values.contains(name) || !is_builtin_name(name) {
         return;
     }
+    // `sorted(xs, reverse: true)`, as in Python.
+    if name == "sorted" && args.len() == 2 {
+        if let ExprKind::NamedArg { name: n, value } = &args[1].kind {
+            if let (true, ExprKind::Bool(rev)) = (n == "reverse", &value.kind) {
+                let rev = *rev;
+                let span = e.span.clone();
+                let xs = args.remove(0);
+                let sorted = method(
+                    xs,
+                    "sorted",
+                    Vec::new(),
+                    &span.in_copy(crate::span::next_copy_id()),
+                );
+                *e = if rev {
+                    method(sorted, "reversed", Vec::new(), &span)
+                } else {
+                    sorted
+                };
+                return;
+            }
+        }
+    }
     if args
         .iter()
         .any(|a| matches!(a.kind, ExprKind::NamedArg { .. }))
@@ -982,6 +1056,7 @@ fn builtin_call(e: &mut Expr, values: &std::collections::HashSet<String>) {
         ("sum", 1) => one("sum", &mut args),
         ("sorted", 1) => one("sorted", &mut args),
         ("reversed", 1) => one("reversed", &mut args),
+        ("list", 1) => one("to_list", &mut args),
         ("enumerate", 1) => one("enumerate", &mut args),
         ("str", 1) => one("to_string", &mut args),
         ("int", 1) => one("as_int", &mut args),
@@ -1028,6 +1103,19 @@ fn builtin_call(e: &mut Expr, values: &std::collections::HashSet<String>) {
                 callee: Box::new(Expr {
                     kind: ExprKind::Ident {
                         name: format!("__{name}2"),
+                        generics: Vec::new(),
+                    },
+                    span: inner(&span),
+                }),
+                args,
+            },
+            span: span.clone(),
+        },
+        ("range", 3) => Expr {
+            kind: ExprKind::Call {
+                callee: Box::new(Expr {
+                    kind: ExprKind::Ident {
+                        name: "__range_step".into(),
                         generics: Vec::new(),
                     },
                     span: inner(&span),
@@ -1142,7 +1230,7 @@ fn comprehension(
         },
         span: at(),
     };
-    lower_expr(&mut for_loop);
+    lower_expr(&mut for_loop, false);
     ExprKind::Block(Block {
         stmts: vec![
             Stmt {

@@ -1,0 +1,79 @@
+from std.math import sqrt
+
+class Body {
+    x: float
+    y: float
+    z: float
+    vx: float
+    vy: float
+    vz: float
+    m: float
+}
+
+fun advance(bodies: list[Body], dt: float) {
+    let n = len(bodies)
+    var i = 0
+    while i < n {
+        let a = bodies[i]
+        var j = i + 1
+        while j < n {
+            let b = bodies[j]
+            let dx = a.x - b.x
+            let dy = a.y - b.y
+            let dz = a.z - b.z
+            let d2 = dx * dx + dy * dy + dz * dz
+            let mag = dt / (d2 * sqrt(d2))
+            a.vx -= dx * b.m * mag
+            a.vy -= dy * b.m * mag
+            a.vz -= dz * b.m * mag
+            b.vx += dx * a.m * mag
+            b.vy += dy * a.m * mag
+            b.vz += dz * a.m * mag
+            j += 1
+        }
+        i += 1
+    }
+    for b in bodies {
+        b.x += dt * b.vx
+        b.y += dt * b.vy
+        b.z += dt * b.vz
+    }
+}
+
+fun energy(bodies: list[Body]) -> float {
+    var e = 0.0
+    let n = len(bodies)
+    var i = 0
+    while i < n {
+        let a = bodies[i]
+        e += 0.5 * a.m * (a.vx * a.vx + a.vy * a.vy + a.vz * a.vz)
+        var j = i + 1
+        while j < n {
+            let b = bodies[j]
+            let dx = a.x - b.x
+            let dy = a.y - b.y
+            let dz = a.z - b.z
+            e -= a.m * b.m / sqrt(dx * dx + dy * dy + dz * dz)
+            j += 1
+        }
+        i += 1
+    }
+    return e
+}
+
+fun main() {
+    let bodies = [
+        Body(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 39.47),
+        Body(4.84, -1.16, -0.1, 0.6, 2.81, -0.02, 0.037),
+        Body(8.34, 4.12, -0.4, -1.01, 1.82, 0.008, 0.011),
+        Body(12.89, -15.11, -0.22, 1.08, 0.86, -0.01, 0.0017),
+        Body(15.37, -25.91, 0.17, 0.97, 0.59, -0.03, 0.002),
+    ]
+    print("${energy(bodies):.9}")
+    var k = 0
+    while k < 5000000 {
+        advance(bodies, 0.01)
+        k += 1
+    }
+    print("${energy(bodies):.9}")
+}

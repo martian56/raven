@@ -50,6 +50,35 @@ fun __min2[T: Ord](a: T, b: T) -> T = a if a.compare(b) <= 0 else b
 
 fun __max2[T: Ord](a: T, b: T) -> T = a if a.compare(b) >= 0 else b
 
+// `range(a, b, step)`: from `a` toward `b` by `step`, counting down for a
+// negative step, as in Python.
+fun __range_step(a: int, b: int, step: int) -> list[int] {
+    if step == 0 {
+        panic("range step must not be zero")
+    }
+    let out: list[int] = []
+    var i = a
+    // Stop before `i + step` would pass the integer limit and wrap.
+    if step > 0 {
+        while i < b {
+            out.push(i)
+            if i > 9223372036854775807 - step {
+                break
+            }
+            i += step
+        }
+    } else {
+        while i > b {
+            out.push(i)
+            if i < -9223372036854775807 - 1 - step {
+                break
+            }
+            i += step
+        }
+    }
+    return out
+}
+
 impl ToString for int {
     fun to_string(self) -> str = "${self}"
 }
@@ -457,6 +486,27 @@ impl[T] list[T] {
     }
 
     // `xs * n`: the items repeated `n` times.
+    // Reverse the list in place.
+    fun reverse(self) {
+        var i = 0
+        var j = self.len() - 1
+        while i < j {
+            let t = self[i]
+            self[i] = self[j]
+            self[j] = t
+            i += 1
+            j -= 1
+        }
+    }
+
+    // `xs.append(x)`, as in Python: the same as `push`.
+    fun append(self, x: T) {
+        self.push(x)
+    }
+
+    // A copy of the list, for `list(xs)`.
+    fun to_list(self) -> list[T] = self.slice(0, self.len())
+
     fun mul(self, n: int) -> list[T] {
         let out: list[T] = []
         out.reserve(len(self) * n)
@@ -481,6 +531,9 @@ impl[T] list[T] {
 
     // Every `k`th item, starting with the first: `(0..10).step(3)`.
     fun step(self, k: int) -> list[T] {
+        if k <= 0 {
+            panic("step must be positive")
+        }
         let out: list[T] = []
         var i = 0
         while i < self.len() {
@@ -692,6 +745,12 @@ impl[T: Eq] list[T] {
 
 impl[T: Ord] list[T] {
     fun sorted(self) -> list[T] = self.sorted_by((a: T, b: T) -> int => a.compare(b))
+
+    // Sort largest first, in place: `xs.sort(reverse: true)`.
+    fun sort_desc(self) {
+        self.sort()
+        self.reverse()
+    }
 
     fun sort(self) {
         var s = self.sorted()
@@ -1050,6 +1109,24 @@ impl int {
     fun as_float(self) -> float = self.to_float()
 
     fun abs(self) -> int = -self if self < 0 else self
+
+    // `x ** n` for a non-negative `n`.
+    fun pow(self, n: int) -> int {
+        if n < 0 {
+            panic("int ** needs a non-negative exponent; use a float")
+        }
+        var result = 1
+        var base = self
+        var e = n
+        while e > 0 {
+            if e % 2 == 1 {
+                result *= base
+            }
+            base *= base
+            e = e / 2
+        }
+        return result
+    }
 }
 
 impl float {
@@ -1058,6 +1135,9 @@ impl float {
     fun as_float(self) -> float = self
 
     fun abs(self) -> float = -self if self < 0.0 else self
+
+    // `x ** y`.
+    fun pow(self, y: float) -> float = raven_float_pow(self, y)
 
     // The nearest int, halves rounding away from zero.
     fun round(self) -> int = (self + 0.5).to_int() if self >= 0.0 else (self - 0.5).to_int()
@@ -1068,6 +1148,7 @@ impl bool {
 }
 
 extern "C" {
+    fun raven_float_pow(x: float, y: float) -> float
     fun raven_waitgroup_new() -> int
     fun raven_waitgroup_add(id: int, delta: int)
     fun raven_waitgroup_wait(id: int)

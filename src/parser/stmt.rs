@@ -146,6 +146,11 @@ impl Parser {
     /// Parse a `let` (`mutable = true`) or `const` (`mutable = false`) local
     /// binding statement. Both require an initializer inside a function body.
     fn parse_let_stmt(&mut self, mutable: bool) -> ParseResult<Stmt> {
+        if matches!(self.peek_kind_at(1), TokenKind::Identifier(_))
+            && matches!(self.peek_kind_at(2), TokenKind::Comma)
+        {
+            return Err(self.python_form("`let a, b = ...`", "write `let (a, b) = (x, y)`"));
+        }
         if !matches!(self.peek_kind_at(2), TokenKind::Colon | TokenKind::Eq) {
             return self.parse_let_else(mutable);
         }

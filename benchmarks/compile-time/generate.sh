@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Generate the compile-time benchmark corpus: a set of valid Raven v2
+# Generate the compile-time benchmark corpus: a set of valid Raven
 # modules plus an entry file that imports and exercises every one of them.
 #
 # The corpus is deterministic. Running this script reproduces byte for
 # byte the committed .rv files under corpus/. Re-run after changing the
 # shape or count of modules, then commit the regenerated output.
 #
-# Usage: benchmarks/compile-time/generate.sh [module_count]
+# Usage: [RAVEN=path/to/raven] benchmarks/compile-time/generate.sh [module_count]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,30 +26,30 @@ emit_module() {
     local base=$(( (i * 7) % 23 + 1 ))
 
     cat > "$f" <<EOF
-import std/string
+import std.string
 
-struct Vec2_${i} { x: Int, y: Int }
+class Vec2_${i} { x: int, y: int }
 
 impl Vec2_${i} {
     fun add(self, o: Vec2_${i}) -> Vec2_${i} {
-        return Vec2_${i} { x: self.x + o.x, y: self.y + o.y }
+        return Vec2_${i}(x: self.x + o.x, y: self.y + o.y)
     }
-    fun scale(self, k: Int) -> Vec2_${i} {
-        return Vec2_${i} { x: self.x * k, y: self.y * k }
+    fun scale(self, k: int) -> Vec2_${i} {
+        return Vec2_${i}(x: self.x * k, y: self.y * k)
     }
-    fun magnitude_sq(self) -> Int {
+    fun magnitude_sq(self) -> int {
         return self.x * self.x + self.y * self.y
     }
 }
 
-struct Node_${i} { id: Int, weight: Int, label: String }
+class Node_${i} { id: int, weight: int, label: str }
 
 impl Node_${i} {
-    fun heavier(self, other: Node_${i}) -> Bool {
+    fun heavier(self, other: Node_${i}) -> bool {
         return self.weight > other.weight
     }
-    fun retag(self, n: String) -> Node_${i} {
-        return Node_${i} { id: self.id, weight: self.weight, label: n }
+    fun retag(self, n: str) -> Node_${i} {
+        return Node_${i}(id: self.id, weight: self.weight, label: n)
     }
 }
 
@@ -60,12 +60,12 @@ enum Shape_${i} {
     Hexagon,
 }
 
-fun classify_${i}(s: Shape_${i}) -> Int {
+fun classify_${i}(s: Shape_${i}) -> int {
     return match s {
-        Circle -> ${base},
-        Square -> ${base} * 2,
-        Triangle -> ${base} * 3,
-        Hexagon -> ${base} * 6,
+        case Circle { ${base} }
+        case Square { ${base} * 2 }
+        case Triangle { ${base} * 3 }
+        case Hexagon { ${base} * 6 }
     }
 }
 
@@ -75,7 +75,7 @@ enum Outcome_${i} {
     Skip,
 }
 
-fun grade_${i}(score: Int) -> Outcome_${i} {
+fun grade_${i}(score: int) -> Outcome_${i} {
     if score >= 60 {
         return Outcome_${i}.Pass
     }
@@ -85,59 +85,59 @@ fun grade_${i}(score: Int) -> Outcome_${i} {
     return Outcome_${i}.Fail
 }
 
-fun grade_points_${i}(o: Outcome_${i}) -> Int {
+fun grade_points_${i}(o: Outcome_${i}) -> int {
     return match o {
-        Pass -> 100,
-        Fail -> 0,
-        Skip -> 50,
+        case Pass { 100 }
+        case Fail { 0 }
+        case Skip { 50 }
     }
 }
 
-struct Pair_${i}<T> { first: T, second: T }
+class Pair_${i}[T] { first: T, second: T }
 
-impl<T> Pair_${i}<T> {
+impl[T] Pair_${i}[T] {
     fun left(self) -> T = self.first
     fun right(self) -> T = self.second
 }
 
-struct Wrap_${i}<T> { inner: T }
+class Wrap_${i}[T] { inner: T }
 
-impl<T> Wrap_${i}<T> {
+impl[T] Wrap_${i}[T] {
     fun get(self) -> T = self.inner
-    fun mapped<U>(self, f: fun(T) -> U) -> U = f(self.inner)
+    fun mapped[U](self, f: fun(T) -> U) -> U = f(self.inner)
 }
 
 trait Score_${i} {
-    fun score(self) -> Int
+    fun score(self) -> int
 }
 
 impl Score_${i} for Node_${i} {
-    fun score(self) -> Int = self.id * 10 + self.weight
+    fun score(self) -> int = self.id * 10 + self.weight
 }
 
 impl Score_${i} for Vec2_${i} {
-    fun score(self) -> Int = self.magnitude_sq()
+    fun score(self) -> int = self.magnitude_sq()
 }
 
-fun ranked_${i}<T: Score_${i}>(x: T) -> Int = x.score()
+fun ranked_${i}[T: Score_${i}](x: T) -> int = x.score()
 
-fun identity_${i}<T>(x: T) -> T = x
+fun identity_${i}[T](x: T) -> T = x
 
-fun maybe_${i}(n: Int) -> Option<Int> {
+fun maybe_${i}(n: int) -> Option[int] {
     if n > ${base} {
         return Some(n * 2)
     }
     return None
 }
 
-fun unwrap_or_${i}(x: Option<Int>, fallback: Int) -> Int {
+fun unwrap_or_${i}(x: Option[int], fallback: int) -> int {
     return match x {
-        None -> fallback,
-        Some(v) -> v,
+        case None { fallback }
+        case Some(v) { v }
     }
 }
 
-fun accumulate_${i}(limit: Int) -> Int {
+fun accumulate_${i}(limit: int) -> int {
     var total = 0
     var i = 0
     while i < limit {
@@ -151,7 +151,7 @@ fun accumulate_${i}(limit: Int) -> Int {
     return total
 }
 
-fun sweep_${i}(limit: Int) -> Int {
+fun sweep_${i}(limit: int) -> int {
     var total = 0
     for k in 0..limit {
         total = total + classify_${i}(Shape_${i}.Triangle) + k
@@ -159,23 +159,23 @@ fun sweep_${i}(limit: Int) -> Int {
     return total
 }
 
-fun fib_${i}(n: Int) -> Int {
+fun fib_${i}(n: int) -> int {
     if n < 2 {
         return n
     }
     return fib_${i}(n - 1) + fib_${i}(n - 2)
 }
 
-fun compute_${i}(seed: Int) -> Int {
-    let v = Vec2_${i} { x: seed, y: seed + ${base} }
-    let w = v.add(Vec2_${i} { x: 2, y: 3 }).scale(2)
-    let node = Node_${i} { id: seed, weight: ${base}, label: "n" }
+fun compute_${i}(seed: int) -> int {
+    let v = Vec2_${i}(x: seed, y: seed + ${base})
+    let w = v.add(Vec2_${i}(x: 2, y: 3)).scale(2)
+    let node = Node_${i}(id: seed, weight: ${base}, label: "n")
     let tagged = node.retag("tagged")
-    let p = Pair_${i} { first: w.x, second: w.y }
-    let q = Pair_${i} { first: tagged.label, second: "z" }
-    let boxed = Wrap_${i} { inner: seed }
-    let doubled = boxed.mapped(fun(x: Int) -> Int = x * 2)
-    let big = boxed.mapped(fun(x: Int) -> Bool = x > ${base})
+    let p = Pair_${i}(first: w.x, second: w.y)
+    let q = Pair_${i}(first: tagged.label, second: "z")
+    let boxed = Wrap_${i}(inner: seed)
+    let doubled = boxed.mapped((x: int) -> int => x * 2)
+    let big = boxed.mapped((x: int) -> bool => x > ${base})
     let m = unwrap_or_${i}(maybe_${i}(seed), 0)
     let g = grade_points_${i}(grade_${i}(seed))
     let r = ranked_${i}(tagged) + ranked_${i}(v)
@@ -191,7 +191,7 @@ EOF
 ENTRY="$CORPUS_DIR/main.rv"
 {
     for ((i = 0; i < COUNT; i++)); do
-        echo "import \"./modules/mod${i}\" { compute_${i} }"
+        echo "from \"./modules/mod${i}\" import compute_${i}"
     done
     echo ""
     echo "fun main() {"
@@ -206,6 +206,10 @@ ENTRY="$CORPUS_DIR/main.rv"
 for ((i = 0; i < COUNT; i++)); do
     emit_module "$i"
 done
+
+# Lay the files out the way `raven fmt` does, so the committed corpus is
+# exactly what this script produces. RAVEN selects the compiler.
+"${RAVEN:-raven}" fmt --write "$ENTRY" "$MODULES_DIR"/*.rv > /dev/null
 
 LINES=$(cat "$ENTRY" "$MODULES_DIR"/*.rv | wc -l)
 echo "generated $COUNT modules plus entry, $LINES total lines under $CORPUS_DIR"

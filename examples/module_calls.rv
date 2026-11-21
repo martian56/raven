@@ -1,0 +1,10 @@
+// Calling through a module name, as in Python: `import std.math` then
+// `math.sqrt(x)`, including the functions a module binds from C.
+import std.math
+import std.path
+
+fun main() {
+    print(math.sqrt(16.0), math.floor(2.7), math.pow(2.0, 10.0))
+    print(math.pi() > 3.14, math.gcd(12, 18))
+    print(path.extension("notes.txt"), path.stem("notes.txt"))
+}

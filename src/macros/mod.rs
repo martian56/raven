@@ -1137,6 +1137,12 @@ fn collect_binding_indices(
                         }
                     }
                 }
+                // `var` is a word rather than a keyword token.
+                TokenKind::Identifier(w) if w == "var" && is_t(i + 1) => {
+                    if let Some(TokenKind::Identifier(s)) = tokens.get(i + 1).map(|t| &t.kind) {
+                        bindings.insert(i + 1, (s.clone(), BindKind::Block));
+                    }
+                }
                 // Scan forward to the parameter list's `(`, past an optional
                 // function name (a literal identifier or a spliced metavariable).
                 TokenKind::Fun => {
@@ -1364,6 +1370,8 @@ fn scope_aware_rename(tokens: &mut [Token], from_template: &[bool], spans: &mut 
                     scopes.pop();
                 }
             }
+            // A field or method name after `.` is never a binding use.
+            TokenKind::Identifier(_) if i > 0 && matches!(tokens[i - 1].kind, TokenKind::Dot) => {}
             TokenKind::Identifier(s) => {
                 if let Some((name, kind)) = bindings.get(&i).cloned() {
                     let fresh = match kind {

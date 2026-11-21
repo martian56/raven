@@ -207,6 +207,9 @@ pub fn collect_declarations(
                     },
                 };
                 env.statics.insert(id, ty);
+                if !l.mutable {
+                    env.immutable_statics.insert(id);
+                }
             }
             DeclKind::Import(_) => {}
             // Macros are expanded before the compiler parses; only the
