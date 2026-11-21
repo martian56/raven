@@ -1,6 +1,6 @@
-# Getting started (v2)
+# Getting started
 
-Raven v2 is a compiled, statically typed language. The toolchain lexes,
+Raven is a compiled, statically typed language that reads like Python with braces. The toolchain lexes,
 parses, resolves, type checks, lowers to MIR, and emits a native binary
 through Cranelift, linking against the Raven runtime.
 

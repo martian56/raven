@@ -16,7 +16,7 @@ fun main() {
 
 ## No printf
 
-There is no `format("{}", a, b)` function. The v2 surface language has no
+There is no `format("{}", a, b)` function. Raven has no
 varargs and no format-placeholder runtime, so string interpolation `"${expr}"`
 is the placeholder mechanism. std/fmt provides the helpers that compose with
 it, not a printf replacement.

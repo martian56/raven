@@ -1,4 +1,4 @@
-# Language reference (v2)
+# Language reference
 
 Raven reads like Python with braces. Statements end at a newline (a `;` is
 allowed but rarely needed), blocks use `{ }`, and types are checked at
@@ -48,10 +48,11 @@ var names = []
 names.push("ann") // names is list[str]
 ```
 
-At module level (outside any function), `let` and `var` declare globals,
-initialized before `main` in declaration order. `const` declares a
-compile-time constant whose initializer is a literal or arithmetic over
-literals; it is inlined at each use.
+At module level (outside any function), `var` declares a mutable global and
+`let` an immutable one, initialized before `main` in declaration order. A
+module `let` whose value is a literal or arithmetic over literals is a
+compile-time constant, inlined at each use; assigning to it is an error that
+suggests `var`.
 
 ```rust
 let MAX: int = 100
@@ -465,6 +466,23 @@ A trait used as a type holds a value of any class implementing it, and its
 methods are dispatched at run time. `dyn Shape` is the same type, spelled out:
 
 ```rust
+trait Shape {
+    fun area(self) -> float
+}
+
+class Circle: Shape {
+    r: float
+
+    fun area(self) -> float = 3.14159 * self.r * self.r
+}
+
+class Rect: Shape {
+    w: float
+    h: float
+
+    fun area(self) -> float = self.w * self.h
+}
+
 fun total(shapes: list[Shape]) -> float {
     return sum([s.area() for s in shapes])
 }
@@ -824,7 +842,7 @@ fun main() {
 }
 ```
 
-A name a template introduces at a `let`, `const`, or `for` binding is
+A name a template introduces at a `let`, `var`, or `for` binding is
 renamed to a fresh name, so a template temporary cannot collide with or
 capture a caller's variable of the same spelling.
 
