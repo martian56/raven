@@ -966,6 +966,28 @@ fn builtin_call(e: &mut Expr, values: &std::collections::HashSet<String>) {
     if !generics.is_empty() || values.contains(name) || !is_builtin_name(name) {
         return;
     }
+    // `sorted(xs, reverse: true)`, as in Python.
+    if name == "sorted" && args.len() == 2 {
+        if let ExprKind::NamedArg { name: n, value } = &args[1].kind {
+            if let (true, ExprKind::Bool(rev)) = (n == "reverse", &value.kind) {
+                let rev = *rev;
+                let span = e.span.clone();
+                let xs = args.remove(0);
+                let sorted = method(
+                    xs,
+                    "sorted",
+                    Vec::new(),
+                    &span.in_copy(crate::span::next_copy_id()),
+                );
+                *e = if rev {
+                    method(sorted, "reversed", Vec::new(), &span)
+                } else {
+                    sorted
+                };
+                return;
+            }
+        }
+    }
     if args
         .iter()
         .any(|a| matches!(a.kind, ExprKind::NamedArg { .. }))
