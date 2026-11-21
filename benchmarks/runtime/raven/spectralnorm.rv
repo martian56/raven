@@ -1,0 +1,58 @@
+from std.math import sqrt
+
+fun a(i: int, j: int) -> float {
+    return 1.0 / ((i + j) * (i + j + 1) / 2 + i + 1).to_float()
+}
+
+fun mul_av(v: list[float], out: list[float]) {
+    let n = len(v)
+    var i = 0
+    while i < n {
+        var s = 0.0
+        var j = 0
+        while j < n {
+            s += a(i, j) * v[j]
+            j += 1
+        }
+        out[i] = s
+        i += 1
+    }
+}
+
+fun mul_atv(v: list[float], out: list[float]) {
+    let n = len(v)
+    var i = 0
+    while i < n {
+        var s = 0.0
+        var j = 0
+        while j < n {
+            s += a(j, i) * v[j]
+            j += 1
+        }
+        out[i] = s
+        i += 1
+    }
+}
+
+fun mul_atav(v: list[float], out: list[float], tmp: list[float]) {
+    mul_av(v, tmp)
+    mul_atv(tmp, out)
+}
+
+fun main() {
+    let n = 2000
+    let u = [1.0] * n
+    let v = [0.0] * n
+    let tmp = [0.0] * n
+    for k in range(10) {
+        mul_atav(u, v, tmp)
+        mul_atav(v, u, tmp)
+    }
+    var vbv = 0.0
+    var vv = 0.0
+    for i in range(n) {
+        vbv += u[i] * v[i]
+        vv += v[i] * v[i]
+    }
+    print("${sqrt(vbv / vv):.9}")
+}

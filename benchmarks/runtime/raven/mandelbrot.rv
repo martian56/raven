@@ -1,0 +1,28 @@
+fun main() {
+    let size = 1600
+    let max_iter = 50
+    var inside = 0
+    var y = 0
+    while y < size {
+        let ci = 2.0 * y.to_float() / size.to_float() - 1.0
+        var x = 0
+        while x < size {
+            let cr = 2.0 * x.to_float() / size.to_float() - 1.5
+            var zr = 0.0
+            var zi = 0.0
+            var i = 0
+            while i < max_iter and zr * zr + zi * zi <= 4.0 {
+                let t = zr * zr - zi * zi + cr
+                zi = 2.0 * zr * zi + ci
+                zr = t
+                i += 1
+            }
+            if i == max_iter {
+                inside += 1
+            }
+            x += 1
+        }
+        y += 1
+    }
+    print(inside)
+}
