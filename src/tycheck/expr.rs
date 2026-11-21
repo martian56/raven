@@ -2739,13 +2739,30 @@ impl<'a, 'b> Checker<'a, 'b> {
             .iter()
             .find(|(_, s)| s.name == mangled)
             .map(|(d, _)| *d);
-        let Some(decl) = decl else {
-            return Err(ty_custom(
-                &format!("module `{}` has no function `{}`", alias, name),
-                span,
-            ));
+        // A C function the module declares in `extern "C"` keeps its own
+        // name: `import std.math` then `math.sqrt(x)`.
+        let extern_ty = match decl {
+            Some(_) => None,
+            None => self
+                .env
+                .externs
+                .values()
+                .find(|s| s.name == name && !s.variadic)
+                .map(|s| Ty::Function {
+                    params: s.params.clone(),
+                    ret: Box::new(s.ret.clone()),
+                }),
         };
-        let fn_ty = self.type_of_binding(&Binding::Function(decl), span, &[])?;
+        let fn_ty = match (decl, extern_ty) {
+            (Some(decl), _) => self.type_of_binding(&Binding::Function(decl), span, &[])?,
+            (None, Some(t)) => t,
+            (None, None) => {
+                return Err(ty_custom(
+                    &format!("module `{}` has no function `{}`", alias, name),
+                    span,
+                ))
+            }
+        };
         let Ty::Function { params, ret } = fn_ty else {
             return Ok(None);
         };

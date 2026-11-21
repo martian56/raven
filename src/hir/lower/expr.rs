@@ -2133,12 +2133,26 @@ fn module_qualified_fn(receiver: &Expr, name: &str, cx: &LowerCtx<'_>) -> Option
     // alias call `alias.fn()` targets `<prefix>.fn`, for std, local, and
     // external sources alike.
     let prefix = import.mangled_prefix.as_ref()?;
-    Some(format!(
+    let mangled = format!(
         "{}{}{}",
         prefix,
         crate::resolve::stdlib::NAMESPACE_SEP,
         name
-    ))
+    );
+    if cx.env.functions.values().any(|s| s.name == mangled) {
+        return Some(mangled);
+    }
+    // A C function declared in the module's `extern "C"` block keeps its own
+    // name, so `math.sqrt(x)` calls `sqrt`.
+    if cx
+        .env
+        .externs
+        .values()
+        .any(|s| s.name == name && !s.variadic)
+    {
+        return Some(name.to_string());
+    }
+    Some(mangled)
 }
 
 /// Wrap an interpolation part in a `to_string()` method call when its
