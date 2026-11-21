@@ -1,4 +1,4 @@
-//! Raven v2 compiler entry point.
+//! Raven compiler entry point.
 //!
 //! Supports:
 //!   raven build <source.rv> [-o <output>]
@@ -7,7 +7,7 @@
 //!   raven --version | -V         Print the compiler version.
 //!   raven                        Print usage.
 //!
-//! The `build` subcommand runs the entire v2 pipeline (lex, parse,
+//! The `build` subcommand runs the entire pipeline (lex, parse,
 //! resolve, type check, HIR, MIR) and feeds the resulting `MirProgram`
 //! to the Cranelift back end. The relocatable object is then linked
 //! with the `raven-runtime` staticlib by the toolchain-aware linker

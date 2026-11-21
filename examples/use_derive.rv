@@ -1,8 +1,8 @@
 // Compile-time `@derive(...)` for the core traits. The attribute
 // synthesizes the trait impls so the type works with hash-backed
 // collections and prints without a hand written `equals`/`hash`/
-// `to_string`/`debug`. Covers a non-generic struct used as a Map key and a
-// Set element, an enum with payload variants, and a bounded generic struct.
+// `to_string`/`debug`. Covers a non-generic class used as a Map key and a
+// Set element, an enum with payload variants, and a bounded generic class.
 
 from std.collections import Map, Set
 
@@ -34,7 +34,7 @@ fun main() {
     print(p.to_string()) // Point { x: 1, y: 2 }
     print(p.debug()) // Point { x: 1, y: 2 }
 
-    // Derived Eq + Hash let the struct key a Map and join a Set.
+    // Derived Eq + Hash let the class key a Map and join a Set.
     let m: dict[Point, int] = Map.new()
     m.set(p, 100)
     print(m.has(q)) // true

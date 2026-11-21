@@ -1,4 +1,4 @@
-// Converting between Int and Float with the built-in .to_float() and .to_int().
+// Converting between int and float with the built-in .to_float() and .to_int().
 // There are no implicit numeric coercions, so the conversion is always explicit.
 
 fun main() {

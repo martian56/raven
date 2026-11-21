@@ -748,8 +748,8 @@ fn lower_set_lit(
     ))
 }
 
-/// Lower a map literal `[k1: v1, ...]` (and the empty `[:]`) to a block
-/// that builds the map with the `Map.new()` associated constructor and
+/// Lower a dict literal `{k1: v1, ...}` (and the empty `{}`) to a block
+/// that builds the dict with the `Map.new()` associated constructor and
 /// one `set` call per pair:
 ///
 /// ```text

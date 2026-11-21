@@ -1,6 +1,6 @@
 //! Cross-crate integration tests for the tracing collector.
 //!
-//! These play the role the v2 code generator (issue #67) will play:
+//! These play the role the code generator plays:
 //! they register roots on the shadow stack, allocate objects through the
 //! collector's constructors, force collections, and assert that
 //! reachable objects survive while unreachable ones (including cycles)

@@ -1,4 +1,4 @@
-// std/process: spawn subprocesses over the raven-runtime C ABI, backed by
+// std.process: spawn subprocesses over the raven-runtime C ABI, backed by
 // std::process::Command. Two modes share one registry-id scheme:
 //
 // - `run` waits: the child runs to completion in one runtime call that
@@ -15,11 +15,11 @@
 // through the runtime's thread-local last-error slot, tagged with kind
 // "process".
 //
-// A `List` cannot cross the FFI, so the args are joined into one String
+// A `list` cannot cross the FFI, so the args are joined into one str
 // with a single NUL byte (`\0`) between elements and split back in the
 // runtime. Program args effectively never contain NUL, so this is
 // unambiguous; an arg containing a NUL byte is not supported. An empty arg
-// list is the empty String. See docs/specs/std-process.md.
+// `list` is the empty str. See docs/guide/stdlib/process.md.
 
 import std.error
 import std.string
@@ -73,7 +73,7 @@ impl Child {
     // written. False means the stdin was already closed, the child had
     // exited (a broken pipe), or the handle is unknown. The bytes are
     // flushed, so a line the child is waiting on arrives without delay. A
-    // String is a byte buffer, so binary data passes through unchanged.
+    // `str` is a byte buffer, so binary data passes through unchanged.
     fun write_stdin(self, data: str) -> bool {
         return raven_process_write_stdin(self.id, data) >= 0
     }
@@ -149,9 +149,9 @@ impl Output {
     }
 }
 
-// Join `args` into one String, NUL-prefixing each element, the encoding the
+// Join `args` into one str, NUL-prefixing each element, the encoding the
 // runtime splits back into the child's argument list. An empty list yields the
-// empty String (zero args); a one-element list `[""]` yields a single NUL, so a
+// empty str (zero args); a one-element list `[""]` yields a single NUL, so a
 // lone empty argument is distinguishable from no arguments. An arg must not
 // contain NUL.
 fun join_args(args: list[str]) -> str {

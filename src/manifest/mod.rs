@@ -9,7 +9,7 @@
 //! dependencies, resolving version constraints, and wiring `[ffi]` into
 //! the link step are handled by later rvpm work.
 //!
-//! See `docs/specs/rv-toml.md` for the full field reference.
+//! See `docs/guide/rvpm.md` for the full field reference.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -151,8 +151,7 @@ pub struct Ffi {
     pub link_args: Vec<String>,
 }
 
-/// The optional `[fmt]` section, carried from v1. Absent fields take the
-/// documented defaults.
+/// The optional `[fmt]` section. Absent fields take the documented defaults.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fmt {
     pub indent_width: u32,

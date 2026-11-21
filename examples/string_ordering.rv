@@ -1,4 +1,4 @@
-// Lexicographic ordering on String with < <= > >=. Regression for issue
+// Lexicographic ordering on str with < <= > >=. Regression for issue
 // #267 (these used to be a type error). Prints:
 //   true false true true false
 fun main() {

@@ -1,4 +1,4 @@
-# std/test
+# std.test
 
 Assertions for writing test programs in Raven. A test is an ordinary Raven
 program whose `main` calls these assertions: if every assertion holds, the
@@ -241,4 +241,4 @@ each exit code; the first nonzero exit marks a failure.
 ## See also
 
 - [rvpm guide](../rvpm.md) for project structure and running a package.
-- [std/string](string.md) for the string methods used in the examples above.
+- [std.string](string.md) for the string methods used in the examples above.

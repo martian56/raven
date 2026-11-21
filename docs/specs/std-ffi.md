@@ -1,31 +1,31 @@
-# std/ffi Spec
+# std.ffi Spec
 
 Companion module for the C foreign-function interface. The C type set is
 built into the type checker (see `docs/specs/ffi.md`); this module adds
-the runtime conversions between a Raven `String` and a C `CStr`, which the
+the runtime conversions between a Raven `str` and a C `CStr`, which the
 compiler FFI layer deliberately left out. A `c"..."` literal already
-yields a `CStr` at compile time, but a `String` value computed at runtime
+yields a `CStr` at compile time, but a `str` value computed at runtime
 needs a conversion, which is what `to_cstr` and `from_cstr` provide.
 
 ## Import
 
 ```rust
-import std/ffi { to_cstr, from_cstr }
-import std/ffi { alloc, free, load, store, offset, is_null, null_ptr }
+from std.ffi import to_cstr, from_cstr
+from std.ffi import alloc, free, load, store, offset, is_null, null_ptr
 ```
 
 ## Surface
 
 ```rust
-fun to_cstr(s: String) -> CStr
-fun from_cstr(p: CStr) -> String
+fun to_cstr(s: str) -> CStr
+fun from_cstr(p: CStr) -> str
 ```
 
 `to_cstr` copies the bytes of `s` into a fresh, null-terminated buffer and
 returns a `CStr` pointing at the first byte. The result is a standalone
 copy, not the String's own length-prefixed buffer, so it is a valid
 `const char *`. `from_cstr` reads the null-terminated bytes at `p`,
-stopping at the first NUL, and builds a Raven `String` from them (the
+stopping at the first NUL, and builds a Raven `str` from them (the
 terminator is not included).
 
 Both wrappers are pure Raven over two raven-runtime symbols bound through
@@ -33,41 +33,41 @@ Both wrappers are pure Raven over two raven-runtime symbols bound through
 
 ## Raw pointer and buffer access
 
-`CPtr<T>` is a usable raw pointer. The following generic functions read and
+`CPtr[T]` is a usable raw pointer. The following generic functions read and
 write C memory through it and obtain or release a buffer:
 
 ```rust
-fun alloc<T>(count: Int) -> CPtr<T>
-fun free<T>(p: CPtr<T>)
-fun load<T>(p: CPtr<T>) -> T
-fun store<T>(p: CPtr<T>, value: T)
-fun offset<T>(p: CPtr<T>, count: Int) -> CPtr<T>
-fun is_null<T>(p: CPtr<T>) -> Bool
-fun null_ptr<T>() -> CPtr<T>
+fun alloc[T](count: int) -> CPtr[T]
+fun free[T](p: CPtr[T])
+fun load[T](p: CPtr[T]) -> T
+fun store[T](p: CPtr[T], value: T)
+fun offset[T](p: CPtr[T], count: int) -> CPtr[T]
+fun is_null[T](p: CPtr[T]) -> bool
+fun null_ptr[T]() -> CPtr[T]
 ```
 
-* `alloc<T>(count)` reserves room for `count` elements of `T` and returns a
-  `CPtr<T>` to the (uninitialized) buffer, or the null pointer on a zero
+* `alloc[T](count)` reserves room for `count` elements of `T` and returns a
+  `CPtr[T]` to the (uninitialized) buffer, or the null pointer on a zero
   count or allocation failure.
-* `free<T>(p)` releases a buffer from `alloc`; a null pointer is a no-op.
-* `load<T>(p)` reads the element of type `T` at `p`; `store<T>(p, value)`
+* `free[T](p)` releases a buffer from `alloc`; a null pointer is a no-op.
+* `load[T](p)` reads the element of type `T` at `p`; `store[T](p, value)`
   writes it. The pointee width sets the size of the single machine
   load/store the back end emits.
-* `offset<T>(p, count)` advances `p` by `count` elements, scaling by the
+* `offset[T](p, count)` advances `p` by `count` elements, scaling by the
   size of `T` (`p + count * sizeof(T)`). There is no `at`/indexed-load in
   this release; compose `load(offset(p, i))`.
-* `is_null<T>(p)` is true exactly when `p` is the null pointer; `null_ptr<T>()`
-  is that null `CPtr<T>`. Many C APIs return null on failure, so check before
+* `is_null[T](p)` is true exactly when `p` is the null pointer; `null_ptr[T]()`
+  is that null `CPtr[T]`. Many C APIs return null on failure, so check before
   dereferencing.
 
 ### Supported pointee types
 
 `T` must be a C scalar (`CInt`, `CLong`, `CSize`, `CFloat`, `CDouble`,
-`CStr`) or a native `Int`/`Float`. The pointer load/store width is the
+`CStr`) or a native `int`/`float`. The pointer load/store width is the
 Cranelift machine type of `T`: `CInt` is a 4-byte i32, `CLong`/`CSize`/`CStr`
-and `Int` are 8-byte i64, `CFloat` is a 4-byte f32, `CDouble`/`Float` an
-8-byte f64. A native `Int` stored to a `CInt` pointee is narrowed to i32 at
-the store, and a `Float` stored to a `CFloat` pointee is narrowed to f32,
+and `int` are 8-byte i64, `CFloat` is a 4-byte f32, `CDouble`/`float` an
+8-byte f64. A native `int` stored to a `CInt` pointee is narrowed to i32 at
+the store, and a `float` stored to a `CFloat` pointee is narrowed to f32,
 the same boundary conversions an `extern` call applies. The pointee may also
 be a generic parameter inside a generic function, which is how these
 wrappers forward `T`; it is grounded to a concrete type per monomorphization
@@ -110,8 +110,8 @@ literal (which is static) or a `CStr` from another source; a freed pointer must
 not be used again. A caller that converts in a hot loop should free each buffer
 or hoist the conversion.
 
-`from_cstr` produces an ordinary GC-managed `String`, traced and reclaimed
-like any other. Embedded NUL bytes in the source `String` are preserved by
+`from_cstr` produces an ordinary GC-managed `str`, traced and reclaimed
+like any other. Embedded NUL bytes in the source `str` are preserved by
 `to_cstr` up to the first one, but a C reader stops at that first NUL, so a
 round trip through `from_cstr` truncates at an embedded NUL. Plain UTF-8
 text without interior NUL bytes round-trips exactly.
@@ -119,7 +119,7 @@ text without interior NUL bytes round-trips exactly.
 ## C type set
 
 The C ABI primitives recognized by the type checker, with their machine
-mappings. `CInt`/`CLong`/`CSize`/`CStr`/`CPtr<T>` are specified in
+mappings. `CInt`/`CLong`/`CSize`/`CStr`/`CPtr[T]` are specified in
 `docs/specs/ffi.md`; `CFloat` and `CDouble` are added here. The C
 numeric FFI types are now complete.
 
@@ -131,23 +131,23 @@ numeric FFI types are now complete.
 | `CStr`     | `const char *` | pointer width (`i64`) |
 | `CFloat`   | `float`        | `f32`                 |
 | `CDouble`  | `double`       | `f64`                 |
-| `CPtr<T>`  | `T *` (opaque) | pointer width (`i64`) |
+| `CPtr[T]`  | `T *` (opaque) | pointer width (`i64`) |
 | `CFnPtr`   | function ptr   | pointer width (`i64`) |
 
 `CDouble` is C `double`. It maps to `f64`, the exact representation a
-Raven `Float` already crosses the C ABI as, so a `Float` argument is
+Raven `float` already crosses the C ABI as, so a `float` argument is
 accepted where a `CDouble` parameter is expected with no conversion at the
 call boundary, and a `CDouble` return is an `f64`. A libm function such as
-`sqrt(x: CDouble) -> CDouble` is callable with a `Float`.
+`sqrt(x: CDouble) -> CDouble` is callable with a `float`.
 
-`CFloat` is C `float` (an f32). A Raven `Float` is f64, so it does not
-share `CFloat`'s representation the way it does `CDouble`'s. A `Float`
+`CFloat` is C `float` (an f32). A Raven `float` is f64, so it does not
+share `CFloat`'s representation the way it does `CDouble`'s. A `float`
 argument is still accepted where a `CFloat` parameter is expected: the
 back end narrows the f64 to f32 at the call boundary with `fdemote`, and a
-`CFloat` return is widened back to an f64 `Float` with `fpromote` before it
+`CFloat` return is widened back to an f64 `float` with `fpromote` before it
 is used. A single-precision CRT/libm function such as
-`sqrtf(x: CFloat) -> CFloat` is callable with a `Float` and its result
-prints and interpolates as a `Float`.
+`sqrtf(x: CFloat) -> CFloat` is callable with a `float` and its result
+prints and interpolates as a `float`.
 
 `CString` is accepted as an alias for `CStr`.
 
@@ -160,11 +160,11 @@ naming it bare:
 
 ```rust
 extern "C" {
-    fun qsort(base: CPtr<CInt>, count: CSize, size: CSize, cmp: CFnPtr)
+    fun qsort(base: CPtr[CInt], count: CSize, size: CSize, cmp: CFnPtr)
 }
 
-fun compare(a: CPtr<CInt>, b: CPtr<CInt>) -> CInt {
-    return load<CInt>(a) - load<CInt>(b)
+fun compare(a: CPtr[CInt], b: CPtr[CInt]) -> CInt {
+    return load[CInt](a) - load[CInt](b)
 }
 
 fun main() {
@@ -188,14 +188,14 @@ Rules:
 
   ```rust
   fun run(base: CLong) {
-      let add = fun(x: CLong) -> CLong = x + base
+      let add = (x: CLong) -> CLong => x + base
       apply_cb(add, add, 5) // add -> trampoline; add -> userdata
   }
   ```
 * The function or closure's parameters and return must all be C-FFI types
-  (`CInt`, `CLong`, `CSize`, `CFloat`, `CDouble`, `CStr`, `CPtr<T>`, `CFnPtr`,
-  or `Unit` return) so the C ABI of the resulting pointer is well defined. A
-  native `Int`/`Float`/`String` parameter or return is rejected.
+  (`CInt`, `CLong`, `CSize`, `CFloat`, `CDouble`, `CStr`, `CPtr[T]`, `CFnPtr`,
+  or `()` return) so the C ABI of the resulting pointer is well defined. A
+  native `int`/`float`/`str` parameter or return is rejected.
 * `CFnPtr` is untyped: the type checker does not verify the function's
   signature matches what the C side expects. The signature match is the
   programmer's responsibility, exactly as in C.
@@ -226,7 +226,7 @@ invocations.
 
 A `c"..."` literal types as `CStr` and lowers to a static, read-only,
 null-terminated buffer with no allocation and no runtime call. Use it for
-compile-time-known strings; use `to_cstr` for a `String` value. See
+compile-time-known strings; use `to_cstr` for a `str` value. See
 `docs/specs/ffi.md` for the literal's codegen.
 
 ## libc verification
@@ -234,8 +234,8 @@ compile-time-known strings; use `to_cstr` for a `String` value. See
 `examples/use_ffi.rv` converts runtime Strings and calls libc:
 
 ```rust
-import std/ffi { to_cstr, from_cstr }
-import std/io { println }
+from std.ffi import to_cstr, from_cstr
+from std.io import println
 
 extern "C" {
     fun strlen(s: CStr) -> CSize
@@ -263,18 +263,18 @@ Output:
 roundtrip
 ```
 
-`strlen` counts the 5 bytes of the converted `String`. `strcmp` returns 0
+`strlen` counts the 5 bytes of the converted `str`. `strcmp` returns 0
 for equal strings and a negative value when the first differing byte is
 smaller (`-1` here for `'c'` against `'d'`). `from_cstr(to_cstr("roundtrip"))`
 recovers the original text.
 
 The C integer results print through `print`. The integer FFI types
-(`CInt`, `CLong`, `CSize`) satisfy `ToString` by widening to `Int` (a
-narrower one is sign-extended) and rendering through the `Int` to-string
+(`CInt`, `CLong`, `CSize`) satisfy `ToString` by widening to `int` (a
+narrower one is sign-extended) and rendering through the `int` to-string
 path, so a `CSize` or `CInt` can be printed or interpolated into a
-`"${...}"` string directly. `CSize` is treated as a signed `Int`, correct
+`"${...}"` string directly. `CSize` is treated as a signed `int`, correct
 for realistic sizes (below 2^63). The float FFI types (`CFloat`,
-`CDouble`) satisfy `ToString` the same way through the `Float` to-string
+`CDouble`) satisfy `ToString` the same way through the `float` to-string
 path; a `CFloat` widens its f32 to f64 first.
 
 ## Raw pointer verification
@@ -303,12 +303,12 @@ are read back after the C `raven_ffi_fill_i32` filled the buffer with `7`.
 ## Small C structs by value
 
 A small C struct can cross the FFI by value, both as an argument and as a
-return. The Raven side declares a struct with C memory layout by marking it
+return. The Raven side declares a class with C memory layout by marking it
 `@repr(C)`:
 
 ```rust
 @repr(C)
-struct Point {
+class Point {
     x: CInt
     y: CInt
 }
@@ -319,8 +319,8 @@ extern "C" {
 }
 
 fun main() {
-    let p = Point { x: 3, y: 4 }
-    print(raven_ffi_point_sum(p))       // 7
+    let p = Point(x: 3, y: 4)
+    print(raven_ffi_point_sum(p)) // 7
     let q = raven_ffi_translate(p, 1, 2) // {4, 6}
     print(q.x)
     print(q.y)
@@ -329,34 +329,34 @@ fun main() {
 
 ### Layout rule
 
-A `@repr(C)` struct has C layout: fields in declaration order, each at its
+A `@repr(C)` class has C layout: fields in declaration order, each at its
 naturally aligned offset, and the total size rounded up to the struct's
 alignment. `CInt` is 4-byte aligned and 4 bytes; `CLong`, `CSize`, `CStr`,
-`CPtr<T>`, and `CFnPtr` are 8-byte aligned and 8 bytes. So `Point` above is
+`CPtr[T]`, and `CFnPtr` are 8-byte aligned and 8 bytes. So `Point` above is
 `{ x at 0, y at 4 }`, total 8 bytes. The fields are still readable on the
-Raven side (`q.x`), since the value remains an ordinary heap struct; only
+Raven side (`q.x`), since the value remains an ordinary heap object; only
 the call boundary marshals it by value.
 
 ### Supported shape (this release)
 
 * Every field must be a **C scalar**: an integer-class type (`CInt`,
-  `CLong`, `CSize`, `CStr`, `CPtr<T>`, `CFnPtr`) or a float (`CFloat`,
+  `CLong`, `CSize`, `CStr`, `CPtr[T]`, `CFnPtr`) or a float (`CFloat`,
   `CDouble`). A float field is classified into the platform's float
   register class (SSE on System V, a SIMD register on AArch64) at the call
   boundary.
 * There is **no size limit**. Up to 16 bytes the struct crosses in registers;
   a larger one crosses in memory on the stack (the System V MEMORY class) or
   by reference (Windows x64, AArch64), and is returned through a hidden
-  pointer. Passing a `CPtr<...>` is still cheaper for a large struct.
-* A native `Int` literal initializes a `CInt`/`CLong`/`CSize` field
-  (`Point { x: 3, y: 4 }`), and a native `Float` literal a `CFloat`/`CDouble`
+  pointer. Passing a `CPtr[...]` is still cheaper for a large struct.
+* A native `int` literal initializes a `CInt`/`CLong`/`CSize` field
+  (`Point(x: 3, y: 4)`), and a native `float` literal a `CFloat`/`CDouble`
   field (`Color { r: 1.0 }`), the same coercion a C call applies. An f64
   narrows to f32 for a `CFloat` field at the boundary.
-* A field may itself be a nested `@repr(C)` struct: its bytes are inlined
-  into the parent's C image at the field offset. A non-`@repr(C)` struct field
+* A field may itself be a nested `@repr(C)` class: its bytes are inlined
+  into the parent's C image at the field offset. A non-`@repr(C)` class field
   is rejected.
-* Only a `@repr(C)` struct may be handed to a C function by value; a plain
-  heap struct (a GC pointer) is rejected at the call.
+* Only a `@repr(C)` class may be handed to a C function by value; a plain
+  class (a GC pointer) is rejected at the call.
 
 ### ABI and marshaling
 
@@ -368,11 +368,11 @@ stack rather than apply the C ABI register classification):
 * **At most 8 bytes**: one integer register on every target (Windows x64
   requires the size to be exactly 1, 2, 4, or 8). The fields pack into one
   i64 at their C byte offsets; a returned struct arrives in one register and
-  is unpacked into a fresh heap struct.
+  is unpacked into a fresh heap object.
 * **9 to 16 bytes, System V AMD64 and AArch64**: two integer registers (two
   eightbytes). The back end writes the struct's C image to a stack slot,
   loads the two eightbyte registers from it to pass, and stores the two
-  returned registers back to a slot to rebuild the heap struct.
+  returned registers back to a slot to rebuild the heap object.
 * **Windows x64, sizes 3, 5, 6, 7, or 9 to 16**: by reference. The caller
   copies the struct to a stack slot and passes its address; a struct return
   of these sizes uses a hidden first pointer argument (`sret`) the callee
@@ -383,7 +383,7 @@ stack rather than apply the C ABI register classification):
   such a struct through the hidden `sret` pointer.
 
 All these paths read and write the struct through its exact C memory image, so
-a Raven heap struct round-trips a C call unchanged. A nested struct field is
+a Raven heap object round-trips a C call unchanged. A nested class field is
 followed through its heap pointer and inlined recursively; on a return the
 nested object is rebuilt and the parent's GC descriptor marks the nested-field
 slot as a pointer so the collector traces it.

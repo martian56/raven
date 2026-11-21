@@ -18,7 +18,7 @@ Source -> Lexer -> Parser -> Resolver -> Tycheck -> HIR -> MIR -> Codegen -> Lin
 * The lexer produces `CStringLit` for `c"..."` and `Extern` for the
   keyword.
 * The parser produces an `Extern` declaration holding `ExternFn`
-  signatures. This is already part of the grammar (`docs/specs/parser.md`).
+  signatures.
 * The resolver records each foreign function as `Binding::Extern` and
   treats the FFI type names as built-in.
 * The type checker assigns each FFI type name a distinct `Ty::Ffi(...)`
@@ -39,11 +39,11 @@ extern "C" {
 }
 ```
 
-* `extern` is followed by an ABI string literal. Only `"C"` is meaningful
-  in v2.0; other ABI strings parse but are treated as C.
+* `extern` is followed by an ABI string literal. Only `"C"` is meaningful;
+  other ABI strings parse but are treated as C.
 * The block holds zero or more `fun name(params) -> Ret` signatures with
   no bodies. A signature with no `-> Ret` returns the C `void`
-  equivalent (`Unit`).
+  equivalent (`()`).
 * Foreign functions are not generic.
 
 A call uses the foreign name directly:
@@ -69,32 +69,28 @@ not silently passed where the C ABI expects a foreign one.
 | `CStr`     | `const char *`   | pointer width (`i64`)  |
 | `CFloat`   | `float`          | `f32`                  |
 | `CDouble`  | `double`         | `f64`                  |
-| `CPtr<T>`  | `T *` (opaque)   | pointer width (`i64`)  |
+| `CPtr[T]`  | `T *` (opaque)   | pointer width (`i64`)  |
 
 `CInt` is fixed at 32-bit, which matches the C `int` on every ABI Raven
 targets. `CSize` is 64-bit on the 64-bit targets Raven supports. `CLong`
 follows the platform: it is C `long`, 64-bit under LP64 (Linux) and 32-bit
 under LLP64 (Windows), so a Windows `long` argument or return is passed and
-sign-extended at 32 bits. `CStr`, `CSize`, and `CPtr<T>` are all pointer
+sign-extended at 32 bits. `CStr`, `CSize`, and `CPtr[T]` are all pointer
 width. `CDouble`
-is C `double`, the same `f64` representation a Raven `Float` already uses,
-so a `Float` argument is accepted where a `CDouble` is expected with no
-conversion at the call. `CFloat` is C `float` (`f32`). A `Float` argument
+is C `double`, the same `f64` representation a Raven `float` already uses,
+so a `float` argument is accepted where a `CDouble` is expected with no
+conversion at the call. `CFloat` is C `float` (`f32`). A `float` argument
 is accepted where a `CFloat` is expected: the back end narrows the f64 to
 f32 at the call boundary (`fdemote`), and a `CFloat` return is widened back
-to an f64 `Float` (`fpromote`) before use. The C numeric FFI types are now
-complete: `CInt`, `CLong`, `CSize`, `CFloat`, `CDouble`, plus `CStr` and
-`CPtr<T>` for pointers.
+to an f64 `float` (`fpromote`) before use.
 
-`CPtr<T>` is a typed but opaque pointer in v2.0: the pointee type is kept
-for documentation and future conversions, but the back end treats the
-value as a raw pointer-width integer. There is no dereference operator
-for it yet.
+`CPtr[T]` is a typed raw pointer. The back end treats the value as a
+pointer-width integer; `std.ffi` reads and writes through it with `load`,
+`store`, and `offset`, using `T` to pick the access width.
 
-`CString` is accepted as an alias for `CStr` so that older `extern`
-signatures keep checking.
+`CString` is accepted as another name for `CStr`.
 
-The `std/ffi` module adds runtime `String` to `CStr` conversion helpers
+The `std.ffi` module adds runtime `str` to `CStr` conversion helpers
 on top of these primitives. See `docs/specs/std-ffi.md`.
 
 ## C string literals and `CStr`
@@ -105,18 +101,18 @@ followed by a single `\0`. No heap allocation and no runtime call occur,
 so the pointer is handed straight to the C function as a `const char *`.
 Identical literals share one symbol.
 
-Passing a native Raven `String` where a `CStr` is expected is rejected.
-A heap `String` (see `docs/specs/object-layout.md` and
+Passing a native Raven `str` where a `CStr` is expected is rejected.
+A heap `str` (see `docs/specs/object-layout.md` and
 `raven-runtime/src/object/string.rs`) is length-prefixed and not
 guaranteed to be null-terminated, so it is not a valid `const char *`.
-To pass a runtime `String`, convert it through `std/ffi`'s `to_cstr`,
+To pass a runtime `str`, convert it through `std.ffi`'s `to_cstr`,
 which copies the bytes into a null-terminated buffer (see
 `docs/specs/std-ffi.md`). A `c"..."` literal still produces a `CStr`
 directly with no allocation.
 
-An integer C parameter (`CInt`, `CLong`, `CSize`) accepts a native `Int`
+An integer C parameter (`CInt`, `CLong`, `CSize`) accepts a native `int`
 argument, so a literal such as `abs(-7)` checks. The back end converts
-the i64 `Int` to the parameter's machine width at the call (a reduce to
+the i64 `int` to the parameter's machine width at the call (a reduce to
 i32 for `CInt`, a pass-through for the i64-width types). This keeps a C
 function with integer parameters callable without a cast.
 
@@ -127,16 +123,16 @@ with FFI parameter and return types. A call:
 
 * checks arity against the signature,
 * checks each argument against the parameter's FFI type, with the two
-  coercions above (`c"..."` -> `CStr`, native `Int` -> integer FFI type),
+  coercions above (`c"..."` -> `CStr`, native `int` -> integer FFI type),
 * otherwise requires the argument type to unify with the parameter type.
 
 A mismatch (for example a `c"..."` where a `CInt` is expected, or a
-`String` where a `CStr` is expected) is a normal `TypeError` reported at
+`str` where a `CStr` is expected) is a normal `TypeError` reported at
 the argument's span.
 
 The return type flows out as the call's type. An integer FFI return
-(`CInt`, `CLong`, `CSize`) satisfies `ToString`: it widens to `Int` (a
-narrower one is sign-extended) and renders through the `Int` to-string
+(`CInt`, `CLong`, `CSize`) satisfies `ToString`: it widens to `int` (a
+narrower one is sign-extended) and renders through the `int` to-string
 path, so `print(n)` and `"${n}"` both observe a C call result directly.
 
 ## Codegen
@@ -165,8 +161,8 @@ linker. Paths in `sources` must remain within their package root.
 
 A signature ending in `...` is variadic (`fun printf(fmt: CStr, ...) -> CInt`).
 A call may pass extra arguments after the fixed parameters; each must be a
-C-FFI integer or pointer type (`CInt`, `CLong`, `CSize`, `CStr`, `CPtr<T>`) or
-a native `Int`. The back end builds a signature from the actual arguments at
+C-FFI integer or pointer type (`CInt`, `CLong`, `CSize`, `CStr`, `CPtr[T]`) or
+a native `int`. The back end builds a signature from the actual arguments at
 each call site and dispatches through `call_indirect`.
 
 **Float variadic arguments are rejected at compile time.** The Cranelift
@@ -180,8 +176,6 @@ On `*-windows-msvc`, the `printf` family is provided by
 `legacy_stdio_definitions.lib` (the UCRT inlines it in headers), which the
 linker pulls in automatically.
 
-## Out of scope
+## Not supported
 
-* Non-CRT libraries and their link flags (issue #81).
-* Dereferencing or arithmetic on `CPtr<T>`.
 * Float variadic arguments (see above).

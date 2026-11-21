@@ -1,4 +1,4 @@
-// std/string enrichment: split, parse_int/parse_float, trim sides, reverse,
+// std.string enrichment: split, parse_int/parse_float, trim sides, reverse,
 // count. Prints:
 //   3
 //   200

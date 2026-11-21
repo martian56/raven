@@ -1,4 +1,4 @@
-//! Source spans for the v2 compiler.
+//! Source spans for the Raven compiler.
 
 use std::fmt;
 use std::path::PathBuf;

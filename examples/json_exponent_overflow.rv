@@ -1,5 +1,5 @@
 // A JSON exponent is capped while its digits are read, so a huge exponent
-// saturates to infinity instead of overflowing Int and wrapping into a small
+// saturates to infinity instead of overflowing int and wrapping into a small
 // step count. Normal exponents are unaffected. Prints:
 //   1e19... -> inf
 //   1e40... -> inf

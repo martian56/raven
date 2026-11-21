@@ -1,4 +1,4 @@
-//! Recursive descent parser for the v2 grammar.
+//! Recursive descent parser for the Raven grammar.
 //!
 //! The parser consumes a token slice produced by `crate::lexer` and
 //! emits an AST (`crate::ast::File`). It is hand written and single pass.
@@ -16,8 +16,7 @@
 //! The cursor and helper machinery live in this module on the `Parser`
 //! struct; the category modules implement methods on it.
 //!
-//! See `docs/specs/parser.md` for the full grammar and the design
-//! notes on disambiguation rules.
+//! The surface grammar is documented in `docs/guide/language-reference.md`.
 
 use crate::ast::File;
 use crate::error::{ParseError, RavenError};

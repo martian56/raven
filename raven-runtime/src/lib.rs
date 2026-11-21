@@ -1,6 +1,6 @@
-//! Runtime support crate for compiled Raven v2 programs.
+//! Runtime support crate for compiled Raven programs.
 //!
-//! Compiled v2 binaries link against this crate as a `staticlib`. The
+//! Compiled binaries link against this crate as a `staticlib`. The
 //! exported `extern "C"` symbols below form the entire ABI surface the
 //! back-end is allowed to call. See `docs/specs/runtime.md` for the
 //! full contract and what is intentionally deferred.
@@ -660,8 +660,7 @@ fn string_bytes<'a>(s: *const object::String) -> &'a [u8] {
 
 /// Reinterpret a signed 64-bit integer as an `f64` by value conversion.
 ///
-/// The v2 surface language has no Int-to-Float cast, so `std/random`
-/// binds this symbol through `extern "C"` to build a `Float` in
+/// `std/random` binds this symbol through `extern "C"` to build a `Float` in
 /// `[0.0, 1.0)` from generated bits.
 #[no_mangle]
 pub extern "C" fn raven_int_to_float(value: i64) -> f64 {
@@ -670,8 +669,7 @@ pub extern "C" fn raven_int_to_float(value: i64) -> f64 {
 
 /// Truncate an `f64` toward zero to a signed 64-bit integer.
 ///
-/// The v2 surface language has no Float-to-Int cast, so `std/json` binds
-/// this symbol through `extern "C"` to recover an `Int` field from a JSON
+/// `std/json` binds this symbol through `extern "C"` to recover an `Int` field from a JSON
 /// number (which always parses to `Float`). A value outside the `i64`
 /// range saturates to `i64::MIN`/`i64::MAX`, and `NaN` maps to `0`, the
 /// usual `as` cast behavior.

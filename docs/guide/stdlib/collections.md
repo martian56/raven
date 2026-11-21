@@ -1,4 +1,4 @@
-# std/collections
+# std.collections
 
 Hash-backed `set[T]` and `dict[K, V]` over keys that implement the prelude
 `Eq + Hash` traits. Lookup, insert, and remove are O(1) average, and
@@ -35,18 +35,16 @@ fun main() {
 
 ## Supported key types
 
-`Hash` is implemented for `int`, `bool`, and `str`, and any user type
-that implements both `Eq` and `Hash` works as an element or key. `char` and
-`float` do not yet implement `Hash`, so `set[char]`, `set[float]`, and maps
-keyed on them do not satisfy the bound.
+`Hash` is implemented for `int`, `bool`, `char`, `str`, and tuples of those.
+A class or enum whose fields all hash gets `Eq` and `Hash` automatically, so it
+works as an element or key too. `float` does not implement `Hash`, so
+`set[float]` and dicts keyed on a float do not satisfy the bound.
 
 | Key type | Usable as `set[T]` / `dict[K, _]` |
 |----------|----------------------------------|
-| `int` | yes |
-| `bool` | yes |
-| `str` | yes |
-| user type with `Eq + Hash` | yes |
-| `char` | no (not hashable) |
+| `int`, `bool`, `char`, `str` | yes |
+| tuples of hashable types | yes |
+| a class or enum whose fields hash | yes |
 | `float` | no (not hashable) |
 
 ## Set and map literals
@@ -107,7 +105,7 @@ item moves into its position.
 
 ```rust
 fun main() {
-    let s = Set.new()
+    let s: set[str] = set()
     s.add("a")
     s.add("b")
     s.add("a") // already present, no-op
@@ -122,15 +120,16 @@ fun main() {
 
 ### `to_list(self) -> list[T]`
 
-Every element as a list, in insertion order. This is the way to enumerate
-a set: iterate the returned list.
+Every element as a list, in insertion order. A `for` loop over the set
+itself visits the same elements in the same order.
 
 ```rust
 fun main() {
     let s = {1, 2, 3}
-    for x in s.to_list() {
+    for x in s {
         print(x) // 1, 2, 3 (insertion order)
     }
+    print(s.to_list()) // [1, 2, 3]
 }
 ```
 
@@ -190,8 +189,7 @@ True when `k` has an entry in the map.
 
 ```rust
 fun main() {
-    let m = Map.new()
-    m.set("ada", 1815)
+    let m = {"ada": 1815}
 
     match m.get("ada") {
         case Some(year) { print(year) } // 1815
@@ -221,7 +219,7 @@ fun main() {
 ### `set(self, k: K, v: V)`
 
 Insert `k` with value `v`, or overwrite the existing value when `k` is
-already present.
+already present. `m[k] = v` is the same call.
 
 ### `keys(self) -> list[K]`
 
@@ -253,13 +251,11 @@ recently added entry moves into its position.
 
 ```rust
 fun main() {
-    let m = Map.new()
-    m.set("a", 1)
-    m.set("b", 2)
-    m.set("a", 10) // overwrites
+    let m = {"a": 1, "b": 2}
+    m["a"] = 10 // overwrites
 
-    print(m.len()) // 2
-    print(m.has("a")) // true
+    print(len(m)) // 2
+    print("a" in m) // true
     print(m.remove("b")) // true
     print(m.remove("z")) // false
 }
@@ -287,32 +283,16 @@ order. Removing an item moves the most recently inserted one into its place.
 ## Worked example: word frequencies
 
 ```rust
-import std.collections
-import std.string
-
 fun main() {
     let words = ["red", "blue", "red", "green", "blue", "red"]
 
-    let counts: dict[str, int] = {}
-    var i = 0
-    while i < words.len() {
-        let w = words[i]
-        match counts.get(w) {
-            case Some(n) { counts.set(w, n + 1) }
-            case None { counts.set(w, 1) }
-        }
-        i = i + 1
+    var counts: dict[str, int] = {}
+    for w in words {
+        counts[w] = counts.get_or(w, 0) + 1
     }
 
-    let ks = counts.keys()
-    var j = 0
-    while j < ks.len() {
-        let k = ks[j]
-        match counts.get(k) {
-            case Some(n) { print("${k}: ${n}") }
-            case None { print("${k}: 0") }
-        }
-        j = j + 1
+    for (word, n) in counts {
+        print("${word}: ${n}") // red: 3, blue: 2, green: 1
     }
 }
 ```
@@ -321,8 +301,8 @@ fun main() {
 
 - The [core traits spec](../../specs/core-traits.md) for the `Eq` and `Hash`
   traits these types build on.
-- The [std/hash spec](../../specs/std-hash.md) for hashing helpers.
-- The [std/iter spec](../../specs/std-iter.md) for working with the lists
-  returned by `keys()` and `values()`.
+- The [std.hash spec](../../specs/std-hash.md) for hashing helpers.
+- The [std.iter spec](../../specs/std-iter.md) for lazy pipelines over the
+  lists returned by `keys()` and `values()`.
 - The [language reference](../language-reference.md) for `Option`, `match`,
   and list literals.

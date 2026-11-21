@@ -1,4 +1,4 @@
-//! Canonical source formatter for the Raven v2 grammar.
+//! Canonical source formatter for the Raven grammar.
 //!
 //! There are no style options. Given any parseable source, the formatter
 //! emits a single canonical rendering that re-parses to an equivalent AST
@@ -6,8 +6,7 @@
 //!
 //! The pipeline lexes and parses the input, then walks the AST emitting
 //! canonical text. Line comments are recovered from the source separately
-//! (the lexer drops them) and woven back in by source position. See
-//! `docs/specs/formatter.md` for the full set of rules.
+//! (the lexer drops them) and woven back in by source position.
 
 use std::fmt::Write as _;
 
@@ -532,7 +531,7 @@ impl Printer<'_> {
         if !s.derives.is_empty() {
             self.line(&format!("@derive({})", s.derives.join(", ")));
         }
-        let mut head = String::from(if s.repr_c { "struct " } else { "class " });
+        let mut head = String::from("class ");
         head.push_str(&s.name);
         head.push_str(&render_generics(&s.generics));
         if !s.implements.is_empty() {

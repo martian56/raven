@@ -1,5 +1,5 @@
 // Exercises request_with_timeout and the streaming client against an
-// in-process std/http server: a short deadline on a slow route times out, a
+// in-process std.http server: a short deadline on a slow route times out, a
 // generous one succeeds, and a large body arrives over multiple stream
 // chunks that reassemble exactly.
 // golden:skip (binds a port and depends on timing, so it is not diffed by

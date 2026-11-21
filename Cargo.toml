@@ -2,7 +2,7 @@
 members = [".", "raven-runtime"]
 
 [workspace.package]
-version = "2.26.2"
+version = "3.0.0"
 edition = "2021"
 authors = ["martian56"]
 license = "MIT"
@@ -15,13 +15,13 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "A modern compiled programming language (v2 in development)"
+description = "A compiled programming language that reads like Python with braces"
 homepage = "https://raven.ufazien.com"
 keywords = ["programming", "language", "compiler"]
 categories = ["development-tools", "command-line-utilities"]
 
 # Packaging metadata for the tagged-release workflow (.github/workflows/release.yml).
-# The v2 stdlib is embedded in the binaries via include_str!, so no .rv files ship
+# The stdlib is embedded in the binaries via include_str!, so no .rv files ship
 # as installed assets. The raven_runtime static library is placed next to the raven
 # binary so the compiler locates it without configuration when linking user programs.
 [package.metadata.deb]

@@ -1,10 +1,10 @@
-// std/net: TCP client and server over the raven-runtime C ABI. Sockets
+// std.net: TCP client and server over the raven-runtime C ABI. Sockets
 // cannot cross the FFI, so the runtime keeps them in a registry keyed by an
 // opaque integer id and hands Raven that id; TcpStream and TcpListener wrap
-// the id. Fallible ops return Result<T, Error> tagged with kind "net" via
+// the id. Fallible ops return Result[T, Error] tagged with kind "net" via
 // the runtime's thread-local last-error slot. Goroutines run in parallel, so a
 // program can be both a client and a server at once (spawn a goroutine per
-// accepted connection). See docs/specs/std-net.md.
+// accepted connection). See docs/guide/stdlib/net.md.
 
 from std.error import error_kind
 import std.string
@@ -81,7 +81,7 @@ impl TcpListener {
 }
 
 impl TcpStream {
-    // Read up to `max` bytes, returning them as a String byte buffer. A
+    // Read up to `max` bytes, returning them as a `str` byte buffer. A
     // clean EOF yields Ok("").
     fun read(self, max: int) -> Result[str, Error] {
         let data = raven_net_read(self.id, max)
@@ -91,7 +91,7 @@ impl TcpStream {
         return Ok(data)
     }
 
-    // Read until EOF, accumulating every byte into one String. Reads in
+    // Read until EOF, accumulating every byte into one str. Reads in
     // 4 KiB chunks; a clean EOF (an empty read) ends the loop.
     fun read_all(self) -> Result[str, Error] {
         var out = ""

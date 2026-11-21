@@ -1,4 +1,4 @@
-// std/math and std/iter enrichment: fmod, gcd, is_nan/is_inf, log2; iterator
+// std.math and std.iter enrichment: fmod, gcd, is_nan/is_inf, log2; iterator
 // reductions sum/product/min/max and position/nth/last. Prints:
 //   1
 //   6

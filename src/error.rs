@@ -55,7 +55,6 @@ pub enum ParseError {
     ChainedComparison,
     DuplicateField(String),
     InvalidImportPath,
-    /// Tuple syntax is parsed but not yet supported in v2.0.
     UnsupportedTuple,
     InvalidPattern(String),
     Custom(String),
@@ -93,7 +92,7 @@ impl fmt::Display for ParseError {
     }
 }
 
-/// Name resolution errors. See `docs/specs/resolver.md` for the full catalog.
+/// Name resolution errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolveError {
     UnresolvedName(String),
@@ -151,7 +150,7 @@ impl fmt::Display for ResolveError {
     }
 }
 
-/// Type checking errors. See `docs/specs/tycheck.md` for the full catalog.
+/// Type checking errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeError {
     TypeMismatch {
@@ -235,7 +234,7 @@ impl fmt::Display for TypeError {
                 )
             }
             TypeError::UndefinedField { struct_name, field } => {
-                write!(f, "struct `{}` has no field `{}`", struct_name, field)
+                write!(f, "class `{}` has no field `{}`", struct_name, field)
             }
             TypeError::UndefinedMethod {
                 receiver_ty,
@@ -783,7 +782,7 @@ mod tests {
             span,
         );
         let s = format!("{}", err);
-        assert_eq!(s, "test.rv:7:2: struct `Point` has no field `z`");
+        assert_eq!(s, "test.rv:7:2: class `Point` has no field `z`");
     }
 
     #[test]

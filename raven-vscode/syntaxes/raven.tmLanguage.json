@@ -239,7 +239,7 @@
       "patterns": [
         {
           "name": "keyword.control.raven",
-          "match": "\\b(if|else|while|for|loop|in|break|continue|return|match|case|defer|spawn|assert|and|or|not)\\b"
+          "match": "\\b(if|elif|else|while|for|loop|in|break|continue|return|match|case|defer|spawn|assert|and|or|not)\\b"
         },
         {
           "name": "keyword.other.macro.raven",

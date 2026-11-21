@@ -1,6 +1,6 @@
 //! Inline unit tests for the Cranelift back end.
 //!
-//! Each test runs the full v2 front end pipeline (lex, parse, resolve,
+//! Each test runs the full front end pipeline (lex, parse, resolve,
 //! type check, HIR, MIR) on a small Raven snippet, hands the resulting
 //! `MirProgram` to `compile_program`, and inspects the returned object
 //! bytes. These tests do not depend on the system `cc` driver; the end

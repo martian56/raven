@@ -1,15 +1,15 @@
-// std/tls: client-side TLS over the raven-runtime C ABI. Like std/net, the
+// std.tls: client-side TLS over the raven-runtime C ABI. Like std.net, the
 // runtime keeps each TLS connection in a registry keyed by an opaque integer id
 // and hands Raven that id; TlsStream wraps it. Reads and writes carry bytes in a
-// String buffer, the same convention std/net uses. Fallible ops return
-// Result<T, Error> tagged kind "tls" via the runtime's thread-local last-error
+// `str` buffer, the same convention std.net uses. Fallible ops return
+// Result[T, Error] tagged kind "tls" via the runtime's thread-local last-error
 // slot. TLS I/O blocks by suspending the goroutine to the scheduler, so a
 // program can run many TLS connections across the worker pool at once.
 //
 // The default connect verifies the server against the bundled Mozilla root
 // store and sends `server_name` for SNI. For a private CA, a client certificate
 // (mTLS), or a dev-only skip of verification, build a TlsConfig and use
-// connect_with. See docs/specs/std-tls.md.
+// connect_with. See docs/guide/stdlib/tls.md.
 
 from std.error import error_kind
 from std.net import TcpStream
@@ -77,7 +77,7 @@ fun connect_with(addr: str, server_name: str, cfg: TlsConfig) -> Result[TlsStrea
 
 // Upgrade an already-connected plaintext TCP stream to a verified TLS stream on
 // the same socket, for protocols that negotiate in the clear and then start TLS
-// (Postgres SSLRequest, MySQL, SMTP STARTTLS): connect with std/net, exchange
+// (Postgres SSLRequest, MySQL, SMTP STARTTLS): connect with std.net, exchange
 // the protocol's start-TLS step, then call this. `server_name` is the host for
 // SNI and verification. The original stream is consumed: do not use it again.
 fun upgrade(stream: TcpStream, server_name: str) -> Result[TlsStream, Error] {
@@ -168,7 +168,7 @@ impl TlsConfig {
 }
 
 impl TlsStream {
-    // Read up to `max` decrypted bytes, returning them as a String byte buffer.
+    // Read up to `max` decrypted bytes, returning them as a `str` byte buffer.
     // A clean close yields Ok("").
     fun read(self, max: int) -> Result[str, Error] {
         let data = raven_tls_read(self.id, max)
@@ -179,7 +179,7 @@ impl TlsStream {
     }
 
     // Read until the peer closes the connection, accumulating every decrypted
-    // byte into one String. Reads in 4 KiB chunks.
+    // byte into one str. Reads in 4 KiB chunks.
     fun read_all(self) -> Result[str, Error] {
         var out = ""
         var chunk = self.read(4096)?

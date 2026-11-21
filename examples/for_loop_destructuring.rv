@@ -1,4 +1,4 @@
-// A for loop can destructure its element with a pattern: a struct binds its
+// A for loop can destructure its element with a pattern: a class binds its
 // fields, and a refutable enum pattern skips elements that do not match.
 // Prints:
 //   5

@@ -1,6 +1,6 @@
-// @derive(Ord) gives a type a `compare(self, other) -> Int` method: structs
+// @derive(Ord) gives a type a `compare(self, other) -> int` method: classes
 // compare field by field in declaration order, enums by variant order and then
-// by payload. That is enough to sort a list of either with std/cmp.
+// by payload. That is enough to sort a list of either with std.cmp.
 from std.io import println
 from std.cmp import sort
 

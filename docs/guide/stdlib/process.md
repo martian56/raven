@@ -1,4 +1,4 @@
-# std/process
+# std.process
 
 Run external programs either to completion or as a live child. `run` waits and
 returns captured output; `start` returns a `Child` that can exchange stdin,
@@ -219,8 +219,7 @@ calling `success()`).
 
 The `Err` path is taken only on a spawn failure, for example when the program
 is not found or cannot be executed. The error is
-`Err(Error { kind: "process", message })`, where `message` is the OS error
-text. The `Error` type comes from [std/error](error.md).
+an `Error` with kind `"process"` whose message is the OS error text. The `Error` type comes from [std.error](error.md).
 
 ```rust
 from std.process import run
@@ -275,7 +274,7 @@ fun main() {
 
 ## See also
 
-- [std/error](error.md) for the `Error` type and the `Result` model used by
+- [std.error](error.md) for the `Error` type and the `Result` model used by
   `run`, `run_with_input`, and `start`.
-- [std/sync](sync.md) for scheduler-aware sleeps while polling a child.
-- [std/string](string.md) for trimming and inspecting captured output.
+- [std.sync](sync.md) for scheduler-aware sleeps while polling a child.
+- [std.string](string.md) for trimming and inspecting captured output.

@@ -7,7 +7,7 @@
 //! against a rule and splicing the captured token runs into a copy of the
 //! template. The rewritten stream is then parsed normally.
 //!
-//! Scope of this slice (see `docs/specs/macros.md`):
+//! Scope of this slice (see `docs/guide/language-reference.md`):
 //!
 //! * Definition: `macro <name> { (<matcher>) => { <template> } ... }`, one
 //!   or more rules, first matching rule wins.

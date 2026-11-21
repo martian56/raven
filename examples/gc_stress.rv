@@ -7,7 +7,7 @@
 // only reports the verified-correct live values.
 //
 // Expected output:
-//   struct 7 ada
+//   class 7 ada
 //   nested 99 deep
 //   list 0 a
 //   list 2 c
@@ -35,7 +35,7 @@ class User {
     name: str
 }
 
-// Allocate `n` throwaway structs so the collector runs repeatedly while
+// Allocate `n` throwaway classes so the collector runs repeatedly while
 // the caller's roots stay live. Returns a folded sum so the work is not
 // dead-code eliminated.
 fun churn(n: int) -> int {
@@ -56,24 +56,24 @@ fun deferred_value(out: dict[str, int]) -> int {
 }
 
 fun main() {
-    // Struct with a String field, held across churn.
+    // Struct with a str field, held across churn.
     let u = User(id: 7, name: "ada")
     let _a = churn(4000)
     print("struct ${u.id} ${u.name}")
 
-    // Nested struct: an Outer whose field is an Inner with a String.
+    // Nested class: an Outer whose field is an Inner with a str.
     let o = Outer(id: 1, inner: Inner(tag: 99, name: "deep"))
     let _b = churn(4000)
     print("nested ${o.inner.tag} ${o.inner.name}")
 
-    // A list of String values read back after churn.
+    // A list of str values read back after churn.
     let words = ["a", "b", "c"]
     words.push("d")
     let _c = churn(4000)
     print("list 0 ${words[0]}")
     print("list 2 ${words[2]}")
 
-    // A hash-backed Map<String, String> and Set<Int> surviving churn.
+    // A hash-backed dict[str, str] and set[int] surviving churn.
     let m = Map.new()
     m.set("k", "x")
     let s = Set.new()
@@ -93,7 +93,7 @@ fun main() {
     let _e = churn(4000)
     print("closure ${add42(0)}")
 
-    // Any-boxed heap struct read back through reflection after churn.
+    // Any-boxed heap class read back through reflection after churn.
     let boxed = to_any[User](User(id: 7, name: "ada"))
     let _f = churn(4000)
     let id_field = get_field(boxed, "id")

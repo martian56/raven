@@ -1,4 +1,4 @@
-# std/fs
+# std.fs
 
 Filesystem access: read and write files, create and remove directories,
 list and size entries, query existence, and manipulate path strings. The
@@ -22,7 +22,7 @@ fun main() {
 from std.fs import read, write, append, read_lines, copy, remove_file, create_dir, create_dir_all, remove_dir, list_dir, walk, size, exists, is_file, is_dir, join, dirname, basename, split
 ```
 
-`std/fs` is a set of free functions, so use a selective import and list the
+`std.fs` is a set of free functions, so use a selective import and list the
 names you want. A bare `import std.fs` does not bring the functions into
 scope. Import only what a given file uses:
 
@@ -33,7 +33,7 @@ from std.fs import read, exists
 ## The error model
 
 Fallible operations return `Result[T, Error]`. On failure the `Error` is an
-std/error value tagged with kind `"io"`. Its message is a short context
+std.error value tagged with kind `"io"`. Its message is a short context
 prefix (the operation name) joined to the operating system error text, for
 example `read: No such file or directory`.
 
@@ -304,7 +304,7 @@ fun split(p: str) -> list[str]
 These are pure string operations with no runtime call and no `Result`. They
 use `/` as the separator. Forward slash works on Windows for these std ops,
 so the operating system separator is not detected. They overlap with
-[std/path](../../specs/std-path.md); std/fs duplicates them so the module is
+[std.path](../../specs/std-path.md); std.fs duplicates them so the module is
 usable without a second import.
 
 ### `join(a: str, b: str) -> str`
@@ -393,8 +393,8 @@ fun main() {
 
 ## See also
 
-- [std/path](../../specs/std-path.md) for the same `join`, `dirname`, and
+- [std.path](../../specs/std-path.md) for the same `join`, `dirname`, and
   `basename` helpers when you do not also need filesystem access.
-- [std/error](../../specs/std-error.md) for `Error`, `error_kind`, and reading
+- [std.error](../../specs/std-error.md) for `Error`, `error_kind`, and reading
   the `kind` and `message` of an `Err`.
-- [std/io](io.md) for reading from and writing to the console instead of files.
+- [std.io](io.md) for reading from and writing to the console instead of files.

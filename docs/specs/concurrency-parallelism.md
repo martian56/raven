@@ -16,7 +16,7 @@ plan. It builds on the shipped cooperative scheduler (see
 follow-ups: M:N scheduler (#237), thread-safe/parallel GC (#238), select
 (#239), non-blocking IO (#240), and sync primitives/timers (#241).
 
-The user-facing surface (`spawn`, `std/sync` channels, `yield_now`) does not
+The user-facing surface (`spawn`, `std.sync` channels, `yield_now`) does not
 change. What changes is underneath: goroutines may now run truly concurrently,
 so every shared runtime structure (the heap, channels, the scheduler queues)
 becomes a concurrent structure, and the garbage collector must coordinate a

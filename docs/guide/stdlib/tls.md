@@ -1,9 +1,9 @@
-# std/tls
+# std.tls
 
-Client-side TLS streams over the raven-runtime TLS backend. Use `std/tls` when
+Client-side TLS streams over the raven-runtime TLS backend. Use `std.tls` when
 you need a raw encrypted byte stream for a protocol such as Redis, Postgres,
 MySQL, or SMTP after STARTTLS negotiation. For ordinary HTTPS requests, use
-[std/http](http.md); its client already handles TLS.
+[std.http](http.md); its client already handles TLS.
 
 ## Importing
 
@@ -92,7 +92,7 @@ fun main() {
 
 ### `upgrade(stream: TcpStream, server_name: str) -> Result[TlsStream, Error]`
 
-Turn an already-connected `std/net` TCP stream into a TLS stream on the same
+Turn an already-connected `std.net` TCP stream into a TLS stream on the same
 socket. This is for protocols that negotiate in plaintext and then switch to
 TLS. On success the original TCP stream is consumed.
 

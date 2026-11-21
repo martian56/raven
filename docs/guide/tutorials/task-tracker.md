@@ -1,16 +1,16 @@
-# Tutorial: modeling data with structs and enums
+# Tutorial: modeling data with classes and enums
 
 This tutorial builds a small in-memory task tracker. It is a tour of Raven's
-type system: structs to group data, enums (sum types) to model a value that is
-one of several shapes, methods with `impl`, exhaustive `match`, and `Option`
+type system: classes to group data, enums (sum types) to model a value that is
+one of several shapes, methods, exhaustive `match`, and `Option`
 for a lookup that might find nothing. Every step compiles and runs.
 
 If you are new to the language, skim the
 [language reference](../language-reference.md) for syntax as you go.
 
-## Step 1: a struct for a task
+## Step 1: a class for a task
 
-A struct groups related fields under one type. A task has an id and a title:
+A class groups related fields under one type. A task has an id and a title:
 
 ```rust
 class Task {
@@ -24,8 +24,9 @@ fun main() {
 }
 ```
 
-You build a struct value with `Type { field: value, ... }` and read a field
-with `value.field`. Types are checked: leaving out a field or giving one the
+You build a value by calling the class like a function, with named
+(`Task(id: 1, title: "...")`) or positional (`Task(1, "...")`) arguments, and
+read a field with `value.field`. Types are checked: leaving out a field or giving one the
 wrong type is a compile error, not a surprise at runtime.
 
 ## Step 2: a status that is one of several
@@ -101,13 +102,17 @@ Construct it with the payload: `Status.Blocked("waiting on review")`. The
 payload travels with the value, and the only way to read it is to `match`,
 which forces you to consider the blocked case wherever a status is inspected.
 
-## Step 4: behavior with `impl`
+## Step 4: methods
 
-Functions that belong to a type live in an `impl` block and take `self`. Move
-the formatting onto `Task` as a method:
+Functions that belong to a type are written inside the class and take `self`.
+Move the formatting onto `Task` as a method:
 
 ```rust
-impl Task {
+class Task {
+    id: int
+    title: str
+    status: Status
+
     fun line(self) -> str {
         let tag = match self.status {
             case Todo { "todo" }
@@ -165,9 +170,7 @@ class Task {
     id: int
     title: str
     status: Status
-}
 
-impl Task {
     fun line(self) -> str {
         let tag = match self.status {
             case Todo { "todo" }
@@ -218,9 +221,9 @@ found: ship release
 ## Where to go next
 
 - Count how many tasks are in each status with a `dict[str, int]` from
-  [std/collections](../stdlib/collections.md), keyed by `label(t.status)`.
+  [std.collections](../stdlib/collections.md), keyed by `label(t.status)`.
 - Filter to just the blocked tasks and print their reasons.
-- Persist the list as JSON with [std/json](../stdlib/json.md), or derive
+- Persist the list as JSON with [std.json](../stdlib/json.md), or derive
   serialization with `@derive(ToJson)` (see the language reference).
 
 See the [word-frequency tutorial](word-frequency.md) for a program that reads

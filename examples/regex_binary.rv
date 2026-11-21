@@ -1,4 +1,4 @@
-// std/regex operates on raw bytes: a Raven String is a byte buffer, so a
+// std.regex operates on raw bytes: a Raven str is a byte buffer, so a
 // pattern matches against text that is not valid UTF-8, and a replacement
 // preserves the non-UTF-8 bytes instead of discarding the input.
 from std.regex import compile

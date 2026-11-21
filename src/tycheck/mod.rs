@@ -1,4 +1,4 @@
-//! Type checker for the Raven v2 monomorphic core.
+//! Type checker for the Raven monomorphic core.
 //!
 //! Given a [`ResolvedFile`](crate::resolve::ResolvedFile) produced by
 //! `src/resolve`, the type checker validates every expression and
@@ -16,8 +16,6 @@
 //! * `expr` and `stmt` run the body checking pass.
 //! * `pattern` and `match_check` validate pattern matching and
 //!   exhaustiveness.
-//!
-//! See `docs/specs/tycheck.md` for the design.
 
 pub mod builtin;
 pub mod collect;

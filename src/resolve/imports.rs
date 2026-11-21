@@ -68,9 +68,8 @@ impl SourceLoader for FsLoader {
     }
 }
 
-/// The recognized stdlib module names. Anything else under `std/` is
-/// `UnresolvedImport`. The list intentionally mirrors the v1 stdlib so
-/// future code can be ported without re writing imports.
+/// The recognized stdlib module names. Anything else under `std.` is
+/// `UnresolvedImport`.
 pub const STDLIB_MODULES: &[&str] = &[
     "io",
     "iter",
@@ -188,16 +187,16 @@ fn resolve_one_import(
         ImportSource::Std(segments) => {
             // The first segment after `std` is the module name; nested
             // segments select a submodule, which is also looked up in
-            // the registry by its leading name in v2.0.
+            // the registry by its leading name.
             let head = segments
                 .first()
                 .ok_or_else(|| invalid_import(decl_span, "std import has no module name"))?;
             if !STDLIB_MODULES.contains(&head.as_str()) {
                 return Err(RavenError::resolve(
-                    ResolveError::UnresolvedImport(format!("std/{}", segments.join("/"))),
+                    ResolveError::UnresolvedImport(format!("std.{}", segments.join("."))),
                     import.span.clone(),
                 )
-                .with_hint("unknown stdlib module; see `docs/specs/resolver.md`"));
+                .with_hint("unknown stdlib module; the standard library modules are listed at https://martian56.github.io/raven/guide/standard-library/"));
             }
             Ok(ResolvedImport {
                 id,

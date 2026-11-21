@@ -1,6 +1,6 @@
-# std/iter
+# std.iter
 
-Lazy, single-pass iterator pipelines. `std/iter` gives a `list[T]` an
+Lazy, single-pass iterator pipelines. `std.iter` gives a `list[T]` an
 `iter()` method that turns it into an iterator, a set of lazy adapters (`map`,
 `filter`, `take`, `skip`, `enumerate`) that you chain with method calls, and a
 set of consumers (`collect`, `count`, `fold`, `any`, `all`, `find`,
@@ -36,7 +36,7 @@ adapter methods come along with the module.
 
 The adapters are **lazy**: building a chain like
 `xs.iter().map(f).filter(g)` does no work and touches no element. Each adapter
-is a small struct that remembers its source iterator (and, where applicable, a
+is a small class that remembers its source iterator (and, where applicable, a
 closure). Nothing runs until a **consumer** pulls elements through. A consumer
 walks the chain one element at a time, in a single pass.
 
@@ -80,7 +80,7 @@ method. `from_list(xs)` and `xs.iter()` produce the same `ListIter[T]`.
 
 ## Adapters
 
-Each adapter is a generic struct over its element type(s) and a bounded source
+Each adapter is a generic class over its element type(s) and a bounded source
 `S: Iterator[T]`. The adapter methods are defined on every concrete iterator
 type, so chaining is uniform: `xs.iter().map(f).filter(g).take(n)`. Each
 adapter's `next` pulls from its source on demand.
@@ -287,7 +287,7 @@ fun main() {
 }
 ```
 
-### `for_each[T, S: Iterator[T]](it: S, f: fun(T) -> Unit)`
+### `for_each[T, S: Iterator[T]](it: S, f: fun(T) -> ())`
 
 Apply `f` to each element for its side effect.
 
@@ -467,7 +467,7 @@ fun main() {
 
 ## See also
 
-- [std/string](string.md) for text methods you can `map` over.
-- [std/io](io.md) for printing pipeline results.
+- [std.string](string.md) for text methods you can `map` over.
+- [std.io](io.md) for printing pipeline results.
 - The [language reference](../language-reference.md) for closures, generics,
   and `for` loops.

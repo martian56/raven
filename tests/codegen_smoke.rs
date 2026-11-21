@@ -428,8 +428,9 @@ fn ffi_strlen_program_compiles_and_runs() {
     // C FFI end to end: `extern "C" { fun strlen(s: CStr) -> CSize }` is
     // declared as an imported symbol, resolved against the CRT at link
     // time, and called on the C string literal `c"hello"` (a static
-    // null-terminated buffer). strlen counts 5 bytes; prints 5.
-    compile_link_run_and_check("ffi_strlen.rv", "5\n", &runtime);
+    // null-terminated buffer). strlen counts 5 bytes, and `as int` and
+    // `as float` convert the CSize result.
+    compile_link_run_and_check("ffi_strlen.rv", "5\n6 2.0\n", &runtime);
 }
 
 #[test]
@@ -813,8 +814,12 @@ fn iter_pipeline_program_compiles_and_runs() {
     // and `count`. Each consumer is generic over `S: Iterator<T>` where the
     // element type `T` appears only in the bound and the return type, so the
     // monomorphizer recovers it by matching the declared return type against
-    // the concrete call result. Prints 4, then 180, then 3.
-    compile_link_run_and_check("iter_pipeline.rv", "4\n180\n3\n", &runtime);
+    // the concrete call result.
+    compile_link_run_and_check(
+        "iter_pipeline.rv",
+        "4\n180\n3\n[30, 40]\nSome(2) Some(7)\n",
+        &runtime,
+    );
 }
 
 #[test]
@@ -1086,9 +1091,8 @@ fn net_program_compiles_and_runs() {
     let Some(runtime) = supported_runtime() else {
         return;
     };
-    // std/net TCP client end to end against a loopback echo server. Raven
-    // v2 has no threads, so a single program cannot be both server and
-    // client: the test side runs the server on a std::thread and the
+    // std/net TCP client end to end against a loopback echo server. The
+    // test side runs the server on a std::thread and the
     // compiled Raven program is the client. The server binds an ephemeral
     // loopback port, the test passes its address to the client through
     // RAVEN_NET_ADDR, the client connects, writes "ping", reads the echo,
@@ -1217,7 +1221,7 @@ fn http_program_compiles_and_runs() {
         return;
     };
     // std/http client end to end against a loopback mock server. CI has no
-    // external network and Raven v2 has no threads, so the test runs a tiny
+    // external network, so the test runs a tiny
     // HTTP/1.1 server on a std::thread that accepts one connection, reads the
     // request headers, and writes a fixed 200 response. The compiled Raven
     // program GETs that URL (passed through RAVEN_HTTP_URL) and prints the

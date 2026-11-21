@@ -4,7 +4,7 @@ import std.collections
 // resize and rehash run, plus deliberate collisions and removal.
 
 fun main() {
-    // Insert 0..60 into a Set<Int>, with every value added twice. The set
+    // Insert 0..60 into a set[int], with every value added twice. The set
     // dedups, forcing several resizes (8 buckets, load factor 0.75).
     let s = Set.new()
     var i = 0
@@ -28,7 +28,7 @@ fun main() {
     print(s.contains(2))
     print(s.contains(3))
 
-    // Map<Int, Int> with keys that collide under the small table:
+    // dict[int, int] with keys that collide under the small table:
     // multiples of 8 share a bucket before resize.
     let m = Map.new()
     var k = 0
@@ -63,7 +63,7 @@ fun main() {
     print(m.has(7))
     print(m.remove(7))
 
-    // String keys with collisions: short strings into the same table.
+    // str keys with collisions: short strings into the same table.
     let sm = Map.new()
     sm.set("alpha", 1)
     sm.set("beta", 2)

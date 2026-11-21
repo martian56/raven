@@ -2,8 +2,7 @@
 //!
 //! Expressions are the recursive heart of the language. Most of the
 //! grammar's nesting lives here: arithmetic, calls, control flow,
-//! lambdas, struct literals. The variants below mirror the grammar in
-//! `docs/specs/parser.md` closely.
+//! lambdas, constructor calls.
 
 use std::fmt;
 
@@ -37,7 +36,7 @@ pub enum ExprKind {
     /// segments, split into an ordered run of literal-text and embedded
     /// expression fragments. The parser produces this only when at least
     /// one real (non-escaped) `${...}` is present; otherwise the literal
-    /// stays a plain `Str`. See `docs/specs/interpolation.md`.
+    /// stays a plain `Str`. See `docs/guide/language-reference.md`.
     InterpolatedString(Vec<StrFragment>),
     /// Triple quoted block string literal. Block strings are raw and are
     /// never interpolated.
@@ -74,13 +73,10 @@ pub enum ExprKind {
     /// HIR lowers this to a `Set.new()` constructor plus one `add` call
     /// per element.
     SetLit(Vec<Expr>),
-    /// `[k1: v1, k2: v2]` map literal. The empty map is the distinct `[:]`
-    /// form, which still lowers here with no pairs. The HIR lowers this to
+    /// `{k1: v1, k2: v2}` dict literal; `{}` is the empty dict. The HIR lowers this to
     /// a `Map.new()` constructor plus one `set` call per pair.
     MapLit(Vec<(Expr, Expr)>),
-    /// `(a, b, c)` tuple literal. Always at least two elements. The
-    /// parser produces this and the resolver rejects it until tuples
-    /// land; see `docs/specs/parser.md`.
+    /// `(a, b, c)` tuple literal. Always at least two elements.
     Tuple(Vec<Expr>),
     /// `(expr)` parenthesized expression, retained so spans cover the
     /// parens for error reporting.

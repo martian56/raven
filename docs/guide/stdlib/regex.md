@@ -1,4 +1,4 @@
-# std/regex
+# std.regex
 
 Regular expressions: compile a pattern once into a reusable handle, then test
 for a match, find the first match or every match, pull out capture groups,
@@ -36,7 +36,7 @@ here rather than at each match.
 ### `compile(pattern: str) -> Result[Regex, Error]`
 
 Compile `pattern` into a reusable `Regex`. On success the result is
-`Ok(Regex)`. An invalid pattern is `Err(Error)` from [std/error](error.md),
+`Ok(Regex)`. An invalid pattern is `Err(Error)` from [std.error](error.md),
 tagged with kind `"regex"`, its message the underlying syntax error.
 
 ```rust
@@ -253,6 +253,6 @@ debug=true -> =true
 
 ## See also
 
-- [std/string](string.md) for literal substring search and replace when you do
+- [std.string](string.md) for literal substring search and replace when you do
   not need a full pattern.
-- [std/error](error.md) for the `Error` type that `compile` returns on failure.
+- [std.error](error.md) for the `Error` type that `compile` returns on failure.

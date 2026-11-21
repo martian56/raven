@@ -1,7 +1,7 @@
 {
   "name": "raven-language",
   "displayName": "Raven Language",
-  "description": "Syntax highlighting and language support for the Raven v2 programming language, including concurrency, derive attributes, macros, reflection, and C FFI",
+  "description": "Syntax highlighting and language support for the Raven programming language, including concurrency, derive attributes, macros, reflection, and C FFI",
   "version": "3.0.0",
   "publisher": "martian56",
   "icon": "icons/raven-fullsize.png",

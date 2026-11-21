@@ -34,7 +34,7 @@ fun main() {
 
 ## Core traits are always in scope
 
-`std/core` defines the foundational traits (`ToString`, `Eq`, `Ord`,
+`std.core` defines the foundational traits (`ToString`, `Eq`, `Ord`,
 `Hash`, `Iterator[T]`) and implements them for the primitive types. It is
 auto-imported, so you never write `import std.core`:
 
@@ -67,7 +67,7 @@ fun main() {
 }
 ```
 
-See [std/error](stdlib/error.md) for `Error`, `?`, and the `Result`/`Option`
+See [std.error](stdlib/error.md) for `Error`, `?`, and the `Result`/`Option`
 helpers.
 
 ## The modules
@@ -76,55 +76,55 @@ helpers.
 
 | Module | What it is for |
 |--------|----------------|
-| [std/string](stdlib/string.md) | methods on `str`: slicing, case, search, replace |
-| [std/fmt](stdlib/fmt.md) | padding, joining, number bases, the `Debug` trait |
-| [std/regex](stdlib/regex.md) | regular expressions |
-| [std/encoding](stdlib/encoding.md) | hex and base64 |
+| [std.string](stdlib/string.md) | methods on `str`: slicing, case, search, replace |
+| [std.fmt](stdlib/fmt.md) | padding, joining, number bases, the `Debug` trait |
+| [std.regex](stdlib/regex.md) | regular expressions |
+| [std.encoding](stdlib/encoding.md) | hex and base64 |
 
 ### Data structures and iteration
 
 | Module | What it is for |
 |--------|----------------|
-| [std/collections](stdlib/collections.md) | hash-backed `dict` and `set` |
-| [std/list](stdlib/list.md) | utility functions over the built-in `list` |
-| [std/option](stdlib/option.md) | combinators over the built-in `Option` |
-| [std/iter](stdlib/iter.md) | lazy iterator adapters and consumers |
-| [std/cmp](stdlib/cmp.md) | sorting and comparison helpers |
-| [std/hash](stdlib/hash.md) | non-cryptographic hashing |
+| [std.collections](stdlib/collections.md) | hash-backed `dict` and `set` |
+| [std.list](stdlib/list.md) | utility functions over the built-in `list` |
+| [std.option](stdlib/option.md) | combinators over the built-in `Option` |
+| [std.iter](stdlib/iter.md) | lazy iterator adapters and consumers |
+| [std.cmp](stdlib/cmp.md) | sorting and comparison helpers |
+| [std.hash](stdlib/hash.md) | non-cryptographic hashing |
 
 ### Numbers
 
 | Module | What it is for |
 |--------|----------------|
-| [std/math](stdlib/math.md) | float and integer math, constants |
-| [std/random](stdlib/random.md) | a seeded random number generator |
+| [std.math](stdlib/math.md) | float and integer math, constants |
+| [std.random](stdlib/random.md) | a seeded random number generator |
 
 ### Input, output, and the system
 
 | Module | What it is for |
 |--------|----------------|
-| [std/io](stdlib/io.md) | console input and output |
-| [std/fs](stdlib/fs.md) | files and directories |
-| [std/path](stdlib/path.md) | path string manipulation (no IO) |
-| [std/env](stdlib/env.md) | environment, arguments, platform |
-| [std/process](stdlib/process.md) | run external programs |
-| [std/time](stdlib/time.md) | timestamps and calendar conversions |
+| [std.io](stdlib/io.md) | console input and output |
+| [std.fs](stdlib/fs.md) | files and directories |
+| [std.path](stdlib/path.md) | path string manipulation (no IO) |
+| [std.env](stdlib/env.md) | environment, arguments, platform |
+| [std.process](stdlib/process.md) | run external programs |
+| [std.time](stdlib/time.md) | timestamps and calendar conversions |
 
 ### Networking
 
 | Module | What it is for |
 |--------|----------------|
-| [std/net](stdlib/net.md) | TCP sockets |
-| [std/http](stdlib/http.md) | an HTTP client and server |
-| [std/tls](stdlib/tls.md) | verified TLS streams and STARTTLS upgrades |
-| [std/json](stdlib/json.md) | JSON parse and stringify |
+| [std.net](stdlib/net.md) | TCP sockets |
+| [std.http](stdlib/http.md) | an HTTP client and server |
+| [std.tls](stdlib/tls.md) | verified TLS streams and STARTTLS upgrades |
+| [std.json](stdlib/json.md) | JSON parse and stringify |
 
 ### Concurrency, errors, FFI, testing
 
 | Module | What it is for |
 |--------|----------------|
-| [std/sync](stdlib/sync.md) | channels for goroutines |
-| [std/error](stdlib/error.md) | the `Error` type and `Result` helpers |
-| [std/ffi](stdlib/ffi.md) | bridge values to C and access raw memory |
-| [std/test](stdlib/test.md) | assertions for test programs |
-| [std/core](stdlib/core.md) | the always-in-scope core traits |
+| [std.sync](stdlib/sync.md) | channels for goroutines |
+| [std.error](stdlib/error.md) | the `Error` type and `Result` helpers |
+| [std.ffi](stdlib/ffi.md) | bridge values to C and access raw memory |
+| [std.test](stdlib/test.md) | assertions for test programs |
+| [std.core](stdlib/core.md) | the always-in-scope core traits |

@@ -2,10 +2,10 @@
 
 ## Goal
 
-Pin the in-memory shape of every heap-allocated Raven v2 value. The shared
-`ObjectHeader` from issue #63 is already fixed; this document specifies what
-follows the header for each tag, the exact field offsets, the constructor
-APIs the back-end calls, and how the future GC will walk each layout.
+Pin the in-memory shape of every heap-allocated Raven value. This document
+specifies the shared `ObjectHeader`, what follows it for each tag, the exact
+field offsets, the constructor APIs the back-end calls, and how the collector
+walks each layout.
 
 The layouts are documented in two parallel forms: a `#[repr(C)]` Rust
 struct in `raven-runtime/src/object/<kind>.rs` that the in-tree tests
@@ -155,14 +155,13 @@ Map field offsets on 64-bit:
 * `buckets` points to `bucket_count` contiguous `MapEntry` slots. An
   empty or tombstoned slot has `key == null`. Tombstones are distinguished
   from truly-empty slots by `hash == TOMBSTONE_HASH` (a reserved bit
-  pattern; see the constructor module). Tombstone bookkeeping is not yet
-  used by the v2 stdlib, but the slot reservation keeps the entry shape
-  stable when rehash and delete land in a stdlib issue.
+  pattern; see the constructor module). The standard library's `dict` and `set`
+  are written in Raven over lists, so they do not use this runtime layout.
 * `key` and `value` are pointers. When the logical key or value is a
   primitive that does not fit in a pointer, the back-end boxes it through
   `raven_box_new` before insertion.
 
-The hash function for the v2 scaffold is FNV-1a 64. It is deterministic
+The runtime map hash function is FNV-1a 64. It is deterministic
 (no per-process seed) and depends on no external crate. The choice is
 documented here because the hash is part of the persisted-bucket layout:
 re-hashing on resize must agree with the original insert. A future
@@ -375,7 +374,7 @@ sweep; see `docs/specs/gc.md`.
 
 ## Tracing summary
 
-The collector (issue #64) dispatches on `header.tag` and walks the
+The collector dispatches on `header.tag` and walks the
 layout's internal GC pointers, gated by the per-layout pointer-kind
 flags. The pointers each layout owns are:
 
@@ -394,10 +393,8 @@ and `raven-runtime/src/gc.rs`.
 
 ## Out of scope
 
-* Trait object fat pointers. The `BOX` tag is the storage shape; the
-  vtable layout is issue #66.
-* Full stdlib over these layouts (string methods, list iteration, map
-  iteration). Issues #71 to #80 ship those.
+* Trait object vtables. The `BOX` tag is the storage shape; the vtable
+  layout belongs to the code generator.
 * Resize policy beyond the constructor. `raven_list_push` doubles `cap`
   when full; map and set resize live with the stdlib issues.
 

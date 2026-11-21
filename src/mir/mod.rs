@@ -1,12 +1,10 @@
-//! Mid-level IR (MIR) for the Raven v2 compiler.
+//! Mid-level IR (MIR) for the Raven compiler.
 //!
 //! The MIR is a control-flow graph of basic blocks with named locals.
 //! Every operation reads from a local and writes to a local; nested
 //! expressions are gone. Generic functions are monomorphized once per
 //! distinct concrete type-argument tuple reachable from the program
 //! roots.
-//!
-//! See `docs/specs/mir.md` for the full design.
 
 pub mod builder;
 pub mod copyprop;

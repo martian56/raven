@@ -1,6 +1,6 @@
-// std/ffi bridges a Raven String to a C string. `to_cstr` copies into a fresh
+// std.ffi bridges a Raven str to a C string. `to_cstr` copies into a fresh
 // buffer (released with `free_cstr`); `from_cstr` reads a C string back into a
-// String. Prints:
+// str. Prints:
 //   5
 //   roundtrip
 import std.ffi

@@ -7,7 +7,7 @@
 //! the `Any` box carries the value's runtime type id. The metadata maps a
 //! type id to its rendered name, its struct flag, and (for a struct) its
 //! field names, per-field type ids, and per-field GC-pointer flags. See
-//! `docs/specs/runtime-reflection.md`.
+//! `docs/guide/language-reference.md`.
 //!
 //! `Any` reuses the `Box` object (`TAG_BOX`): the payload holds the value
 //! (a pointer for heap types, an inline scalar otherwise) and the box's

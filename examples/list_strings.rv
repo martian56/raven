@@ -1,4 +1,4 @@
-// A list whose elements are heap String values, exercising the
+// A list whose elements are heap str values, exercising the
 // GC-pointer element path: the list traces each element pointer, so the
 // strings stay reachable through the list across allocations. Compiling
 // and running this prints raven, then bird, then 3.

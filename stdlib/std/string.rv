@@ -1,7 +1,7 @@
-// std/string: byte-oriented String methods. Indices, lengths, and slices
+// std.string: byte-oriented str methods. Indices, lengths, and slices
 // count UTF-8 bytes, not code points. Case mapping is ASCII only.
 
-// Convert a single decimal digit (0..9) to a Float without any FFI, so this
+// Convert a single decimal digit (0..9) to a float without any FFI, so this
 // module declares no extern symbols that could collide with another stdlib
 // module's. Used by `parse_float`.
 fun digit_to_float(d: int) -> float {
@@ -632,7 +632,7 @@ impl str {
                         break
                     }
                     exp = exp * 10 + (b - 48)
-                    // Clamp the exponent: a Float overflows to infinity (or
+                    // Clamp the exponent: a float overflows to infinity (or
                     // underflows to zero) well before 1e400, so a larger value
                     // changes nothing but would make the apply loop below run
                     // billions of times (a DoS) and could overflow `exp` itself.

@@ -1,4 +1,4 @@
-//! M:N green-thread scheduler and channels for compiled Raven v2 programs.
+//! M:N green-thread scheduler and channels for compiled Raven programs.
 //!
 //! See `docs/specs/mn-scheduler.md` for the model. Goroutines are
 //! `corosensei` coroutines multiplexed onto a pool of worker OS threads (one

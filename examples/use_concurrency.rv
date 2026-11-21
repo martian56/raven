@@ -2,7 +2,7 @@
 // fun() -> Unit closure; channels carry values between goroutines and
 // block (yielding to the scheduler) when full or empty. Output is
 // deterministic because every result is a sum or count, not an order.
-// See docs/specs/concurrency.md.
+// See docs/guide/tutorials/concurrency.md.
 
 from std.sync import Channel, channel, channel_buffered, yield_now
 

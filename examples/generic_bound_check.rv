@@ -1,5 +1,5 @@
-// A generic struct used as a Map key must satisfy the key's Eq and Hash bounds.
-// Deriving them makes Box<Int> a valid key; without them it is a clear type
+// A generic class used as a Map key must satisfy the key's Eq and Hash bounds.
+// Deriving them makes Box[int] a valid key; without them it is a clear type
 // error rather than an unresolved callee at code generation.
 from std.io import println
 import std.collections

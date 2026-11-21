@@ -1,4 +1,4 @@
-// Named enums matched to their string forms, mirroring the v1 enum demo.
+// Named enums matched to their string forms.
 enum HttpStatus {
     Ok,
     NotFound,

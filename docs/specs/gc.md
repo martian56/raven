@@ -2,7 +2,7 @@
 
 ## Goal
 
-Give compiled Raven v2 programs automatic memory management. The
+Give compiled Raven programs automatic memory management. The
 collector reclaims every heap object the per-kind layouts in
 `object-layout.md` allocate (`String`, `List`, `Map`, `Set`, `Closure`,
 `Box`) once the running program can no longer reach it.
@@ -345,7 +345,7 @@ register with the collector.
 
 ## Out of scope
 
-* **Cranelift stack maps.** The shadow stack is the v2.0 root mechanism;
+* **Cranelift stack maps.** The shadow stack is the root mechanism;
   stack maps are a later throughput optimisation that would not change
   the object layouts or the sweep logic.
 * **Generational collection.** No nursery, remembered set, or write
@@ -354,8 +354,8 @@ register with the collector.
   completion with the mutator stopped.
 * **Moving or compacting collection.** Objects keep their addresses for
   their whole lifetime. The slot-address shadow stack is forward
-  compatible with a future moving collector, but v2.0 never relocates an
-  object.
+  compatible with a future moving collector, but the collector never
+  relocates an object.
 * **Parallel marking or sweeping.** Raven mutators run across multiple OS
   threads, but one thread performs each collection cycle after stopping the
   world.

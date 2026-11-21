@@ -1,6 +1,6 @@
-# std/string
+# std.string
 
-Methods for working with text. `std/string` adds an `impl str` block, so
+Methods for working with text. `std.string` adds an `impl str` block, so
 a bare `import std.string` brings every method below into scope as a method
 on any `str` value.
 
@@ -362,7 +362,7 @@ fun main() {
 
 ## See also
 
-- [std/fmt](fmt.md) for padding, joining, and number formatting.
-- [std/regex](regex.md) for pattern matching beyond literal substrings.
+- [std.fmt](fmt.md) for padding, joining, and number formatting.
+- [std.regex](regex.md) for pattern matching beyond literal substrings.
 - The [language reference](../language-reference.md) for string literals,
   interpolation, and block strings.

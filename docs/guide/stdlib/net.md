@@ -1,4 +1,4 @@
-# std/net
+# std.net
 
 TCP networking: connect a client stream, bind a listener and accept
 connections, read and write bytes, resolve DNS names, and probe whether an
@@ -30,7 +30,7 @@ Select the free functions you use. The methods on `TcpStream` and
 
 A socket cannot cross the FFI boundary, so the runtime keeps the real socket
 in a process-wide registry and hands Raven an opaque integer id. `TcpStream`
-and `TcpListener` are thin structs wrapping that id; every method looks the
+and `TcpListener` are thin classes wrapping that id; every method looks the
 socket up by id and acts on it.
 
 ```rust
@@ -48,9 +48,9 @@ and `accept`, and use the methods below.
 ## The error model
 
 Every fallible operation returns `Result[T, Error]` where `Error` is the
-[std/error](error.md) type tagged with kind `"net"`. The message is a short
+[std.error](error.md) type tagged with kind `"net"`. The message is a short
 context prefix (the operation name) joined to the OS error text. Match on the
-`Result`, or use the [std/error](error.md) combinators to thread it.
+`Result`, or use the [std.error](error.md) combinators to thread it.
 
 ```rust
 from std.net import connect
@@ -281,8 +281,8 @@ fun main() {
 
 ## See also
 
-- [std/http](http.md) builds request and response handling on top of TCP.
-- [std/error](error.md) for the `Error` type, `error_kind`, and the `?`
+- [std.http](http.md) builds request and response handling on top of TCP.
+- [std.error](error.md) for the `Error` type, `error_kind`, and the `?`
   operator used above.
-- [std/string](string.md) for slicing and scanning the byte buffers that
+- [std.string](string.md) for slicing and scanning the byte buffers that
   `read` returns.

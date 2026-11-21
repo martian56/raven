@@ -1,4 +1,4 @@
-// std/io: standard input and output. The `__io_*` intrinsics are lowered
+// std.io: standard input and output. The `__io_*` intrinsics are lowered
 // by the compiler to the raven-runtime C ABI symbols.
 
 fun print(s: str) {

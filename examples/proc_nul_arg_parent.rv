@@ -1,5 +1,5 @@
-// golden:skip - std/process NUL argv validation, checked in codegen_smoke.rs.
-// `std/process.run` should reject an argument containing a NUL byte before
+// golden:skip - std.process NUL argv validation, checked in codegen_smoke.rs.
+// `std.process.run` should reject an argument containing a NUL byte before
 // passing the joined argv buffer to the runtime.
 from std.process import run
 from std.io import println

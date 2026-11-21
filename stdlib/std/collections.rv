@@ -1,4 +1,4 @@
-// std/collections: hash-backed `set[T]` and `dict[K, V]` over keys that
+// std.collections: hash-backed `set[T]` and `dict[K, V]` over keys that
 // implement `Eq + Hash`.
 //
 // Both keep their items in dense lists in insertion order (so iteration

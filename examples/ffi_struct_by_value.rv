@@ -1,6 +1,6 @@
 // FFI: passing and returning @repr(C) structs larger than one register by
 // value. The runtime ships small C-ABI fixtures (raven_ffi_*) so the test
-// is identical on every platform; the back end marshals the structs per the
+// is identical on every platform; the back end marshals the classes per the
 // target ABI (two integer registers on System V / AArch64, by reference on
 // Windows x64), and this example runs in CI on every target.
 // Prints:
@@ -47,22 +47,22 @@ extern "C" {
 }
 
 fun main() {
-    // 16-byte struct as both argument and return value.
+    // 16-byte class as both argument and return value.
     let q = raven_ffi_swap_pair(Pair(a: 7, b: 9))
     print(q.a) // 9
     print(q.b) // 7
 
-    // 16-byte four-field struct argument.
+    // 16-byte four-field class argument.
     print(raven_ffi_rect_area(Rect(x: 0, y: 0, w: 4, h: 5))) // 20
 
-    // 16-byte struct return value.
+    // 16-byte class return value.
     let r = raven_ffi_make_rect(1, 2, 3, 4)
     print(r.w) // 3
 
-    // 12-byte struct argument (a partial second eightbyte).
+    // 12-byte class argument (a partial second eightbyte).
     print(raven_ffi_vec3_sum(Vec3(x: 10, y: 20, z: 30))) // 60
 
-    // A real C standard-library function returning a 16-byte struct.
+    // A real C standard-library function returning a 16-byte class.
     let d = lldiv(17, 5)
     print(d.quot) // 3
     print(d.rem) // 2

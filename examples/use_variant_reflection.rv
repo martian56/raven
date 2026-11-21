@@ -1,24 +1,24 @@
-// Compile-time enum reflection: variant_names<T>() and
-// variant_field_types<T>().
+// Compile-time enum reflection: variant_names[T]() and
+// variant_field_types[T]().
 //
 // variant_names yields an enum's variant names in declaration order.
 // variant_field_types yields, per variant (same order), the payload field
 // type names as an inner list: empty for a unit variant, one entry per
 // payload field otherwise. Both resolve at compile time per monomorphization,
 // so a generic enum renders its concrete payload types. See
-// docs/specs/reflection.md.
+// docs/guide/language-reference.md.
 //
 // Compiling and running this prints:
 //   Circle
 //   Rectangle
 //   Dot
 //   --
-//   Circle: Float
-//   Rectangle: Float, Float
+//   Circle: float
+//   Rectangle: float, float
 //   Dot
 //   == generic ==
-//   Leaf: Int
-//   Branch: Int, Int
+//   Leaf: int
+//   Branch: int, int
 //   Empty
 enum Shape {
     Circle(radius: float),

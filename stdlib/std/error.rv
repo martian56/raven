@@ -1,5 +1,5 @@
-// std/error: an `Error` value type plus ergonomic helpers over the
-// built-in `Result<T, E>`. Raven already has `Result`, `Option`, and the
+// std.error: an `Error` value type plus ergonomic helpers over the
+// built-in `Result[T, E]`. Raven already has `Result`, `Option`, and the
 // `?` operator; this module adds a carryable error with a message and
 // optional kind, context chaining, and a few free functions over Result.
 

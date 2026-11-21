@@ -1,4 +1,4 @@
-# std/random
+# std.random
 
 A small, reproducible pseudo-random generator. `Rng` is a value type holding
 the generator state; its methods draw the next value and mutate that state in
@@ -19,7 +19,7 @@ fun main() {
 import std.random
 ```
 
-`std/random` adds a `class Rng`, so a bare import
+`std.random` adds a `class Rng`, so a bare import
 brings the constructors (`Rng.new`, `Rng.from_entropy`) and every method below
 into scope. Import the whole module (not a selective `{ ... }` list).
 
@@ -30,7 +30,7 @@ tokens, or anything where predictability is a risk.
 
 The generator is splitmix64: the same seed always yields the same sequence of
 draws. That determinism is the point of seeded construction, and it makes
-`std/random` a good fit for reproducible tests and simulations.
+`std.random` a good fit for reproducible tests and simulations.
 
 `Rng.from_entropy()` instead seeds from a runtime source (a high-resolution
 timestamp mixed with the process id), so its stream is not reproducible across
@@ -253,7 +253,7 @@ Change the `7` to `Rng.from_entropy()` and each run differs.
 
 ## See also
 
-- [std/math](math.md) for the numeric functions you will often pair with
+- [std.math](math.md) for the numeric functions you will often pair with
   random draws.
 - The [language reference](../language-reference.md) for `Option`, `match`, and
   generics.

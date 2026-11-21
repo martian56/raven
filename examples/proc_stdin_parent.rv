@@ -1,4 +1,4 @@
-// golden:skip - std/process stdin streaming parent, checked in codegen_smoke.rs
+// golden:skip - std.process stdin streaming parent, checked in codegen_smoke.rs
 // (process_stdin_streams_to_child). Drives write_stdin / close_stdin against
 // the child in RAVEN_PROC_CHILD (proc_stdin_child.rv):
 //

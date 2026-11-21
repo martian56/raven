@@ -25,7 +25,7 @@ fun main() {
         case None { print(-1) }
     }
 
-    // Map value inference: String keys to Bool values.
+    // Map value inference: str keys to bool values.
     let flags = {"x": true, "y": false}
     print(flags.len())
     match flags.get("x") {

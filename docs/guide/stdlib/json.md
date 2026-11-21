@@ -1,6 +1,6 @@
-# std/json
+# std.json
 
-Parse and serialize JSON. `std/json` is a recursive descent parser
+Parse and serialize JSON. `std.json` is a recursive descent parser
 (`parse`) and a compact serializer (`stringify`) written in pure Raven, with
 a `JsonValue` enum for the parsed value tree.
 
@@ -54,7 +54,7 @@ Construct variants with the qualified form (`JsonValue.Null`,
 `JsonValue.Array(list)`, `JsonValue.Object(map)`). Match with the bare
 variant names (`Null`, `Bool(b)`, `Number(n)`, ...).
 
-`Object` holds a `std/collections` `dict[str, JsonValue]`. The serializer
+`Object` holds a `std.collections` `dict[str, JsonValue]`. The serializer
 emits members in insertion order.
 
 ### Numbers are Float
@@ -87,7 +87,7 @@ fun main() {
 }
 ```
 
-A failure is an `std/error` `Error` tagged with `kind` `"json"`. The message
+A failure is an `std.error` `Error` tagged with `kind` `"json"`. The message
 names roughly what failed and, for an unexpected or trailing byte, the byte
 offset.
 
@@ -233,7 +233,7 @@ fun main() {
 
 Multi-line serialization with `indent` spaces of padding per nesting level.
 Object members and array elements each go on their own line; empty arrays and
-objects stay on one line as `[]` and `{}`. Members are emitted in the Map's
+objects stay on one line as `[]` and `{}`. Members are emitted in the dict's
 key order, as with `stringify`.
 
 ```rust
@@ -250,8 +250,7 @@ fun main() {
 ## Building a value
 
 Build a `JsonValue` tree directly with these free constructors instead of
-parsing text. Select them from the module, and import `std/collections` when
-you need a `Map` for `json_object`.
+parsing text. Select them from the module; `json_object` takes a `dict[str, JsonValue]`.
 
 ```rust
 from std.json import json_null, json_bool, json_number, json_int, json_string, json_array, json_object
@@ -283,7 +282,7 @@ An `Array` wrapping a list of values.
 
 ### `json_object(map: dict[str, JsonValue]) -> JsonValue`
 
-An `Object` wrapping a `std/collections` `Map`. A map literal `["k": v]`
+An `Object` wrapping a `dict[str, JsonValue]`. A dict literal `{"k": v}`
 serves as the argument.
 
 ```rust
@@ -299,7 +298,7 @@ fun main() {
 
 ## Derived conversions
 
-`std/json` also defines two traits for converting between a Raven value and
+`std.json` also defines two traits for converting between a Raven value and
 its JSON form:
 
 ```rust
@@ -319,8 +318,8 @@ An `int` round-trips through `float` (JSON has one number type) and loses
 precision beyond 2^53; a number decodes back to `int` by truncation toward
 zero.
 
-Annotate a user struct or enum with `@derive(ToJson, FromJson)` to get these
-traits automatically: a struct serializes to an object keyed by field name,
+Annotate a class or enum with `@derive(ToJson, FromJson)` to get these
+traits automatically: a class serializes to an object keyed by field name,
 an enum to a tagged object. See the [derive spec](../../specs/derive.md) for
 the full encoding and the helper functions the derive emits.
 
@@ -357,7 +356,7 @@ fun main() {
 
 ## See also
 
-- [std/io](io.md) for reading the text you hand to `parse`.
+- [std.io](io.md) for reading the text you hand to `parse`.
 - The [derive spec](../../specs/derive.md) for `@derive(ToJson, FromJson)`
   on your own types.
 - The [language reference](../language-reference.md) for `match`, `Result`,

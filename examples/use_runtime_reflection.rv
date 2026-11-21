@@ -1,16 +1,16 @@
 // Runtime reflection: box a value into Any, read its runtime type name,
-// walk its struct fields, read each field back through get_field, and cast
+// walk its class fields, read each field back through get_field, and cast
 // each field Any to its concrete type. This is the "given an unknown value,
 // inspect its type and fields" pattern a validation or serialization
-// framework uses. See docs/specs/runtime-reflection.md.
+// framework uses. See docs/guide/language-reference.md.
 //
 // Compiling and running this prints:
 //   type: User
 //   field id = 7
 //   field name = ada
-//   cast id to Int: 7
-//   cast name to String: ada
-//   cast id to String: none
+//   cast id to int: 7
+//   cast name to str: ada
+//   cast id to str: none
 //   gc id = 7
 //   gc name = ada
 class User {
@@ -47,7 +47,7 @@ fun main() {
     let a = to_any[User](u)
     describe(a)
 
-    // cast<T> succeeds for the right T and is None for a wrong T.
+    // cast[T] succeeds for the right T and is None for a wrong T.
     let id_any = get_field(a, "id")
     match id_any {
         case Some(v) {
@@ -78,7 +78,7 @@ fun main() {
         case None { print("cast id to String: missing") }
     }
 
-    // GC soundness: box a freshly allocated struct, drop other references,
+    // GC soundness: box a freshly allocated class, drop other references,
     // allocate enough to encourage a collection, then read the fields back
     // through the Any. The Any is the only reference to the payload, so a
     // correct read proves the Any keeps its payload alive across collection.

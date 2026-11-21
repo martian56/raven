@@ -1,8 +1,8 @@
-// std/json: a JSON parser and serializer in pure Raven over the byte
+// std.json: a JSON parser and serializer in pure Raven over the byte
 // intrinsics. `parse` is a recursive descent parser returning
-// Result<JsonValue, Error>; `stringify` is a compact serializer. All JSON
-// numbers parse to Float, so integers beyond the 53-bit mantissa lose
-// precision. See docs/specs/std-json.md.
+// Result[JsonValue, Error]; `stringify` is a compact serializer. All JSON
+// numbers parse to float, so integers beyond the 53-bit mantissa lose
+// precision. See docs/guide/stdlib/json.md.
 
 import std.collections
 import std.error
@@ -26,7 +26,7 @@ enum JsonValue {
     Object(dict[str, JsonValue]),
 }
 
-// A JsonError is an std/error `Error` tagged with kind "json". Raven has
+// A JsonError is an std.error `Error` tagged with kind "json". Raven has
 // no type alias and a bundled module cannot call another bundled module's
 // free functions, so the struct literal is built directly here.
 fun json_error(msg: str) -> Error {
@@ -143,7 +143,7 @@ fun read_hex4(c: Cursor) -> int {
 }
 
 // Parse the body of a string literal after the opening quote. Returns the
-// decoded String, or an Err on a bad escape or unterminated input. The
+// decoded str, or an Err on a bad escape or unterminated input. The
 // cursor ends just past the closing quote.
 fun parse_string(c: Cursor) -> Result[str, Error] {
     var out = ""
@@ -235,9 +235,9 @@ fun parse_string(c: Cursor) -> Result[str, Error] {
     return Ok(out)
 }
 
-// Parse a JSON number into a Float. The cursor is positioned at the first
+// Parse a JSON number into a float. The cursor is positioned at the first
 // byte of the number (an optional minus or a digit). Integer digits build
-// a Float through raven_int_to_float; fraction digits divide by powers of
+// a float through raven_int_to_float; fraction digits divide by powers of
 // ten; an exponent scales the result.
 fun parse_number(c: Cursor) -> Result[float, Error] {
     var negative = false
@@ -295,7 +295,7 @@ fun parse_number(c: Cursor) -> Result[float, Error] {
         // few hundred yields the same result (infinity, or zero for a negative
         // exponent) as any larger one. Stop accumulating once the value is well
         // past that point so the digits of a huge exponent like 1e999999999
-        // cannot overflow Int and wrap into a small or negative step count.
+        // cannot overflow int and wrap into a small or negative step count.
         var exp = 0
         while is_digit(c.peek()) {
             if exp <= 400 {
@@ -516,7 +516,7 @@ fun escape_string(out: str, s: str) -> str {
             r = __str_concat(r, __str_from_byte(b))
         } else {
             // Non-ASCII: JSON allows raw UTF-8, so pass a valid sequence through
-            // unchanged, but a Raven String can hold arbitrary bytes. Replace an
+            // unchanged, but a Raven str can hold arbitrary bytes. Replace an
             // invalid byte with the U+FFFD escape so the output is always valid
             // JSON (and valid UTF-8) rather than leaking a raw bad byte.
             let len = utf8_seq_len(s, i, n)
@@ -636,8 +636,8 @@ fun number_to_json(n: float) -> str {
     return "null"
 }
 
-// Compact (non-pretty) serialization. A whole-number Float renders the way
-// the runtime's Float-to-string does (for example 1 prints as `1`).
+// Compact (non-pretty) serialization. A whole-number float renders the way
+// the runtime's float-to-string does (for example 1 prints as `1`).
 fun stringify(value: JsonValue) -> str {
     return match value {
         case Null { "null" }
@@ -789,7 +789,7 @@ impl JsonValue {
         return array_at(self, i)
     }
 
-    // The number truncated to an Int, or None when not a number.
+    // The number truncated to an int, or None when not a number.
     fun as_int(self) -> Option[int] {
         return value_as_int(self)
     }
@@ -913,7 +913,7 @@ fun array_at(value: JsonValue, i: int) -> Option[JsonValue] {
 // ----- JSON serialization traits -----
 //
 // `ToJson` turns a value into a `JsonValue`; pair it with `stringify` for a
-// String. `FromJson` reads a `JsonValue` back, returning an `Error` when the
+// `str`. `FromJson` reads a `JsonValue` back, returning an `Error` when the
 // shape does not match. `from_json` is an associated function: call it as
 // `Point.from_json(j)` for a user type, or route a field through the generic
 // `from_json_value` helper so the type parameter selects the impl.
@@ -930,15 +930,15 @@ trait FromJson {
 }
 
 // Decode `j` as a `T`, with `T` chosen by the expected result type, so
-// scalar, List, Option, and user-type members decode uniformly through one
-// call (`T.from_json` dispatches on the type parameter). The built-in List
+// scalar, list, Option, and user-type members decode uniformly through one
+// call (`T.from_json` dispatches on the type parameter). The built-in list
 // and Option impls use it; a hand-written FromJson impl can too.
 fun from_json_value[T: FromJson](j: JsonValue) -> Result[T, Error] {
     return T.from_json(j)
 }
 
 // Parse a JSON string and decode it into a `T` in one step. The element type is
-// chosen by the call, so `decode<Point>(text)` or a `Result<Point, Error>`
+// chosen by the call, so `decode[Point](text)` or a `Result[Point, Error]`
 // annotation selects the impl. Returns an Err for malformed JSON or a shape that
 // does not match `T`.
 fun decode[T: FromJson](s: str) -> Result[T, Error] {
@@ -957,10 +957,10 @@ fun json_field(j: JsonValue, key: str) -> Result[JsonValue, Error] {
 
 // ----- Built-in ToJson/FromJson impls -----
 //
-// These bottom out field recursion. Int and Float both serialize to a JSON
-// number; an Int round-trips through Float and loses precision beyond 2^53
-// (the IEEE 754 double mantissa). Bool maps to a JSON bool, String to a JSON
-// string, List<T> to a JSON array, and Option<T> to null or the inner value.
+// These bottom out field recursion. `int` and float both serialize to a JSON
+// number; an int round-trips through float and loses precision beyond 2^53
+// (the IEEE 754 double mantissa). `bool` maps to a JSON bool, str to a JSON
+// string, list[T] to a JSON array, and Option[T] to null or the inner value.
 
 impl ToJson for int {
     fun to_json(self) -> JsonValue {
@@ -1041,7 +1041,7 @@ impl[T: FromJson] FromJson for list[T] {
     }
 }
 
-// The List FromJson body lives in a free function: matching a `self`-less
+// The list FromJson body lives in a free function: matching a `self`-less
 // JsonValue payload and pushing decoded elements through the generic helper
 // keeps the element type inference straightforward.
 fun list_from_json[T: FromJson](j: JsonValue) -> Result[list[T], Error] {

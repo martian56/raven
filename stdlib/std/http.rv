@@ -1,4 +1,4 @@
-// std/http: an HTTP/1.1 client over the raven-runtime C ABI, backed by
+// std.http: an HTTP/1.1 client over the raven-runtime C ABI, backed by
 // ureq. A ureq Response is consumed when its body is read, so the whole
 // request runs in one runtime call that eagerly captures the status,
 // reason, headers, and body into a registry entry keyed by an opaque
@@ -6,7 +6,7 @@
 // status (404, 500) is a successful request that yielded a response, not
 // a transport error: only DNS, connect, and timeout failures take the Err
 // path through the runtime's thread-local last-error slot, tagged with
-// kind "http". See docs/specs/std-http.md.
+// kind "http". See docs/guide/stdlib/http.md.
 
 from std.error import error_kind
 from std.net import listen, connect, TcpStream
@@ -185,7 +185,7 @@ impl HttpStream {
 // ===========================================================================
 // HTTP/1.1 server
 //
-// A small, dependency-free server built on std/net (TCP). Register handler
+// A small, dependency-free server built on std.net (TCP). Register handler
 // functions on a `Server` by method and path pattern, then `listen`. Each
 // connection is parsed into a `Request`, routed to the first matching handler,
 // and the returned `Response` is written back. A path pattern may name captures
@@ -271,7 +271,7 @@ impl Request {
     }
 
     // Decode the request body into a `T` via its `FromJson` impl, for example
-    // `req.json<User>()` or `let u: User = req.json()?`. Returns an Err for
+    // `req.json[User]()` or `let u: User = req.json()?`. Returns an Err for
     // malformed JSON or a body that does not match `T`.
     fun json[T: FromJson](self) -> Result[T, Error] {
         return decode(self.body)
@@ -301,7 +301,7 @@ impl Response {
     }
 
     // 200 with `value` serialized to JSON via its `ToJson` impl (a `@derive(
-    // ToJson)` struct or enum, a List, an Option, or a scalar), with
+    // ToJson)` struct or enum, a list, an Option, or a scalar), with
     // `Content-Type: application/json`. Chain `.status_code(201)` for Created.
     fun json[T: ToJson](value: T) -> Response {
         return Response.with_body(200, stringify(value.to_json())).content_type("application/json")
@@ -782,7 +782,7 @@ class ChunkedBody {
 
 // Decode a `Transfer-Encoding: chunked` body, beginning from `initial` (the
 // bytes already read after the headers) and reading more from `stream` as
-// needed. Each chunk is `<hex-size>[;ext]\r\n<data>\r\n`; a zero-size chunk
+// needed. Each chunk is `<hex-size>[;ext]\r\n[data]\r\n`; a zero-size chunk
 // ends the body, followed by optional trailer lines and a final blank line.
 fun is_chunked_only(te: str) -> bool {
     let parts = te.split(",")
@@ -1145,7 +1145,7 @@ fun status_forbids_content_length(status: int) -> bool {
 }
 
 // A valid HTTP status code is three digits, 100 through 599. A handler can set
-// any Int through `status_code`, so an out-of-range value (which would frame a
+// any int through `status_code`, so an out-of-range value (which would frame a
 // malformed status line like `HTTP/1.1 -1 OK`) is replaced with 500.
 fun sanitize_status(status: int) -> int {
     if status < 100 or status > 599 {
@@ -1297,14 +1297,14 @@ fun write_response(stream: TcpStream, resp: Response, keep_alive: bool, is_head:
 }
 
 // Convert a timeout in seconds to milliseconds without overflowing. A value so
-// large that `seconds * 1000` would wrap past the Int range (and read back as a
+// large that `seconds * 1000` would wrap past the int range (and read back as a
 // non-positive, "disabled" timeout) is clamped to a very large bound instead. A
 // non-positive `seconds` disables the timeout (0).
 fun timeout_ms(seconds: int) -> int {
     if seconds <= 0 {
         return 0
     }
-    // Int is 64-bit, so 9223372036854775 is floor(max / 1000): anything larger
+    // `int` is 64-bit, so 9223372036854775 is floor(max / 1000): anything larger
     // would overflow when multiplied by 1000.
     if seconds > 9223372036854775 {
         return 9223372036854775000

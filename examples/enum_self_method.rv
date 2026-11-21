@@ -1,7 +1,7 @@
 // Match on the `self` receiver of an enum method and read its payload.
 // Regression for issue #186: the receiver carries a `SelfTy` wrapper, so
 // the match scrutinee must resolve to the underlying enum before payload
-// projection. Covers a scalar payload and heap payloads (String, List).
+// projection. Covers a scalar payload and heap payloads (str, list).
 
 enum Bag {
     Num(int),

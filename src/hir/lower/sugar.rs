@@ -1,7 +1,7 @@
 //! Helpers for desugaring rules.
 //!
-//! Each public function in this module implements one of the rewrite
-//! rules described in `docs/specs/hir.md`. They take low-level
+//! Each public function in this module implements one desugaring
+//! rule. They take low-level
 //! ingredients (already-lowered HIR sub-trees) and assemble the
 //! desugared shape.
 

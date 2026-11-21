@@ -1,9 +1,9 @@
 // golden:skip
-// std/ffi: convert a runtime Raven String to a C string and call libc.
+// std.ffi: convert a runtime Raven str to a C string and call libc.
 // strlen counts the bytes of "hello" (5). strcmp returns 0 for equal
 // strings and a nonzero value otherwise. from_cstr round-trips a CStr
-// back to a Raven String. The C integer results print through `print`,
-// which widens the FFI integer types to Int and renders the digits.
+// back to a Raven str. The C integer results print through `print`,
+// which widens the FFI integer types to int and renders the digits.
 from std.ffi import to_cstr, from_cstr
 from std.io import println
 

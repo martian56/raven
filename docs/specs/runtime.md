@@ -2,7 +2,7 @@
 
 ## Goal
 
-`raven-runtime` is the small Rust crate that compiled v2 programs link
+`raven-runtime` is the small Rust crate that compiled Raven programs link
 against at run time. The compiler back-end emits machine code that calls
 into a fixed C ABI surface for heap allocation, panicking, and the few
 intrinsic operations the back-end does not want to open-code (strings,

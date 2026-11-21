@@ -1,4 +1,4 @@
-# std/error
+# std.error
 
 An `Error` value type plus a few helpers over the built-in `Result[T, E]`.
 The language already gives you `Result`, `Option`, and the `?` operator, so
@@ -138,7 +138,7 @@ fun open_config(path: str) -> Result[str, Error] {
 
 ## Error methods
 
-`Error` is a struct holding a `kind` and a `message`, both `str`. These
+`Error` is a class holding a `kind` and a `message`, both `str`. These
 methods come from the merged `impl` blocks.
 
 ### `message(self) -> str`
@@ -364,9 +364,9 @@ fun main() {
 
 ## See also
 
-- [std/io](io.md) for `print` and `println`, which render an `Error` through its
+- [std.io](io.md) for `print` and `println`, which render an `Error` through its
   `ToString` impl.
-- [std/string](string.md) for `concat`, `trim`, and the other text methods used
+- [std.string](string.md) for `concat`, `trim`, and the other text methods used
   alongside error messages.
 - The [language reference](../language-reference.md) for `Result`, `Option`,
   pattern matching, and the `?` operator.

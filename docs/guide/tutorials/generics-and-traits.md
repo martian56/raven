@@ -8,9 +8,9 @@ runtime type check and no boxing unless you ask for it. This tutorial builds
 from a generic container to bounded functions, trait objects, and derived
 implementations. Every step compiles and runs.
 
-## Step 1: a generic struct
+## Step 1: a generic class
 
-A type parameter in angle brackets makes a struct hold any type. `Box[T]` wraps
+A type parameter in square brackets makes a class hold any type. `Box[T]` wraps
 one value of type `T`:
 
 ```rust
@@ -27,22 +27,20 @@ fun main() {
 ```
 
 You never write the type argument when constructing: the compiler infers `T`
-from the value you pass, so `Box { value: 7 }` is a `Box[int]` and `Box { value:
-"raven" }` is a `Box[str]`. Each instantiation gets its own layout and its
+from the value you pass, so `Box(value: 7)` is a `Box[int]` and
+`Box(value: "raven")` is a `Box[str]`. Each instantiation gets its own layout and its
 own garbage-collector descriptor, so wrapping an `int` and wrapping a `str`
 are both fully typed.
 
 ## Step 2: generic methods on a generic type
 
-An `impl[T]` block adds methods that work for every instantiation. A method's
-body can use `T` as the element type:
+Methods written inside a generic class work for every instantiation. A
+method's body can use `T` as the element type:
 
 ```rust
 class Box[T] {
     value: T
-}
 
-impl[T] Box[T] {
     fun unwrap(self) -> T = self.value
 }
 
@@ -124,7 +122,7 @@ fun main() {
 
 The standard library leans on this. `ToString` is part of the always-imported
 prelude, with built-in implementations for the primitives, so a bound of
-`<T: ToString>` accepts ints, bools, and any type you implement it for:
+`[T: ToString]` accepts ints, bools, and any type you implement it for:
 
 ```rust
 class Point {
@@ -193,9 +191,7 @@ A method can introduce its own type parameter, separate from the type's. Here
 ```rust
 class Box[T] {
     value: T
-}
 
-impl[T] Box[T] {
     fun mapped[U](self, f: fun(T) -> U) -> U = f(self.value)
 }
 
@@ -209,27 +205,20 @@ fun main() {
 ```
 
 Calling `mapped` at two different `U` on the same `Box[int]` compiles to two
-distinct specializations. The closures use the single-expression form
-`fun(x: int) -> int = x * 2`, which is how a closure that returns a value is
-written.
+distinct specializations. The closures use the arrow form `(x: int) -> int => x * 2`; the
+annotations are optional when the types can be inferred.
 
-## Step 7: deriving common implementations
+## Step 7: classes as dict keys
 
-Writing equality and hashing by hand is tedious, so `@derive` generates them. A
-type used as a `Map` key must satisfy the key bounds `Eq` and `Hash`; deriving
-both makes a generic struct a valid key:
+A type used as a dict key must satisfy the key bounds `Eq` and `Hash`:
 
 ```rust
-import std.collections
-
-@derive(Eq, Hash)
 class Box[T] {
     value: T
 }
 
 fun main() {
-    let m: dict[Box[int], int] = Map.new()
-    m.set(Box(value: 7), 42)
+    let m = {Box(value: 7): 42}
     match m.get(Box(value: 7)) {
         case Some(v) { print(v) } // 42
         case None { print(0) }
@@ -237,10 +226,10 @@ fun main() {
 }
 ```
 
-`@derive(Eq, Hash)` writes the `equals` and `hash` methods for you; `@derive`
-also understands `Ord` (ordering) among others. Without the derive, using
-`Box[int]` as a key is a clear type error rather than a failure deep in code
-generation.
+A class whose fields all compare and hash gets `==` and hashing
+automatically, so it works as a dict key or set element with no extra code.
+`@derive(Ord)` adds ordering, and `@derive(ToJson, FromJson)` adds JSON
+conversion.
 
 ## Putting it together
 
@@ -249,12 +238,10 @@ and a function that works over both. The snippet below stores any
 `ToString` value and renders it:
 
 ```rust
-class Labeled[T] {
+class Labeled[T: ToString] {
     name: str
     value: T
-}
 
-impl[T: ToString] Labeled[T] {
     fun show(self) -> str = "${self.name}=${self.value.to_string()}"
 }
 
@@ -274,7 +261,7 @@ The bound on the `impl[T: ToString]` block means `show` is available only when
 
 - The [language reference](../language-reference.md) covers generics, traits,
   `dyn Trait`, and `@derive` in full.
-- [`std/cmp`](../stdlib/cmp.md) and [`std/hash`](../stdlib/hash.md) define the
+- [`std.cmp`](../stdlib/cmp.md) and [`std.hash`](../stdlib/hash.md) define the
   `Ord`, `Eq`, and `Hash` traits the derives target.
-- The [modeling-data tutorial](task-tracker.md) uses structs, enums, and
+- The [modeling-data tutorial](task-tracker.md) uses classes, enums, and
   `match` together, the data side that complements the abstraction tools here.

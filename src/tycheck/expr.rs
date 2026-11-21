@@ -310,7 +310,7 @@ struct Checker<'a, 'b> {
     /// Accumulated diagnostics for this body. Statement and item checking
     /// recover at their boundaries (binding a failed value to `Ty::Error`)
     /// and push the error here instead of returning it, so one compile can
-    /// report many independent errors. See `docs/specs/tycheck.md`.
+    /// report many independent errors.
     errors: Vec<RavenError>,
     /// Binding keys of `const` locals in this body, used to reject a
     /// reassignment of an immutable local.
@@ -334,6 +334,9 @@ struct Checker<'a, 'b> {
     /// Operators whose operands were both unsolved when checked, as in the
     /// lambda `(a, b) => a + b`; judged once the body's calls pin the types.
     deferred_ops: Vec<(Ty, Ty, BinaryOp, Span)>,
+    /// Printed values whose type still had unsolved parts, rechecked once
+    /// deferred iterator element types are known.
+    deferred_to_string: Vec<(Ty, Span)>,
     /// Checking the program's `main`, where `?` may stop the program.
     in_main: bool,
     /// Expected parameter types for the lambda argument being checked.
@@ -398,6 +401,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             loop_breaks: Vec::new(),
             never_vars: Vec::new(),
             deferred_ops: Vec::new(),
+            deferred_to_string: Vec::new(),
             in_main: false,
             lambda_hint: None,
         }
@@ -671,6 +675,10 @@ impl<'a, 'b> Checker<'a, 'b> {
                 }
             }
             other if self.implements_trait(other, "ToString") => Ok(()),
+            other if other.has_var() => {
+                self.deferred_to_string.push((other.clone(), span.clone()));
+                Ok(())
+            }
             other => Err(RavenError::ty(
                 TypeError::BoundNotSatisfied {
                     ty: format!("{}", other),
@@ -730,6 +738,13 @@ impl<'a, 'b> Checker<'a, 'b> {
         let env = self.env;
         let elem_of = move |ty: &Ty| -> Option<Ty> { iterator_elem_concrete(&env.impls, ty) };
         self.infer.solve_iterator_links(&elem_of)?;
+        for (ty, span) in std::mem::take(&mut self.deferred_to_string) {
+            if !self.infer.resolve(&ty).has_var() {
+                if let Err(e) = self.require_to_string(&ty, &span) {
+                    self.push_error(e);
+                }
+            }
+        }
 
         // Resolve only the entries this body recorded, replacing each value
         // with its resolved form and raising CannotInferType if a variable
@@ -1569,14 +1584,15 @@ impl<'a, 'b> Checker<'a, 'b> {
                 // Fallback: build a ParamId from the binding.
                 Ok(Ty::Param(ParamId::new(owner, 0, name.clone())))
             }
-            Binding::Variant { .. } | Binding::ImportAlias(_) | Binding::ImportedItem { .. } => {
-                // These are not yet given a usable type by the type
-                // checker; surface a clear error so users see what is
-                // missing rather than a panic.
-                Err(ty_custom(
-                    "name does not yet have a type in this release",
-                    span,
-                ))
+            Binding::ImportedItem { .. } => Err(ty_custom(
+                "this name is imported from a package that is not installed",
+                span,
+            )
+            .with_hint(
+                "add the package with `rvpm add github.com/<user>/<repo>@<version>`, then build with `rvpm build` or `rvpm run`",
+            )),
+            Binding::Variant { .. } | Binding::ImportAlias(_) => {
+                Err(ty_custom("this name cannot be used as a value here", span))
             }
         }
     }
@@ -1703,8 +1719,8 @@ impl<'a, 'b> Checker<'a, 'b> {
         })
     }
 
-    /// Check a map literal `[k1: v1, ...]` (and the empty `[:]`). The
-    /// result is `Map<K, V>` where `K` unifies with every key type and `V`
+    /// Check a dict literal `{k1: v1, ...}` (and the empty `{}`). The
+    /// result is `dict[K, V]` where `K` unifies with every key type and `V`
     /// with every value type. The `Eq` bound on `Map`'s key parameter
     /// rides along on the fresh key argument variable.
     fn check_map_lit(&mut self, pairs: &[(Expr, Expr)], span: &Span) -> Result<Ty, RavenError> {
@@ -1915,7 +1931,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                 if callee_is_extern && !is_repr_c {
                     return Err(ty_custom(
                         &format!(
-                            "struct `{name}` is passed to a C function but is not `@repr(C)`; mark it `@repr(C)` to cross the FFI by value"
+                            "class `{name}` is passed to a C function but is not `@repr(C)`; mark it `@repr(C)` to cross the FFI by value"
                         ),
                         &arg.span,
                     ));
@@ -2175,7 +2191,7 @@ impl<'a, 'b> Checker<'a, 'b> {
     /// arguments. The resolved type argument is recorded under the callee
     /// span so HIR lowering can carry it (a generic parameter `T` resolves
     /// to `Ty::Param`, grounded per monomorphization in MIR). See
-    /// `docs/specs/reflection.md`.
+    /// `docs/guide/language-reference.md`.
     fn check_reflection_builtin(
         &mut self,
         name: &str,
@@ -2210,7 +2226,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         {
             return Err(RavenError::ty(
                 TypeError::Custom(format!(
-                    "`{}` requires a struct type, got `{}`",
+                    "`{}` requires a class type, got `{}`",
                     name, arg_ty
                 )),
                 span.clone(),
@@ -2245,7 +2261,7 @@ impl<'a, 'b> Checker<'a, 'b> {
     /// Both carry the type argument `T` at the callee span so MIR grounds it
     /// per monomorphization (the box site knows the static tag, the cast site
     /// knows the tag to compare). The other three take an `Any` value and no
-    /// type argument. See `docs/specs/runtime-reflection.md`.
+    /// type argument. See `docs/guide/language-reference.md`.
     fn check_runtime_reflection_builtin(
         &mut self,
         name: &str,
@@ -2538,6 +2554,13 @@ impl<'a, 'b> Checker<'a, 'b> {
         let recv_ty = self.check_expr(receiver)?;
         let recv_resolved = self.infer.resolve(&recv_ty);
         let recv_stripped = recv_resolved.strip_self().clone();
+        // `x as int` and `x as float` on a C numeric value convert it.
+        if (is_int_ffi(&recv_stripped) || is_float_ffi(&recv_stripped))
+            && args.is_empty()
+            && (name == "as_int" || name == "as_float")
+        {
+            return Ok(if name == "as_int" { Ty::Int } else { Ty::Float });
+        }
         if matches!(recv_stripped, Ty::Error) {
             // Eat the cascade.
             for a in args {
@@ -3335,7 +3358,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             }
             VariantPayloadSig::Struct(_) => Err(RavenError::ty(
                 TypeError::Custom(format!(
-                    "variant `{}` has named fields; struct-variant construction is not yet supported",
+                    "variant `{}` has named fields; construct it with positional arguments in field order",
                     name
                 )),
                 span.clone(),
@@ -3594,7 +3617,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         // the struct decl).
         let binding = self.resolved.map.lookup(span).ok_or_else(|| {
             RavenError::ty(
-                TypeError::Custom(format!("struct `{}` is not in scope", name)),
+                TypeError::Custom(format!("class `{}` is not in scope", name)),
                 span.clone(),
             )
         })?;
@@ -3602,7 +3625,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             Binding::Struct(id) => *id,
             _ => {
                 return Err(RavenError::ty(
-                    TypeError::Custom(format!("`{}` is not a struct type", name)),
+                    TypeError::Custom(format!("`{}` is not a class", name)),
                     span.clone(),
                 ));
             }
@@ -3677,7 +3700,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         if !missing.is_empty() {
             return Err(RavenError::ty(
                 TypeError::Custom(format!(
-                    "struct `{}` is missing field(s): {}",
+                    "class `{}` is missing field(s): {}",
                     sig.name,
                     missing.join(", ")
                 )),
@@ -3751,6 +3774,10 @@ impl<'a, 'b> Checker<'a, 'b> {
                     continue;
                 }
             } else if self.implements_trait(stripped, "ToString") {
+                continue;
+            } else if stripped.has_var() {
+                self.deferred_to_string
+                    .push((resolved.clone(), e.span.clone()));
                 continue;
             }
             return Err(RavenError::ty(

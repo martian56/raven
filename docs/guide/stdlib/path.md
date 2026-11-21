@@ -1,10 +1,10 @@
-# std/path
+# std.path
 
 Pure path string manipulation on the POSIX `/` separator. Every function
 here is plain string work. Nothing in this module touches the disk: it
 never checks whether a file exists, never reads a directory, never
 resolves a real path. For anything that talks to the filesystem, reach for
-[std/fs](fs.md) instead.
+[std.fs](fs.md) instead.
 
 ```rust
 from std.path import join, basename, dirname, extension, stem, is_absolute
@@ -26,7 +26,7 @@ brought in by a selective import:
 from std.path import join, basename, dirname, extension, stem, is_absolute
 ```
 
-Pull in only the names you use. The module is built on `std/string`'s
+Pull in only the names you use. The module is built on `std.string`'s
 `str` methods, and the import merges that dependency transitively, so
 you do not need a separate `import std.string`.
 
@@ -37,7 +37,7 @@ only separator this module understands. Windows backslash (`\`) paths,
 drive letters, and UNC paths are out of scope: a `\` is treated as an
 ordinary path byte, not a separator.
 
-Indices are byte offsets, consistent with `std/string`. Paths are assumed
+Indices are byte offsets, consistent with `std.string`. Paths are assumed
 to be valid UTF-8 with the separator and the dot appearing only as their
 own single-byte ASCII forms.
 
@@ -248,23 +248,23 @@ fun main() {
 }
 ```
 
-## Relationship to std/fs
+## Relationship to std.fs
 
-`std/path` and [std/fs](fs.md) split cleanly along one line: `std/path` is
-strings, `std/fs` is the disk.
+`std.path` and [std.fs](fs.md) split cleanly along one line: `std.path` is
+strings, `std.fs` is the disk.
 
-- `std/path` answers questions about the shape of a path string
+- `std.path` answers questions about the shape of a path string
   (`dirname`, `basename`, `extension`) and builds new ones (`join`). It
   never opens, reads, or stats anything, so its results hold even for
   paths that do not exist.
-- [std/fs](fs.md) is where existence checks, reading, writing, and
+- [std.fs](fs.md) is where existence checks, reading, writing, and
   directory listing live. When you need to know whether a path is really
-  on disk, use `std/fs`.
+  on disk, use `std.fs`.
 
-A common pattern is to compute a target path with `std/path`, then hand
-that string to `std/fs` to actually read or write it.
+A common pattern is to compute a target path with `std.path`, then hand
+that string to `std.fs` to actually read or write it.
 
 ## See also
 
-- [std/fs](fs.md) for filesystem access (existence, reading, writing).
-- [std/string](string.md) for the `str` methods this module builds on.
+- [std.fs](fs.md) for filesystem access (existence, reading, writing).
+- [std.string](string.md) for the `str` methods this module builds on.

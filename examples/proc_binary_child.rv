@@ -1,4 +1,4 @@
-// golden:skip - the child half of the std/process binary I/O smoke test
+// golden:skip - the child half of the std.process binary I/O smoke test
 // (proc_binary_parent.rv, checked in codegen_smoke.rs). Writes the bytes
 // 0x00 0xFF 0x41 to stdout (the builtin print adds a trailing newline).
 import std.string

@@ -815,7 +815,7 @@ fn lower_ptr_alloc(
 /// Lower `to_any<T>(v)`: box `value` into a fresh `Any` tagged with `T`'s
 /// runtime type id. A scalar payload is widened into the eight-byte slot; a
 /// GC-pointer payload sets the box's traced flag so the collector keeps it
-/// alive through the `Any`. See `docs/specs/runtime-reflection.md`.
+/// alive through the `Any`. See `docs/guide/language-reference.md`.
 fn lower_any_box(
     cx: &mut ModuleCx,
     builder: &mut FunctionBuilder<'_>,
@@ -877,7 +877,7 @@ fn lower_any_runtime_call(
 /// whose discriminant and payload are chosen by the comparison: `Some` with
 /// the payload reinterpreted as `T` on a match, `None` (with a null
 /// payload) otherwise. The branch-free `select` keeps the rvalue a single
-/// value. See `docs/specs/runtime-reflection.md`.
+/// value. See `docs/guide/language-reference.md`.
 fn lower_any_cast(
     cx: &mut ModuleCx,
     builder: &mut FunctionBuilder<'_>,
@@ -938,7 +938,7 @@ fn lower_any_cast(
 
 /// Lower `get_field(a, name)`: call the runtime to read the named field as
 /// an `Any` (or null), then wrap it into `Option<Any>` (`Some(any)` when
-/// non-null, `None` when null). See `docs/specs/runtime-reflection.md`.
+/// non-null, `None` when null). See `docs/guide/language-reference.md`.
 fn lower_any_get_field(
     cx: &mut ModuleCx,
     builder: &mut FunctionBuilder<'_>,
@@ -2762,7 +2762,7 @@ fn aarch64_hfa(layout: &ReprCLayout) -> Option<Vec<RegSlot>> {
 }
 
 /// The register plan for a by-value `@repr(C)` struct under the target ABI.
-/// See `docs/specs/ffi-extensions.md`.
+/// See `docs/specs/ffi.md`.
 pub(crate) fn repr_c_register_plan(layout: &ReprCLayout, conv: CallConv) -> RegPlan {
     match conv {
         // Windows x64: sizes 1/2/4/8 in one integer register (a float-field

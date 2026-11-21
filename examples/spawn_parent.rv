@@ -1,4 +1,4 @@
-// golden:skip - std/process spawn parent, checked in codegen_smoke.rs
+// golden:skip - std.process spawn parent, checked in codegen_smoke.rs
 // (process_spawn_streams_and_kills). Drives the whole streaming surface
 // against the child in RAVEN_PROC_CHILD (spawn_child.rv):
 //

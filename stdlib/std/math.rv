@@ -1,4 +1,4 @@
-// std/math: numeric constants and functions. The transcendental and
+// std.math: numeric constants and functions. The transcendental and
 // rounding functions bind directly to the C runtime math library through
 // `extern "C"`; the rest is pure Raven.
 
@@ -84,7 +84,7 @@ fun ln(x: float) -> float {
     return log(x)
 }
 
-// Float absolute value. C names this `fabs`.
+// `float` absolute value. C names this `fabs`.
 fun abs(x: float) -> float {
     return fabs(x)
 }

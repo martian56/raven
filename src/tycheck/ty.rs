@@ -13,7 +13,7 @@
 //! * [`Ty::Var`] is an inference variable, solved by the union-find
 //!   table in [`super::infer::InferCtx`].
 //!
-//! See `docs/specs/generics.md` for the design rationale.
+//! See `docs/guide/tutorials/generics-and-traits.md` for the design rationale.
 
 use crate::resolve::DeclId;
 use crate::span::Span;
@@ -194,7 +194,7 @@ pub enum Ty {
     /// identity. The runtime reflection builtins (`to_any`, `cast`,
     /// `type_name_of`, `field_names_of`, `get_field`) produce and consume
     /// it. Represented at runtime as a single GC pointer to an `Any` box.
-    /// See `docs/specs/runtime-reflection.md`.
+    /// See `docs/guide/language-reference.md`.
     Any,
     /// A C FFI primitive type (`CInt`, `CStr`, `CPtr<T>`, ...). Used in
     /// `extern "C"` signatures and `c"..."` literals.

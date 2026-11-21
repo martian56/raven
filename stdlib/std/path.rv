@@ -1,5 +1,5 @@
-// std/path: POSIX-style path manipulation on `/` separators. Built on the
-// `String` methods from std/string. Windows `\` handling is out of scope.
+// std.path: POSIX-style path manipulation on `/` separators. Built on the
+// `str` methods from std.string. Windows `\` handling is out of scope.
 
 import std.string
 

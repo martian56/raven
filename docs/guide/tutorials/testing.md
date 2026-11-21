@@ -4,7 +4,7 @@ Raven's test model is deliberately small: a test is a zero-argument function
 named `test_*` in a file ending in `_test.rv`. There are no attributes, no
 registration macros, and no reflection. `rvpm test` finds those functions,
 runs each in its own process, and reports pass or fail by whether its
-assertions held. The assertions come from [`std/test`](../stdlib/test.md). This
+assertions held. The assertions come from [`std.test`](../stdlib/test.md). This
 tutorial writes a function, tests it, makes a test fail on purpose to see the
 output, then tests a library and wires the whole thing into CI.
 
@@ -34,7 +34,7 @@ fun main() {
 
 A test lives in a `*_test.rv` file and imports the function under test from its
 module. Each check is a `test_*` function that calls assertions from
-`std/test`:
+`std.test`:
 
 ```rust
 // src/add_test.rv
@@ -86,7 +86,7 @@ fun test_add_is_commutative() {
 ```
 
 A failure reports the condition as written: `assertion failed: add(2, 3) ==
-add(3, 2)`. The `std/test` helpers below also print the values that differed.
+add(3, 2)`. The `std.test` helpers below also print the values that differed.
 
 ## Step 4: see a failure
 
@@ -121,7 +121,7 @@ values. Fix the expected value (or the code) and the test goes back to `ok`.
 
 ## Step 5: pick the right assertion
 
-`std/test` has an assertion per common shape. Import the ones you use:
+`std.test` has an assertion per common shape. Import the ones you use:
 
 ```rust
 from std.test import assert_msg, assert_true, assert_false, assert_eq_int, assert_eq_str, assert_eq, assert_ne, assert_some, assert_none
@@ -215,7 +215,7 @@ where a zero exit means it passed.
 
 ## Where to go next
 
-- The [`std/test` reference](../stdlib/test.md) lists every assertion, including
+- The [`std.test` reference](../stdlib/test.md) lists every assertion, including
   `assert_eq_float`, `assert_some`, and `assert_ok`, with examples.
 - The [rvpm guide](../rvpm.md) covers project layout and how `rvpm test`
   discovers and runs tests.

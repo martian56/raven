@@ -18,10 +18,10 @@ extern "C" {
 }
 
 fun main() {
-    // A 24-byte struct passed by value (in memory on System V).
+    // A 24-byte class passed by value (in memory on System V).
     print(raven_ffi_big_sum(Big(a: 1, b: 2, c: 3))) // 6
 
-    // A 24-byte struct returned by value (through the sret pointer).
+    // A 24-byte class returned by value (through the sret pointer).
     let g = raven_ffi_make_big(10, 20, 30)
     print(raven_ffi_big_sum(g)) // 60
 }

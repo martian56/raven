@@ -1,8 +1,8 @@
-# std/cmp
+# std.cmp
 
 Free generic functions for ordering and sorting. They build on the prelude
 `Ord` trait, so any type that implements `compare` works with them, including
-your own structs.
+your own classes.
 
 ```rust
 from std.cmp import min, max, sort
@@ -38,7 +38,7 @@ fun compare(self, other: Self) -> int
 
 `compare` returns a negative `int` when `self < other`, zero when they are
 equal, and a positive `int` when `self > other`. Built-in types like `int`
-and `str` already satisfy `Ord`, and any struct that implements `compare`
+and `str` already satisfy `Ord`, and any class that implements `compare`
 becomes usable with every `Ord`-bound function below.
 
 The one exception is `sorted_by`, which takes the comparator as a value
@@ -182,7 +182,7 @@ fun main() {
 
 ## See also
 
-- [std/string](string.md) for text, whose `str` values are `Ord` and so
+- [std.string](string.md) for text, whose `str` values are `Ord` and so
   work with every function here.
 - The [language reference](../language-reference.md) for generics, trait
   bounds, closures, and `Option`.

@@ -388,7 +388,7 @@ impl ModuleCx {
     /// return the descriptor the main shim needs to call `raven_type_register`.
     /// The type id matches the GC descriptor id (interned by mangle), so a
     /// boxed value's runtime id and its metadata always agree. See
-    /// `docs/specs/runtime-reflection.md`.
+    /// `docs/guide/language-reference.md`.
     fn intern_reflect_metadata(
         &mut self,
         mangle: &str,
@@ -813,7 +813,7 @@ impl ModuleCx {
         sig = self.make_sig(&[ptr], &[]);
         self.declare_runtime(intrinsics::RUNTIME_FFI_FREE, &sig)?;
 
-        // Runtime reflection. See `docs/specs/runtime-reflection.md`.
+        // Runtime reflection. See `docs/guide/language-reference.md`.
         // raven_type_register(type_id: u32, name: ptr, is_struct: u32,
         //   field_count: u32, field_names: ptr, field_type_ids: ptr,
         //   field_is_gc_ptr: ptr)

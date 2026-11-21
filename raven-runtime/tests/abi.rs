@@ -8,7 +8,7 @@
 //!    test binary picks the rlib variant; if `crate-type` regresses
 //!    to just `staticlib`, the test refuses to compile).
 //! 2. The exported symbols stay reachable through the public Rust
-//!    surface that the v2 codegen and tooling will import.
+//!    surface that the codegen and tooling import.
 
 use raven_runtime::{
     raven_alloc, raven_dealloc, raven_print_str, raven_println_str, ObjectHeader, OBJECT_ALIGN,

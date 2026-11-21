@@ -1,5 +1,5 @@
 //! Stop-the-world, tracing mark-and-sweep garbage collector for compiled
-//! Raven v2 programs with parallel mutators.
+//! Raven programs with parallel mutators.
 //!
 //! The collector finds its roots through a shadow stack the code
 //! generator maintains: a runtime-owned stack of the addresses of the

@@ -1,4 +1,4 @@
-// Float's Eq and Ord trait impls are total: a NaN equals itself and sorts
+// float's Eq and Ord trait impls are total: a NaN equals itself and sorts
 // after every ordinary number, so sorting and equality stay well defined even
 // with NaN present. The < and > operators keep their IEEE meaning. Prints:
 //   nan equals nan: true

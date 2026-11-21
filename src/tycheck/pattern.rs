@@ -128,7 +128,7 @@ pub fn bind(
                     }
                     VariantPayloadSig::Struct(_) => Err(RavenError::ty(
                         TypeError::Custom(format!(
-                            "variant `{}` has named fields, use a struct pattern",
+                            "variant `{}` has named fields; match them by position, as in `case V(a, b)`",
                             variant
                         )),
                         pat.span.clone(),

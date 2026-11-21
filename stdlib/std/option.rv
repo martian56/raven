@@ -1,4 +1,4 @@
-// std/option: free-function forms of the `Option[T]` combinators. The same
+// std.option: free-function forms of the `Option[T]` combinators. The same
 // operations are available as methods with no import (`o.map(f)`).
 
 // True when the option holds a value.

@@ -1,4 +1,4 @@
-// std/json enrichment: build a value programmatically, read it back with the
+// std.json enrichment: build a value programmatically, read it back with the
 // typed accessors, and pretty-print it. Prints:
 //   7
 //   ok

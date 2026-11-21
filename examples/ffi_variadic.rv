@@ -1,7 +1,7 @@
 // FFI: calling a variadic C function. A variadic extern is declared with a
 // trailing `...`; extra C-FFI integer/pointer arguments may follow the fixed
 // ones. The back end dispatches the call through call_indirect with a
-// signature built from the actual arguments. Float varargs are rejected at
+// signature built from the actual arguments. float varargs are rejected at
 // compile time (the back end cannot honor the variadic float ABI), so a
 // format like "%f" needs a C shim. Prints:
 //   1 2 3

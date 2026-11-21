@@ -1,8 +1,8 @@
-// std/fmt: string formatting helpers and a Debug trait. Padding widths
-// count UTF-8 bytes, matching the byte-oriented String model. There is no
+// std.fmt: string formatting helpers and a Debug trait. Padding widths
+// count UTF-8 bytes, matching the byte-oriented str model. There is no
 // printf-style format function: string interpolation "${expr}" is the
 // placeholder mechanism, and these are the building blocks. See
-// docs/specs/std-fmt.md.
+// docs/guide/stdlib/fmt.md.
 
 import std.string
 from std.math import floor, fabs
@@ -221,7 +221,7 @@ fun from_hex(s: str) -> Option[int] {
     return from_radix(s, 16)
 }
 
-// Map a float digit (0.0..9.0) to its character, with no Int conversion.
+// Map a float digit (0.0..9.0) to its character, with no int conversion.
 fun float_digit_char(d: float) -> str {
     if d < 0.5 {
         return "0"
@@ -330,7 +330,7 @@ fun format_float(x: float, decimals: int) -> str {
 fun pad_int(n: int, width: int) -> str {
     if n < 0 {
         // Render through `to_string` and strip the leading '-' rather than
-        // negating, which overflows (and stays negative) at Int::MIN, producing
+        // negating, which overflows (and stays negative) at the minimum int, producing
         // a doubled minus sign.
         let s = n.to_string()
         var digits = s.substring(1, s.length())

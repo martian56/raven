@@ -3,7 +3,7 @@
 // main receives all four with `select_recv`, summing the values and counting
 // which channel each came from. The value sum (100) and the per-channel counts
 // (two from each) are deterministic regardless of the order the channels become
-// ready. See docs/specs/concurrency.md.
+// ready. See docs/guide/tutorials/concurrency.md.
 
 from std.sync import channel, select_recv
 

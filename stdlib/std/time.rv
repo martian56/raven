@@ -1,10 +1,10 @@
-// std/time: date and time over the raven-runtime C ABI, backed by chrono
+// std.time: date and time over the raven-runtime C ABI, backed by chrono
 // in UTC. All timestamps are Unix seconds (or milliseconds) in UTC; there
 // is no local-timezone handling. The primitives bind `raven_time_*`
 // symbols through `extern "C"`; the structs are assembled in pure Raven
 // from scalar component extractors because a struct cannot cross the FFI
-// boundary. Parsing is fallible and returns Result<Int, Error> through the
-// runtime's thread-local last-error slot. See docs/specs/std-time.md.
+// boundary. Parsing is fallible and returns Result[int, Error] through the
+// runtime's thread-local last-error slot. See docs/guide/stdlib/time.md.
 
 from std.error import error_kind
 
@@ -103,7 +103,7 @@ fun pad2(n: int) -> str {
 fun pad4(n: int) -> str {
     if n < 0 {
         // Keep the sign in front of the zero fill: year -1 is "-0001", not
-        // "000-1". The calendar year range stays well within Int, so negating
+        // "000-1". The calendar year range stays well within int, so negating
         // the magnitude here does not overflow.
         return "-".concat(pad4(0 - n))
     }
