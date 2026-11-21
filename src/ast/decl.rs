@@ -265,6 +265,8 @@ pub struct LetDecl {
     pub name: String,
     pub ty: Option<Type>,
     pub init: Option<Expr>,
+    /// Declared with `var`; a module `let` cannot be reassigned.
+    pub mutable: bool,
     pub span: Span,
 }
 

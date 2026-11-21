@@ -120,6 +120,9 @@ pub struct ResolvedImport {
     /// module-alias call `alias.fn()` resolves to `<prefix>.fn`. `None` for
     /// an external import resolved without a package context.
     pub mangled_prefix: Option<String>,
+    /// Names of the C functions a stdlib module declares in `extern "C"`,
+    /// which keep their C names: `math.sqrt(x)` calls `sqrt`.
+    pub externs: Vec<String>,
     pub span: Span,
 }
 

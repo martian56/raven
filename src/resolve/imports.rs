@@ -136,6 +136,11 @@ pub fn resolve_imports_ctx(
         let id = ImportId(out_imports.len());
         let mut resolved = resolve_one_import(import, &decl.span, loader, in_progress, id)?;
         resolved.mangled_prefix = import_mangle_prefix(&resolved.target, ctx);
+        if let ImportTarget::StdlibModule { segments } = &resolved.target {
+            if let Some(m) = segments.first() {
+                resolved.externs = super::stdlib::module_extern_names(m);
+            }
+        }
         bind_import(import, &resolved, id, scope, ctx)?;
         out_imports.push(resolved);
     }
@@ -201,6 +206,7 @@ fn resolve_one_import(
                     segments: segments.clone(),
                 },
                 mangled_prefix: None,
+                externs: Vec::new(),
                 span: import.span.clone(),
             })
         }
@@ -211,6 +217,7 @@ fn resolve_one_import(
                     path: path.clone(),
                     target: pkg,
                     mangled_prefix: None,
+                    externs: Vec::new(),
                     span: import.span.clone(),
                 })
             } else if path.starts_with("./") || path.starts_with("../") {
@@ -373,6 +380,7 @@ fn resolve_local_import(
             module_names,
         },
         mangled_prefix: None,
+        externs: Vec::new(),
         span: import.span.clone(),
     })
 }

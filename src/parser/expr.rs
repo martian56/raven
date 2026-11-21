@@ -522,6 +522,7 @@ impl Parser {
     /// as in Python: `-x ** 2` is `-(x ** 2)` and `2 ** 3 ** 2` is `2 ** 9`.
     fn parse_power(&mut self) -> ParseResult<Expr> {
         let base = self.parse_postfix()?;
+        self.skip_newlines_at_continuation();
         if !matches!(self.peek_kind(), TokenKind::StarStar) {
             return Ok(base);
         }
@@ -644,6 +645,9 @@ impl Parser {
                 TokenKind::LBracket => {
                     self.advance();
                     self.skip_newlines();
+                    if matches!(self.peek_kind(), TokenKind::Colon) {
+                        return Err(self.python_form("a `[:b]` slice", "write `xs[..b]`"));
+                    }
                     let index = self.parse_expr()?;
                     self.skip_newlines();
                     if matches!(self.peek_kind(), TokenKind::Colon) {
@@ -1512,6 +1516,9 @@ impl Parser {
         self.skip_newlines();
         // Python's `elif` reads as `else if`.
         if self.peek_word("elif") {
+            // Recorded so a speculative parse that rewinds sees `elif` again.
+            self.token_edits
+                .push((self.pos, self.tokens[self.pos].clone()));
             self.tokens[self.pos].kind = TokenKind::If;
             return true;
         }
@@ -1751,6 +1758,7 @@ impl Parser {
         matches!(
             self.peek_kind(),
             TokenKind::Star
+                | TokenKind::StarStar
                 | TokenKind::Slash
                 | TokenKind::Percent
                 | TokenKind::EqEq

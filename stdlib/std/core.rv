@@ -50,6 +50,28 @@ fun __min2[T: Ord](a: T, b: T) -> T = a if a.compare(b) <= 0 else b
 
 fun __max2[T: Ord](a: T, b: T) -> T = a if a.compare(b) >= 0 else b
 
+// `range(a, b, step)`: from `a` toward `b` by `step`, counting down for a
+// negative step, as in Python.
+fun __range_step(a: int, b: int, step: int) -> list[int] {
+    if step == 0 {
+        panic("range step must not be zero")
+    }
+    let out: list[int] = []
+    var i = a
+    if step > 0 {
+        while i < b {
+            out.push(i)
+            i += step
+        }
+    } else {
+        while i > b {
+            out.push(i)
+            i += step
+        }
+    }
+    return out
+}
+
 impl ToString for int {
     fun to_string(self) -> str = "${self}"
 }
@@ -502,6 +524,9 @@ impl[T] list[T] {
 
     // Every `k`th item, starting with the first: `(0..10).step(3)`.
     fun step(self, k: int) -> list[T] {
+        if k <= 0 {
+            panic("step must be positive")
+        }
         let out: list[T] = []
         var i = 0
         while i < self.len() {

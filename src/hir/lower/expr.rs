@@ -1171,6 +1171,28 @@ fn lower_for(
             cx,
         ));
     }
+    // `range(a, b, step)` counts without building the list.
+    if let ExprKind::Call { callee, args } = &iter.kind {
+        if let (ExprKind::Ident { name, .. }, [a, b, k]) = (&callee.kind, args.as_slice()) {
+            if name == "__range_step" {
+                let start_lowered = lower_expr(a, &Ty::Int, cx)?;
+                let end_lowered = lower_expr(b, &Ty::Int, cx)?;
+                let step = lower_expr(k, &Ty::Int, cx)?;
+                return Ok(lower_counter_for(
+                    pat,
+                    start_lowered,
+                    end_lowered,
+                    false,
+                    Some(step),
+                    None,
+                    Ty::Int,
+                    body,
+                    span,
+                    cx,
+                ));
+            }
+        }
+    }
     if let ExprKind::MethodCall {
         receiver,
         name,
@@ -1443,17 +1465,47 @@ fn lower_counter_for(
         let_stmt(&i_name, Ty::Int, start, span.clone()),
         let_stmt(&end_name, Ty::Int, end, span.clone()),
     ];
+    let mut runtime_step: Option<String> = None;
     let step_expr = match step {
         None => int(1),
         Some(
             e @ HirExpr {
-                kind: HirExprKind::Int(_),
+                kind: HirExprKind::Int(n),
                 ..
             },
-        ) => e,
+        ) if n != 0 => e,
+        Some(e) if down => e,
         Some(e) => {
+            // A step known only at run time picks its direction then, and a
+            // zero step is an error rather than a loop that never ends.
             let step_name = cx.fresh("step");
             setup.push(let_stmt(&step_name, Ty::Int, e, span.clone()));
+            let panic = make_expr(
+                HirExprKind::Call {
+                    callee: Box::new(make_expr(
+                        HirExprKind::Ident("__panic".into()),
+                        Ty::Function {
+                            params: vec![Ty::Str],
+                            ret: Box::new(Ty::Unit),
+                        },
+                        span.clone(),
+                    )),
+                    args: vec![make_expr(
+                        HirExprKind::Str("range step must not be zero".into()),
+                        Ty::Str,
+                        span.clone(),
+                    )],
+                    type_args: Vec::new(),
+                },
+                Ty::Unit,
+                span.clone(),
+            );
+            setup.push(stmt(if_then(
+                bin(HirBinaryOp::Eq, var(&step_name, Ty::Int), int(0), Ty::Bool),
+                vec![stmt(panic)],
+                None,
+            )));
+            runtime_step = Some(step_name.clone());
             var(&step_name, Ty::Int)
         }
     };
@@ -1479,6 +1531,31 @@ fn lower_counter_for(
         var(&end_name, Ty::Int),
         Ty::Bool,
     );
+    if let Some(step_name) = &runtime_step {
+        let back = if inclusive {
+            HirBinaryOp::Lt
+        } else {
+            HirBinaryOp::Le
+        };
+        let up = bin(
+            HirBinaryOp::And,
+            bin(HirBinaryOp::Gt, var(step_name, Ty::Int), int(0), Ty::Bool),
+            cond,
+            Ty::Bool,
+        );
+        let down_past = bin(
+            HirBinaryOp::And,
+            bin(HirBinaryOp::Lt, var(step_name, Ty::Int), int(0), Ty::Bool),
+            bin(
+                back,
+                var(&i_name, Ty::Int),
+                var(&end_name, Ty::Int),
+                Ty::Bool,
+            ),
+            Ty::Bool,
+        );
+        cond = bin(HirBinaryOp::Or, up, down_past, Ty::Bool);
+    }
     if inclusive {
         cond = bin(HirBinaryOp::Or, var(&stop_name, Ty::Bool), cond, Ty::Bool);
     }
@@ -2146,12 +2223,7 @@ fn module_qualified_fn(receiver: &Expr, name: &str, cx: &LowerCtx<'_>) -> Option
     }
     // A C function declared in the module's `extern "C"` block keeps its own
     // name, so `math.sqrt(x)` calls `sqrt`.
-    if cx
-        .env
-        .externs
-        .values()
-        .any(|s| s.name == name && !s.variadic)
-    {
+    if import.externs.iter().any(|e| e == name) {
         return Some(name.to_string());
     }
     Some(mangled)

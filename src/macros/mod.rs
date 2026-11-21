@@ -1137,6 +1137,12 @@ fn collect_binding_indices(
                         }
                     }
                 }
+                // `var` is a word rather than a keyword token.
+                TokenKind::Identifier(w) if w == "var" && is_t(i + 1) => {
+                    if let Some(TokenKind::Identifier(s)) = tokens.get(i + 1).map(|t| &t.kind) {
+                        bindings.insert(i + 1, (s.clone(), BindKind::Block));
+                    }
+                }
                 // Scan forward to the parameter list's `(`, past an optional
                 // function name (a literal identifier or a spliced metavariable).
                 TokenKind::Fun => {

@@ -29,10 +29,17 @@ pub fn desugar(file: &mut File) -> Result<(), RavenError> {
         items.extend(extra);
     }
     let mut error = None;
+    // `xs.sort(reverse: true)` is rewritten for lists only when no type in the
+    // file declares its own `sort`, which would take the named argument.
+    let own_sort = items.iter().any(|d| match &d.kind {
+        DeclKind::Impl(i) => i.items.iter().any(|f| f.name == "sort"),
+        DeclKind::Struct(s) => s.methods.iter().any(|f| f.name == "sort"),
+        _ => false,
+    });
     for decl in &mut items {
         visit::walk_decl(
             decl,
-            &mut |e: &mut Expr| lower_expr(e),
+            &mut |e: &mut Expr| lower_expr(e, own_sort),
             &mut |b: &mut Block| {
                 if error.is_none() {
                     if let Err(e) = lower_let_tuple(b).and_then(|_| lower_let_else(b)) {
@@ -267,7 +274,7 @@ fn statement_block(mut b: Block) -> Block {
     b
 }
 
-fn lower_expr(e: &mut Expr) {
+fn lower_expr(e: &mut Expr, own_sort: bool) {
     let span = e.span.clone();
     let kind = std::mem::replace(&mut e.kind, ExprKind::Bool(false));
     e.kind = match kind {
@@ -275,15 +282,24 @@ fn lower_expr(e: &mut Expr) {
             op: BinaryOp::Pow,
             lhs,
             rhs,
-        } => {
-            method(
-                *lhs,
-                "pow",
-                vec![*rhs],
-                &span.in_copy(crate::span::next_copy_id()),
-            )
-            .kind
-        }
+        } => match (&lhs.kind, &rhs.kind) {
+            // Literal powers fold, so `let N = 2 ** 10` stays a constant.
+            (ExprKind::Int(b), ExprKind::Int(e))
+                if (0..=u32::MAX as i64).contains(e) && b.checked_pow(*e as u32).is_some() =>
+            {
+                ExprKind::Int(b.pow(*e as u32))
+            }
+            (ExprKind::Float(b), ExprKind::Float(e)) => ExprKind::Float(b.powf(*e)),
+            _ => {
+                method(
+                    *lhs,
+                    "pow",
+                    vec![*rhs],
+                    &span.in_copy(crate::span::next_copy_id()),
+                )
+                .kind
+            }
+        },
         ExprKind::Binary {
             op: op @ (BinaryOp::In | BinaryOp::NotIn),
             lhs,
@@ -311,6 +327,7 @@ fn lower_expr(e: &mut Expr) {
             generics,
             args,
         } if name == "sort"
+            && !own_sort
             && matches!(args.as_slice(), [Expr { kind: ExprKind::NamedArg { name: n, value }, .. }]
                 if n == "reverse" && matches!(value.kind, ExprKind::Bool(_))) =>
         {
@@ -1094,21 +1111,19 @@ fn builtin_call(e: &mut Expr, values: &std::collections::HashSet<String>) {
             },
             span: span.clone(),
         },
-        ("range", 3) => {
-            // `range(a, b, step)` is `(a..b).step(step)`.
-            let step = args.pop().expect("range step");
-            let end = args.pop().expect("range end");
-            let start = args.pop().expect("range start");
-            let range = Expr {
-                kind: ExprKind::Range {
-                    start: Box::new(start),
-                    end: Box::new(end),
-                    inclusive: false,
-                },
-                span: inner(&span),
-            };
-            method(range, "step", vec![step], &span)
-        }
+        ("range", 3) => Expr {
+            kind: ExprKind::Call {
+                callee: Box::new(Expr {
+                    kind: ExprKind::Ident {
+                        name: "__range_step".into(),
+                        generics: Vec::new(),
+                    },
+                    span: inner(&span),
+                }),
+                args,
+            },
+            span: span.clone(),
+        },
         ("range", 1 | 2) => {
             let end = args.pop().expect("range end");
             let start = args.pop().unwrap_or(Expr {
@@ -1215,7 +1230,7 @@ fn comprehension(
         },
         span: at(),
     };
-    lower_expr(&mut for_loop);
+    lower_expr(&mut for_loop, false);
     ExprKind::Block(Block {
         stmts: vec![
             Stmt {

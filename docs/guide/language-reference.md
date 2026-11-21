@@ -49,10 +49,10 @@ names.push("ann") // names is list[str]
 ```
 
 At module level (outside any function), `var` declares a mutable global and
-`let` an immutable one, initialized before `main` in declaration order. A
-module `let` whose value is a literal or arithmetic over literals is a
-compile-time constant, inlined at each use; assigning to it is an error that
-suggests `var`.
+`let` an immutable one, initialized before `main` in declaration order;
+assigning to a module `let` is an error that suggests `var`. A module `let`
+whose value is a literal or arithmetic over literals (including `**`) is a
+compile-time constant, inlined at each use.
 
 ```rust
 let MAX: int = 100

@@ -5,7 +5,7 @@
 //! looks up signatures here when it encounters calls, field access,
 //! method dispatch, and enum variant construction.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::resolve::DeclId;
 use crate::span::Span;
@@ -162,6 +162,8 @@ pub struct TypeEnv {
     pub consts: HashMap<DeclId, Ty>,
     /// Top level `let` declarations keyed by `DeclId`.
     pub statics: HashMap<DeclId, Ty>,
+    /// Module globals declared with `let`, which cannot be reassigned.
+    pub immutable_statics: HashSet<DeclId>,
     /// Extern declarations keyed by `(DeclId, item_index)`.
     pub externs: HashMap<(DeclId, usize), FnSig>,
     pub trait_impl_pairs: std::cell::OnceCell<std::rc::Rc<Vec<(String, Ty)>>>,

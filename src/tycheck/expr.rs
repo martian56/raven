@@ -1042,6 +1042,9 @@ impl<'a, 'b> Checker<'a, 'b> {
                             self.const_locals.contains(&BindingKey::local(decl))
                         }
                         Some(crate::resolve::Binding::Const(_)) => true,
+                        Some(crate::resolve::Binding::Static(id)) => {
+                            self.env.immutable_statics.contains(id)
+                        }
                         _ => false,
                     };
                     if is_const {
@@ -1843,6 +1846,19 @@ impl<'a, 'b> Checker<'a, 'b> {
             self.resolved.map.lookup(&callee.span),
             Some(Binding::Extern { .. })
         );
+        self.check_fixed_args(&params, args, callee_is_extern)?;
+        Ok(ret)
+    }
+
+    /// Check call arguments against fixed parameters. A call to a C function
+    /// accepts native ints and floats for C number types, functions for
+    /// `CFnPtr`, and only `@repr(C)` structs.
+    fn check_fixed_args(
+        &mut self,
+        params: &[Ty],
+        args: &[Expr],
+        callee_is_extern: bool,
+    ) -> Result<(), RavenError> {
         for (param_ty, arg) in params.iter().zip(args.iter()) {
             let a = self.check_arg(arg, param_ty)?;
             // An integer C FFI parameter (`CInt`, `CLong`, `CSize`)
@@ -1907,7 +1923,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             }
             self.unify(param_ty, &a, &arg.span)?;
         }
-        Ok(ret)
+        Ok(())
     }
 
     /// Validate an argument passed where a `CFnPtr` is expected. The
@@ -2743,7 +2759,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         // name: `import std.math` then `math.sqrt(x)`.
         let extern_ty = match decl {
             Some(_) => None,
-            None => self
+            None if import.externs.iter().any(|e| e == name) => self
                 .env
                 .externs
                 .values()
@@ -2752,7 +2768,9 @@ impl<'a, 'b> Checker<'a, 'b> {
                     params: s.params.clone(),
                     ret: Box::new(s.ret.clone()),
                 }),
+            None => None,
         };
+        let is_extern = extern_ty.is_some();
         let fn_ty = match (decl, extern_ty) {
             (Some(decl), _) => self.type_of_binding(&Binding::Function(decl), span, &[])?,
             (None, Some(t)) => t,
@@ -2776,10 +2794,7 @@ impl<'a, 'b> Checker<'a, 'b> {
                 span.clone(),
             ));
         }
-        for (param_ty, arg) in params.iter().zip(args.iter()) {
-            let a = self.check_arg(arg, param_ty)?;
-            self.unify(param_ty, &a, &arg.span)?;
-        }
+        self.check_fixed_args(&params, args, is_extern)?;
         Ok(Some(*ret))
     }
 
