@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [Unreleased]
+
+### Performance
+
+- `[x] * n` fills the list in one runtime call (a memset for `list[bool]`) instead of `n` pushes; the sieve benchmark, written as `[true] * (n + 1)`, went from 349 ms to 316 ms against C's 297 ms.
+
 ## [3.1.0] - 2026-11-21
 
 ### Added
