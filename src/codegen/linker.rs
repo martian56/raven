@@ -33,10 +33,16 @@ use super::CodegenError;
 ///
 /// Captured from
 /// `cargo rustc -p raven-runtime --crate-type staticlib -- --print native-static-libs`
-/// against rustc 1.85.0 (x86_64-pc-windows-msvc). Refresh the same way
-/// if the runtime crate gains native dependencies. The trailing
-/// `/defaultlib:msvcrt` selects the C runtime and is passed verbatim.
+/// against the release toolchain (x86_64-pc-windows-msvc). Refresh the
+/// same way if the runtime crate gains native dependencies; newer Rust
+/// standard libraries need `synchronization.lib` for `WaitOnAddress`. The
+/// trailing `/defaultlib:msvcrt` selects the C runtime and is passed
+/// verbatim.
 const MSVC_NATIVE_STATIC_LIBS: &[&str] = &[
+    "synchronization.lib",
+    "psapi.lib",
+    "shell32.lib",
+    "user32.lib",
     "bcrypt.lib",
     "kernel32.lib",
     "advapi32.lib",

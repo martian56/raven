@@ -280,7 +280,7 @@ jobs:
           raven build ffif.rv -o ffif
           ffif_out="$(./ffif)"
           echo "ffi float-struct output: $ffif_out"
-          test "$ffif_out" = "30"
+          test "$ffif_out" = "30.0"
           # FFI: a capturing Raven closure passed as a C callback through a
           # generated trampoline (userdata-last); the fixture calls back in.
           printf 'extern "C" {\n  fun raven_ffi_apply_cb(cb: CFnPtr, data: CPtr[()], x: CLong) -> CLong\n}\nfun run(base: CLong) {\n  let add = (x: CLong) -> CLong => x + base\n  print(raven_ffi_apply_cb(add, add, 5))\n}\nfun main() {\n  run(100)\n}\n' > fficb.rv
