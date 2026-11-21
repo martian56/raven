@@ -2706,9 +2706,15 @@ pub extern "C" fn raven_process_poll(id: i64) -> i64 {
     // Give the reader threads a moment to reach end of file so a read after
     // the exit sees everything; a grandchild holding the pipe open only
     // costs the bounded wait.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
-    while !pumps.iter().all(|p| p.load(Ordering::Acquire)) && std::time::Instant::now() < deadline {
-        std::thread::sleep(std::time::Duration::from_millis(1));
+    if !pumps.iter().all(|p| p.load(Ordering::Acquire)) {
+        let was = gc::block_begin();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+        while !pumps.iter().all(|p| p.load(Ordering::Acquire))
+            && std::time::Instant::now() < deadline
+        {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        gc::block_end(was);
     }
     code
 }
