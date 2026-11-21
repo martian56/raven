@@ -66,6 +66,8 @@ pub enum ListMethodOp {
     Push,
     /// `reserve(self, n)`: make room for `n` more elements.
     Reserve,
+    /// `__repeat_last(self, n)`: append `n` more copies of the last element.
+    RepeatLast,
     /// `pop(self) -> T`: remove and return the last element. Panics when
     /// the list is empty.
     Pop,

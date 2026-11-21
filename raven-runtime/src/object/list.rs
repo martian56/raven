@@ -173,6 +173,47 @@ pub extern "C" fn raven_list_reserve(l: *mut List, additional: i64) {
     );
 }
 
+/// Append `count` more copies of the list's last element, growing the
+/// buffer once. A one-byte element fills with `write_bytes` (a memset).
+/// No-op when `l` is null, empty, or `count <= 0`.
+#[no_mangle]
+pub extern "C" fn raven_list_repeat_last(l: *mut List, count: i64) {
+    if l.is_null() || count <= 0 {
+        return;
+    }
+    // SAFETY: caller passes a pointer obtained from a constructor.
+    let (len, elem_size) = unsafe { ((*l).header.len, (*l).element_size) };
+    if len == 0 {
+        return;
+    }
+    let count = count.min((u32::MAX - len) as i64) as u32;
+    if elem_size == 0 {
+        // SAFETY: bumping a counter on a live header.
+        unsafe { (*l).header.len = len + count };
+        return;
+    }
+    raven_list_reserve(l, count as i64);
+    // SAFETY: re-read after the reserve; the buffer now has room for
+    // `len + count` slots when the reserve succeeded.
+    unsafe {
+        if (*l).header.cap < len + count {
+            return;
+        }
+        let size = elem_size as usize;
+        let base = (*l).elements;
+        let last = base.add((len as usize - 1) * size);
+        let dst = base.add(len as usize * size);
+        if size == 1 {
+            ptr::write_bytes(dst, *last, count as usize);
+        } else {
+            for i in 0..count as usize {
+                ptr::copy_nonoverlapping(last, dst.add(i * size), size);
+            }
+        }
+        (*l).header.len = len + count;
+    }
+}
+
 /// Remove and return the last element of the list.
 ///
 /// Copies `element_size` bytes from the slot at index `header.len - 1`

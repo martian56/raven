@@ -7,6 +7,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 out="${OUT:-$here/.build}"
 raven="${RAVEN:-raven}"
 cc="${CC:-clang}"
+if ! command -v "$cc" >/dev/null 2>&1 && [ -x "/c/Program Files/LLVM/bin/clang.exe" ]; then
+    cc="/c/Program Files/LLVM/bin/clang.exe"
+fi
 mkdir -p "$out"
 
 ms() { local s e; s=$(date +%s%N); "$@" > /dev/null; e=$(date +%s%N); echo $(( (e - s) / 1000000 )); }
@@ -19,7 +22,7 @@ best() {
 printf "%-10s %10s %10s %10s %10s %10s %10s\n" bench raven c go rust python raven-build
 for f in "$here"/raven/*.rv; do
     n=$(basename "$f" .rv)
-    rm -f "$out/$n-rv.exe"
+    rm -f "$out/$n-rv.exe" "$out/$n-c.exe" "$out/$n-go.exe" "$out/$n-rs.exe"
     rb=$(ms "$raven" build "$f" -o "$out/$n-rv.exe")
     [ -f "$out/$n-rv.exe" ] || rb=failed
     "$cc" -O2 -o "$out/$n-c.exe" "$here/c/$n.c" -lm 2>/dev/null || "$cc" -O2 -o "$out/$n-c.exe" "$here/c/$n.c" 2>/dev/null

@@ -200,6 +200,7 @@ pub const RUNTIME_LIST_ELEMENTS: &str = "raven_list_elements";
 pub const RUNTIME_LIST_PUSH: &str = "raven_list_push";
 /// `raven_list_reserve(List, additional: i64)` grows capacity ahead of pushes.
 pub const RUNTIME_LIST_RESERVE: &str = "raven_list_reserve";
+pub const RUNTIME_LIST_REPEAT_LAST: &str = "raven_list_repeat_last";
 /// `raven_list_pop(List, out_ptr) -> u32` removes the last element into
 /// `out_ptr`, returning `1` on success and `0` when the list is empty.
 pub const RUNTIME_LIST_POP: &str = "raven_list_pop";

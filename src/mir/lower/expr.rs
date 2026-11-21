@@ -2153,6 +2153,7 @@ fn list_method_op(name: &str) -> Option<ListMethodOp> {
         "is_empty" => ListMethodOp::IsEmpty,
         "push" => ListMethodOp::Push,
         "reserve" => ListMethodOp::Reserve,
+        "__repeat_last" => ListMethodOp::RepeatLast,
         "pop" => ListMethodOp::Pop,
         "get" => ListMethodOp::Get,
         _ => return None,

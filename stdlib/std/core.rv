@@ -510,11 +510,9 @@ impl[T] list[T] {
         let out: list[T] = []
         out.reserve(len(self) * n)
         if len(self) == 1 {
-            let x = self[0]
-            var j = 0
-            while j < n {
-                out.push(x)
-                j += 1
+            if n > 0 {
+                out.push(self[0])
+                out.__repeat_last(n - 1)
             }
             return out
         }
