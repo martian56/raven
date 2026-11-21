@@ -55,6 +55,8 @@ struct Visible {
     /// Declarations by name, with the file each is declared in.
     structs: HashMap<String, Vec<(FileKey, Vec<StructField>)>>,
     funcs: HashMap<String, Vec<(FileKey, Vec<Param>)>>,
+    /// Named-field enum variants by `Enum.Variant`, with their fields.
+    variants: HashMap<String, Vec<(FileKey, Vec<StructField>)>>,
     /// Per file, local name to imported name from its selector imports.
     imports: HashMap<FileKey, HashMap<String, String>>,
     /// Every top-level name each file declares.
@@ -66,6 +68,7 @@ impl Visible {
         let mut v = Visible {
             structs: HashMap::new(),
             funcs: HashMap::new(),
+            variants: HashMap::new(),
             imports: HashMap::new(),
             declared: HashMap::new(),
         };
@@ -93,6 +96,31 @@ impl Visible {
                     .entry(f.name.clone())
                     .or_default()
                     .push((d.span.file.clone(), f.params.clone())),
+                DeclKind::Enum(e) => {
+                    for var in &e.variants {
+                        let crate::ast::VariantPayload::Tuple(tys) = &var.payload else {
+                            continue;
+                        };
+                        if var.field_names.len() != tys.len() {
+                            continue;
+                        }
+                        let fields = var
+                            .field_names
+                            .iter()
+                            .zip(tys)
+                            .map(|(n, t)| StructField {
+                                name: n.clone(),
+                                ty: t.clone(),
+                                default: None,
+                                span: var.span.clone(),
+                            })
+                            .collect();
+                        v.variants
+                            .entry(format!("{}.{}", e.name, var.name))
+                            .or_default()
+                            .push((d.span.file.clone(), fields));
+                    }
+                }
                 DeclKind::Import(im) => {
                     let m = v.imports.entry(d.span.file.clone()).or_default();
                     for sel in &im.selectors {
@@ -372,13 +400,39 @@ fn rewrite(
                 *args = ordered;
                 return Ok(());
             }
+            if let Some(fields) = scope.lookup(&scope.variants, name, file) {
+                let params = variant_params(fields);
+                *args = order_args(name, args, &params, &e.span)?;
+                return Ok(());
+            }
             if strict {
                 check_no_named(args)
             } else {
                 Ok(())
             }
         }
-        ExprKind::MethodCall { args, .. } if strict => check_no_named(args),
+        ExprKind::MethodCall {
+            receiver,
+            name,
+            args,
+            ..
+        } => {
+            if let ExprKind::Ident { name: owner, .. } = &receiver.kind {
+                let key = format!("{owner}.{name}");
+                if !locals.contains(owner) {
+                    if let Some(fields) = scope.lookup(&scope.variants, &key, file) {
+                        let params = variant_params(fields);
+                        *args = order_args(&key, args, &params, &e.span)?;
+                        return Ok(());
+                    }
+                }
+            }
+            if strict {
+                check_no_named(args)
+            } else {
+                Ok(())
+            }
+        }
         ExprKind::StructLit { name, fields, .. } => {
             let Some(decl) = scope.lookup(&scope.structs, name, file) else {
                 return Ok(());
@@ -398,6 +452,18 @@ fn rewrite(
         }
         _ => Ok(()),
     }
+}
+
+fn variant_params(fields: &[StructField]) -> Vec<Param> {
+    fields
+        .iter()
+        .map(|f| Param {
+            name: f.name.clone(),
+            ty: f.ty.clone(),
+            default: f.default.clone(),
+            span: f.span.clone(),
+        })
+        .collect()
 }
 
 fn check_no_named(args: &[Expr]) -> Result<(), RavenError> {

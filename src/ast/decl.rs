@@ -172,6 +172,9 @@ pub struct Enum {
 pub struct EnumVariant {
     pub name: String,
     pub payload: VariantPayload,
+    /// The field names of a `V(a: T, b: U)` variant, kept after its
+    /// payload is lowered to a tuple so calls can pass them by name.
+    pub field_names: Vec<String>,
     pub span: Span,
 }
 

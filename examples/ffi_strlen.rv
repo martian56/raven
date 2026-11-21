@@ -1,7 +1,7 @@
 // C FFI: declare libc `strlen` and call it on a C string literal.
 // `c"hello"` lowers to a pointer to a static null-terminated buffer, so
-// strlen counts 5 bytes. A `CSize` prints directly, and `as int` turns it
-// into a native int for arithmetic.
+// strlen counts 5 bytes. A `CSize` prints directly, mixes with a native int
+// in arithmetic and comparisons, and `as int` converts it explicitly.
 extern "C" {
     fun strlen(s: CStr) -> CSize
 }
@@ -10,4 +10,5 @@ fun main() {
     let n = strlen(c"hello")
     print(n)
     print(n as int + 1, strlen(c"ab") as float)
+    print(n + 10, n > 3)
 }

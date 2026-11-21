@@ -2,6 +2,13 @@
 
 All notable changes to Raven are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Enum variants with named fields take their arguments by name: `Shape.Rect(h: 3.0, w: 2.0)`.
+- A C number mixed with a native `int` or `float` in arithmetic, ordering, or `==` widens to the native type: `strlen(s) + 1` is an `int`.
+
 ## [3.0.2] - 2026-11-21
 
 ### Fixed

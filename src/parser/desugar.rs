@@ -19,6 +19,7 @@ pub fn desugar(file: &mut File) -> Result<(), RavenError> {
         if let DeclKind::Enum(e) = &mut decl.kind {
             for v in &mut e.variants {
                 if let VariantPayload::Struct(fields) = &mut v.payload {
+                    v.field_names = fields.iter().map(|f| f.name.clone()).collect();
                     let tys = std::mem::take(fields).into_iter().map(|f| f.ty).collect();
                     v.payload = VariantPayload::Tuple(tys);
                 }

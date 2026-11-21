@@ -1404,7 +1404,6 @@ fn lower_iterator_for(
 /// `Some`) makes the per-iteration binding `__list[__i]` instead of the
 /// raw counter `__i`. `element_ty` is the loop variable's type.
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::too_many_arguments)]
 fn lower_counter_for(
     pat: &crate::ast::Pattern,
     start: HirExpr,
