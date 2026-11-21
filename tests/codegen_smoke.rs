@@ -457,7 +457,7 @@ fn ffi_cfloat_program_compiles_and_runs() {
     // returns a C `float`. The Raven `Float` argument 16.0 is narrowed to
     // f32 at the call (fdemote) and the f32 result is widened back to f64
     // (fpromote) before printing; sqrtf(16.0) is 4.
-    compile_link_run_and_check("ffi_cfloat.rv", "4.0\n", &runtime);
+    compile_link_run_and_check("ffi_cfloat.rv", "4.0\ntrue true 4.5\n", &runtime);
 }
 
 #[test]

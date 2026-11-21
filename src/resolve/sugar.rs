@@ -55,8 +55,8 @@ struct Visible {
     /// Declarations by name, with the file each is declared in.
     structs: HashMap<String, Vec<(FileKey, Vec<StructField>)>>,
     funcs: HashMap<String, Vec<(FileKey, Vec<Param>)>>,
-    /// Named-field enum variants by `Enum.Variant`, with their fields.
-    variants: HashMap<String, Vec<(FileKey, Vec<StructField>)>>,
+    /// Per enum, its named-field variants and their fields.
+    variants: HashMap<String, Vec<(FileKey, HashMap<String, Vec<StructField>>)>>,
     /// Per file, local name to imported name from its selector imports.
     imports: HashMap<FileKey, HashMap<String, String>>,
     /// Every top-level name each file declares.
@@ -97,6 +97,7 @@ impl Visible {
                     .or_default()
                     .push((d.span.file.clone(), f.params.clone())),
                 DeclKind::Enum(e) => {
+                    let mut named = HashMap::new();
                     for var in &e.variants {
                         let crate::ast::VariantPayload::Tuple(tys) = &var.payload else {
                             continue;
@@ -115,10 +116,13 @@ impl Visible {
                                 span: var.span.clone(),
                             })
                             .collect();
+                        named.insert(var.name.clone(), fields);
+                    }
+                    if !named.is_empty() {
                         v.variants
-                            .entry(format!("{}.{}", e.name, var.name))
+                            .entry(e.name.clone())
                             .or_default()
-                            .push((d.span.file.clone(), fields));
+                            .push((d.span.file.clone(), named));
                     }
                 }
                 DeclKind::Import(im) => {
@@ -400,10 +404,15 @@ fn rewrite(
                 *args = ordered;
                 return Ok(());
             }
-            if let Some(fields) = scope.lookup(&scope.variants, name, file) {
-                let params = variant_params(fields);
-                *args = order_args(name, args, &params, &e.span)?;
-                return Ok(());
+            if let Some((owner, variant)) = name.rsplit_once('.') {
+                let fields = scope
+                    .lookup(&scope.variants, owner, file)
+                    .and_then(|m| m.get(variant));
+                if let Some(fields) = fields {
+                    let params = variant_params(fields);
+                    *args = order_args(name, args, &params, &e.span)?;
+                    return Ok(());
+                }
             }
             if strict {
                 check_no_named(args)
@@ -420,7 +429,10 @@ fn rewrite(
             if let ExprKind::Ident { name: owner, .. } = &receiver.kind {
                 let key = format!("{owner}.{name}");
                 if !locals.contains(owner) {
-                    if let Some(fields) = scope.lookup(&scope.variants, &key, file) {
+                    let fields = scope
+                        .lookup(&scope.variants, owner, file)
+                        .and_then(|m| m.get(name.as_str()));
+                    if let Some(fields) = fields {
                         let params = variant_params(fields);
                         *args = order_args(&key, args, &params, &e.span)?;
                         return Ok(());
@@ -616,6 +628,14 @@ fn order_args(
                 slots[i] = Some(*value);
             }
             _ => {
+                if slots.get(positional).is_some_and(|s| s.is_some()) {
+                    return Err(bad(
+                        format!(
+                            "a positional argument follows a named one in `{fname}`; put positional arguments first"
+                        ),
+                        &a.span,
+                    ));
+                }
                 if positional >= params.len() {
                     return Err(bad(
                         format!(

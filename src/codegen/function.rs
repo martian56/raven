@@ -1121,7 +1121,7 @@ fn emit_binop(
     rhs: Value,
 ) -> Value {
     let ty = builder.func.dfg.value_type(lhs);
-    let is_float = ty == types::F64;
+    let is_float = ty == types::F64 || ty == types::F32;
     let is_bool = ty == types::I8;
     match op {
         MirBinOp::Add if is_float => builder.ins().fadd(lhs, rhs),
@@ -1210,7 +1210,7 @@ fn emit_compare(
 
 fn emit_unop(builder: &mut FunctionBuilder<'_>, op: MirUnOp, v: Value) -> Value {
     let ty = builder.func.dfg.value_type(v);
-    let is_float = ty == types::F64;
+    let is_float = ty == types::F64 || ty == types::F32;
     match op {
         MirUnOp::Neg if is_float => builder.ins().fneg(v),
         MirUnOp::Neg => builder.ins().ineg(v),
