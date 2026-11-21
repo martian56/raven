@@ -293,6 +293,7 @@ pub fn lower_function(
     decls: &DeclTables<'_>,
 ) -> LoweredFunction {
     let ret_ty = mir_ty(&hir.ret, subst);
+    let returns_value = ret_ty != super::ty::MirType::Unit;
     let mut builder =
         FunctionBuilder::new(mangled.clone(), hir.name.clone(), ret_ty, hir.span.clone());
 
@@ -335,6 +336,17 @@ pub fn lower_function(
             // dead one. Mark the dead block `Unreachable` to keep the dump
             // tidy. A non-diverged empty block carries a real tail value
             // (for example `fun f() -> Int = 1`) and must return it.
+            cx.builder
+                .close_block(cx.current, super::ir::MirTerminator::Unreachable);
+        } else if returns_value
+            && matches!(
+                result,
+                super::ir::MirOperand::Const(super::ir::MirConstant::Unit)
+            )
+        {
+            // Every path of a value-returning function returns explicitly
+            // (the type checker requires it), so a fallthrough that only
+            // carries `()` can never run.
             cx.builder
                 .close_block(cx.current, super::ir::MirTerminator::Unreachable);
         } else {

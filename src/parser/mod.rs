@@ -28,6 +28,7 @@ mod desugar;
 mod expr;
 mod pattern;
 mod stmt;
+mod tailrec;
 mod ty;
 
 #[cfg(test)]

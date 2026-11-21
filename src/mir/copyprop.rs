@@ -70,7 +70,6 @@ fn forward_field_loads(f: &mut MirFunction) {
                     let reusable = match value {
                         MirOperand::Copy(_) => true,
                         MirOperand::Const(c) => !matches!(c, super::ir::MirConstant::Str(_)),
-                        _ => false,
                     };
                     if reusable {
                         learn = Some(((*base, i), value.clone()));
