@@ -191,13 +191,14 @@ Every path through a function with a return type must return a value.
 `return`, `break`, `continue`, and `panic(msg)` never produce a value, so they
 fit anywhere a value is expected.
 
-A non-generic function that returns a call to itself runs as a loop, so deep
-recursion of that shape does not grow the stack: `return sum_to(n - 1, acc + n)`
-recurses millions of times. For an `int` result, `return x + f(...)` and
-`return x * f(...)` are handled the same way through an accumulator. The
-rewrite applies when the function has parameters, its body ends in `return`,
-and the body has no lambda, loop, `defer`, or `spawn` and does not rebind a
-parameter; other functions recurse normally.
+A free (non-method), non-generic function that returns a call to itself runs
+as a loop, so deep recursion of that shape does not grow the stack:
+`return sum_to(n - 1, acc + n)` recurses millions of times. For an `int`
+result, `return x + f(...)` or `return x * f(...)` is handled the same way
+through an accumulator, as long as every such return in the function uses the
+same operator. The rewrite applies when the function has parameters, its body
+ends in `return`, and the body has no lambda, loop, `defer`, or `spawn` and
+does not rebind a parameter; methods and other functions recurse normally.
 
 ## Lambdas
 

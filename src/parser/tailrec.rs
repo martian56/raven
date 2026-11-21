@@ -14,6 +14,10 @@ use crate::ast::{
 use crate::span::Span;
 
 pub fn rewrite(decl: &mut Decl) {
+    if !matches!(decl.kind, DeclKind::Function(_)) {
+        return;
+    }
+    let total_returns = count_returns(decl);
     let DeclKind::Function(f) = &mut decl.kind else {
         return;
     };
@@ -42,7 +46,7 @@ pub fn rewrite(decl: &mut Decl) {
     };
     let mut visited = 0usize;
     each_return(body, &mut |_| visited += 1);
-    let all_visited = text.matches("Return(").count() == visited;
+    let all_visited = total_returns == visited;
     let mut prefix = "__tailrec".to_string();
     while text.contains(&prefix) || params.iter().any(|p| p.starts_with(&prefix)) {
         prefix.push('_');
@@ -194,6 +198,21 @@ fn each_return_expr(e: &Expr, f: &mut dyn FnMut(&Expr)) {
         }
         _ => {}
     }
+}
+
+/// Every `return` statement in the function, wherever it sits.
+fn count_returns(decl: &Decl) -> usize {
+    let mut copy = decl.clone();
+    let count = std::cell::Cell::new(0usize);
+    crate::ast::visit::walk_decl(&mut copy, &mut |_| {}, &mut |b: &mut Block| {
+        let n = b
+            .stmts
+            .iter()
+            .filter(|s| matches!(s.kind, StmtKind::Return(_)))
+            .count();
+        count.set(count.get() + n);
+    });
+    count.get()
 }
 
 /// Whether every return can be rewritten in place: no construct that

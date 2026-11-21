@@ -55,8 +55,9 @@ fun main() {
 ## Performance
 
 Best runs in milliseconds on Windows x86_64 (`benchmarks/runtime`, run with
-`benchmarks/runtime/run.sh`). Every time includes about 58 ms of process
-startup, the same for all four languages.
+`benchmarks/runtime/run.sh`). Times are for the whole process, so each
+includes process startup: a program that only prints one line takes about
+58 ms in both C and Raven on this machine.
 
 | Benchmark | Raven | C (clang -O2) | Go | Rust (-O) |
 |-----------|------:|------:|---:|-----:|
