@@ -387,6 +387,12 @@ pub(crate) fn net_take_stream(id: i64) -> Option<TcpStream> {
 ///
 /// The caller must pair every non-null return with exactly one
 /// `raven_dealloc` using the same `size` and `align`.
+/// `x ** y` on floats.
+#[no_mangle]
+pub extern "C" fn raven_float_pow(x: f64, y: f64) -> f64 {
+    x.powf(y)
+}
+
 #[no_mangle]
 pub extern "C" fn raven_alloc(size: usize, align: usize) -> *mut u8 {
     let Ok(layout) = Layout::from_size_align(size, align) else {

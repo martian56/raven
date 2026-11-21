@@ -65,6 +65,9 @@ impl str {
     }
 
     // Each character as a one-character string, for `for c in s`.
+    // The characters, for `list(s)`.
+    fun to_list(self) -> list[str] = self.iter()
+
     fun iter(self) -> list[str] {
         let out: list[str] = []
         let n = __str_len(self)

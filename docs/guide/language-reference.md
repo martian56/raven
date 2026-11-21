@@ -131,7 +131,7 @@ more) need no import; `" ".join(parts)` joins a list. Triple-quoted strings
 
 ## Operators
 
-- Arithmetic: `+ - * / %`
+- Arithmetic: `+ - * / %`, and `**` for powers (`2 ** 10`, `x ** 0.5`)
 - Comparison: `== != < <= > >=`. Comparisons do not chain.
 - Logic: `and`, `or`, `not`
 - Membership: `x in xs` and `x not in xs` (lists, sets, dict keys, substrings)
@@ -224,6 +224,11 @@ if n > 0 {
 
 let label = "big" if n > 100 else "small"
 ```
+
+`elif` is accepted for `else if`, and `for i, x in ...` for
+`for (i, x) in ...`; `raven fmt` writes the long forms. Python spellings Raven
+does not take (`True`, `f"..."`, `xs[a:b]`, `let a, b = ...`) are errors that
+name the Raven form.
 
 Loops:
 

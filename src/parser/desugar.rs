@@ -272,6 +272,19 @@ fn lower_expr(e: &mut Expr) {
     let kind = std::mem::replace(&mut e.kind, ExprKind::Bool(false));
     e.kind = match kind {
         ExprKind::Binary {
+            op: BinaryOp::Pow,
+            lhs,
+            rhs,
+        } => {
+            method(
+                *lhs,
+                "pow",
+                vec![*rhs],
+                &span.in_copy(crate::span::next_copy_id()),
+            )
+            .kind
+        }
+        ExprKind::Binary {
             op: op @ (BinaryOp::In | BinaryOp::NotIn),
             lhs,
             rhs,
@@ -289,6 +302,27 @@ fn lower_expr(e: &mut Expr) {
                     op: crate::ast::UnaryOp::Not,
                     operand: Box::new(call),
                 }
+            }
+        }
+        // `xs.sort(reverse: true)`, as in Python.
+        ExprKind::MethodCall {
+            receiver,
+            name,
+            generics,
+            args,
+        } if name == "sort"
+            && matches!(args.as_slice(), [Expr { kind: ExprKind::NamedArg { name: n, value }, .. }]
+                if n == "reverse" && matches!(value.kind, ExprKind::Bool(_))) =>
+        {
+            let ExprKind::NamedArg { value, .. } = &args[0].kind else {
+                unreachable!()
+            };
+            let desc = matches!(value.kind, ExprKind::Bool(true));
+            ExprKind::MethodCall {
+                receiver,
+                name: if desc { "sort_desc" } else { "sort" }.to_string(),
+                generics,
+                args: Vec::new(),
             }
         }
         ExprKind::Index { receiver, index }
@@ -920,6 +954,7 @@ fn index_not_type_args(e: &mut Expr, values: &std::collections::HashSet<String>)
 const BUILTINS: &[&str] = &[
     "set",
     "dict",
+    "list",
     "len",
     "sum",
     "min",
@@ -1004,6 +1039,7 @@ fn builtin_call(e: &mut Expr, values: &std::collections::HashSet<String>) {
         ("sum", 1) => one("sum", &mut args),
         ("sorted", 1) => one("sorted", &mut args),
         ("reversed", 1) => one("reversed", &mut args),
+        ("list", 1) => one("to_list", &mut args),
         ("enumerate", 1) => one("enumerate", &mut args),
         ("str", 1) => one("to_string", &mut args),
         ("int", 1) => one("as_int", &mut args),

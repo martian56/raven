@@ -905,7 +905,9 @@ fn lower_binop(op: BinaryOp) -> HirBinaryOp {
         BinaryOp::BitXor => HirBinaryOp::BitXor,
         BinaryOp::Shl => HirBinaryOp::Shl,
         BinaryOp::Shr => HirBinaryOp::Shr,
-        BinaryOp::In | BinaryOp::NotIn => unreachable!("membership is desugared after parsing"),
+        BinaryOp::In | BinaryOp::NotIn | BinaryOp::Pow => {
+            unreachable!("membership and `**` are desugared after parsing")
+        }
     }
 }
 
@@ -2087,7 +2089,7 @@ fn fold_binary(op: BinaryOp, l: HirExprKind, r: HirExprKind) -> Option<HirExprKi
             Le => Some(Bool(a <= b)),
             Gt => Some(Bool(a > b)),
             Ge => Some(Bool(a >= b)),
-            And | Or | In | NotIn => None,
+            And | Or | In | NotIn | Pow => None,
         },
         (Float(a), Float(b)) => match op {
             Add => Some(Float(a + b)),

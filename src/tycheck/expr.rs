@@ -3803,7 +3803,7 @@ pub fn check_binary(l: &Ty, r: &Ty, op: BinaryOp, span: &Span) -> Result<Ty, Rav
     let ls = l.strip_self();
     let rs = r.strip_self();
     match op {
-        In | NotIn => unreachable!("membership is desugared after parsing"),
+        In | NotIn | Pow => unreachable!("membership and `**` are desugared after parsing"),
         Add | Sub | Mul | Div | Mod => match (ls, rs) {
             (Ty::Int, Ty::Int) => Ok(Ty::Int),
             (Ty::Str, Ty::Str) if op == Add => Ok(Ty::Str),
