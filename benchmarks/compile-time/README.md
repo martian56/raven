@@ -124,3 +124,20 @@ time raven build benchmarks/compile-time/corpus/main.rv -o corpus
 On a Windows x86_64 desktop (best of 5), `go build` took 3327 ms and
 `raven build` 766 ms, with Raven also compiling its own standard library on
 every build.
+
+## Small programs
+
+Building each program in `benchmarks/runtime` (ms, best of 3, Windows
+x86_64). Go has its standard library cached and the program edited before
+each build, so it recompiles the program but not the library:
+
+| program | raven | go | rustc -O3 | clang -O2 |
+|---|---|---|---|---|
+| fib | 258 | 965 | 285 | 260 |
+| maps | 252 | 904 | 539 | 268 |
+| nbody | 249 | 937 | 367 | 277 |
+| sieve | 246 | 960 | 319 | 267 |
+| strings | 245 | 943 | 341 | 277 |
+| trees | 247 | 912 | 351 | 261 |
+
+About 145 ms of each Raven build is linking.
