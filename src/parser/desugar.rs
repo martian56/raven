@@ -1058,6 +1058,21 @@ fn builtin_call(e: &mut Expr, values: &std::collections::HashSet<String>) {
             },
             span: span.clone(),
         },
+        ("range", 3) => {
+            // `range(a, b, step)` is `(a..b).step(step)`.
+            let step = args.pop().expect("range step");
+            let end = args.pop().expect("range end");
+            let start = args.pop().expect("range start");
+            let range = Expr {
+                kind: ExprKind::Range {
+                    start: Box::new(start),
+                    end: Box::new(end),
+                    inclusive: false,
+                },
+                span: inner(&span),
+            };
+            method(range, "step", vec![step], &span)
+        }
         ("range", 1 | 2) => {
             let end = args.pop().expect("range end");
             let start = args.pop().unwrap_or(Expr {
