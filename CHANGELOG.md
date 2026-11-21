@@ -2,7 +2,7 @@
 
 All notable changes to Raven are documented in this file.
 
-## [Unreleased]
+## [3.1.1] - 2026-11-21
 
 ### Performance
 
