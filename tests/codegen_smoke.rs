@@ -158,7 +158,11 @@ fn enum_construction_compiles_and_runs() {
     // User enum variants constructed in expression position and matched.
     // `Color.Green` (unit) prints `green`; `Shape.Circle(2.0)` and
     // `Shape.Square(3.0)` (payload) print 12 and 9.
-    compile_link_run_and_check("enum_construct.rv", "green\n12.0\n9.0\n", &runtime);
+    compile_link_run_and_check(
+        "enum_construct.rv",
+        "green\n12.0\n9.0\n6.0 10.0\n",
+        &runtime,
+    );
 }
 
 #[test]
@@ -430,7 +434,7 @@ fn ffi_strlen_program_compiles_and_runs() {
     // time, and called on the C string literal `c"hello"` (a static
     // null-terminated buffer). strlen counts 5 bytes, and `as int` and
     // `as float` convert the CSize result.
-    compile_link_run_and_check("ffi_strlen.rv", "5\n6 2.0\n", &runtime);
+    compile_link_run_and_check("ffi_strlen.rv", "5\n6 2.0\n15 true\n", &runtime);
 }
 
 #[test]
@@ -453,7 +457,7 @@ fn ffi_cfloat_program_compiles_and_runs() {
     // returns a C `float`. The Raven `Float` argument 16.0 is narrowed to
     // f32 at the call (fdemote) and the f32 result is widened back to f64
     // (fpromote) before printing; sqrtf(16.0) is 4.
-    compile_link_run_and_check("ffi_cfloat.rv", "4.0\n", &runtime);
+    compile_link_run_and_check("ffi_cfloat.rv", "4.0\ntrue true 4.5\n", &runtime);
 }
 
 #[test]

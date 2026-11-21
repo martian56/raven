@@ -11,6 +11,7 @@ enum Color {
 enum Shape {
     Circle(float),
     Square(float),
+    Rect(w: float, h: float),
 }
 
 fun name(c: Color) -> str {
@@ -25,6 +26,7 @@ fun area(s: Shape) -> float {
     return match s {
         case Circle(r) { r * r * 3.0 }
         case Square(w) { w * w }
+        case Rect(w, h) { w * h }
     }
 }
 
@@ -33,4 +35,5 @@ fun main() {
     print(name(c))
     print(area(Shape.Circle(2.0)))
     print(area(Shape.Square(3.0)))
+    print(area(Shape.Rect(h: 3.0, w: 2.0)), area(Shape.Rect(2.0, h: 5.0)))
 }

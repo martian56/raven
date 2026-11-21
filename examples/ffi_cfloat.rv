@@ -9,4 +9,5 @@ extern "C" {
 fun main() {
     let r = sqrtf(16.0)
     print(r)
+    print(sqrtf(4.0) < sqrtf(9.0), sqrtf(4.0) == sqrtf(4.0), r + 0.5)
 }

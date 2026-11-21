@@ -55,6 +55,8 @@ struct Visible {
     /// Declarations by name, with the file each is declared in.
     structs: HashMap<String, Vec<(FileKey, Vec<StructField>)>>,
     funcs: HashMap<String, Vec<(FileKey, Vec<Param>)>>,
+    /// Per enum, its named-field variants and their fields.
+    variants: HashMap<String, Vec<(FileKey, HashMap<String, Vec<StructField>>)>>,
     /// Per file, local name to imported name from its selector imports.
     imports: HashMap<FileKey, HashMap<String, String>>,
     /// Every top-level name each file declares.
@@ -66,6 +68,7 @@ impl Visible {
         let mut v = Visible {
             structs: HashMap::new(),
             funcs: HashMap::new(),
+            variants: HashMap::new(),
             imports: HashMap::new(),
             declared: HashMap::new(),
         };
@@ -93,6 +96,35 @@ impl Visible {
                     .entry(f.name.clone())
                     .or_default()
                     .push((d.span.file.clone(), f.params.clone())),
+                DeclKind::Enum(e) => {
+                    let mut named = HashMap::new();
+                    for var in &e.variants {
+                        let crate::ast::VariantPayload::Tuple(tys) = &var.payload else {
+                            continue;
+                        };
+                        if var.field_names.len() != tys.len() {
+                            continue;
+                        }
+                        let fields = var
+                            .field_names
+                            .iter()
+                            .zip(tys)
+                            .map(|(n, t)| StructField {
+                                name: n.clone(),
+                                ty: t.clone(),
+                                default: None,
+                                span: var.span.clone(),
+                            })
+                            .collect();
+                        named.insert(var.name.clone(), fields);
+                    }
+                    if !named.is_empty() {
+                        v.variants
+                            .entry(e.name.clone())
+                            .or_default()
+                            .push((d.span.file.clone(), named));
+                    }
+                }
                 DeclKind::Import(im) => {
                     let m = v.imports.entry(d.span.file.clone()).or_default();
                     for sel in &im.selectors {
@@ -372,13 +404,47 @@ fn rewrite(
                 *args = ordered;
                 return Ok(());
             }
+            if let Some((owner, variant)) = name.rsplit_once('.') {
+                let fields = scope
+                    .lookup(&scope.variants, owner, file)
+                    .and_then(|m| m.get(variant));
+                if let Some(fields) = fields {
+                    let params = variant_params(fields);
+                    *args = order_args(name, args, &params, &e.span)?;
+                    return Ok(());
+                }
+            }
             if strict {
                 check_no_named(args)
             } else {
                 Ok(())
             }
         }
-        ExprKind::MethodCall { args, .. } if strict => check_no_named(args),
+        ExprKind::MethodCall {
+            receiver,
+            name,
+            args,
+            ..
+        } => {
+            if let ExprKind::Ident { name: owner, .. } = &receiver.kind {
+                let key = format!("{owner}.{name}");
+                if !locals.contains(owner) {
+                    let fields = scope
+                        .lookup(&scope.variants, owner, file)
+                        .and_then(|m| m.get(name.as_str()));
+                    if let Some(fields) = fields {
+                        let params = variant_params(fields);
+                        *args = order_args(&key, args, &params, &e.span)?;
+                        return Ok(());
+                    }
+                }
+            }
+            if strict {
+                check_no_named(args)
+            } else {
+                Ok(())
+            }
+        }
         ExprKind::StructLit { name, fields, .. } => {
             let Some(decl) = scope.lookup(&scope.structs, name, file) else {
                 return Ok(());
@@ -398,6 +464,18 @@ fn rewrite(
         }
         _ => Ok(()),
     }
+}
+
+fn variant_params(fields: &[StructField]) -> Vec<Param> {
+    fields
+        .iter()
+        .map(|f| Param {
+            name: f.name.clone(),
+            ty: f.ty.clone(),
+            default: f.default.clone(),
+            span: f.span.clone(),
+        })
+        .collect()
 }
 
 fn check_no_named(args: &[Expr]) -> Result<(), RavenError> {
@@ -550,6 +628,14 @@ fn order_args(
                 slots[i] = Some(*value);
             }
             _ => {
+                if slots.get(positional).is_some_and(|s| s.is_some()) {
+                    return Err(bad(
+                        format!(
+                            "a positional argument follows a named one in `{fname}`; put positional arguments first"
+                        ),
+                        &a.span,
+                    ));
+                }
                 if positional >= params.len() {
                     return Err(bad(
                         format!(

@@ -3855,6 +3855,9 @@ pub fn check_binary(l: &Ty, r: &Ty, op: BinaryOp, span: &Span) -> Result<Ty, Rav
             // width). This lets an FFI callback such as a `qsort`
             // comparator compute `load<CInt>(a) - load<CInt>(b)` directly.
             (a, b) if is_int_ffi(a) && a == b => Ok(a.clone()),
+            // A C number mixed with a native one widens to the native type.
+            (a, Ty::Int) | (Ty::Int, a) if is_int_ffi(a) => Ok(Ty::Int),
+            (a, Ty::Float) | (Ty::Float, a) if is_float_ffi(a) => Ok(Ty::Float),
             _ => Err(binary_op_error(
                 op,
                 ls,
@@ -3864,7 +3867,10 @@ pub fn check_binary(l: &Ty, r: &Ty, op: BinaryOp, span: &Span) -> Result<Ty, Rav
             )),
         },
         Eq | Ne => {
-            if assignable(ls, rs) || assignable(rs, ls) {
+            let mixed_c = |a: &Ty, b: &Ty| {
+                (is_int_ffi(a) && *b == Ty::Int) || (is_float_ffi(a) && *b == Ty::Float)
+            };
+            if assignable(ls, rs) || assignable(rs, ls) || mixed_c(ls, rs) || mixed_c(rs, ls) {
                 Ok(Ty::Bool)
             } else {
                 Err(RavenError::ty(
@@ -3881,6 +3887,10 @@ pub fn check_binary(l: &Ty, r: &Ty, op: BinaryOp, span: &Span) -> Result<Ty, Rav
             | (Ty::Float, Ty::Float)
             | (Ty::Char, Ty::Char)
             | (Ty::Str, Ty::Str) => Ok(Ty::Bool),
+            (a, b) if is_int_ffi(a) && (a == b || *b == Ty::Int) => Ok(Ty::Bool),
+            (Ty::Int, b) if is_int_ffi(b) => Ok(Ty::Bool),
+            (a, b) if is_float_ffi(a) && (a == b || *b == Ty::Float) => Ok(Ty::Bool),
+            (Ty::Float, b) if is_float_ffi(b) => Ok(Ty::Bool),
             _ => Err(binary_op_error(
                 op,
                 ls,

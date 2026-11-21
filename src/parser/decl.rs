@@ -426,6 +426,7 @@ impl Parser {
             variants.push(EnumVariant {
                 name: vname,
                 payload,
+                field_names: Vec::new(),
                 span,
             });
             if !self.eat(&TokenKind::Comma) && !matches!(self.peek_kind(), TokenKind::Newline) {

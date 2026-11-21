@@ -367,7 +367,9 @@ fun area(s: Shape) -> float {
 }
 ```
 
-Variants are constructed with their enum name: `Shape.Circle(2.0)`. Patterns
+Variants are constructed with their enum name: `Shape.Circle(2.0)`. A
+variant with named fields also takes them by name, in any order:
+`Shape.Rect(h: 3.0, w: 2.0)`. Patterns
 may name the variant with or without the enum. `match` must cover every case,
 and a capitalized name in a pattern must be a variant, so a typo is an error
 instead of a silent catch-all.
@@ -597,9 +599,10 @@ A native `int` is accepted where an integer C type is expected, and a
 where a `CFloat` or `CDouble` is expected; for `CFloat` the value is
 narrowed to f32 at the call and a `CFloat` return is widened back to a
 `float`. The integer and float C return types satisfy `ToString`, so a
-`CInt` or `CDouble` result prints and interpolates directly. To do native
-arithmetic on a C result, convert it with `as int` or `as float`:
-`strlen(c"hi") as int + 1`.
+`CInt` or `CDouble` result prints and interpolates directly. A C integer
+mixed with a native `int` in arithmetic or a comparison widens to `int`
+(`strlen(c"hi") + 1` is an `int`), and a C float mixed with a `float` widens
+to `float`. `as int` and `as float` convert one explicitly.
 
 ```rust
 extern "C" {

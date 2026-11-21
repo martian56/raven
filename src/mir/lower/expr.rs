@@ -137,6 +137,7 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
                 );
                 return MirOperand::Copy(dst);
             }
+            let (l, r) = widen_mixed_ffi(cx, l, &lhs.ty, r, &rhs.ty);
             let dst = cx.builder.fresh_temp("bin", ty);
             cx.builder
                 .assign(cx.current, dst, MirRvalue::BinaryOp(map_binary(*op), l, r));
@@ -2195,3 +2196,38 @@ fn map_unary(op: HirUnaryOp) -> MirUnOp {
 
 #[allow(dead_code)]
 pub(crate) fn unused_marker(_: MirLocal, _: MirBlockId, _: MirStatement) {}
+
+/// A C number mixed with a native `int` or `float` in a binary operator:
+/// widen the C operand so both sides have the native machine type.
+fn widen_mixed_ffi(
+    cx: &mut LowerCx<'_>,
+    l: MirOperand,
+    lt: &crate::tycheck::Ty,
+    r: MirOperand,
+    rt: &crate::tycheck::Ty,
+) -> (MirOperand, MirOperand) {
+    let lm = mir_ty(lt, cx.subst);
+    let rm = mir_ty(rt, cx.subst);
+    let native = |t: &MirType| match t {
+        MirType::Ffi(MirFfiTy::CInt | MirFfiTy::CLong | MirFfiTy::CSize) => Some(MirType::Int),
+        MirType::Ffi(MirFfiTy::CFloat | MirFfiTy::CDouble) => Some(MirType::Float),
+        _ => None,
+    };
+    let mut widen = |op: MirOperand, target: MirType| {
+        let dst = cx.builder.fresh_temp("ffiwiden", target.clone());
+        cx.builder.assign(
+            cx.current,
+            dst,
+            MirRvalue::Cast {
+                operand: op,
+                target,
+            },
+        );
+        MirOperand::Copy(dst)
+    };
+    match (native(&lm), native(&rm)) {
+        (Some(n), None) if n == rm => (widen(l, n), r),
+        (None, Some(n)) if n == lm => (l, widen(r, n)),
+        _ => (l, r),
+    }
+}
