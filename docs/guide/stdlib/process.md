@@ -210,6 +210,22 @@ fun main() {
 }
 ```
 
+### `run_in(dir: str, program: str, args: list[str]) -> Result[Output, Error]`, `start_in(dir: str, program: str, args: list[str]) -> Result[Child, Error]`
+
+`run` and `start` with the child started in directory `dir` instead of the
+current one, so a build can run inside a checkout without a shell `cd`.
+
+```rust
+from std.process import run_in
+
+fun main() {
+    match run_in("vendor/lib", "git", ["status", "--short"]) {
+        case Ok(out) { print(out.stdout) }
+        case Err(e) { print(e.message) }
+    }
+}
+```
+
 ## A non-zero exit is not an error
 
 A program that spawns and runs but exits with a non-zero code is a normal,

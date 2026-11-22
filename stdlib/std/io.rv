@@ -3,6 +3,7 @@
 
 extern "C" {
     fun raven_io_is_terminal(fd: int) -> bool
+    fun raven_io_eprint(s: str)
 }
 
 // Whether standard output is a terminal, not a pipe or a file. Use it to
@@ -22,6 +23,16 @@ fun print(s: str) {
 
 fun println(s: str) {
     __io_println_str(s)
+}
+
+// Write to standard error with no newline. Unbuffered, so it shows at once.
+fun eprint(s: str) {
+    raven_io_eprint(s)
+}
+
+// Write to standard error followed by a newline.
+fun eprintln(s: str) {
+    raven_io_eprint(s + "\n")
 }
 
 // Print `prompt` with no trailing newline, then read one line from stdin

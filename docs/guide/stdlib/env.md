@@ -58,6 +58,38 @@ fun main() {
 }
 ```
 
+### `set_env(name: str, value: str) -> bool`
+
+Sets a variable for this program and every program it starts afterwards
+with `std.process`. Returns `false` when `name` is empty or contains `=`.
+
+Set variables at startup, before starting goroutines that use the network
+or the clock: on Linux, C library code on another thread (name lookups,
+time zones) can read the environment while it changes, which is undefined
+behaviour. To give one child its own value, prefer setting it just for that
+child's command rather than for the whole program.
+
+```rust
+from std.env import set_env, get_env
+
+fun main() {
+    let _ = set_env("GIT_TERMINAL_PROMPT", "0")
+    print(get_env("GIT_TERMINAL_PROMPT"))
+}
+```
+
+### `unset_env(name: str) -> bool`
+
+Removes a variable, the opposite of `set_env`. The same advice about
+goroutines applies.
+
+## Working directory
+
+### `current_dir() -> str`
+
+The directory the program runs in, with forward slashes on every platform,
+or `""` when it cannot be read.
+
 ## Command-line arguments
 
 ### `arg_count() -> int`

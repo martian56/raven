@@ -1657,11 +1657,26 @@ impl<'a, 'b> Checker<'a, 'b> {
     }
 
     fn check_array(&mut self, items: &[Expr], span: &Span) -> Result<Ty, RavenError> {
+        // The hint describes this literal only. Taking it here keeps it from
+        // reaching an empty `[]` nested inside an element, such as a class
+        // field's default inlined into `[Item(id: "a")]`.
+        let hint = self.array_hint.take();
+        let r = self.check_array_with(items, span, hint.clone());
+        self.array_hint = hint;
+        r
+    }
+
+    fn check_array_with(
+        &mut self,
+        items: &[Expr],
+        span: &Span,
+        hint: Option<Ty>,
+    ) -> Result<Ty, RavenError> {
         if items.is_empty() {
             // An empty `[]` has no element to infer from. Adopt the
             // element type hint from the enclosing `let` binding's
             // declared `List<T>` type when one is present.
-            if let Some(elem) = self.array_hint.clone() {
+            if let Some(elem) = hint {
                 return Ok(Ty::List(Box::new(elem)));
             }
             let v = self.infer.fresh(span.clone());
@@ -1669,7 +1684,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         }
         // Elements of a list of trait objects each convert on their own, so
         // `[Circle(1.0), Rect(2.0, 3.0)]` fits `list[Shape]`.
-        if let Some(hint @ Ty::Dyn { .. }) = self.array_hint.clone() {
+        if let Some(hint @ Ty::Dyn { .. }) = hint {
             for it in items {
                 let t = self.check_expr(it)?;
                 self.unify(&hint, &t, &it.span)?;

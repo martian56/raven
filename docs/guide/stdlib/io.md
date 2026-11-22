@@ -85,6 +85,20 @@ fun main() {
 }
 ```
 
+### `eprint(s: str)`, `eprintln(s: str)`
+
+Write to standard error, with no newline or with one. Standard error is not
+buffered, so the text shows at once, and it stays out of a pipe that reads
+standard output.
+
+```rust
+from std.io import eprintln
+
+fun main() {
+    eprintln("warning: no config found, using defaults")
+}
+```
+
 ## Terminals
 
 ### `is_terminal() -> bool`, `stdin_is_terminal() -> bool`

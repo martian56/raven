@@ -1,0 +1,15 @@
+// A class field defaulting to [] keeps its own element type inside a list
+// literal whose element type is the class.
+
+class Item {
+    id: str
+    tags: list[(str, str)] = []
+}
+
+fun main() {
+    let items: list[Item] = [Item(id: "a")]
+    items[0].tags.push(("k", "v"))
+    print("${len(items)} ${len(items[0].tags)} ${items[0].tags[0].0}\n")
+    let empty: list[list[int]] = [[]]
+    print("${len(empty)} ${len(empty[0])}\n")
+}

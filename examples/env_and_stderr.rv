@@ -1,0 +1,18 @@
+// set_env and current_dir from std.env, and eprint from std.io.
+
+from std.env import set_env, get_env, has_env, unset_env, current_dir
+from std.io import eprint, eprintln
+
+fun main() {
+    print(set_env("RAVEN_EXAMPLE_VAR", "hello"))
+    print(get_env("RAVEN_EXAMPLE_VAR"))
+    print(unset_env("RAVEN_EXAMPLE_VAR"))
+    print(has_env("RAVEN_EXAMPLE_VAR"))
+    print(set_env("", "x"))
+    print(set_env("A=B", "x"))
+    let dir = current_dir()
+    print(dir != "" and not dir.contains("\\"))
+    eprint("to stderr ")
+    eprintln("only")
+    print("done")
+}
