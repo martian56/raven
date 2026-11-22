@@ -48,39 +48,36 @@ fn randomized_rooting_survives_threshold_one() {
     // its index in, so the set is diverse but deterministic.
     let base_seed: u64 = env_u64("RAVEN_GC_STRESS_SEED", 0x5eed_1234_abcd_0001);
 
-    let mut failures = Vec::new();
-    for shape in 0..shapes {
-        let mut rng = Rng::new(base_seed ^ shape.wrapping_mul(0x9e37_79b9_7f4a_7c15));
-        let prog = generate_program(&mut rng);
-        let example = match build_program(&prog.source, &runtime) {
-            Ok(e) => e,
-            Err(e) => {
-                failures.push(format!("shape {shape}: build failed: {e}\n{}", prog.source));
-                continue;
-            }
-        };
-        let expected = format!("{}\n", prog.checksum);
-        for run in 0..repeats {
-            let output = Command::new(&example.binary)
-                .env("RAVEN_GC_THRESHOLD", "1")
-                .output()
-                .expect("run generated binary");
-            let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-            let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-            if !output.status.success() || stdout != expected {
-                failures.push(format!(
-                    "shape {shape} run {run}: status={:?}\n  expected: {expected:?}\n  \
-                     actual:   {stdout:?}\n  stderr: {stderr}\n  source:\n{}",
-                    output.status, prog.source
-                ));
-                break;
-            }
+    // Shapes are independent, so they run across the machine's cores.
+    // RAVEN_GC_STRESS_JOBS=1 runs them one at a time.
+    let jobs = env_u64(
+        "RAVEN_GC_STRESS_JOBS",
+        std::thread::available_parallelism()
+            .map(|n| n.get() as u64)
+            .unwrap_or(1),
+    )
+    .clamp(1, shapes.max(1));
+    let next = std::sync::atomic::AtomicU64::new(0);
+    let found: std::sync::Mutex<Vec<(u64, String)>> = std::sync::Mutex::new(Vec::new());
+    std::thread::scope(|scope| {
+        for _ in 0..jobs {
+            scope.spawn(|| loop {
+                if found.lock().unwrap().len() >= 5 {
+                    break;
+                }
+                let shape = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if shape >= shapes {
+                    break;
+                }
+                if let Some(f) = run_shape(shape, base_seed, repeats, &runtime) {
+                    found.lock().unwrap().push((shape, f));
+                }
+            });
         }
-        cleanup(&example.tmp);
-        if !failures.is_empty() && failures.len() >= 5 {
-            break;
-        }
-    }
+    });
+    let mut found = found.into_inner().unwrap();
+    found.sort_by_key(|(shape, _)| *shape);
+    let failures: Vec<String> = found.into_iter().map(|(_, f)| f).collect();
 
     assert!(
         failures.is_empty(),
@@ -88,6 +85,41 @@ fn randomized_rooting_survives_threshold_one() {
         failures.len(),
         failures.join("\n\n----\n\n")
     );
+}
+
+/// Build and run one shape `repeats` times; the failure, if any.
+fn run_shape(
+    shape: u64,
+    base_seed: u64,
+    repeats: usize,
+    runtime: &RuntimeStaticLib,
+) -> Option<String> {
+    let mut rng = Rng::new(base_seed ^ shape.wrapping_mul(0x9e37_79b9_7f4a_7c15));
+    let prog = generate_program(&mut rng);
+    let example = match build_program(&prog.source, runtime) {
+        Ok(e) => e,
+        Err(e) => return Some(format!("shape {shape}: build failed: {e}\n{}", prog.source)),
+    };
+    let expected = format!("{}\n", prog.checksum);
+    let mut failure = None;
+    for run in 0..repeats {
+        let output = Command::new(&example.binary)
+            .env("RAVEN_GC_THRESHOLD", "1")
+            .output()
+            .expect("run generated binary");
+        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        if !output.status.success() || stdout != expected {
+            failure = Some(format!(
+                "shape {shape} run {run}: status={:?}\n  expected: {expected:?}\n  \
+                 actual:   {stdout:?}\n  stderr: {stderr}\n  source:\n{}",
+                output.status, prog.source
+            ));
+            break;
+        }
+    }
+    cleanup(&example.tmp);
+    failure
 }
 
 /// A generated program and the checksum it must print.

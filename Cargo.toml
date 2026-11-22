@@ -86,6 +86,16 @@ toml_edit = "0.22"
 # Content (tree) hashing for the rvpm lock file (rv.lock).
 sha2 = "0.10"
 
+# Every test program links the runtime as a static library. Built without
+# debug info, and optimized, it is about a seventh of the size, and linking the
+# hundreds of programs the test suites build takes a fraction of the time.
+[profile.dev.package.raven-runtime]
+opt-level = 2
+debug = false
+
+[profile.dev.package."*"]
+debug = false
+
 [profile.release]
 opt-level = 3
 lto = true

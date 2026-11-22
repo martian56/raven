@@ -34,87 +34,46 @@ fn v2_examples_match_golden_baselines() {
     };
 
     let update = std::env::var_os("RAVEN_UPDATE_GOLDEN").is_some();
+    let examples = collect_examples();
+    // Each example compiles, links, and runs on its own, so they spread over
+    // the machine's cores. RAVEN_GOLDEN_JOBS=1 runs them one at a time.
+    let jobs = std::env::var("RAVEN_GOLDEN_JOBS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1)
+        })
+        .min(examples.len().max(1));
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let outcomes: std::sync::Mutex<Vec<(usize, Outcome)>> = std::sync::Mutex::new(Vec::new());
+    std::thread::scope(|scope| {
+        for _ in 0..jobs {
+            scope.spawn(|| loop {
+                let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let Some(example) = examples.get(i) else {
+                    break;
+                };
+                let outcome = run_example(example, &runtime, update);
+                outcomes.lock().unwrap().push((i, outcome));
+            });
+        }
+    });
+    let mut outcomes = outcomes.into_inner().unwrap();
+    outcomes.sort_by_key(|(i, _)| *i);
+
     let mut failures: Vec<String> = Vec::new();
     let mut ran = 0usize;
-
-    for example in collect_examples() {
-        let source = std::fs::read_to_string(&example.source)
-            .unwrap_or_else(|e| panic!("read {}: {}", example.source.display(), e));
-
-        let object_bytes = match build_object(&source, &example.source) {
-            Ok(b) => b,
-            Err(e) => {
-                failures.push(format!("{}: build failed: {}", example.label, e));
-                continue;
+    for (_, outcome) in outcomes {
+        match outcome {
+            Outcome::Ran => ran += 1,
+            Outcome::RanAndFailed(f) => {
+                ran += 1;
+                failures.push(f);
             }
-        };
-
-        let tmp = workdir();
-        let object_path = tmp.join(format!("{}.o", example.stem));
-        std::fs::write(&object_path, &object_bytes).expect("write object");
-        let binary = tmp.join(if cfg!(windows) {
-            format!("{}.exe", example.stem)
-        } else {
-            example.stem.clone()
-        });
-        if let Err(e) = linker::link(
-            &object_path,
-            &runtime,
-            &linker::NativeLink::default(),
-            &binary,
-        ) {
-            cleanup(&tmp);
-            failures.push(format!("{}: link failed: {}", example.label, e));
-            continue;
-        }
-
-        let output = Command::new(&binary)
-            .output()
-            .unwrap_or_else(|e| panic!("run {} binary: {}", example.label, e));
-        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-        cleanup(&tmp);
-
-        if !output.status.success() {
-            failures.push(format!(
-                "{}: binary exited non zero: status={:?} stderr={}",
-                example.label, output.status, stderr
-            ));
-            continue;
-        }
-
-        ran += 1;
-
-        // Normalize line endings before storing or comparing: a program that
-        // prints through C `printf` emits CRLF on Windows (the CRT text mode),
-        // and git normalizes the committed `.rv.out` baseline to LF, so the
-        // raw bytes would spuriously differ across platforms.
-        let normalize = |s: &str| s.replace("\r\n", "\n");
-        let stdout = normalize(&stdout);
-
-        if update {
-            std::fs::write(&example.baseline, &stdout)
-                .unwrap_or_else(|e| panic!("write baseline {}: {}", example.baseline.display(), e));
-            continue;
-        }
-
-        let expected = match std::fs::read_to_string(&example.baseline) {
-            Ok(s) => normalize(&s),
-            Err(e) => {
-                failures.push(format!(
-                    "{}: missing baseline {} ({}); run RAVEN_UPDATE_GOLDEN=1 to create it",
-                    example.label,
-                    example.baseline.display(),
-                    e
-                ));
-                continue;
-            }
-        };
-        if stdout != expected {
-            failures.push(format!(
-                "{}: stdout did not match baseline\n  expected: {:?}\n  actual:   {:?}",
-                example.label, expected, stdout
-            ));
+            Outcome::Failed(f) => failures.push(f),
         }
     }
 
@@ -130,6 +89,88 @@ fn v2_examples_match_golden_baselines() {
         failures.join("\n")
     );
     assert!(ran > 0, "golden suite ran no examples");
+}
+
+/// What became of one example: it ran and matched (or its baseline was
+/// refreshed), it ran but its output differed, or it never got to run.
+enum Outcome {
+    Ran,
+    RanAndFailed(String),
+    Failed(String),
+}
+
+fn run_example(example: &Example, runtime: &RuntimeStaticLib, update: bool) -> Outcome {
+    let source = std::fs::read_to_string(&example.source)
+        .unwrap_or_else(|e| panic!("read {}: {}", example.source.display(), e));
+
+    let object_bytes = match build_object(&source, &example.source) {
+        Ok(b) => b,
+        Err(e) => return Outcome::Failed(format!("{}: build failed: {}", example.label, e)),
+    };
+
+    let tmp = workdir();
+    let object_path = tmp.join(format!("{}.o", example.stem));
+    std::fs::write(&object_path, &object_bytes).expect("write object");
+    let binary = tmp.join(if cfg!(windows) {
+        format!("{}.exe", example.stem)
+    } else {
+        example.stem.clone()
+    });
+    if let Err(e) = linker::link(
+        &object_path,
+        runtime,
+        &linker::NativeLink::default(),
+        &binary,
+    ) {
+        cleanup(&tmp);
+        return Outcome::Failed(format!("{}: link failed: {}", example.label, e));
+    }
+
+    let output = Command::new(&binary)
+        .output()
+        .unwrap_or_else(|e| panic!("run {} binary: {}", example.label, e));
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    cleanup(&tmp);
+
+    if !output.status.success() {
+        return Outcome::Failed(format!(
+            "{}: binary exited non zero: status={:?} stderr={}",
+            example.label, output.status, stderr
+        ));
+    }
+
+    // Normalize line endings before storing or comparing: a program that
+    // prints through C `printf` emits CRLF on Windows (the CRT text mode),
+    // and git normalizes the committed `.rv.out` baseline to LF, so the
+    // raw bytes would spuriously differ across platforms.
+    let normalize = |s: &str| s.replace("\r\n", "\n");
+    let stdout = normalize(&stdout);
+
+    if update {
+        std::fs::write(&example.baseline, &stdout)
+            .unwrap_or_else(|e| panic!("write baseline {}: {}", example.baseline.display(), e));
+        return Outcome::Ran;
+    }
+
+    let expected = match std::fs::read_to_string(&example.baseline) {
+        Ok(s) => normalize(&s),
+        Err(e) => {
+            return Outcome::RanAndFailed(format!(
+                "{}: missing baseline {} ({}); run RAVEN_UPDATE_GOLDEN=1 to create it",
+                example.label,
+                example.baseline.display(),
+                e
+            ))
+        }
+    };
+    if stdout != expected {
+        return Outcome::RanAndFailed(format!(
+            "{}: stdout did not match baseline\n  expected: {:?}\n  actual:   {:?}",
+            example.label, expected, stdout
+        ));
+    }
+    Outcome::Ran
 }
 
 /// One runnable example: its entry source, the stem used to name temporary
