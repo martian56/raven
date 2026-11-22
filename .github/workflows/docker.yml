@@ -32,9 +32,16 @@ jobs:
           TAG: ${{ inputs.tag || github.event.workflow_run.head_branch }}
         run: |
           version="${TAG#v}"
+          image="ghcr.io/${{ github.repository_owner }}/raven"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "minor=${version%.*}" >> "$GITHUB_OUTPUT"
+          # A prerelease (v3.4.0-rc.1) gets only its exact tag; the X.Y alias
+          # and latest move for stable releases alone.
+          if [[ "$version" == *-* ]]; then
+            echo "tags=$image:$version" >> "$GITHUB_OUTPUT"
+          else
+            echo "tags=$image:$version,$image:${version%.*},$image:latest" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Fetch the Linux release build
         shell: bash
@@ -61,30 +68,24 @@ jobs:
           context: docker
           load: true
           tags: raven-test:latest
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.description=The Raven compiler and rvpm package manager
-            org.opencontainers.image.licenses=MIT
-            org.opencontainers.image.version=${{ steps.v.outputs.version }}
 
       - name: Smoke test
         shell: bash
         run: |
           docker run --rm raven-test:latest raven --version
-          docker run --rm raven-test:latest sh -c '
-            printf "fun main() {\n    print(\"hello from docker\")\n}\n" > hello.rv &&
-            raven build hello.rv -o hello && ./hello' | grep -q "hello from docker"
-          docker run --rm raven-test:latest sh -c 'rvpm new demo && cd demo && rvpm run' | grep -q .
+          out=$(docker run --rm raven-test:latest sh -c 'printf "fun main() {\n    print(\"hello from docker\")\n}\n" > hello.rv && raven build hello.rv -o hello && ./hello')
+          echo "$out"
+          grep -q "hello from docker" <<< "$out"
+          out=$(docker run --rm raven-test:latest sh -c 'rvpm new demo && cd demo && rvpm run')
+          echo "$out"
+          test -n "$out"
 
       - name: Push
         uses: docker/build-push-action@v6
         with:
           context: docker
           push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/raven:${{ steps.v.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/raven:${{ steps.v.outputs.minor }}
-            ghcr.io/${{ github.repository_owner }}/raven:latest
+          tags: ${{ steps.v.outputs.tags }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.description=The Raven compiler and rvpm package manager
