@@ -489,51 +489,55 @@ fun parse(text: str) -> Result[JsonValue, Error] {
 // `out`. Control bytes below 0x20 become \uXXXX; quote and backslash are
 // escaped; every other byte passes through unchanged.
 fun escape_string(out: str, s: str) -> str {
+    // Runs that need no escaping are copied whole and everything is joined
+    // once; appending byte by byte copied the result again for every byte.
     let n = __str_len(s)
+    let parts: list[str] = [out]
+    var start = 0
     var i = 0
-    var r = out
     while i < n {
         let b = __str_byte_at(s, i)
+        var esc = ""
+        var step = 1
         if b == 34 {
-            r = __str_concat(r, "\\\"")
+            esc = "\\\""
         } else if b == 92 {
-            r = __str_concat(r, "\\\\")
+            esc = "\\\\"
         } else if b == 8 {
-            r = __str_concat(r, "\\b")
+            esc = "\\b"
         } else if b == 12 {
-            r = __str_concat(r, "\\f")
+            esc = "\\f"
         } else if b == 10 {
-            r = __str_concat(r, "\\n")
+            esc = "\\n"
         } else if b == 13 {
-            r = __str_concat(r, "\\r")
+            esc = "\\r"
         } else if b == 9 {
-            r = __str_concat(r, "\\t")
+            esc = "\\t"
         } else if b < 32 {
-            r = __str_concat(r, "\\u00")
-            r = __str_concat(r, __str_from_byte(hex_digit(b >> 4)))
-            r = __str_concat(r, __str_from_byte(hex_digit(b & 15)))
-        } else if b < 128 {
-            r = __str_concat(r, __str_from_byte(b))
-        } else {
-            // Non-ASCII: JSON allows raw UTF-8, so pass a valid sequence through
-            // unchanged, but a Raven str can hold arbitrary bytes. Replace an
-            // invalid byte with the U+FFFD escape so the output is always valid
-            // JSON (and valid UTF-8) rather than leaking a raw bad byte.
+            esc = __str_concat("\\u00", __str_concat(__str_from_byte(hex_digit(b >> 4)), __str_from_byte(hex_digit(b & 15))))
+        } else if b >= 128 {
+            // JSON allows raw UTF-8, so a valid sequence passes through; a
+            // Raven str can hold arbitrary bytes, and an invalid byte becomes
+            // the U+FFFD escape so the output is always valid JSON.
             let len = utf8_seq_len(s, i, n)
             if len == 0 {
-                r = __str_concat(r, "\\uFFFD")
+                esc = "\\uFFFD"
             } else {
-                var j = 0
-                while j < len {
-                    r = __str_concat(r, __str_from_byte(__str_byte_at(s, i + j)))
-                    j = j + 1
-                }
-                i = i + (len - 1)
+                step = len
             }
         }
-        i = i + 1
+        if esc != "" {
+            parts.push(__str_substring(s, start, i))
+            parts.push(esc)
+            start = i + 1
+        }
+        i = i + step
     }
-    return r
+    if start == 0 {
+        return __str_concat(out, s)
+    }
+    parts.push(__str_substring(s, start, n))
+    return "".join(parts)
 }
 
 // The length (1..4) of the valid UTF-8 sequence starting at byte `i` of `s`, or
@@ -648,47 +652,36 @@ fun stringify(value: JsonValue) -> str {
             __str_concat(q, "\"")
         }
         case Array(items) {
-            var out = "["
-            var i = 0
-            let n = items.len()
-            while i < n {
-                if i > 0 {
-                    out = __str_concat(out, ",")
-                }
-                out = __str_concat(out, stringify(items[i]))
-                i = i + 1
+            let parts: list[str] = []
+            for item in items {
+                parts.push(stringify(item))
             }
-            __str_concat(out, "]")
+            __str_concat(__str_concat("[", ",".join(parts)), "]")
         }
         case Object(map) {
-            var out = "{"
             let keys = map.keys()
             let values = map.values()
+            let parts: list[str] = []
             var i = 0
-            let n = keys.len()
-            while i < n {
-                if i > 0 {
-                    out = __str_concat(out, ",")
-                }
+            while i < keys.len() {
                 let kq = __str_concat("\"", escape_string("", keys[i]))
-                out = __str_concat(out, __str_concat(kq, "\":"))
-                out = __str_concat(out, stringify(values[i]))
+                parts.push(__str_concat(__str_concat(kq, "\":"), stringify(values[i])))
                 i = i + 1
             }
-            __str_concat(out, "}")
+            __str_concat(__str_concat("{", ",".join(parts)), "}")
         }
     }
 }
 
 // `n` spaces, for pretty-printing indentation.
 fun pretty_indent(n: int) -> str {
-    var out = ""
+    let out: list[str] = []
     var i = 0
     while i < n {
-        out = __str_concat(out, " ")
+        out.push(" ")
         i = i + 1
     }
-    return out
+    return "".join(out)
 }
 
 fun stringify_pretty_at(value: JsonValue, indent: int, depth: int) -> str {
