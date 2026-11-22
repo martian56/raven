@@ -95,36 +95,140 @@ pub extern "C" fn raven_string_bytes(s: *const String) -> *const u8 {
     unsafe { (*s).bytes }
 }
 
-/// Concatenate two strings into a freshly allocated string.
+/// High bit of `header.cap`: `bytes` points into a [`SharedBuf`] whose
+/// spare room later concatenations may fill. Static literals never set it.
+const SHARED: u32 = 1 << 31;
+/// Results at least this long get spare room, so a loop of `s += x` grows
+/// the buffer geometrically instead of copying the whole string each time.
+const GROW_FROM: usize = 32;
+const BUF_HDR: usize = std::mem::size_of::<SharedBuf>();
+
+/// Header in front of a shared byte buffer. `used` is how far any string
+/// has written; only a string whose length equals `used` may append in
+/// place, so strings sharing the buffer never see each other's bytes.
+#[repr(C)]
+struct SharedBuf {
+    refs: std::sync::atomic::AtomicU32,
+    used: std::sync::atomic::AtomicU32,
+}
+
+fn shared_header(bytes: *mut u8) -> *const SharedBuf {
+    // SAFETY: callers pass the data pointer of a shared buffer, which
+    // starts BUF_HDR bytes after its header.
+    unsafe { bytes.sub(BUF_HDR) as *const SharedBuf }
+}
+
+/// A GC `String` object over an existing buffer.
+fn string_over(bytes: *mut u8, len: u32, cap_field: u32) -> *mut String {
+    let header_ptr = raven_gc_alloc(size_of_string(), align_of_string(), TAG_STRING) as *mut String;
+    if header_ptr.is_null() {
+        return ptr::null_mut();
+    }
+    // SAFETY: header_ptr points to writable, correctly aligned storage.
+    unsafe {
+        ptr::write(
+            header_ptr,
+            String {
+                header: ObjectHeader::new(TAG_STRING, len, cap_field),
+                bytes,
+            },
+        );
+    }
+    header_ptr
+}
+
+/// Concatenate two strings.
 ///
-/// The result has `len = a.len + b.len` and a capacity equal to that
-/// length. Either input may be null, in which case it is treated as
-/// the empty string.
+/// When `a` sits at the end of a shared buffer with room for `b`, `b` is
+/// written in place and the result shares the buffer: `s = s + x` in a
+/// loop then costs amortized O(len(x)) instead of copying `s`. Otherwise a
+/// fresh buffer is made, with spare room once the result is long enough.
+/// Either input may be null, in which case it is treated as the empty
+/// string.
 #[no_mangle]
 pub extern "C" fn raven_string_concat(a: *const String, b: *const String) -> *mut String {
+    use std::sync::atomic::Ordering;
     let a_len = raven_string_len(a) as usize;
     let b_len = raven_string_len(b) as usize;
     let total = a_len + b_len;
     let total_u32 = match u32::try_from(total) {
-        Ok(v) => v,
-        Err(_) => return ptr::null_mut(),
+        Ok(v) if v < SHARED / 2 => v,
+        _ => return ptr::null_mut(),
     };
-    let out = raven_string_new(total_u32);
-    if out.is_null() {
+    if !a.is_null() && b_len > 0 {
+        // SAFETY: a is a live String.
+        let (a_cap, a_bytes) = unsafe { ((*a).header.cap, (*a).bytes) };
+        if a_cap & SHARED != 0 && total <= (a_cap & !SHARED) as usize {
+            let buf = shared_header(a_bytes);
+            // SAFETY: a shared String's bytes always have a SharedBuf header.
+            let claimed = unsafe {
+                (*buf)
+                    .used
+                    .compare_exchange(a_len as u32, total_u32, Ordering::AcqRel, Ordering::Acquire)
+                    .is_ok()
+            };
+            if claimed {
+                // SAFETY: the CAS reserved [a_len, total) for this call alone,
+                // and the buffer holds at least `total` bytes.
+                unsafe {
+                    ptr::copy_nonoverlapping(raven_string_bytes(b), a_bytes.add(a_len), b_len);
+                    (*buf).refs.fetch_add(1, Ordering::AcqRel);
+                }
+                let out = string_over(a_bytes, total_u32, a_cap);
+                if out.is_null() {
+                    // SAFETY: undo the reference taken for the failed object.
+                    unsafe { (*buf).refs.fetch_sub(1, Ordering::AcqRel) };
+                }
+                return out;
+            }
+        }
+    }
+    if total < GROW_FROM {
+        let out = raven_string_new(total_u32);
+        if out.is_null() {
+            return ptr::null_mut();
+        }
+        // SAFETY: out has `total` bytes of capacity; the copies are bounded
+        // by the inputs' lengths.
+        unsafe {
+            let dst = (*out).bytes;
+            if a_len > 0 {
+                ptr::copy_nonoverlapping(raven_string_bytes(a), dst, a_len);
+            }
+            if b_len > 0 {
+                ptr::copy_nonoverlapping(raven_string_bytes(b), dst.add(a_len), b_len);
+            }
+            (*out).header.len = total_u32;
+        }
+        return out;
+    }
+    let cap = (total * 2).min((SHARED - 1) as usize);
+    let block = raven_alloc(BUF_HDR + cap, align_of::<SharedBuf>().max(8));
+    if block.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: out was just constructed with `total_u32` capacity. We
-    // copy `a_len` bytes from a's buffer then `b_len` bytes from b's
-    // buffer, both bounded by the caller-supplied lengths.
-    unsafe {
-        let dst = (*out).bytes;
+    // SAFETY: block holds BUF_HDR + cap writable bytes; the header is
+    // initialised before any string can see it.
+    let bytes = unsafe {
+        ptr::write(
+            block as *mut SharedBuf,
+            SharedBuf {
+                refs: std::sync::atomic::AtomicU32::new(1),
+                used: std::sync::atomic::AtomicU32::new(total_u32),
+            },
+        );
+        let bytes = block.add(BUF_HDR);
         if a_len > 0 {
-            ptr::copy_nonoverlapping(raven_string_bytes(a), dst, a_len);
+            ptr::copy_nonoverlapping(raven_string_bytes(a), bytes, a_len);
         }
         if b_len > 0 {
-            ptr::copy_nonoverlapping(raven_string_bytes(b), dst.add(a_len), b_len);
+            ptr::copy_nonoverlapping(raven_string_bytes(b), bytes.add(a_len), b_len);
         }
-        (*out).header.len = total_u32;
+        bytes
+    };
+    let out = string_over(bytes, total_u32, SHARED | cap as u32);
+    if out.is_null() {
+        raven_dealloc(block, BUF_HDR + cap, align_of::<SharedBuf>().max(8));
     }
     out
 }
@@ -392,9 +496,29 @@ pub(crate) unsafe fn free_buffers(s: *mut String) {
     // SAFETY: caller guarantees `s` is a live String.
     let cap = unsafe { (*s).header.cap };
     let bytes = unsafe { (*s).bytes };
-    if !bytes.is_null() && cap > 0 {
-        raven_dealloc(bytes, cap as usize, 1);
+    if bytes.is_null() || cap == 0 {
+        return;
     }
+    if cap & SHARED != 0 {
+        // The last string over a shared buffer frees it.
+        let buf = shared_header(bytes);
+        // SAFETY: a shared String's bytes always have a SharedBuf header.
+        let last = unsafe {
+            (*buf)
+                .refs
+                .fetch_sub(1, std::sync::atomic::Ordering::AcqRel)
+        } == 1;
+        if last {
+            let data = (cap & !SHARED) as usize;
+            raven_dealloc(
+                buf as *mut u8,
+                BUF_HDR + data,
+                align_of::<SharedBuf>().max(8),
+            );
+        }
+        return;
+    }
+    raven_dealloc(bytes, cap as usize, 1);
 }
 
 #[cfg(test)]
@@ -720,6 +844,60 @@ mod tests {
             drop_string_for_test(joined);
             drop_string_for_test(a);
             drop_string_for_test(b);
+        }
+    }
+
+    #[test]
+    fn appending_to_a_long_string_reuses_its_buffer() {
+        let long = "x".repeat(40);
+        let a = raven_string_from_bytes(long.as_ptr(), 40);
+        let b = raven_string_from_bytes(b"yz".as_ptr(), 2);
+        let ab = raven_string_concat(a, b);
+        let abb = raven_string_concat(ab, b);
+        assert_eq!(read(abb), format!("{long}yzyz"));
+        unsafe {
+            assert_ne!((*ab).header.cap & SHARED, 0);
+            // The second append wrote into the first result's spare room.
+            assert_eq!((*abb).bytes, (*ab).bytes);
+            drop_string_for_test(abb);
+            drop_string_for_test(ab);
+            drop_string_for_test(a);
+            drop_string_for_test(b);
+        }
+    }
+
+    #[test]
+    fn two_appends_to_one_prefix_do_not_share_bytes() {
+        let long = "p".repeat(40);
+        let base = raven_string_from_bytes(long.as_ptr(), 40);
+        let bang = raven_string_from_bytes(b"!".as_ptr(), 1);
+        let prefix = raven_string_concat(base, bang);
+        let l = raven_string_from_bytes(b"LEFT".as_ptr(), 4);
+        let r = raven_string_from_bytes(b"RIGHT".as_ptr(), 5);
+        let left = raven_string_concat(prefix, l);
+        let right = raven_string_concat(prefix, r);
+        assert_eq!(read(left), format!("{long}!LEFT"));
+        assert_eq!(read(right), format!("{long}!RIGHT"));
+        assert_eq!(read(prefix), format!("{long}!"));
+        unsafe {
+            // The first branch took the spare room; the second had to copy.
+            assert_eq!((*left).bytes, (*prefix).bytes);
+            assert_ne!((*right).bytes, (*prefix).bytes);
+            // Freeing every string over the shared buffer releases it once.
+            for s in [left, right, prefix, base, bang, l, r] {
+                drop_string_for_test(s);
+            }
+        }
+    }
+
+    #[test]
+    fn short_results_stay_exact() {
+        let a = raven_string_from_bytes(b"ab".as_ptr(), 2);
+        let ab = raven_string_concat(a, a);
+        unsafe {
+            assert_eq!((*ab).header.cap, 4);
+            drop_string_for_test(ab);
+            drop_string_for_test(a);
         }
     }
 

@@ -59,6 +59,19 @@ Field offsets on 64-bit:
   text-producing APIs emit UTF-8. The remaining `cap - len` bytes are
   undefined.
 * When `cap == 0`, `bytes` is null.
+* Shared buffers: when bit 31 of `header.cap` is set, the low 31 bits are
+  the capacity and `bytes` points into a buffer several strings share. An
+  8-byte header sits just before `bytes`: a 32-bit reference count (one per
+  string over the buffer) and a 32-bit `used` mark, how many bytes any
+  string has written. `raven_string_concat(a, b)` writes `b` in place after
+  `a` only when `a.len == used` and the capacity allows, claiming the range
+  with a compare-and-swap on `used`, so strings over one buffer never see
+  each other's bytes. A concatenation 32 bytes or longer that cannot extend
+  in place allocates a shared buffer with twice the needed capacity, which
+  makes `s += x` in a loop amortized linear. Freeing a shared string drops
+  the reference count, and the last one frees the buffer. Static string
+  literals never set the bit, and code outside the runtime only reads
+  `len` and `bytes`.
 
 ## List
 
