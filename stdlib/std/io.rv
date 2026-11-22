@@ -1,6 +1,21 @@
 // std.io: standard input and output. The `__io_*` intrinsics are lowered
 // by the compiler to the raven-runtime C ABI symbols.
 
+extern "C" {
+    fun raven_io_is_terminal(fd: int) -> bool
+}
+
+// Whether standard output is a terminal, not a pipe or a file. Use it to
+// decide whether to emit colors or interactive prompts.
+fun is_terminal() -> bool {
+    return raven_io_is_terminal(1)
+}
+
+// Whether standard input is a terminal.
+fun stdin_is_terminal() -> bool {
+    return raven_io_is_terminal(0)
+}
+
 fun print(s: str) {
     __io_print_str(s)
 }

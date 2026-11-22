@@ -227,13 +227,15 @@ fun main() {
 A mutex guards a critical section so only one goroutine holds it at a time,
 which matters now that goroutines run in parallel across worker threads.
 
-### `mutex() -> Mutex`, `lock(self)`, `unlock(self)`
+### `Mutex.new()`, `lock(self)`, `unlock(self)`
+
+`mutex()` is the same constructor as a free function.
 
 ```rust
-from std.sync import mutex
+from std.sync import Mutex
 
 fun main() {
-    let m = mutex()
+    let m = Mutex.new()
     m.lock()
     // ... exclusive section ...
     m.unlock()
@@ -245,9 +247,9 @@ fun main() {
 A wait group counts outstanding work and lets one goroutine block until it
 reaches zero, the usual way to wait for spawned goroutines to finish.
 
-### `wait_group() -> WaitGroup`
+### `WaitGroup.new()`
 
-Create a wait group with a zero counter.
+Create a wait group with a zero counter. `wait_group()` does the same.
 
 ### `add(self, n: int)`, `done(self)`, `wait(self)`, `free(self)`
 

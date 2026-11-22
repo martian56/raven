@@ -41,10 +41,10 @@ fun net_error(ctx: str) -> Error {
 fun connect(addr: str) -> Result[TcpStream, Error] {
     let id = raven_net_connect(addr)
     if id == 0 {
-        return Err(net_error("connect"))
+        return Err(net_error("connect ${addr}"))
     }
     if raven_net_last_error().length() > 0 {
-        return Err(net_error("connect"))
+        return Err(net_error("connect ${addr}"))
     }
     return Ok(TcpStream(id: id))
 }
@@ -53,10 +53,10 @@ fun connect(addr: str) -> Result[TcpStream, Error] {
 fun listen(addr: str) -> Result[TcpListener, Error] {
     let id = raven_net_listen(addr)
     if id == 0 {
-        return Err(net_error("listen"))
+        return Err(net_error("listen ${addr}"))
     }
     if raven_net_last_error().length() > 0 {
-        return Err(net_error("listen"))
+        return Err(net_error("listen ${addr}"))
     }
     return Ok(TcpListener(id: id))
 }

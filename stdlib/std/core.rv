@@ -52,6 +52,10 @@ fun __max2[T: Ord](a: T, b: T) -> T = a if a.compare(b) >= 0 else b
 
 // `range(a, b, step)`: from `a` toward `b` by `step`, counting down for a
 // negative step, as in Python.
+fun __print_with(items: list[str], sep: str, end: str) {
+    __io_print_str(sep.join(items) + end)
+}
+
 fun __range_step(a: int, b: int, step: int) -> list[int] {
     if step == 0 {
         panic("range step must not be zero")

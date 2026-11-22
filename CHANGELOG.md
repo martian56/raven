@@ -2,6 +2,26 @@
 
 All notable changes to Raven are documented in this file.
 
+## [3.3.0] - 2026-11-22
+
+### Language
+
+- `print(a, b, sep: ", ", end: "")` takes Python's `sep` and `end` keywords.
+- `spawn work(i)` runs one call in a goroutine, as in Go. `spawn { ... }` and `spawn closure` work as before; `spawn (make_task())` spawns the closure a call returns.
+- `from m import (a, b,)` accepts a trailing comma before the closing parenthesis, and `raven fmt` wraps an import longer than the line width into that form.
+- A module-level `let` holding a list of literals (`let NAMES = ["a", "b"]`) infers its type instead of asking for an annotation.
+
+### Standard library
+
+- `std.io.is_terminal()` and `stdin_is_terminal()` report whether a stream is a terminal rather than a pipe or file.
+- `str.chars()` returns the characters, like `list(s)`.
+- `Mutex.new()` and `WaitGroup.new()` construct the std.sync types, matching the rest of the library (`mutex()` and `wait_group()` still work).
+- std.fs and std.net errors name the path or address: `read notes.txt: ...`, `connect 127.0.0.1:5432: ...`.
+
+### Diagnostics
+
+- An error inside a `"${...}"` interpolation points at the expression in the source line instead of `file<interp:...>:1:1`.
+
 ## [3.2.3] - 2026-11-22
 
 ### Performance

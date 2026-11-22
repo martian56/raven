@@ -757,10 +757,6 @@ fun stringify_pretty(value: JsonValue, indent: int) -> str {
     return stringify_pretty_at(value, indent, 0)
 }
 
-// The accessor methods forward to free functions that take the value as a
-// plain parameter. Matching a `self` receiver and then reading the bound
-// payload hits a back-end limitation that corrupts the extracted value, so
-// every payload-reading accessor goes through a free helper.
 impl JsonValue {
     fun is_null(self) -> bool {
         return value_is_null(self)

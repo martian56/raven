@@ -64,9 +64,10 @@ impl str {
         return __str_substring(self, lo, hi)
     }
 
-    // Each character as a one-character string, for `for c in s`.
-    // The characters, for `list(s)`.
+    // The characters as one-character strings, for `list(s)` and `s.chars()`.
     fun to_list(self) -> list[str] = self.iter()
+
+    fun chars(self) -> list[str] = self.iter()
 
     fun iter(self) -> list[str] {
         let out: list[str] = []
