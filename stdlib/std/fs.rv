@@ -117,7 +117,7 @@ fun size(path: str) -> Result[int, Error] {
     return Ok(n)
 }
 
-// Whether anything exists at `path`. A missing path is a normal false.
+
 // When `path` was last modified, in milliseconds since 1970-01-01 UTC, or -1
 // when it does not exist or cannot be read. Compare two readings to notice a
 // change made by another program.
@@ -125,6 +125,7 @@ fun modified(path: str) -> int {
     return raven_fs_modified(path)
 }
 
+// Whether anything exists at `path`. A missing path is a normal false.
 fun exists(path: str) -> bool {
     return raven_fs_exists(path)
 }

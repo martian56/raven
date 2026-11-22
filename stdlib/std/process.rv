@@ -36,6 +36,7 @@ extern "C" {
     fun raven_process_run(program: str, args_nul_joined: str, stdin_data: str) -> int
     fun raven_process_run_in(dir: str, program: str, args_nul_joined: str, stdin_data: str) -> int
     fun raven_process_spawn_in(dir: str, program: str, args_nul_joined: str) -> int
+    fun raven_fs_is_dir(path: str) -> bool
     fun raven_process_exit_code(id: int) -> int
     fun raven_process_stdout(id: int) -> str
     fun raven_process_stderr(id: int) -> str
@@ -219,6 +220,9 @@ fun run_with_input(program: str, args: list[str], input: str) -> Result[Output, 
 // Like `run`, with the child started in directory `dir`.
 fun run_in(dir: str, program: str, args: list[str]) -> Result[Output, Error] {
     validate_args(args)?
+    if dir != "" and not __process_dir_exists(dir) {
+        return Err(Error(kind: "process", message: "no such directory: ${dir}"))
+    }
     let id = raven_process_run_in(dir, program, join_args(args), "")
     if id == 0 {
         return Err(Error(kind: "process", message: raven_process_last_error()))
@@ -229,9 +233,14 @@ fun run_in(dir: str, program: str, args: list[str]) -> Result[Output, Error] {
 // Like `start`, with the child started in directory `dir`.
 fun start_in(dir: str, program: str, args: list[str]) -> Result[Child, Error] {
     validate_args(args)?
+    if dir != "" and not __process_dir_exists(dir) {
+        return Err(Error(kind: "process", message: "no such directory: ${dir}"))
+    }
     let id = raven_process_spawn_in(dir, program, join_args(args))
     if id == 0 {
         return Err(Error(kind: "process", message: raven_process_last_error()))
     }
     return Ok(Child(id: id))
 }
+
+fun __process_dir_exists(dir: str) -> bool = raven_fs_is_dir(dir)

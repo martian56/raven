@@ -573,8 +573,12 @@ pub extern "C" fn raven_env_set(name: *const object::String, value: *const objec
     if n.is_empty() || n.contains('=') || n.contains('\0') || v.contains('\0') {
         return false;
     }
-    // SAFETY: Raven programs set variables before starting the children that
-    // read them; the runtime itself does not read the environment concurrently.
+    // SAFETY: not fully guaranteed. Rust's own environment reads take the same
+    // lock, but C code on another worker thread (getaddrinfo in std.net and
+    // std.http, time zone lookups) reads `environ` without it, so on Linux a
+    // set racing such a read is undefined behaviour. The std.env docs ask
+    // programs to set variables before starting goroutines that do network
+    // or time work.
     unsafe { std::env::set_var(n, v) };
     true
 }
@@ -605,9 +609,13 @@ pub extern "C" fn raven_io_eprint(s: *const object::String) {
     }
     // SAFETY: a Raven String holds `len` initialized bytes.
     let bytes = unsafe { slice::from_raw_parts(ptr, len) };
-    let mut err = io::stderr().lock();
-    let _ = err.write_all(bytes);
-    let _ = err.flush();
+    // A full stderr pipe blocks the write; keep this thread out of the
+    // collector's running set meanwhile. Nothing here allocates a GC object.
+    crate::gc::blocking(|| {
+        let mut err = io::stderr().lock();
+        let _ = err.write_all(bytes);
+        let _ = err.flush();
+    });
 }
 
 /// A file's last modification time in milliseconds since the Unix epoch, or

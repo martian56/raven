@@ -12,6 +12,10 @@ fun main() {
         case Ok(o) { print(o.stdout.trim()) }
         case Err(e) { print("error: ${e.message}") }
     }
+    match run_in("_ex_no_such_dir", "git", ["--version"]) {
+        case Ok(o) { print("ran") }
+        case Err(e) { print(e.message) }
+    }
     let before = modified("_ex_dir_sub/marker.txt")
     print(before > 0)
     print(modified("_ex_dir_sub/missing.txt"))

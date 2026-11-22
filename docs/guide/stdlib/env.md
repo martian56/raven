@@ -63,6 +63,12 @@ fun main() {
 Sets a variable for this program and every program it starts afterwards
 with `std.process`. Returns `false` when `name` is empty or contains `=`.
 
+Set variables at startup, before starting goroutines that use the network
+or the clock: on Linux, C library code on another thread (name lookups,
+time zones) can read the environment while it changes, which is undefined
+behaviour. To give one child its own value, prefer setting it just for that
+child's command rather than for the whole program.
+
 ```rust
 from std.env import set_env, get_env
 
