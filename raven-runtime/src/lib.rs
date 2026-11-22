@@ -518,6 +518,10 @@ pub extern "C" fn raven_read_line() -> *mut object::String {
     // with a non-UTF-8 byte must be preserved rather than discarded. `read_line`
     // requires valid UTF-8 and drops the line on a bad byte; `read_until` reads
     // the bytes up to the newline regardless.
+    // Stdout is line-buffered, so a prompt printed without a newline
+    // (`input("Name: ")`) would stay hidden until after the read. Flush it
+    // first, as Python's input() does.
+    let _ = io::stdout().flush();
     let mut line: Vec<u8> = Vec::new();
     let stdin = io::stdin();
     // A read error or clean EOF both leave `line` as the bytes gathered
