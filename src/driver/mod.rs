@@ -242,6 +242,9 @@ pub fn compile_to_object(
     if std::env::var_os("RAVEN_NO_COPYPROP").is_none() {
         crate::mir::copyprop::propagate_copies(&mut mir);
     }
+    if std::env::var_os("RAVEN_NO_BCE").is_none() {
+        crate::mir::bce::version_loops(&mut mir);
+    }
     t.mark("mir");
     if std::env::var("RAVEN_DUMP_MIR").is_ok() {
         eprintln!("{}", crate::mir::pretty::pretty_program(&mir));

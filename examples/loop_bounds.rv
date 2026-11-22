@@ -1,0 +1,31 @@
+// Counted loops over a list skip the per-access bounds check when one test
+// before the loop proves every index in range, and keep it otherwise.
+// Prints: [2, 6, 12] 12, then 20, then 15
+fun total(xs: list[int], n: int) -> int {
+    var s = 0
+    var i = 0
+    while i < n {
+        s += xs[i]
+        i += 1
+    }
+    return s
+}
+
+fun main() {
+    let xs = [1, 2, 3]
+    var i = 0
+    var s = 0
+    while i < 3 {
+        s += xs[i] * 2
+        xs[i] = s
+        i += 1
+    }
+    print(xs, s)
+    var j = 5
+    while j < 7 {
+        s += xs[j - 5]
+        j += 1
+    }
+    print(s)
+    print(total([4, 5, 6], 3))
+}

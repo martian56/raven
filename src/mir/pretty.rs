@@ -124,7 +124,9 @@ fn pretty_stmt(buf: &mut String, s: &MirStatement, depth: usize) {
             pretty_operand(buf, value);
             buf.push_str(")\n");
         }
-        MirStatement::StoreIndex { base, index, value } => {
+        MirStatement::StoreIndex {
+            base, index, value, ..
+        } => {
             buf.push_str("(store-index ");
             pretty_operand(buf, base);
             buf.push(' ');
@@ -212,7 +214,7 @@ fn pretty_rvalue(buf: &mut String, r: &MirRvalue) {
             pretty_operand(buf, base);
             write!(buf, " #{})", index).unwrap();
         }
-        MirRvalue::IndexAccess { base, index } => {
+        MirRvalue::IndexAccess { base, index, .. } => {
             buf.push_str("(index ");
             pretty_operand(buf, base);
             buf.push(' ');

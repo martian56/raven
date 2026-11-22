@@ -267,10 +267,16 @@ fn map_statement(st: &MirStatement, f: &dyn Fn(MirLocal) -> MirLocal) -> MirStat
             index: *index,
             value: map_operand(value, f),
         },
-        MirStatement::StoreIndex { base, index, value } => MirStatement::StoreIndex {
+        MirStatement::StoreIndex {
+            base,
+            index,
+            value,
+            checked,
+        } => MirStatement::StoreIndex {
             base: map_operand(base, f),
             index: map_operand(index, f),
             value: map_operand(value, f),
+            checked: *checked,
         },
         MirStatement::StorageLive(l) => MirStatement::StorageLive(f(*l)),
         MirStatement::StorageDead(l) => MirStatement::StorageDead(f(*l)),
@@ -293,9 +299,14 @@ fn map_rvalue(r: &MirRvalue, f: &dyn Fn(MirLocal) -> MirLocal) -> MirRvalue {
             callee: callee.clone(),
             args: args.iter().map(|a| map_operand(a, f)).collect(),
         },
-        MirRvalue::IndexAccess { base, index } => MirRvalue::IndexAccess {
+        MirRvalue::IndexAccess {
+            base,
+            index,
+            checked,
+        } => MirRvalue::IndexAccess {
             base: map_operand(base, f),
             index: map_operand(index, f),
+            checked: *checked,
         },
         MirRvalue::ListMethod {
             op,

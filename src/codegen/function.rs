@@ -432,9 +432,12 @@ fn lower_stmt(
         MirStatement::StoreField { base, index, value } => {
             lower_store_field(cx, builder, base, *index, value, slots)
         }
-        MirStatement::StoreIndex { base, index, value } => {
-            lower_store_index(cx, builder, base, index, value, slots)
-        }
+        MirStatement::StoreIndex {
+            base,
+            index,
+            value,
+            checked,
+        } => lower_store_index(cx, builder, base, index, value, *checked, slots),
         MirStatement::PtrStore {
             addr,
             value,
@@ -543,6 +546,7 @@ fn lower_store_index(
     base: &MirOperand,
     index: &MirOperand,
     value: &MirOperand,
+    checked: bool,
     slots: &[LocalSlot],
 ) -> Result<(), CodegenError> {
     let ptr = cx.pointer_type();
@@ -567,8 +571,10 @@ fn lower_store_index(
     // address arithmetic and the unsigned bounds compare.
     let idx = to_pointer_width(builder, idx, ptr);
 
-    let len = call_list_len(cx, builder, list, ptr);
-    emit_bounds_check(cx, builder, idx, len, "list index out of bounds");
+    if checked {
+        let len = call_list_len(cx, builder, list, ptr);
+        emit_bounds_check(cx, builder, idx, len, "list index out of bounds");
+    }
 
     let elements = call_list_elements(cx, builder, list);
     let offset = builder
@@ -657,9 +663,11 @@ fn lower_rvalue(
             ret_ty,
         } => lower_virtual_call(cx, builder, receiver, *slot, args, param_tys, ret_ty, slots),
         MirRvalue::ArrayLit { ty, elements } => lower_array_lit(cx, builder, ty, elements, slots),
-        MirRvalue::IndexAccess { base, index } => {
-            lower_index_access(cx, builder, base, index, slots)
-        }
+        MirRvalue::IndexAccess {
+            base,
+            index,
+            checked,
+        } => lower_index_access(cx, builder, base, index, *checked, slots),
         MirRvalue::ListMethod {
             op,
             receiver,
@@ -1727,6 +1735,7 @@ fn lower_index_access(
     builder: &mut FunctionBuilder<'_>,
     base: &MirOperand,
     index: &MirOperand,
+    checked: bool,
     slots: &[LocalSlot],
 ) -> Result<RValue, CodegenError> {
     let ptr = cx.pointer_type();
@@ -1736,8 +1745,10 @@ fn lower_index_access(
     // address arithmetic and the unsigned bounds compare.
     let idx = to_pointer_width(builder, idx, ptr);
 
-    let len = call_list_len(cx, builder, list, ptr);
-    emit_bounds_check(cx, builder, idx, len, "list index out of bounds");
+    if checked {
+        let len = call_list_len(cx, builder, list, ptr);
+        emit_bounds_check(cx, builder, idx, len, "list index out of bounds");
+    }
 
     let byte = operand_is_byte_list(base, slots);
     let elements = call_list_elements(cx, builder, list);
