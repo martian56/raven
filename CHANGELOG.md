@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [3.3.3] - 2026-11-22
+
+### Fixes
+
+- `input("Name: ")` showed its prompt only after the answer was typed, because stdout is line-buffered and the prompt has no newline. Reading a line now flushes stdout first, as Python's `input()` does.
+
 ## [3.3.2] - 2026-11-22
 
 ### Performance
