@@ -9,7 +9,8 @@ All notable changes to Raven are documented in this file.
 - `print(a, b, sep: ", ", end: "")` takes Python's `sep` and `end` keywords.
 - `spawn work(i)` runs one call in a goroutine, as in Go. `spawn { ... }` and `spawn closure` work as before; `spawn (make_task())` spawns the closure a call returns.
 - `from m import (a, b,)` accepts a trailing comma before the closing parenthesis, and `raven fmt` wraps an import longer than the line width into that form.
-- A module-level `let` holding a list of literals (`let NAMES = ["a", "b"]`) infers its type instead of asking for an annotation.
+- A module-level `let` infers its type from a list, dict, or tuple of literals (`let PAIRS = {"(": ")"}`) or a class constructor (`let ORIGIN = Point(0, 0)`), instead of asking for an annotation.
+- A field of a call's result can be assigned: `self.doc().lang = 3`.
 
 ### Standard library
 
@@ -22,9 +23,12 @@ All notable changes to Raven are documented in this file.
 ### Fixes
 
 - `range(n)` accepts a bound whose type comes from a generic call, such as `d.get(k).unwrap_or(0)`.
+- Module-level initializers that call a class constructor or build a tuple compile; they failed with "`(?0, ?1)` is not a function" even when annotated.
 
 ### Diagnostics
 
+- A syntax error in an imported module is reported at its own line instead of as "cannot resolve import" pointing at line 1.
+- Module-level names in diagnostics no longer show their internal module prefix.
 - An error inside a `"${...}"` interpolation points at the expression in the source line instead of `file<interp:...>:1:1`.
 
 ## [3.2.3] - 2026-11-22

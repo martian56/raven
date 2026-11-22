@@ -167,13 +167,13 @@ pub fn collect_declarations(
                     // initializer, like a module-level `let`. A `const` requires
                     // a constant initializer, so a non-literal one is reported
                     // separately during lowering; ask for an annotation here.
-                    None => match literal_ty_of(&c.value) {
+                    None => match literal_ty_of(&c.value, env) {
                         Some(t) => t,
                         None => {
                             return Err(RavenError::ty(
                                 TypeError::Custom(format!(
                                     "cannot infer the type of `const {0}` from this initializer; add a type annotation, for example `const {0}: SomeType = ...`",
-                                    c.name
+                                    c.name.rsplit('.').next().unwrap_or(&c.name)
                                 )),
                                 c.span.clone(),
                             ));
@@ -193,13 +193,13 @@ pub fn collect_declarations(
                     // annotation instead of leaving the binding typed `Error`,
                     // which previously surfaced only as an opaque codegen
                     // failure (`unresolved callee: Unit$<method>`) at each use.
-                    None => match l.init.as_ref().and_then(literal_ty_of) {
+                    None => match l.init.as_ref().and_then(|e| literal_ty_of(e, env)) {
                         Some(t) => t,
                         None => {
                             return Err(RavenError::ty(
                                 TypeError::Custom(format!(
                                     "cannot infer the type of module-level `let {0}` from a non-literal initializer; add a type annotation, for example `let {0}: SomeType = ...`",
-                                    l.name
+                                    l.name.rsplit('.').next().unwrap_or(&l.name)
                                 )),
                                 l.span.clone(),
                             ));
@@ -423,14 +423,14 @@ fn substitute_self(ty: &Ty, target: &Ty) -> Ty {
 /// The type of a literal initializer expression, or `None` when it is not a
 /// literal. Unwraps parentheses and a single arithmetic negation on a
 /// numeric literal. Used to infer an unannotated module-level `let`.
-fn literal_ty_of(e: &Expr) -> Option<Ty> {
+fn literal_ty_of(e: &Expr, env: &TypeEnv) -> Option<Ty> {
     match &e.kind {
         ExprKind::Int(_) => Some(Ty::Int),
         ExprKind::Float(_) => Some(Ty::Float),
         ExprKind::Bool(_) => Some(Ty::Bool),
         ExprKind::Char(_) => Some(Ty::Char),
         ExprKind::Str(_) | ExprKind::BlockStr(_) => Some(Ty::Str),
-        ExprKind::Paren(inner) => literal_ty_of(inner),
+        ExprKind::Paren(inner) => literal_ty_of(inner, env),
         ExprKind::Unary {
             op: UnaryOp::Neg,
             operand,
@@ -441,15 +441,76 @@ fn literal_ty_of(e: &Expr) -> Option<Ty> {
         },
         // `["Food", "Rent"]`: every element a literal of one type.
         ExprKind::Array(items) if !items.is_empty() => {
-            let first = literal_ty_of(&items[0])?;
+            let first = literal_ty_of(&items[0], env)?;
             if items[1..]
                 .iter()
-                .all(|i| literal_ty_of(i).as_ref() == Some(&first))
+                .all(|i| literal_ty_of(i, env).as_ref() == Some(&first))
             {
                 Some(Ty::List(Box::new(first)))
             } else {
                 None
             }
+        }
+        // A constructor: `Point(0, 0)` is a `Point`, and a tuple of literals
+        // (rewritten to `Tuple2 { _0: .., _1: .. }`) takes its item types.
+        ExprKind::StructLit { name, fields, .. } => {
+            let short = name.rsplit('.').next().unwrap_or(name);
+            let found = env
+                .structs
+                .iter()
+                .find(|(_, s)| s.name == *name)
+                .or_else(|| {
+                    let mut hits = env
+                        .structs
+                        .iter()
+                        .filter(|(_, s)| s.name.rsplit('.').next() == Some(short));
+                    let first = hits.next();
+                    if hits.next().is_some() {
+                        None
+                    } else {
+                        first
+                    }
+                });
+            let (id, sig) = found?;
+            if sig.generics.is_empty() {
+                return Some(Ty::Struct {
+                    id: *id,
+                    name: sig.name.clone(),
+                    args: Vec::new(),
+                });
+            }
+            if !short.starts_with("Tuple") || fields.len() != sig.generics.len() {
+                return None;
+            }
+            let mut args = Vec::with_capacity(fields.len());
+            for i in 0..fields.len() {
+                let field = fields.iter().find(|f| f.name == format!("_{i}"))?;
+                args.push(literal_ty_of(&field.value, env)?);
+            }
+            Some(Ty::Struct {
+                id: *id,
+                name: sig.name.clone(),
+                args,
+            })
+        }
+        // `{"(": ")", "[": "]"}`: every key and every value a literal of one
+        // type each.
+        ExprKind::MapLit(pairs) if !pairs.is_empty() => {
+            let k = literal_ty_of(&pairs[0].0, env)?;
+            let v = literal_ty_of(&pairs[0].1, env)?;
+            let same = pairs.iter().all(|(a, b)| {
+                literal_ty_of(a, env).as_ref() == Some(&k)
+                    && literal_ty_of(b, env).as_ref() == Some(&v)
+            });
+            if !same {
+                return None;
+            }
+            let (id, sig) = env.structs.iter().find(|(_, s)| s.name == "Map")?;
+            Some(Ty::Struct {
+                id: *id,
+                name: sig.name.clone(),
+                args: vec![k, v],
+            })
         }
         _ => None,
     }

@@ -3,6 +3,23 @@
 from std.sync import WaitGroup, Mutex
 
 let NAMES = ["ada", "grace", "linus"]
+let PAIRS = {"(": ")", "[": "]"}
+let MENU = [("save", "write the file"), ("quit", "leave")]
+
+class Point {
+    x: int
+    y: int
+}
+
+let ORIGIN = Point(0, 0)
+
+class Holder {
+    points: list[Point]
+}
+
+impl Holder {
+    fun first(self) -> Point = self.points[0]
+}
 
 var counter = 1
 
@@ -77,4 +94,12 @@ fun main() {
     xs.insert(2, "c")
     let gone = xs.remove_at(-1)
     print(xs, gone, xs.remove("b"), xs)
+
+    // Module-level dicts, tuple lists, and constructors infer their types.
+    print(PAIRS.get("(").unwrap_or("?"), len(MENU), MENU[1].0, ORIGIN.x)
+    // A field of a call's result can be assigned.
+    let h = Holder([Point(1, 2)])
+    h.first().x = 10
+    h.first().y += 5
+    print(h.points[0].x, h.points[0].y)
 }

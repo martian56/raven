@@ -24,6 +24,28 @@ pub fn expand_calls(items: &mut [Decl], strict: bool) -> Result<(), RavenError> 
     let mut error: Option<RavenError> = None;
     for decl in items.iter_mut() {
         let file = decl.span.file.clone();
+        // A module-level initializer (`let ORIGIN = Point(0, 0)`, or a
+        // tuple, which desugars to a `TupleN(...)` call) is expanded too.
+        let mut init = |e: &mut Expr| {
+            let locals = std::collections::HashSet::new();
+            visit::expr(e, &mut |x: &mut Expr| {
+                if error.is_some() {
+                    return;
+                }
+                if let Err(err) = rewrite(x, &scope, &file, &locals, strict) {
+                    error = Some(err);
+                }
+            });
+        };
+        match &mut decl.kind {
+            DeclKind::Let(l) => {
+                if let Some(e) = l.init.as_mut() {
+                    init(e);
+                }
+            }
+            DeclKind::Const(c) => init(&mut c.value),
+            _ => {}
+        }
         let mut each = |func: &mut Function| {
             let locals = local_names(func);
             visit::exprs_in_fn(func, &mut |e: &mut Expr| {

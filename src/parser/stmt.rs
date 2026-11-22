@@ -374,7 +374,14 @@ impl Parser {
 fn is_valid_lvalue(expr: &Expr) -> bool {
     match &expr.kind {
         ExprKind::Ident { .. } | ExprKind::SelfLower => true,
-        ExprKind::Field { receiver, .. } => is_valid_lvalue(receiver),
+        // `self.doc().lang = x` stores into the object the call returns.
+        ExprKind::Field { receiver, .. } => {
+            is_valid_lvalue(receiver)
+                || matches!(
+                    receiver.kind,
+                    ExprKind::Call { .. } | ExprKind::MethodCall { .. }
+                )
+        }
         ExprKind::Index { receiver, .. } => is_valid_lvalue(receiver),
         ExprKind::Paren(inner) => is_valid_lvalue(inner),
         ExprKind::Tuple(items) => !items.is_empty() && items.iter().all(is_valid_lvalue),
