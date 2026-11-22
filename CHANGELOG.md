@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [Unreleased]
+
+### Performance
+
+- `s += x` in a loop is amortized linear. A concatenation of 32 bytes or more gets spare room in a buffer that later concatenations fill in place, so building a 1.4 MB string from 200,000 pieces takes 24 ms (20,000 pieces went from 438 ms to 3 ms). Strings stay immutable: two strings extended from the same prefix never share bytes.
+
 ## [3.3.1] - 2026-11-22
 
 ### Performance

@@ -1,0 +1,34 @@
+// Building strings with += in loops, branching from a shared prefix, and
+// dropping most intermediate strings so the collector frees their buffers.
+
+fun build(n: int, piece: str) -> str {
+    var s = ""
+    for i in range(n) {
+        s += piece
+    }
+    return s
+}
+
+fun main() {
+    let big = build(100000, "ab")
+    print(big.length(), big.substring(0, 6), big.substring(199994, 200000))
+
+    var prefix = "p" * 40
+    prefix += ":"
+    let a = prefix + "first"
+    let b = prefix + "second"
+    print(a.substring(40, a.length()), b.substring(40, b.length()), prefix.length())
+
+    // Many short-lived builders: their buffers are collected as they go.
+    var total = 0
+    var last = ""
+    for round in range(300) {
+        var tmp = "round ${round}: "
+        for i in range(200) {
+            tmp += "${i % 10}"
+        }
+        total += tmp.length()
+        last = tmp
+    }
+    print(total, last.substring(0, 12), last.substring(last.length() - 5, last.length()))
+}
