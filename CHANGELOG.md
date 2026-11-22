@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [Unreleased]
+
+### Performance
+
+- `std.json.stringify` and string escaping, hex, base64, base32, and URL encoding and decoding, `str.to_upper`, `to_lower`, `reverse`, format padding, and `std.fmt` joining built their result one piece at a time, copying it again for every piece. They now collect pieces and join once: stringifying 20,000 strings takes 44 ms and URL-encoding 190 KB takes 44 ms.
+
 ## [3.3.0] - 2026-11-22
 
 ### Language

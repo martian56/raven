@@ -9,13 +9,10 @@ from std.math import floor, fabs
 
 // `s` repeated `n` times. A non-positive `n` yields the empty string.
 fun repeat(s: str, n: int) -> str {
-    var out = ""
-    var i = 0
-    while i < n {
-        out = __str_concat(out, s)
-        i = i + 1
+    if n <= 0 or s == "" {
+        return ""
     }
-    return out
+    return s.repeat(n)
 }
 
 // Repeat `fill` just enough whole times to span at least `width` bytes. A
@@ -72,16 +69,16 @@ fun center(s: str, width: int, fill: str) -> str {
 // Join `parts` with `sep` between adjacent elements.
 fun join(parts: list[str], sep: str) -> str {
     let n = parts.len()
-    var out = ""
+    let out: list[str] = []
     var i = 0
     while i < n {
         if i > 0 {
-            out = __str_concat(out, sep)
+            out.push(sep)
         }
-        out = __str_concat(out, parts[i])
+        out.push(parts[i])
         i = i + 1
     }
-    return out
+    return "".join(out)
 }
 
 // Map a 0..15 digit value to its lowercase digit byte (0-9, a-f).

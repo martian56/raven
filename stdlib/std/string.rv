@@ -38,18 +38,18 @@ fun __fmt_pad(s: str, width: int, align: str, fill: str) -> str {
     } else if align == "^" {
         left = pad / 2
     }
-    var out = ""
+    let out: list[str] = []
     var i = 0
     while i < left {
-        out = out + fill
+        out.push(fill)
         i += 1
     }
-    out = out + s
+    out.push(s)
     while i < pad {
-        out = out + fill
+        out.push(fill)
         i += 1
     }
-    return out
+    return "".join(out)
 }
 
 impl str {
@@ -148,42 +148,42 @@ impl str {
 
     fun to_upper(self) -> str {
         let n = __str_len(self)
-        var out = ""
+        let out: list[str] = []
         var i = 0
         while i < n {
             let b = __str_byte_at(self, i)
             if b >= 97 {
                 if b <= 122 {
-                    out = __str_concat(out, __str_from_byte(b - 32))
+                    out.push(__str_from_byte(b - 32))
                 } else {
-                    out = __str_concat(out, __str_from_byte(b))
+                    out.push(__str_from_byte(b))
                 }
             } else {
-                out = __str_concat(out, __str_from_byte(b))
+                out.push(__str_from_byte(b))
             }
             i = i + 1
         }
-        return out
+        return "".join(out)
     }
 
     fun to_lower(self) -> str {
         let n = __str_len(self)
-        var out = ""
+        let out: list[str] = []
         var i = 0
         while i < n {
             let b = __str_byte_at(self, i)
             if b >= 65 {
                 if b <= 90 {
-                    out = __str_concat(out, __str_from_byte(b + 32))
+                    out.push(__str_from_byte(b + 32))
                 } else {
-                    out = __str_concat(out, __str_from_byte(b))
+                    out.push(__str_from_byte(b))
                 }
             } else {
-                out = __str_concat(out, __str_from_byte(b))
+                out.push(__str_from_byte(b))
             }
             i = i + 1
         }
-        return out
+        return "".join(out)
     }
 
     // Remove leading and trailing ASCII whitespace; interior whitespace is
@@ -235,19 +235,19 @@ impl str {
     // A non-positive count yields the empty string.
     // Doubling, so a long repeat copies O(result) bytes in total.
     fun repeat(self, n: int) -> str {
-        var out = ""
+        let out: list[str] = []
         var piece = self
         var k = n
         while k > 0 {
             if k % 2 == 1 {
-                out = __str_concat(out, piece)
+                out.push(piece)
             }
             k = k / 2
             if k > 0 {
                 piece = __str_concat(piece, piece)
             }
         }
-        return out
+        return "".join(out)
     }
 
     // True when the bytes of `needle` occur starting at byte index `at`.
@@ -389,13 +389,13 @@ impl str {
     // character's encoding is reversed byte-wise.
     fun reverse(self) -> str {
         let n = __str_len(self)
-        var out = ""
+        let out: list[str] = []
         var i = n - 1
         while i >= 0 {
-            out = __str_concat(out, __str_substring(self, i, i + 1))
+            out.push(__str_substring(self, i, i + 1))
             i = i - 1
         }
-        return out
+        return "".join(out)
     }
 
     // Remove leading ASCII whitespace only.

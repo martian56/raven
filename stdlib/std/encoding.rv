@@ -41,15 +41,15 @@ fun hex_value(b: int) -> int {
 
 fun hex_encode(s: str) -> str {
     let n = __str_len(s)
-    var out = ""
+    let out: list[str] = []
     var i = 0
     while i < n {
         let b = __str_byte_at(s, i)
-        out = __str_concat(out, __str_from_byte(hex_digit(b >> 4)))
-        out = __str_concat(out, __str_from_byte(hex_digit(b & 15)))
+        out.push(__str_from_byte(hex_digit(b >> 4)))
+        out.push(__str_from_byte(hex_digit(b & 15)))
         i = i + 1
     }
-    return out
+    return "".join(out)
 }
 
 // Inverse of hex_encode. An odd length, or any non-hex byte, is an Err rather
@@ -59,7 +59,7 @@ fun hex_decode(s: str) -> Result[str, Error] {
     if n % 2 != 0 {
         return Err(encoding_error("hex input has an odd length"))
     }
-    var out = ""
+    let out: list[str] = []
     var i = 0
     while i < n {
         let hi = hex_value(__str_byte_at(s, i))
@@ -67,10 +67,10 @@ fun hex_decode(s: str) -> Result[str, Error] {
         if hi < 0 or lo < 0 {
             return Err(encoding_error("hex input has a non-hex character"))
         }
-        out = __str_concat(out, __str_from_byte((hi << 4) | lo))
+        out.push(__str_from_byte((hi << 4) | lo))
         i = i + 2
     }
-    return Ok(out)
+    return Ok("".join(out))
 }
 
 // Map a 0..63 sextet to its standard base64 alphabet byte (A-Z, a-z,
@@ -120,34 +120,34 @@ fun b64_value(b: int) -> int {
 
 fun base64_encode(s: str) -> str {
     let n = __str_len(s)
-    var out = ""
+    let out: list[str] = []
     var i = 0
     while i + 3 <= n {
         let b0 = __str_byte_at(s, i)
         let b1 = __str_byte_at(s, i + 1)
         let b2 = __str_byte_at(s, i + 2)
-        out = __str_concat(out, __str_from_byte(b64_digit(b0 >> 2)))
-        out = __str_concat(out, __str_from_byte(b64_digit(((b0 & 3) << 4) | (b1 >> 4))))
-        out = __str_concat(out, __str_from_byte(b64_digit(((b1 & 15) << 2) | (b2 >> 6))))
-        out = __str_concat(out, __str_from_byte(b64_digit(b2 & 63)))
+        out.push(__str_from_byte(b64_digit(b0 >> 2)))
+        out.push(__str_from_byte(b64_digit(((b0 & 3) << 4) | (b1 >> 4))))
+        out.push(__str_from_byte(b64_digit(((b1 & 15) << 2) | (b2 >> 6))))
+        out.push(__str_from_byte(b64_digit(b2 & 63)))
         i = i + 3
     }
     let rem = n - i
     if rem == 1 {
         let b0 = __str_byte_at(s, i)
-        out = __str_concat(out, __str_from_byte(b64_digit(b0 >> 2)))
-        out = __str_concat(out, __str_from_byte(b64_digit((b0 & 3) << 4)))
-        out = __str_concat(out, "==")
+        out.push(__str_from_byte(b64_digit(b0 >> 2)))
+        out.push(__str_from_byte(b64_digit((b0 & 3) << 4)))
+        out.push("==")
     }
     if rem == 2 {
         let b0 = __str_byte_at(s, i)
         let b1 = __str_byte_at(s, i + 1)
-        out = __str_concat(out, __str_from_byte(b64_digit(b0 >> 2)))
-        out = __str_concat(out, __str_from_byte(b64_digit(((b0 & 3) << 4) | (b1 >> 4))))
-        out = __str_concat(out, __str_from_byte(b64_digit((b1 & 15) << 2)))
-        out = __str_concat(out, "=")
+        out.push(__str_from_byte(b64_digit(b0 >> 2)))
+        out.push(__str_from_byte(b64_digit(((b0 & 3) << 4) | (b1 >> 4))))
+        out.push(__str_from_byte(b64_digit((b1 & 15) << 2)))
+        out.push("=")
     }
-    return out
+    return "".join(out)
 }
 
 // Inverse of base64_encode. The length must be a multiple of 4, trailing `=`
@@ -158,7 +158,7 @@ fun base64_decode(s: str) -> Result[str, Error] {
     if n % 4 != 0 {
         return Err(encoding_error("base64 input length is not a multiple of 4"))
     }
-    var out = ""
+    let out: list[str] = []
     var i = 0
     while i + 4 <= n {
         let c0 = __str_byte_at(s, i)
@@ -190,20 +190,20 @@ fun base64_decode(s: str) -> Result[str, Error] {
             }
         }
         let o0 = ((v0 << 2) | (v1 >> 4)) & 255
-        out = __str_concat(out, __str_from_byte(o0))
+        out.push(__str_from_byte(o0))
         if c2 != 61 {
             let o1 = (((v1 & 15) << 4) | (v2 >> 2)) & 255
-            out = __str_concat(out, __str_from_byte(o1))
+            out.push(__str_from_byte(o1))
         }
         if c2 != 61 {
             if c3 != 61 {
                 let o2 = (((v2 & 3) << 6) | v3) & 255
-                out = __str_concat(out, __str_from_byte(o2))
+                out.push(__str_from_byte(o2))
             }
         }
         i = i + 4
     }
-    return Ok(out)
+    return Ok("".join(out))
 }
 
 // Map a 0..15 nibble to its uppercase hex digit byte (for percent-encoding).
@@ -250,27 +250,27 @@ fun is_unreserved(b: int) -> bool {
 // hex (a space becomes "%20", not "+").
 fun url_encode(s: str) -> str {
     let n = __str_len(s)
-    var out = ""
+    let out: list[str] = []
     var i = 0
     while i < n {
         let b = __str_byte_at(s, i)
         if is_unreserved(b) {
-            out = __str_concat(out, __str_from_byte(b))
+            out.push(__str_from_byte(b))
         } else {
-            out = __str_concat(out, "%")
-            out = __str_concat(out, __str_from_byte(hex_upper(b / 16)))
-            out = __str_concat(out, __str_from_byte(hex_upper(b % 16)))
+            out.push("%")
+            out.push(__str_from_byte(hex_upper(b / 16)))
+            out.push(__str_from_byte(hex_upper(b % 16)))
         }
         i = i + 1
     }
-    return out
+    return "".join(out)
 }
 
 // Decode "%XX" percent escapes back to bytes. The inverse of `url_encode`. A
 // "+" is left as a literal plus.
 fun url_decode(s: str) -> str {
     let n = __str_len(s)
-    var out = ""
+    let out: list[str] = []
     var i = 0
     while i < n {
         let b = __str_byte_at(s, i)
@@ -280,22 +280,22 @@ fun url_decode(s: str) -> str {
                 let lo = hex_value(__str_byte_at(s, i + 2))
                 if hi < 0 or lo < 0 {
                     // Not a valid `%XX` escape: keep the `%` as a literal byte.
-                    out = __str_concat(out, __str_from_byte(b))
+                    out.push(__str_from_byte(b))
                     i = i + 1
                 } else {
-                    out = __str_concat(out, __str_from_byte(hi * 16 + lo))
+                    out.push(__str_from_byte(hi * 16 + lo))
                     i = i + 3
                 }
             } else {
-                out = __str_concat(out, __str_from_byte(b))
+                out.push(__str_from_byte(b))
                 i = i + 1
             }
         } else {
-            out = __str_concat(out, __str_from_byte(b))
+            out.push(__str_from_byte(b))
             i = i + 1
         }
     }
-    return out
+    return "".join(out)
 }
 
 // Map a 0..31 value to its RFC 4648 base32 character (A-Z, 2-7).
@@ -329,7 +329,7 @@ fun base32_value(b: int) -> int {
 // RFC 4648 base32 encoding with "=" padding.
 fun base32_encode(s: str) -> str {
     let n = __str_len(s)
-    var out = ""
+    let out: list[str] = []
     var i = 0
     while i < n {
         var count = 0
@@ -361,15 +361,15 @@ fun base32_encode(s: str) -> str {
             if j < out_chars {
                 let shift = 35 - j * 5
                 let v = (acc >> shift) & 31
-                out = __str_concat(out, __str_from_byte(base32_char(v)))
+                out.push(__str_from_byte(base32_char(v)))
             } else {
-                out = __str_concat(out, "=")
+                out.push("=")
             }
             j = j + 1
         }
         i = i + 5
     }
-    return out
+    return "".join(out)
 }
 
 // Inverse of base32_encode. Trailing `=` is padding; any other non-alphabet
@@ -381,7 +381,7 @@ fun base32_decode(s: str) -> Result[str, Error] {
     if n % 8 != 0 {
         return Err(encoding_error("base32 input length is not a multiple of 8"))
     }
-    var out = ""
+    let out: list[str] = []
     var acc = 0
     var bits = 0
     var seen_pad = false
@@ -406,7 +406,7 @@ fun base32_decode(s: str) -> Result[str, Error] {
             if bits >= 8 {
                 bits = bits - 8
                 let byte = (acc >> bits) & 255
-                out = __str_concat(out, __str_from_byte(byte))
+                out.push(__str_from_byte(byte))
             }
         }
         i = i + 1
@@ -414,5 +414,5 @@ fun base32_decode(s: str) -> Result[str, Error] {
     if pad_count != 0 and pad_count != 1 and pad_count != 3 and pad_count != 4 and pad_count != 6 {
         return Err(encoding_error("base32 padding is malformed"))
     }
-    return Ok(out)
+    return Ok("".join(out))
 }

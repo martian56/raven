@@ -1227,17 +1227,17 @@ fun is_valid_field_name(name: str) -> bool {
 // except HTAB which is allowed. The visible bytes and obs-text (0x80..0xFF) are
 // kept, so a normal value is unchanged.
 fun sanitize_field_value(value: str) -> str {
-    var out = ""
+    let out: list[str] = []
     var i = 0
     while i < value.length() {
         let b = __str_byte_at(value, i)
         let forbidden = (b < 32 and b != 9) or b == 127
         if not forbidden {
-            out = out.concat(value.substring(i, i + 1))
+            out.push(value.substring(i, i + 1))
         }
         i += 1
     }
-    return out
+    return "".join(out)
 }
 
 // Remove every header whose name matches `lower_name` (already lowercase),
