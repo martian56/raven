@@ -12,6 +12,7 @@ from std.error import error_kind
 import std.string
 
 extern "C" {
+    fun raven_fs_modified(path: str) -> int
     fun raven_fs_last_error() -> str
     fun raven_fs_read(path: str) -> str
     fun raven_fs_write(path: str, contents: str) -> bool
@@ -117,6 +118,13 @@ fun size(path: str) -> Result[int, Error] {
 }
 
 // Whether anything exists at `path`. A missing path is a normal false.
+// When `path` was last modified, in milliseconds since 1970-01-01 UTC, or -1
+// when it does not exist or cannot be read. Compare two readings to notice a
+// change made by another program.
+fun modified(path: str) -> int {
+    return raven_fs_modified(path)
+}
+
 fun exists(path: str) -> bool {
     return raven_fs_exists(path)
 }

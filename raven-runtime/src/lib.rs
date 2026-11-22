@@ -559,6 +559,78 @@ pub extern "C" fn raven_env_get(name: *const object::String) -> *mut object::Str
     object::raven_string_from_bytes(value.as_ptr(), value.len())
 }
 
+/// Set an environment variable for this process and the children it starts.
+/// Returns false for an empty name or one containing `=` or NUL.
+///
+/// # Safety
+///
+/// `name` and `value` must be valid `raven_string_from_bytes`-built `String`s.
+#[no_mangle]
+pub extern "C" fn raven_env_set(name: *const object::String, value: *const object::String) -> bool {
+    let (Some(n), Some(v)) = (env_name(name), env_name(value)) else {
+        return false;
+    };
+    if n.is_empty() || n.contains('=') || n.contains('\0') || v.contains('\0') {
+        return false;
+    }
+    // SAFETY: Raven programs set variables before starting the children that
+    // read them; the runtime itself does not read the environment concurrently.
+    unsafe { std::env::set_var(n, v) };
+    true
+}
+
+/// The current working directory with forward slashes, or "" when unknown.
+#[no_mangle]
+pub extern "C" fn raven_env_current_dir() -> *mut object::String {
+    let dir = std::env::current_dir()
+        .ok()
+        .and_then(|p| p.into_os_string().into_string().ok())
+        .map(|p| p.replace('\\', "/"))
+        .unwrap_or_default();
+    object::raven_string_from_bytes(dir.as_ptr(), dir.len())
+}
+
+/// Write a string to standard error, unbuffered.
+///
+/// # Safety
+///
+/// `s` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_io_eprint(s: *const object::String) {
+    use std::io::Write as _;
+    let ptr = object::raven_string_bytes(s);
+    let len = object::raven_string_len(s) as usize;
+    if ptr.is_null() || len == 0 {
+        return;
+    }
+    // SAFETY: a Raven String holds `len` initialized bytes.
+    let bytes = unsafe { slice::from_raw_parts(ptr, len) };
+    let mut err = io::stderr().lock();
+    let _ = err.write_all(bytes);
+    let _ = err.flush();
+}
+
+/// A file's last modification time in milliseconds since the Unix epoch, or
+/// -1 when it cannot be read.
+///
+/// # Safety
+///
+/// `path` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_fs_modified(path: *const object::String) -> i64 {
+    let Some(p) = env_name(path) else {
+        return -1;
+    };
+    crate::gc::blocking(|| {
+        std::fs::metadata(p)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(-1)
+    })
+}
+
 /// Report whether an environment variable is set, regardless of value.
 ///
 /// # Safety
@@ -2408,6 +2480,34 @@ pub extern "C" fn raven_process_run(
     args_nul_joined: *const object::String,
     stdin_data: *const object::String,
 ) -> i64 {
+    process_run_impl(None, program, args_nul_joined, stdin_data)
+}
+
+/// `raven_process_run` with the child started in `dir`.
+///
+/// # Safety
+///
+/// Every argument must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_process_run_in(
+    dir: *const object::String,
+    program: *const object::String,
+    args_nul_joined: *const object::String,
+    stdin_data: *const object::String,
+) -> i64 {
+    let Some(d) = env_name(dir) else {
+        process_set_error("directory is not valid UTF-8".to_string());
+        return 0;
+    };
+    process_run_impl(Some(d), program, args_nul_joined, stdin_data)
+}
+
+fn process_run_impl(
+    dir: Option<&str>,
+    program: *const object::String,
+    args_nul_joined: *const object::String,
+    stdin_data: *const object::String,
+) -> i64 {
     // A child that exits before reading all of its stdin closes the pipe, so
     // writing the rest would raise SIGPIPE and kill this program. Ignore it so
     // the write returns a (handled) error instead.
@@ -2442,6 +2542,9 @@ pub extern "C" fn raven_process_run(
     };
 
     let mut command = process::Command::new(program);
+    if let Some(d) = dir.filter(|d| !d.is_empty()) {
+        command.current_dir(d);
+    }
     command.args(&args);
     command.stdin(process::Stdio::piped());
     command.stdout(process::Stdio::piped());
@@ -2558,6 +2661,32 @@ pub extern "C" fn raven_process_spawn(
     program: *const object::String,
     args_nul_joined: *const object::String,
 ) -> i64 {
+    process_spawn_impl(None, program, args_nul_joined)
+}
+
+/// `raven_process_spawn` with the child started in `dir`.
+///
+/// # Safety
+///
+/// Every argument must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_process_spawn_in(
+    dir: *const object::String,
+    program: *const object::String,
+    args_nul_joined: *const object::String,
+) -> i64 {
+    let Some(d) = env_name(dir) else {
+        process_set_error("directory is not valid UTF-8".to_string());
+        return 0;
+    };
+    process_spawn_impl(Some(d), program, args_nul_joined)
+}
+
+fn process_spawn_impl(
+    dir: Option<&str>,
+    program: *const object::String,
+    args_nul_joined: *const object::String,
+) -> i64 {
     ignore_sigpipe();
     let (Some(program), Some(args_joined)) = (env_name(program), env_name(args_nul_joined)) else {
         process_set_error("program or args is not valid UTF-8".to_string());
@@ -2570,6 +2699,9 @@ pub extern "C" fn raven_process_spawn(
     };
 
     let mut command = process::Command::new(program);
+    if let Some(d) = dir.filter(|d| !d.is_empty()) {
+        command.current_dir(d);
+    }
     command.args(&args);
     // stdin is piped and kept open so the caller can stream to a long-lived
     // child (write_stdin / close_stdin); this is what a persistent protocol

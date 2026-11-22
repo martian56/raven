@@ -58,6 +58,27 @@ fun main() {
 }
 ```
 
+### `set_env(name: str, value: str) -> bool`
+
+Sets a variable for this program and every program it starts afterwards
+with `std.process`. Returns `false` when `name` is empty or contains `=`.
+
+```rust
+from std.env import set_env, get_env
+
+fun main() {
+    let _ = set_env("GIT_TERMINAL_PROMPT", "0")
+    print(get_env("GIT_TERMINAL_PROMPT"))
+}
+```
+
+## Working directory
+
+### `current_dir() -> str`
+
+The directory the program runs in, with forward slashes on every platform,
+or `""` when it cannot be read.
+
 ## Command-line arguments
 
 ### `arg_count() -> int`

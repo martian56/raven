@@ -1,0 +1,21 @@
+// run_in starts a child in another directory; fs.modified notices a write.
+
+from std.process import run_in
+from std.fs import write, modified, create_dir_all, remove_file, remove_dir, exists
+from std.env import os_name
+
+fun main() {
+    let _ = create_dir_all("_ex_dir_sub")
+    write("_ex_dir_sub/marker.txt", "x")
+    let listing = run_in("_ex_dir_sub", "cmd", ["/c", "dir", "/b"]) if os_name() == "windows" else run_in("_ex_dir_sub", "ls", [])
+    match listing {
+        case Ok(o) { print(o.stdout.trim()) }
+        case Err(e) { print("error: ${e.message}") }
+    }
+    let before = modified("_ex_dir_sub/marker.txt")
+    print(before > 0)
+    print(modified("_ex_dir_sub/missing.txt"))
+    let _ = remove_file("_ex_dir_sub/marker.txt")
+    let _ = remove_dir("_ex_dir_sub")
+    print(exists("_ex_dir_sub"))
+}

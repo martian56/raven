@@ -262,6 +262,21 @@ fun total(a: str, b: str) -> Result[int, Error] {
 }
 ```
 
+### `modified(path: str) -> int`
+
+When `path` was last changed, in milliseconds since 1970-01-01 UTC, or `-1`
+when it does not exist or cannot be read. Compare two readings to notice that
+another program changed a file.
+
+```rust
+from std.fs import modified
+
+fun main() {
+    let stamp = modified("config.toml")
+    print(stamp > 0)
+}
+```
+
 ## Boolean checks
 
 ```rust
