@@ -111,6 +111,8 @@ fun mutex() -> Mutex {
 }
 
 impl Mutex {
+    fun new() -> Mutex = mutex()
+
     // Acquire the lock, blocking until it is free.
     fun lock(self) {
         raven_channel_recv(self.ch)
@@ -135,6 +137,8 @@ fun wait_group() -> WaitGroup {
 }
 
 impl WaitGroup {
+    fun new() -> WaitGroup = wait_group()
+
     // Add `n` to the outstanding count (call before spawning the work).
     fun add(self, n: int) {
         raven_waitgroup_add(self.id, n)

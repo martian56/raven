@@ -1,0 +1,105 @@
+// print's sep and end keywords, spawn of a call, str.chars, and a module-level
+// list whose type is inferred from its literals.
+from std.sync import WaitGroup, Mutex
+
+let NAMES = ["ada", "grace", "linus"]
+let PAIRS = {"(": ")", "[": "]"}
+let MENU = [("save", "write the file"), ("quit", "leave")]
+
+class Point {
+    x: int
+    y: int
+}
+
+let ORIGIN = Point(0, 0)
+
+class Holder {
+    points: list[Point]
+}
+
+impl Holder {
+    fun first(self) -> Point = self.points[0]
+}
+
+var counter = 1
+
+fun bump() -> int {
+    counter = 2
+    return 0
+}
+
+fun pair(a: int, b: int, wg: WaitGroup) {
+    print("pair", a, b)
+    wg.done()
+}
+
+class Tally {
+    total: int
+}
+
+fun add(t: Tally, lock: Mutex, n: int, wg: WaitGroup) {
+    lock.lock()
+    t.total += n
+    lock.unlock()
+    wg.done()
+}
+
+fun register(wg: WaitGroup) -> int {
+    wg.add(1)
+    return 100
+}
+
+fun main() {
+    print("a", "b", "c", sep: "-")
+    print(1, 2, 3, sep: ", ", end: ".\n")
+    for name in NAMES {
+        print(name, end: " ")
+    }
+    print()
+    for c in "héllo".chars() {
+        print(c, end: "|")
+    }
+    print()
+
+    let t = Tally(0)
+    let lock = Mutex.new()
+    let wg = WaitGroup.new()
+    for i in range(1, 11) {
+        wg.add(1)
+        spawn add(t, lock, i, wg)
+    }
+    wg.wait()
+    print("total", t.total)
+
+    // Arguments are evaluated at the spawn, so register() runs before wait().
+    spawn add(t, lock, register(wg), wg)
+    wg.wait()
+    print("total", t.total)
+
+    // Left to right: counter is read before bump() changes it.
+    wg.add(1)
+    spawn pair(counter, bump(), wg)
+    wg.wait()
+
+    // A range bound from a generic call is fixed to int.
+    let counts = {"a": 3}
+    let n = counts.get("a").unwrap_or(0)
+    for i in range(n) {
+        print(i, end: " ")
+    }
+    print()
+
+    let xs = ["b", "d"]
+    xs.insert(0, "a")
+    xs.insert(2, "c")
+    let gone = xs.remove_at(-1)
+    print(xs, gone, xs.remove("b"), xs)
+
+    // Module-level dicts, tuple lists, and constructors infer their types.
+    print(PAIRS.get("(").unwrap_or("?"), len(MENU), MENU[1].0, ORIGIN.x)
+    // A field of a call's result can be assigned.
+    let h = Holder([Point(1, 2)])
+    h.first().x = 10
+    h.first().y += 5
+    print(h.points[0].x, h.points[0].y)
+}

@@ -13,10 +13,14 @@ fn rvpm(dir: &std::path::Path, args: &[&str]) -> std::process::Output {
 }
 
 fn workdir() -> PathBuf {
+    // Tests run in parallel, and the clock can repeat between two of them.
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut p = std::env::temp_dir();
     let unique = format!(
-        "rvpm_fmt_{}_{}",
+        "rvpm_fmt_{}_{}_{}",
         std::process::id(),
+        n,
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()

@@ -1014,6 +1014,23 @@ fn method(receiver: Expr, name: &str, args: Vec<Expr>, span: &Span) -> Expr {
 /// Python-style builtins: `len(x)` is `x.len()`, `min(xs)` is
 /// `xs.min().unwrap()`, `range(a, b)` is `a..b`, and so on, unless the file
 /// defines or imports a function by that name.
+/// Whether a `print` call's keyword arguments are only `sep` and `end`, each
+/// at most once, with at least one of them. Anything else falls through to
+/// the ordinary named-argument check, which reports it.
+fn print_keywords(args: &[Expr]) -> bool {
+    let (mut sep, mut end) = (0, 0);
+    for a in args {
+        if let ExprKind::NamedArg { name, .. } = &a.kind {
+            match name.as_str() {
+                "sep" => sep += 1,
+                "end" => end += 1,
+                _ => return false,
+            }
+        }
+    }
+    sep + end > 0 && sep <= 1 && end <= 1
+}
+
 fn builtin_call(e: &mut Expr, values: &std::collections::HashSet<String>) {
     let ExprKind::Call { callee, args } = &mut e.kind else {
         return;
@@ -1045,6 +1062,58 @@ fn builtin_call(e: &mut Expr, values: &std::collections::HashSet<String>) {
                 return;
             }
         }
+    }
+    if name == "print" && print_keywords(args) {
+        // `print(a, b, sep: ", ", end: "")`, as in Python.
+        let span = e.span.clone();
+        let inner = |s: &Span| s.in_copy(crate::span::next_copy_id());
+        let mut sep = None;
+        let mut end = None;
+        let mut values = Vec::new();
+        for a in std::mem::take(args) {
+            match a.kind {
+                ExprKind::NamedArg { name, value } if name == "sep" => sep = Some(*value),
+                ExprKind::NamedArg { name, value } if name == "end" => end = Some(*value),
+                _ => values.push(a),
+            }
+        }
+        let lit = |t: &str| Expr {
+            kind: ExprKind::Str(t.into()),
+            span: inner(&span),
+        };
+        let sep = sep.unwrap_or_else(|| lit(" "));
+        let end = end.unwrap_or_else(|| lit("\n"));
+        let mut items = Vec::new();
+        for v in values {
+            // Through interpolation, which also converts C numeric types.
+            items.push(Expr {
+                span: inner(&span),
+                kind: ExprKind::InterpolatedString(vec![crate::ast::StrFragment::Expr(Box::new(
+                    v,
+                ))]),
+            });
+        }
+        if items.is_empty() {
+            items.push(lit(""));
+        }
+        let list = Expr {
+            kind: ExprKind::Array(items),
+            span: inner(&span),
+        };
+        *e = Expr {
+            kind: ExprKind::Call {
+                callee: Box::new(Expr {
+                    kind: ExprKind::Ident {
+                        name: "__print_with".into(),
+                        generics: Vec::new(),
+                    },
+                    span: inner(&span),
+                }),
+                args: vec![list, sep, end],
+            },
+            span,
+        };
+        return;
     }
     if args
         .iter()

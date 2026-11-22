@@ -1,0 +1,23 @@
+import std.fs
+from std.json import parse, stringify as to_json
+from "./models" import User, Order
+from "github.com/acme/widgets" import (
+    first_widget_name,
+    second_widget_name,
+    third_widget_name,
+    fourth_widget_name,
+)
+from "github.com/acme/tools" import alpha, beta as b
+from "github.com/acme/kit" import (
+    gamma, // kept with gamma
+    // above delta
+    delta,
+)
+from "github.com/acme/more" import (
+    eps,
+    zeta, // zeta helper
+)
+
+fun main() {
+    print(fs.exists("x"))
+}

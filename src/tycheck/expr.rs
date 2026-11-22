@@ -1201,6 +1201,17 @@ impl<'a, 'b> Checker<'a, 'b> {
             ExprKind::Range { start, end, .. } => {
                 let s = self.check_expr(start)?;
                 let e = self.check_expr(end)?;
+                // A bound from a generic call (`d.get(k).unwrap_or(0)`) can
+                // still be an inference variable here; a range fixes it to int.
+                let mut bounds = Vec::new();
+                for (t, at) in [(&s, &start.span), (&e, &end.span)] {
+                    let r = self.infer.resolve(t);
+                    if let Ty::Var(_) = r {
+                        self.unify_recover(&Ty::Int, &r, at);
+                    }
+                    bounds.push(self.infer.resolve(&r));
+                }
+                let (s, e) = (bounds[0].clone(), bounds[1].clone());
                 if !assignable(&Ty::Int, &s) || !assignable(&Ty::Int, &e) {
                     return Err(RavenError::ty(
                         TypeError::Custom("range bounds must be `int`".into()),

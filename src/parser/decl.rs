@@ -545,14 +545,21 @@ impl Parser {
         if self.eat(&TokenKind::LBrace) {
             self.skip_separators();
             while !matches!(self.peek_kind(), TokenKind::RBrace) {
-                let (n, _) = self.expect_ident("identifier")?;
+                let (n, sp) = self.expect_ident("identifier")?;
+                let mut end = sp.end;
                 let alias = if self.eat(&TokenKind::As) {
-                    let (a, _) = self.expect_ident("alias name")?;
+                    let (a, asp) = self.expect_ident("alias name")?;
+                    end = asp.end;
                     Some(a)
                 } else {
                     None
                 };
-                selectors.push(crate::ast::ImportSelector { name: n, alias });
+                selectors.push(crate::ast::ImportSelector {
+                    name: n,
+                    alias,
+                    start: sp.start,
+                    end,
+                });
                 if !self.eat(&TokenKind::Comma) {
                     break;
                 }
@@ -691,23 +698,36 @@ impl Parser {
         let paren = self.eat(&TokenKind::LParen);
         loop {
             self.skip_newlines();
+            // `from m import (a, b,)`: a trailing comma before `)`.
+            if paren && matches!(self.peek_kind(), TokenKind::RParen) && !selectors.is_empty() {
+                break;
+            }
             let (n, sp) = self.expect_ident("name to import")?;
             span = merge_spans(&span, &sp);
+            let start = sp.start;
+            let mut end = sp.end;
             let alias = if self.eat(&TokenKind::As) {
                 let (a, sp) = self.expect_ident("alias name")?;
                 span = merge_spans(&span, &sp);
+                end = sp.end;
                 Some(a)
             } else {
                 None
             };
-            selectors.push(crate::ast::ImportSelector { name: n, alias });
+            selectors.push(crate::ast::ImportSelector {
+                name: n,
+                alias,
+                start,
+                end,
+            });
             if !self.eat(&TokenKind::Comma) {
                 break;
             }
         }
         if paren {
             self.skip_newlines();
-            self.expect(&TokenKind::RParen, "`)`")?;
+            let close = self.expect(&TokenKind::RParen, "`)`")?;
+            span = merge_spans(&span, &close.span);
         }
         Ok(Decl {
             kind: DeclKind::Import(Import {

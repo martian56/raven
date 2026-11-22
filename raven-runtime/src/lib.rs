@@ -1123,6 +1123,19 @@ pub extern "C" fn raven_fs_size(path: *const object::String) -> i64 {
     fs_record(result).unwrap_or(0)
 }
 
+/// Whether stream `fd` (0 stdin, 1 stdout, 2 stderr) is attached to a
+/// terminal rather than a pipe or file.
+#[no_mangle]
+pub extern "C" fn raven_io_is_terminal(fd: i64) -> bool {
+    use std::io::IsTerminal;
+    match fd {
+        0 => io::stdin().is_terminal(),
+        1 => io::stdout().is_terminal(),
+        2 => io::stderr().is_terminal(),
+        _ => false,
+    }
+}
+
 /// Whether anything exists at `path`. Not fallible: a missing path is a
 /// normal `false`.
 ///

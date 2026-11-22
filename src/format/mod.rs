@@ -734,7 +734,39 @@ impl Printer<'_> {
                     None => s.name.clone(),
                 })
                 .collect();
-            format!("from {source} import {}", sels.join(", "))
+            let one = format!("from {source} import {}", sels.join(", "));
+            let commented = self.pending_comment_within(im.span.start, im.span.end);
+            if one.chars().count() <= self.wrap_width && !commented {
+                one
+            } else {
+                // One name per line; a comment inside the parentheses stays
+                // with the name it follows or precedes.
+                let mut t = format!("from {source} import (\n");
+                for (i, (sel, text)) in im.selectors.iter().zip(&sels).enumerate() {
+                    self.weave_own_line_comments(&mut t, sel.start, 1);
+                    t.push_str(&self.indent_unit);
+                    t.push_str(text);
+                    t.push(',');
+                    let line = self.line_of(sel.end);
+                    // A comment after several names on one line belongs to the last.
+                    let next_start = im.selectors.get(i + 1).map_or(usize::MAX, |n| n.start);
+                    if let Some(c) = self.comments.get(self.next_comment) {
+                        if !c.own_line
+                            && c.start < im.span.end
+                            && c.start < next_start
+                            && self.line_of(c.start) == line
+                        {
+                            t.push(' ');
+                            t.push_str(&c.text.clone());
+                            self.next_comment += 1;
+                        }
+                    }
+                    t.push('\n');
+                }
+                self.weave_own_line_comments(&mut t, im.span.end, 1);
+                t.push(')');
+                t
+            }
         };
         self.line(&text);
         self.take_trailing_comment(self.line_of(im.span.end))

@@ -33,9 +33,9 @@ from std.fs import read, exists
 ## The error model
 
 Fallible operations return `Result[T, Error]`. On failure the `Error` is an
-std.error value tagged with kind `"io"`. Its message is a short context
-prefix (the operation name) joined to the operating system error text, for
-example `read: No such file or directory`.
+std.error value tagged with kind `"io"`. Its message names the operation
+and the path, then gives the operating system error text, for example
+`read notes.txt: No such file or directory`.
 
 There are no sentinel return values: a missing file does not come back as an
 empty string or a `-1`, it comes back as an `Err`. The two ways to consume a

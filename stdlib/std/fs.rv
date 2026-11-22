@@ -37,7 +37,7 @@ fun io_error(ctx: str) -> Error {
 fun read(path: str) -> Result[str, Error] {
     let out = raven_fs_read(path)
     if raven_fs_last_error().length() > 0 {
-        return Err(io_error("read"))
+        return Err(io_error("read ${path}"))
     }
     return Ok(out)
 }
@@ -48,7 +48,7 @@ fun read(path: str) -> Result[str, Error] {
 fun write(path: str, contents: str) -> Result[bool, Error] {
     raven_fs_write(path, contents)
     if raven_fs_last_error().length() > 0 {
-        return Err(io_error("write"))
+        return Err(io_error("write ${path}"))
     }
     return Ok(true)
 }
@@ -57,7 +57,7 @@ fun write(path: str, contents: str) -> Result[bool, Error] {
 fun append(path: str, contents: str) -> Result[bool, Error] {
     raven_fs_append(path, contents)
     if raven_fs_last_error().length() > 0 {
-        return Err(io_error("append"))
+        return Err(io_error("append ${path}"))
     }
     return Ok(true)
 }
@@ -66,7 +66,7 @@ fun append(path: str, contents: str) -> Result[bool, Error] {
 fun remove_file(path: str) -> Result[bool, Error] {
     raven_fs_remove_file(path)
     if raven_fs_last_error().length() > 0 {
-        return Err(io_error("remove_file"))
+        return Err(io_error("remove_file ${path}"))
     }
     return Ok(true)
 }
@@ -76,7 +76,7 @@ fun remove_file(path: str) -> Result[bool, Error] {
 fun create_dir(path: str) -> Result[bool, Error] {
     raven_fs_create_dir(path)
     if raven_fs_last_error().length() > 0 {
-        return Err(io_error("create_dir"))
+        return Err(io_error("create_dir ${path}"))
     }
     return Ok(true)
 }
@@ -86,7 +86,7 @@ fun create_dir(path: str) -> Result[bool, Error] {
 fun remove_dir(path: str) -> Result[bool, Error] {
     raven_fs_remove_dir(path)
     if raven_fs_last_error().length() > 0 {
-        return Err(io_error("remove_dir"))
+        return Err(io_error("remove_dir ${path}"))
     }
     return Ok(true)
 }
@@ -96,7 +96,7 @@ fun remove_dir(path: str) -> Result[bool, Error] {
 fun list_dir(path: str) -> Result[list[str], Error] {
     let joined = raven_fs_list(path)
     if raven_fs_last_error().length() > 0 {
-        return Err(io_error("list_dir"))
+        return Err(io_error("list_dir ${path}"))
     }
     // Names are joined by a NUL byte, which cannot appear in a filename, so a
     // name containing a newline is not split and a non-UTF-8 name is preserved.
@@ -111,7 +111,7 @@ fun list_dir(path: str) -> Result[list[str], Error] {
 fun size(path: str) -> Result[int, Error] {
     let n = raven_fs_size(path)
     if raven_fs_last_error().length() > 0 {
-        return Err(io_error("size"))
+        return Err(io_error("size ${path}"))
     }
     return Ok(n)
 }

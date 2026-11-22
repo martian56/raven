@@ -2,6 +2,40 @@
 
 All notable changes to Raven are documented in this file.
 
+## [3.3.0] - 2026-11-22
+
+### Language
+
+- `print(a, b, sep: ", ", end: "")` takes Python's `sep` and `end` keywords.
+- `spawn work(i)` runs one call in a goroutine, as in Go. `spawn { ... }` and `spawn closure` work as before; `spawn (make_task())` spawns the closure a call returns.
+- `from m import (a, b,)` accepts a trailing comma before the closing parenthesis, and `raven fmt` wraps an import longer than the line width into that form.
+- A module-level `let` infers its type from a list, dict, or tuple of literals (`let PAIRS = {"(": ")"}`) or a class constructor (`let ORIGIN = Point(0, 0)`), instead of asking for an annotation.
+- A field of a call's result can be assigned: `self.doc().lang = 3`.
+
+### Standard library
+
+- `std.io.is_terminal()` and `stdin_is_terminal()` report whether a stream is a terminal rather than a pipe or file.
+- `str.chars()` returns the characters, like `list(s)`.
+- Lists gain Python's `insert(i, x)`, `remove(x)`, `clear()`, and `copy()`, plus `remove_at(i)` for Python's `pop(i)`.
+- `Mutex.new()` and `WaitGroup.new()` construct the std.sync types, matching the rest of the library (`mutex()` and `wait_group()` still work).
+- std.fs and std.net errors name the path or address: `read notes.txt: ...`, `connect 127.0.0.1:5432: ...`.
+
+### Performance
+
+- `str.replace` copied its whole result for every byte, so replacing in a 120 KB string took over 2 seconds; it now keeps unchanged runs whole and takes about 1 ms. It returns the string itself when nothing matches.
+- `list[str].join` and `str.repeat` copied their result for every item; they now take O(n log n) and O(n). Joining 40,000 pieces takes 4 ms.
+
+### Fixes
+
+- `range(n)` accepts a bound whose type comes from a generic call, such as `d.get(k).unwrap_or(0)`.
+- Module-level initializers that call a class constructor or build a tuple compile; they failed with "`(?0, ?1)` is not a function" even when annotated.
+
+### Diagnostics
+
+- A syntax error in an imported module is reported at its own line instead of as "cannot resolve import" pointing at line 1.
+- Module-level names in diagnostics no longer show their internal module prefix.
+- An error inside a `"${...}"` interpolation points at the expression in the source line instead of `file<interp:...>:1:1`.
+
 ## [3.2.3] - 2026-11-22
 
 ### Performance

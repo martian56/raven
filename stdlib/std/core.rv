@@ -52,6 +52,10 @@ fun __max2[T: Ord](a: T, b: T) -> T = a if a.compare(b) >= 0 else b
 
 // `range(a, b, step)`: from `a` toward `b` by `step`, counting down for a
 // negative step, as in Python.
+fun __print_with(items: list[str], sep: str, end: str) {
+    __io_print_str(sep.join(items) + end)
+}
+
 fun __range_step(a: int, b: int, step: int) -> list[int] {
     if step == 0 {
         panic("range step must not be zero")
@@ -503,6 +507,44 @@ impl[T] list[T] {
         self.push(x)
     }
 
+    // Insert `x` before position `i`, as in Python; `i` at or past the end
+    // appends, and a negative `i` counts from the end.
+    fun insert(self, i: int, x: T) {
+        var at = i + self.len() if i < 0 else i
+        at = max(0, min(at, self.len()))
+        self.push(x)
+        var j = self.len() - 1
+        while j > at {
+            self[j] = self[j - 1]
+            j -= 1
+        }
+        self[at] = x
+    }
+
+    // Remove and return the item at `i` (Python's `pop(i)`). Panics when
+    // `i` is out of range.
+    fun remove_at(self, i: int) -> T {
+        let at = i + self.len() if i < 0 else i
+        let x = self[at]
+        var j = at
+        while j < self.len() - 1 {
+            self[j] = self[j + 1]
+            j += 1
+        }
+        let _ = self.pop()
+        return x
+    }
+
+    // Remove every item.
+    fun clear(self) {
+        while self.len() > 0 {
+            let _ = self.pop()
+        }
+    }
+
+    // A shallow copy, as in Python.
+    fun copy(self) -> list[T] = self.slice(0, self.len())
+
     // A copy of the list, for `list(xs)`.
     fun to_list(self) -> list[T] = self.slice(0, self.len())
 
@@ -738,6 +780,17 @@ impl[T: Eq] list[T] {
         }
         return None
     }
+
+    // Remove the first item equal to `x`, as in Python; false when absent.
+    fun remove(self, x: T) -> bool {
+        return match self.index_of(x) {
+            case Some(i) {
+                let _ = self.remove_at(i)
+                true
+            }
+            case None { false }
+        }
+    }
 }
 
 impl[T: Ord] list[T] {
@@ -806,17 +859,23 @@ impl list[float] {
 }
 
 impl list[str] {
-    fun join(self, sep: str) -> str {
-        var out = ""
-        var i = 0
-        while i < self.len() {
-            if i > 0 {
-                out = out + sep
-            }
-            out = out + self[i]
-            i += 1
+    // Halves are joined and then glued, so each byte is copied about
+    // log2(len) times; appending one item at a time copies the whole result
+    // again for every item.
+    fun join(self, sep: str) -> str = self._join_range(sep, 0, self.len())
+
+    fun _join_range(self, sep: str, a: int, b: int) -> str {
+        if b - a <= 0 {
+            return ""
         }
-        return out
+        if b - a == 1 {
+            return self[a]
+        }
+        if b - a == 2 {
+            return self[a] + sep + self[a + 1]
+        }
+        let mid = a + (b - a) / 2
+        return self._join_range(sep, a, mid) + sep + self._join_range(sep, mid, b)
     }
 }
 

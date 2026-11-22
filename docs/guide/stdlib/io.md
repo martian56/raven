@@ -37,6 +37,20 @@ fun main() {
 }
 ```
 
+Several arguments print separated by spaces. As in Python, `sep:` changes the
+separator and `end:` replaces the trailing newline:
+
+```rust
+fun main() {
+    print("a", 1, true) // a 1 true
+    print(1, 2, 3, sep: ", ") // 1, 2, 3
+    for i in range(3) {
+        print(i, end: " ")
+    }
+    print() // 0 1 2
+}
+```
+
 The `print` function from `std.io` is the `str`-only form below. The
 always-available builtin is the more convenient choice for most output; reach
 for `std.io` when you want `println`, `input`, or `read_line`.
@@ -68,6 +82,22 @@ from std.io import println
 fun main() {
     println("first line")
     println("second line")
+}
+```
+
+## Terminals
+
+### `is_terminal() -> bool`, `stdin_is_terminal() -> bool`
+
+Whether standard output (or standard input) is attached to a terminal rather
+than a pipe or a file. Check it before emitting colors or prompting.
+
+```rust
+from std.io import is_terminal
+
+fun main() {
+    let warn = "\u{1b}[33mwarning\u{1b}[0m" if is_terminal() else "warning"
+    print(warn)
 }
 ```
 

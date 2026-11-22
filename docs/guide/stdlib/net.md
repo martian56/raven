@@ -58,7 +58,7 @@ from std.net import connect
 fun main() {
     match connect("127.0.0.1:9999") {
         case Ok(stream) { stream.close() }
-        case Err(e) { print(e.message) } // e.g. connect: ...
+        case Err(e) { print(e.message) } // e.g. connect 127.0.0.1:9999: ...
     }
 }
 ```

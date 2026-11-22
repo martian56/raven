@@ -819,22 +819,18 @@ fn load_local_module(
         return Ok(());
     }
 
-    let tokens = Lexer::new(loaded_mod.source.clone(), loaded_mod.canonical_path.clone())
-        .tokenize()
-        .map_err(|e| local_error(&loaded_mod.canonical_path, format!("lex: {e}")))?;
+    let tokens =
+        Lexer::new(loaded_mod.source.clone(), loaded_mod.canonical_path.clone()).tokenize()?;
     // Expand the module's own declarative macros, the same pre-pass the entry
     // file gets, so a macro call inside an imported module is rewritten rather
     // than reaching later stages unexpanded. The macro table (collected before
     // the definitions are stripped) handles a call inside a `"${...}"`
     // interpolation fragment, and the def-sites flow to the resolver so a free
     // identifier the module's macros introduce resolves at the module scope.
-    let table = collect_macro_table(&tokens)
-        .map_err(|e| local_error(&loaded_mod.canonical_path, format!("macro: {e}")))?;
-    let (tokens, module_def_sites) = expand_tokens_hygienic(&tokens)
-        .map_err(|e| local_error(&loaded_mod.canonical_path, format!("macro: {e}")))?;
+    let table = collect_macro_table(&tokens)?;
+    let (tokens, module_def_sites) = expand_tokens_hygienic(&tokens)?;
     def_sites.extend(module_def_sites);
-    let (module_file, interp_def_sites) = parse_with_macros(&tokens, table)
-        .map_err(|e| local_error(&loaded_mod.canonical_path, format!("parse: {e}")))?;
+    let (module_file, interp_def_sites) = parse_with_macros(&tokens, table)?;
     // Fold in the def-sites a macro expanded inside one of the module's
     // `"${...}"` interpolation fragments introduced.
     def_sites.extend(interp_def_sites);
@@ -1535,17 +1531,6 @@ fn local_import_targets(file: &File) -> Vec<(PathBuf, String)> {
         }
     }
     out
-}
-
-/// Build a resolve error for a local module that failed to load. The lex
-/// or parse error is anchored at the start of the offending file.
-fn local_error(path: &Path, detail: String) -> RavenError {
-    let span = crate::span::Span::point(Arc::new(path.to_path_buf()), 0, 1, 1);
-    RavenError::resolve(
-        ResolveError::UnresolvedImport(path.display().to_string()),
-        span,
-    )
-    .with_hint(format!("local module failed to load: {detail}"))
 }
 
 /// Lex and parse one bundled module's embedded source.

@@ -1892,8 +1892,13 @@ fn split_interpolation(
                     span.clone(),
                 ));
             }
+            // Where the fragment starts in the file: past the opening quote
+            // and the `${`. Escapes earlier in the literal can shift this a
+            // little, which only moves a diagnostic's column.
+            let low = (1usize << 40) - 1;
+            let origin = (span.start & low) + 1 + start;
             let (expr, frag_def_sites) =
-                parse_interpolation_snippet(snippet, span, frag_index, macros)?;
+                parse_interpolation_snippet(snippet, span, frag_index, origin, macros)?;
             def_sites.extend(frag_def_sites);
             fragments.push(StrFragment::Expr(Box::new(expr)));
             frag_index += 1;
@@ -2038,17 +2043,20 @@ fn parse_interpolation_snippet(
     snippet: &str,
     span: &Span,
     frag_index: usize,
+    origin: usize,
     macros: &crate::macros::MacroTable,
 ) -> ParseResult<(Expr, crate::macros::DefSites)> {
     if let Some((value, spec)) = split_format_spec(snippet) {
-        if let Ok((expr, sites)) = parse_interpolation_snippet(value, span, frag_index, macros) {
+        if let Ok((expr, sites)) =
+            parse_interpolation_snippet(value, span, frag_index, origin, macros)
+        {
             return Ok((apply_format_spec(expr, &spec), sites));
         }
     }
     let synthetic = std::path::PathBuf::from(format!(
         "{}<interp:{}:{}>",
         span.file.display(),
-        span.start,
+        origin,
         frag_index
     ));
     let tokens = Lexer::new(snippet.to_string(), synthetic)

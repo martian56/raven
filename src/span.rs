@@ -66,6 +66,22 @@ impl Span {
         }
     }
 
+    /// For a span inside a `${...}` fragment, whose file is the synthetic
+    /// `path<interp:offset:index>`, the real file and the approximate byte
+    /// offset in it. A nested fragment carries one marker per level, each
+    /// offset relative to the enclosing fragment, so they add up. `None` for
+    /// an ordinary span.
+    pub fn interpolation_origin(&self) -> Option<(PathBuf, usize)> {
+        let name = self.file.to_string_lossy();
+        let first = name.find("<interp:")?;
+        let mut base = 0usize;
+        for marker in name[first..].split("<interp:").skip(1) {
+            base += marker.split(':').next()?.parse::<usize>().ok()?;
+        }
+        let low = (1usize << COPY_SHIFT) - 1;
+        Some((PathBuf::from(&name[..first]), base + (self.start & low)))
+    }
+
     pub fn len(&self) -> usize {
         self.end.saturating_sub(self.start)
     }

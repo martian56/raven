@@ -131,7 +131,15 @@ impl Parser {
                         span,
                     }
                 } else {
-                    self.parse_expr()?
+                    let value = self.parse_expr()?;
+                    if matches!(
+                        value.kind,
+                        ExprKind::Call { .. } | ExprKind::MethodCall { .. }
+                    ) {
+                        let span = merge_spans(&start_span, &value.span);
+                        return Ok(spawn_call(value, span));
+                    }
+                    value
                 };
                 let span = merge_spans(&start_span, &value.span);
                 Ok(Stmt {
@@ -366,7 +374,18 @@ impl Parser {
 fn is_valid_lvalue(expr: &Expr) -> bool {
     match &expr.kind {
         ExprKind::Ident { .. } | ExprKind::SelfLower => true,
-        ExprKind::Field { receiver, .. } => is_valid_lvalue(receiver),
+        // `self.doc().lang = x` stores into the object the call returns.
+        ExprKind::Field { receiver, .. } => {
+            let mut inner = &**receiver;
+            while let ExprKind::Paren(x) = &inner.kind {
+                inner = x;
+            }
+            is_valid_lvalue(receiver)
+                || matches!(
+                    inner.kind,
+                    ExprKind::Call { .. } | ExprKind::MethodCall { .. }
+                )
+        }
         ExprKind::Index { receiver, .. } => is_valid_lvalue(receiver),
         ExprKind::Paren(inner) => is_valid_lvalue(inner),
         ExprKind::Tuple(items) => !items.is_empty() && items.iter().all(is_valid_lvalue),
@@ -395,5 +414,201 @@ fn pattern_bindings(p: &Pattern, out: &mut Vec<String>) {
             }
         }
         _ => {}
+    }
+}
+
+/// `spawn work(i, f(x))`, as in Go: the arguments (and the parts of a
+/// receiver that run code) are evaluated in order where the `spawn` runs,
+/// then the call itself runs in the new goroutine.
+fn spawn_call(mut call: Expr, span: crate::span::Span) -> Stmt {
+    let fresh = |s: &crate::span::Span| s.in_copy(crate::span::next_copy_id());
+    let mut h = Hoist {
+        id: crate::span::next_copy_id(),
+        lets: Vec::new(),
+        names: false,
+    };
+    // Names are captured when the closure is created, after every hoisted
+    // argument has run. Once anything is hoisted, names are hoisted too, so
+    // a later argument cannot change an earlier one.
+    let effects = match &call.kind {
+        ExprKind::Call { callee, args } => has_effects(callee) || args.iter().any(has_effects),
+        ExprKind::MethodCall { receiver, args, .. } => {
+            has_effects(receiver) || args.iter().any(has_effects)
+        }
+        _ => false,
+    };
+    h.names = effects;
+    match &mut call.kind {
+        ExprKind::Call { callee, args } => {
+            // `spawn make_task()(x)`: the function value is computed here too.
+            if has_effects(callee) {
+                h.temp(callee);
+            }
+            for a in args.iter_mut() {
+                h.arg(a);
+            }
+        }
+        ExprKind::MethodCall { receiver, args, .. } => {
+            h.receiver(receiver);
+            for a in args.iter_mut() {
+                h.arg(a);
+            }
+        }
+        _ => {}
+    }
+    let mut lets = std::mem::take(&mut h.lets);
+    let body_span = fresh(&call.span);
+    let closure = Expr {
+        kind: ExprKind::Lambda {
+            params: Vec::new(),
+            ret: None,
+            body: crate::ast::LambdaBody::Block(Block {
+                stmts: vec![Stmt {
+                    span: body_span.clone(),
+                    kind: StmtKind::Expr(call),
+                }],
+                trailing: None,
+                span: body_span.clone(),
+            }),
+            params_inferred: false,
+        },
+        span: fresh(&body_span),
+    };
+    let spawn = Stmt {
+        kind: StmtKind::Spawn(closure),
+        span: span.clone(),
+    };
+    if lets.is_empty() {
+        return spawn;
+    }
+    lets.push(spawn);
+    let block_span = fresh(&span);
+    Stmt {
+        kind: StmtKind::Expr(Expr {
+            kind: ExprKind::Block(Block {
+                stmts: lets,
+                trailing: None,
+                span: block_span.clone(),
+            }),
+            span: block_span,
+        }),
+        span,
+    }
+}
+
+/// Whether evaluating `e` runs code (a call, a block, an assignment), as
+/// opposed to reading names, fields, indexes, and literals.
+fn has_effects(e: &Expr) -> bool {
+    match &e.kind {
+        ExprKind::Ident { .. }
+        | ExprKind::SelfLower
+        | ExprKind::Int(_)
+        | ExprKind::Float(_)
+        | ExprKind::Bool(_)
+        | ExprKind::Char(_)
+        | ExprKind::Str(_)
+        | ExprKind::Lambda { .. } => false,
+        ExprKind::Field { receiver, .. } => has_effects(receiver),
+        // Indexing a class runs its `index` method.
+        ExprKind::Paren(inner) => has_effects(inner),
+        ExprKind::NamedArg { value, .. } => has_effects(value),
+        ExprKind::Array(items) | ExprKind::Tuple(items) | ExprKind::SetLit(items) => {
+            items.iter().any(has_effects)
+        }
+        ExprKind::MapLit(pairs) => pairs.iter().any(|(k, v)| has_effects(k) || has_effects(v)),
+        _ => true,
+    }
+}
+
+/// The `let` temporaries a spawned call's arguments are evaluated into.
+struct Hoist {
+    id: usize,
+    lets: Vec<Stmt>,
+    /// Also hoist plain names and field reads, to keep left-to-right values.
+    names: bool,
+}
+
+impl Hoist {
+    fn take(e: &mut Expr) -> Expr {
+        let placeholder = Expr {
+            kind: ExprKind::Bool(false),
+            span: e.span.clone(),
+        };
+        std::mem::replace(e, placeholder)
+    }
+
+    /// Evaluate `e` now into a fresh local and leave a read of it in place.
+    fn temp(&mut self, e: &mut Expr) {
+        let value = Self::take(e);
+        let name = format!("__spawn{}_{}", self.id, self.lets.len());
+        let at = value.span.in_copy(crate::span::next_copy_id());
+        self.lets.push(Stmt {
+            span: at.clone(),
+            kind: StmtKind::Let {
+                name: name.clone(),
+                ty: None,
+                init: Some(value),
+                mutable: true,
+            },
+        });
+        *e = Expr {
+            kind: ExprKind::Ident {
+                name,
+                generics: Vec::new(),
+            },
+            span: at,
+        };
+    }
+
+    /// An argument. Literal collections stay in place so the call still sees
+    /// a literal (a `[item]` passed as `list[Trait]` converts its elements);
+    /// only their elements are hoisted.
+    fn arg(&mut self, e: &mut Expr) {
+        let pure_read = !self.names && !has_effects(e);
+        match &mut e.kind {
+            ExprKind::Int(_)
+            | ExprKind::Float(_)
+            | ExprKind::Bool(_)
+            | ExprKind::Char(_)
+            | ExprKind::Str(_) => {}
+            // A lambda captures when it is built; once a later argument runs
+            // early, build it early too. One whose parameters are inferred
+            // from the call stays at the call, so inference still applies.
+            ExprKind::Lambda { params, .. } => {
+                if self.names && params.iter().all(|p| p.ty.is_some()) {
+                    self.temp(e);
+                }
+            }
+            ExprKind::NamedArg { value, .. } => self.arg(value),
+            ExprKind::Paren(inner) => self.arg(inner),
+            ExprKind::Array(items) | ExprKind::Tuple(items) | ExprKind::SetLit(items) => {
+                for i in items.iter_mut() {
+                    self.arg(i);
+                }
+            }
+            ExprKind::MapLit(pairs) => {
+                for (k, v) in pairs.iter_mut() {
+                    self.arg(k);
+                    self.arg(v);
+                }
+            }
+            ExprKind::Ident { .. }
+            | ExprKind::SelfLower
+            | ExprKind::Field { .. }
+            | ExprKind::Index { .. }
+                if pure_read => {}
+            _ => self.temp(e),
+        }
+    }
+
+    /// A method receiver. A bare name may be a module or a type, so it stays;
+    /// field and index paths keep their shape while the code inside runs now.
+    fn receiver(&mut self, e: &mut Expr) {
+        match &mut e.kind {
+            ExprKind::Ident { .. } | ExprKind::SelfLower => {}
+            ExprKind::Field { receiver, .. } => self.receiver(receiver),
+            ExprKind::Paren(inner) => self.receiver(inner),
+            _ => self.temp(e),
+        }
     }
 }
