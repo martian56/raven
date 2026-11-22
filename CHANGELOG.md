@@ -18,6 +18,10 @@ All notable changes to Raven are documented in this file.
 - `Mutex.new()` and `WaitGroup.new()` construct the std.sync types, matching the rest of the library (`mutex()` and `wait_group()` still work).
 - std.fs and std.net errors name the path or address: `read notes.txt: ...`, `connect 127.0.0.1:5432: ...`.
 
+### Fixes
+
+- `range(n)` accepts a bound whose type comes from a generic call, such as `d.get(k).unwrap_or(0)`.
+
 ### Diagnostics
 
 - An error inside a `"${...}"` interpolation points at the expression in the source line instead of `file<interp:...>:1:1`.
