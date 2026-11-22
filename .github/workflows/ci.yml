@@ -37,6 +37,7 @@ jobs:
         working-directory: .
     steps:
     - uses: actions/checkout@v4
+    - uses: Swatinem/rust-cache@v2
     - name: Lint
       run: cargo clippy --workspace --all-targets
 
@@ -48,10 +49,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - uses: Swatinem/rust-cache@v2
     - name: Build
-      run: cargo build --workspace --verbose
+      run: cargo build --workspace
     - name: Run tests
-      run: cargo test --workspace --verbose
+      run: cargo test --workspace
 
   benchmark:
     runs-on: ubuntu-latest
@@ -60,6 +62,7 @@ jobs:
         working-directory: .
     steps:
     - uses: actions/checkout@v4
+    - uses: Swatinem/rust-cache@v2
     - name: Build release raven and runtime
       run: |
         cargo build --release --bin raven
