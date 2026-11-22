@@ -9,13 +9,10 @@ from std.math import floor, fabs
 
 // `s` repeated `n` times. A non-positive `n` yields the empty string.
 fun repeat(s: str, n: int) -> str {
-    let out: list[str] = []
-    var i = 0
-    while i < n {
-        out.push(s)
-        i = i + 1
+    if n <= 0 or s == "" {
+        return ""
     }
-    return "".join(out)
+    return s.repeat(n)
 }
 
 // Repeat `fill` just enough whole times to span at least `width` bytes. A
