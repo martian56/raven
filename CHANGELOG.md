@@ -2,6 +2,13 @@
 
 All notable changes to Raven are documented in this file.
 
+## [Unreleased]
+
+### Performance
+
+- Bounds-check versioning also covers `while lo < hi` loops that move `lo` up and `hi` down (checked against the entry values of both), and offset reads such as `xs[j + 1]` (checked as `n <= len(xs) - 1`). Fannkuch goes from 329 ms to 291 ms.
+- New fannkuch benchmark in all five languages.
+
 ## [3.2.2] - 2026-11-22
 
 ### Performance
