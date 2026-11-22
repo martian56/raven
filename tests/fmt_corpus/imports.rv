@@ -6,6 +6,11 @@ from "github.com/acme/tools" import (
     alpha,
     beta as b,
 )
+from "github.com/acme/kit" import (
+    gamma, // kept with gamma
+    // above delta
+    delta,
+)
 
 fun main() {
     print(fs.exists("x"))

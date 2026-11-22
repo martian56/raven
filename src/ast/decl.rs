@@ -218,6 +218,10 @@ pub struct ImportSelector {
     /// The local name to bind it under, from `name as local`. `None` binds
     /// under `name` itself.
     pub alias: Option<String>,
+    /// Source byte range of `name` or `name as alias`, used by the formatter
+    /// to keep a comment next to its name.
+    pub start: usize,
+    pub end: usize,
 }
 
 impl ImportSelector {

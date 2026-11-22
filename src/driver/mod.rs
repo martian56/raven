@@ -41,7 +41,10 @@ pub enum DriverError {
 /// when it differs from the entry file (for example an error inside a local
 /// module or a dependency).
 fn render_one(e: &crate::error::RavenError, input: &Path, source: &str) -> String {
-    let span_file = e.span().file.clone();
+    let span_file = match e.span().interpolation_origin() {
+        Some((file, _)) => std::sync::Arc::new(file),
+        None => e.span().file.clone(),
+    };
     let src: std::borrow::Cow<str> = if span_file.as_path() == input {
         std::borrow::Cow::Borrowed(source)
     } else {

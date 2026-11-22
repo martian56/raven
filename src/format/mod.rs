@@ -735,15 +735,29 @@ impl Printer<'_> {
                 })
                 .collect();
             let one = format!("from {source} import {}", sels.join(", "));
-            if one.chars().count() <= self.wrap_width {
+            let commented = self.pending_comment_within(im.span.start, im.span.end);
+            if one.chars().count() <= self.wrap_width && !commented {
                 one
             } else {
+                // One name per line; a comment inside the parentheses stays
+                // with the name it follows or precedes.
                 let mut t = format!("from {source} import (\n");
-                for sel in &sels {
+                for (sel, text) in im.selectors.iter().zip(&sels) {
+                    self.weave_own_line_comments(&mut t, sel.start, 1);
                     t.push_str(&self.indent_unit);
-                    t.push_str(sel);
-                    t.push_str(",\n");
+                    t.push_str(text);
+                    t.push(',');
+                    let line = self.line_of(sel.end);
+                    if let Some(c) = self.comments.get(self.next_comment) {
+                        if !c.own_line && c.start < im.span.end && self.line_of(c.start) == line {
+                            t.push(' ');
+                            t.push_str(&c.text.clone());
+                            self.next_comment += 1;
+                        }
+                    }
+                    t.push('\n');
                 }
+                self.weave_own_line_comments(&mut t, im.span.end, 1);
                 t.push(')');
                 t
             }

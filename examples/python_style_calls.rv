@@ -15,6 +15,11 @@ fun add(t: Tally, lock: Mutex, n: int, wg: WaitGroup) {
     wg.done()
 }
 
+fun register(wg: WaitGroup) -> int {
+    wg.add(1)
+    return 100
+}
+
 fun main() {
     print("a", "b", "c", sep: "-")
     print(1, 2, 3, sep: ", ", end: ".\n")
@@ -34,6 +39,11 @@ fun main() {
         wg.add(1)
         spawn add(t, lock, i, wg)
     }
+    wg.wait()
+    print("total", t.total)
+
+    // Arguments are evaluated at the spawn, so register() runs before wait().
+    spawn add(t, lock, register(wg), wg)
     wg.wait()
     print("total", t.total)
 }

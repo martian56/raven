@@ -1014,19 +1014,21 @@ fn method(receiver: Expr, name: &str, args: Vec<Expr>, span: &Span) -> Expr {
 /// Python-style builtins: `len(x)` is `x.len()`, `min(xs)` is
 /// `xs.min().unwrap()`, `range(a, b)` is `a..b`, and so on, unless the file
 /// defines or imports a function by that name.
-/// Whether a `print` call's keyword arguments are only `sep` and `end`, with
-/// at least one of them.
+/// Whether a `print` call's keyword arguments are only `sep` and `end`, each
+/// at most once, with at least one of them. Anything else falls through to
+/// the ordinary named-argument check, which reports it.
 fn print_keywords(args: &[Expr]) -> bool {
-    let mut any = false;
+    let (mut sep, mut end) = (0, 0);
     for a in args {
         if let ExprKind::NamedArg { name, .. } = &a.kind {
-            if name != "sep" && name != "end" {
-                return false;
+            match name.as_str() {
+                "sep" => sep += 1,
+                "end" => end += 1,
+                _ => return false,
             }
-            any = true;
         }
     }
-    any
+    sep + end > 0 && sep <= 1 && end <= 1
 }
 
 fn builtin_call(e: &mut Expr, values: &std::collections::HashSet<String>) {
@@ -1083,14 +1085,12 @@ fn builtin_call(e: &mut Expr, values: &std::collections::HashSet<String>) {
         let end = end.unwrap_or_else(|| lit("\n"));
         let mut items = Vec::new();
         for v in values {
+            // Through interpolation, which also converts C numeric types.
             items.push(Expr {
                 span: inner(&span),
-                kind: ExprKind::MethodCall {
-                    receiver: Box::new(v),
-                    name: "to_string".into(),
-                    generics: Vec::new(),
-                    args: Vec::new(),
-                },
+                kind: ExprKind::InterpolatedString(vec![crate::ast::StrFragment::Expr(Box::new(
+                    v,
+                ))]),
             });
         }
         if items.is_empty() {

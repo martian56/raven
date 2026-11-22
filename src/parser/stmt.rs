@@ -132,31 +132,14 @@ impl Parser {
                     }
                 } else {
                     let value = self.parse_expr()?;
-                    // `spawn work(i)`, as in Go: run the call in a goroutine.
                     if matches!(
                         value.kind,
                         ExprKind::Call { .. } | ExprKind::MethodCall { .. }
                     ) {
-                        let span = value.span.clone();
-                        Expr {
-                            kind: ExprKind::Lambda {
-                                params: Vec::new(),
-                                ret: None,
-                                body: crate::ast::LambdaBody::Block(crate::ast::Block {
-                                    stmts: vec![Stmt {
-                                        span: span.clone(),
-                                        kind: StmtKind::Expr(value),
-                                    }],
-                                    trailing: None,
-                                    span: span.clone(),
-                                }),
-                                params_inferred: false,
-                            },
-                            span,
-                        }
-                    } else {
-                        value
+                        let span = merge_spans(&start_span, &value.span);
+                        return Ok(spawn_call(value, span));
                     }
+                    value
                 };
                 let span = merge_spans(&start_span, &value.span);
                 Ok(Stmt {
@@ -420,5 +403,130 @@ fn pattern_bindings(p: &Pattern, out: &mut Vec<String>) {
             }
         }
         _ => {}
+    }
+}
+
+/// `spawn work(i, f(x))`, as in Go: the arguments (and a call receiver) are
+/// evaluated where the `spawn` runs, then the call itself runs in the new
+/// goroutine. Names and literals need no temporary: the goroutine's closure
+/// captures them by value when it is created.
+fn spawn_call(mut call: Expr, span: crate::span::Span) -> Stmt {
+    let fresh = |s: &crate::span::Span| s.in_copy(crate::span::next_copy_id());
+    let id = crate::span::next_copy_id();
+    let mut lets: Vec<Stmt> = Vec::new();
+    let bind = |e: Expr, lets: &mut Vec<Stmt>| -> Expr {
+        if matches!(
+            e.kind,
+            ExprKind::Ident { .. }
+                | ExprKind::SelfLower
+                | ExprKind::Int(_)
+                | ExprKind::Float(_)
+                | ExprKind::Bool(_)
+                | ExprKind::Char(_)
+                | ExprKind::Str(_)
+                | ExprKind::Lambda { .. }
+        ) {
+            return e;
+        }
+        let name = format!("__spawn{}_{}", id, lets.len());
+        let at = fresh(&e.span);
+        lets.push(Stmt {
+            span: at.clone(),
+            kind: StmtKind::Let {
+                name: name.clone(),
+                ty: None,
+                init: Some(e),
+                mutable: true,
+            },
+        });
+        Expr {
+            kind: ExprKind::Ident {
+                name,
+                generics: Vec::new(),
+            },
+            span: at,
+        }
+    };
+    let bind_args = |args: &mut Vec<Expr>, lets: &mut Vec<Stmt>| {
+        for a in args.iter_mut() {
+            let taken = std::mem::replace(
+                a,
+                Expr {
+                    kind: ExprKind::Bool(false),
+                    span: a.span.clone(),
+                },
+            );
+            *a = match taken.kind {
+                ExprKind::NamedArg { name, value } => Expr {
+                    span: taken.span,
+                    kind: ExprKind::NamedArg {
+                        name,
+                        value: Box::new(bind(*value, lets)),
+                    },
+                },
+                kind => bind(
+                    Expr {
+                        kind,
+                        span: taken.span,
+                    },
+                    lets,
+                ),
+            };
+        }
+    };
+    match &mut call.kind {
+        ExprKind::Call { args, .. } => bind_args(args, &mut lets),
+        ExprKind::MethodCall { receiver, args, .. } => {
+            if matches!(
+                receiver.kind,
+                ExprKind::Call { .. } | ExprKind::MethodCall { .. }
+            ) {
+                let placeholder = Expr {
+                    kind: ExprKind::Bool(false),
+                    span: receiver.span.clone(),
+                };
+                let r = std::mem::replace(receiver.as_mut(), placeholder);
+                **receiver = bind(r, &mut lets);
+            }
+            bind_args(args, &mut lets);
+        }
+        _ => {}
+    }
+    let body_span = fresh(&call.span);
+    let closure = Expr {
+        kind: ExprKind::Lambda {
+            params: Vec::new(),
+            ret: None,
+            body: crate::ast::LambdaBody::Block(Block {
+                stmts: vec![Stmt {
+                    span: body_span.clone(),
+                    kind: StmtKind::Expr(call),
+                }],
+                trailing: None,
+                span: body_span.clone(),
+            }),
+            params_inferred: false,
+        },
+        span: fresh(&body_span),
+    };
+    let spawn = Stmt {
+        kind: StmtKind::Spawn(closure),
+        span: span.clone(),
+    };
+    if lets.is_empty() {
+        return spawn;
+    }
+    lets.push(spawn);
+    let block_span = fresh(&span);
+    Stmt {
+        kind: StmtKind::Expr(Expr {
+            kind: ExprKind::Block(Block {
+                stmts: lets,
+                trailing: None,
+                span: block_span.clone(),
+            }),
+            span: block_span,
+        }),
+        span,
     }
 }

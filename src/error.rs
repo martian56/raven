@@ -414,7 +414,7 @@ impl RavenError {
         // A span inside a `${...}` fragment points into the fragment's own
         // text; map it back onto the file so the pointer lands on the source.
         if let Some((file, offset)) = span.interpolation_origin() {
-            if offset <= source.len() {
+            if offset <= source.len() && source.is_char_boundary(offset) {
                 let before = &source[..offset];
                 let line = before.matches('\n').count() as u32 + 1;
                 let col = before.rsplit('\n').next().map_or(0, |l| l.chars().count()) as u32 + 1;
