@@ -26,23 +26,39 @@ use super::ty::MirType;
 use super::visit::assigned_local;
 
 pub fn version_loops(program: &mut MirProgram) {
+    // Math calls count as pure only when they reach the C function itself:
+    // a declared `float -> float` extern, and no Raven function of that name.
+    let defined: HashSet<String> = program.functions.iter().map(|f| f.name.clone()).collect();
+    let math: HashSet<String> = program
+        .externs
+        .iter()
+        .filter(|e| {
+            matches!(
+                e.name.as_str(),
+                "sqrt" | "floor" | "ceil" | "trunc" | "fabs"
+            ) && e.params == [MirType::Float]
+                && e.ret == MirType::Float
+                && !defined.contains(&e.name)
+        })
+        .map(|e| e.name.clone())
+        .collect();
     for f in &mut program.functions {
         if f.blocks
             .iter()
             .enumerate()
             .all(|(i, b)| b.id.0 as usize == i)
         {
-            version_in(f);
+            version_in(f, &math);
         }
     }
 }
 
-fn version_in(f: &mut MirFunction) {
+fn version_in(f: &mut MirFunction, math: &HashSet<String>) {
     let headers: Vec<usize> = (0..f.blocks.len())
         .filter(|&i| f.blocks[i].is_loop_header)
         .collect();
     for body in headers {
-        if let Some(plan) = analyze(f, body) {
+        if let Some(plan) = analyze(f, body, math) {
             apply(f, plan);
         }
     }
@@ -97,9 +113,8 @@ fn loop_test(b: &MirBlock, body: usize) -> Option<(MirBinOp, MirLocal, MirOperan
 
 /// A call to one of the C math functions the back end emits as a single
 /// instruction; it touches no memory and cannot reach a collection.
-fn pure_math_call(r: &MirRvalue) -> bool {
-    matches!(r, MirRvalue::Call { callee, .. }
-        if matches!(callee.mangled.as_str(), "sqrt" | "floor" | "ceil" | "trunc" | "fabs"))
+fn pure_math_call(r: &MirRvalue, math: &HashSet<String>) -> bool {
+    matches!(r, MirRvalue::Call { callee, .. } if math.contains(&callee.mangled))
 }
 
 fn invariant(op: &MirOperand, assigned: &HashSet<MirLocal>) -> bool {
@@ -122,7 +137,7 @@ fn preds_of(f: &MirFunction, target: usize) -> Vec<usize> {
         .collect()
 }
 
-fn analyze(f: &MirFunction, body: usize) -> Option<Plan> {
+fn analyze(f: &MirFunction, body: usize, math: &HashSet<String>) -> Option<Plan> {
     // Follow the body's straight-line chain of `goto`s to the block that
     // jumps to the latch: the latch is the first block whose only statement
     // is the loop test feeding back to `body`.
@@ -186,7 +201,7 @@ fn analyze(f: &MirFunction, body: usize) -> Option<Plan> {
                         | MirRvalue::FieldAccess { .. }
                         | MirRvalue::IndexAccess { .. }
                         | MirRvalue::Cast { .. }
-                ) || pure_math_call(rvalue)
+                ) || pure_math_call(rvalue, math)
             }
             MirStatement::StoreField { .. }
             | MirStatement::StoreIndex { .. }
@@ -372,6 +387,12 @@ fn apply(f: &mut MirFunction, plan: Plan) {
             f,
             &mut stmts,
             MirRvalue::BinaryOp(op, plan.bound.clone(), MirOperand::Copy(len)),
+        );
+        // A step no larger than the length keeps `i + step` from wrapping.
+        and(
+            f,
+            &mut stmts,
+            MirRvalue::BinaryOp(MirBinOp::Le, plan.step.clone(), MirOperand::Copy(len)),
         );
     }
     let original_body = MirBlockId(plan.body as u32);
