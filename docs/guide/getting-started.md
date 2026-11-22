@@ -19,6 +19,19 @@ Compiling a program also needs a C linker on your machine: the MSVC build
 tools on Windows, or `cc`/`clang` on Linux. The compiler uses it to link
 the final binary.
 
+With Docker, the `ghcr.io/martian56/raven` image has `raven`, `rvpm`, and a
+C linker. Tags follow releases (`3.3.3`, `3.3`, and `latest`):
+
+```bash
+docker run --rm -v "$PWD":/app ghcr.io/martian56/raven:latest rvpm build
+```
+
+A compiled program does not need Raven to run, so a Dockerfile can build
+in this image and copy the binary into a small runtime image (see the
+README for an example). In GitHub Actions, use the
+[`martian56/setup-raven`](https://github.com/martian56/setup-raven) action
+instead.
+
 To build from source instead (for contributors, or to track the latest
 commit):
 

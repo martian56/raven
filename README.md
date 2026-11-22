@@ -84,6 +84,20 @@ Download the installer or archive for your platform from the [releases page](htt
 
 This installs the `raven` compiler and the `rvpm` package manager and adds them to your `PATH`. Compiling a program also needs a C linker on your machine (the MSVC build tools on Windows, `cc`/`clang` on Linux).
 
+A Docker image with the toolchain and a C linker is published for every release, as `ghcr.io/martian56/raven:<version>` and `:latest`. Build in it and copy the binary into a small runtime image:
+
+```dockerfile
+FROM ghcr.io/martian56/raven:3.3 AS build
+COPY . /app
+RUN rvpm build
+
+FROM debian:bookworm-slim
+COPY --from=build /app/target/raven-out/myapp /usr/local/bin/myapp
+CMD ["myapp"]
+```
+
+In GitHub Actions, [`martian56/setup-raven`](https://github.com/martian56/setup-raven) installs Raven on the runner.
+
 ## Quick Start
 
 ```bash
