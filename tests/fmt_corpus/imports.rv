@@ -11,6 +11,8 @@ from "github.com/acme/kit" import (
     // above delta
     delta,
 )
+from "github.com/acme/more" import (eps, zeta, // zeta helper
+)
 
 fun main() {
     print(fs.exists("x"))

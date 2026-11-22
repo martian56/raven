@@ -406,92 +406,42 @@ fn pattern_bindings(p: &Pattern, out: &mut Vec<String>) {
     }
 }
 
-/// `spawn work(i, f(x))`, as in Go: the arguments (and a call receiver) are
-/// evaluated where the `spawn` runs, then the call itself runs in the new
-/// goroutine. Names and literals need no temporary: the goroutine's closure
-/// captures them by value when it is created.
+/// `spawn work(i, f(x))`, as in Go: the arguments (and the parts of a
+/// receiver that run code) are evaluated in order where the `spawn` runs,
+/// then the call itself runs in the new goroutine.
 fn spawn_call(mut call: Expr, span: crate::span::Span) -> Stmt {
     let fresh = |s: &crate::span::Span| s.in_copy(crate::span::next_copy_id());
-    let id = crate::span::next_copy_id();
-    let mut lets: Vec<Stmt> = Vec::new();
-    let bind = |e: Expr, lets: &mut Vec<Stmt>| -> Expr {
-        if matches!(
-            e.kind,
-            ExprKind::Ident { .. }
-                | ExprKind::SelfLower
-                | ExprKind::Int(_)
-                | ExprKind::Float(_)
-                | ExprKind::Bool(_)
-                | ExprKind::Char(_)
-                | ExprKind::Str(_)
-                | ExprKind::Lambda { .. }
-        ) {
-            return e;
-        }
-        let name = format!("__spawn{}_{}", id, lets.len());
-        let at = fresh(&e.span);
-        lets.push(Stmt {
-            span: at.clone(),
-            kind: StmtKind::Let {
-                name: name.clone(),
-                ty: None,
-                init: Some(e),
-                mutable: true,
-            },
-        });
-        Expr {
-            kind: ExprKind::Ident {
-                name,
-                generics: Vec::new(),
-            },
-            span: at,
-        }
+    let mut h = Hoist {
+        id: crate::span::next_copy_id(),
+        lets: Vec::new(),
+        names: false,
     };
-    let bind_args = |args: &mut Vec<Expr>, lets: &mut Vec<Stmt>| {
-        for a in args.iter_mut() {
-            let taken = std::mem::replace(
-                a,
-                Expr {
-                    kind: ExprKind::Bool(false),
-                    span: a.span.clone(),
-                },
-            );
-            *a = match taken.kind {
-                ExprKind::NamedArg { name, value } => Expr {
-                    span: taken.span,
-                    kind: ExprKind::NamedArg {
-                        name,
-                        value: Box::new(bind(*value, lets)),
-                    },
-                },
-                kind => bind(
-                    Expr {
-                        kind,
-                        span: taken.span,
-                    },
-                    lets,
-                ),
-            };
-        }
-    };
-    match &mut call.kind {
-        ExprKind::Call { args, .. } => bind_args(args, &mut lets),
+    // Names are captured when the closure is created, after every hoisted
+    // argument has run. Once anything is hoisted, names are hoisted too, so
+    // a later argument cannot change an earlier one.
+    let effects = match &call.kind {
+        ExprKind::Call { args, .. } => args.iter().any(has_effects),
         ExprKind::MethodCall { receiver, args, .. } => {
-            if matches!(
-                receiver.kind,
-                ExprKind::Call { .. } | ExprKind::MethodCall { .. }
-            ) {
-                let placeholder = Expr {
-                    kind: ExprKind::Bool(false),
-                    span: receiver.span.clone(),
-                };
-                let r = std::mem::replace(receiver.as_mut(), placeholder);
-                **receiver = bind(r, &mut lets);
+            has_effects(receiver) || args.iter().any(has_effects)
+        }
+        _ => false,
+    };
+    h.names = effects;
+    match &mut call.kind {
+        ExprKind::Call { args, .. } => {
+            for a in args.iter_mut() {
+                h.arg(a);
             }
-            bind_args(args, &mut lets);
+        }
+        ExprKind::MethodCall { receiver, args, .. } => {
+            h.receiver(receiver);
+            for a in args.iter_mut() {
+                h.arg(a);
+            }
         }
         _ => {}
     }
+    let mut lets = std::mem::take(&mut h.lets);
     let body_span = fresh(&call.span);
     let closure = Expr {
         kind: ExprKind::Lambda {
@@ -528,5 +478,121 @@ fn spawn_call(mut call: Expr, span: crate::span::Span) -> Stmt {
             span: block_span,
         }),
         span,
+    }
+}
+
+/// Whether evaluating `e` runs code (a call, a block, an assignment), as
+/// opposed to reading names, fields, indexes, and literals.
+fn has_effects(e: &Expr) -> bool {
+    match &e.kind {
+        ExprKind::Ident { .. }
+        | ExprKind::SelfLower
+        | ExprKind::Int(_)
+        | ExprKind::Float(_)
+        | ExprKind::Bool(_)
+        | ExprKind::Char(_)
+        | ExprKind::Str(_)
+        | ExprKind::Lambda { .. } => false,
+        ExprKind::Field { receiver, .. } => has_effects(receiver),
+        ExprKind::Index { receiver, index } => has_effects(receiver) || has_effects(index),
+        ExprKind::Paren(inner) => has_effects(inner),
+        ExprKind::NamedArg { value, .. } => has_effects(value),
+        ExprKind::Array(items) | ExprKind::Tuple(items) | ExprKind::SetLit(items) => {
+            items.iter().any(has_effects)
+        }
+        ExprKind::MapLit(pairs) => pairs.iter().any(|(k, v)| has_effects(k) || has_effects(v)),
+        _ => true,
+    }
+}
+
+/// The `let` temporaries a spawned call's arguments are evaluated into.
+struct Hoist {
+    id: usize,
+    lets: Vec<Stmt>,
+    /// Also hoist plain names and field reads, to keep left-to-right values.
+    names: bool,
+}
+
+impl Hoist {
+    fn take(e: &mut Expr) -> Expr {
+        let placeholder = Expr {
+            kind: ExprKind::Bool(false),
+            span: e.span.clone(),
+        };
+        std::mem::replace(e, placeholder)
+    }
+
+    /// Evaluate `e` now into a fresh local and leave a read of it in place.
+    fn temp(&mut self, e: &mut Expr) {
+        let value = Self::take(e);
+        let name = format!("__spawn{}_{}", self.id, self.lets.len());
+        let at = value.span.in_copy(crate::span::next_copy_id());
+        self.lets.push(Stmt {
+            span: at.clone(),
+            kind: StmtKind::Let {
+                name: name.clone(),
+                ty: None,
+                init: Some(value),
+                mutable: true,
+            },
+        });
+        *e = Expr {
+            kind: ExprKind::Ident {
+                name,
+                generics: Vec::new(),
+            },
+            span: at,
+        };
+    }
+
+    /// An argument. Literal collections stay in place so the call still sees
+    /// a literal (a `[item]` passed as `list[Trait]` converts its elements);
+    /// only their elements are hoisted.
+    fn arg(&mut self, e: &mut Expr) {
+        let pure_read = !self.names && !has_effects(e);
+        match &mut e.kind {
+            ExprKind::Int(_)
+            | ExprKind::Float(_)
+            | ExprKind::Bool(_)
+            | ExprKind::Char(_)
+            | ExprKind::Str(_)
+            | ExprKind::Lambda { .. } => {}
+            ExprKind::NamedArg { value, .. } => self.arg(value),
+            ExprKind::Paren(inner) => self.arg(inner),
+            ExprKind::Array(items) | ExprKind::Tuple(items) | ExprKind::SetLit(items) => {
+                for i in items.iter_mut() {
+                    self.arg(i);
+                }
+            }
+            ExprKind::MapLit(pairs) => {
+                for (k, v) in pairs.iter_mut() {
+                    self.arg(k);
+                    self.arg(v);
+                }
+            }
+            ExprKind::Ident { .. }
+            | ExprKind::SelfLower
+            | ExprKind::Field { .. }
+            | ExprKind::Index { .. }
+                if pure_read => {}
+            _ => self.temp(e),
+        }
+    }
+
+    /// A method receiver. A bare name may be a module or a type, so it stays;
+    /// field and index paths keep their shape while the code inside runs now.
+    fn receiver(&mut self, e: &mut Expr) {
+        match &mut e.kind {
+            ExprKind::Ident { .. } | ExprKind::SelfLower => {}
+            ExprKind::Field { receiver, .. } => self.receiver(receiver),
+            ExprKind::Index { receiver, index } => {
+                self.receiver(receiver);
+                if has_effects(index) || self.names {
+                    self.arg(index);
+                }
+            }
+            ExprKind::Paren(inner) => self.receiver(inner),
+            _ => self.temp(e),
+        }
     }
 }

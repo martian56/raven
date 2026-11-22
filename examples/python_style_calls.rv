@@ -4,6 +4,18 @@ from std.sync import WaitGroup, Mutex
 
 let NAMES = ["ada", "grace", "linus"]
 
+var counter = 1
+
+fun bump() -> int {
+    counter = 2
+    return 0
+}
+
+fun pair(a: int, b: int, wg: WaitGroup) {
+    print("pair", a, b)
+    wg.done()
+}
+
 class Tally {
     total: int
 }
@@ -46,4 +58,9 @@ fun main() {
     spawn add(t, lock, register(wg), wg)
     wg.wait()
     print("total", t.total)
+
+    // Left to right: counter is read before bump() changes it.
+    wg.add(1)
+    spawn pair(counter, bump(), wg)
+    wg.wait()
 }
