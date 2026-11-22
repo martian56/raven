@@ -859,17 +859,23 @@ impl list[float] {
 }
 
 impl list[str] {
-    fun join(self, sep: str) -> str {
-        var out = ""
-        var i = 0
-        while i < self.len() {
-            if i > 0 {
-                out = out + sep
-            }
-            out = out + self[i]
-            i += 1
+    // Halves are joined and then glued, so each byte is copied about
+    // log2(len) times; appending one item at a time copies the whole result
+    // again for every item.
+    fun join(self, sep: str) -> str = self._join_range(sep, 0, self.len())
+
+    fun _join_range(self, sep: str, a: int, b: int) -> str {
+        if b - a <= 0 {
+            return ""
         }
-        return out
+        if b - a == 1 {
+            return self[a]
+        }
+        if b - a == 2 {
+            return self[a] + sep + self[a + 1]
+        }
+        let mid = a + (b - a) / 2
+        return self._join_range(sep, a, mid) + sep + self._join_range(sep, mid, b)
     }
 }
 

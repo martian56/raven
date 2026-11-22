@@ -20,6 +20,11 @@ All notable changes to Raven are documented in this file.
 - `Mutex.new()` and `WaitGroup.new()` construct the std.sync types, matching the rest of the library (`mutex()` and `wait_group()` still work).
 - std.fs and std.net errors name the path or address: `read notes.txt: ...`, `connect 127.0.0.1:5432: ...`.
 
+### Performance
+
+- `str.replace` copied its whole result for every byte, so replacing in a 120 KB string took over 2 seconds; it now keeps unchanged runs whole and takes about 1 ms. It returns the string itself when nothing matches.
+- `list[str].join` and `str.repeat` copied their result for every item; they now take O(n log n) and O(n). Joining 40,000 pieces takes 4 ms.
+
 ### Fixes
 
 - `range(n)` accepts a bound whose type comes from a generic call, such as `d.get(k).unwrap_or(0)`.

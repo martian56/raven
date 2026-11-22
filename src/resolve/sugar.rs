@@ -27,7 +27,7 @@ pub fn expand_calls(items: &mut [Decl], strict: bool) -> Result<(), RavenError> 
         // A module-level initializer (`let ORIGIN = Point(0, 0)`, or a
         // tuple, which desugars to a `TupleN(...)` call) is expanded too.
         let mut init = |e: &mut Expr| {
-            let locals = std::collections::HashSet::new();
+            let locals = init_locals(e);
             visit::expr(e, &mut |x: &mut Expr| {
                 if error.is_some() {
                     return;
@@ -194,6 +194,20 @@ impl Visible {
 
 /// Every name a function binds as a value: parameters, `let`/`var`, lambda
 /// parameters, and pattern bindings.
+/// Names a module-level initializer binds inside itself (lambda parameters,
+/// and the locals of block-bodied lambdas), which shadow a class name.
+fn init_locals(e: &Expr) -> std::collections::HashSet<String> {
+    let func = Function {
+        name: String::new(),
+        generics: Vec::new(),
+        params: Vec::new(),
+        ret: None,
+        body: crate::ast::FunctionBody::Expr(e.clone()),
+        span: e.span.clone(),
+    };
+    local_names(&func)
+}
+
 pub(crate) fn local_names(func: &Function) -> std::collections::HashSet<String> {
     let mut out: std::collections::HashSet<String> =
         func.params.iter().map(|p| p.name.clone()).collect();

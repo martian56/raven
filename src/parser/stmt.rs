@@ -376,9 +376,13 @@ fn is_valid_lvalue(expr: &Expr) -> bool {
         ExprKind::Ident { .. } | ExprKind::SelfLower => true,
         // `self.doc().lang = x` stores into the object the call returns.
         ExprKind::Field { receiver, .. } => {
+            let mut inner = &**receiver;
+            while let ExprKind::Paren(x) = &inner.kind {
+                inner = x;
+            }
             is_valid_lvalue(receiver)
                 || matches!(
-                    receiver.kind,
+                    inner.kind,
                     ExprKind::Call { .. } | ExprKind::MethodCall { .. }
                 )
         }
@@ -427,7 +431,7 @@ fn spawn_call(mut call: Expr, span: crate::span::Span) -> Stmt {
     // argument has run. Once anything is hoisted, names are hoisted too, so
     // a later argument cannot change an earlier one.
     let effects = match &call.kind {
-        ExprKind::Call { args, .. } => args.iter().any(has_effects),
+        ExprKind::Call { callee, args } => has_effects(callee) || args.iter().any(has_effects),
         ExprKind::MethodCall { receiver, args, .. } => {
             has_effects(receiver) || args.iter().any(has_effects)
         }
@@ -435,7 +439,11 @@ fn spawn_call(mut call: Expr, span: crate::span::Span) -> Stmt {
     };
     h.names = effects;
     match &mut call.kind {
-        ExprKind::Call { args, .. } => {
+        ExprKind::Call { callee, args } => {
+            // `spawn make_task()(x)`: the function value is computed here too.
+            if has_effects(callee) {
+                h.temp(callee);
+            }
             for a in args.iter_mut() {
                 h.arg(a);
             }
@@ -501,7 +509,7 @@ fn has_effects(e: &Expr) -> bool {
         | ExprKind::Str(_)
         | ExprKind::Lambda { .. } => false,
         ExprKind::Field { receiver, .. } => has_effects(receiver),
-        ExprKind::Index { receiver, index } => has_effects(receiver) || has_effects(index),
+        // Indexing a class runs its `index` method.
         ExprKind::Paren(inner) => has_effects(inner),
         ExprKind::NamedArg { value, .. } => has_effects(value),
         ExprKind::Array(items) | ExprKind::Tuple(items) | ExprKind::SetLit(items) => {
@@ -562,8 +570,15 @@ impl Hoist {
             | ExprKind::Float(_)
             | ExprKind::Bool(_)
             | ExprKind::Char(_)
-            | ExprKind::Str(_)
-            | ExprKind::Lambda { .. } => {}
+            | ExprKind::Str(_) => {}
+            // A lambda captures when it is built; once a later argument runs
+            // early, build it early too. One whose parameters are inferred
+            // from the call stays at the call, so inference still applies.
+            ExprKind::Lambda { params, .. } => {
+                if self.names && params.iter().all(|p| p.ty.is_some()) {
+                    self.temp(e);
+                }
+            }
             ExprKind::NamedArg { value, .. } => self.arg(value),
             ExprKind::Paren(inner) => self.arg(inner),
             ExprKind::Array(items) | ExprKind::Tuple(items) | ExprKind::SetLit(items) => {
@@ -592,12 +607,6 @@ impl Hoist {
         match &mut e.kind {
             ExprKind::Ident { .. } | ExprKind::SelfLower => {}
             ExprKind::Field { receiver, .. } => self.receiver(receiver),
-            ExprKind::Index { receiver, index } => {
-                self.receiver(receiver);
-                if has_effects(index) || self.names {
-                    self.arg(index);
-                }
-            }
             ExprKind::Paren(inner) => self.receiver(inner),
             _ => self.temp(e),
         }
