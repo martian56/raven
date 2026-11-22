@@ -583,6 +583,24 @@ pub extern "C" fn raven_env_set(name: *const object::String, value: *const objec
     true
 }
 
+/// Remove an environment variable. Returns false for an invalid name.
+///
+/// # Safety
+///
+/// `name` must be a valid `raven_string_from_bytes`-built `String`.
+#[no_mangle]
+pub extern "C" fn raven_env_unset(name: *const object::String) -> bool {
+    let Some(n) = env_name(name) else {
+        return false;
+    };
+    if n.is_empty() || n.contains('=') || n.contains('\0') {
+        return false;
+    }
+    // SAFETY: as for raven_env_set.
+    unsafe { std::env::remove_var(n) };
+    true
+}
+
 /// The current working directory with forward slashes, or "" when unknown.
 #[no_mangle]
 pub extern "C" fn raven_env_current_dir() -> *mut object::String {

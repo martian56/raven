@@ -78,6 +78,11 @@ fun main() {
 }
 ```
 
+### `unset_env(name: str) -> bool`
+
+Removes a variable, the opposite of `set_env`. The same advice about
+goroutines applies.
+
 ## Working directory
 
 ### `current_dir() -> str`
