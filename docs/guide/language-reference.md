@@ -431,10 +431,11 @@ takes any number of arguments. Each is an ordinary method underneath
 (`len(x)` is `x.len()`), so a file can still define its own function by one
 of these names.
 
-Lists carry `push`, `pop`, `len`, `map`, `filter`, `fold`, `each`, `any`,
-`all`, `find`, `position`, `count`, `first`, `last`, `slice`, `take`,
-`skip`, `reversed`, `extend`, `concat`, `sorted_by`, `enumerate`, `zip`,
-plus `contains` and `index_of` (elements with `Eq`), `sorted`, `sort`, `min`,
+Lists carry `push`, `pop`, `insert(i, x)`, `remove_at(i)`, `clear`, `copy`,
+`len`, `map`, `filter`, `fold`, `each`, `any`, `all`, `find`, `position`,
+`count`, `first`, `last`, `slice`, `take`, `skip`, `reversed`, `extend`,
+`concat`, `sorted_by`, `enumerate`, `zip`, plus `contains`, `index_of`, and
+`remove(x)` (elements with `Eq`), `sorted`, `sort`, `min`,
 `max` (elements with `Ord`), `sum`, and `join` on `list[str]`. Dicts carry
 `get` (an `Option`), `get_or`, `set`, `has`, `remove`, `keys`, `values`,
 `items`, and `len`. None of these need an import.

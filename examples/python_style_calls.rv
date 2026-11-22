@@ -71,4 +71,10 @@ fun main() {
         print(i, end: " ")
     }
     print()
+
+    let xs = ["b", "d"]
+    xs.insert(0, "a")
+    xs.insert(2, "c")
+    let gone = xs.remove_at(-1)
+    print(xs, gone, xs.remove("b"), xs)
 }

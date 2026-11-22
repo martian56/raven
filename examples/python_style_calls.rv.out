@@ -6,3 +6,4 @@ total 55
 total 155
 pair 1 0
 0 1 2 
+["a", "b", "c"] d true ["a", "c"]

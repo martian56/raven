@@ -507,6 +507,44 @@ impl[T] list[T] {
         self.push(x)
     }
 
+    // Insert `x` before position `i`, as in Python; `i` at or past the end
+    // appends, and a negative `i` counts from the end.
+    fun insert(self, i: int, x: T) {
+        var at = i + self.len() if i < 0 else i
+        at = max(0, min(at, self.len()))
+        self.push(x)
+        var j = self.len() - 1
+        while j > at {
+            self[j] = self[j - 1]
+            j -= 1
+        }
+        self[at] = x
+    }
+
+    // Remove and return the item at `i` (Python's `pop(i)`). Panics when
+    // `i` is out of range.
+    fun remove_at(self, i: int) -> T {
+        let at = i + self.len() if i < 0 else i
+        let x = self[at]
+        var j = at
+        while j < self.len() - 1 {
+            self[j] = self[j + 1]
+            j += 1
+        }
+        let _ = self.pop()
+        return x
+    }
+
+    // Remove every item.
+    fun clear(self) {
+        while self.len() > 0 {
+            let _ = self.pop()
+        }
+    }
+
+    // A shallow copy, as in Python.
+    fun copy(self) -> list[T] = self.slice(0, self.len())
+
     // A copy of the list, for `list(xs)`.
     fun to_list(self) -> list[T] = self.slice(0, self.len())
 
@@ -741,6 +779,17 @@ impl[T: Eq] list[T] {
             i += 1
         }
         return None
+    }
+
+    // Remove the first item equal to `x`, as in Python; false when absent.
+    fun remove(self, x: T) -> bool {
+        return match self.index_of(x) {
+            case Some(i) {
+                let _ = self.remove_at(i)
+                true
+            }
+            case None { false }
+        }
     }
 }
 

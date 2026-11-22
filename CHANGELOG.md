@@ -15,6 +15,7 @@ All notable changes to Raven are documented in this file.
 
 - `std.io.is_terminal()` and `stdin_is_terminal()` report whether a stream is a terminal rather than a pipe or file.
 - `str.chars()` returns the characters, like `list(s)`.
+- Lists gain Python's `insert(i, x)`, `remove(x)`, `clear()`, and `copy()`, plus `remove_at(i)` for Python's `pop(i)`.
 - `Mutex.new()` and `WaitGroup.new()` construct the std.sync types, matching the rest of the library (`mutex()` and `wait_group()` still work).
 - std.fs and std.net errors name the path or address: `read notes.txt: ...`, `connect 127.0.0.1:5432: ...`.
 
