@@ -1,6 +1,6 @@
 // Counted loops over a list skip the per-access bounds check when one test
 // before the loop proves every index in range, and keep it otherwise.
-// Prints: [2, 6, 12] 12, then 20, then 15, then [5, 4, 3, 2, 1] and [4, 3, 2, 1, 1]
+// Prints: [2, 6, 12] 12, then 20, then 15, then [5, 4, 3, 2, 1] and [4, 3, 2, 1, 1], then 9
 fun rev(xs: list[int], lo0: int, hi0: int) {
     var lo = lo0
     var hi = hi0
@@ -53,4 +53,16 @@ fun main() {
     print(ys)
     shift(ys, 4)
     print(ys)
+
+    // `t` is read before it is set in each iteration, so its first value
+    // comes from outside the loop and the read stays checked.
+    var k = 0
+    var t = 0
+    var acc = 0
+    while k < 3 {
+        acc += ys[t]
+        t = k + 1
+        k += 1
+    }
+    print(acc)
 }

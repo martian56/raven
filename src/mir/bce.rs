@@ -255,39 +255,39 @@ fn analyze(f: &MirFunction, body: usize, math: &HashSet<String>) -> Option<Plan>
     // Accesses `xs[i]` before the update, on lists the body never rebinds.
     let mut sites = Vec::new();
     let mut lists: Vec<(MirLocal, i64)> = Vec::new();
-    // An index `t` set once to `index + c` (constant `c >= 0`) before the
-    // update reads at a fixed offset from `index`.
+    // An index `t` set once to `index + c` (constant `c >= 0`) earlier in
+    // the same iteration reads at a fixed offset from `index`. It counts only
+    // after its assignment, so a read of a stale `t` stays checked.
+    let single_def = |l: MirLocal| {
+        stmts
+            .iter()
+            .filter(|(_, _, s2)| assigned_local(s2) == Some(l))
+            .count()
+            == 1
+    };
     let mut offsets: std::collections::HashMap<MirLocal, i64> = Default::default();
-    if pair.is_none() {
-        for &(_, _, st) in stmts.iter().take(last) {
-            if let MirStatement::Assign {
-                dst,
-                rvalue:
-                    MirRvalue::BinaryOp(
-                        MirBinOp::Add,
-                        MirOperand::Copy(i),
-                        MirOperand::Const(MirConstant::Int(c)),
-                    ),
-            } = st
-            {
-                let defs = stmts
-                    .iter()
-                    .filter(|(_, _, s2)| assigned_local(s2) == Some(*dst))
-                    .count();
-                if *i == index && *c >= 0 && *c < 1 << 20 && defs == 1 {
-                    offsets.insert(*dst, *c);
-                }
+    for &(bi, k, st) in stmts.iter().take(last) {
+        if let MirStatement::Assign {
+            dst,
+            rvalue:
+                MirRvalue::BinaryOp(
+                    MirBinOp::Add,
+                    MirOperand::Copy(i),
+                    MirOperand::Const(MirConstant::Int(c)),
+                ),
+        } = st
+        {
+            if pair.is_none() && *i == index && (0..1 << 20).contains(c) && single_def(*dst) {
+                offsets.insert(*dst, *c);
             }
         }
-    }
-    let offset_of = |i: &MirLocal| -> Option<i64> {
-        if *i == index || Some(*i) == hi_local {
-            Some(0)
-        } else {
-            offsets.get(i).copied()
-        }
-    };
-    for &(bi, k, st) in stmts.iter().take(last) {
+        let offset_of = |i: &MirLocal| -> Option<i64> {
+            if *i == index || Some(*i) == hi_local {
+                Some(0)
+            } else {
+                offsets.get(i).copied()
+            }
+        };
         let (base, off) = match st {
             MirStatement::Assign {
                 rvalue:
