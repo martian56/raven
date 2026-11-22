@@ -131,7 +131,32 @@ impl Parser {
                         span,
                     }
                 } else {
-                    self.parse_expr()?
+                    let value = self.parse_expr()?;
+                    // `spawn work(i)`, as in Go: run the call in a goroutine.
+                    if matches!(
+                        value.kind,
+                        ExprKind::Call { .. } | ExprKind::MethodCall { .. }
+                    ) {
+                        let span = value.span.clone();
+                        Expr {
+                            kind: ExprKind::Lambda {
+                                params: Vec::new(),
+                                ret: None,
+                                body: crate::ast::LambdaBody::Block(crate::ast::Block {
+                                    stmts: vec![Stmt {
+                                        span: span.clone(),
+                                        kind: StmtKind::Expr(value),
+                                    }],
+                                    trailing: None,
+                                    span: span.clone(),
+                                }),
+                                params_inferred: false,
+                            },
+                            span,
+                        }
+                    } else {
+                        value
+                    }
                 };
                 let span = merge_spans(&start_span, &value.span);
                 Ok(Stmt {

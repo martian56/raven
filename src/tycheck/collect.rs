@@ -439,6 +439,18 @@ fn literal_ty_of(e: &Expr) -> Option<Ty> {
             ExprKind::Float(_) => Some(Ty::Float),
             _ => None,
         },
+        // `["Food", "Rent"]`: every element a literal of one type.
+        ExprKind::Array(items) if !items.is_empty() => {
+            let first = literal_ty_of(&items[0])?;
+            if items[1..]
+                .iter()
+                .all(|i| literal_ty_of(i).as_ref() == Some(&first))
+            {
+                Some(Ty::List(Box::new(first)))
+            } else {
+                None
+            }
+        }
         _ => None,
     }
 }

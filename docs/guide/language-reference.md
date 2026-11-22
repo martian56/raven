@@ -123,8 +123,8 @@ a `0` for zero padding, a width, and a precision: `${x:.2}`, `${s:<10}`,
 `${n:*^9}`.
 
 `+` joins strings, `+=` appends, and `"ab" * 3` repeats. `s[1..4]` slices by
-byte offset, `"ell" in s` tests for a substring, and `for c in s` visits each
-character. String methods (`len`, `split`, `strip`, `upper`, `lower`,
+byte offset, `"ell" in s` tests for a substring, and `for c in s` (or
+`s.chars()`) visits each character. String methods (`len`, `split`, `strip`, `upper`, `lower`,
 `replace`, `startswith`, `endswith`, `join`, `index_of`, `parse_int`, and
 more) need no import; `" ".join(parts)` joins a list. Triple-quoted strings
 (`"""..."""`) are raw and keep newlines.
@@ -548,6 +548,28 @@ fun main() {
 }
 ```
 
+`spawn work(i)` runs one call in a goroutine, as in Go. Variables it reads are
+captured when the goroutine starts, so a loop can hand each goroutine its own
+`i`:
+
+```rust
+from std.sync import WaitGroup
+
+fun work(i: int, wg: WaitGroup) {
+    print("job ${i}")
+    wg.done()
+}
+
+fun main() {
+    let wg = WaitGroup.new()
+    for i in range(3) {
+        wg.add(1)
+        spawn work(i, wg)
+    }
+    wg.wait()
+}
+```
+
 A `Channel[T]` carries values of any type: classes, strings, tuples. A send on
 a full channel and a receive on an empty one block only the goroutine.
 `let task = spawn { ... }` keeps a handle, and `task.join()` waits for the
@@ -564,7 +586,9 @@ import "github.com/martian56/raven-http" as http
 ```
 
 - `import std.fs` makes the module's functions reachable as `fs.read(...)`.
-- `from M import a, b as c` binds names directly; `as` renames one.
+- `from M import a, b as c` binds names directly; `as` renames one. A long
+  list goes in parentheses, one name per line with a trailing comma, as in
+  Python; `raven fmt` wraps an import that is too long into that form.
 - A quoted path is a local file (`"./models"`) or a package
   (`"github.com/user/repo"`, resolved through rvpm; see the
   [rvpm guide](rvpm.md)).

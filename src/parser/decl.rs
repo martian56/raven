@@ -691,6 +691,10 @@ impl Parser {
         let paren = self.eat(&TokenKind::LParen);
         loop {
             self.skip_newlines();
+            // `from m import (a, b,)`: a trailing comma before `)`.
+            if paren && matches!(self.peek_kind(), TokenKind::RParen) && !selectors.is_empty() {
+                break;
+            }
             let (n, sp) = self.expect_ident("name to import")?;
             span = merge_spans(&span, &sp);
             let alias = if self.eat(&TokenKind::As) {
@@ -707,7 +711,8 @@ impl Parser {
         }
         if paren {
             self.skip_newlines();
-            self.expect(&TokenKind::RParen, "`)`")?;
+            let close = self.expect(&TokenKind::RParen, "`)`")?;
+            span = merge_spans(&span, &close.span);
         }
         Ok(Decl {
             kind: DeclKind::Import(Import {

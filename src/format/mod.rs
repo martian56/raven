@@ -734,7 +734,19 @@ impl Printer<'_> {
                     None => s.name.clone(),
                 })
                 .collect();
-            format!("from {source} import {}", sels.join(", "))
+            let one = format!("from {source} import {}", sels.join(", "));
+            if one.chars().count() <= self.wrap_width {
+                one
+            } else {
+                let mut t = format!("from {source} import (\n");
+                for sel in &sels {
+                    t.push_str(&self.indent_unit);
+                    t.push_str(sel);
+                    t.push_str(",\n");
+                }
+                t.push(')');
+                t
+            }
         };
         self.line(&text);
         self.take_trailing_comment(self.line_of(im.span.end))
