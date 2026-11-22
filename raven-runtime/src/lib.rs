@@ -2638,14 +2638,18 @@ pub extern "C" fn raven_process_write_stdin(id: i64, data: *const object::String
             None => return -1,
         }
     };
-    let mut guard = handle.lock().unwrap();
-    match guard.as_mut() {
-        Some(pipe) => match pipe.write_all(&bytes).and_then(|_| pipe.flush()) {
-            Ok(()) => bytes.len() as i64,
-            Err(_) => -1,
-        },
-        None => -1,
-    }
+    // A child that stops reading fills the pipe and the write blocks; keep
+    // the waiting thread out of the collector's running set meanwhile.
+    crate::gc::blocking(|| {
+        let mut guard = handle.lock().unwrap();
+        match guard.as_mut() {
+            Some(pipe) => match pipe.write_all(&bytes).and_then(|_| pipe.flush()) {
+                Ok(()) => bytes.len() as i64,
+                Err(_) => -1,
+            },
+            None => -1,
+        }
+    })
 }
 
 /// Close the spawned child `id`'s stdin, sending EOF. Returns 1 when the
