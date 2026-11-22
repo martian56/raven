@@ -76,10 +76,13 @@ struct Plan {
     bound: MirOperand,
     cmp: MirBinOp,
     step: MirOperand,
+    /// For `while lo < hi` with `hi` stepping down: `hi` and its step.
+    pair: Option<(MirLocal, MirOperand)>,
     /// (block, statement) positions whose access becomes unchecked, and the
     /// lists they index.
     sites: Vec<(usize, usize)>,
-    lists: Vec<MirLocal>,
+    /// Each indexed list with the largest constant offset used on it.
+    lists: Vec<(MirLocal, i64)>,
 }
 
 /// The `(cond, cmp, index, bound)` a block's last statement computes for its
@@ -221,48 +224,71 @@ fn analyze(f: &MirFunction, body: usize, math: &HashSet<String>) -> Option<Plan>
         assigned.insert(l);
     }
 
-    // The index moves once, at the end, by a step that cannot be negative
-    // once checked: `t = i + step; i = t` (or `i = i + step`).
-    let defs: Vec<usize> = stmts
-        .iter()
-        .enumerate()
-        .filter(|(_, (_, _, st))| assigned_local(st) == Some(index))
-        .map(|(k, _)| k)
-        .collect();
-    let [update] = defs[..] else {
-        return None;
-    };
-    let step = match stmts[update].2 {
-        MirStatement::Assign {
-            rvalue: MirRvalue::BinaryOp(MirBinOp::Add, MirOperand::Copy(i), s),
-            ..
-        } if *i == index => s.clone(),
-        MirStatement::Assign {
-            rvalue: MirRvalue::Use(MirOperand::Copy(t)),
-            ..
-        } => {
-            let k = (0..update)
-                .rev()
-                .find(|&k| assigned_local(stmts[k].2) == Some(*t))?;
-            match stmts[k].2 {
-                MirStatement::Assign {
-                    rvalue: MirRvalue::BinaryOp(MirBinOp::Add, MirOperand::Copy(i), s),
-                    ..
-                } if *i == index => s.clone(),
-                _ => return None,
-            }
-        }
-        _ => return None,
-    };
-    if !invariant(&bound, &assigned) || !invariant(&step, &assigned) {
+    // The index moves once, by a step that cannot be negative once checked:
+    // `t = i + step; i = t` (or `i = i + step`).
+    let (update, step) = find_step(&stmts, index, MirBinOp::Add)?;
+    if !invariant(&step, &assigned) {
         return None;
     }
+    // `while lo < hi` where `hi` steps down: every access stays between the
+    // entry values of `lo` and `hi`. Otherwise the bound must not change.
+    let mut pair = None;
+    let mut last = update;
+    if let MirOperand::Copy(hi) = bound {
+        if assigned.contains(&hi) {
+            if cmp != MirBinOp::Lt {
+                return None;
+            }
+            let (hi_update, hi_step) = find_step(&stmts, hi, MirBinOp::Sub)?;
+            if !invariant(&hi_step, &assigned) {
+                return None;
+            }
+            last = last.min(hi_update);
+            pair = Some((hi, hi_step));
+        }
+    }
+    if pair.is_none() && !invariant(&bound, &assigned) {
+        return None;
+    }
+    let hi_local = pair.as_ref().map(|(h, _)| *h);
 
     // Accesses `xs[i]` before the update, on lists the body never rebinds.
     let mut sites = Vec::new();
-    let mut lists = Vec::new();
-    for &(bi, k, st) in stmts.iter().take(update) {
-        let base = match st {
+    let mut lists: Vec<(MirLocal, i64)> = Vec::new();
+    // An index `t` set once to `index + c` (constant `c >= 0`) before the
+    // update reads at a fixed offset from `index`.
+    let mut offsets: std::collections::HashMap<MirLocal, i64> = Default::default();
+    if pair.is_none() {
+        for &(_, _, st) in stmts.iter().take(last) {
+            if let MirStatement::Assign {
+                dst,
+                rvalue:
+                    MirRvalue::BinaryOp(
+                        MirBinOp::Add,
+                        MirOperand::Copy(i),
+                        MirOperand::Const(MirConstant::Int(c)),
+                    ),
+            } = st
+            {
+                let defs = stmts
+                    .iter()
+                    .filter(|(_, _, s2)| assigned_local(s2) == Some(*dst))
+                    .count();
+                if *i == index && *c >= 0 && *c < 1 << 20 && defs == 1 {
+                    offsets.insert(*dst, *c);
+                }
+            }
+        }
+    }
+    let offset_of = |i: &MirLocal| -> Option<i64> {
+        if *i == index || Some(*i) == hi_local {
+            Some(0)
+        } else {
+            offsets.get(i).copied()
+        }
+    };
+    for &(bi, k, st) in stmts.iter().take(last) {
+        let (base, off) = match st {
             MirStatement::Assign {
                 rvalue:
                     MirRvalue::IndexAccess {
@@ -271,20 +297,27 @@ fn analyze(f: &MirFunction, body: usize, math: &HashSet<String>) -> Option<Plan>
                         ..
                     },
                 ..
-            } if *i == index => *xs,
+            } => match offset_of(i) {
+                Some(o) => (*xs, o),
+                None => continue,
+            },
             MirStatement::StoreIndex {
                 base: MirOperand::Copy(xs),
                 index: MirOperand::Copy(i),
                 ..
-            } if *i == index => *xs,
+            } => match offset_of(i) {
+                Some(o) => (*xs, o),
+                None => continue,
+            },
             _ => continue,
         };
         if assigned.contains(&base) || !matches!(f.locals[base.0 as usize].ty, MirType::List(_)) {
             continue;
         }
         sites.push((bi, k));
-        if !lists.contains(&base) {
-            lists.push(base);
+        match lists.iter_mut().find(|(l, _)| *l == base) {
+            Some(entry) => entry.1 = entry.1.max(off),
+            None => lists.push((base, off)),
         }
     }
     if sites.is_empty() {
@@ -300,9 +333,48 @@ fn analyze(f: &MirFunction, body: usize, math: &HashSet<String>) -> Option<Plan>
         bound,
         cmp,
         step,
+        pair,
         sites,
         lists,
     })
+}
+
+/// The one statement that updates `local`, as `local = local op step` or
+/// through a temporary, with its position among `stmts`.
+fn find_step(
+    stmts: &[(usize, usize, &MirStatement)],
+    local: MirLocal,
+    op: MirBinOp,
+) -> Option<(usize, MirOperand)> {
+    let defs: Vec<usize> = stmts
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, _, st))| assigned_local(st) == Some(local))
+        .map(|(k, _)| k)
+        .collect();
+    let [update] = defs[..] else {
+        return None;
+    };
+    let step_of = |st: &MirStatement| match st {
+        MirStatement::Assign {
+            rvalue: MirRvalue::BinaryOp(o, MirOperand::Copy(i), s),
+            ..
+        } if *i == local && *o == op => Some(s.clone()),
+        _ => None,
+    };
+    let step = match stmts[update].2 {
+        MirStatement::Assign {
+            rvalue: MirRvalue::Use(MirOperand::Copy(t)),
+            ..
+        } => {
+            let k = (0..update)
+                .rev()
+                .find(|&k| assigned_local(stmts[k].2) == Some(*t))?;
+            step_of(stmts[k].2)?
+        }
+        st => step_of(st)?,
+    };
+    Some((update, step))
 }
 
 fn apply(f: &mut MirFunction, plan: Plan) {
@@ -361,14 +433,25 @@ fn apply(f: &mut MirFunction, plan: Plan) {
             MirOperand::Const(MirConstant::Int(0)),
         ),
     );
-    for xs in &plan.lists {
+    if let Some((_, hi_step)) = &plan.pair {
+        and(
+            f,
+            &mut stmts,
+            MirRvalue::BinaryOp(
+                MirBinOp::Ge,
+                hi_step.clone(),
+                MirOperand::Const(MirConstant::Int(0)),
+            ),
+        );
+    }
+    for (xs, off) in &plan.lists {
         let elem = match &f.locals[xs.0 as usize].ty {
             MirType::List(e) => (**e).clone(),
             _ => unreachable!("only list locals are versioned"),
         };
-        let len = new_local(f, "bce_len", MirType::Int);
+        let full_len = new_local(f, "bce_len", MirType::Int);
         stmts.push(MirStatement::Assign {
-            dst: len,
+            dst: full_len,
             rvalue: MirRvalue::ListMethod {
                 op: ListMethodOp::Len,
                 receiver: MirOperand::Copy(*xs),
@@ -376,9 +459,26 @@ fn apply(f: &mut MirFunction, plan: Plan) {
                 elem_ty: elem,
             },
         });
+        // Offset accesses `xs[i + c]` need `n` within `len - c`; subtracting
+        // from the length cannot wrap, unlike adding to `n`.
+        let len = if *off > 0 {
+            let l = new_local(f, "bce_len", MirType::Int);
+            stmts.push(MirStatement::Assign {
+                dst: l,
+                rvalue: MirRvalue::BinaryOp(
+                    MirBinOp::Sub,
+                    MirOperand::Copy(full_len),
+                    MirOperand::Const(MirConstant::Int(*off)),
+                ),
+            });
+            l
+        } else {
+            full_len
+        };
         // `i <= n` touches index n, so n must be below len; `i < n` stops
-        // short of it, so n may equal len.
-        let op = if plan.cmp == MirBinOp::Le {
+        // short of it, so n may equal len. A falling `hi` is itself indexed,
+        // so it must be below len.
+        let op = if plan.cmp == MirBinOp::Le || plan.pair.is_some() {
             MirBinOp::Lt
         } else {
             MirBinOp::Le
@@ -394,6 +494,13 @@ fn apply(f: &mut MirFunction, plan: Plan) {
             &mut stmts,
             MirRvalue::BinaryOp(MirBinOp::Le, plan.step.clone(), MirOperand::Copy(len)),
         );
+        if let Some((_, hi_step)) = &plan.pair {
+            and(
+                f,
+                &mut stmts,
+                MirRvalue::BinaryOp(MirBinOp::Le, hi_step.clone(), MirOperand::Copy(len)),
+            );
+        }
     }
     let original_body = MirBlockId(plan.body as u32);
     let check = MirBlock {

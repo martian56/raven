@@ -27,7 +27,7 @@
 ## Why Raven
 
 - Reads like Python with braces: classes, tuples, comprehensions, `x in xs`, f-string formatting, `len`/`sorted`/`enumerate` and the other builtins, named and default arguments, `x => x * 2` lambdas, inferred types.
-- Runs at native speed: compiled through Cranelift into a single static binary. On the benchmarks below it is ahead of or level with Go on seven of eight, faster than C on dictionaries and strings, within 10% of C on recursion, mandelbrot, and the sieve, and ahead of C, Go, and Rust on allocation-heavy code.
+- Runs at native speed: compiled through Cranelift into a single static binary. On the benchmarks below it is ahead of Go on seven of nine and within 9% on the other two, faster than C on dictionaries and strings, within 7% of C on recursion, mandelbrot, and the sieve, and ahead of C, Go, and Rust on allocation-heavy code.
 - Compiles fast: a small program builds in about 0.25 seconds, and a 10,000-line program in about 0.75 seconds, roughly four times faster than `go build` on the same program.
 - Static typing with generics, traits, and sum types checked by an exhaustive `match`.
 - A tracing garbage collector and `Result`/`Option` instead of `null`.
@@ -61,14 +61,15 @@ includes process startup: a program that only prints one line takes about
 
 | Benchmark | Raven | C (clang -O2) | Go | Rust (-O) |
 |-----------|------:|------:|---:|-----:|
-| fib(35), recursion | 90 | 84 | 116 | 84 |
-| 1M dict inserts and lookups | 115 | 131 | 281 | 199 |
-| 20M sieve | 312 | 296 | 327 | 280 |
-| 200k string build | 75 | 82 | 98 | 84 |
-| binary trees, allocation | 209 | 404 | 312 | 457 |
-| mandelbrot 1600x1600, float loop | 283 | 275 | 286 | 270 |
-| spectral norm, n = 2000 | 365 | 253 | 325 | 269 |
-| n-body, float math | 465 | 347 | 467 | 299 |
+| fib(35), recursion | 90 | 84 | 115 | 83 |
+| 1M dict inserts and lookups | 117 | 131 | 284 | 190 |
+| 20M sieve | 292 | 280 | 317 | 272 |
+| 200k string build | 74 | 79 | 98 | 84 |
+| binary trees, allocation | 207 | 395 | 265 | 442 |
+| mandelbrot 1600x1600, float loop | 280 | 272 | 283 | 268 |
+| spectral norm, n = 2000 | 324 | 247 | 317 | 266 |
+| fannkuch(10), list permutations | 291 | 252 | 268 | 227 |
+| n-body, float math | 453 | 340 | 463 | 279 |
 
 Compile time for the same programs is about 250 ms with Raven. The
 `benchmarks/compile-time` corpus (10,000 lines across 62 modules) builds in

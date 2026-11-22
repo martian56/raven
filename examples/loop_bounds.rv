@@ -1,6 +1,26 @@
 // Counted loops over a list skip the per-access bounds check when one test
 // before the loop proves every index in range, and keep it otherwise.
-// Prints: [2, 6, 12] 12, then 20, then 15
+// Prints: [2, 6, 12] 12, then 20, then 15, then [5, 4, 3, 2, 1] and [4, 3, 2, 1, 1]
+fun rev(xs: list[int], lo0: int, hi0: int) {
+    var lo = lo0
+    var hi = hi0
+    while lo < hi {
+        let t = xs[lo]
+        xs[lo] = xs[hi]
+        xs[hi] = t
+        lo += 1
+        hi -= 1
+    }
+}
+
+fun shift(xs: list[int], r: int) {
+    var j = 0
+    while j < r {
+        xs[j] = xs[j + 1]
+        j += 1
+    }
+}
+
 fun total(xs: list[int], n: int) -> int {
     var s = 0
     var i = 0
@@ -28,4 +48,9 @@ fun main() {
     }
     print(s)
     print(total([4, 5, 6], 3))
+    let ys = [1, 2, 3, 4, 5]
+    rev(ys, 0, 4)
+    print(ys)
+    shift(ys, 4)
+    print(ys)
 }

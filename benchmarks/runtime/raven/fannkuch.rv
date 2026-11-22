@@ -1,0 +1,65 @@
+fun main() {
+    let n = 10
+    let perm = [0] * n
+    let perm1 = [0] * n
+    let count = [0] * n
+    var i = 0
+    while i < n {
+        perm1[i] = i
+        i += 1
+    }
+    var max_flips = 0
+    var checksum = 0
+    var perm_count = 0
+    var r = n
+    while true {
+        while r != 1 {
+            count[r - 1] = r
+            r -= 1
+        }
+        var k = 0
+        while k < n {
+            perm[k] = perm1[k]
+            k += 1
+        }
+        var flips = 0
+        var first = perm[0]
+        while first != 0 {
+            var lo = 0
+            var hi = first
+            while lo < hi {
+                let t = perm[lo]
+                perm[lo] = perm[hi]
+                perm[hi] = t
+                lo += 1
+                hi -= 1
+            }
+            flips += 1
+            first = perm[0]
+        }
+        if flips > max_flips {
+            max_flips = flips
+        }
+        checksum += flips if perm_count % 2 == 0 else -flips
+        while true {
+            if r == n {
+                print(checksum)
+                print(max_flips)
+                return
+            }
+            let p0 = perm1[0]
+            var j = 0
+            while j < r {
+                perm1[j] = perm1[j + 1]
+                j += 1
+            }
+            perm1[r] = p0
+            count[r] -= 1
+            if count[r] > 0 {
+                break
+            }
+            r += 1
+        }
+        perm_count += 1
+    }
+}
