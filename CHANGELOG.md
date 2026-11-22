@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [Unreleased]
+
+### Performance
+
+- A counted `while` loop over a list (`while i < n { ... xs[i] ... i += step }`) whose body cannot resize the list runs an unchecked copy when one test before the loop proves every access in range (`0 <= i`, `0 <= step`, `n` within `len(xs)`); otherwise the checked loop runs, so an out-of-range access still panics where it did. This includes loop bodies split into several blocks by inlining (spectral norm 365 ms to 341 ms).
+
 ## [3.2.1] - 2026-11-22
 
 ### Performance

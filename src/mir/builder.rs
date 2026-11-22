@@ -131,7 +131,15 @@ impl FunctionBuilder {
         index: MirOperand,
         value: MirOperand,
     ) {
-        self.emit(block, MirStatement::StoreIndex { base, index, value });
+        self.emit(
+            block,
+            MirStatement::StoreIndex {
+                base,
+                index,
+                value,
+                checked: true,
+            },
+        );
     }
 
     /// Close `block` with `terminator`. Calling this twice on the same

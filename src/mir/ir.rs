@@ -149,6 +149,8 @@ pub enum MirRvalue {
     IndexAccess {
         base: MirOperand,
         index: MirOperand,
+        /// False when an enclosing check already proved `index` in range.
+        checked: bool,
     },
     ArrayLit {
         ty: MirType,
@@ -344,6 +346,8 @@ pub enum MirStatement {
         base: MirOperand,
         index: MirOperand,
         value: MirOperand,
+        /// False when an enclosing check already proved `index` in range.
+        checked: bool,
     },
     /// Raw FFI pointer store: write `value` (of type `pointee`) to the
     /// address `addr`. The back end emits a single Cranelift `store` of the

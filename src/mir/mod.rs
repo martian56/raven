@@ -6,6 +6,7 @@
 //! distinct concrete type-argument tuple reachable from the program
 //! roots.
 
+pub mod bce;
 pub mod builder;
 pub mod copyprop;
 pub mod inline;

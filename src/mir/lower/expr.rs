@@ -218,8 +218,15 @@ pub fn lower_expr(cx: &mut LowerCx<'_>, expr: &HirExpr) -> MirOperand {
             let base = lower_expr(cx, receiver);
             let idx = lower_expr(cx, index);
             let dst = cx.builder.fresh_temp("index", ty);
-            cx.builder
-                .assign(cx.current, dst, MirRvalue::IndexAccess { base, index: idx });
+            cx.builder.assign(
+                cx.current,
+                dst,
+                MirRvalue::IndexAccess {
+                    base,
+                    index: idx,
+                    checked: true,
+                },
+            );
             MirOperand::Copy(dst)
         }
         HirExprKind::If {

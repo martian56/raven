@@ -17,7 +17,7 @@ macro_rules! operand_visitors {
                 | MirRvalue::ArrayLit { elements: args, .. }
                 | MirRvalue::ClosureCreate { captures: args, .. } => args.into_iter().for_each(&mut *f),
                 MirRvalue::FieldAccess { base, .. } => f(base),
-                MirRvalue::IndexAccess { base, index } => {
+                MirRvalue::IndexAccess { base, index, .. } => {
                     f(base);
                     f(index);
                 }
@@ -69,7 +69,9 @@ macro_rules! operand_visitors {
                     f(base);
                     f(value);
                 }
-                MirStatement::StoreIndex { base, index, value } => {
+                MirStatement::StoreIndex {
+                    base, index, value, ..
+                } => {
                     f(base);
                     f(index);
                     f(value);
