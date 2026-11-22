@@ -2,6 +2,34 @@
 
 All notable changes to Raven are documented in this file.
 
+## [3.4.1] - 2026-11-23
+
+### Build
+
+- CI runs in about 3.5 minutes instead of 20. The golden suite and the GC rooting stress test run their programs across the machine's cores (`RAVEN_GOLDEN_JOBS` and `RAVEN_GC_STRESS_JOBS` set the count, 1 runs them serially), the debug runtime library programs link against shrinks from 179 MB to 55 MB, and every job caches its build.
+
+## [3.4.0] - 2026-11-22
+
+### Features
+
+- `std.io` gains `eprint` and `eprintln`, `std.env` gains `set_env`, `unset_env`, and `current_dir`, `std.process` gains `run_in` and `start_in` to start a child in another directory, and `std.fs` gains `modified` for a file's change time. (#934)
+
+### Fixes
+
+- An empty `[]` nested inside a list literal (such as a class field default inlined into `[Item(...)]`) no longer takes the outer literal's element type.
+- Writes to stderr run as blocking calls, so a full stderr pipe cannot stall garbage collection.
+- `run_in` and `start_in` report a missing directory instead of a confusing spawn error.
+
+## [3.3.4] - 2026-11-22
+
+### Fixes
+
+- Writing to a child process that stops reading no longer freezes the program. The write runs as a blocking call, so a goroutine stuck on a full pipe cannot stall every collection.
+
+### Build
+
+- Each release publishes a Docker image, `ghcr.io/martian56/raven`, with the version, minor, and `latest` tags. Prerelease tags push only their exact version.
+
 ## [3.3.3] - 2026-11-22
 
 ### Fixes
