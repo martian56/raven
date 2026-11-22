@@ -63,4 +63,12 @@ fun main() {
     wg.add(1)
     spawn pair(counter, bump(), wg)
     wg.wait()
+
+    // A range bound from a generic call is fixed to int.
+    let counts = {"a": 3}
+    let n = counts.get("a").unwrap_or(0)
+    for i in range(n) {
+        print(i, end: " ")
+    }
+    print()
 }
