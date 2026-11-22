@@ -410,7 +410,19 @@ impl RavenError {
     pub fn render(&self, source: &str, color: bool) -> String {
         let p = Palette::new(color);
         let d = self.diagnostic();
-        let span = self.span();
+        let mut span = self.span().clone();
+        // A span inside a `${...}` fragment points into the fragment's own
+        // text; map it back onto the file so the pointer lands on the source.
+        if let Some((file, offset)) = span.interpolation_origin() {
+            if offset <= source.len() {
+                let before = &source[..offset];
+                let line = before.matches('\n').count() as u32 + 1;
+                let col = before.rsplit('\n').next().map_or(0, |l| l.chars().count()) as u32 + 1;
+                let len = span.len();
+                span = Span::new(std::sync::Arc::new(file), offset, offset + len, line, col);
+            }
+        }
+        let span = &span;
         let line_no = span.line.max(1);
         let g = line_no.to_string().len();
         let pad = " ".repeat(g);

@@ -66,6 +66,18 @@ impl Span {
         }
     }
 
+    /// For a span inside a `${...}` fragment, whose file is the synthetic
+    /// `path<interp:offset:index>`, the real file and the approximate byte
+    /// offset in it. `None` for an ordinary span.
+    pub fn interpolation_origin(&self) -> Option<(PathBuf, usize)> {
+        let name = self.file.to_string_lossy();
+        let at = name.find("<interp:")?;
+        let rest = &name[at + "<interp:".len()..];
+        let base: usize = rest.split(':').next()?.parse().ok()?;
+        let low = (1usize << COPY_SHIFT) - 1;
+        Some((PathBuf::from(&name[..at]), base + (self.start & low)))
+    }
+
     pub fn len(&self) -> usize {
         self.end.saturating_sub(self.start)
     }
