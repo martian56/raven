@@ -2,6 +2,22 @@
 
 All notable changes to Raven are documented in this file.
 
+## [3.7.0] - 2026-11-24
+
+Raven's HTTP stack against Go and Rust on a 16-core server, with wrk at 256 connections: plain text went from 67,000 to 113,000 requests a second (Go 134,000, Rust axum 140,000), a 4.9 KB JSON page from 16,000 to 34,000, and the OS thread count from 273 to 18.
+
+### Performance
+
+- Sockets are event driven. A read, write, or accept that would block parks the goroutine and frees its worker, and one poller thread wakes it when the socket is ready or its timeout passes. A server no longer holds an OS thread per open connection, so it handles thousands of connections with one worker per core.
+- Idle workers spin briefly before sleeping, and waking a goroutine skips the futex when no worker is asleep. Contention on the scheduler lock had been the largest cost per request.
+- `std.http` checks for shutdown with an atomic instead of a lock taken twice per request.
+- `std.json.stringify` builds its output in one pass, with string quoting and number formatting in the runtime. The output is unchanged.
+
+### Fixes
+
+- `x % y` on floats crashed the compiler. It now compiles to C `fmod`: the result has the sign of `x`, and a zero divisor gives NaN.
+- Read and write timeouts bound each wait for progress, as before, and carry over when a stream is upgraded to TLS. A STARTTLS on a stream that another operation is using reports that it is busy.
+
 ## [3.6.1] - 2026-11-23
 
 Found by load testing the marketplace backend on two 16-core servers.
