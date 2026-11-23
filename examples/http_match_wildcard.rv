@@ -1,0 +1,20 @@
+// Route patterns: `:name` matches one segment, `*name` the rest of the path.
+from std.http import match_path
+
+fun show(pattern: str, path: str) {
+    match match_path(pattern, path) {
+        case Some(p) { print("${pattern} ${path} -> ${p.get_or("id", "")}${p.get_or("file", "")}") }
+        case None { print("${pattern} ${path} -> no match") }
+    }
+}
+
+fun main() {
+    show("/products/:id", "/products/42")
+    show("/products/:id", "/products/42/reviews")
+    show("/*file", "/img/p3.svg")
+    show("/*file", "/index.html")
+    show("/*file", "/")
+    show("/assets/*file", "/assets/css/site/main.css")
+    show("/assets/*file", "/assets")
+    show("/assets/*file", "/other/x.css")
+}

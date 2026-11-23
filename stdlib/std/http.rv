@@ -556,15 +556,19 @@ impl Server {
         self.route(Method.Patch, pattern, handler)
     }
 
-    // Serve files under directory `dir` for GET requests whose path is `prefix`
-    // followed by a file name, for example `app.static("/static", "public")`
-    // serves `GET /static/style.css` from `public/style.css`. The file name is a
-    // single path segment, so it cannot escape `dir` with a slash. A missing
-    // file is a 404 (see `Response.file`).
+    // Serve files under directory `dir` for GET requests whose path starts with
+    // `prefix`: `app.static("/static", "public")` serves `GET
+    // /static/img/logo.svg` from `public/img/logo.svg`. Parent references,
+    // backslashes, and drive markers are refused, so a request cannot leave
+    // `dir`. A missing file is a 404 (see `Response.file`).
     fun static(self, prefix: str, dir: str) {
+        var p = prefix
+        while p.ends_with("/") {
+            p = p.substring(0, p.length() - 1)
+        }
         self.route(
             Method.Get,
-            prefix.concat("/:file"),
+            p.concat("/*file"),
             (req: Request) -> Response => serve_from(dir, req),
         )
     }
@@ -768,7 +772,12 @@ fun dispatch(routes: list[Route], req: Request) -> Response {
 fun match_path(pattern: str, path: str) -> Option[dict[str, str]] {
     let pat = path_segments(pattern)
     let got = path_segments(path)
-    if pat.len() != got.len() {
+    let wildcard = pat.len() > 0 and pat[pat.len() - 1].starts_with("*")
+    if wildcard {
+        if got.len() < pat.len() {
+            return None
+        }
+    } else if pat.len() != got.len() {
         return None
     }
     let params: dict[str, str] = Map.new()
@@ -776,6 +785,11 @@ fun match_path(pattern: str, path: str) -> Option[dict[str, str]] {
     while i < pat.len() {
         let p = pat[i]
         let g = got[i]
+        if p.starts_with("*") {
+            // A `*name` segment captures the rest of the path, slashes and all.
+            params.set(p.substring(1, p.length()), "/".join(got.slice(i, got.len())))
+            return Some(params) if got.len() > i else None
+        }
         if p.starts_with(":") {
             params.set(p.substring(1, p.length()), g)
         } else {
@@ -1445,15 +1459,18 @@ fun reason_phrase(status: int) -> str {
 // Serve the `:file` capture of a `Server.static` route from its directory.
 fun serve_from(dir: str, req: Request) -> Response {
     let name = req.param("file")
-    // The captured name must be a single, ordinary file name inside `dir`.
-    // Reject anything that could climb out: a path separator (note that `\` is
-    // one on Windows), a parent reference, a drive or stream marker, or an
-    // empty name. Without this a request like `..\..\secret` would escape.
+    // The captured path may hold subdirectories (`img/a.svg`) but must stay
+    // inside `dir`. Reject anything that could climb out: a backslash (a path
+    // separator on Windows), a parent reference, a drive or stream marker, an
+    // empty or dot segment, or an empty name. Without this a request like
+    // `..\..\secret` would escape.
     if name.length() == 0 {
         return Response.with_body(404, "Not Found")
     }
-    if name.contains("/") {
-        return Response.with_body(404, "Not Found")
+    for segment in name.split("/") {
+        if segment == "" or segment == "." {
+            return Response.with_body(404, "Not Found")
+        }
     }
     if name.contains("\\") {
         return Response.with_body(404, "Not Found")
