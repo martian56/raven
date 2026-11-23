@@ -206,8 +206,8 @@ that creates many channels over time.
 
 ### `sleep_millis(ms: int)`
 
-Block the current goroutine for `ms` milliseconds, yielding so other goroutines
-run in the meantime.
+Block the current goroutine for `ms` milliseconds. The goroutine parks on a
+timer, so its worker thread runs other goroutines in the meantime.
 
 ```rust
 from std.sync import sleep_millis
@@ -297,6 +297,91 @@ fun main() {
     print(chosen.value) // 22
 }
 ```
+
+## Timeouts
+
+`ch.recv_timeout(ms)` returns `Some(value)`, or `None` if nothing arrives in
+time. `ch.try_recv()` takes a value only if one is already waiting.
+`select_recv_timeout(channels, ms)` is `select_recv` with the same limit.
+
+```rust
+from std.sync import channel_buffered
+
+fun main() {
+    let jobs: Channel[str] = channel_buffered(4)
+    match jobs.recv_timeout(10) {
+        case Some(job) { print(job) }
+        case None { print("no job yet") }
+    }
+}
+```
+
+## Timers and tickers
+
+`after(ms)` is a one-shot `Timer`: `wait()` blocks until it fires, and
+`stop()` cancels it (returning false if it already fired). `ticker(ms)`
+fires every `ms` milliseconds; `tick()` waits for the next one and `stop()`
+ends it. A tick nobody waits for is dropped, so a slow loop does not fall
+behind. Waiting on either parks the goroutine, not its thread.
+
+```rust
+from std.sync import after, ticker
+
+fun main() {
+    after(10).wait()
+    let t = ticker(5)
+    for _ in range(3) {
+        t.tick()
+    }
+    t.stop()
+    print("done")
+}
+```
+
+## Atomic integers
+
+`AtomicInt.new(v)` is an integer goroutines update without a lock: `load`,
+`store`, `add(delta)` (returns the new value), `swap(v)` (returns the old
+one), and `compare_and_swap(expected, new)`. Call `free()` when it is no
+longer used.
+
+## Read-write lock, once, and semaphore
+
+- `RwLock.new()`: any number of goroutines hold `read_lock()` at once, or one
+  holds `write_lock()`. A waiting writer blocks new readers so it is not
+  starved. Pair each with `read_unlock()` or `write_unlock()`.
+- `Once.new()`: `call(f)` runs `f` the first time only, and other callers wait
+  until it has finished. `is_done()` reports whether it ran.
+- `Semaphore.new(n)`: at most `n` goroutines hold a permit between
+  `acquire()` and `release()`.
+
+```rust
+from std.sync import Semaphore, WaitGroup, sleep_millis
+
+fun fetch(sem: Semaphore, wg: WaitGroup) {
+    sem.acquire()
+    sleep_millis(5) // at most 2 of these run at once
+    sem.release()
+    wg.done()
+}
+
+fun main() {
+    let sem = Semaphore.new(2)
+    let wg = WaitGroup.new()
+    wg.add(6)
+    for _ in range(6) {
+        spawn fetch(sem, wg)
+    }
+    wg.wait()
+    print("all fetched")
+}
+```
+
+## Deadlocks
+
+When every goroutine is blocked on a channel and nothing can wake them, the
+program stops with `all goroutines are blocked: deadlock`. A pending timer or
+an open `std.signal` subscription counts as something that can wake them.
 
 ## See also
 

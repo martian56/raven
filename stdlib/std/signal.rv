@@ -1,0 +1,65 @@
+// std.signal: notice when the process is asked to stop (Ctrl+C, SIGINT,
+// SIGTERM, or a console close on Windows), so a server can finish its work
+// and exit cleanly. See docs/guide/stdlib/signal.md.
+
+extern "C" {
+    fun raven_signal_subscribe() -> int
+    fun raven_signal_unsubscribe(chan: int)
+    fun raven_channel_recv(id: int) -> int
+    fun raven_channel_free(id: int)
+    fun raven_timer_after(ms: int) -> int
+    fun raven_timer_stop(chan: int) -> bool
+    fun raven_select_new() -> int
+    fun raven_select_add(set_id: int, chan_id: int)
+    fun raven_select_recv(set_id: int) -> int
+    fun raven_select_free(set_id: int)
+}
+
+// A subscription to stop requests. While one is open, a stop request no
+// longer ends the process; the program decides when to exit.
+class Interrupts {
+    id: int
+}
+
+// Start receiving stop requests.
+fun on_interrupt() -> Interrupts {
+    let id = raven_signal_subscribe()
+    if id < 0 {
+        panic("std.signal: could not install the stop-request handler")
+    }
+    return Interrupts(id: id)
+}
+
+impl Interrupts {
+    // Wait for the next stop request.
+    fun wait(self) {
+        raven_channel_recv(self.id)
+    }
+
+    // Wait up to `ms` milliseconds; true if a stop request arrived.
+    fun wait_timeout(self, ms: int) -> bool {
+        let timer = raven_timer_after(ms)
+        let set = raven_select_new()
+        raven_select_add(set, self.id)
+        raven_select_add(set, timer)
+        let index = raven_select_recv(set)
+        raven_select_free(set)
+        let _ = raven_timer_stop(timer)
+        raven_channel_free(timer)
+        return index == 0
+    }
+
+    // End the subscription. With none left, a stop request ends the process
+    // again.
+    fun stop(self) {
+        raven_signal_unsubscribe(self.id)
+        raven_channel_free(self.id)
+    }
+}
+
+// Block until the process is asked to stop.
+fun wait_for_interrupt() {
+    let s = on_interrupt()
+    s.wait()
+    s.stop()
+}

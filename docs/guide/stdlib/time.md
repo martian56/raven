@@ -167,8 +167,9 @@ fun main() {
 
 ### `sleep_millis(ms: int)`
 
-Sleep the current thread for `ms` milliseconds. A negative value is treated
-as zero.
+Pause for `ms` milliseconds. A negative value is treated as zero. Inside a
+goroutine the pause parks the goroutine on a timer, so its worker thread runs
+other goroutines meanwhile; a thousand goroutines can sleep at once.
 
 ```rust
 from std.time import sleep_millis
@@ -177,6 +178,44 @@ fun main() {
     sleep_millis(100) // pause for 100 ms
 }
 ```
+
+## Durations
+
+`Duration` is a span of time in nanoseconds. Build one with `nanoseconds`,
+`microseconds`, `milliseconds`, `seconds`, `minutes`, or `hours`, combine them
+with `plus`, `minus`, and `times`, and read them back with `as_nanos`,
+`as_micros`, `as_millis`, `as_seconds`, or `as_seconds_float`. A duration
+prints in its largest whole unit:
+
+```rust
+from std.time import milliseconds, seconds, minutes
+
+fun main() {
+    print(milliseconds(1500)) // 1.5s
+    print(milliseconds(250)) // 250ms
+    print(minutes(2).plus(seconds(5))) // 2m5s
+}
+```
+
+## Measuring elapsed time
+
+`now()` follows the system clock, which can jump when it is corrected.
+`Instant.now()` reads a clock that only moves forward, so use it for
+timeouts, rate limits, and latency:
+
+```rust
+from std.time import Instant, sleep_millis
+
+fun main() {
+    let start = Instant.now()
+    sleep_millis(20)
+    let took = start.elapsed()
+    print(took.as_millis() >= 20) // true
+}
+```
+
+`elapsed()` is the time since the instant, `later.since(earlier)` the time
+between two, and `plus(d)` an instant moved forward.
 
 ## Worked example: a formatted timestamp round trip
 
