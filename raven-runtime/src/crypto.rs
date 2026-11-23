@@ -6,10 +6,10 @@ use ring::{digest, hmac, pbkdf2, rand::SecureRandom};
 use std::num::NonZeroU32;
 use std::slice;
 
-const PASSWORD_ITERATIONS: u32 = 210_000;
-const PASSWORD_SALT_LEN: usize = 16;
-const PASSWORD_HASH_LEN: usize = 32;
-const PASSWORD_SCHEME: &str = "pbkdf2-sha256";
+const KDF_ROUNDS: u32 = 210_000;
+const KDF_SALT_LEN: usize = 16;
+const KDF_HASH_LEN: usize = 32;
+const KDF_SCHEME: &str = "pbkdf2-sha256";
 
 fn bytes_of(s: *const object::String) -> Vec<u8> {
     if s.is_null() {
@@ -162,12 +162,12 @@ pub extern "C" fn raven_crypto_hash_password(
     password: *const object::String,
 ) -> *mut object::String {
     let password = bytes_of(password);
-    let mut salt = [0u8; PASSWORD_SALT_LEN];
+    let mut salt = [0u8; KDF_SALT_LEN];
     if !fill_random(&mut salt) {
         return new_string(&[]);
     }
-    let iters = NonZeroU32::new(PASSWORD_ITERATIONS).unwrap();
-    let mut out = [0u8; PASSWORD_HASH_LEN];
+    let iters = NonZeroU32::new(KDF_ROUNDS).unwrap();
+    let mut out = [0u8; KDF_HASH_LEN];
     crate::gc::blocking(|| {
         pbkdf2::derive(
             pbkdf2::PBKDF2_HMAC_SHA256,
@@ -177,11 +177,7 @@ pub extern "C" fn raven_crypto_hash_password(
             &mut out,
         )
     });
-    let stored = format!(
-        "{PASSWORD_SCHEME}${PASSWORD_ITERATIONS}${}${}",
-        hex(&salt),
-        hex(&out)
-    );
+    let stored = format!("{KDF_SCHEME}${KDF_ROUNDS}${}${}", hex(&salt), hex(&out));
     new_string(stored.as_bytes())
 }
 
@@ -208,7 +204,7 @@ pub extern "C" fn raven_crypto_verify_password(
     ) else {
         return false;
     };
-    if scheme != PASSWORD_SCHEME || hash.is_empty() {
+    if scheme != KDF_SCHEME || hash.is_empty() {
         return false;
     }
     crate::gc::blocking(|| {
