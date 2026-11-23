@@ -4,18 +4,16 @@
 
 import std.error
 
+extern "C" {
+    fun raven_hex_encode(s: str) -> str
+    fun raven_base64_encode(s: str) -> str
+    fun raven_url_encode(s: str) -> str
+}
+
 // An Error tagged with kind "encoding". The struct literal is built directly:
 // a bundled module cannot call another bundled module's free helpers.
 fun encoding_error(msg: str) -> Error {
     return Error(kind: "encoding", message: msg)
-}
-
-// Map a 0..15 nibble to its lowercase hex digit byte.
-fun hex_digit(v: int) -> int {
-    if v < 10 {
-        return 48 + v
-    }
-    return 87 + v
 }
 
 // Map a hex digit byte (0-9, a-f, A-F) to its 0..15 value. Any other
@@ -40,16 +38,7 @@ fun hex_value(b: int) -> int {
 }
 
 fun hex_encode(s: str) -> str {
-    let n = __str_len(s)
-    let out: list[str] = []
-    var i = 0
-    while i < n {
-        let b = __str_byte_at(s, i)
-        out.push(__str_from_byte(hex_digit(b >> 4)))
-        out.push(__str_from_byte(hex_digit(b & 15)))
-        i = i + 1
-    }
-    return "".join(out)
+    return raven_hex_encode(s)
 }
 
 // Inverse of hex_encode. An odd length, or any non-hex byte, is an Err rather
@@ -71,24 +60,6 @@ fun hex_decode(s: str) -> Result[str, Error] {
         i = i + 2
     }
     return Ok("".join(out))
-}
-
-// Map a 0..63 sextet to its standard base64 alphabet byte (A-Z, a-z,
-// 0-9, +, /).
-fun b64_digit(v: int) -> int {
-    if v < 26 {
-        return 65 + v
-    }
-    if v < 52 {
-        return 71 + v
-    }
-    if v < 62 {
-        return v - 4
-    }
-    if v == 62 {
-        return 43
-    }
-    return 47
 }
 
 // Map a base64 alphabet byte to its 0..63 value. Any other byte
@@ -119,35 +90,7 @@ fun b64_value(b: int) -> int {
 }
 
 fun base64_encode(s: str) -> str {
-    let n = __str_len(s)
-    let out: list[str] = []
-    var i = 0
-    while i + 3 <= n {
-        let b0 = __str_byte_at(s, i)
-        let b1 = __str_byte_at(s, i + 1)
-        let b2 = __str_byte_at(s, i + 2)
-        out.push(__str_from_byte(b64_digit(b0 >> 2)))
-        out.push(__str_from_byte(b64_digit(((b0 & 3) << 4) | (b1 >> 4))))
-        out.push(__str_from_byte(b64_digit(((b1 & 15) << 2) | (b2 >> 6))))
-        out.push(__str_from_byte(b64_digit(b2 & 63)))
-        i = i + 3
-    }
-    let rem = n - i
-    if rem == 1 {
-        let b0 = __str_byte_at(s, i)
-        out.push(__str_from_byte(b64_digit(b0 >> 2)))
-        out.push(__str_from_byte(b64_digit((b0 & 3) << 4)))
-        out.push("==")
-    }
-    if rem == 2 {
-        let b0 = __str_byte_at(s, i)
-        let b1 = __str_byte_at(s, i + 1)
-        out.push(__str_from_byte(b64_digit(b0 >> 2)))
-        out.push(__str_from_byte(b64_digit(((b0 & 3) << 4) | (b1 >> 4))))
-        out.push(__str_from_byte(b64_digit((b1 & 15) << 2)))
-        out.push("=")
-    }
-    return "".join(out)
+    return raven_base64_encode(s)
 }
 
 // Inverse of base64_encode. The length must be a multiple of 4, trailing `=`
@@ -206,64 +149,10 @@ fun base64_decode(s: str) -> Result[str, Error] {
     return Ok("".join(out))
 }
 
-// Map a 0..15 nibble to its uppercase hex digit byte (for percent-encoding).
-fun hex_upper(v: int) -> int {
-    if v < 10 {
-        return 48 + v
-    }
-    return 55 + v
-}
-
-// RFC 3986 unreserved bytes: A-Z a-z 0-9 and - _ . ~
-fun is_unreserved(b: int) -> bool {
-    if b >= 65 {
-        if b <= 90 {
-            return true
-        }
-    }
-    if b >= 97 {
-        if b <= 122 {
-            return true
-        }
-    }
-    if b >= 48 {
-        if b <= 57 {
-            return true
-        }
-    }
-    if b == 45 {
-        return true
-    }
-    if b == 95 {
-        return true
-    }
-    if b == 46 {
-        return true
-    }
-    if b == 126 {
-        return true
-    }
-    return false
-}
-
 // Percent-encode every byte that is not RFC 3986 unreserved, using uppercase
 // hex (a space becomes "%20", not "+").
 fun url_encode(s: str) -> str {
-    let n = __str_len(s)
-    let out: list[str] = []
-    var i = 0
-    while i < n {
-        let b = __str_byte_at(s, i)
-        if is_unreserved(b) {
-            out.push(__str_from_byte(b))
-        } else {
-            out.push("%")
-            out.push(__str_from_byte(hex_upper(b / 16)))
-            out.push(__str_from_byte(hex_upper(b % 16)))
-        }
-        i = i + 1
-    }
-    return "".join(out)
+    return raven_url_encode(s)
 }
 
 // Decode "%XX" percent escapes back to bytes. The inverse of `url_encode`. A

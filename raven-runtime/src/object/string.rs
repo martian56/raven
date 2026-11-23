@@ -433,6 +433,76 @@ pub extern "C" fn raven_float_mod(a: f64, b: f64) -> f64 {
     a % b
 }
 
+fn string_slice<'a>(s: *const String) -> &'a [u8] {
+    let len = raven_string_len(s) as usize;
+    let ptr = raven_string_bytes(s);
+    if ptr.is_null() || len == 0 {
+        &[]
+    } else {
+        // SAFETY: a Raven String holds `len` initialized bytes.
+        unsafe { std::slice::from_raw_parts(ptr, len) }
+    }
+}
+
+/// Lowercase hex of every byte of `s`.
+#[no_mangle]
+pub extern "C" fn raven_hex_encode(s: *const String) -> *mut String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let bytes = string_slice(s);
+    let mut out = Vec::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        out.push(HEX[(b >> 4) as usize]);
+        out.push(HEX[(b & 15) as usize]);
+    }
+    raven_string_from_bytes(out.as_ptr(), out.len())
+}
+
+/// Standard base64 (`+`, `/`, `=` padding) of the bytes of `s`.
+#[no_mangle]
+pub extern "C" fn raven_base64_encode(s: *const String) -> *mut String {
+    const ALPHA: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let bytes = string_slice(s);
+    let mut out = Vec::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(ALPHA[(n >> 18) as usize & 63]);
+        out.push(ALPHA[(n >> 12) as usize & 63]);
+        out.push(if chunk.len() > 1 {
+            ALPHA[(n >> 6) as usize & 63]
+        } else {
+            b'='
+        });
+        out.push(if chunk.len() > 2 {
+            ALPHA[n as usize & 63]
+        } else {
+            b'='
+        });
+    }
+    raven_string_from_bytes(out.as_ptr(), out.len())
+}
+
+/// Percent-encode every byte of `s` outside RFC 3986's unreserved set
+/// (`A-Z a-z 0-9 - _ . ~`), with uppercase hex; a space becomes `%20`.
+#[no_mangle]
+pub extern "C" fn raven_url_encode(s: *const String) -> *mut String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let bytes = string_slice(s);
+    let mut out = Vec::with_capacity(bytes.len());
+    for &b in bytes {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
+            out.push(b);
+        } else {
+            out.push(b'%');
+            out.push(HEX[(b >> 4) as usize]);
+            out.push(HEX[(b & 15) as usize]);
+        }
+    }
+    raven_string_from_bytes(out.as_ptr(), out.len())
+}
+
 /// Allocate the JSON form of a number: `{}` formatting (which never prints a
 /// `.0`) for a finite value, `null` for infinity or NaN.
 #[no_mangle]
