@@ -1,0 +1,166 @@
+from std.sync import (
+    AtomicInt,
+    Once,
+    RwLock,
+    Semaphore,
+    WaitGroup,
+    after,
+    channel,
+    channel_buffered,
+    select_recv_timeout,
+    sleep_millis,
+    ticker,
+)
+from std.time import Instant, milliseconds, nanoseconds, seconds, minutes, hours, microseconds
+
+class Counter {
+    n: int
+}
+
+fun sleeper(wg: WaitGroup, done: AtomicInt) {
+    sleep_millis(100)
+    let _ = done.add(1)
+    wg.done()
+}
+
+fun adder(total: AtomicInt, wg: WaitGroup) {
+    for _ in range(100) {
+        let _ = total.add(1)
+    }
+    wg.done()
+}
+
+fun reader(lock: RwLock, c: Counter, seen: AtomicInt, wg: WaitGroup) {
+    lock.read_lock()
+    let _ = seen.add(c.n)
+    lock.read_unlock()
+    wg.done()
+}
+
+fun writer(lock: RwLock, c: Counter, wg: WaitGroup) {
+    lock.write_lock()
+    c.n = c.n + 1
+    lock.write_unlock()
+    wg.done()
+}
+
+fun limited(sem: Semaphore, active: AtomicInt, peak: AtomicInt, wg: WaitGroup) {
+    sem.acquire()
+    let now = active.add(1)
+    var p = peak.load()
+    while now > p and not peak.compare_and_swap(p, now) {
+        p = peak.load()
+    }
+    sleep_millis(5)
+    let _ = active.add(-1)
+    sem.release()
+    wg.done()
+}
+
+fun init_once(once: Once, runs: AtomicInt, wg: WaitGroup) {
+    once.call(() => {
+        let _ = runs.add(1)
+    })
+    wg.done()
+}
+
+fun late_send(ch: Channel[str]) {
+    sleep_millis(30)
+    ch.send("late")
+}
+
+fun main() {
+    // Durations.
+    print(milliseconds(1500), milliseconds(250), microseconds(12003), nanoseconds(7))
+    print(seconds(125), hours(1), minutes(1).plus(seconds(30)).as_seconds(), milliseconds(5).times(3).as_millis())
+
+    // One-shot timer and elapsed time on the monotonic clock.
+    let start = Instant.now()
+    after(50).wait()
+    let waited = start.elapsed().as_millis()
+    print(waited >= 50, waited < 1000)
+
+    // A stopped timer never fires.
+    let t = after(10000)
+    print(t.stop())
+
+    // Ticker.
+    let tk = ticker(10)
+    for _ in range(3) {
+        tk.tick()
+    }
+    tk.stop()
+    print("ticked 3")
+
+    // Receive with a timeout.
+    let ch: Channel[str] = channel_buffered(1)
+    print(ch.recv_timeout(20).is_none(), ch.try_recv().is_none())
+    ch.send("ready")
+    print(ch.try_recv().unwrap())
+    spawn late_send(ch)
+    print(ch.recv_timeout(5000).unwrap())
+
+    let a: Channel[int] = channel()
+    let b: Channel[int] = channel_buffered(1)
+    print(select_recv_timeout([a, b], 10).is_none())
+    b.send(42)
+    let got = select_recv_timeout([a, b], 1000).unwrap()
+    print(got.index, got.value)
+
+    // 1000 goroutines sleep 100 ms at once; parked on timers, not threads.
+    let wg = WaitGroup.new()
+    let done = AtomicInt.new(0)
+    let t0 = Instant.now()
+    wg.add(1000)
+    for _ in range(1000) {
+        spawn sleeper(wg, done)
+    }
+    wg.wait()
+    print(done.load(), t0.elapsed().as_millis() < 2000)
+
+    // Atomic counter across goroutines.
+    let total = AtomicInt.new(0)
+    let wg2 = WaitGroup.new()
+    wg2.add(50)
+    for _ in range(50) {
+        spawn adder(total, wg2)
+    }
+    wg2.wait()
+    print(total.load(), total.swap(0), total.load())
+
+    // Readers and writers.
+    let lock = RwLock.new()
+    let c = Counter(n: 0)
+    let seen = AtomicInt.new(0)
+    let wg3 = WaitGroup.new()
+    wg3.add(40)
+    for i in range(20) {
+        spawn writer(lock, c, wg3)
+        spawn reader(lock, c, seen, wg3)
+    }
+    wg3.wait()
+    print(c.n, seen.load() <= 400)
+
+    // A semaphore of 3 permits.
+    let sem = Semaphore.new(3)
+    let active = AtomicInt.new(0)
+    let peak = AtomicInt.new(0)
+    let wg4 = WaitGroup.new()
+    wg4.add(20)
+    for _ in range(20) {
+        spawn limited(sem, active, peak, wg4)
+    }
+    wg4.wait()
+    print(peak.load() <= 3, peak.load() >= 1)
+
+    // Once.
+    let once = Once.new()
+    let runs = AtomicInt.new(0)
+    let wg5 = WaitGroup.new()
+    wg5.add(10)
+    for _ in range(10) {
+        spawn init_once(once, runs, wg5)
+    }
+    wg5.wait()
+    print(runs.load(), once.is_done())
+}
