@@ -493,6 +493,7 @@ impl Drop for AllocState {
         if self.registered.get() {
             let me = self as *const AllocState;
             heaps.retain(|h| h.0 != me);
+            ALLOCATED.fetch_add(self.pending.get(), Ordering::Relaxed);
         }
         let pages = std::mem::replace(self.pages.get_mut(), SmallHeap::new());
         let large = std::mem::take(self.heap.get_mut());
