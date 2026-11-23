@@ -12,6 +12,10 @@ extern "C" {
     fun raven_crypto_hash_password(password: str) -> str
     fun raven_crypto_verify_password(password: str, stored: str) -> bool
     fun raven_crypto_hex(data: str) -> str
+    fun raven_crypto_hasher_new(alg: str) -> int
+    fun raven_crypto_hmac_new(alg: str, key: str) -> int
+    fun raven_crypto_hasher_update(id: int, data: str) -> bool
+    fun raven_crypto_hasher_finish(id: int) -> str
 }
 
 fun sha256(data: str) -> str {
@@ -81,4 +85,54 @@ fun hash_password(password: str) -> str {
 // Whether `password` matches a stored `hash_password` result.
 fun verify_password(password: str, stored: str) -> bool {
     return raven_crypto_verify_password(password, stored)
+}
+
+// An incremental hash: feed data with `update` as it arrives, then read the
+// result once with `digest` or `hex_digest`. Hashes a large file or stream
+// without holding it all in memory.
+class Hasher {
+    id: int
+}
+
+fun _hasher(id: int, what: str) -> Hasher {
+    if id == 0 {
+        panic("std.crypto: unknown algorithm ${what}")
+    }
+    return Hasher(id: id)
+}
+
+impl Hasher {
+    fun sha256() -> Hasher = _hasher(raven_crypto_hasher_new("sha256"), "sha256")
+
+    fun sha384() -> Hasher = _hasher(raven_crypto_hasher_new("sha384"), "sha384")
+
+    fun sha512() -> Hasher = _hasher(raven_crypto_hasher_new("sha512"), "sha512")
+
+    fun hmac_sha256(key: str) -> Hasher = _hasher(
+        raven_crypto_hmac_new("sha256", key),
+        "hmac-sha256",
+    )
+
+    fun hmac_sha512(key: str) -> Hasher = _hasher(
+        raven_crypto_hmac_new("sha512", key),
+        "hmac-sha512",
+    )
+
+    fun update(self, data: str) -> Hasher {
+        if not raven_crypto_hasher_update(self.id, data) {
+            panic("std.crypto: update after the hasher finished")
+        }
+        return self
+    }
+
+    // The raw result. A hasher finishes once; reading it again panics.
+    fun digest(self) -> str {
+        let out = raven_crypto_hasher_finish(self.id)
+        if out.length() == 0 {
+            panic("std.crypto: the hasher already finished")
+        }
+        return out
+    }
+
+    fun hex_digest(self) -> str = raven_crypto_hex(self.digest())
 }

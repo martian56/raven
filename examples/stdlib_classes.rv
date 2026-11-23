@@ -1,0 +1,74 @@
+from std.crypto import Hasher, sha256_hex, hmac_sha256_hex
+from std.log import Logger, DEBUG, WARN, parse_level
+from std.path import Path
+from std.time import DateTime, hours, minutes, milliseconds
+
+fun main() {
+    // Incremental hashing matches the one-shot functions.
+    let h = Hasher.sha256()
+    for part in ["ra", "ven", " lang"] {
+        h.update(part)
+    }
+    print(h.hex_digest() == sha256_hex("raven lang"))
+    print(
+        Hasher.hmac_sha256("Jefe").update("what do ya want ").update("for nothing?").hex_digest() == hmac_sha256_hex(
+            "Jefe",
+            "what do ya want for nothing?",
+        ),
+    )
+    print(len(Hasher.sha512().update("x").digest()))
+
+    // DateTime.
+    let t = DateTime.of(2024, 1, 31, 22, 30, 0)
+    print(t.to_rfc3339(), t.year(), t.month(), t.day(), t.weekday())
+    let baku = t.with_offset(240)
+    print(baku.to_rfc3339(), baku.day(), baku.hour(), baku == t)
+    print(
+        t.add_months(1).to_rfc3339(),
+        t.add_days(1).to_rfc3339(),
+        t.plus(hours(2)).plus(minutes(15)).to_rfc3339(),
+    )
+    print(baku.start_of_day().to_rfc3339(), t.format("%d/%m/%Y %H:%M"))
+    let later = t.plus(milliseconds(1500))
+    print(
+        later.since(t),
+        later.is_after(t),
+        t.is_before(later),
+        t.compare(later),
+        later.timestamp_millis() - t.timestamp_millis(),
+    )
+    let p = DateTime.parse("2024-02-01T02:30:00+04:00").unwrap()
+    print(p == t, p.to_rfc3339(), DateTime.parse("nope").is_err())
+    print(DateTime.now().year() >= 2026, DateTime.from_seconds(0).to_rfc3339())
+    let dates = [
+        DateTime.of(2025, 5, 1, 0, 0, 0),
+        DateTime.of(2023, 1, 1, 0, 0, 0),
+        DateTime.of(2024, 7, 4, 12, 0, 0),
+    ]
+    let sorted = dates.sorted_by((a: DateTime, b: DateTime) -> int => a.compare(b))
+    print(sorted.map(d => d.year()))
+
+    // Path.
+    let cfg = Path.new("/etc/app").join("conf").join("main.toml")
+    print(cfg, cfg.name(), cfg.stem(), cfg.extension(), cfg.parent())
+    print(
+        cfg.with_extension("json"),
+        cfg.with_name("extra.toml"),
+        cfg.is_absolute(),
+        cfg.components(),
+    )
+    print(Path.new("a/./b/../c") == Path.new("a/c"))
+
+    // Logger, formatted at a fixed time.
+    let log = Logger.new("bazaar").with_field("region", "eu")
+    let child = log.with_field("order", "42").with_field("note", "two words")
+    let ms = 1700000000123
+    print(log.format_line(20, "started", ms))
+    print(child.format_line(30, "slow payment", ms))
+    print(child.with_json(true).format_line(40, "card \"declined\"", ms))
+    print(
+        log.enabled(DEBUG()),
+        log.with_level(DEBUG()).enabled(DEBUG()),
+        parse_level("Warning") == WARN(),
+    )
+}

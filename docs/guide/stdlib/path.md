@@ -264,6 +264,23 @@ strings, `std.fs` is the disk.
 A common pattern is to compute a target path with `std.path`, then hand
 that string to `std.fs` to actually read or write it.
 
+## The Path class
+
+`Path.new(text)` is a path as a value, like Python's `pathlib.Path`. It has
+`join(part)`, `parent()`, `name()`, `stem()`, `extension()`,
+`with_extension(ext)`, `with_name(name)`, `components()`, `normalize()`, and
+`is_absolute()`. Two paths are equal when they normalize to the same text.
+It works on the text only, so `to_string()` it for `std.fs` calls.
+
+```rust
+from std.path import Path
+
+fun main() {
+    let p = Path.new("/srv/app").join("logs").join("api.log")
+    print(p.name(), p.parent(), p.with_extension("gz")) // api.log /srv/app/logs /srv/app/logs/api.gz
+}
+```
+
 ## See also
 
 - [std.fs](fs.md) for filesystem access (existence, reading, writing).

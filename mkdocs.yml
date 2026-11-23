@@ -119,6 +119,7 @@ nav:
       - std.io: guide/stdlib/io.md
       - std.fs: guide/stdlib/fs.md
       - std.path: guide/stdlib/path.md
+      - std.log: guide/stdlib/log.md
       - std.env: guide/stdlib/env.md
       - std.process: guide/stdlib/process.md
       - std.time: guide/stdlib/time.md

@@ -200,6 +200,27 @@ Use this form for endpoints that legitimately take longer than the default,
 such as model inference. It still buffers the entire response; use `stream`
 when the body should be consumed as it arrives.
 
+## A client with defaults
+
+`Client.new(base_url)` holds a base URL, default headers, and a timeout, like
+a `requests.Session`. Paths are joined to the base URL. `with_header`,
+`with_bearer(token)`, and `with_timeout_ms` set defaults; `get`, `delete`,
+`post`, `put`, and `patch` send a request (the last three send their body as
+JSON), and `send(method, path, body, extra_headers)` covers the rest. A gzip
+response is decoded for you.
+
+```rust
+from std.http import Client
+
+fun main() {
+    let api = Client.new("https://api.example.com/v1").with_bearer("token").with_timeout_ms(5000)
+    match api.get("/orders?page=2") {
+        case Ok(r) { print(r.status_code) }
+        case Err(e) { print("request failed: ${e.message}") }
+    }
+}
+```
+
 ## Streaming responses
 
 ### `stream(method, url, body, headers, timeout_ms) -> Result[HttpStream, Error]`
@@ -580,6 +601,67 @@ model and never matches a registered route. The enum derives `Eq` and
 `listen` hands each accepted connection to its own goroutine, so a slow handler
 only delays its own client. The goroutines run in parallel across the worker
 pool, and a connection waiting on a read or write does not hold up the others.
+
+## Middleware
+
+`server.use(mw)` wraps every request. A middleware takes the request and
+`next`, the rest of the chain, and returns a response: it can answer on its
+own, change the request first, or change the response `next` returns.
+Middleware runs in the order added, before routing.
+
+`req.set_value(key, value)` attaches a value for later middleware and
+handlers, and `req.value(key)` reads it back as an `Option`.
+`req.bearer_token()` reads `Authorization: Bearer ...`.
+
+```rust
+from std.http import Request, Response, Server
+
+fun require_token(req: Request, next: fun(Request) -> Response) -> Response {
+    match req.bearer_token() {
+        case Some(token) {
+            req.set_value("user", token)
+            return next(req)
+        }
+        case None { return Response.with_body(401, "sign in first") }
+    }
+}
+
+fun me(req: Request) -> Response {
+    return Response.ok("hello ${req.value("user").unwrap_or("?")}")
+}
+
+fun main() {
+    let s = Server.new()
+    s.use(require_token)
+    s.get("/me", me)
+    // s.listen("127.0.0.1:8080")
+}
+```
+
+## Cookies
+
+`req.cookie(name)` reads one from the `Cookie` header. `resp.set_cookie(c)`
+adds a `Set-Cookie` header (call it once per cookie), and
+`resp.clear_cookie(name)` deletes one. `Cookie.new(name, value)` starts with
+safe defaults (path `/`, HttpOnly, SameSite=Lax, a session cookie) and has
+`with_max_age(seconds)`, `with_secure`, `with_http_only`, `with_same_site`,
+`with_path`, and `with_domain`.
+
+```rust
+from std.http import Cookie, Response
+
+fun main() {
+    let r = Response.ok("signed in").set_cookie(Cookie.new("session", "abc").with_max_age(86400).with_secure(true))
+    print(r.headers.get_or("Set-Cookie", "")) // session=abc; Path=/; Max-Age=86400; HttpOnly; Secure; SameSite=Lax
+}
+```
+
+## Limits and compression
+
+`with_max_body(bytes)` answers a larger request body with 413 Payload Too
+Large; the default is 10 MiB. `with_gzip()` compresses text, JSON,
+JavaScript, XML, and SVG responses of 1 KiB or more when the client sends
+`Accept-Encoding: gzip`, and adds `Vary: Accept-Encoding`.
 
 ## See also
 
