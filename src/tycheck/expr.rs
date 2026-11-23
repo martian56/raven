@@ -327,6 +327,9 @@ struct Checker<'a, 'b> {
     loop_kinds: Vec<bool>,
     /// Control cannot reach the current point.
     diverges: bool,
+    /// The `if` or `match` about to be checked is a statement, so its value is
+    /// discarded and its branches need not agree on a type.
+    discard_value: bool,
     /// Per enclosing loop: whether it is broken out of, and the break value type.
     loop_breaks: Vec<(bool, Option<Ty>)>,
     /// Types of diverging expressions; unsolved ones default to `Unit`.
@@ -398,6 +401,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             recorded: Vec::new(),
             loop_kinds: Vec::new(),
             diverges: false,
+            discard_value: false,
             loop_breaks: Vec::new(),
             never_vars: Vec::new(),
             deferred_ops: Vec::new(),
@@ -1112,7 +1116,9 @@ impl<'a, 'b> Checker<'a, 'b> {
                 }
             }
             StmtKind::Expr(e) => {
+                self.discard_value = matches!(e.kind, ExprKind::If { .. } | ExprKind::Match { .. });
                 self.check_expr_recover(e);
+                self.discard_value = false;
             }
         }
     }
@@ -3452,6 +3458,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         else_branch: Option<&ElseBranch>,
         span: &Span,
     ) -> Result<Ty, RavenError> {
+        let discard = std::mem::take(&mut self.discard_value);
         let c = self.check_expr(cond)?;
         self.unify(&Ty::Bool, &c, &cond.span)?;
         let outer = std::mem::take(&mut self.diverges);
@@ -3465,11 +3472,22 @@ impl<'a, 'b> Checker<'a, 'b> {
                 self.diverges = outer;
                 return Ok(Ty::Unit);
             }
-            Some(ElseBranch::If(expr)) => self.check_expr(expr)?,
+            Some(ElseBranch::If(expr)) => {
+                // An `else if` chain is a statement all the way down.
+                self.discard_value = discard;
+                self.check_expr(expr)?
+            }
             Some(ElseBranch::Block(b)) => self.check_block(b)?,
         };
         let else_div = self.diverges;
         self.diverges = outer || (then_div && else_div);
+        // A branch with no value (an `else if` chain without a final `else`,
+        // or an empty block) makes the whole `if` a unit expression.
+        let unit_branch = matches!(self.infer.resolve(&t), Ty::Unit)
+            || matches!(self.infer.resolve(&e), Ty::Unit);
+        if discard || unit_branch {
+            return Ok(Ty::Unit);
+        }
         self.unify(&t, &e, span)?;
         Ok(self.infer.resolve(&t))
     }
@@ -3480,6 +3498,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         arms: &[crate::ast::MatchArm],
         span: &Span,
     ) -> Result<Ty, RavenError> {
+        let discard = std::mem::take(&mut self.discard_value);
         let scrut_ty = self.check_expr(scrutinee)?;
         // Resolve the scrutinee type up front. A nested match binds its
         // scrutinee to an inference variable that is already solved by the time
@@ -3514,6 +3533,15 @@ impl<'a, 'b> Checker<'a, 'b> {
 
             result_ty = Some(match result_ty.take() {
                 None => body_ty,
+                // A statement match discards its value, so the arms may differ,
+                // and an arm with no value makes the whole match unit.
+                Some(_) if discard => Ty::Unit,
+                Some(prev)
+                    if matches!(self.infer.resolve(&prev), Ty::Unit)
+                        || matches!(self.infer.resolve(&body_ty), Ty::Unit) =>
+                {
+                    Ty::Unit
+                }
                 Some(prev) => {
                     self.unify(&prev, &body_ty, &arm.span)?;
                     self.infer.resolve(&prev)
@@ -3551,6 +3579,9 @@ impl<'a, 'b> Checker<'a, 'b> {
             }
         } else {
             super::match_check::check(&scrut_stripped, &pattern_names, span, self.env)?;
+        }
+        if discard {
+            return Ok(Ty::Unit);
         }
         Ok(result_ty.unwrap_or(Ty::Unit))
     }

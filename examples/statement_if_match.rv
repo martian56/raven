@@ -1,0 +1,37 @@
+// An if or match used as a statement, or with a branch that has no value,
+// does not need its branches to agree on a type.
+class Box {
+    n: int
+}
+
+impl Box {
+    fun bump(self) -> Box {
+        self.n += 1
+        return self
+    }
+}
+
+fun pick(o: Option[int], b: Box) {
+    match o {
+        case Some(v) { b.bump() }
+        case None {}
+    }
+    if b.n > 5 {
+        b.bump()
+    } else if b.n > 1 {
+        b.bump().bump()
+    }
+}
+
+fun main() {
+    let b = Box(n: 0)
+    pick(Some(1), b)
+    pick(None, b)
+    pick(Some(2), b)
+    print(b.n)
+    let v = match b.n {
+        case 4 { "four" }
+        case _ { "other" }
+    }
+    print(v)
+}
