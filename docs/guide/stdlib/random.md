@@ -24,7 +24,8 @@ brings the constructors (`Rng.new`, `Rng.from_entropy`) and every method below
 into scope. Import the whole module (not a selective `{ ... }` list).
 
 This generator is **not** cryptographically secure. Do not use it for keys,
-tokens, or anything where predictability is a risk.
+tokens, or anything where predictability is a risk; use `random_bytes` or
+`random_hex` from [std.crypto](crypto.md) instead.
 
 ## Reproducibility
 

@@ -1,0 +1,84 @@
+// std.crypto: hashes, HMAC, PBKDF2, secure random bytes, constant-time
+// comparison, and password hashing, backed by the runtime. Byte results are
+// raw bytes in a str; the `_hex` forms return lowercase hex. See
+// docs/guide/stdlib/crypto.md.
+
+extern "C" {
+    fun raven_crypto_digest(alg: str, data: str) -> str
+    fun raven_crypto_hmac(alg: str, key: str, data: str) -> str
+    fun raven_crypto_pbkdf2_sha256(password: str, salt: str, iterations: int, length: int) -> str
+    fun raven_crypto_random_bytes(n: int) -> str
+    fun raven_crypto_equal(a: str, b: str) -> bool
+    fun raven_crypto_hash_password(password: str) -> str
+    fun raven_crypto_verify_password(password: str, stored: str) -> bool
+    fun raven_crypto_hex(data: str) -> str
+}
+
+fun sha256(data: str) -> str {
+    return raven_crypto_digest("sha256", data)
+}
+
+fun sha256_hex(data: str) -> str {
+    return raven_crypto_hex(raven_crypto_digest("sha256", data))
+}
+
+fun sha384(data: str) -> str {
+    return raven_crypto_digest("sha384", data)
+}
+
+fun sha512(data: str) -> str {
+    return raven_crypto_digest("sha512", data)
+}
+
+fun sha512_hex(data: str) -> str {
+    return raven_crypto_hex(raven_crypto_digest("sha512", data))
+}
+
+fun hmac_sha256(key: str, data: str) -> str {
+    return raven_crypto_hmac("sha256", key, data)
+}
+
+fun hmac_sha256_hex(key: str, data: str) -> str {
+    return raven_crypto_hex(raven_crypto_hmac("sha256", key, data))
+}
+
+fun hmac_sha512(key: str, data: str) -> str {
+    return raven_crypto_hmac("sha512", key, data)
+}
+
+// PBKDF2-HMAC-SHA256, `length` bytes (1 to 1024). Empty when an argument is
+// out of range.
+fun pbkdf2_sha256(password: str, salt: str, iterations: int, length: int) -> str {
+    return raven_crypto_pbkdf2_sha256(password, salt, iterations, length)
+}
+
+// `n` bytes (0 to 65536) from the operating system's secure random source.
+fun random_bytes(n: int) -> str {
+    return raven_crypto_random_bytes(n)
+}
+
+// `n` secure random bytes as 2n hex characters, for tokens and ids.
+fun random_hex(n: int) -> str {
+    return raven_crypto_hex(raven_crypto_random_bytes(n))
+}
+
+fun to_hex(data: str) -> str {
+    return raven_crypto_hex(data)
+}
+
+// Byte equality whose timing depends only on the lengths, for comparing
+// secrets such as tokens and MACs.
+fun constant_time_eq(a: str, b: str) -> bool {
+    return raven_crypto_equal(a, b)
+}
+
+// A salted PBKDF2-SHA256 hash for storage, in the form
+// `pbkdf2-sha256$<iterations>$<salt hex>$<hash hex>`.
+fun hash_password(password: str) -> str {
+    return raven_crypto_hash_password(password)
+}
+
+// Whether `password` matches a stored `hash_password` result.
+fun verify_password(password: str, stored: str) -> bool {
+    return raven_crypto_verify_password(password, stored)
+}
