@@ -2,6 +2,20 @@
 
 All notable changes to Raven are documented in this file.
 
+## [3.6.0] - 2026-11-23
+
+Found by load testing the marketplace backend.
+
+### Features
+
+- `std.http`: a route pattern may end with `*name`, which matches the rest of the path (`/assets/*file` matches `/assets/css/main.css`). `Server.static` uses it, so it serves subdirectories.
+
+### Fixes
+
+- A server under concurrent load crashed with an access violation. A function that returned after its goroutine parked (on a contended `Mutex` or a channel) and resumed on another worker thread unlinked its GC root record from the first thread's chain, so the collector lost live roots and freed objects still in use.
+- `Server.static` refuses any path through a symlink, which could lead outside its directory.
+- After a 413 or 400, the server reads and discards the rest of the client's upload before closing, so the client gets the response instead of a connection reset.
+
 ## [3.5.0] - 2026-11-23
 
 A standard library for writing services, found by building a full marketplace backend in Raven.
