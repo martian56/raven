@@ -381,6 +381,47 @@ fun main() {
 }
 ```
 
+## Renaming and temporary files
+
+- `rename(from, to)` moves a file or directory, replacing `to` if it is a file.
+- `write_atomic(path, contents)` writes a temporary file beside `path` and
+  renames it into place, so a reader sees the old file or the new one, never
+  half of it.
+- `temp_dir()` is the system's temporary directory, and
+  `make_temp_dir(prefix)` creates a new, uniquely named directory in it.
+  Remove it with `remove_dir` when done.
+
+## Reading and writing a piece at a time
+
+`read` and `write` move whole files. For a large file, or a log you keep
+appending to, open a `File`: `open(path)` to read, `create(path)` to write
+(truncating), or `open_append(path)`. A `File` has `read(n)` (up to `n` bytes,
+`""` at the end), `read_line()` (`Some(line)` without its line ending, or
+`None` at the end), `write(data)`, `flush()`, `seek(pos)`, and `close()`.
+Writes are buffered until `flush` or `close`, and reading a file opened for
+writing (or the reverse) is an error.
+
+```rust
+import std.fs
+
+fun main() {
+    let dir = fs.make_temp_dir("demo-").unwrap()
+    let path = fs.join(dir, "events.log")
+    let out = fs.create(path).unwrap()
+    out.write("started\nstopped\n").unwrap()
+    out.close().unwrap()
+    let f = fs.open(path).unwrap()
+    while true {
+        match f.read_line().unwrap() {
+            case Some(line) { print(line) }
+            case None { break }
+        }
+    }
+    f.close().unwrap()
+    fs.remove_dir(dir).unwrap()
+}
+```
+
 ## Worked example: write then read a file
 
 Write a file, confirm it exists, then read it back. Each fallible step uses

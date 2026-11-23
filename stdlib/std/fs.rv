@@ -26,6 +26,16 @@ extern "C" {
     fun raven_fs_is_file(path: str) -> bool
     fun raven_fs_is_dir(path: str) -> bool
     fun raven_fs_is_symlink(path: str) -> bool
+    fun raven_fs_rename(from: str, to: str) -> bool
+    fun raven_fs_temp_dir() -> str
+    fun raven_fs_make_temp_dir(prefix: str) -> str
+    fun raven_file_open(path: str, mode: str) -> int
+    fun raven_file_read(id: int, n: int) -> str
+    fun raven_file_read_line(id: int) -> str
+    fun raven_file_write(id: int, data: str) -> bool
+    fun raven_file_flush(id: int) -> bool
+    fun raven_file_seek(id: int, pos: int) -> bool
+    fun raven_file_close(id: int) -> bool
 }
 
 // An Error tagged with kind "io" (the IoError realization), its message a
@@ -116,7 +126,6 @@ fun size(path: str) -> Result[int, Error] {
     }
     return Ok(n)
 }
-
 
 // When `path` was last modified, in milliseconds since 1970-01-01 UTC, or -1
 // when it does not exist or cannot be read. Compare two readings to notice a
@@ -292,4 +301,118 @@ fun split(p: str) -> list[str] {
         out.push(p.substring(start, n))
     }
     return out
+}
+
+// Rename or move `from` to `to`, replacing `to` if it is a file.
+fun rename(from: str, to: str) -> Result[bool, Error] {
+    raven_fs_rename(from, to)
+    if raven_fs_last_error().length() > 0 {
+        return Err(io_error("rename ${from} to ${to}"))
+    }
+    return Ok(true)
+}
+
+// The system's directory for temporary files.
+fun temp_dir() -> str = raven_fs_temp_dir()
+
+// Create a new, uniquely named directory in the temp directory, its name
+// starting with `prefix`, and return its path. The caller removes it.
+fun make_temp_dir(prefix: str) -> Result[str, Error] {
+    let path = raven_fs_make_temp_dir(prefix)
+    if raven_fs_last_error().length() > 0 {
+        return Err(io_error("make temp dir ${prefix}"))
+    }
+    return Ok(path)
+}
+
+// Write `contents` to a temporary file next to `path`, then rename it over
+// `path`, so readers see the old file or the new one, never half of it.
+fun write_atomic(path: str, contents: str) -> Result[bool, Error] {
+    let tmp = "${path}.tmp"
+    write(tmp, contents)?
+    return match rename(tmp, path) {
+        case Ok(v) { Ok(v) }
+        case Err(e) {
+            let _ = remove_file(tmp)
+            Err(e)
+        }
+    }
+}
+
+// An open file, read or written a piece at a time instead of all at once.
+// Close it when done; writes are buffered until `flush` or `close`.
+class File {
+    id: int
+    path: str
+}
+
+fun _open(path: str, mode: str) -> Result[File, Error] {
+    let id = raven_file_open(path, mode)
+    if id == 0 {
+        return Err(io_error("open ${path}"))
+    }
+    return Ok(File(id: id, path: path))
+}
+
+// Open `path` for reading.
+fun open(path: str) -> Result[File, Error] = _open(path, "r")
+
+// Create `path` (or truncate it) for writing.
+fun create(path: str) -> Result[File, Error] = _open(path, "w")
+
+// Open `path` for appending, creating it if needed.
+fun open_append(path: str) -> Result[File, Error] = _open(path, "a")
+
+impl File {
+    fun _check(self, what: str) -> Result[bool, Error] {
+        if raven_fs_last_error().length() > 0 {
+            return Err(io_error("${what} ${self.path}"))
+        }
+        return Ok(true)
+    }
+
+    // Up to `n` bytes; "" at the end of the file.
+    fun read(self, n: int) -> Result[str, Error] {
+        let out = raven_file_read(self.id, n)
+        self._check("read")?
+        return Ok(out)
+    }
+
+    // The next line without its line ending, or None at the end of the file.
+    fun read_line(self) -> Result[Option[str], Error] {
+        let raw = raven_file_read_line(self.id)
+        self._check("read")?
+        if raw.length() == 0 {
+            return Ok(None)
+        }
+        var line = raw
+        if line.ends_with("\n") {
+            line = line.substring(0, line.length() - 1)
+        }
+        if line.ends_with("\r") {
+            line = line.substring(0, line.length() - 1)
+        }
+        return Ok(Some(line))
+    }
+
+    fun write(self, data: str) -> Result[bool, Error] {
+        raven_file_write(self.id, data)
+        return self._check("write")
+    }
+
+    fun flush(self) -> Result[bool, Error] {
+        raven_file_flush(self.id)
+        return self._check("flush")
+    }
+
+    // Move to byte offset `pos` from the start.
+    fun seek(self, pos: int) -> Result[bool, Error] {
+        raven_file_seek(self.id, pos)
+        return self._check("seek")
+    }
+
+    fun close(self) -> Result[bool, Error] {
+        raven_file_close(self.id)
+        return self._check("close")
+    }
 }

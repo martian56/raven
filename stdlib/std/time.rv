@@ -39,6 +39,9 @@ extern "C" {
     fun raven_time_format(ts: int, pattern: str) -> str
     fun raven_time_parse(text: str, pattern: str) -> int
     fun raven_time_sleep_millis(ms: int)
+    fun raven_time_format_rfc3339(ms: int, offset_minutes: int) -> str
+    fun raven_time_parse_rfc3339(text: str) -> int
+    fun raven_time_local_offset(ts: int) -> int
     fun raven_time_monotonic_nanos() -> int
 }
 
@@ -142,6 +145,89 @@ impl ToString for DateTime {
     }
 }
 
+// Unix seconds as RFC 3339 in UTC: `2026-11-23T09:30:00Z`.
+fun format_rfc3339(ts: int) -> str = raven_time_format_rfc3339(ts * 1000, 0)
+
+// Unix milliseconds as RFC 3339 at a UTC offset in minutes (0 gives `Z`):
+// `2026-11-23T13:30:00.250+04:00`. Milliseconds appear only when nonzero.
+fun format_rfc3339_millis(ms: int, offset_minutes: int) -> str = raven_time_format_rfc3339(
+    ms,
+    offset_minutes,
+)
+
+// Parse an RFC 3339 timestamp with any offset to Unix milliseconds. A space
+// may stand in for the `T`.
+fun parse_rfc3339_millis(text: str) -> Result[int, Error] {
+    let ms = raven_time_parse_rfc3339(text)
+    let msg = raven_time_last_error()
+    if msg.length() > 0 {
+        return Err(error_kind("time", msg))
+    }
+    return Ok(ms)
+}
+
+// Parse an RFC 3339 timestamp to Unix seconds (fractions dropped).
+fun parse_rfc3339(text: str) -> Result[int, Error] {
+    let ms = parse_rfc3339_millis(text)?
+    return Ok(_floor_div(ms, 1000))
+}
+
+// The local time zone's offset from UTC in seconds at Unix time `ts`
+// (positive east of Greenwich). It changes with daylight saving time.
+fun local_offset_seconds(ts: int) -> int = raven_time_local_offset(ts)
+
+fun _floor_div(a: int, b: int) -> int {
+    let q = a / b
+    return q - 1 if (a % b != 0) and ((a < 0) != (b < 0)) else q
+}
+
+fun is_leap_year(year: int) -> bool = (year % 4 == 0 and year % 100 != 0) or year % 400 == 0
+
+fun days_in_month(year: int, month: int) -> int {
+    if month == 2 {
+        return 29 if is_leap_year(year) else 28
+    }
+    if month == 4 or month == 6 or month == 9 or month == 11 {
+        return 30
+    }
+    return 31
+}
+
+// Midnight UTC of the day containing `ts`.
+fun start_of_day(ts: int) -> int = _floor_div(ts, 86400) * 86400
+
+fun add_days(ts: int, days: int) -> int = ts + days * 86400
+
+// The same time of day `months` months later (or earlier, when negative),
+// with the day clamped to the target month's length: Jan 31 plus one month
+// is Feb 28 or 29.
+fun add_months(ts: int, months: int) -> int {
+    let dt = from_timestamp(ts)
+    let total = dt.date.year * 12 + (dt.date.month - 1) + months
+    let year = _floor_div(total, 12)
+    let month = total - year * 12 + 1
+    var day = dt.date.day
+    let limit = days_in_month(year, month)
+    if day > limit {
+        day = limit
+    }
+    let secs = dt.time.hour * 3600 + dt.time.minute * 60 + dt.time.second
+    return _days_from_civil(year, month, day) * 86400 + secs
+}
+
+// Days since 1970-01-01 for a calendar date (proleptic Gregorian).
+fun _days_from_civil(year: int, month: int, day: int) -> int {
+    let y = year - 1 if month <= 2 else year
+    let era = _floor_div(y, 400)
+    let yoe = y - era * 400
+    let mp = (month + 9) % 12
+    let doy = (153 * mp + 2) / 5 + day - 1
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+    return era * 146097 + doe - 719468
+}
+
+// Unix seconds at midnight UTC on a calendar date.
+fun date_to_timestamp(year: int, month: int, day: int) -> int = _days_from_civil(year, month, day) * 86400
 // A span of time with nanosecond resolution.
 class Duration {
     nanos: int

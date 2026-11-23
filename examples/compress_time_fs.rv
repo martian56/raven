@@ -1,0 +1,103 @@
+import std.compress
+import std.fs
+from std.time import (
+    add_days,
+    add_months,
+    date_to_timestamp,
+    days_in_month,
+    format_rfc3339,
+    format_rfc3339_millis,
+    is_leap_year,
+    local_offset_seconds,
+    parse_rfc3339,
+    parse_rfc3339_millis,
+    start_of_day,
+)
+
+fun main() {
+    // Compression round trips, and limits on hostile input.
+    let text = "raven " * 2000
+    let gz = compress.gzip(text)
+    print(len(text), len(gz) < 200, compress.gunzip(gz).unwrap() == text)
+    print(
+        compress.unzlib(compress.zlib(text)).unwrap() == text,
+        compress.inflate(compress.deflate(text)).unwrap() == text,
+    )
+    print(
+        len(compress.gzip_level(text, 0)) > len(text),
+        len(compress.gzip_level(text, 9)) <= len(gz),
+    )
+    print(compress.gunzip("not gzip").is_err(), compress.gunzip_limit(gz, 100).is_err())
+    print(compress.gunzip(compress.gzip("")).unwrap() == "")
+
+    // RFC 3339.
+    let ts = date_to_timestamp(2026, 11, 23) + 9 * 3600 + 30 * 60
+    print(
+        format_rfc3339(ts),
+        format_rfc3339_millis(ts * 1000 + 250, 240),
+        format_rfc3339_millis(ts * 1000, -330),
+    )
+    print(
+        parse_rfc3339("2026-11-23T13:30:00+04:00").unwrap() == ts,
+        parse_rfc3339_millis("2026-11-23 09:30:00.25Z").unwrap() - ts * 1000,
+    )
+    print(parse_rfc3339("yesterday").is_err(), parse_rfc3339("2026-13-40T00:00:00Z").is_err())
+    print(
+        format_rfc3339(parse_rfc3339("1969-12-31T23:59:59Z").unwrap()),
+        parse_rfc3339("1969-12-31T23:59:59.5Z").unwrap(),
+    )
+    let off = local_offset_seconds(ts)
+    print(off > -50000 and off < 50000)
+
+    // Calendar arithmetic.
+    print(
+        is_leap_year(2024),
+        is_leap_year(1900),
+        is_leap_year(2000),
+        days_in_month(2024, 2),
+        days_in_month(2026, 4),
+    )
+    print(format_rfc3339(start_of_day(ts)), format_rfc3339(add_days(ts, -30)))
+    let jan31 = date_to_timestamp(2024, 1, 31) + 3600
+    print(
+        format_rfc3339(add_months(jan31, 1)),
+        format_rfc3339(add_months(jan31, 13)),
+        format_rfc3339(add_months(jan31, -2)),
+    )
+    print(date_to_timestamp(1970, 1, 1), date_to_timestamp(2000, 3, 1))
+
+    // File handles, rename, temp dirs.
+    let dir = fs.make_temp_dir("raven-example-").unwrap()
+    print(fs.is_dir(dir), dir.starts_with(fs.temp_dir().substring(0, 3)))
+    let path = fs.join(dir, "log.txt")
+    let f = fs.create(path).unwrap()
+    for i in range(3) {
+        f.write("line ${i}\r\n").unwrap()
+    }
+    f.close().unwrap()
+    let a = fs.open_append(path).unwrap()
+    a.write("last").unwrap()
+    a.close().unwrap()
+    let r = fs.open(path).unwrap()
+    var lines: list[str] = []
+    while true {
+        match r.read_line().unwrap() {
+            case Some(line) { lines.push(line) }
+            case None {
+                break
+            }
+        }
+    }
+    print(lines)
+    r.seek(0).unwrap()
+    print(r.read(4).unwrap(), r.write("x").is_err())
+    r.close().unwrap()
+    print(r.close().is_err(), fs.open(fs.join(dir, "missing")).is_err())
+    let moved = fs.join(dir, "moved.txt")
+    fs.rename(path, moved).unwrap()
+    print(fs.exists(path), fs.exists(moved))
+    fs.write_atomic(moved, "replaced").unwrap()
+    print(fs.read(moved).unwrap(), fs.exists("${moved}.tmp"))
+    fs.remove_dir(dir).unwrap()
+    print(fs.exists(dir))
+}

@@ -101,6 +101,7 @@ nav:
       - std.fmt: guide/stdlib/fmt.md
       - std.regex: guide/stdlib/regex.md
       - std.bytes: guide/stdlib/bytes.md
+      - std.compress: guide/stdlib/compress.md
       - std.crypto: guide/stdlib/crypto.md
       - std.encoding: guide/stdlib/encoding.md
       - std.url: guide/stdlib/url.md

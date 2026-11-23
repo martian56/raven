@@ -179,6 +179,46 @@ fun main() {
 }
 ```
 
+## RFC 3339 and UTC offsets
+
+RFC 3339 (`2026-11-23T09:30:00Z`) is the timestamp format of JSON APIs and
+databases.
+
+| Function | Does |
+|----------|------|
+| `format_rfc3339(ts)` | Unix seconds as UTC text ending in `Z` |
+| `format_rfc3339_millis(ms, offset_minutes)` | Unix milliseconds at an offset, such as `+04:00`; milliseconds appear when nonzero |
+| `parse_rfc3339(text) -> Result[int, Error]` | Unix seconds from text at any offset; a space may stand in for `T` |
+| `parse_rfc3339_millis(text) -> Result[int, Error]` | the same, in milliseconds |
+| `local_offset_seconds(ts)` | the local time zone's offset from UTC at `ts`, which shifts with daylight saving time |
+
+```rust
+from std.time import format_rfc3339, format_rfc3339_millis, parse_rfc3339
+
+fun main() {
+    let ts = parse_rfc3339("2026-11-23T13:30:00+04:00").unwrap()
+    print(format_rfc3339(ts)) // 2026-11-23T09:30:00Z
+    print(format_rfc3339_millis(ts * 1000, 240)) // 2026-11-23T13:30:00+04:00
+}
+```
+
+## Calendar arithmetic
+
+`is_leap_year(year)`, `days_in_month(year, month)`,
+`date_to_timestamp(year, month, day)` (midnight UTC), `start_of_day(ts)`,
+`add_days(ts, n)`, and `add_months(ts, n)`. Adding months keeps the time of
+day and clamps the day to the target month, so January 31 plus one month is
+the last day of February. All of these work in UTC.
+
+```rust
+from std.time import add_months, date_to_timestamp, format_rfc3339
+
+fun main() {
+    let jan31 = date_to_timestamp(2024, 1, 31)
+    print(format_rfc3339(add_months(jan31, 1))) // 2024-02-29T00:00:00Z
+}
+```
+
 ## Durations
 
 `Duration` is a span of time in nanoseconds. Build one with `nanoseconds`,
