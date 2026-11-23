@@ -328,3 +328,23 @@ fn enum_use_resolves_to_enum_binding() {
         RavenError::Resolve(ResolveError::UnresolvedName(_), _, _)
     );
 }
+
+#[test]
+fn assigning_a_captured_local_in_a_lambda_is_an_error() {
+    for src in [
+        "fun main() {\n    var n = 0\n    let f = () => {\n        n = n + 1\n        return n\n    }\n    print(f())\n}\n",
+        "fun main() {\n    var n = 0\n    let f = (x: int) => {\n        n += x\n    }\n    f(1)\n}\n",
+    ] {
+        let err = resolve_file(&parse_src(src, "test.rv"), &mut NoLoader).unwrap_err();
+        assert!(
+            matches!(&err, RavenError::Resolve(ResolveError::AssignToCapture(n), _, _) if n == "n"),
+            "{err:?}"
+        );
+    }
+}
+
+#[test]
+fn lambda_may_assign_its_own_locals_and_shared_state() {
+    let src = "class Box { v: int }\nvar total = 0\nfun main() {\n    let b = Box(v: 0)\n    let xs = [0]\n    let f = (x: int) => {\n        var local = x\n        local = local + 1\n        b.v = local\n        xs[0] = local\n        total = total + local\n    }\n    f(1)\n}\n";
+    resolve_file(&parse_src(src, "test.rv"), &mut NoLoader).unwrap();
+}

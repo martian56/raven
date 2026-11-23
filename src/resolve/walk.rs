@@ -301,6 +301,17 @@ fn walk_stmt(
         StmtKind::Continue => {}
         StmtKind::Defer(e) | StmtKind::Spawn(e) => walk_expr(e, scope, map)?,
         StmtKind::Assign { target, value, .. } => {
+            if let ExprKind::Ident { name, .. } = &target.kind {
+                if scope.is_captured_local(name) {
+                    return Err(RavenError::resolve(
+                        ResolveError::AssignToCapture(name.clone()),
+                        target.span.clone(),
+                    )
+                    .with_hint(format!(
+                        "a lambda copies `{name}` when it is created, so this assignment would be lost; keep shared state in a class field or list, or return the new value"
+                    )));
+                }
+            }
             walk_expr(target, scope, map)?;
             walk_expr(value, scope, map)?;
         }
@@ -547,7 +558,7 @@ fn walk_expr(
         ExprKind::Lambda {
             params, ret, body, ..
         } => {
-            scope.push(ScopeKind::Function);
+            scope.push_lambda();
             for p in params {
                 insert_param(scope, &p.name, p.span.clone())?;
                 if let Some(t) = &p.ty {

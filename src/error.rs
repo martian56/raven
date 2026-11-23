@@ -113,6 +113,8 @@ pub enum ResolveError {
     /// parameter. Distinct from `SelfOutsideImpl`: the use is inside an `impl`,
     /// but the enclosing method has no `self` to refer to.
     SelfNotMethodParam,
+    /// Assignment inside a lambda to a local the lambda captured by value.
+    AssignToCapture(String),
     /// A resolve-stage diagnostic that does not fit the structured variants,
     /// carrying its own message (for example a `@derive(...)` rejection).
     Other(String),
@@ -143,6 +145,13 @@ impl fmt::Display for ResolveError {
                 write!(
                     f,
                     "`self` is used here, but this method has no `self` parameter"
+                )
+            }
+            ResolveError::AssignToCapture(name) => {
+                write!(
+                    f,
+                    "cannot assign to `{}` inside a lambda that captured it",
+                    name
                 )
             }
             ResolveError::Other(msg) => write!(f, "{}", msg),
