@@ -217,7 +217,10 @@ let clamp = (x: int) => {
 ```
 
 `return` in a block-bodied lambda leaves the lambda. Lambdas capture the
-values of surrounding locals when they are created. A function type is
+values of surrounding locals when they are created, so assigning to a
+captured local inside a lambda is a compile error: the change would only
+reach the lambda's copy. Keep state the lambda should update in a class
+field or a list, which the lambda and its creator share. A function type is
 written `fun(int) -> int`.
 
 ## Control flow

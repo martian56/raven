@@ -32,6 +32,8 @@ pub enum ScopeKind {
 pub struct Scope {
     pub kind: ScopeKind,
     pub names: HashMap<String, ScopeEntry>,
+    /// The body of a lambda, which captures outer locals by value.
+    pub lambda: bool,
 }
 
 /// One entry in a [`Scope`].
@@ -49,6 +51,7 @@ impl Scope {
         Scope {
             kind,
             names: HashMap::new(),
+            lambda: false,
         }
     }
 }
@@ -94,6 +97,26 @@ impl ScopeStack {
     /// Push a fresh frame of the given kind.
     pub fn push(&mut self, kind: ScopeKind) {
         self.frames.push(Scope::new(kind));
+    }
+
+    /// Push the frame for a lambda body.
+    pub fn push_lambda(&mut self) {
+        let mut frame = Scope::new(ScopeKind::Function);
+        frame.lambda = true;
+        self.frames.push(frame);
+    }
+
+    /// True when `name` is a local bound outside the innermost lambda, so the
+    /// lambda holds a copy of it. Module-level names are shared, not copied.
+    pub fn is_captured_local(&self, name: &str) -> bool {
+        let mut inside_lambda = false;
+        for (i, frame) in self.frames.iter().enumerate().rev() {
+            if frame.names.contains_key(name) {
+                return inside_lambda && i > 0;
+            }
+            inside_lambda |= frame.lambda;
+        }
+        false
     }
 
     /// Pop the innermost frame. Panics if only the root remains; this is
