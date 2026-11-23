@@ -1147,7 +1147,10 @@ fn emit_binop(
         MirBinOp::Mod if is_float => {
             // Cranelift has no float remainder; the runtime's is C fmod.
             let (lhs, rhs) = if ty == types::F32 {
-                (builder.ins().fpromote(types::F64, lhs), builder.ins().fpromote(types::F64, rhs))
+                (
+                    builder.ins().fpromote(types::F64, lhs),
+                    builder.ins().fpromote(types::F64, rhs),
+                )
             } else {
                 (lhs, rhs)
             };
