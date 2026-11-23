@@ -2,6 +2,30 @@
 
 All notable changes to Raven are documented in this file.
 
+## [3.5.0] - 2026-11-23
+
+A standard library for writing services, found by building a full marketplace backend in Raven.
+
+### Features
+
+- `std.crypto`: SHA-256/384/512, HMAC, PBKDF2, secure random bytes, constant-time comparison, `hash_password`/`verify_password` (PBKDF2-SHA256, 600,000 rounds), and an incremental `Hasher`.
+- `std.signal`: graceful shutdown on Ctrl+C, SIGINT, SIGTERM, and console close.
+- `std.sync`: `after`, `ticker`, `recv_timeout`, `try_recv`, `select_recv_timeout`, `AtomicInt`, `RwLock`, `Once`, and `Semaphore`. `sleep_millis` in a goroutine parks on a timer instead of holding a worker thread.
+- `std.time`: `Duration`, a monotonic `Instant`, RFC 3339 formatting and parsing at any offset, the local UTC offset, calendar arithmetic, and `DateTime` as a full value with an instant and an offset.
+- `std.bytes` (binary readers and writers), `std.url` (RFC 3986 parsing, building, and query strings), `std.uuid` (v4 and v7 as a `Uuid` value), and `std.compress` (gzip, zlib, DEFLATE with a size limit).
+- `std.log`: a leveled, structured `Logger` with text or JSON lines.
+- `std.http`: middleware, per-request context, cookies, bearer tokens, a body size limit answered with 413, gzip responses, and a `Client` class with a base URL, headers, and a timeout.
+- `std.fs`: `File` handles, `rename`, `write_atomic`, and temp directories. `std.path`: a `Path` class. `std.encoding`: URL-safe base64. `std.collections`: `Deque` and `PriorityQueue`.
+
+### Fixes
+
+- `T.from_json(j)` in generic code passed an extra argument, so decoding any `list` or `Option` (and every `@derive(FromJson)` class with such a field) crashed. A missing key now decodes an `Option` field as `None`.
+- An `if` or `match` used as a statement no longer needs branches of one type, and a branch with no value makes the expression unit.
+- `?` in a block lambda infers that the lambda returns a `Result` or `Option`.
+- Assigning to a local a lambda captured is a compile error instead of a silently lost write.
+- `raven run` reports a crash (segmentation fault, access violation) instead of exiting 1 with no message.
+- `raven fmt` keeps a string literal's escapes as written.
+
 ## [3.4.1] - 2026-11-23
 
 ### Build
