@@ -148,6 +148,17 @@ pub(crate) const fn align_of_map() -> usize {
 /// # Safety
 ///
 /// `m` must point to a live `Map` produced by `raven_map_new`.
+/// Bytes of the bucket buffer `m` owns.
+pub(crate) unsafe fn buffer_bytes(m: *mut Map) -> usize {
+    // SAFETY: caller guarantees `m` is a live Map.
+    let (count, buckets) = unsafe { ((*m).bucket_count, (*m).buckets) };
+    if buckets.is_null() {
+        0
+    } else {
+        (count as usize) * std::mem::size_of::<MapEntry>()
+    }
+}
+
 pub(crate) unsafe fn free_buffers(m: *mut Map) {
     // SAFETY: caller guarantees `m` is a live Map.
     let bucket_count = unsafe { (*m).bucket_count };

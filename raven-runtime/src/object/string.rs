@@ -630,6 +630,23 @@ pub(crate) const fn align_of_string() -> usize {
 /// # Safety
 ///
 /// `s` must point to a live `String` produced by `raven_string_new`.
+/// Bytes of the buffer `s` owns; its share of a shared buffer.
+pub(crate) unsafe fn buffer_bytes(s: *mut String) -> usize {
+    // SAFETY: caller guarantees `s` is a live String.
+    let cap = unsafe { (*s).header.cap };
+    let bytes = unsafe { (*s).bytes };
+    if bytes.is_null() || cap == 0 {
+        return 0;
+    }
+    if cap & SHARED != 0 {
+        let buf = shared_header(bytes);
+        // SAFETY: a shared String's bytes always have a SharedBuf header.
+        let refs = unsafe { (*buf).refs.load(std::sync::atomic::Ordering::Relaxed) }.max(1);
+        return (BUF_HDR + (cap & !SHARED) as usize) / refs as usize;
+    }
+    cap as usize
+}
+
 pub(crate) unsafe fn free_buffers(s: *mut String) {
     // SAFETY: caller guarantees `s` is a live String.
     let cap = unsafe { (*s).header.cap };

@@ -299,6 +299,17 @@ pub(crate) const fn align_of_list() -> usize {
 /// # Safety
 ///
 /// `l` must point to a live `List` produced by `raven_list_new`.
+/// Bytes of the element buffer `l` owns.
+pub(crate) unsafe fn buffer_bytes(l: *mut List) -> usize {
+    // SAFETY: caller guarantees `l` is a live List.
+    let (cap, elem_size, buffer) = unsafe { ((*l).header.cap, (*l).element_size, (*l).elements) };
+    if buffer.is_null() {
+        0
+    } else {
+        (cap as usize) * (elem_size as usize)
+    }
+}
+
 pub(crate) unsafe fn free_buffers(l: *mut List) {
     // SAFETY: caller guarantees `l` is a live List.
     let cap = unsafe { (*l).header.cap };

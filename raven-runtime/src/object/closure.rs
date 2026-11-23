@@ -143,6 +143,17 @@ pub(crate) const fn align_of_closure() -> usize {
 /// # Safety
 ///
 /// `c` must point to a live `Closure` produced by `raven_closure_new`.
+/// Bytes of the capture buffer `c` owns.
+pub(crate) unsafe fn buffer_bytes(c: *mut Closure) -> usize {
+    // SAFETY: caller guarantees `c` is a live Closure.
+    let (size, captures) = unsafe { ((*c).capture_size, (*c).captures) };
+    if captures.is_null() {
+        0
+    } else {
+        size as usize
+    }
+}
+
 pub(crate) unsafe fn free_buffers(c: *mut Closure) {
     // SAFETY: caller guarantees `c` is a live Closure.
     let capture_size = unsafe { (*c).capture_size };

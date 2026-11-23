@@ -137,6 +137,17 @@ pub(crate) const fn align_of_set() -> usize {
 /// # Safety
 ///
 /// `s` must point to a live `Set` produced by `raven_set_new`.
+/// Bytes of the bucket buffer `s` owns.
+pub(crate) unsafe fn buffer_bytes(s: *mut Set) -> usize {
+    // SAFETY: caller guarantees `s` is a live Set.
+    let (count, buckets) = unsafe { ((*s).bucket_count, (*s).buckets) };
+    if buckets.is_null() {
+        0
+    } else {
+        (count as usize) * std::mem::size_of::<SetEntry>()
+    }
+}
+
 pub(crate) unsafe fn free_buffers(s: *mut Set) {
     // SAFETY: caller guarantees `s` is a live Set.
     let bucket_count = unsafe { (*s).bucket_count };

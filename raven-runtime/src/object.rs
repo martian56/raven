@@ -166,6 +166,28 @@ pub(crate) unsafe fn object_body_layout(header: *const ObjectHeader) -> (usize, 
 ///
 /// `header` must point to a live object produced by one of the
 /// constructors.
+/// The bytes of the out-of-line buffers a live object owns (string bytes, list
+/// elements, map and set buckets, closure captures), so a collection can count
+/// what survivors really hold. A buffer shared by several strings is split
+/// between them.
+///
+/// # Safety
+///
+/// `header` must be a live object header.
+pub(crate) unsafe fn object_buffer_bytes(header: *mut ObjectHeader) -> usize {
+    // SAFETY: caller guarantees `header` is a live object header.
+    let tag = unsafe { (*header).tag };
+    match tag {
+        // SAFETY: tag matches the layout cast in each arm.
+        TAG_STRING => unsafe { string::buffer_bytes(header as *mut String) },
+        TAG_LIST => unsafe { list::buffer_bytes(header as *mut List) },
+        TAG_MAP => unsafe { map::buffer_bytes(header as *mut Map) },
+        TAG_SET => unsafe { set::buffer_bytes(header as *mut Set) },
+        TAG_CLOSURE => unsafe { closure::buffer_bytes(header as *mut Closure) },
+        _ => 0,
+    }
+}
+
 pub(crate) unsafe fn free_object_buffers(header: *mut ObjectHeader) {
     // SAFETY: caller guarantees `header` is a live object header.
     let tag = unsafe { (*header).tag };
