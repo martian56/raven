@@ -100,6 +100,7 @@ nav:
       - std.string: guide/stdlib/string.md
       - std.fmt: guide/stdlib/fmt.md
       - std.regex: guide/stdlib/regex.md
+      - std.compress: guide/stdlib/compress.md
       - std.crypto: guide/stdlib/crypto.md
       - std.encoding: guide/stdlib/encoding.md
     - Data structures and iteration:

@@ -672,6 +672,7 @@ version = "3.4.1"
 dependencies = [
  "chrono",
  "corosensei",
+ "flate2",
  "libc",
  "mimalloc",
  "regex",

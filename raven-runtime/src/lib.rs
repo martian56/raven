@@ -2941,6 +2941,392 @@ pub extern "C" fn raven_process_spawn_free(id: i64) {
     }
 }
 
+// ----- compression -----
+
+thread_local! {
+    static COMPRESS_LAST_ERROR: RefCell<std::string::String> =
+        const { RefCell::new(std::string::String::new()) };
+}
+
+fn compress_record(r: Result<Vec<u8>, std::string::String>) -> *mut object::String {
+    let out = match r {
+        Ok(v) => {
+            COMPRESS_LAST_ERROR.with(|e| e.borrow_mut().clear());
+            v
+        }
+        Err(msg) => {
+            COMPRESS_LAST_ERROR.with(|e| *e.borrow_mut() = msg);
+            Vec::new()
+        }
+    };
+    object::raven_string_from_bytes(out.as_ptr(), out.len())
+}
+
+fn raw_bytes(s: *const object::String) -> Vec<u8> {
+    if s.is_null() {
+        return Vec::new();
+    }
+    let ptr = object::raven_string_bytes(s);
+    let len = object::raven_string_len(s) as usize;
+    if ptr.is_null() || len == 0 {
+        return Vec::new();
+    }
+    // SAFETY: a Raven String holds `len` initialized bytes.
+    unsafe { slice::from_raw_parts(ptr, len) }.to_vec()
+}
+
+/// The message of the most recent failed compress or decompress, or empty.
+#[no_mangle]
+pub extern "C" fn raven_compress_last_error() -> *mut object::String {
+    COMPRESS_LAST_ERROR.with(|e| {
+        let msg = e.borrow();
+        object::raven_string_from_bytes(msg.as_ptr(), msg.len())
+    })
+}
+
+/// Compress `data` as `kind` ("gzip", "zlib", or "deflate" for raw DEFLATE)
+/// at `level` 0 (store) to 9 (smallest).
+#[no_mangle]
+pub extern "C" fn raven_compress(
+    kind: *const object::String,
+    data: *const object::String,
+    level: i64,
+) -> *mut object::String {
+    use std::io::Write as _;
+    let kind = raw_bytes(kind);
+    let data = raw_bytes(data);
+    let level = flate2::Compression::new(level.clamp(0, 9) as u32);
+    let result = crate::gc::blocking(|| -> Result<Vec<u8>, std::string::String> {
+        let out = match kind.as_slice() {
+            b"gzip" => {
+                let mut e = flate2::write::GzEncoder::new(Vec::new(), level);
+                e.write_all(&data).and_then(|_| e.finish())
+            }
+            b"zlib" => {
+                let mut e = flate2::write::ZlibEncoder::new(Vec::new(), level);
+                e.write_all(&data).and_then(|_| e.finish())
+            }
+            b"deflate" => {
+                let mut e = flate2::write::DeflateEncoder::new(Vec::new(), level);
+                e.write_all(&data).and_then(|_| e.finish())
+            }
+            _ => return Err("unknown compression kind".to_string()),
+        };
+        out.map_err(|e| e.to_string())
+    });
+    compress_record(result)
+}
+
+/// Decompress `data` of `kind`, refusing output larger than `limit` bytes so
+/// a small hostile input cannot expand to fill memory. A non-positive limit
+/// means 256 MiB.
+#[no_mangle]
+pub extern "C" fn raven_decompress(
+    kind: *const object::String,
+    data: *const object::String,
+    limit: i64,
+) -> *mut object::String {
+    use std::io::Read as _;
+    let kind = raw_bytes(kind);
+    let data = raw_bytes(data);
+    let limit = if limit > 0 { limit as u64 } else { 256 << 20 };
+    let result = crate::gc::blocking(|| -> Result<Vec<u8>, std::string::String> {
+        let reader: Box<dyn io::Read + '_> = match kind.as_slice() {
+            b"gzip" => Box::new(flate2::read::MultiGzDecoder::new(data.as_slice())),
+            b"zlib" => Box::new(flate2::read::ZlibDecoder::new(data.as_slice())),
+            b"deflate" => Box::new(flate2::read::DeflateDecoder::new(data.as_slice())),
+            _ => return Err("unknown compression kind".to_string()),
+        };
+        let mut out = Vec::new();
+        reader.take(limit + 1).read_to_end(&mut out).map_err(|e| {
+            format!(
+                "invalid {} data: {e}",
+                std::string::String::from_utf8_lossy(&kind)
+            )
+        })?;
+        if out.len() as u64 > limit {
+            return Err(format!("decompressed data exceeds the {limit}-byte limit"));
+        }
+        Ok(out)
+    });
+    compress_record(result)
+}
+
+// ----- RFC 3339 and UTC offsets -----
+
+/// Format Unix milliseconds as RFC 3339 at a UTC offset of `offset_minutes`,
+/// for example `2026-11-23T09:30:00Z` or `2026-11-23T13:30:00.250+04:00`.
+/// Milliseconds appear only when nonzero.
+#[no_mangle]
+pub extern "C" fn raven_time_format_rfc3339(ms: i64, offset_minutes: i64) -> *mut object::String {
+    let text = chrono::FixedOffset::east_opt((offset_minutes * 60) as i32)
+        .and_then(|tz| chrono::DateTime::from_timestamp_millis(ms).map(|dt| dt.with_timezone(&tz)))
+        .map(|dt| {
+            let base = if ms.rem_euclid(1000) == 0 {
+                dt.format("%Y-%m-%dT%H:%M:%S").to_string()
+            } else {
+                dt.format("%Y-%m-%dT%H:%M:%S%.3f").to_string()
+            };
+            if offset_minutes == 0 {
+                format!("{base}Z")
+            } else {
+                format!("{base}{}", dt.format("%:z"))
+            }
+        })
+        .unwrap_or_default();
+    object::raven_string_from_bytes(text.as_ptr(), text.len())
+}
+
+/// Parse an RFC 3339 timestamp (`2026-11-23T09:30:00Z`,
+/// `2026-11-23T13:30:00.25+04:00`, a space in place of `T`) to Unix
+/// milliseconds. On failure sets the time error and returns 0.
+#[no_mangle]
+pub extern "C" fn raven_time_parse_rfc3339(text: *const object::String) -> i64 {
+    let parsed = match env_name(text) {
+        Some(t) => {
+            let t = t.trim();
+            chrono::DateTime::parse_from_rfc3339(t)
+                .or_else(|_| chrono::DateTime::parse_from_rfc3339(&t.replacen(' ', "T", 1)))
+                .map(|dt| dt.timestamp_millis())
+                .map_err(|e| format!("`{t}` is not an RFC 3339 timestamp: {e}"))
+        }
+        None => Err("text is not valid UTF-8".to_string()),
+    };
+    match parsed {
+        Ok(ms) => {
+            time_clear_error();
+            ms
+        }
+        Err(msg) => {
+            time_set_error(msg);
+            0
+        }
+    }
+}
+
+/// The local time zone's offset from UTC, in seconds, at Unix time `ts`.
+#[no_mangle]
+pub extern "C" fn raven_time_local_offset(ts: i64) -> i64 {
+    use chrono::{Offset, TimeZone};
+    match chrono::Local.timestamp_opt(ts, 0) {
+        chrono::LocalResult::Single(dt) | chrono::LocalResult::Ambiguous(dt, _) => {
+            i64::from(dt.offset().fix().local_minus_utc())
+        }
+        chrono::LocalResult::None => 0,
+    }
+}
+
+// ----- more file system operations -----
+
+fn fs_path(p: *const object::String) -> io::Result<std::string::String> {
+    env_name(p)
+        .map(str::to_string)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8"))
+}
+
+/// Rename or move `from` to `to`, replacing `to` if it is a file.
+#[no_mangle]
+pub extern "C" fn raven_fs_rename(from: *const object::String, to: *const object::String) -> bool {
+    let (from, to) = (fs_path(from), fs_path(to));
+    let result = crate::gc::blocking(|| std::fs::rename(from?, to?));
+    fs_record(result).is_some()
+}
+
+/// The system's directory for temporary files.
+#[no_mangle]
+pub extern "C" fn raven_fs_temp_dir() -> *mut object::String {
+    let dir = std::env::temp_dir().to_string_lossy().into_owned();
+    object::raven_string_from_bytes(dir.as_ptr(), dir.len())
+}
+
+/// Create a new, uniquely named directory under the temp directory whose name
+/// starts with `prefix`, and return its path.
+#[no_mangle]
+pub extern "C" fn raven_fs_make_temp_dir(prefix: *const object::String) -> *mut object::String {
+    let prefix = fs_path(prefix);
+    let result = crate::gc::blocking(|| -> io::Result<std::string::String> {
+        let prefix = prefix?;
+        let base = std::env::temp_dir();
+        for _ in 0..32 {
+            let tag = raven_random_entropy() as u64;
+            let path = base.join(format!("{prefix}{tag:016x}"));
+            match std::fs::create_dir(&path) {
+                Ok(()) => return Ok(path.to_string_lossy().into_owned()),
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e),
+            }
+        }
+        Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "no unused temp directory name",
+        ))
+    });
+    let path = fs_record(result).unwrap_or_default();
+    object::raven_string_from_bytes(path.as_ptr(), path.len())
+}
+
+enum FileHandle {
+    Read(io::BufReader<std::fs::File>),
+    Write(io::BufWriter<std::fs::File>),
+}
+
+type SharedFile = std::sync::Arc<Mutex<FileHandle>>;
+
+fn file_registry() -> &'static Mutex<HashMap<i64, SharedFile>> {
+    static FILES: std::sync::OnceLock<Mutex<HashMap<i64, SharedFile>>> = std::sync::OnceLock::new();
+    FILES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+static NEXT_FILE: AtomicI64 = AtomicI64::new(1);
+
+fn file_handle(id: i64) -> io::Result<SharedFile> {
+    file_registry()
+        .lock()
+        .unwrap()
+        .get(&id)
+        .cloned()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "file is closed"))
+}
+
+/// Open `path` with `mode` "r" (read), "w" (create or truncate), or "a"
+/// (create or append). Returns a handle id, or 0 on failure.
+#[no_mangle]
+pub extern "C" fn raven_file_open(path: *const object::String, mode: *const object::String) -> i64 {
+    let path = fs_path(path);
+    let mode = raw_bytes(mode);
+    let result = crate::gc::blocking(|| -> io::Result<FileHandle> {
+        let path = path?;
+        let mut opts = std::fs::OpenOptions::new();
+        match mode.as_slice() {
+            b"r" => Ok(FileHandle::Read(io::BufReader::new(
+                opts.read(true).open(path)?,
+            ))),
+            b"w" => Ok(FileHandle::Write(io::BufWriter::new(
+                opts.write(true).create(true).truncate(true).open(path)?,
+            ))),
+            b"a" => Ok(FileHandle::Write(io::BufWriter::new(
+                opts.append(true).create(true).open(path)?,
+            ))),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "mode must be r, w, or a",
+            )),
+        }
+    });
+    match fs_record(result) {
+        Some(handle) => {
+            let id = NEXT_FILE.fetch_add(1, Ordering::Relaxed);
+            file_registry()
+                .lock()
+                .unwrap()
+                .insert(id, std::sync::Arc::new(Mutex::new(handle)));
+            id
+        }
+        None => 0,
+    }
+}
+
+fn with_file<T>(id: i64, f: impl FnOnce(&mut FileHandle) -> io::Result<T>) -> Option<T> {
+    let result = crate::gc::blocking(|| {
+        let handle = file_handle(id)?;
+        let mut guard = handle.lock().unwrap();
+        f(&mut guard)
+    });
+    fs_record(result)
+}
+
+fn not_readable() -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidInput, "file was opened for writing")
+}
+
+/// Read up to `n` bytes; empty at end of file.
+#[no_mangle]
+pub extern "C" fn raven_file_read(id: i64, n: i64) -> *mut object::String {
+    use std::io::Read as _;
+    let n = n.clamp(0, 64 << 20) as usize;
+    let out = with_file(id, |h| match h {
+        FileHandle::Read(r) => {
+            let mut buf = vec![0u8; n];
+            let got = r.read(&mut buf)?;
+            buf.truncate(got);
+            Ok(buf)
+        }
+        FileHandle::Write(_) => Err(not_readable()),
+    })
+    .unwrap_or_default();
+    object::raven_string_from_bytes(out.as_ptr(), out.len())
+}
+
+/// Read through the next newline (kept); empty at end of file.
+#[no_mangle]
+pub extern "C" fn raven_file_read_line(id: i64) -> *mut object::String {
+    use std::io::BufRead as _;
+    let out = with_file(id, |h| match h {
+        FileHandle::Read(r) => {
+            let mut buf = Vec::new();
+            r.read_until(b'\n', &mut buf)?;
+            Ok(buf)
+        }
+        FileHandle::Write(_) => Err(not_readable()),
+    })
+    .unwrap_or_default();
+    object::raven_string_from_bytes(out.as_ptr(), out.len())
+}
+
+#[no_mangle]
+pub extern "C" fn raven_file_write(id: i64, data: *const object::String) -> bool {
+    use std::io::Write as _;
+    let data = raw_bytes(data);
+    with_file(id, |h| match h {
+        FileHandle::Write(w) => w.write_all(&data),
+        FileHandle::Read(_) => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "file was opened for reading",
+        )),
+    })
+    .is_some()
+}
+
+#[no_mangle]
+pub extern "C" fn raven_file_flush(id: i64) -> bool {
+    use std::io::Write as _;
+    with_file(id, |h| match h {
+        FileHandle::Write(w) => w.flush(),
+        FileHandle::Read(_) => Ok(()),
+    })
+    .is_some()
+}
+
+/// Move to byte offset `pos` from the start.
+#[no_mangle]
+pub extern "C" fn raven_file_seek(id: i64, pos: i64) -> bool {
+    use std::io::Seek as _;
+    let to = io::SeekFrom::Start(pos.max(0) as u64);
+    with_file(id, |h| match h {
+        FileHandle::Read(r) => r.seek(to).map(|_| ()),
+        FileHandle::Write(w) => w.seek(to).map(|_| ()),
+    })
+    .is_some()
+}
+
+/// Flush and close. Closing twice reports an error.
+#[no_mangle]
+pub extern "C" fn raven_file_close(id: i64) -> bool {
+    use std::io::Write as _;
+    let handle = file_registry().lock().unwrap().remove(&id);
+    let result = crate::gc::blocking(|| match handle {
+        Some(h) => match &mut *h.lock().unwrap() {
+            FileHandle::Write(w) => w.flush(),
+            FileHandle::Read(_) => Ok(()),
+        },
+        None => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "file is closed",
+        )),
+    });
+    fs_record(result).is_some()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

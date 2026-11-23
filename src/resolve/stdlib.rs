@@ -59,6 +59,7 @@ pub const BUNDLED_MODULES: &[(&str, &str)] = &[
     ("error", include_str!("../../stdlib/std/error.rv")),
     ("env", include_str!("../../stdlib/std/env.rv")),
     ("crypto", include_str!("../../stdlib/std/crypto.rv")),
+    ("compress", include_str!("../../stdlib/std/compress.rv")),
     ("fs", include_str!("../../stdlib/std/fs.rv")),
     ("time", include_str!("../../stdlib/std/time.rv")),
     ("net", include_str!("../../stdlib/std/net.rv")),

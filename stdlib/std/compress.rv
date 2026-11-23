@@ -1,0 +1,65 @@
+// std.compress: gzip, zlib, and raw DEFLATE compression. Data is bytes in a
+// str. Decompression refuses output past a size limit, so a small hostile
+// input cannot expand to fill memory. See docs/guide/stdlib/compress.md.
+
+import std.error
+
+extern "C" {
+    fun raven_compress(kind: str, data: str, level: int) -> str
+    fun raven_decompress(kind: str, data: str, limit: int) -> str
+    fun raven_compress_last_error() -> str
+}
+
+// The largest output a decompress call accepts unless told otherwise.
+fun _default_limit() -> int = 268435456
+
+fun _done(out: str) -> Result[str, Error] {
+    let msg = raven_compress_last_error()
+    if msg.length() > 0 {
+        return Err(Error(kind: "compress", message: msg))
+    }
+    return Ok(out)
+}
+
+// gzip at the default level (6), as HTTP `Content-Encoding: gzip` and `.gz`
+// files use.
+fun gzip(data: str) -> str = raven_compress("gzip", data, 6)
+
+// gzip at `level`: 0 stores, 1 is fastest, 9 is smallest.
+fun gzip_level(data: str, level: int) -> str = raven_compress("gzip", data, level)
+
+// Decompress gzip data (several concatenated members are joined).
+fun gunzip(data: str) -> Result[str, Error] = _done(
+    raven_decompress("gzip", data, _default_limit()),
+)
+
+// Decompress gzip data, failing if the output would exceed `limit` bytes.
+fun gunzip_limit(data: str, limit: int) -> Result[str, Error] = _done(
+    raven_decompress("gzip", data, limit),
+)
+
+// zlib, as HTTP `Content-Encoding: deflate` and PNG use.
+fun zlib(data: str) -> str = raven_compress("zlib", data, 6)
+
+fun zlib_level(data: str, level: int) -> str = raven_compress("zlib", data, level)
+
+fun unzlib(data: str) -> Result[str, Error] = _done(
+    raven_decompress("zlib", data, _default_limit()),
+)
+
+fun unzlib_limit(data: str, limit: int) -> Result[str, Error] = _done(
+    raven_decompress("zlib", data, limit),
+)
+
+// Raw DEFLATE with no header, as zip entries and WebSocket compression use.
+fun deflate(data: str) -> str = raven_compress("deflate", data, 6)
+
+fun deflate_level(data: str, level: int) -> str = raven_compress("deflate", data, level)
+
+fun inflate(data: str) -> Result[str, Error] = _done(
+    raven_decompress("deflate", data, _default_limit()),
+)
+
+fun inflate_limit(data: str, limit: int) -> Result[str, Error] = _done(
+    raven_decompress("deflate", data, limit),
+)
