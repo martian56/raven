@@ -709,9 +709,12 @@ impl SmallHeap {
 
     /// Free every slot not marked with `epoch`; returns the bytes and object
     /// count released.
-    fn sweep(&mut self, epoch: u32) -> (usize, usize) {
+    /// Free the unmarked slots. Returns the bytes and count freed, and the
+    /// buffer bytes the survivors own.
+    fn sweep(&mut self, epoch: u32) -> (usize, usize, usize) {
         let mut freed_bytes = 0;
         let mut freed = 0;
+        let mut kept_buffers = 0;
         for (class, c) in self.classes.iter_mut().enumerate() {
             let size = CLASS_SIZES[class];
             c.free = std::ptr::null_mut();
@@ -735,6 +738,8 @@ impl SmallHeap {
                     let (tag, mark) = unsafe { ((*header).tag, (*header).gc_bits) };
                     if tag != TAG_FREE && mark == epoch {
                         survivors += 1;
+                        // SAFETY: a marked slot holds a live object.
+                        kept_buffers += unsafe { crate::object::object_buffer_bytes(header) };
                         continue;
                     }
                     if tag != TAG_FREE {
@@ -769,7 +774,7 @@ impl SmallHeap {
             kept.reverse();
             c.pages = kept;
         }
-        (freed_bytes, freed)
+        (freed_bytes, freed, kept_buffers)
     }
 }
 
@@ -1395,7 +1400,7 @@ fn sweep() -> usize {
 ///
 /// No other thread may touch `a` for the duration of the call.
 unsafe fn sweep_heap(a: &AllocState, epoch: u32) -> usize {
-    let (freed_bytes, freed) = a.pages.borrow_mut().sweep(epoch);
+    let (freed_bytes, freed, mut kept_buffers) = a.pages.borrow_mut().sweep(epoch);
     a.bytes.set(a.bytes.get().saturating_sub(freed_bytes));
     a.live.set(a.live.get().saturating_sub(freed));
     let mut heap = a.heap.borrow_mut();
@@ -1407,6 +1412,8 @@ unsafe fn sweep_heap(a: &AllocState, epoch: u32) -> usize {
         if marked {
             heap[write] = object;
             write += 1;
+            // SAFETY: a marked entry is a live object.
+            kept_buffers += unsafe { crate::object::object_buffer_bytes(object) };
         } else {
             // SAFETY: unmarked this cycle and registered in `a`; free it and
             // charge `a`, which may belong to another thread.
@@ -1420,7 +1427,9 @@ unsafe fn sweep_heap(a: &AllocState, epoch: u32) -> usize {
         }
     }
     heap.truncate(write);
-    a.bytes.get()
+    // The live total sizes the next shared budget, which counts buffer bytes
+    // as they are allocated, so it counts the survivors' buffers too.
+    a.bytes.get() + kept_buffers
 }
 
 /// Visit the current object pointer held by every registered root slot, across
@@ -1571,6 +1580,21 @@ mod collector_tests {
 
     /// A dummy closure body pointer.
     extern "C" fn dummy_body() {}
+
+    #[test]
+    fn survivors_report_the_buffers_they_own() {
+        isolated(|| {
+            let list = crate::object::list::raven_list_new(8, 8, 1000, 0);
+            assert!(!list.is_null());
+            // SAFETY: a freshly allocated list.
+            let bytes = unsafe { crate::object::object_buffer_bytes(list as *mut ObjectHeader) };
+            assert_eq!(bytes, 8000);
+            let s = raven_string_new(64);
+            // SAFETY: a freshly allocated string.
+            let sb = unsafe { crate::object::object_buffer_bytes(s as *mut ObjectHeader) };
+            assert!(sb >= 64);
+        });
+    }
 
     #[test]
     fn unrooted_object_is_collected() {
