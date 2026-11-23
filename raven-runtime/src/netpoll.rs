@@ -11,7 +11,7 @@
 //! event that lands between the attempt and the park is never lost.
 
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::io;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
@@ -20,6 +20,10 @@ use std::time::{Duration, Instant};
 use mio::{Events, Interest, Poll, Registry, Token, Waker};
 
 const WAKER: Token = Token(0);
+
+/// Once the timer heap holds this many entries and is several times larger
+/// than the number of open sockets, the poller drops the timers of closed ones.
+const COMPACT_AT: usize = 4096;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Dir {
@@ -33,14 +37,22 @@ enum Waiter {
     Thread,
 }
 
+#[derive(Clone, Copy)]
+struct WaitRec {
+    who: Waiter,
+    gen: u64,
+    deadline: Option<Instant>,
+}
+
+/// One direction of a socket. Several callers may wait on it at once (two
+/// goroutines accepting on one listener); readiness wakes all of them and each
+/// retries its syscall. `armed` is the deadline of this side's one queued heap
+/// timer: a timer that fires before any waiter is due re-arms for the earliest
+/// remaining deadline, so a busy socket keeps a single heap entry per side.
 #[derive(Default)]
 struct Side {
     seq: u64,
-    waiter: Option<(Waiter, u64)>,
-    // The current waiter's deadline, and the deadline of this side's one queued
-    // heap timer. A timer that fires early re-arms for `deadline`, so a busy
-    // socket keeps a single heap entry per direction instead of one per wait.
-    deadline: Option<Instant>,
+    waiters: Vec<WaitRec>,
     armed: Option<Instant>,
 }
 
@@ -71,10 +83,17 @@ pub(crate) struct IoEntry {
 impl IoEntry {
     /// The readiness sequence for `dir`; pass it to `wait` after a syscall
     /// that would block.
-    pub(crate) fn seq(&self, dir: Dir) -> u64 {
+    fn seq(&self, dir: Dir) -> u64 {
         let mut st = lock(&self.state);
         st.side(dir).seq
     }
+}
+
+/// How a wait ended.
+enum Woke {
+    Ready,
+    TimedOut,
+    Closed,
 }
 
 struct Poller {
@@ -90,34 +109,49 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn poller() -> &'static Poller {
-    static POLLER: OnceLock<&'static Poller> = OnceLock::new();
-    POLLER.get_or_init(|| {
-        let poll = Poll::new().expect("netpoll: cannot create the OS poller");
-        let registry = poll
-            .registry()
-            .try_clone()
-            .expect("netpoll: cannot clone the registry");
-        let waker = Waker::new(poll.registry(), WAKER).expect("netpoll: cannot create the waker");
-        let p: &'static Poller = Box::leak(Box::new(Poller {
-            registry,
-            waker,
-            entries: Mutex::new(HashMap::new()),
-            timers: Mutex::new(BinaryHeap::new()),
-            next_token: AtomicUsize::new(1),
-            earliest: AtomicU64::new(u64::MAX),
-        }));
-        std::thread::Builder::new()
-            .name("raven-netpoll".into())
-            .spawn(move || run(poll, p))
-            .expect("netpoll: cannot start the poller thread");
-        p
-    })
+static POLLER: OnceLock<&'static Poller> = OnceLock::new();
+
+/// The process poller, started on first use. A failure (for example no file
+/// descriptor left for the OS selector) is returned, and the next call tries
+/// again.
+fn poller() -> io::Result<&'static Poller> {
+    static INIT: Mutex<()> = Mutex::new(());
+    if let Some(p) = POLLER.get() {
+        return Ok(p);
+    }
+    let _guard = lock(&INIT);
+    if let Some(p) = POLLER.get() {
+        return Ok(p);
+    }
+    let poll = Poll::new()?;
+    let registry = poll.registry().try_clone()?;
+    let waker = Waker::new(poll.registry(), WAKER)?;
+    let p: &'static Poller = Box::leak(Box::new(Poller {
+        registry,
+        waker,
+        entries: Mutex::new(HashMap::new()),
+        timers: Mutex::new(BinaryHeap::new()),
+        next_token: AtomicUsize::new(1),
+        earliest: AtomicU64::new(u64::MAX),
+    }));
+    std::thread::Builder::new()
+        .name("raven-netpoll".into())
+        .spawn(move || run(poll, p))?;
+    let _ = POLLER.set(p);
+    Ok(p)
+}
+
+/// The poller for an operation on an already registered socket, which exists
+/// only once `poller` succeeded.
+fn running() -> &'static Poller {
+    POLLER
+        .get()
+        .expect("netpoll: socket registered without a poller")
 }
 
 /// Register `source` for read and write readiness.
 pub(crate) fn register(source: &mut impl mio::event::Source) -> io::Result<Arc<IoEntry>> {
-    let p = poller();
+    let p = poller()?;
     let token = Token(p.next_token.fetch_add(1, Ordering::Relaxed));
     let entry = Arc::new(IoEntry {
         token,
@@ -138,26 +172,32 @@ pub(crate) fn register(source: &mut impl mio::event::Source) -> io::Result<Arc<I
 /// Remove `source` from the poller, for a socket that is handed to blocking
 /// code. A socket that is simply closed needs only `close`.
 pub(crate) fn deregister(source: &mut impl mio::event::Source, entry: &IoEntry) {
-    let _ = poller().registry.deregister(source);
+    let _ = running().registry.deregister(source);
     close(entry);
 }
 
-/// Stop tracking `entry` and wake anything still waiting on it.
+/// Stop tracking `entry` and wake anything still waiting on it; their
+/// operations fail with "socket closed".
 pub(crate) fn close(entry: &IoEntry) {
-    lock(&poller().entries).remove(&entry.token);
+    lock(&running().entries).remove(&entry.token);
     let waiters = {
         let mut st = lock(&entry.state);
         st.closed = true;
         st.read.seq += 1;
         st.write.seq += 1;
-        [st.read.waiter.take(), st.write.waiter.take()]
+        let mut all = std::mem::take(&mut st.read.waiters);
+        all.append(&mut st.write.waiters);
+        all
     };
     entry.cv.notify_all();
-    for (w, _) in waiters.into_iter().flatten() {
-        if let Waiter::Goroutine(id) = w {
-            crate::sched::wake_io(id);
-        }
-    }
+    let ids: Vec<usize> = waiters
+        .iter()
+        .filter_map(|w| match w.who {
+            Waiter::Goroutine(id) => Some(id),
+            Waiter::Thread => None,
+        })
+        .collect();
+    crate::sched::wake_io_batch(&ids);
 }
 
 /// Run `op` until it stops returning `WouldBlock`, waiting for `dir`
@@ -172,8 +212,14 @@ pub(crate) fn retry<T>(
         let seq = entry.seq(dir);
         match attempt(&mut op) {
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                if !wait(entry, dir, seq, deadline) {
-                    return Err(io::Error::new(io::ErrorKind::TimedOut, "timed out"));
+                match wait(entry, dir, seq, deadline) {
+                    Woke::Ready => {}
+                    Woke::TimedOut => {
+                        return Err(io::Error::new(io::ErrorKind::TimedOut, "timed out"))
+                    }
+                    Woke::Closed => {
+                        return Err(io::Error::new(io::ErrorKind::NotConnected, "socket closed"))
+                    }
                 }
             }
             Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
@@ -190,27 +236,36 @@ fn attempt<T>(op: &mut impl FnMut() -> io::Result<T>) -> io::Result<T> {
     op()
 }
 
-/// Wait until `dir` readiness moves past `seq` (returns true) or `deadline`
-/// passes first (returns false).
-fn wait(entry: &IoEntry, dir: Dir, seq: u64, deadline: Option<Instant>) -> bool {
+/// Wait until `dir` readiness moves past `seq`, `deadline` passes, or the
+/// socket is closed.
+fn wait(entry: &IoEntry, dir: Dir, seq: u64, deadline: Option<Instant>) -> Woke {
     loop {
-        if let Some(d) = deadline {
-            if Instant::now() >= d {
-                return lock(&entry.state).side(dir).seq != seq;
+        {
+            let mut st = lock(&entry.state);
+            if st.closed {
+                return Woke::Closed;
+            }
+            if st.side(dir).seq != seq {
+                return Woke::Ready;
             }
         }
+        if deadline.is_some_and(|d| Instant::now() >= d) {
+            return Woke::TimedOut;
+        }
         if crate::sched::on_goroutine() {
-            let mut gen = 0;
-            let parked = crate::sched::park_io(|me| {
+            crate::sched::park_io(|me| {
                 let mut st = lock(&entry.state);
                 if st.side(dir).seq != seq || st.closed {
                     return false;
                 }
                 st.next_gen += 1;
-                gen = st.next_gen;
+                let gen = st.next_gen;
                 let side = st.side(dir);
-                side.waiter = Some((Waiter::Goroutine(me), gen));
-                side.deadline = deadline;
+                side.waiters.push(WaitRec {
+                    who: Waiter::Goroutine(me),
+                    gen,
+                    deadline,
+                });
                 if let Some(d) = deadline {
                     if side.armed.is_none_or(|t| t > d) {
                         side.armed = Some(d);
@@ -219,16 +274,17 @@ fn wait(entry: &IoEntry, dir: Dir, seq: u64, deadline: Option<Instant>) -> bool 
                 }
                 true
             });
-            if !parked {
-                return true;
-            }
         } else {
             let was = crate::gc::block_begin();
             let mut st = lock(&entry.state);
             if st.side(dir).seq == seq && !st.closed {
                 st.next_gen += 1;
                 let gen = st.next_gen;
-                st.side(dir).waiter = Some((Waiter::Thread, gen));
+                st.side(dir).waiters.push(WaitRec {
+                    who: Waiter::Thread,
+                    gen,
+                    deadline: None,
+                });
                 let timeout = deadline.map(|d| d.saturating_duration_since(Instant::now()));
                 st = match timeout {
                     Some(t) => {
@@ -240,21 +296,16 @@ fn wait(entry: &IoEntry, dir: Dir, seq: u64, deadline: Option<Instant>) -> bool 
                     }
                     None => entry.cv.wait(st).unwrap_or_else(|e| e.into_inner()),
                 };
-                if matches!(st.side(dir).waiter, Some((_, g)) if g == gen) {
-                    st.side(dir).waiter = None;
-                }
+                st.side(dir).waiters.retain(|w| w.gen != gen);
             }
             drop(st);
             crate::gc::block_end(was);
-        }
-        if lock(&entry.state).side(dir).seq != seq {
-            return true;
         }
     }
 }
 
 fn add_timer(deadline: Instant, token: Token, dir: Dir) {
-    let p = poller();
+    let p = running();
     lock(&p.timers).push(Reverse((deadline, token.0, dir as u8)));
     let nanos = nanos_since_base(deadline);
     if nanos < p.earliest.fetch_min(nanos, Ordering::AcqRel) {
@@ -294,19 +345,19 @@ fn run(mut poll: Poll, p: &'static Poller) {
                 continue;
             };
             let broken = ev.is_error() || ev.is_read_closed() || ev.is_write_closed();
-            let mut woken: [Option<(Waiter, u64)>; 2] = [None, None];
+            let mut woken = Vec::new();
             {
                 let mut st = lock(&entry.state);
                 if ev.is_readable() || broken {
                     st.read.seq += 1;
-                    woken[0] = st.read.waiter.take();
+                    woken.append(&mut st.read.waiters);
                 }
                 if ev.is_writable() || broken {
                     st.write.seq += 1;
-                    woken[1] = st.write.waiter.take();
+                    woken.append(&mut st.write.waiters);
                 }
             }
-            notify(&entry, woken, &mut wake);
+            notify(&entry, &woken, &mut wake);
         }
         expire_timers(p, &mut wake);
         crate::sched::wake_io_batch(&wake);
@@ -316,10 +367,10 @@ fn run(mut poll: Poll, p: &'static Poller) {
 
 /// Wake `woken`: threads at once, goroutines collected into `wake` so the
 /// whole poll batch takes the scheduler lock once.
-fn notify(entry: &IoEntry, woken: [Option<(Waiter, u64)>; 2], wake: &mut Vec<usize>) {
+fn notify(entry: &IoEntry, woken: &[WaitRec], wake: &mut Vec<usize>) {
     let mut thread = false;
-    for (w, _) in woken.into_iter().flatten() {
-        match w {
+    for w in woken {
+        match w.who {
             Waiter::Goroutine(id) => wake.push(id),
             Waiter::Thread => thread = true,
         }
@@ -368,24 +419,41 @@ fn expire_timers(p: &Poller, wake: &mut Vec<usize>) {
             let mut st = lock(&entry.state);
             let side = st.side(dir);
             if side.armed != Some(at) {
-                None
+                Vec::new()
             } else {
                 side.armed = None;
-                match (side.waiter, side.deadline) {
-                    (Some(_), Some(d)) if d <= now => side.waiter.take(),
-                    (Some(_), Some(d)) => {
-                        side.armed = Some(d);
-                        add_timer(d, Token(token), dir);
-                        None
-                    }
-                    _ => None,
+                let (due, rest): (Vec<WaitRec>, Vec<WaitRec>) = side
+                    .waiters
+                    .drain(..)
+                    .partition(|w| w.deadline.is_some_and(|d| d <= now));
+                side.waiters = rest;
+                if let Some(next) = side.waiters.iter().filter_map(|w| w.deadline).min() {
+                    side.armed = Some(next);
+                    add_timer(next, Token(token), dir);
                 }
+                due
             }
         };
-        let pair = match dir {
-            Dir::Read => [woken, None],
-            Dir::Write => [None, woken],
-        };
-        notify(&entry, pair, wake);
+        notify(&entry, &woken, wake);
     }
+    compact_timers(p);
+}
+
+/// Drop the queued timers of sockets that have closed, once the heap has grown
+/// well past the number of open sockets (connection churn with long timeouts).
+fn compact_timers(p: &Poller) {
+    let queued = lock(&p.timers).len();
+    if queued < COMPACT_AT {
+        return;
+    }
+    let open: HashSet<usize> = lock(&p.entries).keys().map(|t| t.0).collect();
+    if queued < open.len() * 4 {
+        return;
+    }
+    let mut timers = lock(&p.timers);
+    let kept: Vec<_> = timers
+        .drain()
+        .filter(|Reverse((_, token, _))| open.contains(token))
+        .collect();
+    *timers = kept.into_iter().collect();
 }

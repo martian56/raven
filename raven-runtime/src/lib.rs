@@ -446,20 +446,32 @@ fn net_insert(sock: Socket) -> i64 {
 /// Returns None if the id is unknown or names a listener, leaving the registry
 /// unchanged in that case.
 pub(crate) fn net_take_stream(id: i64) -> Option<TcpStream> {
+    // Only a stream no other operation holds can change hands. Other holders
+    // clone the Arc under this lock and only drop it outside, so a count of one
+    // seen here stays one; otherwise the id is left registered and usable.
     let arc = {
         let mut reg = net_registry().lock().unwrap();
         match reg.get(&id) {
-            Some(Socket::Stream(_)) => match reg.remove(&id) {
+            Some(Socket::Stream(s)) if Arc::strong_count(s) == 1 => match reg.remove(&id) {
                 Some(Socket::Stream(s)) => s,
                 _ => return None,
             },
             _ => return None,
         }
     };
-    let NetStream { mut io, entry, .. } = Arc::try_unwrap(arc).ok()?;
+    let NetStream {
+        mut io,
+        entry,
+        read_ms,
+        write_ms,
+    } = Arc::try_unwrap(arc).ok()?;
     netpoll::deregister(&mut io, &entry);
     let stream = mio_into_std(io);
     stream.set_nonblocking(false).ok()?;
+    // Carry the timeouts over to the blocking socket, as before the upgrade.
+    let timeout = |ms: i64| (ms > 0).then(|| Duration::from_millis(ms as u64));
+    let _ = stream.set_read_timeout(timeout(read_ms.into_inner()));
+    let _ = stream.set_write_timeout(timeout(write_ms.into_inner()));
     Some(stream)
 }
 
@@ -1658,11 +1670,12 @@ pub extern "C" fn raven_net_read(stream_id: i64, max: i64) -> *mut object::Strin
         }
     };
     let deadline = NetStream::deadline(&stream.read_ms);
+    // The buffer is taken out of the thread's slot rather than borrowed (the
+    // string allocation can switch goroutines on this thread) and kept across
+    // readiness retries, so a large read limit is allocated once per call.
+    let mut owned: Option<Vec<u8>> = None;
     let result = netpoll::retry(&stream.entry, netpoll::Dir::Read, deadline, || {
-        // Take the buffer out of the slot rather than borrowing it: the string
-        // allocation below can switch goroutines on this thread, and another
-        // read must not find the slot borrowed.
-        let mut buf = read_buf_take();
+        let buf = owned.get_or_insert_with(read_buf_take);
         if buf.len() < cap {
             // A very large `max` must fail gracefully rather than abort on a
             // failed allocation.
@@ -1676,12 +1689,13 @@ pub extern "C" fn raven_net_read(stream_id: i64, max: i64) -> *mut object::Strin
             buf.resize(cap, 0);
         }
         let read = (&stream.io).read(&mut buf[..cap]);
-        let out = read.map(|n| object::raven_string_from_bytes(buf.as_ptr(), n));
+        read.map(|n| object::raven_string_from_bytes(buf.as_ptr(), n))
+    });
+    if let Some(buf) = owned {
         if buf.len() <= 1 << 20 {
             read_buf_put(buf);
         }
-        out
-    });
+    }
     match result {
         Ok(out) => {
             net_clear_error();
@@ -1717,9 +1731,12 @@ pub extern "C" fn raven_net_write(stream_id: i64, data: *const object::String) -
     // holding it, so a blocked write does not serialize other goroutines' net
     // operations on the shared registry.
     let result = net_get_stream(stream_id).and_then(|s| {
-        let deadline = NetStream::deadline(&s.write_ms);
+        // The write timeout bounds each wait for progress, not the whole
+        // transfer, so a slow client that keeps draining still gets a large
+        // response, as with a blocking socket's send timeout.
         let mut done = 0;
         while done < bytes.len() {
+            let deadline = NetStream::deadline(&s.write_ms);
             let n = netpoll::retry(&s.entry, netpoll::Dir::Write, deadline, || {
                 (&s.io).write(&bytes[done..])
             })?;
@@ -3567,6 +3584,43 @@ mod tests {
 
     fn rv_string(s: &str) -> *mut object::String {
         object::raven_string_from_bytes(s.as_ptr(), s.len())
+    }
+
+    fn listener_port(lid: i64) -> u16 {
+        match net_registry().lock().unwrap().get(&lid) {
+            Some(Socket::Listener(l)) => l.io.local_addr().unwrap().port(),
+            _ => panic!("listener not registered"),
+        }
+    }
+
+    #[test]
+    fn two_parked_accepts_both_get_a_connection() {
+        let lid = raven_net_listen(rv_string("127.0.0.1:0"));
+        assert!(lid > 0, "listen failed");
+        let port = listener_port(lid);
+        let a = std::thread::spawn(move || raven_net_accept(lid));
+        let b = std::thread::spawn(move || raven_net_accept(lid));
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let _c1 = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        let _c2 = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        assert!(a.join().unwrap() > 0);
+        assert!(b.join().unwrap() > 0);
+    }
+
+    #[test]
+    fn closing_a_listener_ends_a_parked_accept() {
+        let lid = raven_net_listen(rv_string("127.0.0.1:0"));
+        assert!(lid > 0, "listen failed");
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(raven_net_accept(lid));
+        });
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        raven_net_close(lid);
+        let got = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("accept still parked after close");
+        assert_eq!(got, 0);
     }
 
     #[test]

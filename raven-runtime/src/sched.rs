@@ -737,11 +737,6 @@ pub(crate) fn park_io(register: impl FnOnce(usize) -> bool) -> bool {
     true
 }
 
-/// Make a goroutine parked by `park_io` runnable again.
-pub(crate) fn wake_io(id: usize) {
-    wake_io_batch(&[id]);
-}
-
 /// Wake several `park_io` goroutines under one scheduler lock.
 pub(crate) fn wake_io_batch(ids: &[usize]) {
     if ids.is_empty() {
