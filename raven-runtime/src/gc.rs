@@ -687,6 +687,7 @@ impl SmallHeap {
             let size = CLASS_SIZES[class];
             c.free = std::ptr::null_mut();
             let last = c.pages.last().copied();
+            let mut kept = Vec::with_capacity(c.pages.len());
             for &page in c.pages.iter().rev() {
                 let limit = if Some(page) == last {
                     c.bump
@@ -694,6 +695,8 @@ impl SmallHeap {
                     // SAFETY: whole slots fit below this bound.
                     unsafe { page.add(PAGE_BYTES / size * size) }
                 };
+                let free_before = c.free;
+                let mut survivors = 0usize;
                 let mut slot = limit;
                 while slot > page {
                     // SAFETY: stepping back by whole slots stays in the page.
@@ -702,6 +705,7 @@ impl SmallHeap {
                     // SAFETY: every slot below the bump limit holds a header.
                     let (tag, mark) = unsafe { ((*header).tag, (*header).gc_bits) };
                     if tag != TAG_FREE && mark == epoch {
+                        survivors += 1;
                         continue;
                     }
                     if tag != TAG_FREE {
@@ -717,7 +721,24 @@ impl SmallHeap {
                     }
                     c.free = slot;
                 }
+                // An empty page other than the bump page goes back to the
+                // allocator, dropping the slots it just added to the free list.
+                if survivors == 0 && Some(page) != last {
+                    c.free = free_before;
+                    // SAFETY: allocated in `alloc` with this layout; no slot in
+                    // it is live or on the free list any more.
+                    unsafe {
+                        std::alloc::dealloc(
+                            page,
+                            std::alloc::Layout::from_size_align_unchecked(PAGE_BYTES, 4096),
+                        )
+                    };
+                } else {
+                    kept.push(page);
+                }
             }
+            kept.reverse();
+            c.pages = kept;
         }
         (freed_bytes, freed)
     }
