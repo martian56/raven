@@ -35,14 +35,34 @@ The collector is **stop the world**: a collection runs to completion
 before the mutator (the compiled program) resumes. There is no
 concurrent or incremental marking.
 
-The mark-and-sweep cycle itself is **single threaded**, but Raven mutators are
-not. Each worker thread owns its allocation list, byte counters, and current
-shadow stack. Every live thread registers that stack in a process-wide root
-registry, while parked goroutine roots and buffered channel values are exposed
-through the scheduler. A collector stops all in-Raven threads at allocation or
-loop-back-edge safepoints, scans the complete root set, and sweeps only the
-initiating thread's allocation list. Globally unique mark epochs distinguish
-the current cycle from marks written by another thread's collection.
+Marking is **single threaded**; sweeping runs in parallel. Raven mutators are
+multi-threaded. Each worker thread owns its allocation list, byte counters, and
+current shadow stack. Every live thread registers that stack in a process-wide
+root registry, while parked goroutine roots and buffered channel values are
+exposed through the scheduler. A collector stops all in-Raven threads at
+allocation or loop-back-edge safepoints, scans the complete root set, and then
+sweeps every heap: its own, each heap registered by a thread that runs compiled
+Raven, and the heaps left by exited threads. Helper threads take the heaps in
+parallel, since heaps are disjoint. A thread that allocates outside compiled
+Raven (a native caller, a test) is not registered; only its own collections
+sweep its heap. Globally unique mark epochs distinguish the current cycle from
+marks written by an earlier one.
+
+### Trigger
+
+Registered threads share one budget: a collection runs once the bytes allocated
+since the last one (object bodies plus owned buffers such as string bytes) pass
+the live bytes it left, or a floor of `RAVEN_GC_THRESHOLD` (16 MiB by default)
+per core, whichever is larger. A per-thread budget let a server with hundreds
+of worker threads, one per blocked connection, hold hundreds of thresholds of
+garbage. An unregistered thread keeps its own budget of twice its live bytes.
+
+### Exited threads and empty pages
+
+A thread's heap outlives the thread: its objects may still be reachable. When a
+thread exits, its pages and large objects move to an orphan list, and the next
+collection adopts them into the collector's heap. A sweep returns every page
+that ends up empty (except the page currently being filled) to the allocator.
 
 ### Mark epoch
 

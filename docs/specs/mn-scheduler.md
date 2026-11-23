@@ -34,11 +34,14 @@ are `Send`, so a coroutine may resume on a different thread than it last ran
 on, as long as only one thread resumes a given coroutine at a time (guaranteed
 by popping it from the ready queue exclusively).
 
-The GC is already correct for this: each OS thread keeps its own heap and sweeps
-only that heap, the registry makes a collection scan every thread's roots, and
-epochs keep per-thread sweeps from tripping over cross-thread marks. A migrated
-goroutine's objects simply spread across worker heaps and stay live through the
-registry.
+The GC is correct for this: each OS thread allocates from its own heap, the
+registry makes a collection scan every thread's roots, and a collection sweeps
+every worker's heap (see `gc.md`). A migrated goroutine's objects simply spread
+across worker heaps and stay live through the registry.
+
+Workers added to cover blocking syscalls stay idle for `WORKER_LINGER` (2 s)
+before retiring. Retiring the moment a blocked call returned made a busy server
+create and destroy an OS thread for nearly every socket or database call.
 
 ## Pieces to build
 

@@ -1992,6 +1992,23 @@ mod collector_tests {
         });
     }
 
+    fn small_pages() -> usize {
+        ALLOC.with(|a| a.pages.borrow().classes.iter().map(|c| c.pages.len()).sum())
+    }
+
+    #[test]
+    fn sweep_returns_empty_pages() {
+        isolated(|| {
+            for _ in 0..200_000 {
+                let _garbage = raven_string_new(8);
+            }
+            let grown = small_pages();
+            raven_gc_collect();
+            assert!(grown > 10, "expected many pages, got {grown}");
+            assert!(small_pages() <= 1, "kept {} pages", small_pages());
+        });
+    }
+
     #[test]
     fn exited_thread_heap_is_adopted_by_the_next_collection() {
         isolated(|| {
