@@ -454,6 +454,8 @@ struct HeapPtr(*const AllocState);
 // SAFETY: a registered heap is only touched by another thread while the world
 // is stopped, and its thread removes it under the lock before it goes away.
 unsafe impl Send for HeapPtr {}
+// SAFETY: as for Send; a sweep hands each heap to exactly one helper.
+unsafe impl Sync for HeapPtr {}
 static HEAPS: Mutex<Vec<HeapPtr>> = Mutex::new(Vec::new());
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -480,6 +482,13 @@ static ADOPTED_OBJECTS: AtomicUsize = AtomicUsize::new(0);
 
 impl Drop for AllocState {
     fn drop(&mut self) {
+        // A sweep helper owns nothing and exits while the sweep holds `HEAPS`.
+        if !self.registered.get()
+            && self.pages.get_mut().is_empty()
+            && self.heap.get_mut().is_empty()
+        {
+            return;
+        }
         let mut heaps = lock(&HEAPS);
         if self.registered.get() {
             let me = self as *const AllocState;
@@ -1334,16 +1343,40 @@ fn sweep() -> usize {
     let heaps = lock(&HEAPS);
     adopt_orphans();
     let own = ALLOC.with(|a| a as *const AllocState);
-    // SAFETY: `own` is this thread's live heap.
-    let mut live = unsafe { sweep_heap(&*own, epoch) };
-    for h in heaps.iter() {
-        if h.0 != own {
-            // SAFETY: the world is stopped, so the owning thread is parked or
-            // outside the heap, and it cannot unregister while `heaps` is held.
-            live += unsafe { sweep_heap(&*h.0, epoch) };
-        }
+    let mut all: Vec<HeapPtr> = vec![HeapPtr(own)];
+    all.extend(heaps.iter().filter(|h| h.0 != own).map(|h| HeapPtr(h.0)));
+    let helpers = std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .min(all.len());
+    if helpers <= 1 {
+        // SAFETY: the world is stopped, so each owning thread is parked or
+        // outside its heap, and none can unregister while `heaps` is held.
+        return all
+            .iter()
+            .map(|h| unsafe { sweep_heap(&*h.0, epoch) })
+            .sum();
     }
-    live
+    // Heaps are disjoint, so helpers sweep them in parallel, each claiming the
+    // next unswept heap.
+    let next = AtomicUsize::new(0);
+    let all = &all;
+    let next = &next;
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..helpers)
+            .map(|_| {
+                scope.spawn(move || {
+                    let mut live = 0;
+                    loop {
+                        let i = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(h) = all.get(i) else { break live };
+                        // SAFETY: as above; each heap is claimed by one helper.
+                        live += unsafe { sweep_heap(&*h.0, epoch) };
+                    }
+                })
+            })
+            .collect();
+        workers.into_iter().map(|w| w.join().unwrap_or(0)).sum()
+    })
 }
 
 /// Free every object in `a` not marked with `epoch`; returns `a`'s live bytes.
