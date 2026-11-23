@@ -43,17 +43,19 @@ base64, pass raw bytes to `base64_encode` from [std.encoding](encoding.md).
 ## Passwords
 
 `hash_password` derives 32 bytes with PBKDF2-HMAC-SHA256 over a fresh 16-byte
-random salt at 210,000 iterations (the OWASP recommendation), and returns
+random salt at 600,000 iterations (the OWASP recommendation for
+PBKDF2-HMAC-SHA256), and returns
 them as one string:
 
 ```text
-pbkdf2-sha256$210000$<salt hex>$<hash hex>
+pbkdf2-sha256$600000$<salt hex>$<hash hex>
 ```
 
 Store that string as is. `verify_password` reads the iteration count and salt
 back from it, so hashes made today keep verifying if a later release raises
-the default. A malformed stored value never matches. Hashing takes tens of
-milliseconds on purpose. It runs as a blocking call, so other goroutines keep
+the default. A malformed stored value never matches, and neither does one
+whose salt or hash was shortened. Hashing and verifying are slow on purpose
+(a large fraction of a second each), so a stolen hash is costly to guess. They run as a blocking call, so other goroutines keep
 running and the collector is not held up.
 
 ## Tokens and signatures

@@ -6,7 +6,7 @@ use ring::{digest, hmac, pbkdf2, rand::SecureRandom};
 use std::num::NonZeroU32;
 use std::slice;
 
-const KDF_ROUNDS: u32 = 210_000;
+const KDF_ROUNDS: u32 = 600_000;
 const KDF_SALT_LEN: usize = 16;
 const KDF_HASH_LEN: usize = 32;
 const KDF_SCHEME: &str = "pbkdf2-sha256";
@@ -204,7 +204,8 @@ pub extern "C" fn raven_crypto_verify_password(
     ) else {
         return false;
     };
-    if scheme != KDF_SCHEME || hash.is_empty() {
+    // A shortened hash or salt would make the stored value easy to brute force.
+    if scheme != KDF_SCHEME || hash.len() != KDF_HASH_LEN || salt.len() < KDF_SALT_LEN {
         return false;
     }
     crate::gc::blocking(|| {

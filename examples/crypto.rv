@@ -22,6 +22,8 @@ fun main() {
     print(len(a), a != random_hex(16))
     print(constant_time_eq("token", "token"), constant_time_eq("token", "tokem"), constant_time_eq("a", "ab"))
     let stored = hash_password("hunter2")
-    print(stored.starts_with("pbkdf2-sha256$210000$"), stored != hash_password("hunter2"))
+    print(stored.starts_with("pbkdf2-sha256$600000$"), stored != hash_password("hunter2"))
     print(verify_password("hunter2", stored), verify_password("hunter3", stored), verify_password("x", "garbage"))
+    let cut = stored.substring(0, stored.length() - 62)
+    print(verify_password("hunter2", cut))
 }
