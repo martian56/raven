@@ -90,7 +90,7 @@ fun churn(s: Shared, g: int, wg: WaitGroup) {
 fun main() {
     let slots: list[Slot] = []
     for i in range(8) {
-        slots.push(Slot(label: "s${i}", hits: 0))
+        slots.push(Slot(label: "slot-${i}", hits: 0))
     }
     let s = Shared(lock: Mutex.new(), slots: slots)
     let wg = WaitGroup.new()
