@@ -215,10 +215,30 @@ value, so a typo or a truncated string surfaces as an `Err` you can handle.
 
 Round-tripping output from the matching encoder always decodes to `Ok`.
 
+## URL-safe base64
+
+### `base64url_encode(s: str) -> str`
+
+Base64 with the URL-safe alphabet (`-` and `_` in place of `+` and `/`) and no
+`=` padding, as JWTs and URL tokens use (RFC 4648, section 5).
+
+### `base64url_decode(s: str) -> Result[str, Error]`
+
+Decode URL-safe base64, padded or not. Input containing `+` or `/` is an
+error, since it is standard base64.
+
+```rust
+from std.encoding import base64url_encode, base64url_decode
+
+fun main() {
+    print(base64url_encode("hi")) // aGk
+    print(base64url_decode("aGk").unwrap()) // hi
+}
+```
+
 ## Out of scope
 
-URL-safe base64 (the `-_` alphabet) and base64 line wrapping are not provided.
-Both can be added later without changing the existing functions.
+Base64 line wrapping is not provided.
 
 ## Worked example: a hex dump round trip
 

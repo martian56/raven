@@ -1,0 +1,191 @@
+// std.bytes: build and read binary data, for wire protocols and file formats.
+// A Raven str holds bytes, so a ByteWriter produces a str and a ByteReader
+// reads one. Integers are written and read in big-endian (network) or
+// little-endian order. See docs/guide/stdlib/bytes.md.
+
+import std.error
+
+fun bytes_error(msg: str) -> Error {
+    return Error(kind: "bytes", message: msg)
+}
+
+// Appends values to a growing byte string.
+class ByteWriter {
+    parts: list[str]
+    size: int
+}
+
+impl ByteWriter {
+    fun new() -> ByteWriter = ByteWriter(parts: [], size: 0)
+
+    fun len(self) -> int = self.size
+
+    // The bytes written so far.
+    fun finish(self) -> str {
+        let joined = "".join(self.parts)
+        self.parts = [joined]
+        return joined
+    }
+
+    fun u8(self, v: int) -> ByteWriter {
+        self.parts.push(__str_from_byte(v & 255))
+        self.size += 1
+        return self
+    }
+
+    fun _be(self, v: int, n: int) -> ByteWriter {
+        var shift = (n - 1) * 8
+        while shift >= 0 {
+            self.parts.push(__str_from_byte((v >> shift) & 255))
+            shift -= 8
+        }
+        self.size += n
+        return self
+    }
+
+    fun _le(self, v: int, n: int) -> ByteWriter {
+        var shift = 0
+        while shift < n * 8 {
+            self.parts.push(__str_from_byte((v >> shift) & 255))
+            shift += 8
+        }
+        self.size += n
+        return self
+    }
+
+    fun u16_be(self, v: int) -> ByteWriter = self._be(v, 2)
+
+    fun u16_le(self, v: int) -> ByteWriter = self._le(v, 2)
+
+    fun u32_be(self, v: int) -> ByteWriter = self._be(v, 4)
+
+    fun u32_le(self, v: int) -> ByteWriter = self._le(v, 4)
+
+    fun i64_be(self, v: int) -> ByteWriter = self._be(v, 8)
+
+    fun i64_le(self, v: int) -> ByteWriter = self._le(v, 8)
+
+    // Raw bytes, as is.
+    fun bytes(self, data: str) -> ByteWriter {
+        self.parts.push(data)
+        self.size += __str_len(data)
+        return self
+    }
+
+    // `s` followed by a NUL byte, as C strings and many protocols use.
+    fun cstr(self, s: str) -> ByteWriter {
+        self.parts.push(s)
+        self.parts.push(__str_from_byte(0))
+        self.size += __str_len(s) + 1
+        return self
+    }
+}
+
+// Reads values from the front of a byte string. Every read checks that
+// enough bytes remain and returns an error instead of reading past the end.
+class ByteReader {
+    data: str
+    pos: int
+}
+
+impl ByteReader {
+    fun new(data: str) -> ByteReader = ByteReader(data: data, pos: 0)
+
+    fun remaining(self) -> int = __str_len(self.data) - self.pos
+
+    fun at_end(self) -> bool = self.pos >= __str_len(self.data)
+
+    fun position(self) -> int = self.pos
+
+    fun _need(self, n: int) -> Result[int, Error] {
+        if n < 0 or n > self.remaining() {
+            return Err(
+                bytes_error("need ${n} bytes at offset ${self.pos}, only ${self.remaining()} remain"),
+            )
+        }
+        let at = self.pos
+        self.pos += n
+        return Ok(at)
+    }
+
+    fun u8(self) -> Result[int, Error] {
+        let at = self._need(1)?
+        return Ok(__str_byte_at(self.data, at))
+    }
+
+    fun _be(self, n: int) -> Result[int, Error] {
+        let at = self._need(n)?
+        var v = 0
+        for i in range(n) {
+            v = (v << 8) | __str_byte_at(self.data, at + i)
+        }
+        return Ok(v)
+    }
+
+    fun _le(self, n: int) -> Result[int, Error] {
+        let at = self._need(n)?
+        var v = 0
+        var i = n - 1
+        while i >= 0 {
+            v = (v << 8) | __str_byte_at(self.data, at + i)
+            i -= 1
+        }
+        return Ok(v)
+    }
+
+    fun u16_be(self) -> Result[int, Error] = self._be(2)
+
+    fun u16_le(self) -> Result[int, Error] = self._le(2)
+
+    fun u32_be(self) -> Result[int, Error] = self._be(4)
+
+    fun u32_le(self) -> Result[int, Error] = self._le(4)
+
+    fun i64_be(self) -> Result[int, Error] = self._be(8)
+
+    fun i64_le(self) -> Result[int, Error] = self._le(8)
+
+    // A signed 16- or 32-bit value, sign-extended.
+    fun i16_be(self) -> Result[int, Error] {
+        let v = self._be(2)?
+        return Ok(v - 65536 if v >= 32768 else v)
+    }
+
+    fun i32_be(self) -> Result[int, Error] {
+        let v = self._be(4)?
+        return Ok(v - 4294967296 if v >= 2147483648 else v)
+    }
+
+    // The next `n` bytes.
+    fun bytes(self, n: int) -> Result[str, Error] {
+        let at = self._need(n)?
+        return Ok(__str_substring(self.data, at, at + n))
+    }
+
+    // Everything not yet read.
+    fun rest(self) -> str {
+        let at = self.pos
+        self.pos = __str_len(self.data)
+        return __str_substring(self.data, at, self.pos)
+    }
+
+    // Bytes up to the next NUL, which is consumed but not returned.
+    fun cstr(self) -> Result[str, Error] {
+        let n = __str_len(self.data)
+        var end = self.pos
+        while end < n and __str_byte_at(self.data, end) != 0 {
+            end += 1
+        }
+        if end >= n {
+            return Err(bytes_error("no NUL terminator after offset ${self.pos}"))
+        }
+        let s = __str_substring(self.data, self.pos, end)
+        self.pos = end + 1
+        return Ok(s)
+    }
+
+    fun skip(self, n: int) -> Result[int, Error] {
+        let _ = self._need(n)?
+        return Ok(self.pos)
+    }
+}

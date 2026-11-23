@@ -1,0 +1,30 @@
+24 510000000d53454c4543542031000102fffffffffffffffe
+81 13 SELECT 1 513 -2 true
+true
+-1 -1
+-_-_ true aGk hi true
+true
+https Ann Lee p@ss example.com 8443 /a/b%20c top
+raven lang ["x", "y"] false ["q", "tag"]
+https://Ann%20Lee:p%40ss@example.com:8443/a/b%20c?q=raven+lang&tag=x&tag=y#top
+https://Ann%20Lee:xxxxx@example.com:8443/a/b%20c?q=raven+lang&tag=x&tag=y#top
+::1 5432 [::1]:5432 /shop /shop?sslmode=disable
+file:///etc/hosts a@b.c
+true true true
+https://api.example.com/search?q=a%26b%20c&page=2
+a%20b%2Fc%3Fd a b/c%zz
+36 4 7 true true
+true true 16 true
+6ba7b810-9dad-11d1-80b4-00c04fd430c8 6ba7b810-9dad-11d1-80b4-00c04fd430c8 6ba7b810-9dad-11d1-80b4-00c04fd430c8
+false true false
+true
+1
+true
+80 ["?a"]
+https://api.example.com/v1 https://h/? https://h/#
+true
+[0, 1, 2, 3] 4 0 3
+3 2 1 0 true
+[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+["email", "sms", "resize", "report", "cleanup"] true
+1 6

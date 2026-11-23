@@ -1,0 +1,199 @@
+// std.uuid: generate, parse, and inspect UUIDs (RFC 9562). v4 is fully
+// random; v7 starts with the Unix time in milliseconds, so v7 ids made in
+// different milliseconds sort by creation time and keep database indexes
+// compact. Both draw from the operating system's secure random source. See
+// docs/guide/stdlib/uuid.md.
+
+import std.error
+
+extern "C" {
+    fun raven_crypto_random_bytes(n: int) -> str
+    fun raven_time_now_millis() -> int
+}
+
+fun uuid_error(msg: str) -> Error {
+    return Error(kind: "uuid", message: msg)
+}
+
+// A UUID. Equal ids compare equal, ids sort by their text (which for v7 is
+// creation order across milliseconds), and a Uuid can key a dict or set.
+class Uuid {
+    text: str
+}
+
+fun _hex(b: int) -> str {
+    let digits = "0123456789abcdef"
+    let hi = b >> 4
+    let lo = b & 15
+    return __str_substring(digits, hi, hi + 1) + __str_substring(digits, lo, lo + 1)
+}
+
+fun _from_bytes(raw: list[int]) -> Uuid {
+    let parts: list[str] = []
+    for i in range(16) {
+        if i == 4 or i == 6 or i == 8 or i == 10 {
+            parts.push("-")
+        }
+        parts.push(_hex(raw[i]))
+    }
+    return Uuid(text: "".join(parts))
+}
+
+// Set the version and RFC 9562 variant bits.
+fun _stamp(raw: list[int], version: int) -> Uuid {
+    raw[6] = (raw[6] & 15) | (version << 4)
+    raw[8] = (raw[8] & 63) | 128
+    return _from_bytes(raw)
+}
+
+fun _random(n: int) -> list[int] {
+    let r = raven_crypto_random_bytes(n)
+    if __str_len(r) != n {
+        panic("std.uuid: the secure random source failed")
+    }
+    let out: list[int] = []
+    for i in range(n) {
+        out.push(__str_byte_at(r, i))
+    }
+    return out
+}
+
+// A random (version 4) UUID.
+fun v4() -> Uuid = _stamp(_random(16), 4)
+
+// A time-ordered (version 7) UUID: 48 bits of Unix milliseconds, then random.
+fun v7() -> Uuid {
+    let raw = _random(16)
+    let ms = raven_time_now_millis()
+    for i in range(6) {
+        raw[i] = (ms >> ((5 - i) * 8)) & 255
+    }
+    return _stamp(raw, 7)
+}
+
+// The all-zero UUID.
+fun nil() -> Uuid = Uuid(text: "00000000-0000-0000-0000-000000000000")
+
+fun _hex_value(b: int) -> int {
+    if b >= 48 and b <= 57 {
+        return b - 48
+    }
+    if b >= 97 and b <= 102 {
+        return b - 87
+    }
+    if b >= 65 and b <= 70 {
+        return b - 55
+    }
+    return -1
+}
+
+fun _lower(s: str) -> str {
+    let out: list[str] = []
+    for i in range(__str_len(s)) {
+        let b = __str_byte_at(s, i)
+        out.push(__str_from_byte(b + 32 if b >= 65 and b <= 90 else b))
+    }
+    return "".join(out)
+}
+
+// Parse a UUID written with or without hyphens, in either case, optionally in
+// braces or with a `urn:uuid:` prefix (any case).
+fun parse(s: str) -> Result[Uuid, Error] {
+    var t = s.trim()
+    if __str_len(t) > 9 and _lower(__str_substring(t, 0, 9)) == "urn:uuid:" {
+        t = __str_substring(t, 9, __str_len(t))
+    }
+    if t.starts_with("{") and t.ends_with("}") {
+        t = __str_substring(t, 1, __str_len(t) - 1)
+    }
+    let n = __str_len(t)
+    if n != 32 and n != 36 {
+        return Err(uuid_error("`${s}` is not a UUID"))
+    }
+    let raw: list[int] = []
+    var i = 0
+    while i < n {
+        let b = __str_byte_at(t, i)
+        if n == 36 and (i == 8 or i == 13 or i == 18 or i == 23) {
+            if b != 45 {
+                return Err(uuid_error("`${s}` is not a UUID"))
+            }
+            i += 1
+            continue
+        }
+        let hi = _hex_value(b)
+        let lo = _hex_value(__str_byte_at(t, i + 1))
+        if hi < 0 or lo < 0 {
+            return Err(uuid_error("`${s}` is not a UUID"))
+        }
+        raw.push(hi * 16 + lo)
+        i += 2
+    }
+    return Ok(_from_bytes(raw))
+}
+
+fun is_valid(s: str) -> bool = parse(s).is_ok()
+
+impl Uuid {
+    // The version digit: 4 for v4, 7 for v7.
+    fun version(self) -> int = _hex_value(__str_byte_at(self.text, 14))
+
+    // Whether the variant bits are the RFC 9562 ones (`10xx`).
+    fun is_rfc_variant(self) -> bool {
+        let v = _hex_value(__str_byte_at(self.text, 19))
+        return v >= 8 and v <= 11
+    }
+
+    fun is_nil(self) -> bool = self.text == "00000000-0000-0000-0000-000000000000"
+
+    // When a v7 UUID was made, in Unix milliseconds.
+    fun timestamp_millis(self) -> Result[int, Error] {
+        if self.version() != 7 or not self.is_rfc_variant() {
+            return Err(uuid_error("`${self.text}` is not a version 7 UUID"))
+        }
+        var ms = 0
+        for i in range(13) {
+            if i != 8 {
+                ms = ms * 16 + _hex_value(__str_byte_at(self.text, i))
+            }
+        }
+        return Ok(ms)
+    }
+
+    // The 16 raw bytes.
+    fun bytes(self) -> str {
+        let out: list[str] = []
+        var i = 0
+        while i < 36 {
+            if __str_byte_at(self.text, i) == 45 {
+                i += 1
+                continue
+            }
+            out.push(
+                __str_from_byte(
+                    _hex_value(__str_byte_at(self.text, i)) * 16 + _hex_value(
+                        __str_byte_at(self.text, i + 1),
+                    ),
+                ),
+            )
+            i += 2
+        }
+        return "".join(out)
+    }
+}
+
+impl ToString for Uuid {
+    fun to_string(self) -> str = self.text
+}
+
+impl Eq for Uuid {
+    fun equals(self, other: Uuid) -> bool = self.text == other.text
+}
+
+impl Ord for Uuid {
+    fun compare(self, other: Uuid) -> int = self.text.compare(other.text)
+}
+
+impl Hash for Uuid {
+    fun hash(self) -> int = self.text.hash()
+}
