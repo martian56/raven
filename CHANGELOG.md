@@ -2,6 +2,16 @@
 
 All notable changes to Raven are documented in this file.
 
+## [3.7.1] - 2026-11-24
+
+### Performance
+
+- `std.encoding`: `hex_encode`, `base64_encode`, and `url_encode` run in the runtime. On 520 KB, hex went from 205 ms to 4 ms, base64 from 128 ms to 2 ms, and URL encoding from 118 ms to 5 ms. The output is unchanged.
+
+### Fixes
+
+- The collector sized its next budget from object bodies only, while the budget itself counts string, list, map, set, and closure buffers. A program whose live data was mostly in large buffers collected far more often than twice its live size. Survivors' buffers now count toward the live total.
+
 ## [3.7.0] - 2026-11-24
 
 Raven's HTTP stack against Go and Rust on a 16-core server, with wrk at 256 connections: plain text went from 67,000 to 113,000 requests a second (Go 134,000, Rust axum 140,000), a 4.9 KB JSON page from 16,000 to 34,000, and the OS thread count from 273 to 18.
