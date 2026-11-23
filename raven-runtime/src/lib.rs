@@ -17,6 +17,7 @@
 pub mod crypto;
 pub mod ffi_test;
 pub mod gc;
+pub mod netpoll;
 pub mod object;
 pub mod reflect;
 pub mod roots;
@@ -133,10 +134,14 @@ thread_local! {
     static NET_LAST_ERROR: RefCell<std::string::String> = const { RefCell::new(std::string::String::new()) };
 }
 
+// Net calls can park and resume on another worker, and an inlined TLS access
+// may reuse the address computed on the first thread, so these stay out of line.
+#[inline(never)]
 fn net_set_error(msg: std::string::String) {
     NET_LAST_ERROR.with(|e| *e.borrow_mut() = msg);
 }
 
+#[inline(never)]
 fn net_clear_error() {
     NET_LAST_ERROR.with(|e| e.borrow_mut().clear());
 }
@@ -342,10 +347,76 @@ fn http_stream_registry() -> &'static Mutex<HashMap<i64, HttpStreamEntry>> {
 }
 
 /// An entry in the socket registry. A listener or a stream is kept
-/// runtime-side so only an opaque integer id crosses the FFI.
+/// runtime-side so only an opaque integer id crosses the FFI. Both are
+/// non-blocking and registered with the netpoller; an operation clones the
+/// `Arc` under the registry lock and runs without it.
+#[derive(Clone)]
 enum Socket {
-    Listener(TcpListener),
-    Stream(TcpStream),
+    Listener(Arc<NetListener>),
+    Stream(Arc<NetStream>),
+}
+
+struct NetListener {
+    io: mio::net::TcpListener,
+    entry: Arc<netpoll::IoEntry>,
+}
+
+struct NetStream {
+    io: mio::net::TcpStream,
+    entry: Arc<netpoll::IoEntry>,
+    read_ms: AtomicI64,
+    write_ms: AtomicI64,
+}
+
+impl NetStream {
+    fn new(mut io: mio::net::TcpStream) -> io::Result<Self> {
+        let entry = netpoll::register(&mut io)?;
+        Ok(NetStream {
+            io,
+            entry,
+            read_ms: AtomicI64::new(0),
+            write_ms: AtomicI64::new(0),
+        })
+    }
+
+    fn deadline(ms: &AtomicI64) -> Option<std::time::Instant> {
+        let ms = ms.load(Ordering::Relaxed);
+        (ms > 0).then(|| std::time::Instant::now() + Duration::from_millis(ms as u64))
+    }
+}
+
+impl NetListener {
+    fn new(listener: TcpListener) -> io::Result<Self> {
+        listener.set_nonblocking(true)?;
+        let mut io = mio::net::TcpListener::from_std(listener);
+        let entry = netpoll::register(&mut io)?;
+        Ok(NetListener { io, entry })
+    }
+}
+
+/// A blocking std stream (from a connect) as a registered non-blocking one.
+fn net_stream_from_std(stream: TcpStream) -> io::Result<Socket> {
+    stream.set_nonblocking(true)?;
+    Ok(Socket::Stream(Arc::new(NetStream::new(
+        mio::net::TcpStream::from_std(stream),
+    )?)))
+}
+
+fn net_get(id: i64) -> io::Result<Socket> {
+    match net_registry().lock().unwrap().get(&id) {
+        Some(sock) => Ok(sock.clone()),
+        None => Err(io::Error::new(io::ErrorKind::NotFound, "unknown socket id")),
+    }
+}
+
+fn net_get_stream(id: i64) -> io::Result<Arc<NetStream>> {
+    match net_get(id)? {
+        Socket::Stream(s) => Ok(s),
+        Socket::Listener(_) => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "id is not a stream",
+        )),
+    }
 }
 
 /// The process-wide socket registry keyed by an incrementing id. Ids start
@@ -372,16 +443,70 @@ fn net_insert(sock: Socket) -> i64 {
 
 /// Remove a connected TCP stream from the registry and return ownership of the
 /// socket, so another subsystem can take it over (std/tls upgrade for STARTTLS).
-/// Returns None if the id is unknown or names a listener, leaving the registry
-/// unchanged in that case.
-pub(crate) fn net_take_stream(id: i64) -> Option<TcpStream> {
-    let mut reg = net_registry().lock().unwrap();
-    if matches!(reg.get(&id), Some(Socket::Stream(_))) {
-        if let Some(Socket::Stream(stream)) = reg.remove(&id) {
-            return Some(stream);
+/// Fails, leaving the registry unchanged, when the id is unknown or names a
+/// listener, or when another operation (a parked read) still holds the stream;
+/// that last case can succeed once the operation ends.
+pub(crate) fn net_take_stream(id: i64) -> Result<TcpStream, &'static str> {
+    // Other holders clone the Arc under this lock and only drop it outside, so
+    // a count of one seen here stays one.
+    let arc = {
+        let mut reg = net_registry().lock().unwrap();
+        match reg.get(&id) {
+            Some(Socket::Stream(s)) if Arc::strong_count(s) == 1 => match reg.remove(&id) {
+                Some(Socket::Stream(s)) => s,
+                _ => return Err("not a connected net stream id"),
+            },
+            Some(Socket::Stream(_)) => return Err("the stream is busy with another operation"),
+            _ => return Err("not a connected net stream id"),
         }
-    }
-    None
+    };
+    let Ok(NetStream {
+        mut io,
+        entry,
+        read_ms,
+        write_ms,
+    }) = Arc::try_unwrap(arc)
+    else {
+        return Err("the stream is busy with another operation");
+    };
+    netpoll::deregister(&mut io, &entry);
+    let stream = mio_into_std(io);
+    stream
+        .set_nonblocking(false)
+        .map_err(|_| "could not make the stream blocking")?;
+    // Carry the timeouts over to the blocking socket, as before the upgrade.
+    let timeout = |ms: i64| (ms > 0).then(|| Duration::from_millis(ms as u64));
+    let _ = stream.set_read_timeout(timeout(read_ms.into_inner()));
+    let _ = stream.set_write_timeout(timeout(write_ms.into_inner()));
+    Ok(stream)
+}
+
+#[cfg(unix)]
+fn mio_into_std(io: mio::net::TcpStream) -> TcpStream {
+    use std::os::unix::io::{FromRawFd, IntoRawFd};
+    // SAFETY: the descriptor comes straight out of an owned socket.
+    unsafe { TcpStream::from_raw_fd(io.into_raw_fd()) }
+}
+
+#[cfg(windows)]
+fn mio_into_std(io: mio::net::TcpStream) -> TcpStream {
+    use std::os::windows::io::{FromRawSocket, IntoRawSocket};
+    // SAFETY: the socket comes straight out of an owned stream.
+    unsafe { TcpStream::from_raw_socket(io.into_raw_socket()) }
+}
+
+thread_local! {
+    static READ_BUF: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+}
+
+#[inline(never)]
+fn read_buf_take() -> Vec<u8> {
+    READ_BUF.with(|b| std::mem::take(&mut *b.borrow_mut()))
+}
+
+#[inline(never)]
+fn read_buf_put(buf: Vec<u8>) {
+    READ_BUF.with(|b| *b.borrow_mut() = buf);
 }
 
 /// Allocate `size` bytes aligned to `align`.
@@ -1461,8 +1586,8 @@ pub extern "C" fn raven_net_connect(addr: *const object::String) -> i64 {
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "addr is not valid UTF-8"))
             .and_then(TcpStream::connect)
     });
-    match result {
-        Ok(stream) => net_insert(Socket::Stream(stream)),
+    match result.and_then(net_stream_from_std) {
+        Ok(sock) => net_insert(sock),
         Err(e) => {
             net_set_error(e.to_string());
             0
@@ -1480,9 +1605,10 @@ pub extern "C" fn raven_net_connect(addr: *const object::String) -> i64 {
 pub extern "C" fn raven_net_listen(addr: *const object::String) -> i64 {
     let result = env_name(addr)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "addr is not valid UTF-8"))
-        .and_then(TcpListener::bind);
+        .and_then(TcpListener::bind)
+        .and_then(NetListener::new);
     match result {
-        Ok(listener) => net_insert(Socket::Listener(listener)),
+        Ok(listener) => net_insert(Socket::Listener(Arc::new(listener))),
         Err(e) => {
             net_set_error(e.to_string());
             0
@@ -1501,23 +1627,22 @@ pub extern "C" fn raven_net_accept(listener_id: i64) -> i64 {
     // not serialize every other goroutine's net operation on the shared
     // registry. Run outside the running set so a slow accept never freezes a
     // collection.
-    let listener = {
-        let registry = net_registry().lock().unwrap();
-        match registry.get(&listener_id) {
-            Some(Socket::Listener(l)) => l.try_clone(),
-            Some(Socket::Stream(_)) => Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "id is not a listener",
-            )),
-            None => Err(io::Error::new(io::ErrorKind::NotFound, "unknown socket id")),
-        }
-    };
-    let accepted = match listener {
-        Ok(l) => crate::gc::blocking(|| l.accept().map(|(stream, _)| stream)),
+    let accepted = match net_get(listener_id) {
+        Ok(Socket::Listener(l)) => netpoll::retry(&l.entry, netpoll::Dir::Read, None, || {
+            l.io.accept().map(|(s, _)| s)
+        })
+        .and_then(|s| {
+            let _ = s.set_nodelay(true);
+            NetStream::new(s)
+        }),
+        Ok(Socket::Stream(_)) => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "id is not a listener",
+        )),
         Err(e) => Err(e),
     };
     match accepted {
-        Ok(stream) => net_insert(Socket::Stream(stream)),
+        Ok(stream) => net_insert(Socket::Stream(Arc::new(stream))),
         Err(e) => {
             net_set_error(e.to_string());
             0
@@ -1543,40 +1668,44 @@ pub extern "C" fn raven_net_read(stream_id: i64, max: i64) -> *mut object::Strin
     // on the shared registry. Block outside the collector's running set so a slow
     // read never freezes a concurrent collection waiting for this worker to reach
     // a safepoint.
-    let stream = {
-        let registry = net_registry().lock().unwrap();
-        match registry.get(&stream_id) {
-            Some(Socket::Stream(s)) => s.try_clone(),
-            Some(Socket::Listener(_)) => Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "id is not a stream",
-            )),
-            None => Err(io::Error::new(io::ErrorKind::NotFound, "unknown socket id")),
+    let stream = match net_get_stream(stream_id) {
+        Ok(s) => s,
+        Err(e) => {
+            net_set_error(e.to_string());
+            return object::raven_string_from_bytes(std::ptr::null(), 0);
         }
     };
-    let result = match stream {
-        Ok(mut s) => crate::gc::blocking(|| {
-            // A very large `max` must fail gracefully: a plain `vec![0; cap]`
-            // aborts the process when the allocation fails. Reserve fallibly so
-            // an oversized request becomes an error instead.
-            let mut buf: Vec<u8> = Vec::new();
-            buf.try_reserve_exact(cap).map_err(|_| {
-                io::Error::new(
+    let deadline = NetStream::deadline(&stream.read_ms);
+    // The buffer is taken out of the thread's slot rather than borrowed (the
+    // string allocation can switch goroutines on this thread) and kept across
+    // readiness retries, so a large read limit is allocated once per call.
+    let mut owned: Option<Vec<u8>> = None;
+    let result = netpoll::retry(&stream.entry, netpoll::Dir::Read, deadline, || {
+        let buf = owned.get_or_insert_with(read_buf_take);
+        if buf.len() < cap {
+            // A very large `max` must fail gracefully rather than abort on a
+            // failed allocation.
+            let extra = cap - buf.len();
+            if buf.try_reserve_exact(extra).is_err() {
+                return Err(io::Error::new(
                     io::ErrorKind::OutOfMemory,
                     "read size too large to allocate",
-                )
-            })?;
+                ));
+            }
             buf.resize(cap, 0);
-            let n = s.read(&mut buf)?;
-            buf.truncate(n);
-            Ok(buf)
-        }),
-        Err(e) => Err(e),
-    };
+        }
+        let read = (&stream.io).read(&mut buf[..cap]);
+        read.map(|n| object::raven_string_from_bytes(buf.as_ptr(), n))
+    });
+    if let Some(buf) = owned {
+        if buf.len() <= 1 << 20 {
+            read_buf_put(buf);
+        }
+    }
     match result {
-        Ok(bytes) => {
+        Ok(out) => {
             net_clear_error();
-            object::raven_string_from_bytes(bytes.as_ptr(), bytes.len())
+            out
         }
         Err(e) => {
             net_set_error(e.to_string());
@@ -1607,21 +1736,26 @@ pub extern "C" fn raven_net_write(stream_id: i64, data: *const object::String) -
     // Clone the stream handle under the registry lock, then write without
     // holding it, so a blocked write does not serialize other goroutines' net
     // operations on the shared registry.
-    let stream = {
-        let registry = net_registry().lock().unwrap();
-        match registry.get(&stream_id) {
-            Some(Socket::Stream(s)) => s.try_clone(),
-            Some(Socket::Listener(_)) => Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "id is not a stream",
-            )),
-            None => Err(io::Error::new(io::ErrorKind::NotFound, "unknown socket id")),
+    let result = net_get_stream(stream_id).and_then(|s| {
+        // The write timeout bounds each wait for progress, not the whole
+        // transfer, so a slow client that keeps draining still gets a large
+        // response, as with a blocking socket's send timeout.
+        let mut done = 0;
+        while done < bytes.len() {
+            let deadline = NetStream::deadline(&s.write_ms);
+            let n = netpoll::retry(&s.entry, netpoll::Dir::Write, deadline, || {
+                (&s.io).write(&bytes[done..])
+            })?;
+            if n == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::WriteZero,
+                    "failed to write whole buffer",
+                ));
+            }
+            done += n;
         }
-    };
-    let result = match stream {
-        Ok(mut s) => crate::gc::blocking(|| s.write_all(bytes).map(|()| bytes.len() as i64)),
-        Err(e) => Err(e),
-    };
+        Ok(bytes.len() as i64)
+    });
     match result {
         Ok(n) => {
             net_clear_error();
@@ -1644,8 +1778,13 @@ pub extern "C" fn raven_net_close(stream_id: i64) {
     // reader hung. Shut a stream down so that read returns at once. (A listener
     // has no portable shutdown; dropping its registry copy is the best we can
     // do here.)
-    if let Some(Socket::Stream(stream)) = sock {
-        let _ = stream.shutdown(std::net::Shutdown::Both);
+    match sock {
+        Some(Socket::Stream(stream)) => {
+            let _ = stream.io.shutdown(std::net::Shutdown::Both);
+            netpoll::close(&stream.entry);
+        }
+        Some(Socket::Listener(listener)) => netpoll::close(&listener.entry),
+        None => {}
     }
 }
 
@@ -1654,18 +1793,12 @@ pub extern "C" fn raven_net_close(stream_id: i64) {
 /// last-error slot.
 #[no_mangle]
 pub extern "C" fn raven_net_set_read_timeout_ms(stream_id: i64, ms: i64) {
-    let timeout = if ms <= 0 {
-        None
-    } else {
-        Some(Duration::from_millis(ms as u64))
-    };
-    let registry = net_registry().lock().unwrap();
-    match registry.get(&stream_id) {
-        Some(Socket::Stream(s)) => match s.set_read_timeout(timeout) {
-            Ok(()) => net_clear_error(),
-            Err(e) => net_set_error(e.to_string()),
-        },
-        _ => net_set_error("unknown socket id".to_string()),
+    match net_get_stream(stream_id) {
+        Ok(s) => {
+            s.read_ms.store(ms.max(0), Ordering::Relaxed);
+            net_clear_error();
+        }
+        Err(_) => net_set_error("unknown socket id".to_string()),
     }
 }
 
@@ -1674,18 +1807,12 @@ pub extern "C" fn raven_net_set_read_timeout_ms(stream_id: i64, ms: i64) {
 /// last-error slot.
 #[no_mangle]
 pub extern "C" fn raven_net_set_write_timeout_ms(stream_id: i64, ms: i64) {
-    let timeout = if ms <= 0 {
-        None
-    } else {
-        Some(Duration::from_millis(ms as u64))
-    };
-    let registry = net_registry().lock().unwrap();
-    match registry.get(&stream_id) {
-        Some(Socket::Stream(s)) => match s.set_write_timeout(timeout) {
-            Ok(()) => net_clear_error(),
-            Err(e) => net_set_error(e.to_string()),
-        },
-        _ => net_set_error("unknown socket id".to_string()),
+    match net_get_stream(stream_id) {
+        Ok(s) => {
+            s.write_ms.store(ms.max(0), Ordering::Relaxed);
+            net_clear_error();
+        }
+        Err(_) => net_set_error("unknown socket id".to_string()),
     }
 }
 
@@ -3465,6 +3592,43 @@ mod tests {
         object::raven_string_from_bytes(s.as_ptr(), s.len())
     }
 
+    fn listener_port(lid: i64) -> u16 {
+        match net_registry().lock().unwrap().get(&lid) {
+            Some(Socket::Listener(l)) => l.io.local_addr().unwrap().port(),
+            _ => panic!("listener not registered"),
+        }
+    }
+
+    #[test]
+    fn two_parked_accepts_both_get_a_connection() {
+        let lid = raven_net_listen(rv_string("127.0.0.1:0"));
+        assert!(lid > 0, "listen failed");
+        let port = listener_port(lid);
+        let a = std::thread::spawn(move || raven_net_accept(lid));
+        let b = std::thread::spawn(move || raven_net_accept(lid));
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let _c1 = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        let _c2 = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        assert!(a.join().unwrap() > 0);
+        assert!(b.join().unwrap() > 0);
+    }
+
+    #[test]
+    fn closing_a_listener_ends_a_parked_accept() {
+        let lid = raven_net_listen(rv_string("127.0.0.1:0"));
+        assert!(lid > 0, "listen failed");
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(raven_net_accept(lid));
+        });
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        raven_net_close(lid);
+        let got = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("accept still parked after close");
+        assert_eq!(got, 0);
+    }
+
     #[test]
     fn parked_accept_does_not_hold_the_registry_lock() {
         // A connection that has not yet arrived must not serialize other
@@ -3477,7 +3641,7 @@ mod tests {
         let port = {
             let reg = net_registry().lock().unwrap();
             match reg.get(&lid) {
-                Some(Socket::Listener(l)) => l.local_addr().unwrap().port(),
+                Some(Socket::Listener(l)) => l.io.local_addr().unwrap().port(),
                 _ => panic!("listener not registered"),
             }
         };

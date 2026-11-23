@@ -315,9 +315,9 @@ pub extern "C" fn raven_tls_upgrade(
         }
     };
     let tcp = match crate::net_take_stream(net_stream_id) {
-        Some(t) => t,
-        None => {
-            set_error("not a connected net stream id".to_string());
+        Ok(t) => t,
+        Err(why) => {
+            set_error(why.to_string());
             return 0;
         }
     };

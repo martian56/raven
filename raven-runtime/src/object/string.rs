@@ -426,6 +426,74 @@ pub extern "C" fn raven_float_to_string(value: f64) -> *mut String {
     raven_string_from_bytes(rendered.as_ptr(), rendered.len())
 }
 
+/// The floating-point remainder of `a / b` with the sign of `a` (C `fmod`):
+/// `5.5 % 2.0` is `1.5`, `-5.5 % 2.0` is `-1.5`, and a zero divisor gives NaN.
+#[no_mangle]
+pub extern "C" fn raven_float_mod(a: f64, b: f64) -> f64 {
+    a % b
+}
+
+/// Allocate the JSON form of a number: `{}` formatting (which never prints a
+/// `.0`) for a finite value, `null` for infinity or NaN.
+#[no_mangle]
+pub extern "C" fn raven_json_number(value: f64) -> *mut String {
+    if !value.is_finite() {
+        return raven_string_from_bytes(b"null".as_ptr(), 4);
+    }
+    let rendered = format!("{}", value);
+    raven_string_from_bytes(rendered.as_ptr(), rendered.len())
+}
+
+/// Allocate `s` as a quoted JSON string. Quote, backslash and control bytes
+/// are escaped (named escapes where JSON has them, `\u00xx` otherwise), valid
+/// UTF-8 passes through, and each byte of an invalid sequence becomes
+/// `�`, so the output is always valid JSON.
+#[no_mangle]
+pub extern "C" fn raven_json_quote(s: *const String) -> *mut String {
+    let len = raven_string_len(s) as usize;
+    let ptr = raven_string_bytes(s);
+    let bytes: &[u8] = if ptr.is_null() || len == 0 {
+        &[]
+    } else {
+        // SAFETY: a Raven String holds `len` initialized bytes.
+        unsafe { std::slice::from_raw_parts(ptr, len) }
+    };
+    let plain = bytes
+        .iter()
+        .all(|&b| (32..128).contains(&b) && b != b'"' && b != b'\\');
+    let mut out: Vec<u8> = Vec::with_capacity(len + 2);
+    out.push(b'"');
+    if plain {
+        out.extend_from_slice(bytes);
+    } else {
+        for chunk in bytes.utf8_chunks() {
+            for &b in chunk.valid().as_bytes() {
+                match b {
+                    b'"' => out.extend_from_slice(b"\\\""),
+                    b'\\' => out.extend_from_slice(b"\\\\"),
+                    8 => out.extend_from_slice(b"\\b"),
+                    12 => out.extend_from_slice(b"\\f"),
+                    b'\n' => out.extend_from_slice(b"\\n"),
+                    b'\r' => out.extend_from_slice(b"\\r"),
+                    b'\t' => out.extend_from_slice(b"\\t"),
+                    0..=31 => {
+                        const HEX: &[u8; 16] = b"0123456789abcdef";
+                        out.extend_from_slice(b"\\u00");
+                        out.push(HEX[(b >> 4) as usize]);
+                        out.push(HEX[(b & 15) as usize]);
+                    }
+                    _ => out.push(b),
+                }
+            }
+            for _ in chunk.invalid() {
+                out.extend_from_slice(b"\\uFFFD");
+            }
+        }
+    }
+    out.push(b'"');
+    raven_string_from_bytes(out.as_ptr(), out.len())
+}
+
 /// Allocate a GC `String` rendering `value` with exactly `places` digits
 /// after the decimal point (clamped to 0..=64), for `"${x:.2}"`.
 #[no_mangle]

@@ -212,6 +212,7 @@ pub const RUNTIME_LIST_GET: &str = "raven_list_get";
 /// Runtime C symbol reporting a fatal panic and terminating the process.
 /// Used by the out-of-bounds index check.
 pub const RUNTIME_PANIC: &str = "raven_panic";
+pub const RUNTIME_FLOAT_MOD: &str = "raven_float_mod";
 
 /// Runtime C symbol allocating a closure object.
 pub const RUNTIME_CLOSURE_NEW: &str = "raven_closure_new";
