@@ -81,6 +81,7 @@ pub const STDLIB_MODULES: &[&str] = &[
     "encoding",
     "crypto",
     "compress",
+    "signal",
     "random",
     "fmt",
     "string",

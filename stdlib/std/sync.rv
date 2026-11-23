@@ -21,6 +21,16 @@ extern "C" {
     fun raven_select_value() -> int
     fun raven_select_free(set_id: int)
     fun raven_channel_free(id: int)
+    fun raven_timer_after(ms: int) -> int
+    fun raven_timer_ticker(ms: int) -> int
+    fun raven_timer_stop(chan: int) -> bool
+    fun raven_atomic_new(value: int) -> int
+    fun raven_atomic_load(cell: int) -> int
+    fun raven_atomic_store(cell: int, value: int)
+    fun raven_atomic_add(cell: int, delta: int) -> int
+    fun raven_atomic_cas(cell: int, expected: int, new: int) -> bool
+    fun raven_atomic_swap(cell: int, value: int) -> int
+    fun raven_atomic_free(cell: int)
     fun raven_waitgroup_free(id: int)
 }
 
@@ -76,6 +86,27 @@ impl[T] Channel[T] {
         }
         raven_channel_send(self.lock, 0)
         return value
+    }
+
+    // Receive a value, or None if none arrives within `ms` milliseconds.
+    fun recv_timeout(self, ms: int) -> Option[T] {
+        let timer = raven_timer_after(ms)
+        let set = raven_select_new()
+        raven_select_add(set, self.signal)
+        raven_select_add(set, timer)
+        let index = raven_select_recv(set)
+        raven_select_free(set)
+        let _ = raven_timer_stop(timer)
+        raven_channel_free(timer)
+        if index == 0 {
+            return Some(self._take())
+        }
+        return None
+    }
+
+    // Receive a value that is already waiting, or None without blocking.
+    fun try_recv(self) -> Option[T] {
+        return self.recv_timeout(0)
     }
 
     // Release the channel's runtime registry entries. The channel must not be
@@ -182,4 +213,189 @@ fun select_recv[T](channels: list[Channel[T]]) -> SelectResult[T] {
     let index = raven_select_recv(set)
     raven_select_free(set)
     return SelectResult(index: index, value: channels[index]._take())
+}
+
+// Like `select_recv`, but gives up after `ms` milliseconds and returns None.
+fun select_recv_timeout[T](channels: list[Channel[T]], ms: int) -> Option[SelectResult[T]] {
+    let timer = raven_timer_after(ms)
+    let set = raven_select_new()
+    for ch in channels {
+        raven_select_add(set, ch.signal)
+    }
+    raven_select_add(set, timer)
+    let index = raven_select_recv(set)
+    raven_select_free(set)
+    let _ = raven_timer_stop(timer)
+    raven_channel_free(timer)
+    if index == channels.len() {
+        return None
+    }
+    return Some(SelectResult(index: index, value: channels[index]._take()))
+}
+
+// A one-shot timer. `wait` blocks the calling goroutine (not its thread) until
+// the time is up.
+class Timer {
+    id: int
+}
+
+// A timer that fires once after `ms` milliseconds.
+fun after(ms: int) -> Timer {
+    return Timer(id: raven_timer_after(ms))
+}
+
+impl Timer {
+    // Wait for the timer to fire, then release it.
+    fun wait(self) {
+        raven_channel_recv(self.id)
+        raven_channel_free(self.id)
+    }
+
+    // Cancel the timer and release it. Returns false if it had already fired.
+    fun stop(self) -> bool {
+        let stopped = raven_timer_stop(self.id)
+        raven_channel_free(self.id)
+        return stopped
+    }
+}
+
+// Fires every `ms` milliseconds until stopped. Ticks nobody waits for are
+// dropped, so a slow loop does not build a backlog.
+class Ticker {
+    id: int
+}
+
+fun ticker(ms: int) -> Ticker {
+    return Ticker(id: raven_timer_ticker(ms))
+}
+
+impl Ticker {
+    // Wait for the next tick.
+    fun tick(self) {
+        raven_channel_recv(self.id)
+    }
+
+    fun stop(self) {
+        let _ = raven_timer_stop(self.id)
+        raven_channel_free(self.id)
+    }
+}
+
+// An integer shared between goroutines, updated without a lock.
+class AtomicInt {
+    cell: int
+}
+
+impl AtomicInt {
+    fun new(value: int) -> AtomicInt = AtomicInt(cell: raven_atomic_new(value))
+
+    fun load(self) -> int = raven_atomic_load(self.cell)
+
+    fun store(self, value: int) {
+        raven_atomic_store(self.cell, value)
+    }
+
+    // Add `delta` and return the new value.
+    fun add(self, delta: int) -> int = raven_atomic_add(self.cell, delta)
+
+    // Store `value` and return the previous value.
+    fun swap(self, value: int) -> int = raven_atomic_swap(self.cell, value)
+
+    // Set to `new` if the current value is `expected`; returns whether it was.
+    fun compare_and_swap(self, expected: int, new: int) -> bool = raven_atomic_cas(self.cell, expected, new)
+
+    // Release the cell. It must not be used afterward.
+    fun free(self) {
+        raven_atomic_free(self.cell)
+    }
+}
+
+// A lock with shared readers and one exclusive writer. A waiting writer blocks
+// new readers, so a steady stream of reads cannot starve it.
+class RwLock {
+    gate: Mutex
+    state: Mutex
+    resource: Mutex
+    readers: int
+}
+
+impl RwLock {
+    fun new() -> RwLock = RwLock(gate: mutex(), state: mutex(), resource: mutex(), readers: 0)
+
+    fun read_lock(self) {
+        self.gate.lock()
+        self.state.lock()
+        self.readers += 1
+        if self.readers == 1 {
+            self.resource.lock()
+        }
+        self.state.unlock()
+        self.gate.unlock()
+    }
+
+    fun read_unlock(self) {
+        self.state.lock()
+        self.readers -= 1
+        if self.readers == 0 {
+            self.resource.unlock()
+        }
+        self.state.unlock()
+    }
+
+    fun write_lock(self) {
+        self.gate.lock()
+        self.resource.lock()
+        self.gate.unlock()
+    }
+
+    fun write_unlock(self) {
+        self.resource.unlock()
+    }
+}
+
+// Runs a function once, however many goroutines call `call` at the same time.
+// Callers that arrive while it runs wait for it to finish.
+class Once {
+    lock: Mutex
+    done: bool
+}
+
+impl Once {
+    fun new() -> Once = Once(lock: mutex(), done: false)
+
+    fun call(self, f: fun() -> Unit) {
+        self.lock.lock()
+        if not self.done {
+            f()
+            self.done = true
+        }
+        self.lock.unlock()
+    }
+
+    fun is_done(self) -> bool = self.done
+}
+
+// Limits how many goroutines hold a permit at once.
+class Semaphore {
+    ch: int
+}
+
+impl Semaphore {
+    fun new(permits: int) -> Semaphore {
+        let ch = raven_channel_new_buffered(permits)
+        for _ in range(permits) {
+            raven_channel_send(ch, 0)
+        }
+        return Semaphore(ch: ch)
+    }
+
+    // Take a permit, waiting while none are free.
+    fun acquire(self) {
+        raven_channel_recv(self.ch)
+    }
+
+    // Return a permit.
+    fun release(self) {
+        raven_channel_send(self.ch, 0)
+    }
 }

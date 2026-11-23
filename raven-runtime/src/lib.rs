@@ -1429,11 +1429,9 @@ pub extern "C" fn raven_time_parse(
 /// treated as zero.
 #[no_mangle]
 pub extern "C" fn raven_time_sleep_millis(ms: i64) {
-    let ms = ms.max(0) as u64;
-    // Sleeping blocks the thread for the whole duration; leave the collector's
-    // running set so a collection on another thread is not stalled until it
-    // wakes.
-    crate::gc::blocking(|| std::thread::sleep(std::time::Duration::from_millis(ms)));
+    // Same as std.sync.sleep_millis: a goroutine parks on a timer and frees
+    // its worker.
+    sched::raven_sleep_millis(ms);
 }
 
 /// The message of the most recent fallible net op, empty when it
