@@ -314,8 +314,9 @@ thread_local! {
         pages: RefCell::new(SmallHeap::new()),
         bytes: Cell::new(0),
         live: Cell::new(0),
+        pending: Cell::new(0),
+        registered: Cell::new(false),
         threshold: Cell::new(collection_floor()),
-        buffers: Cell::new(0),
     };
 }
 
@@ -423,17 +424,40 @@ struct AllocState {
     heap: RefCell<Vec<*mut ObjectHeader>>,
     /// Size-classed pages for objects of at most `SMALL_MAX` bytes.
     pages: RefCell<SmallHeap>,
-    /// Live object-body bytes. Drives the collection threshold.
+    /// Live object-body bytes.
     bytes: Cell<usize>,
     /// Live object count.
     live: Cell<usize>,
-    /// A collection runs before an allocation that would carry `bytes` plus
-    /// `buffers` past this.
+    /// Bytes allocated on this thread (object bodies and owned buffers) not
+    /// yet added to `ALLOCATED`.
+    pending: Cell<usize>,
+    /// Whether this heap is in `HEAPS`, so every collection sweeps it.
+    registered: Cell<bool>,
+    /// The trigger for a thread outside compiled Raven (a native caller or a
+    /// test), whose heap only its own collections sweep.
     threshold: Cell<usize>,
-    /// Bytes of owned buffers (string bytes, list elements) allocated since the
-    /// last collection. They die with their objects, so they count toward the
-    /// trigger even though `bytes` tracks object bodies only.
-    buffers: Cell<usize>,
+}
+
+/// Bytes allocated by all threads since the last collection. Threads add to it
+/// in `FLUSH_BYTES` batches.
+static ALLOCATED: AtomicUsize = AtomicUsize::new(0);
+/// Live bytes left by the last collection. The next one runs once `ALLOCATED`
+/// passes this (or the floor), so the heap stays about twice the live set no
+/// matter how many threads share the allocation.
+static LIVE_AFTER_GC: AtomicUsize = AtomicUsize::new(0);
+const FLUSH_BYTES: usize = 64 * 1024;
+
+/// Heaps of threads that run compiled Raven. A collection stops all of them, so
+/// it sweeps all of them; with one heap per worker thread, sweeping only the
+/// collector's own heap let garbage pile up on every other worker.
+struct HeapPtr(*const AllocState);
+// SAFETY: a registered heap is only touched by another thread while the world
+// is stopped, and its thread removes it under the lock before it goes away.
+unsafe impl Send for HeapPtr {}
+static HEAPS: Mutex<Vec<HeapPtr>> = Mutex::new(Vec::new());
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// A heap whose thread exited. Other threads may still reach its objects, and
@@ -456,6 +480,11 @@ static ADOPTED_OBJECTS: AtomicUsize = AtomicUsize::new(0);
 
 impl Drop for AllocState {
     fn drop(&mut self) {
+        let mut heaps = lock(&HEAPS);
+        if self.registered.get() {
+            let me = self as *const AllocState;
+            heaps.retain(|h| h.0 != me);
+        }
         let pages = std::mem::replace(self.pages.get_mut(), SmallHeap::new());
         let large = std::mem::take(self.heap.get_mut());
         if pages.is_empty() && large.is_empty() {
@@ -467,23 +496,42 @@ impl Drop for AllocState {
             bytes: self.bytes.get(),
             live: self.live.get(),
         };
-        ORPHANS
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push(orphan);
+        lock(&ORPHANS).push(orphan);
     }
 }
 
-/// Record `size` bytes of owned buffer allocated on this thread.
+/// Record `size` bytes of owned buffer allocated on this thread. Buffers die
+/// with their objects, so they count toward the next collection.
 pub(crate) fn note_buffer_alloc(size: usize) {
-    let _ = ALLOC.try_with(|a| a.buffers.set(a.buffers.get().saturating_add(size)));
+    let _ = ALLOC.try_with(|a| a.pending.set(a.pending.get().saturating_add(size)));
+}
+
+/// Count `size` new bytes on this thread and report whether the shared budget
+/// since the last collection is spent.
+fn budget_spent(a: &AllocState, size: usize) -> bool {
+    if !a.registered.get() && IN_RAVEN.with(|r| r.get()) {
+        lock(&HEAPS).push(HeapPtr(a as *const AllocState));
+        a.registered.set(true);
+    }
+    let pending = a.pending.get() + size;
+    if !a.registered.get() {
+        a.pending.set(pending);
+        return a.bytes.get() + pending > a.threshold.get();
+    }
+    if pending < FLUSH_BYTES {
+        a.pending.set(pending);
+        return false;
+    }
+    a.pending.set(0);
+    let total = ALLOCATED.fetch_add(pending, Ordering::Relaxed) + pending;
+    total > collection_floor().max(LIVE_AFTER_GC.load(Ordering::Relaxed))
 }
 
 /// Move every exited thread's heap into this thread's, so the sweep that
 /// follows frees its garbage and later allocations reuse its pages. Runs only
 /// while the world is stopped.
 fn adopt_orphans() {
-    let orphans = std::mem::take(&mut *ORPHANS.lock().unwrap_or_else(|e| e.into_inner()));
+    let orphans = std::mem::take(&mut *lock(&ORPHANS));
     if orphans.is_empty() {
         return;
     }
@@ -925,7 +973,7 @@ pub extern "C" fn raven_gc_alloc(size: usize, align: usize, tag: u32) -> *mut u8
     }
     // Collect before serving an allocation that would cross the
     // threshold, so the heap stays a bounded multiple of the live set.
-    let over = ALLOC.with(|a| a.bytes.get() + a.buffers.get() + size > a.threshold.get());
+    let over = ALLOC.with(|a| budget_spent(a, size));
     if over {
         collect();
     }
@@ -961,6 +1009,7 @@ pub extern "C" fn raven_gc_alloc(size: usize, align: usize, tag: u32) -> *mut u8
 ///
 /// `header` must point to a live object registered with the collector
 /// and not yet freed.
+#[cfg(test)]
 unsafe fn free_one(header: *mut ObjectHeader) {
     // SAFETY: caller guarantees `header` is a live registered object.
     let (size, align) = unsafe { object_body_layout(header) };
@@ -1007,16 +1056,13 @@ fn collect() {
     // marking without a stale-mark bug.
     CURRENT_EPOCH.with(|e| e.set(next_epoch()));
     mark();
-    adopt_orphans();
-    sweep();
-    // Reset the threshold to twice the surviving live bytes, never
-    // below the floor, so a large live set collects less often and a
-    // small one keeps a tight ceiling.
-    let live = ALLOC.with(|a| a.bytes.get());
-    let next = collection_floor().max(live.saturating_mul(2));
+    let live = sweep();
+    LIVE_AFTER_GC.store(live, Ordering::Relaxed);
+    ALLOCATED.store(0, Ordering::Relaxed);
     ALLOC.with(|a| {
-        a.threshold.set(next);
-        a.buffers.set(0);
+        a.pending.set(0);
+        a.threshold
+            .set(collection_floor().max(a.bytes.get().saturating_mul(2)));
     });
     COORDINATOR.resume_the_world();
     if was_running {
@@ -1245,30 +1291,57 @@ unsafe fn trace_object(object: *mut ObjectHeader, work: &mut Vec<*mut ObjectHead
 /// Sweep phase: free every object not stamped with the current epoch. No
 /// clear pass is needed: the next collection takes a fresh epoch, so survivors
 /// are implicitly unmarked then.
-fn sweep() {
+/// Sweep this thread's heap, the heaps of exited threads, and every other
+/// registered heap. Returns the live bytes left across all of them.
+fn sweep() -> usize {
     let epoch = CURRENT_EPOCH.with(|e| e.get());
-    ALLOC.with(|a| {
-        let (freed_bytes, freed) = a.pages.borrow_mut().sweep(epoch);
-        a.bytes.set(a.bytes.get().saturating_sub(freed_bytes));
-        a.live.set(a.live.get().saturating_sub(freed));
-    });
-    ALLOC.with(|a| {
-        let mut heap = a.heap.borrow_mut();
-        let mut write = 0usize;
-        for read in 0..heap.len() {
-            let object = heap[read];
-            // SAFETY: every heap entry is a live registered header.
-            let marked = unsafe { (*object).gc_bits } == epoch;
-            if marked {
-                heap[write] = object;
-                write += 1;
-            } else {
-                // SAFETY: unmarked this cycle and registered; free it.
-                unsafe { free_one(object) };
-            }
+    let heaps = lock(&HEAPS);
+    adopt_orphans();
+    let own = ALLOC.with(|a| a as *const AllocState);
+    // SAFETY: `own` is this thread's live heap.
+    let mut live = unsafe { sweep_heap(&*own, epoch) };
+    for h in heaps.iter() {
+        if h.0 != own {
+            // SAFETY: the world is stopped, so the owning thread is parked or
+            // outside the heap, and it cannot unregister while `heaps` is held.
+            live += unsafe { sweep_heap(&*h.0, epoch) };
         }
-        heap.truncate(write);
-    });
+    }
+    live
+}
+
+/// Free every object in `a` not marked with `epoch`; returns `a`'s live bytes.
+///
+/// # Safety
+///
+/// No other thread may touch `a` for the duration of the call.
+unsafe fn sweep_heap(a: &AllocState, epoch: u32) -> usize {
+    let (freed_bytes, freed) = a.pages.borrow_mut().sweep(epoch);
+    a.bytes.set(a.bytes.get().saturating_sub(freed_bytes));
+    a.live.set(a.live.get().saturating_sub(freed));
+    let mut heap = a.heap.borrow_mut();
+    let mut write = 0usize;
+    for read in 0..heap.len() {
+        let object = heap[read];
+        // SAFETY: every heap entry is a live registered header.
+        let marked = unsafe { (*object).gc_bits } == epoch;
+        if marked {
+            heap[write] = object;
+            write += 1;
+        } else {
+            // SAFETY: unmarked this cycle and registered in `a`; free it and
+            // charge `a`, which may belong to another thread.
+            unsafe {
+                let (size, align) = object_body_layout(object);
+                free_object_buffers(object);
+                raven_dealloc(object as *mut u8, size.max(1), align);
+                a.bytes.set(a.bytes.get().saturating_sub(size));
+            }
+            a.live.set(a.live.get().saturating_sub(1));
+        }
+    }
+    heap.truncate(write);
+    a.bytes.get()
 }
 
 /// Visit the current object pointer held by every registered root slot, across
