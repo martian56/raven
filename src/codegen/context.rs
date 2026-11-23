@@ -120,6 +120,7 @@ pub struct ModuleCx {
     vtable_counter: u32,
     gc_stop_flag: Option<DataId>,
     frame_chain: Option<DataId>,
+    chain_accessor: Option<FuncId>,
     unit_variants: HashMap<String, DataId>,
     /// Counter handing out unique reflection-metadata data symbol names.
     reflect_counter: u32,
@@ -174,6 +175,7 @@ impl ModuleCx {
             vtable_counter: 0,
             gc_stop_flag: None,
             frame_chain: None,
+            chain_accessor: None,
             unit_variants: HashMap::new(),
             reflect_counter: 0,
             repr_c_structs: HashMap::new(),
@@ -260,9 +262,17 @@ impl ModuleCx {
         Ok(id)
     }
 
-    /// Define a function returning this thread's address of the chain head,
-    /// which the runtime calls to reach it.
-    fn define_chain_accessor(&mut self) -> Result<FuncId, CodegenError> {
+    /// A function returning the calling thread's address of the chain head,
+    /// defined on first use. The runtime calls it to reach the chain, and a
+    /// function's return path calls it to unlink its record: a goroutine can
+    /// park in a callee and resume on another worker thread, so the address
+    /// taken at entry may belong to a different thread by then. A call is
+    /// used because Cranelift treats `tls_value` as pure and would reuse the
+    /// entry's value.
+    pub fn chain_accessor(&mut self) -> Result<FuncId, CodegenError> {
+        if let Some(id) = self.chain_accessor {
+            return Ok(id);
+        }
         let ptr = self.pointer_type();
         let chain = self.frame_chain()?;
         let mut sig = Signature::new(self.module.target_config().default_call_conv);
@@ -287,6 +297,7 @@ impl ModuleCx {
         self.module
             .define_function(id, &mut ctx)
             .map_err(|e| CodegenError::Codegen(format!("define chain accessor: {}", e)))?;
+        self.chain_accessor = Some(id);
         Ok(id)
     }
 
@@ -1177,7 +1188,7 @@ impl ModuleCx {
         };
 
         let callee = self.module.declare_func_in_func(raven_main, &mut ctx.func);
-        let accessor = self.define_chain_accessor()?;
+        let accessor = self.chain_accessor()?;
         let accessor_ref = self.module.declare_func_in_func(accessor, &mut ctx.func);
         let set_accessor_ref = self
             .runtime_id(intrinsics::RUNTIME_GC_SET_CHAIN_ACCESSOR)
