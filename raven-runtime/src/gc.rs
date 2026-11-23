@@ -25,6 +25,7 @@ use crate::stw::StopTheWorld;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 /// Registry of every live thread's shadow-stack [`RootContext`]. A collection
 /// scans every registered context, so an object one thread holds survives a
@@ -314,6 +315,7 @@ thread_local! {
         bytes: Cell::new(0),
         live: Cell::new(0),
         threshold: Cell::new(collection_floor()),
+        buffers: Cell::new(0),
     };
 }
 
@@ -425,9 +427,78 @@ struct AllocState {
     bytes: Cell<usize>,
     /// Live object count.
     live: Cell<usize>,
-    /// A collection runs before an allocation that would carry `bytes` past
-    /// this.
+    /// A collection runs before an allocation that would carry `bytes` plus
+    /// `buffers` past this.
     threshold: Cell<usize>,
+    /// Bytes of owned buffers (string bytes, list elements) allocated since the
+    /// last collection. They die with their objects, so they count toward the
+    /// trigger even though `bytes` tracks object bodies only.
+    buffers: Cell<usize>,
+}
+
+/// A heap whose thread exited. Other threads may still reach its objects, and
+/// no thread would ever sweep it again, so the next collection adopts it.
+struct OrphanHeap {
+    pages: SmallHeap,
+    large: Vec<*mut ObjectHeader>,
+    bytes: usize,
+    live: usize,
+}
+
+// SAFETY: the raw pointers are GC heap memory that any thread may touch while
+// the world is stopped, which is the only time an orphan is adopted.
+unsafe impl Send for OrphanHeap {}
+
+static ORPHANS: Mutex<Vec<OrphanHeap>> = Mutex::new(Vec::new());
+
+#[cfg(test)]
+static ADOPTED_OBJECTS: AtomicUsize = AtomicUsize::new(0);
+
+impl Drop for AllocState {
+    fn drop(&mut self) {
+        let pages = std::mem::replace(self.pages.get_mut(), SmallHeap::new());
+        let large = std::mem::take(self.heap.get_mut());
+        if pages.is_empty() && large.is_empty() {
+            return;
+        }
+        let orphan = OrphanHeap {
+            pages,
+            large,
+            bytes: self.bytes.get(),
+            live: self.live.get(),
+        };
+        ORPHANS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(orphan);
+    }
+}
+
+/// Record `size` bytes of owned buffer allocated on this thread.
+pub(crate) fn note_buffer_alloc(size: usize) {
+    let _ = ALLOC.try_with(|a| a.buffers.set(a.buffers.get().saturating_add(size)));
+}
+
+/// Move every exited thread's heap into this thread's, so the sweep that
+/// follows frees its garbage and later allocations reuse its pages. Runs only
+/// while the world is stopped.
+fn adopt_orphans() {
+    let orphans = std::mem::take(&mut *ORPHANS.lock().unwrap_or_else(|e| e.into_inner()));
+    if orphans.is_empty() {
+        return;
+    }
+    ALLOC.with(|a| {
+        let mut pages = a.pages.borrow_mut();
+        let mut heap = a.heap.borrow_mut();
+        for orphan in orphans {
+            #[cfg(test)]
+            ADOPTED_OBJECTS.fetch_add(orphan.live, Ordering::SeqCst);
+            pages.adopt(orphan.pages);
+            heap.extend(orphan.large);
+            a.bytes.set(a.bytes.get() + orphan.bytes);
+            a.live.set(a.live.get() + orphan.live);
+        }
+    });
 }
 
 /// Objects of at most this many bytes come from size-classed pages.
@@ -514,6 +585,37 @@ impl SmallHeap {
         // SAFETY: the slot is `size` writable bytes.
         unsafe { std::ptr::write_bytes(slot, 0, size) };
         slot
+    }
+
+    fn is_empty(&self) -> bool {
+        self.classes.iter().all(|c| c.pages.is_empty())
+    }
+
+    /// Take over `other`'s pages. Sweeping trusts every slot of a page except
+    /// the newest one, which it reads only up to `bump`, so the adopted newest
+    /// page has its untouched tail marked free and this heap's newest page
+    /// stays last.
+    fn adopt(&mut self, other: SmallHeap) {
+        for (class, (c, o)) in self.classes.iter_mut().zip(other.classes).enumerate() {
+            if o.pages.is_empty() {
+                continue;
+            }
+            if c.pages.is_empty() {
+                *c = o;
+                continue;
+            }
+            let size = CLASS_SIZES[class];
+            let mut slot = o.bump;
+            while slot < o.end {
+                // SAFETY: slots between bump and end lie inside the page.
+                unsafe { *(slot as *mut u32) = TAG_FREE };
+                // SAFETY: stepping by whole slots stays at or below `end`.
+                slot = unsafe { slot.add(size) };
+            }
+            let mut pages = o.pages;
+            pages.append(&mut c.pages);
+            c.pages = pages;
+        }
     }
 
     #[cfg(test)]
@@ -823,7 +925,7 @@ pub extern "C" fn raven_gc_alloc(size: usize, align: usize, tag: u32) -> *mut u8
     }
     // Collect before serving an allocation that would cross the
     // threshold, so the heap stays a bounded multiple of the live set.
-    let over = ALLOC.with(|a| a.bytes.get() + size > a.threshold.get());
+    let over = ALLOC.with(|a| a.bytes.get() + a.buffers.get() + size > a.threshold.get());
     if over {
         collect();
     }
@@ -905,13 +1007,17 @@ fn collect() {
     // marking without a stale-mark bug.
     CURRENT_EPOCH.with(|e| e.set(next_epoch()));
     mark();
+    adopt_orphans();
     sweep();
     // Reset the threshold to twice the surviving live bytes, never
     // below the floor, so a large live set collects less often and a
     // small one keeps a tight ceiling.
     let live = ALLOC.with(|a| a.bytes.get());
     let next = collection_floor().max(live.saturating_mul(2));
-    ALLOC.with(|a| a.threshold.set(next));
+    ALLOC.with(|a| {
+        a.threshold.set(next);
+        a.buffers.set(0);
+    });
     COORDINATOR.resume_the_world();
     if was_running {
         COORDINATOR.enter_running();
@@ -1741,6 +1847,30 @@ mod collector_tests {
             );
             raven_gc_collect();
             assert_eq!(raven_gc_live_objects(), 0);
+        });
+    }
+
+    #[test]
+    fn exited_thread_heap_is_adopted_by_the_next_collection() {
+        isolated(|| {
+            for _ in 0..100 {
+                let _garbage = raven_string_new(8);
+            }
+            let before = ADOPTED_OBJECTS.load(Ordering::SeqCst);
+            std::thread::spawn(|| {
+                for _ in 0..5000 {
+                    let _garbage = raven_string_new(8);
+                }
+            })
+            .join()
+            .unwrap();
+            raven_gc_collect();
+            let adopted = ADOPTED_OBJECTS.load(Ordering::SeqCst) - before;
+            assert!(adopted >= 5000, "adopted {adopted} objects");
+            for _ in 0..20_000 {
+                let _garbage = raven_string_new(8);
+            }
+            raven_gc_collect();
         });
     }
 }

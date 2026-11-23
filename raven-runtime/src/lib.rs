@@ -410,6 +410,7 @@ pub extern "C" fn raven_alloc(size: usize, align: usize) -> *mut u8 {
         // dangling pointer. `std::alloc::alloc` is UB at size zero.
         return align as *mut u8;
     }
+    gc::note_buffer_alloc(layout.size());
     // SAFETY: layout has a non-zero size, validated above.
     unsafe { alloc::alloc(layout) }
 }
