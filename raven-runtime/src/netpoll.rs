@@ -11,7 +11,7 @@
 //! event that lands between the attempt and the park is never lost.
 
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::{BinaryHeap, HashMap};
 use std::io;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
@@ -109,7 +109,7 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-static POLLER: OnceLock<&'static Poller> = OnceLock::new();
+static POLLER: OnceLock<Arc<Poller>> = OnceLock::new();
 
 /// The process poller, started on first use. A failure (for example no file
 /// descriptor left for the OS selector) is returned, and the next call tries
@@ -126,19 +126,23 @@ fn poller() -> io::Result<&'static Poller> {
     let poll = Poll::new()?;
     let registry = poll.registry().try_clone()?;
     let waker = Waker::new(poll.registry(), WAKER)?;
-    let p: &'static Poller = Box::leak(Box::new(Poller {
+    let p = Arc::new(Poller {
         registry,
         waker,
         entries: Mutex::new(HashMap::new()),
         timers: Mutex::new(BinaryHeap::new()),
         next_token: AtomicUsize::new(1),
         earliest: AtomicU64::new(u64::MAX),
-    }));
+    });
+    // Published only once its thread runs: a failed spawn drops the last
+    // reference and closes the registry and waker. The thread needs no
+    // published poller until a socket registers, which waits for this.
+    let thread_p = p.clone();
     std::thread::Builder::new()
         .name("raven-netpoll".into())
-        .spawn(move || run(poll, p))?;
+        .spawn(move || run(poll, &thread_p))?;
     let _ = POLLER.set(p);
-    Ok(p)
+    Ok(POLLER.get().expect("poller just published"))
 }
 
 /// The poller for an operation on an already registered socket, which exists
@@ -209,6 +213,11 @@ pub(crate) fn retry<T>(
     mut op: impl FnMut() -> io::Result<T>,
 ) -> io::Result<T> {
     loop {
+        // An attempt that starts after `close` fails: a parked accept woken by
+        // the close must not admit one more client.
+        if lock(&entry.state).closed {
+            return Err(io::Error::new(io::ErrorKind::NotConnected, "socket closed"));
+        }
         let seq = entry.seq(dir);
         match attempt(&mut op) {
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -324,7 +333,7 @@ fn nanos_since_base(t: Instant) -> u64 {
         .min(u64::MAX as u128) as u64
 }
 
-fn run(mut poll: Poll, p: &'static Poller) {
+fn run(mut poll: Poll, p: &Poller) {
     let mut events = Events::with_capacity(1024);
     let mut wake = Vec::with_capacity(1024);
     loop {
@@ -442,18 +451,20 @@ fn expire_timers(p: &Poller, wake: &mut Vec<usize>) {
 /// Drop the queued timers of sockets that have closed, once the heap has grown
 /// well past the number of open sockets (connection churn with long timeouts).
 fn compact_timers(p: &Poller) {
-    let queued = lock(&p.timers).len();
-    if queued < COMPACT_AT {
+    if lock(&p.timers).len() < COMPACT_AT {
         return;
     }
-    let open: HashSet<usize> = lock(&p.entries).keys().map(|t| t.0).collect();
-    if queued < open.len() * 4 {
-        return;
-    }
+    // Hold the entries lock through the filter (timers second): a socket
+    // registered meanwhile is either seen here or cannot queue a timer until
+    // the filter is done, so no live timer is dropped.
+    let entries = lock(&p.entries);
     let mut timers = lock(&p.timers);
+    if timers.len() < COMPACT_AT || timers.len() < entries.len() * 4 {
+        return;
+    }
     let kept: Vec<_> = timers
         .drain()
-        .filter(|Reverse((_, token, _))| open.contains(token))
+        .filter(|Reverse((_, token, _))| entries.contains_key(&Token(*token)))
         .collect();
     *timers = kept.into_iter().collect();
 }

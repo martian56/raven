@@ -1,0 +1,11 @@
+// The remainder of float division keeps the sign of the dividend, like C fmod.
+fun main() {
+    let a = 5.5
+    print(a % 2.0)
+    print((0.0 - 5.5) % 2.0)
+    print(7.25 % 0.5)
+    print(10.0 % 3.0)
+    let turns = 765.0 % 360.0
+    print(turns)
+    print(1.0 % 0.0)
+}

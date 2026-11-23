@@ -426,6 +426,13 @@ pub extern "C" fn raven_float_to_string(value: f64) -> *mut String {
     raven_string_from_bytes(rendered.as_ptr(), rendered.len())
 }
 
+/// The floating-point remainder of `a / b` with the sign of `a` (C `fmod`):
+/// `5.5 % 2.0` is `1.5`, `-5.5 % 2.0` is `-1.5`, and a zero divisor gives NaN.
+#[no_mangle]
+pub extern "C" fn raven_float_mod(a: f64, b: f64) -> f64 {
+    a % b
+}
+
 /// Allocate the JSON form of a number: `{}` formatting (which never prints a
 /// `.0`) for a finite value, `null` for infinity or NaN.
 #[no_mangle]

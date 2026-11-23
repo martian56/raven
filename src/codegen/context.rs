@@ -658,6 +658,10 @@ impl ModuleCx {
         sig = self.make_sig(&[ptr, ptr], &[]);
         self.declare_runtime(intrinsics::RUNTIME_PRINT_STR, &sig)?;
 
+        // raven_float_mod(a: f64, b: f64) -> f64
+        sig = self.make_sig(&[types::F64, types::F64], &[types::F64]);
+        self.declare_runtime(intrinsics::RUNTIME_FLOAT_MOD, &sig)?;
+
         // raven_read_line() -> String ptr
         sig = self.make_sig(&[], &[ptr]);
         self.declare_runtime(intrinsics::RUNTIME_READ_LINE, &sig)?;

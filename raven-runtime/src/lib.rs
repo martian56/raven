@@ -443,36 +443,42 @@ fn net_insert(sock: Socket) -> i64 {
 
 /// Remove a connected TCP stream from the registry and return ownership of the
 /// socket, so another subsystem can take it over (std/tls upgrade for STARTTLS).
-/// Returns None if the id is unknown or names a listener, leaving the registry
-/// unchanged in that case.
-pub(crate) fn net_take_stream(id: i64) -> Option<TcpStream> {
-    // Only a stream no other operation holds can change hands. Other holders
-    // clone the Arc under this lock and only drop it outside, so a count of one
-    // seen here stays one; otherwise the id is left registered and usable.
+/// Fails, leaving the registry unchanged, when the id is unknown or names a
+/// listener, or when another operation (a parked read) still holds the stream;
+/// that last case can succeed once the operation ends.
+pub(crate) fn net_take_stream(id: i64) -> Result<TcpStream, &'static str> {
+    // Other holders clone the Arc under this lock and only drop it outside, so
+    // a count of one seen here stays one.
     let arc = {
         let mut reg = net_registry().lock().unwrap();
         match reg.get(&id) {
             Some(Socket::Stream(s)) if Arc::strong_count(s) == 1 => match reg.remove(&id) {
                 Some(Socket::Stream(s)) => s,
-                _ => return None,
+                _ => return Err("not a connected net stream id"),
             },
-            _ => return None,
+            Some(Socket::Stream(_)) => return Err("the stream is busy with another operation"),
+            _ => return Err("not a connected net stream id"),
         }
     };
-    let NetStream {
+    let Ok(NetStream {
         mut io,
         entry,
         read_ms,
         write_ms,
-    } = Arc::try_unwrap(arc).ok()?;
+    }) = Arc::try_unwrap(arc)
+    else {
+        return Err("the stream is busy with another operation");
+    };
     netpoll::deregister(&mut io, &entry);
     let stream = mio_into_std(io);
-    stream.set_nonblocking(false).ok()?;
+    stream
+        .set_nonblocking(false)
+        .map_err(|_| "could not make the stream blocking")?;
     // Carry the timeouts over to the blocking socket, as before the upgrade.
     let timeout = |ms: i64| (ms > 0).then(|| Duration::from_millis(ms as u64));
     let _ = stream.set_read_timeout(timeout(read_ms.into_inner()));
     let _ = stream.set_write_timeout(timeout(write_ms.into_inner()));
-    Some(stream)
+    Ok(stream)
 }
 
 #[cfg(unix)]

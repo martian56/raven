@@ -1144,6 +1144,25 @@ fn emit_binop(
         MirBinOp::Sub if is_float => builder.ins().fsub(lhs, rhs),
         MirBinOp::Mul if is_float => builder.ins().fmul(lhs, rhs),
         MirBinOp::Div if is_float => builder.ins().fdiv(lhs, rhs),
+        MirBinOp::Mod if is_float => {
+            // Cranelift has no float remainder; the runtime's is C fmod.
+            let (lhs, rhs) = if ty == types::F32 {
+                (builder.ins().fpromote(types::F64, lhs), builder.ins().fpromote(types::F64, rhs))
+            } else {
+                (lhs, rhs)
+            };
+            let id = cx
+                .runtime_id(intrinsics::RUNTIME_FLOAT_MOD)
+                .expect("float mod declared at module init");
+            let f = cx.module().declare_func_in_func(id, builder.func);
+            let call = builder.ins().call(f, &[lhs, rhs]);
+            let r = builder.inst_results(call)[0];
+            if ty == types::F32 {
+                builder.ins().fdemote(types::F32, r)
+            } else {
+                r
+            }
+        }
         MirBinOp::Add => builder.ins().iadd(lhs, rhs),
         MirBinOp::Sub => builder.ins().isub(lhs, rhs),
         MirBinOp::Mul => builder.ins().imul(lhs, rhs),
