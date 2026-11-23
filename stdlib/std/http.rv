@@ -14,7 +14,7 @@ import std.string
 from std.fmt import from_radix
 import std.collections
 from std.json import JsonValue, ToJson, FromJson, stringify, parse, decode
-from std.fs import read
+from std.fs import is_symlink, read
 from std.sync import mutex, wait_group, Mutex
 from std.encoding import url_decode
 
@@ -1481,7 +1481,16 @@ fun serve_from(dir: str, req: Request) -> Response {
     if name.contains(":") {
         return Response.with_body(404, "Not Found")
     }
-    return Response.file(dir.concat("/").concat(name))
+    // A symlink inside `dir` could point anywhere, so a path through one is
+    // refused rather than followed out of the directory.
+    var path = dir
+    for segment in name.split("/") {
+        path = path.concat("/").concat(segment)
+        if is_symlink(path) {
+            return Response.with_body(404, "Not Found")
+        }
+    }
+    return Response.file(path)
 }
 
 // A `Content-Type` for a file path, chosen from its extension.
