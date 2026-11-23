@@ -675,6 +675,7 @@ dependencies = [
  "libc",
  "mimalloc",
  "regex",
+ "ring",
  "rustls",
  "rustls-pemfile",
  "ureq",
