@@ -1,0 +1,148 @@
+// std.uuid: generate, parse, and inspect UUIDs (RFC 9562). v4 is fully
+// random; v7 starts with the Unix time in milliseconds, so v7 ids sort by
+// creation time and keep database indexes compact. Both draw from the
+// operating system's secure random source. See docs/guide/stdlib/uuid.md.
+
+import std.error
+
+extern "C" {
+    fun raven_crypto_random_bytes(n: int) -> str
+    fun raven_time_now_millis() -> int
+}
+
+fun uuid_error(msg: str) -> Error {
+    return Error(kind: "uuid", message: msg)
+}
+
+fun _hex(b: int) -> str {
+    let digits = "0123456789abcdef"
+    return __str_substring(digits, b >> 4, (b >> 4) + 1) + __str_substring(
+        digits,
+        b & 15,
+        (b & 15) + 1,
+    )
+}
+
+// Format 16 bytes as `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, setting the
+// version and variant bits.
+fun _format(raw: list[int], version: int) -> str {
+    raw[6] = (raw[6] & 15) | (version << 4)
+    raw[8] = (raw[8] & 63) | 128
+    let parts: list[str] = []
+    for i in range(16) {
+        if i == 4 or i == 6 or i == 8 or i == 10 {
+            parts.push("-")
+        }
+        parts.push(_hex(raw[i]))
+    }
+    return "".join(parts)
+}
+
+fun _random(n: int) -> list[int] {
+    let r = raven_crypto_random_bytes(n)
+    if __str_len(r) != n {
+        panic("std.uuid: the secure random source failed")
+    }
+    let out: list[int] = []
+    for i in range(n) {
+        out.push(__str_byte_at(r, i))
+    }
+    return out
+}
+
+// A random (version 4) UUID.
+fun v4() -> str = _format(_random(16), 4)
+
+// A time-ordered (version 7) UUID: 48 bits of Unix milliseconds, then random.
+fun v7() -> str {
+    let raw = _random(16)
+    let ms = raven_time_now_millis()
+    for i in range(6) {
+        raw[i] = (ms >> ((5 - i) * 8)) & 255
+    }
+    return _format(raw, 7)
+}
+
+// The all-zero UUID.
+fun nil() -> str = "00000000-0000-0000-0000-000000000000"
+
+fun _hex_value(b: int) -> int {
+    if b >= 48 and b <= 57 {
+        return b - 48
+    }
+    if b >= 97 and b <= 102 {
+        return b - 87
+    }
+    if b >= 65 and b <= 70 {
+        return b - 55
+    }
+    return -1
+}
+
+// Parse a UUID written with or without hyphens, in either case, optionally in
+// braces or with a `urn:uuid:` prefix. Returns the lowercase hyphenated form.
+fun parse(s: str) -> Result[str, Error] {
+    var t = s.trim()
+    if t.starts_with("urn:uuid:") {
+        t = __str_substring(t, 9, __str_len(t))
+    }
+    if t.starts_with("{") and t.ends_with("}") {
+        t = __str_substring(t, 1, __str_len(t) - 1)
+    }
+    let n = __str_len(t)
+    let raw: list[int] = []
+    var i = 0
+    while i < n {
+        let b = __str_byte_at(t, i)
+        if b == 45 and n == 36 and (i == 8 or i == 13 or i == 18 or i == 23) {
+            i += 1
+            continue
+        }
+        if i + 1 >= n {
+            return Err(uuid_error("`${s}` is not a UUID"))
+        }
+        let hi = _hex_value(b)
+        let lo = _hex_value(__str_byte_at(t, i + 1))
+        if hi < 0 or lo < 0 {
+            return Err(uuid_error("`${s}` is not a UUID"))
+        }
+        raw.push(hi * 16 + lo)
+        i += 2
+    }
+    if len(raw) != 16 or (n != 32 and n != 36) {
+        return Err(uuid_error("`${s}` is not a UUID"))
+    }
+    let parts: list[str] = []
+    for j in range(16) {
+        if j == 4 or j == 6 or j == 8 or j == 10 {
+            parts.push("-")
+        }
+        parts.push(_hex(raw[j]))
+    }
+    return Ok("".join(parts))
+}
+
+fun is_valid(s: str) -> bool = parse(s).is_ok()
+
+// The version digit (4 for v4, 7 for v7), or -1 if `s` is not a UUID.
+fun version(s: str) -> int {
+    return match parse(s) {
+        case Ok(u) { _hex_value(__str_byte_at(u, 14)) }
+        case Err(_) { -1 }
+    }
+}
+
+// The creation time of a v7 UUID in Unix milliseconds.
+fun timestamp_millis(s: str) -> Result[int, Error] {
+    let u = parse(s)?
+    if _hex_value(__str_byte_at(u, 14)) != 7 {
+        return Err(uuid_error("`${s}` is not a version 7 UUID"))
+    }
+    var ms = 0
+    for i in range(13) {
+        if i != 8 {
+            ms = ms * 16 + _hex_value(__str_byte_at(u, i))
+        }
+    }
+    return Ok(ms)
+}

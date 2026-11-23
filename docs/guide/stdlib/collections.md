@@ -297,6 +297,53 @@ fun main() {
 }
 ```
 
+## Deque[T]
+
+A double-ended queue. `push_back`, `push_front`, `pop_back`, and `pop_front`
+run in amortized constant time; the pops return `None` when it is empty.
+`peek_front` and `peek_back` look without removing, and `to_list` returns
+the items front to back.
+
+```rust
+from std.collections import Deque
+
+fun main() {
+    let d: Deque[int] = Deque.new()
+    d.push_back(2)
+    d.push_front(1)
+    d.push_back(3)
+    print(d.to_list()) // [1, 2, 3]
+    print(d.pop_front().unwrap()) // 1
+}
+```
+
+## PriorityQueue[T: Ord]
+
+A binary heap that pops its smallest item first by `Ord.compare`. `push` and
+`pop` take logarithmic time; `peek` looks at the smallest without removing
+it. For largest first, give the items an `Ord` that compares in reverse.
+Items that compare equal come out in no guaranteed order.
+
+```rust
+from std.collections import PriorityQueue
+
+class Job {
+    priority: int
+    name: str
+}
+
+impl Ord for Job {
+    fun compare(self, other: Job) -> int = self.priority - other.priority
+}
+
+fun main() {
+    let q: PriorityQueue[Job] = PriorityQueue.new()
+    q.push(Job(priority: 5, name: "report"))
+    q.push(Job(priority: 1, name: "email"))
+    print(q.pop().unwrap().name) // email
+}
+```
+
 ## See also
 
 - The [core traits spec](../../specs/core-traits.md) for the `Eq` and `Hash`

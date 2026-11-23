@@ -543,3 +543,12 @@ fn repr_c_class_stays_a_class() {
     let out = fmt("@repr(C)\nclass P {\n    x: CInt\n}\n");
     assert_eq!(out, "@repr(C)\nclass P {\n    x: CInt\n}\n");
 }
+
+#[test]
+fn string_escapes_keep_their_spelling() {
+    let src = r#"fun f() -> str {
+    return "zero\u{200b}width \xfb tab\t \u{263a}"
+}
+"#;
+    assert_eq!(fmt(src), src);
+}

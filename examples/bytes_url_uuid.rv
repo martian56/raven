@@ -1,0 +1,138 @@
+from std.bytes import ByteReader, ByteWriter
+from std.collections import Deque, PriorityQueue
+from std.encoding import base64url_decode, base64url_encode, hex_encode
+import std.url
+import std.uuid
+
+class Job {
+    priority: int
+    name: str
+}
+
+impl Ord for Job {
+    fun compare(self, other: Job) -> int = self.priority - other.priority
+}
+
+fun main() {
+    // Bytes: a Postgres-style message, then read it back.
+    let w = ByteWriter.new()
+    w.u8(81).u32_be(13).cstr("SELECT 1").u16_le(513).i64_be(-2)
+    let msg = w.finish()
+    print(w.len(), hex_encode(msg))
+    let r = ByteReader.new(msg)
+    print(
+        r.u8().unwrap(),
+        r.u32_be().unwrap(),
+        r.cstr().unwrap(),
+        r.u16_le().unwrap(),
+        r.i64_be().unwrap(),
+        r.at_end(),
+    )
+    print(r.u8().is_err())
+    let neg = ByteReader.new(ByteWriter.new().u16_be(65535).u32_be(4294967295).finish())
+    print(neg.i16_be().unwrap(), neg.i32_be().unwrap())
+
+    // base64url.
+    let raw = ByteWriter.new().u8(251).u8(255).u8(191).finish()
+    print(
+        base64url_encode(raw),
+        base64url_decode(base64url_encode(raw)).unwrap() == raw,
+        base64url_encode("hi"),
+        base64url_decode("aGk").unwrap(),
+        base64url_decode("-__-").is_ok(),
+    )
+    print(base64url_decode("a+b/").is_err())
+
+    // URLs.
+    let u = url.parse(
+        "HTTPS://Ann%20Lee:p%40ss@Example.COM:8443/a/b%20c?q=raven+lang&tag=x&tag=y#top",
+    ).unwrap()
+    print(u.scheme, u.username, u.password, u.host, u.port, u.path, u.fragment)
+    let qp = u.query_params()
+    print(qp.get("q").unwrap(), qp.get_all("tag"), qp.has("nope"), qp.keys())
+    print(u.to_string())
+    print(u.redacted())
+    let db = url.parse("postgres://app@[::1]/shop?sslmode=disable").unwrap()
+    print(db.host, db.effective_port(), db.host_port(), db.path, db.request_target())
+    print(
+        url.parse("file:///etc/hosts").unwrap().to_string(),
+        url.parse("mailto:a@b.c").unwrap().path,
+    )
+    print(
+        url.parse("no scheme").is_err(),
+        url.parse("http://h:99999/").is_err(),
+        url.parse("http://h:x/").is_err(),
+    )
+    let built = url.parse("https://api.example.com/search").unwrap().with_query(
+        url.query_params().add("q", "a&b c").add("page", "2"),
+    )
+    print(built.to_string())
+    print(url.encode_component("a b/c?d"), url.decode_component("a%20b%2Fc%zz"))
+
+    // UUIDs.
+    let a = uuid.v4()
+    let b = uuid.v7()
+    print(len(a), uuid.version(a), uuid.version(b), a != uuid.v4())
+    let ts = uuid.timestamp_millis(b).unwrap()
+    print(ts > 1700000000000)
+    print(
+        uuid.parse("{6BA7B810-9DAD-11D1-80B4-00C04FD430C8}").unwrap(),
+        uuid.parse("6ba7b8109dad11d180b400c04fd430c8").unwrap(),
+    )
+    print(uuid.is_valid("nope"), uuid.is_valid(uuid.nil()), uuid.version("x"))
+    var earlier = uuid.v7()
+    var sorted = true
+    for _ in range(50) {
+        let next = uuid.v7()
+        if next.substring(0, 13) < earlier.substring(0, 13) {
+            sorted = false
+        }
+        earlier = next
+    }
+    print(sorted)
+
+    // Deque.
+    let d: Deque[int] = Deque.new()
+    d.push_back(2)
+    d.push_back(3)
+    d.push_front(1)
+    d.push_front(0)
+    print(d.to_list(), d.len(), d.peek_front().unwrap(), d.peek_back().unwrap())
+    print(
+        d.pop_back().unwrap(),
+        d.pop_back().unwrap(),
+        d.pop_back().unwrap(),
+        d.pop_back().unwrap(),
+        d.pop_back().is_none(),
+    )
+    for i in range(10) {
+        d.push_back(i)
+    }
+    var drained: list[int] = []
+    while not d.is_empty() {
+        drained.push(d.pop_front().unwrap())
+    }
+    print(drained)
+
+    // Priority queue.
+    let pq: PriorityQueue[Job] = PriorityQueue.new()
+    for j in [
+        Job(priority: 5, name: "report"),
+        Job(priority: 1, name: "email"),
+        Job(priority: 3, name: "resize"),
+        Job(priority: 1, name: "sms"),
+        Job(priority: 9, name: "cleanup"),
+    ] {
+        pq.push(j)
+    }
+    var order: list[str] = []
+    while not pq.is_empty() {
+        order.push(pq.pop().unwrap().name)
+    }
+    print(order, pq.pop().is_none())
+    let nums: PriorityQueue[int] = PriorityQueue.new()
+    for n in [7, 2, 9, 4, 4, 1] {
+        nums.push(n)
+    }
+    print(nums.peek().unwrap(), nums.len())
+}

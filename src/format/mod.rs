@@ -127,6 +127,26 @@ impl<'a> Printer<'a> {
         }
     }
 
+    /// The literal exactly as written, so escapes such as `\u{200b}` keep
+    /// their spelling, when the source span is a one-line `"..."` literal
+    /// that still decodes to `value`.
+    fn source_string_lit(&self, e: &Expr, value: &str) -> Option<String> {
+        let text = self.src.get(e.span.start..e.span.end)?;
+        if text.len() < 2
+            || !text.starts_with('"')
+            || !text.ends_with('"')
+            || text.starts_with("\"\"\"")
+            || text.contains('\n')
+        {
+            return None;
+        }
+        let tokens = Lexer::new(text, "<fmt>").tokenize().ok()?;
+        match tokens.first().map(|t| &t.kind) {
+            Some(TokenKind::StringLit(v)) if v == value => Some(text.to_string()),
+            _ => None,
+        }
+    }
+
     /// The number of spaces in one indent level.
     fn iw(&self) -> usize {
         self.indent_unit.len()
@@ -1085,7 +1105,9 @@ impl Printer<'_> {
             ExprKind::Int(n) => n.to_string(),
             ExprKind::Float(v) => render_float(*v),
             ExprKind::Bool(b) => b.to_string(),
-            ExprKind::Str(s) => render_string_lit(s),
+            ExprKind::Str(s) => self
+                .source_string_lit(e, s)
+                .unwrap_or_else(|| render_string_lit(s)),
             ExprKind::InterpolatedString(frags) => self.render_interpolated(frags),
             ExprKind::BlockStr(s) => format!("\"\"\"{}\"\"\"", s),
             ExprKind::Char(c) => format!("'{}'", render_char(*c)),

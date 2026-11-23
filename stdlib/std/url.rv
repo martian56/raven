@@ -1,0 +1,433 @@
+// std.url: parse, build, and percent-encode URLs (RFC 3986), and read and
+// write query strings. See docs/guide/stdlib/url.md.
+
+import std.error
+
+fun url_error(msg: str) -> Error {
+    return Error(kind: "url", message: msg)
+}
+
+// A parsed absolute URL. `port` is 0 when the URL names none; use
+// `effective_port` for the scheme's default. `query` and `fragment` are kept
+// encoded, without their `?` and `#`.
+class Url {
+    scheme: str
+    username: str
+    password: str
+    host: str
+    port: int
+    path: str
+    query: str
+    fragment: str
+    has_authority: bool
+}
+
+fun _is_alpha(b: int) -> bool = (b >= 65 and b <= 90) or (b >= 97 and b <= 122)
+
+fun _is_digit(b: int) -> bool = b >= 48 and b <= 57
+
+fun _lower(s: str) -> str {
+    let out: list[str] = []
+    for i in range(__str_len(s)) {
+        let b = __str_byte_at(s, i)
+        out.push(__str_from_byte(b + 32 if b >= 65 and b <= 90 else b))
+    }
+    return "".join(out)
+}
+
+fun _find(s: str, b: int, from: int) -> int {
+    var i = from
+    let n = __str_len(s)
+    while i < n {
+        if __str_byte_at(s, i) == b {
+            return i
+        }
+        i += 1
+    }
+    return -1
+}
+
+fun _find_last(s: str, b: int) -> int {
+    var i = __str_len(s) - 1
+    while i >= 0 {
+        if __str_byte_at(s, i) == b {
+            return i
+        }
+        i -= 1
+    }
+    return -1
+}
+
+fun _scheme_end(s: str) -> int {
+    let n = __str_len(s)
+    if n == 0 or not _is_alpha(__str_byte_at(s, 0)) {
+        return -1
+    }
+    var i = 1
+    while i < n {
+        let b = __str_byte_at(s, i)
+        if b == 58 {
+            return i
+        }
+        if not (_is_alpha(b) or _is_digit(b) or b == 43 or b == 45 or b == 46) {
+            return -1
+        }
+        i += 1
+    }
+    return -1
+}
+
+// The usual port for a scheme, or 0 when there is none.
+fun default_port(scheme: str) -> int {
+    return match scheme {
+        case "http" { 80 }
+        case "ws" { 80 }
+        case "https" { 443 }
+        case "wss" { 443 }
+        case "ftp" { 21 }
+        case "ssh" { 22 }
+        case "postgres" { 5432 }
+        case "postgresql" { 5432 }
+        case "mysql" { 3306 }
+        case "redis" { 6379 }
+        case "amqp" { 5672 }
+        case _ { 0 }
+    }
+}
+
+// Parse an absolute URL such as `https://user:pw@example.com:8443/a/b?x=1#top`
+// or `postgres://app@[::1]:5432/shop`. Names and passwords are decoded; the
+// path, query, and fragment are kept as written.
+fun parse(input: str) -> Result[Url, Error] {
+    var rest = input.trim()
+    var fragment = ""
+    let hash = _find(rest, 35, 0)
+    if hash >= 0 {
+        fragment = __str_substring(rest, hash + 1, __str_len(rest))
+        rest = __str_substring(rest, 0, hash)
+    }
+    let colon = _scheme_end(rest)
+    if colon < 0 {
+        return Err(url_error("`${input}` has no scheme (such as `https:`)"))
+    }
+    let scheme = _lower(__str_substring(rest, 0, colon))
+    rest = __str_substring(rest, colon + 1, __str_len(rest))
+    var username = ""
+    var password = ""
+    var host = ""
+    var port = 0
+    var has_authority = false
+    if rest.starts_with("//") {
+        has_authority = true
+        rest = __str_substring(rest, 2, __str_len(rest))
+        var end = __str_len(rest)
+        let slash = _find(rest, 47, 0)
+        let question = _find(rest, 63, 0)
+        if slash >= 0 and slash < end {
+            end = slash
+        }
+        if question >= 0 and question < end {
+            end = question
+        }
+        var authority = __str_substring(rest, 0, end)
+        rest = __str_substring(rest, end, __str_len(rest))
+        let at = _find_last(authority, 64)
+        if at >= 0 {
+            let userinfo = __str_substring(authority, 0, at)
+            authority = __str_substring(authority, at + 1, __str_len(authority))
+            let sep = _find(userinfo, 58, 0)
+            if sep >= 0 {
+                username = decode_component(__str_substring(userinfo, 0, sep))
+                password = decode_component(__str_substring(userinfo, sep + 1, __str_len(userinfo)))
+            } else {
+                username = decode_component(userinfo)
+            }
+        }
+        var port_text = ""
+        if authority.starts_with("[") {
+            let close = _find(authority, 93, 0)
+            if close < 0 {
+                return Err(url_error("`${input}` has an IPv6 host without a closing `]`"))
+            }
+            host = __str_substring(authority, 1, close)
+            let after = __str_substring(authority, close + 1, __str_len(authority))
+            if after.starts_with(":") {
+                port_text = __str_substring(after, 1, __str_len(after))
+            } else if after != "" {
+                return Err(url_error("`${input}` has text after its IPv6 host"))
+            }
+        } else {
+            let pc = _find_last(authority, 58)
+            if pc >= 0 {
+                host = __str_substring(authority, 0, pc)
+                port_text = __str_substring(authority, pc + 1, __str_len(authority))
+            } else {
+                host = authority
+            }
+        }
+        host = _lower(host)
+        if port_text != "" {
+            for i in range(__str_len(port_text)) {
+                if not _is_digit(__str_byte_at(port_text, i)) {
+                    return Err(url_error("`${input}` has an invalid port `${port_text}`"))
+                }
+            }
+            port = port_text.parse_int().unwrap_or(0)
+            if port < 1 or port > 65535 or __str_len(port_text) > 5 {
+                return Err(url_error("`${input}` has a port outside 1 to 65535"))
+            }
+        }
+    }
+    var path = rest
+    var query = ""
+    let q = _find(rest, 63, 0)
+    if q >= 0 {
+        path = __str_substring(rest, 0, q)
+        query = __str_substring(rest, q + 1, __str_len(rest))
+    }
+    return Ok(
+        Url(
+            scheme: scheme,
+            username: username,
+            password: password,
+            host: host,
+            port: port,
+            path: path,
+            query: query,
+            fragment: fragment,
+            has_authority: has_authority,
+        ),
+    )
+}
+
+impl Url {
+    // The explicit port, or the scheme's default (0 if it has none).
+    fun effective_port(self) -> int = self.port if self.port != 0 else default_port(self.scheme)
+
+    // `host:port` for connecting, with IPv6 hosts in brackets.
+    fun host_port(self) -> str {
+        let h = "[${self.host}]" if _find(self.host, 58, 0) >= 0 else self.host
+        return "${h}:${self.effective_port()}"
+    }
+
+    // The query string decoded into its parameters.
+    fun query_params(self) -> QueryParams = parse_query(self.query)
+
+    // Path plus query, as an HTTP request line wants it.
+    fun request_target(self) -> str {
+        let p = self.path if self.path != "" else "/"
+        return p if self.query == "" else "${p}?${self.query}"
+    }
+
+    fun with_path(self, path: str) -> Url {
+        let u = self.copy()
+        u.path = path
+        return u
+    }
+
+    fun with_query(self, params: QueryParams) -> Url {
+        let u = self.copy()
+        u.query = params.encode()
+        return u
+    }
+
+    fun copy(self) -> Url {
+        return Url(
+            scheme: self.scheme,
+            username: self.username,
+            password: self.password,
+            host: self.host,
+            port: self.port,
+            path: self.path,
+            query: self.query,
+            fragment: self.fragment,
+            has_authority: self.has_authority,
+        )
+    }
+
+    // The URL without its password, safe to log.
+    fun redacted(self) -> str {
+        let u = self.copy()
+        if u.password != "" {
+            u.password = "xxxxx"
+        }
+        return u.to_string()
+    }
+}
+
+impl ToString for Url {
+    fun to_string(self) -> str {
+        var out = "${self.scheme}:"
+        if self.has_authority {
+            out += "//"
+            if self.username != "" or self.password != "" {
+                out += encode_component(self.username)
+                if self.password != "" {
+                    out += ":" + encode_component(self.password)
+                }
+                out += "@"
+            }
+            out += "[${self.host}]" if _find(self.host, 58, 0) >= 0 else self.host
+            if self.port != 0 {
+                out += ":${self.port}"
+            }
+        }
+        out += self.path
+        if self.query != "" {
+            out += "?" + self.query
+        }
+        if self.fragment != "" {
+            out += "#" + self.fragment
+        }
+        return out
+    }
+}
+
+fun _hex_digit(v: int) -> int = 48 + v if v < 10 else 55 + v
+
+fun _hex_value(b: int) -> int {
+    if _is_digit(b) {
+        return b - 48
+    }
+    if b >= 65 and b <= 70 {
+        return b - 55
+    }
+    if b >= 97 and b <= 102 {
+        return b - 87
+    }
+    return -1
+}
+
+fun _unreserved(b: int) -> bool = _is_alpha(b) or _is_digit(b) or b == 45 or b == 46 or b == 95 or b == 126
+
+// Percent-encode everything except letters, digits, and `-._~`, so the
+// result is safe in any part of a URL.
+fun encode_component(s: str) -> str {
+    let out: list[str] = []
+    for i in range(__str_len(s)) {
+        let b = __str_byte_at(s, i)
+        if _unreserved(b) {
+            out.push(__str_from_byte(b))
+        } else {
+            out.push("%")
+            out.push(__str_from_byte(_hex_digit(b >> 4)))
+            out.push(__str_from_byte(_hex_digit(b & 15)))
+        }
+    }
+    return "".join(out)
+}
+
+// Decode `%XX` escapes. A malformed escape is kept as written.
+fun decode_component(s: str) -> str = _decode(s, false)
+
+fun _decode(s: str, plus_is_space: bool) -> str {
+    let out: list[str] = []
+    let n = __str_len(s)
+    var i = 0
+    while i < n {
+        let b = __str_byte_at(s, i)
+        if b == 37 and i + 2 < n {
+            let hi = _hex_value(__str_byte_at(s, i + 1))
+            let lo = _hex_value(__str_byte_at(s, i + 2))
+            if hi >= 0 and lo >= 0 {
+                out.push(__str_from_byte(hi * 16 + lo))
+                i += 3
+                continue
+            }
+        }
+        out.push(" " if plus_is_space and b == 43 else __str_from_byte(b))
+        i += 1
+    }
+    return "".join(out)
+}
+
+class QueryParam {
+    key: str
+    value: str
+}
+
+// Query parameters in order. A key may repeat (`tag=a&tag=b`).
+class QueryParams {
+    items: list[QueryParam]
+}
+
+fun query_params() -> QueryParams = QueryParams(items: [])
+
+// Decode `a=1&b=two%20words&flag`. `+` decodes to a space, as in forms.
+fun parse_query(q: str) -> QueryParams {
+    let params = query_params()
+    var text = q
+    if text.starts_with("?") {
+        text = __str_substring(text, 1, __str_len(text))
+    }
+    if text == "" {
+        return params
+    }
+    for part in text.split("&") {
+        if part == "" {
+            continue
+        }
+        let eq = _find(part, 61, 0)
+        params.add(
+            _decode(__str_substring(part, 0, eq), true),
+            _decode(__str_substring(part, eq + 1, __str_len(part)), true),
+        ) if eq >= 0 else params.add(_decode(part, true), "")
+    }
+    return params
+}
+
+impl QueryParams {
+    fun add(self, key: str, value: str) -> QueryParams {
+        self.items.push(QueryParam(key: key, value: value))
+        return self
+    }
+
+    // Replace every value of `key` with one.
+    fun set(self, key: str, value: str) -> QueryParams {
+        self.remove(key)
+        return self.add(key, value)
+    }
+
+    fun remove(self, key: str) {
+        self.items = self.items.filter(p => p.key != key)
+    }
+
+    // The first value of `key`.
+    fun get(self, key: str) -> Option[str] {
+        for p in self.items {
+            if p.key == key {
+                return Some(p.value)
+            }
+        }
+        return None
+    }
+
+    fun get_or(self, key: str, default: str) -> str = self.get(key).unwrap_or(default)
+
+    fun get_all(self, key: str) -> list[str] = self.items.filter(p => p.key == key).map(
+        p => p.value,
+    )
+
+    fun has(self, key: str) -> bool = self.get(key).is_some()
+
+    fun len(self) -> int = len(self.items)
+
+    fun keys(self) -> list[str] {
+        let out: list[str] = []
+        for p in self.items {
+            if not out.contains(p.key) {
+                out.push(p.key)
+            }
+        }
+        return out
+    }
+
+    // `a=1&b=two%20words`, ready to follow a `?`.
+    fun encode(self) -> str {
+        let parts: list[str] = []
+        for p in self.items {
+            parts.push("${encode_component(p.key)}=${encode_component(p.value)}")
+        }
+        return "&".join(parts)
+    }
+}
