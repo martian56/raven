@@ -524,7 +524,22 @@ fn budget_spent(a: &AllocState, size: usize) -> bool {
     }
     a.pending.set(0);
     let total = ALLOCATED.fetch_add(pending, Ordering::Relaxed) + pending;
-    total > collection_floor().max(LIVE_AFTER_GC.load(Ordering::Relaxed))
+    total > shared_floor().max(LIVE_AFTER_GC.load(Ordering::Relaxed))
+}
+
+/// The shared budget's minimum: the collection floor once per core, so a
+/// collection, which stops every worker, runs about as often as one worker
+/// filling its own floor.
+fn shared_floor() -> usize {
+    static FLOOR: AtomicUsize = AtomicUsize::new(0);
+    let cached = FLOOR.load(Ordering::Relaxed);
+    if cached != 0 {
+        return cached;
+    }
+    let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let floor = collection_floor().saturating_mul(cores).max(1);
+    FLOOR.store(floor, Ordering::Relaxed);
+    floor
 }
 
 /// Move every exited thread's heap into this thread's, so the sweep that
