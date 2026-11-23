@@ -5,10 +5,11 @@
 //! parallel on the worker pool; a per-run timeout turns a deadlock into a clean
 //! failure instead of a CI hang.
 //!
-//! Two shapes, both with a deterministic result so corruption shows as a wrong
-//! number: a parallel reduction (eight allocation-heavy goroutines) and a
+//! Three shapes, each with a deterministic result so corruption shows as a
+//! wrong number: a parallel reduction (eight allocation-heavy goroutines), a
 //! goroutine spinning a long NON-allocating loop while another allocates hard
-//! (the loop-back-edge-safepoint case). The default counts are sized for CI;
+//! (the loop-back-edge-safepoint case), and goroutines that park on a contended
+//! mutex and resume on another worker (the root-chain migration case). The default counts are sized for CI;
 //! widen with `RAVEN_SOAK_RUNS`, `RAVEN_SOAK_THRESHOLD`, `RAVEN_SOAK_TIMEOUT_SECS`.
 
 use std::io::Read;
@@ -55,6 +56,60 @@ fun main() {
 }
 "#;
 
+/// Goroutines contend for a `Mutex`, so they park inside `lock` and often
+/// resume on a different worker thread, then return through frames entered on
+/// the first one. Each round moves a shared object through a locked list and
+/// allocates. Result is `8 * 1500 = 12000`.
+const MIGRATE_SOURCE: &str = r#"
+from std.sync import Mutex, WaitGroup
+
+class Slot {
+    label: str
+    hits: int
+}
+
+class Shared {
+    lock: Mutex
+    slots: list[Slot]
+}
+
+fun churn(s: Shared, g: int, wg: WaitGroup) {
+    for i in range(1500) {
+        s.lock.lock()
+        let slot = s.slots.remove_at(len(s.slots) - 1)
+        s.lock.unlock()
+        slot.label = "g${g}-r${i}"
+        slot.hits = slot.hits + 1
+        s.lock.lock()
+        s.slots.push(slot)
+        s.lock.unlock()
+    }
+    wg.done()
+}
+
+fun main() {
+    let slots: list[Slot] = []
+    for i in range(8) {
+        slots.push(Slot(label: "slot-${i}", hits: 0))
+    }
+    let s = Shared(lock: Mutex.new(), slots: slots)
+    let wg = WaitGroup.new()
+    wg.add(8)
+    for g in range(8) {
+        spawn churn(s, g, wg)
+    }
+    wg.wait()
+    var total = 0
+    for slot in s.slots {
+        if slot.label.length() < 5 {
+            total = -1000000
+        }
+        total = total + slot.hits
+    }
+    print(total)
+}
+"#;
+
 #[test]
 fn parallel_programs_survive_a_soak() {
     let Some(runtime) = supported_runtime() else {
@@ -65,9 +120,10 @@ fn parallel_programs_survive_a_soak() {
     let timeout = Duration::from_secs(env_u64("RAVEN_SOAK_TIMEOUT_SECS", 60));
 
     let parallel_src = read_example("concurrency_parallel.rv");
-    let cases: [(&str, &str, &str); 2] = [
+    let cases: [(&str, &str, &str); 3] = [
         ("concurrency_parallel", &parallel_src, "48000"),
         ("spin_nonalloc", SPIN_SOURCE, "5"),
+        ("mutex_migrate", MIGRATE_SOURCE, "12000"),
     ];
 
     let mut failures = Vec::new();

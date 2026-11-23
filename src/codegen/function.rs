@@ -3544,7 +3544,10 @@ fn leave_root_frame(
     };
     let ptr = cx.pointer_type();
     let prev = builder.ins().stack_load(types::I64, ptr, frame.array, 0);
-    let head = builder.use_var(frame.head);
+    let accessor = cx.chain_accessor().expect("chain accessor defines");
+    let accessor_ref = cx.module().declare_func_in_func(accessor, builder.func);
+    let call = builder.ins().call(accessor_ref, &[]);
+    let head = builder.inst_results(call)[0];
     builder.ins().store(MemFlagsData::trusted(), prev, head, 0);
 }
 

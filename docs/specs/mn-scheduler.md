@@ -213,6 +213,15 @@ loop {
 }
 ```
 
+Compiled code links each function's root record into the chain through the
+thread-local `__raven_frame_chain`. A goroutine can park in a callee and resume
+on another worker, so a function must not reuse the chain-head address it took
+at entry when it unlinks its record on return: that address may belong to the
+worker it started on, and writing there corrupts whatever goroutine now runs
+there. The return path calls `__raven_frame_chain_addr` for the current
+thread's address instead. A call is required because Cranelift treats
+`tls_value` as pure and would reuse the entry's value.
+
 `running` plus the per-worker `RootContext` is why `extra_roots` changes: it must
 surface the saved roots of every goroutine **not** in `running` (a running
 goroutine's live roots are in its worker's registered context, already scanned),
