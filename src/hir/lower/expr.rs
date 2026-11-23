@@ -2037,11 +2037,33 @@ fn is_type_ref_receiver(receiver: &Expr, cx: &LowerCtx<'_>) -> bool {
         return false;
     };
     match cx.resolved.map.lookup(&receiver.span) {
-        Some(Binding::Struct(_)) | Some(Binding::Enum(_)) => true,
+        // A generic parameter or `Self` names a type too: `T.from_json(j)` in
+        // a generic function is an associated call on whatever `T` becomes,
+        // not a method call on a value named `T`.
+        Some(Binding::Struct(_))
+        | Some(Binding::Enum(_))
+        | Some(Binding::GenericParam { .. })
+        | Some(Binding::SelfType) => true,
         Some(_) => false,
         None => matches!(
             name.as_str(),
-            "Int" | "Float" | "Bool" | "String" | "Char" | "Unit" | "Array" | "List" | "Vec"
+            "int"
+                | "float"
+                | "bool"
+                | "str"
+                | "char"
+                | "list"
+                | "dict"
+                | "set"
+                | "Int"
+                | "Float"
+                | "Bool"
+                | "String"
+                | "Char"
+                | "Unit"
+                | "Array"
+                | "List"
+                | "Vec"
         ),
     }
 }

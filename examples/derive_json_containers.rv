@@ -1,0 +1,48 @@
+// FromJson for list and Option fields, nested classes, and associated calls
+// on a type parameter (`T.from_json` in generic code), which used to crash.
+from std.json import FromJson, ToJson, decode, parse, stringify
+
+@derive(FromJson, ToJson)
+class Variant {
+    sku: str
+    price_cents: int
+    stock: Option[int]
+}
+
+@derive(FromJson, ToJson)
+class Product {
+    name: str
+    tags: list[str]
+    description: Option[str]
+    variants: list[Variant]
+    discount: Option[Variant]
+}
+
+trait Named {
+    fun label() -> str
+}
+
+class Shop {}
+
+impl Named for Shop {
+    fun label() -> str = "shop"
+}
+
+fun label_of[T: Named]() -> str = T.label()
+
+fun main() {
+    let text = "{\"name\": \"Mug\", \"tags\": [\"kitchen\", \"gift\"], \"variants\": [{\"sku\": \"M-1\", \"price_cents\": 1250, \"stock\": 3}, {\"sku\": \"M-2\", \"price_cents\": 1500}]}"
+    let p: Product = decode(text).unwrap()
+    print(p.name, p.tags, p.description.is_none(), len(p.variants), p.variants[1].stock.is_none(), p.discount.is_none())
+    print(stringify(p.to_json()))
+    let tags: Result[list[str], Error] = decode("[\"a\", \"b\"]")
+    print(tags.unwrap())
+    let maybe: Result[Option[int], Error] = decode("null")
+    print(maybe.unwrap().is_none())
+    let nums: Result[list[list[int]], Error] = decode("[[1, 2], [], [3]]")
+    print(nums.unwrap())
+    print(Product.from_json(parse("{\"name\": 1, \"tags\": [], \"variants\": []}").unwrap()).is_err())
+    print(Product.from_json(parse("{\"tags\": [], \"variants\": []}").unwrap()).is_err())
+    print(Product.from_json(parse("[1]").unwrap()).is_err())
+    print(label_of[Shop]())
+}
