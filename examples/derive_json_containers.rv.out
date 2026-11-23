@@ -1,0 +1,9 @@
+Mug ["kitchen", "gift"] true 2 true true
+{"name":"Mug","tags":["kitchen","gift"],"description":null,"variants":[{"sku":"M-1","price_cents":1250,"stock":3},{"sku":"M-2","price_cents":1500,"stock":null}],"discount":null}
+["a", "b"]
+true
+[[1, 2], [], [3]]
+true
+true
+true
+shop

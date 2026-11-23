@@ -499,6 +499,17 @@ fun raven_derive_json_field(j: JsonValue, key: str) -> Result[JsonValue, Error] 
         case None { Err(Error(kind: "json", message: "missing field ".concat(key))) }
     }
 }
+fun raven_derive_json_optional(j: JsonValue, key: str) -> Result[JsonValue, Error] {
+    return match j {
+        case Object(_) {
+            match j.get(key) {
+                case Some(v) { Ok(v) }
+                case None { Ok(JsonValue.Null) }
+            }
+        }
+        case _ { Err(Error(kind: "json", message: "expected an object")) }
+    }
+}
 fun raven_derive_json_index(j: JsonValue, i: int) -> Result[JsonValue, Error] {
     return match j.at(i) {
         case Some(v) { Ok(v) }
@@ -598,10 +609,17 @@ fn struct_to_json_body(s: &Struct) -> String {
 fn struct_from_json_body(s: &Struct, self_ty: &str) -> String {
     let mut body = format!("    fun from_json(j: JsonValue) -> Result[{self_ty}, Error] {{\n");
     for f in &s.fields {
+        // A missing key decodes an `Option` field as `None`, so a client can
+        // leave optional fields out (a partial update).
+        let ty = render_type(&f.ty);
+        let getter = if ty.starts_with("Option[") {
+            "raven_derive_json_optional"
+        } else {
+            "raven_derive_json_field"
+        };
         body.push_str(&format!(
-            "        let f_{0}: {1} = raven_derive_json_decode(raven_derive_json_field(j, \"{0}\")?)?\n",
-            f.name,
-            render_type(&f.ty)
+            "        let f_{0}: {1} = raven_derive_json_decode({2}(j, \"{0}\")?)?\n",
+            f.name, ty, getter
         ));
     }
     let inits: Vec<String> = s

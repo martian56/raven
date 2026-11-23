@@ -343,10 +343,71 @@ fn run_program(args: &[OsString]) -> ExitCode {
     let status = std::process::Command::new(&exe).args(&args[1..]).status();
     let _ = std::fs::remove_file(&exe);
     match status {
-        Ok(s) => ExitCode::from(u8::try_from(s.code().unwrap_or(1)).unwrap_or(1)),
+        Ok(s) => {
+            if let Some(msg) = crash_description(&s) {
+                eprintln!("raven: the program crashed: {msg}");
+            }
+            ExitCode::from(exit_byte(&s))
+        }
         Err(e) => {
             eprintln!("raven: run {}: {}", exe.display(), e);
             ExitCode::from(1)
         }
     }
+}
+
+/// What went wrong when the program died from a crash rather than exiting,
+/// so `raven run` never fails silently.
+fn crash_description(s: &std::process::ExitStatus) -> Option<String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(sig) = s.signal() {
+            let name = match sig {
+                4 => "illegal instruction (SIGILL)",
+                6 => "aborted (SIGABRT)",
+                7 => "bus error (SIGBUS)",
+                8 => "arithmetic error (SIGFPE)",
+                9 => "killed (SIGKILL)",
+                11 => "segmentation fault (SIGSEGV)",
+                _ => return Some(format!("killed by signal {sig}")),
+            };
+            return Some(name.to_string());
+        }
+        None
+    }
+    #[cfg(windows)]
+    {
+        let code = s.code()? as u32;
+        let name = match code {
+            0xC000_0005 => "access violation",
+            0xC000_00FD => "stack overflow",
+            0xC000_0409 => "stack buffer overrun",
+            0xC000_001D => "illegal instruction",
+            0xC000_0094 => "integer division by zero",
+            0xC000_0374 => "heap corruption",
+            _ if code >= 0xC000_0000 => return Some(format!("exception 0x{code:08X}")),
+            _ => return None,
+        };
+        Some(format!("{name} (0x{code:08X})"))
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = s;
+        None
+    }
+}
+
+/// The exit code to pass on: the program's own when it fits in a byte, 128
+/// plus the signal number for a Unix crash, as shells report it, and 1
+/// otherwise.
+fn exit_byte(s: &std::process::ExitStatus) -> u8 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(sig) = s.signal() {
+            return u8::try_from(128 + sig).unwrap_or(1);
+        }
+    }
+    s.code().and_then(|c| u8::try_from(c).ok()).unwrap_or(1)
 }
