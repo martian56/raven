@@ -2,6 +2,21 @@
 
 All notable changes to Raven are documented in this file.
 
+## [3.6.1] - 2026-11-23
+
+Found by load testing the marketplace backend on two 16-core servers.
+
+### Fixes
+
+- A server's memory grew without bound under load (about 0.5 MB per request, until the kernel killed it at 29 GB). A collection swept only the heap of the thread that started it, so garbage on every other worker thread, and on threads that had exited, was never freed. A collection now sweeps every worker heap and adopts the heaps of exited threads.
+- Collections are triggered by a budget shared across worker threads, counting string and list buffers as well as object bodies. The floor is `RAVEN_GC_THRESHOLD` (16 MiB by default) per core.
+- A sweep returns empty heap pages to the allocator.
+
+### Performance
+
+- Worker heaps are swept in parallel. On the load-test server a collection went from about 115 ms to under 10 ms.
+- A worker started to cover a blocking syscall stays idle for 2 seconds before retiring. Retiring at once made a busy server create and destroy an OS thread for almost every socket or database call (about 15,000 a second).
+
 ## [3.6.0] - 2026-11-23
 
 Found by load testing the marketplace backend.

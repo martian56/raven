@@ -2005,7 +2005,13 @@ mod collector_tests {
             let grown = small_pages();
             raven_gc_collect();
             assert!(grown > 10, "expected many pages, got {grown}");
-            assert!(small_pages() <= 1, "kept {} pages", small_pages());
+            // Another test's exited thread may leave live pages for this
+            // collection to adopt, so only require most pages to go.
+            assert!(
+                small_pages() < grown / 4,
+                "kept {} of {grown} pages",
+                small_pages()
+            );
         });
     }
 
