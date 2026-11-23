@@ -98,7 +98,7 @@ impl ByteReader {
     fun position(self) -> int = self.pos
 
     fun _need(self, n: int) -> Result[int, Error] {
-        if n < 0 or self.pos + n > __str_len(self.data) {
+        if n < 0 or n > self.remaining() {
             return Err(
                 bytes_error("need ${n} bytes at offset ${self.pos}, only ${self.remaining()} remain"),
             )

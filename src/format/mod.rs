@@ -142,7 +142,11 @@ impl<'a> Printer<'a> {
         }
         let tokens = Lexer::new(text, "<fmt>").tokenize().ok()?;
         match tokens.first().map(|t| &t.kind) {
-            Some(TokenKind::StringLit(v)) if v == value => Some(text.to_string()),
+            Some(TokenKind::StringLit(v))
+                if v.replace(crate::lexer::ESCAPED_DOLLAR_SENTINEL, "") == value =>
+            {
+                Some(text.to_string())
+            }
             _ => None,
         }
     }

@@ -3,6 +3,7 @@ from std.collections import Deque, PriorityQueue
 from std.encoding import base64url_decode, base64url_encode, hex_encode
 import std.url
 import std.uuid
+from std.uuid import Uuid
 
 class Job {
     priority: int
@@ -72,24 +73,55 @@ fun main() {
     // UUIDs.
     let a = uuid.v4()
     let b = uuid.v7()
-    print(len(a), uuid.version(a), uuid.version(b), a != uuid.v4())
-    let ts = uuid.timestamp_millis(b).unwrap()
-    print(ts > 1700000000000)
+    print(
+        a.to_string().length(),
+        a.version(),
+        b.version(),
+        a != uuid.v4(),
+        a == uuid.parse(a.to_string()).unwrap(),
+    )
+    print(
+        b.timestamp_millis().unwrap() > 1700000000000,
+        a.timestamp_millis().is_err(),
+        len(a.bytes()),
+        a.is_rfc_variant(),
+    )
     print(
         uuid.parse("{6BA7B810-9DAD-11D1-80B4-00C04FD430C8}").unwrap(),
         uuid.parse("6ba7b8109dad11d180b400c04fd430c8").unwrap(),
+        uuid.parse("URN:UUID:6BA7B810-9DAD-11D1-80B4-00C04FD430C8").unwrap(),
     )
-    print(uuid.is_valid("nope"), uuid.is_valid(uuid.nil()), uuid.version("x"))
+    print(
+        uuid.is_valid("nope"),
+        uuid.nil().is_nil(),
+        uuid.is_valid("6ba7b810x9dad-11d1-80b4-00c04fd430c8"),
+    )
+    print(uuid.parse("00000000-0000-7000-0000-000000000000").unwrap().timestamp_millis().is_err())
+    let seen: dict[Uuid, int] = {}
+    seen[a] = 1
+    print(seen.get(uuid.parse(a.to_string()).unwrap()).unwrap())
     var earlier = uuid.v7()
     var sorted = true
     for _ in range(50) {
         let next = uuid.v7()
-        if next.substring(0, 13) < earlier.substring(0, 13) {
+        if next.timestamp_millis().unwrap() < earlier.timestamp_millis().unwrap() {
             sorted = false
         }
         earlier = next
     }
     print(sorted)
+
+    // URL review cases.
+    print(
+        url.parse("http://h:000080/").unwrap().port,
+        url.parse("https://h/??a=b").unwrap().query_params().keys(),
+    )
+    print(
+        url.parse("https://api.example.com/").unwrap().with_path("v1").to_string(),
+        url.parse("https://h/?").unwrap().to_string(),
+        url.parse("https://h/#").unwrap().to_string(),
+    )
+    print(ByteReader.new("ab").bytes(9223372036854775807).is_err())
 
     // Deque.
     let d: Deque[int] = Deque.new()

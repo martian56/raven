@@ -547,7 +547,7 @@ fn repr_c_class_stays_a_class() {
 #[test]
 fn string_escapes_keep_their_spelling() {
     let src = r#"fun f() -> str {
-    return "zero\u{200b}width \xfb tab\t \u{263a}"
+    return "zero\u{200b}width \xfb tab\t \u{263a} \${x}"
 }
 "#;
     assert_eq!(fmt(src), src);

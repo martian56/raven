@@ -20,6 +20,10 @@ class Url {
     query: str
     fragment: str
     has_authority: bool
+    // Whether the text had a `?` or `#`, so `https://h/?` round-trips even
+    // though its query is empty.
+    has_query: bool
+    has_fragment: bool
 }
 
 fun _is_alpha(b: int) -> bool = (b >= 65 and b <= 90) or (b >= 97 and b <= 122)
@@ -102,6 +106,7 @@ fun parse(input: str) -> Result[Url, Error] {
     var rest = input.trim()
     var fragment = ""
     let hash = _find(rest, 35, 0)
+    let has_fragment = hash >= 0
     if hash >= 0 {
         fragment = __str_substring(rest, hash + 1, __str_len(rest))
         rest = __str_substring(rest, 0, hash)
@@ -172,8 +177,12 @@ fun parse(input: str) -> Result[Url, Error] {
                     return Err(url_error("`${input}` has an invalid port `${port_text}`"))
                 }
             }
-            port = port_text.parse_int().unwrap_or(0)
-            if port < 1 or port > 65535 or __str_len(port_text) > 5 {
+            var digits = port_text
+            while __str_len(digits) > 1 and digits.starts_with("0") {
+                digits = __str_substring(digits, 1, __str_len(digits))
+            }
+            port = digits.parse_int().unwrap_or(0) if __str_len(digits) <= 5 else 0
+            if port < 1 or port > 65535 {
                 return Err(url_error("`${input}` has a port outside 1 to 65535"))
             }
         }
@@ -181,6 +190,7 @@ fun parse(input: str) -> Result[Url, Error] {
     var path = rest
     var query = ""
     let q = _find(rest, 63, 0)
+    let has_query = q >= 0
     if q >= 0 {
         path = __str_substring(rest, 0, q)
         query = __str_substring(rest, q + 1, __str_len(rest))
@@ -196,6 +206,8 @@ fun parse(input: str) -> Result[Url, Error] {
             query: query,
             fragment: fragment,
             has_authority: has_authority,
+            has_query: has_query,
+            has_fragment: has_fragment,
         ),
     )
 }
@@ -211,23 +223,26 @@ impl Url {
     }
 
     // The query string decoded into its parameters.
-    fun query_params(self) -> QueryParams = parse_query(self.query)
+    fun query_params(self) -> QueryParams = _parse_query(self.query)
 
     // Path plus query, as an HTTP request line wants it.
     fun request_target(self) -> str {
         let p = self.path if self.path != "" else "/"
-        return p if self.query == "" else "${p}?${self.query}"
+        return p if not self.has_query and self.query == "" else "${p}?${self.query}"
     }
 
+    // A copy with a new path. With a host, a path that does not start with
+    // `/` gets one, so it cannot run into the host name.
     fun with_path(self, path: str) -> Url {
         let u = self.copy()
-        u.path = path
+        u.path = "/" + path if self.has_authority and path != "" and not path.starts_with("/") else path
         return u
     }
 
     fun with_query(self, params: QueryParams) -> Url {
         let u = self.copy()
         u.query = params.encode()
+        u.has_query = u.query != ""
         return u
     }
 
@@ -242,6 +257,8 @@ impl Url {
             query: self.query,
             fragment: self.fragment,
             has_authority: self.has_authority,
+            has_query: self.has_query,
+            has_fragment: self.has_fragment,
         )
     }
 
@@ -273,10 +290,10 @@ impl ToString for Url {
             }
         }
         out += self.path
-        if self.query != "" {
+        if self.has_query or self.query != "" {
             out += "?" + self.query
         }
-        if self.fragment != "" {
+        if self.has_fragment or self.fragment != "" {
             out += "#" + self.fragment
         }
         return out
@@ -353,13 +370,14 @@ class QueryParams {
 
 fun query_params() -> QueryParams = QueryParams(items: [])
 
-// Decode `a=1&b=two%20words&flag`. `+` decodes to a space, as in forms.
+// Decode `a=1&b=two%20words&flag` (a leading `?` is skipped). `+` decodes to
+// a space, as in forms.
 fun parse_query(q: str) -> QueryParams {
+    return _parse_query(__str_substring(q, 1, __str_len(q)) if q.starts_with("?") else q)
+}
+
+fun _parse_query(text: str) -> QueryParams {
     let params = query_params()
-    var text = q
-    if text.starts_with("?") {
-        text = __str_substring(text, 1, __str_len(text))
-    }
     if text == "" {
         return params
     }
