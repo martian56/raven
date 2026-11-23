@@ -40,6 +40,26 @@ base64, pass raw bytes to `base64_encode` from [std.encoding](encoding.md).
 | `hash_password(password)` | a salted hash to store |
 | `verify_password(password, stored)` | whether `password` matches `stored` |
 
+## Hashing in pieces
+
+`Hasher` hashes data as it arrives, so a large file or stream never has to
+be in memory at once. Start one with `Hasher.sha256()`, `sha384()`,
+`sha512()`, `hmac_sha256(key)`, or `hmac_sha512(key)`; feed it with
+`update(data)` (which chains), and read the result once with `digest()` or
+`hex_digest()`.
+
+```rust
+from std.crypto import Hasher
+
+fun main() {
+    let h = Hasher.sha256()
+    for chunk in ["first part, ", "second part"] {
+        h.update(chunk)
+    }
+    print(h.hex_digest().length()) // 64
+}
+```
+
 ## Passwords
 
 `hash_password` derives 32 bytes with PBKDF2-HMAC-SHA256 over a fresh 16-byte

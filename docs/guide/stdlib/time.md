@@ -257,6 +257,36 @@ fun main() {
 `elapsed()` is the time since the instant, `later.since(earlier)` the time
 between two, and `plus(d)` an instant moved forward.
 
+## DateTime
+
+A `DateTime` is an instant plus the UTC offset its calendar fields are shown
+at, like Python's `datetime` with a time zone. Make one with
+`DateTime.now()`, `now_local()`, `of(year, month, day, hour, minute,
+second)` (UTC), `from_seconds`, `from_millis`, or `parse(rfc3339_text)`.
+
+- Fields: `year()`, `month()`, `day()`, `hour()`, `minute()`, `second()`,
+  `weekday()` (0 is Sunday), `timestamp()`, `timestamp_millis()`, and the
+  `date` and `time` fields.
+- `with_offset(minutes)` shows the same instant at another offset;
+  `to_utc()` returns to UTC.
+- `plus(duration)`, `minus(duration)`, `add_days(n)`, `add_months(n)` (the day
+  clamps to the month), `start_of_day()`, and `since(earlier)`, which returns a
+  `Duration`.
+- `is_before`, `is_after`, `==`, and `compare` work on the instant, so the
+  same moment at two offsets is equal.
+- `format(pattern)` (strftime on the local fields) and `to_rfc3339()`.
+
+```rust
+from std.time import DateTime, hours
+
+fun main() {
+    let order = DateTime.of(2024, 1, 31, 22, 30, 0)
+    let due = order.add_months(1).plus(hours(2))
+    print(due.to_rfc3339()) // 2024-03-01T00:30:00Z
+    print(order.with_offset(240).to_rfc3339()) // 2024-02-01T02:30:00+04:00
+}
+```
+
 ## Worked example: a formatted timestamp round trip
 
 Format the current time, then parse the formatted text back to a timestamp:

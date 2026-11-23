@@ -219,6 +219,74 @@ pub extern "C" fn raven_crypto_hex(data: *const object::String) -> *mut object::
     new_string(hex(&bytes_of(data)).as_bytes())
 }
 
+enum Hashing {
+    Digest(digest::Context),
+    Mac(hmac::Context),
+}
+
+fn hashers() -> &'static std::sync::Mutex<std::collections::HashMap<i64, Hashing>> {
+    static H: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<i64, Hashing>>> =
+        std::sync::OnceLock::new();
+    H.get_or_init(Default::default)
+}
+
+static NEXT_HASHER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(1);
+
+fn register(h: Hashing) -> i64 {
+    let id = NEXT_HASHER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    hashers().lock().unwrap().insert(id, h);
+    id
+}
+
+/// Start an incremental digest; 0 for an unknown algorithm.
+#[no_mangle]
+pub extern "C" fn raven_crypto_hasher_new(alg: *const object::String) -> i64 {
+    match algorithm(&bytes_of(alg)) {
+        Some(a) => register(Hashing::Digest(digest::Context::new(a))),
+        None => 0,
+    }
+}
+
+/// Start an incremental HMAC under `key`; 0 for an unknown algorithm.
+#[no_mangle]
+pub extern "C" fn raven_crypto_hmac_new(
+    alg: *const object::String,
+    key: *const object::String,
+) -> i64 {
+    match hmac_algorithm(&bytes_of(alg)) {
+        Some(a) => register(Hashing::Mac(hmac::Context::with_key(&hmac::Key::new(
+            a,
+            &bytes_of(key),
+        )))),
+        None => 0,
+    }
+}
+
+/// Feed `data` into hasher `id`. Returns false if `id` is unknown or finished.
+#[no_mangle]
+pub extern "C" fn raven_crypto_hasher_update(id: i64, data: *const object::String) -> bool {
+    let data = bytes_of(data);
+    let mut map = hashers().lock().unwrap();
+    match map.get_mut(&id) {
+        Some(Hashing::Digest(c)) => c.update(&data),
+        Some(Hashing::Mac(c)) => c.update(&data),
+        None => return false,
+    }
+    true
+}
+
+/// Finish hasher `id` and return its raw result; empty if `id` is unknown or
+/// already finished.
+#[no_mangle]
+pub extern "C" fn raven_crypto_hasher_finish(id: i64) -> *mut object::String {
+    let taken = hashers().lock().unwrap().remove(&id);
+    match taken {
+        Some(Hashing::Digest(c)) => new_string(c.finish().as_ref()),
+        Some(Hashing::Mac(c)) => new_string(c.sign().as_ref()),
+        None => new_string(&[]),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

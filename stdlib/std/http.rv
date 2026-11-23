@@ -252,6 +252,9 @@ class Request {
     params: dict[str, str]
     query: dict[str, str]
     body: str
+    // Values middleware attaches for later handlers, such as the signed-in
+    // user's id or a request id.
+    context: dict[str, str]
 }
 
 impl Request {
@@ -415,6 +418,9 @@ class Server {
     lock: Mutex
     stopping: bool
     addr: str
+    middleware: list[fun(Request, fun(Request) -> Response) -> Response]
+    max_body: int
+    gzip: bool
 }
 
 impl Server {
@@ -430,6 +436,9 @@ impl Server {
             lock: mutex(),
             stopping: false,
             addr: "",
+            middleware: [],
+            max_body: 10485760,
+            gzip: false,
         )
     }
 
@@ -495,6 +504,29 @@ impl Server {
 
     // Register `handler` for `method` requests whose path matches `pattern`.
     // Routes are tried in registration order; the first match wins.
+    // Wrap every request in `mw`, which receives the request and `next` (the
+    // rest of the chain) and returns the response. Middleware runs in the
+    // order it was added, outermost first, before routing; it can answer on
+    // its own (an auth check returning 401), change the request, or change
+    // the response `next` returns.
+    fun use(self, mw: fun(Request, fun(Request) -> Response) -> Response) {
+        self.middleware.push(mw)
+    }
+
+    // Refuse request bodies over `bytes` with 413 Payload Too Large. The
+    // default is 10 MiB.
+    fun with_max_body(self, bytes: int) -> Server {
+        self.max_body = bytes
+        return self
+    }
+
+    // gzip text, JSON, JavaScript, and SVG responses of 1 KiB or more for
+    // clients that accept it.
+    fun with_gzip(self) -> Server {
+        self.gzip = true
+        return self
+    }
+
     fun route(self, method: Method, pattern: str, handler: fun(Request) -> Response) {
         self.routes.push(Route(method: method, pattern: pattern, handler: handler))
     }
@@ -595,13 +627,16 @@ fun serve_connection(server: Server, stream: TcpStream) {
     var served = 0
     var carry = ""
     while open {
-        match read_request(stream, carry) {
+        match read_request(stream, carry, server.max_body) {
             case Ok(maybe) {
                 match maybe {
                     case Some(parsed) {
                         carry = parsed.rest
                         let req = parsed.request
-                        let resp = dispatch(server.routes, req)
+                        var resp = _run_chain(server, 0, req)
+                        if server.gzip {
+                            resp = _maybe_gzip(req, resp)
+                        }
                         var keep = should_keep_alive(req)
                         if server.is_stopping() {
                             keep = false
@@ -630,13 +665,16 @@ fun serve_connection(server: Server, stream: TcpStream) {
                     }
                 }
             }
-            case Err(_) {
-                // A malformed request is answered with 400 whether or not earlier
-                // requests on this keep-alive connection succeeded; only a clean
-                // idle hang-up (Ok(None) above) closes silently.
-                write_response(stream, Response.bad_request("Bad Request"), false, false)
+            case Err(e) {
+                // A malformed request is answered with 400 (413 for a body over
+                // the limit) whether or not earlier requests on this keep-alive
+                // connection succeeded; only a clean idle hang-up (Ok(None)
+                // above) closes silently.
+                let too_large = e.message.contains("too large")
+                var resp = Response.with_body(413, "Payload Too Large") if too_large else Response.bad_request("Bad Request")
+                write_response(stream, resp, false, false)
                 if server.access_log {
-                    print("- - 400")
+                    print("- - ${resp.status}")
                 }
                 open = false
             }
@@ -792,11 +830,10 @@ fun is_chunked_only(te: str) -> bool {
     return parts[0].trim().to_lower() == "chunked"
 }
 
-fun decode_chunked(stream: TcpStream, initial: str) -> Result[ChunkedBody, Error] {
+fun decode_chunked(stream: TcpStream, initial: str, max_body: int) -> Result[ChunkedBody, Error] {
     var buf = initial
     var decoded = ""
     var total = 0
-    let max_body = 10485760
     // A single chunk-size line or the whole trailer block must fit this, so an
     // oversized extension or trailer cannot force unbounded buffering.
     let max_frame = 65536
@@ -895,7 +932,11 @@ fun decode_chunked(stream: TcpStream, initial: str) -> Result[ChunkedBody, Error
 // an idle keep-alive client that hung up or sat past the read timeout. A request
 // that arrived but failed to parse is an `Err`, which the caller answers with a
 // 400, so a read timeout is never mistaken for a malformed request.
-fun read_request(stream: TcpStream, initial: str) -> Result[Option[ReadResult], Error] {
+fun read_request(
+    stream: TcpStream,
+    initial: str,
+    max_body: int,
+) -> Result[Option[ReadResult], Error] {
     var buf = initial
     var split = buf.index_of("\r\n\r\n")
     while split < 0 {
@@ -1026,7 +1067,7 @@ fun read_request(stream: TcpStream, initial: str) -> Result[Option[ReadResult], 
         if headers.get_or("content-length", "").length() > 0 {
             return Err(error_kind("http", "Content-Length with chunked encoding"))
         }
-        var decoded = decode_chunked(stream, body)?
+        var decoded = decode_chunked(stream, body, max_body)?
         actual_body = decoded.body
         rest = decoded.rest
     } else {
@@ -1056,7 +1097,6 @@ fun read_request(stream: TcpStream, initial: str) -> Result[Option[ReadResult], 
         if want < 0 {
             return Err(error_kind("http", "negative Content-Length"))
         }
-        let max_body = 10485760
         if want > max_body {
             return Err(error_kind("http", "request body too large"))
         }
@@ -1083,6 +1123,7 @@ fun read_request(stream: TcpStream, initial: str) -> Result[Option[ReadResult], 
     }
 
     let params: dict[str, str] = Map.new()
+    let context: dict[str, str] = Map.new()
     return Ok(
         Some(
             ReadResult(
@@ -1094,6 +1135,7 @@ fun read_request(stream: TcpStream, initial: str) -> Result[Option[ReadResult], 
                     params: params,
                     query: query,
                     body: actual_body,
+                    context: context,
                 ),
                 rest: rest,
             ),
@@ -1282,8 +1324,14 @@ fun write_response(stream: TcpStream, resp: Response, keep_alive: bool, is_head:
     while i < keys.len() {
         let k = keys[i]
         if is_valid_field_name(k) {
-            let v = sanitize_field_value(resp.headers.get_or(k, ""))
-            block = block.concat(k).concat(": ").concat(v).concat("\r\n")
+            // Several cookies share the one Set-Cookie entry, separated by
+            // newlines; each goes out as its own header line.
+            let raw = resp.headers.get_or(k, "")
+            for part in raw.split("\n") {
+                if part != "" or raw == "" {
+                    block = block.concat(k).concat(": ").concat(sanitize_field_value(part)).concat("\r\n")
+                }
+            }
         }
         i += 1
     }
@@ -1440,4 +1488,295 @@ fun content_type_for(path: str) -> str {
         return "text/plain; charset=utf-8"
     }
     return "application/octet-stream"
+}
+
+fun _run_chain(server: Server, i: int, req: Request) -> Response {
+    if i >= server.middleware.len() {
+        return dispatch(server.routes, req)
+    }
+    let mw = server.middleware[i]
+    return mw(req, (r: Request) -> Response => _run_chain(server, i + 1, r))
+}
+
+extern "C" {
+    fun raven_compress(kind: str, data: str, level: int) -> str
+}
+
+fun _compressible(content_type: str) -> bool {
+    let ct = content_type.to_lower()
+    return ct.starts_with("text/") or ct.contains("json") or ct.contains("javascript") or ct.contains(
+        "svg",
+    ) or ct.contains("xml")
+}
+
+fun _header_ci(headers: dict[str, str], name: str) -> str {
+    for k in headers.keys() {
+        if k.to_lower() == name {
+            return headers.get_or(k, "")
+        }
+    }
+    return ""
+}
+
+fun _maybe_gzip(req: Request, resp: Response) -> Response {
+    if resp.body.length() < 1024 or _header_ci(resp.headers, "content-encoding") != "" {
+        return resp
+    }
+    if not _compressible(_header_ci(resp.headers, "content-type")) {
+        return resp
+    }
+    if not req.header("accept-encoding").to_lower().contains("gzip") {
+        return resp
+    }
+    let packed = raven_compress("gzip", resp.body, 6)
+    if packed.length() == 0 {
+        return resp
+    }
+    resp.body = packed
+    resp.headers.set("Content-Encoding", "gzip")
+    resp.headers.set("Vary", "Accept-Encoding")
+    return resp
+}
+
+// A cookie to send with `Response.set_cookie`. Defaults are the safe ones:
+// path `/`, HttpOnly, SameSite=Lax, no expiry (a session cookie).
+class Cookie {
+    name: str
+    value: str
+    path: str
+    domain: str
+    max_age: int
+    http_only: bool
+    secure: bool
+    same_site: str
+}
+
+impl Cookie {
+    fun new(name: str, value: str) -> Cookie {
+        return Cookie(
+            name: name,
+            value: value,
+            path: "/",
+            domain: "",
+            max_age: -1,
+            http_only: true,
+            secure: false,
+            same_site: "Lax",
+        )
+    }
+
+    fun with_path(self, path: str) -> Cookie {
+        self.path = path
+        return self
+    }
+
+    fun with_domain(self, domain: str) -> Cookie {
+        self.domain = domain
+        return self
+    }
+
+    // Lifetime in seconds; 0 deletes the cookie, -1 (the default) lasts the
+    // browser session.
+    fun with_max_age(self, seconds: int) -> Cookie {
+        self.max_age = seconds
+        return self
+    }
+
+    fun with_secure(self, on: bool) -> Cookie {
+        self.secure = on
+        return self
+    }
+
+    fun with_http_only(self, on: bool) -> Cookie {
+        self.http_only = on
+        return self
+    }
+
+    // "Strict", "Lax", or "None" (which needs `with_secure(true)`).
+    fun with_same_site(self, mode: str) -> Cookie {
+        self.same_site = mode
+        return self
+    }
+
+    fun header_value(self) -> str {
+        var out = "${self.name}=${self.value}"
+        if self.path != "" {
+            out += "; Path=${self.path}"
+        }
+        if self.domain != "" {
+            out += "; Domain=${self.domain}"
+        }
+        if self.max_age >= 0 {
+            out += "; Max-Age=${self.max_age}"
+        }
+        if self.http_only {
+            out += "; HttpOnly"
+        }
+        if self.secure {
+            out += "; Secure"
+        }
+        if self.same_site != "" {
+            out += "; SameSite=${self.same_site}"
+        }
+        return out
+    }
+}
+
+impl Request {
+    // The value of cookie `name` from the Cookie header, or None.
+    fun cookie(self, name: str) -> Option[str] {
+        for part in self.header("cookie").split(";") {
+            let kv = part.trim()
+            let eq = kv.index_of("=")
+            if eq > 0 and kv.substring(0, eq) == name {
+                return Some(kv.substring(eq + 1, kv.length()))
+            }
+        }
+        return None
+    }
+
+    // Attach a value for later middleware and handlers.
+    fun set_value(self, key: str, value: str) {
+        self.context.set(key, value)
+    }
+
+    // A value attached by middleware, or None.
+    fun value(self, key: str) -> Option[str] {
+        if self.context.has(key) {
+            return Some(self.context.get_or(key, ""))
+        }
+        return None
+    }
+
+    // The bearer token from `Authorization: Bearer <token>`, or None.
+    fun bearer_token(self) -> Option[str] {
+        let auth = self.header("authorization")
+        if auth.length() > 7 and auth.substring(0, 7).to_lower() == "bearer " {
+            return Some(auth.substring(7, auth.length()).trim())
+        }
+        return None
+    }
+}
+
+impl Response {
+    // Add a Set-Cookie header; call once per cookie.
+    fun set_cookie(self, cookie: Cookie) -> Response {
+        let existing = _header_ci(self.headers, "set-cookie")
+        let line = cookie.header_value()
+        self.headers.set("Set-Cookie", line if existing == "" else existing + "\n" + line)
+        return self
+    }
+
+    // Tell the browser to delete cookie `name`.
+    fun clear_cookie(self, name: str) -> Response {
+        return self.set_cookie(Cookie.new(name, "").with_max_age(0))
+    }
+}
+
+// An HTTP client with a base URL, default headers, and a timeout, like a
+// requests Session. Paths given to its methods are joined to the base URL;
+// a full `http://` or `https://` URL is used as is.
+class Client {
+    base_url: str
+    headers: dict[str, str]
+    timeout_ms: int
+}
+
+impl Client {
+    fun new(base_url: str) -> Client {
+        let headers: dict[str, str] = Map.new()
+        var base = base_url
+        while base.ends_with("/") {
+            base = base.substring(0, base.length() - 1)
+        }
+        return Client(base_url: base, headers: headers, timeout_ms: 30000)
+    }
+
+    fun with_header(self, name: str, value: str) -> Client {
+        self.headers.set(name, value)
+        return self
+    }
+
+    fun with_bearer(self, token: str) -> Client {
+        return self.with_header("Authorization", "Bearer ${token}")
+    }
+
+    fun with_timeout_ms(self, ms: int) -> Client {
+        self.timeout_ms = ms
+        return self
+    }
+
+    fun _url(self, path: str) -> str {
+        if path.starts_with("http://") or path.starts_with("https://") {
+            return path
+        }
+        return self.base_url + path if path.starts_with("/") else self.base_url + "/" + path
+    }
+
+    fun _headers(self, extra: dict[str, str]) -> str {
+        let lines: list[str] = []
+        for k in self.headers.keys() {
+            if not extra.has(k) {
+                lines.push("${k}: ${self.headers.get_or(k, "")}")
+            }
+        }
+        for k in extra.keys() {
+            lines.push("${k}: ${extra.get_or(k, "")}")
+        }
+        return "\n".join(lines)
+    }
+
+    // Send a request with extra headers for this call only.
+    fun send(
+        self,
+        method: str,
+        path: str,
+        body: str,
+        extra: dict[str, str],
+    ) -> Result[HttpResponse, Error] {
+        return request_with_timeout(
+            method,
+            self._url(path),
+            body,
+            self._headers(extra),
+            self.timeout_ms,
+        )
+    }
+
+    fun get(self, path: str) -> Result[HttpResponse, Error] {
+        let none: dict[str, str] = Map.new()
+        return self.send("GET", path, "", none)
+    }
+
+    fun delete(self, path: str) -> Result[HttpResponse, Error] {
+        let none: dict[str, str] = Map.new()
+        return self.send("DELETE", path, "", none)
+    }
+
+    // POST, PUT, and PATCH send `body` as JSON.
+    fun post(self, path: str, body: str) -> Result[HttpResponse, Error] = self._json(
+        "POST",
+        path,
+        body,
+    )
+
+    fun put(self, path: str, body: str) -> Result[HttpResponse, Error] = self._json(
+        "PUT",
+        path,
+        body,
+    )
+
+    fun patch(self, path: str, body: str) -> Result[HttpResponse, Error] = self._json(
+        "PATCH",
+        path,
+        body,
+    )
+
+    fun _json(self, method: str, path: str, body: str) -> Result[HttpResponse, Error] {
+        let extra: dict[str, str] = Map.new()
+        if not self.headers.has("Content-Type") {
+            extra.set("Content-Type", "application/json")
+        }
+        return self.send(method, path, body, extra)
+    }
 }

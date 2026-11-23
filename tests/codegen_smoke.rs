@@ -1582,6 +1582,23 @@ fn http_server_decodes_chunked_request_body() {
 }
 
 #[test]
+fn http_middleware_cookies_gzip_and_client() {
+    let Some(runtime) = supported_runtime() else {
+        return;
+    };
+    let expected = "401 no token [\"t-1\"]\n\
+                    200 user=ada trace=t-1\n\
+                    401 bad token\n\
+                    200 [\"session=abc123; Path=/; Max-Age=3600; HttpOnly; Secure; SameSite=Lax\", \"theme=dark; Path=/; SameSite=Lax\"]\n\
+                    session=abc123 theme=dark\n\
+                    true true 6000\n\
+                    false true\n\
+                    got 100 413\n\
+                    stopped\n";
+    compile_link_run_and_check("http_middleware.rv", expected, &runtime);
+}
+
+#[test]
 fn http_sends_binary_body() {
     let Some(runtime) = supported_runtime() else {
         return;

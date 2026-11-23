@@ -1,0 +1,130 @@
+// Middleware, request context, cookies, gzip, the body limit, and the Client
+// class against a live server. golden:skip (binds a port; a codegen smoke test
+// runs it and checks output).
+from std.http import Client, Cookie, Request, Response, Server
+from std.sync import sleep_millis
+import std.compress
+from std.net import connect
+
+fun auth(req: Request, next: fun(Request) -> Response) -> Response {
+    if req.path.starts_with("/private") {
+        match req.bearer_token() {
+            case Some(token) {
+                if token != "secret" {
+                    return Response.with_body(401, "bad token")
+                }
+                req.set_value("user", "ada")
+            }
+            case None {
+                return Response.with_body(401, "no token")
+            }
+        }
+    }
+    return next(req)
+}
+
+fun tag(req: Request, next: fun(Request) -> Response) -> Response {
+    req.set_value("trace", "t-1")
+    let resp = next(req)
+    return resp.header("X-Trace", req.value("trace").unwrap_or("none"))
+}
+
+fun whoami(req: Request) -> Response {
+    return Response.ok(
+        "user=${req.value("user").unwrap_or("?")} trace=${req.value("trace").unwrap_or("?")}",
+    )
+}
+
+fun login(req: Request) -> Response {
+    return Response.ok("logged in").set_cookie(
+        Cookie.new("session", "abc123").with_max_age(3600).with_secure(true),
+    ).set_cookie(Cookie.new("theme", "dark").with_http_only(false))
+}
+
+fun me(req: Request) -> Response {
+    return Response.ok(
+        "session=${req.cookie("session").unwrap_or("none")} theme=${req.cookie("theme").unwrap_or("none")}",
+    )
+}
+
+fun big(req: Request) -> Response {
+    return Response.ok("raven " * 1000)
+}
+
+fun upload(req: Request) -> Response {
+    return Response.ok("got ${req.body.length()}")
+}
+
+fun header_line(headers: str, name: str) -> list[str] {
+    let out: list[str] = []
+    for line in headers.split("\n") {
+        if line.to_lower().starts_with(name.to_lower() + ":") {
+            out.push(line.substring(name.length() + 1, line.length()).trim())
+        }
+    }
+    return out
+}
+
+fun raw_get(path: str, encoding: str) -> str {
+    let conn = connect("127.0.0.1:18431").unwrap()
+    let _ = conn.write(
+        "GET ${path} HTTP/1.1\r\nHost: x\r\nAccept-Encoding: ${encoding}\r\nConnection: close\r\n\r\n",
+    )
+    let out = conn.read_all().unwrap()
+    conn.close()
+    return out
+}
+
+fun serve(s: Server) {
+    s.listen("127.0.0.1:18431")
+}
+
+fun main() {
+    let s = Server.new().with_gzip().with_max_body(2048)
+    s.use(tag)
+    s.use(auth)
+    s.get("/private/whoami", whoami)
+    s.get("/login", login)
+    s.get("/me", me)
+    s.get("/big", big)
+    s.post("/upload", upload)
+    spawn {
+        // The client decodes gzip itself, so check the wire with a raw request.
+        serve(s)
+    }
+    sleep_millis(200)
+
+    let c = Client.new("http://127.0.0.1:18431/")
+    let r1 = c.get("/private/whoami").unwrap()
+    print(r1.status_code, r1.body, header_line(r1.headers, "X-Trace"))
+    let r2 = Client.new("http://127.0.0.1:18431").with_bearer("secret").get("private/whoami").unwrap()
+    print(r2.status_code, r2.body)
+    let r3 = c.with_bearer("wrong").get("/private/whoami").unwrap()
+    print(r3.status_code, r3.body)
+
+    let r4 = Client.new("http://127.0.0.1:18431").get("/login").unwrap()
+    print(r4.status_code, header_line(r4.headers, "Set-Cookie"))
+    let r5 = Client.new("http://127.0.0.1:18431").with_header(
+        "Cookie",
+        "theme=dark; session=abc123",
+    ).get("/me").unwrap()
+    print(r5.body)
+
+    let raw = raw_get("/big", "gzip")
+    let split = raw.index_of("\r\n\r\n")
+    let head = raw.substring(0, split)
+    let body = raw.substring(split + 4, raw.length())
+    print(
+        head.contains("Content-Encoding: gzip"),
+        body.length() < 200,
+        compress.gunzip(body).unwrap().length(),
+    )
+    let plain = raw_get("/big", "identity")
+    print(plain.contains("Content-Encoding"), plain.length() > 6000)
+
+    let ok = Client.new("http://127.0.0.1:18431").post("/upload", "x" * 100).unwrap()
+    let too_big = Client.new("http://127.0.0.1:18431").post("/upload", "x" * 5000).unwrap()
+    print(ok.body, too_big.status_code)
+    s.shutdown()
+    print("stopped")
+}

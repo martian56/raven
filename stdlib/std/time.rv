@@ -20,9 +20,15 @@ class Time {
     second: int
 }
 
+// A moment in time with the calendar fields as seen at a UTC offset.
+// `date` and `time` are local to `offset` (minutes east of UTC); `millis` is
+// the instant in Unix milliseconds, so two DateTimes at different offsets
+// compare equal when they name the same instant.
 class DateTime {
     date: Date
     time: Time
+    millis: int
+    offset: int
 }
 
 extern "C" {
@@ -64,7 +70,7 @@ fun from_timestamp(ts: int) -> DateTime {
         minute: raven_time_minute(ts),
         second: raven_time_second(ts),
     )
-    return DateTime(date: d, time: t)
+    return DateTime(date: d, time: t, millis: ts * 1000, offset: 0)
 }
 
 // Weekday of `ts` (UTC) as 0 for Sunday through 6 for Saturday.
@@ -242,13 +248,21 @@ fun hours(n: int) -> Duration = Duration(nanos: n * 3600000000000)
 
 impl Duration {
     fun as_nanos(self) -> int = self.nanos
+
     fun as_micros(self) -> int = self.nanos / 1000
+
     fun as_millis(self) -> int = self.nanos / 1000000
+
     fun as_seconds(self) -> int = self.nanos / 1000000000
+
     fun as_seconds_float(self) -> float = self.nanos.as_float() / 1000000000.0
+
     fun plus(self, other: Duration) -> Duration = Duration(nanos: self.nanos + other.nanos)
+
     fun minus(self, other: Duration) -> Duration = Duration(nanos: self.nanos - other.nanos)
+
     fun times(self, n: int) -> Duration = Duration(nanos: self.nanos * n)
+
     fun is_zero(self) -> bool = self.nanos == 0
 }
 
@@ -315,4 +329,122 @@ impl Instant {
     fun since(self, earlier: Instant) -> Duration = Duration(nanos: self.nanos - earlier.nanos)
 
     fun plus(self, d: Duration) -> Instant = Instant(nanos: self.nanos + d.nanos)
+}
+
+fun _at(ms: int, offset: int) -> DateTime {
+    let local = _floor_div(ms, 1000) + offset * 60
+    let d = Date(
+        year: raven_time_year(local),
+        month: raven_time_month(local),
+        day: raven_time_day(local),
+    )
+    let t = Time(
+        hour: raven_time_hour(local),
+        minute: raven_time_minute(local),
+        second: raven_time_second(local),
+    )
+    return DateTime(date: d, time: t, millis: ms, offset: offset)
+}
+
+impl DateTime {
+    // The current moment in UTC.
+    fun now() -> DateTime = _at(raven_time_now_millis(), 0)
+
+    // The current moment at the machine's local offset.
+    fun now_local() -> DateTime {
+        let ms = raven_time_now_millis()
+        return _at(ms, raven_time_local_offset(_floor_div(ms, 1000)) / 60)
+    }
+
+    fun from_millis(ms: int) -> DateTime = _at(ms, 0)
+
+    fun from_seconds(ts: int) -> DateTime = _at(ts * 1000, 0)
+
+    // A calendar date and time in UTC.
+    fun of(year: int, month: int, day: int, hour: int, minute: int, second: int) -> DateTime {
+        return _at(
+            (date_to_timestamp(year, month, day) + hour * 3600 + minute * 60 + second) * 1000,
+            0,
+        )
+    }
+
+    // Parse RFC 3339 (`2026-11-23T13:30:00+04:00`); the result is in UTC.
+    fun parse(text: str) -> Result[DateTime, Error] {
+        let ms = parse_rfc3339_millis(text)?
+        return Ok(_at(ms, 0))
+    }
+
+    fun timestamp(self) -> int = _floor_div(self.millis, 1000)
+
+    fun timestamp_millis(self) -> int = self.millis
+
+    fun year(self) -> int = self.date.year
+
+    fun month(self) -> int = self.date.month
+
+    fun day(self) -> int = self.date.day
+
+    fun hour(self) -> int = self.time.hour
+
+    fun minute(self) -> int = self.time.minute
+
+    fun second(self) -> int = self.time.second
+
+    // 0 for Sunday through 6 for Saturday, at this offset.
+    fun weekday(self) -> int = raven_time_weekday(_floor_div(self.millis, 1000) + self.offset * 60)
+
+    // The same instant seen at another offset, in minutes east of UTC.
+    fun with_offset(self, minutes: int) -> DateTime = _at(self.millis, minutes)
+
+    fun to_utc(self) -> DateTime = _at(self.millis, 0)
+
+    fun plus(self, d: Duration) -> DateTime = _at(self.millis + d.nanos / 1000000, self.offset)
+
+    fun minus(self, d: Duration) -> DateTime = _at(self.millis - d.nanos / 1000000, self.offset)
+
+    // The time from `earlier` to this moment.
+    fun since(self, earlier: DateTime) -> Duration = Duration(
+        nanos: (self.millis - earlier.millis) * 1000000,
+    )
+
+    fun add_days(self, n: int) -> DateTime = _at(self.millis + n * 86400000, self.offset)
+
+    // Months later (or earlier), with the day clamped to the month's length,
+    // counted on the local calendar.
+    fun add_months(self, n: int) -> DateTime {
+        let local = _floor_div(self.millis, 1000) + self.offset * 60
+        let moved = add_months(local, n) - self.offset * 60
+        return _at(moved * 1000 + (self.millis - _floor_div(self.millis, 1000) * 1000), self.offset)
+    }
+
+    // Midnight at the start of this local day.
+    fun start_of_day(self) -> DateTime {
+        let local = _floor_div(self.millis, 1000) + self.offset * 60
+        return _at((start_of_day(local) - self.offset * 60) * 1000, self.offset)
+    }
+
+    fun is_before(self, other: DateTime) -> bool = self.millis < other.millis
+
+    fun is_after(self, other: DateTime) -> bool = self.millis > other.millis
+
+    // chrono strftime, on the local fields: `dt.format("%Y-%m-%d %H:%M")`.
+    fun format(self, pattern: str) -> str = raven_time_format(
+        _floor_div(self.millis, 1000) + self.offset * 60,
+        pattern,
+    )
+
+    fun to_rfc3339(self) -> str = raven_time_format_rfc3339(self.millis, self.offset)
+}
+
+impl Eq for DateTime {
+    fun equals(self, other: DateTime) -> bool = self.millis == other.millis
+}
+
+impl Ord for DateTime {
+    fun compare(self, other: DateTime) -> int {
+        if self.millis < other.millis {
+            return -1
+        }
+        return 1 if self.millis > other.millis else 0
+    }
 }

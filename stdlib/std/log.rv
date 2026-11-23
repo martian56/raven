@@ -1,0 +1,170 @@
+// std.log: leveled, structured logging that libraries and applications can
+// share. A Logger has a name, a minimum level, and fields carried into every
+// line; `with_field` makes a child logger with one more field. Lines go to
+// stderr as text or JSON. See docs/guide/stdlib/log.md.
+
+extern "C" {
+    fun raven_time_now_millis() -> int
+    fun raven_time_format_rfc3339(ms: int, offset_minutes: int) -> str
+    fun raven_io_eprint(s: str)
+    fun raven_env_get(name: str) -> str
+}
+
+// Levels in increasing severity.
+fun DEBUG() -> int = 10
+fun INFO() -> int = 20
+fun WARN() -> int = 30
+fun ERROR() -> int = 40
+
+fun _level_name(level: int) -> str {
+    if level >= 40 {
+        return "ERROR"
+    }
+    if level >= 30 {
+        return "WARN"
+    }
+    if level >= 20 {
+        return "INFO"
+    }
+    return "DEBUG"
+}
+
+// A level from its name (`debug`, `info`, `warn` or `warning`, `error`, any
+// case), or INFO for anything else.
+fun parse_level(name: str) -> int {
+    let n = name.trim().to_lower()
+    if n == "debug" {
+        return 10
+    }
+    if n == "warn" or n == "warning" {
+        return 30
+    }
+    if n == "error" {
+        return 40
+    }
+    return 20
+}
+
+class LogField {
+    key: str
+    value: str
+}
+
+class Logger {
+    name: str
+    level: int
+    json: bool
+    fields: list[LogField]
+}
+
+fun _json_str(s: str) -> str {
+    var out = "\""
+    for i in range(s.length()) {
+        let c = __str_byte_at(s, i)
+        if c == 34 {
+            out += "\\\""
+        } else if c == 92 {
+            out += "\\\\"
+        } else if c == 10 {
+            out += "\\n"
+        } else if c == 13 {
+            out += "\\r"
+        } else if c == 9 {
+            out += "\\t"
+        } else if c < 32 {
+            let hex = "0123456789abcdef"
+            out += "\\u00" + __str_substring(hex, c >> 4, (c >> 4) + 1) + __str_substring(
+                hex,
+                c & 15,
+                (c & 15) + 1,
+            )
+        } else {
+            out += __str_from_byte(c)
+        }
+    }
+    return out + "\""
+}
+
+fun _text_value(s: str) -> str {
+    if s == "" or s.contains(" ") or s.contains("=") or s.contains("\"") or s.contains("\n") {
+        return _json_str(s)
+    }
+    return s
+}
+
+impl Logger {
+    // A text logger at INFO.
+    fun new(name: str) -> Logger {
+        let fields: list[LogField] = []
+        return Logger(name: name, level: 20, json: false, fields: fields)
+    }
+
+    // A logger configured from the environment: LOG_LEVEL sets the level and
+    // LOG_FORMAT=json switches to JSON lines.
+    fun from_env(name: str) -> Logger {
+        let l = Logger.new(name)
+        l.level = parse_level(raven_env_get("LOG_LEVEL"))
+        l.json = raven_env_get("LOG_FORMAT").to_lower() == "json"
+        return l
+    }
+
+    fun with_level(self, level: int) -> Logger {
+        self.level = level
+        return self
+    }
+
+    fun with_json(self, on: bool) -> Logger {
+        self.json = on
+        return self
+    }
+
+    // A child logger that adds `key=value` to every line. The parent is
+    // unchanged.
+    fun with_field(self, key: str, value: str) -> Logger {
+        let fields = self.fields.copy()
+        fields.push(LogField(key: key, value: value))
+        return Logger(name: self.name, level: self.level, json: self.json, fields: fields)
+    }
+
+    fun enabled(self, level: int) -> bool = level >= self.level
+
+    fun debug(self, msg: str) {
+        self.log(10, msg)
+    }
+
+    fun info(self, msg: str) {
+        self.log(20, msg)
+    }
+
+    fun warn(self, msg: str) {
+        self.log(30, msg)
+    }
+
+    fun error(self, msg: str) {
+        self.log(40, msg)
+    }
+
+    fun log(self, level: int, msg: str) {
+        if level < self.level {
+            return
+        }
+        raven_io_eprint(self.format_line(level, msg, raven_time_now_millis()) + "\n")
+    }
+
+    // The line `log` would write at Unix millisecond `ms`, without the newline.
+    fun format_line(self, level: int, msg: str, ms: int) -> str {
+        let ts = raven_time_format_rfc3339(ms, 0)
+        if self.json {
+            var out = "{\"ts\":${_json_str(ts)},\"level\":${_json_str(_level_name(level).to_lower())},\"logger\":${_json_str(self.name)},\"msg\":${_json_str(msg)}"
+            for f in self.fields {
+                out += ",${_json_str(f.key)}:${_json_str(f.value)}"
+            }
+            return out + "}"
+        }
+        var out = "${ts} ${_level_name(level)} ${self.name}: ${msg}"
+        for f in self.fields {
+            out += " ${f.key}=${_text_value(f.value)}"
+        }
+        return out
+    }
+}

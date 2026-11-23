@@ -168,3 +168,46 @@ fun with_extension(p: str, ext: str) -> str {
     }
     return p.concat(".").concat(ext)
 }
+
+// A path as a value, like Python's pathlib.Path: `Path.new("data").join("a.txt")`.
+// Methods that touch the disk live in std.fs; this class only works on the
+// text, so it is safe to build paths that do not exist yet.
+class Path {
+    text: str
+}
+
+impl Path {
+    fun new(text: str) -> Path = Path(text: text)
+
+    fun join(self, part: str) -> Path = Path(text: join(self.text, part))
+
+    // The parent directory.
+    fun parent(self) -> Path = Path(text: dirname(self.text))
+
+    // The last component: `report.tar.gz`.
+    fun name(self) -> str = basename(self.text)
+
+    // The name without its last extension: `report.tar`.
+    fun stem(self) -> str = stem(self.text)
+
+    // The last extension without the dot: `gz`, or "".
+    fun extension(self) -> str = extension(self.text)
+
+    fun with_extension(self, ext: str) -> Path = Path(text: with_extension(self.text, ext))
+
+    fun with_name(self, name: str) -> Path = Path(text: join(dirname(self.text), name))
+
+    fun components(self) -> list[str] = components(self.text)
+
+    fun normalize(self) -> Path = Path(text: normalize(self.text))
+
+    fun is_absolute(self) -> bool = is_absolute(self.text)
+}
+
+impl ToString for Path {
+    fun to_string(self) -> str = self.text
+}
+
+impl Eq for Path {
+    fun equals(self, other: Path) -> bool = normalize(self.text) == normalize(other.text)
+}
