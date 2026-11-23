@@ -35,14 +35,34 @@ The collector is **stop the world**: a collection runs to completion
 before the mutator (the compiled program) resumes. There is no
 concurrent or incremental marking.
 
-The mark-and-sweep cycle itself is **single threaded**, but Raven mutators are
-not. Each worker thread owns its allocation list, byte counters, and current
-shadow stack. Every live thread registers that stack in a process-wide root
-registry, while parked goroutine roots and buffered channel values are exposed
-through the scheduler. A collector stops all in-Raven threads at allocation or
-loop-back-edge safepoints, scans the complete root set, and sweeps only the
-initiating thread's allocation list. Globally unique mark epochs distinguish
-the current cycle from marks written by another thread's collection.
+Marking is **single threaded**; sweeping runs in parallel. Raven mutators are
+multi-threaded. Each worker thread owns its allocation list, byte counters, and
+current shadow stack. Every live thread registers that stack in a process-wide
+root registry, while parked goroutine roots and buffered channel values are
+exposed through the scheduler. A collector stops all in-Raven threads at
+allocation or loop-back-edge safepoints, scans the complete root set, and then
+sweeps every heap: its own, each heap registered by a thread that runs compiled
+Raven, and the heaps left by exited threads. Helper threads take the heaps in
+parallel, since heaps are disjoint. A thread that allocates outside compiled
+Raven (a native caller, a test) is not registered; only its own collections
+sweep its heap. Globally unique mark epochs distinguish the current cycle from
+marks written by an earlier one.
+
+### Trigger
+
+Registered threads share one budget: a collection runs once the bytes allocated
+since the last one (object bodies plus owned buffers such as string bytes) pass
+the live bytes it left, or a floor of `RAVEN_GC_THRESHOLD` (16 MiB by default)
+per core, whichever is larger. A per-thread budget let a server with hundreds
+of worker threads, one per blocked connection, hold hundreds of thresholds of
+garbage. An unregistered thread keeps its own budget of twice its live bytes.
+
+### Exited threads and empty pages
+
+A thread's heap outlives the thread: its objects may still be reachable. When a
+thread exits, its pages and large objects move to an orphan list, and the next
+collection adopts them into the collector's heap. A sweep returns every page
+that ends up empty (except the page currently being filled) to the allocator.
 
 ### Mark epoch
 
@@ -193,13 +213,13 @@ Each allocation appends its base pointer. Sweep walks the current thread's
 vector, retaining objects stamped with its collection epoch and dropping freed
 entries; the retained order does not matter.
 
-Two per-thread counters back the trigger and the tests: `bytes_allocated`
-tracks live object-body bytes (the bytes handed out by
-`raven_gc_alloc`) and drives the collection threshold, and
-`live_objects` counts live objects so tests can assert bounded liveness
-deterministically without measuring flaky OS memory. Owned buffers are
-freed with their object but are not separately metered; counting bodies
-is enough to bound the live object set and pace collection.
+Per-thread counters back the trigger and the tests: `bytes` tracks live
+object-body bytes, `live` counts live objects so tests can assert bounded
+liveness deterministically without measuring flaky OS memory, and
+`pending` holds bytes allocated since the thread last reported to the shared
+budget. Owned buffers (string bytes, list elements) are metered when
+`raven_alloc` hands them out: they die with their objects, so they count
+toward the next collection.
 
 ## Marking per layout
 
@@ -300,19 +320,20 @@ one owner.
 
 ## Collection trigger and threshold policy
 
-Allocation goes through `raven_gc_alloc(size, align, tag)`:
+Allocation goes through `raven_gc_alloc(size, align, tag)`, which checks the
+trigger, runs a full collection if it fired, then allocates the body, zeroes
+it, registers it, and bumps the counters. The trigger depends on the thread:
 
-1. If `bytes_allocated + size` would cross the current threshold, run a
-   full collection first.
-2. Allocate the object body through the raw allocator, zero it, register
-   it in the all-objects list, bump the counters, and return it.
+- **Registered threads** (those running compiled Raven) share one budget. Each
+  adds its new bytes to a process-wide count in batches of at most 64 KiB (or
+  the floor, if smaller), and a collection runs once that count passes
+  `max(floor * cores, live bytes after the last collection)`. The count resets
+  after every collection.
+- **Unregistered threads** (native callers, tests) keep their own threshold: a
+  collection runs once their live bytes plus pending bytes cross it, and it is
+  reset to `max(floor, 2 * own live bytes)` after their collection.
 
-The threshold starts at the collection floor (default `16 MiB`). After a
-collection it is reset to `max(floor, 2 * bytes_live_after_sweep)`, so a
-program with a large live set collects less often while a program with a
-small live set keeps a tight ceiling. This is the standard "allocation
-high-water mark" heuristic; it bounds heap growth to a constant factor of
-the live set.
+Both bound heap growth to a constant factor of the live set.
 
 ### Threshold override for testing
 

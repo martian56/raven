@@ -158,6 +158,9 @@ static BLOCKED_WORKERS: AtomicUsize = AtomicUsize::new(0);
 /// connections degrades to queuing rather than spawning threads without bound.
 const MAX_WORKERS: usize = 512;
 
+/// How long an idle worker above the target stays before it retires.
+const WORKER_LINGER: Duration = Duration::from_secs(2);
+
 /// The steady-state worker count: one per core, capped at [`MAX_WORKERS`] so the
 /// initial pool also honors the ceiling on a host with more cores than the cap.
 /// Cached after the first read so the idle loop does not query the OS each pass.
@@ -413,6 +416,7 @@ fn worker_loop() {
     loop {
         let id = {
             let mut guard = SCHED.lock().unwrap();
+            let mut idle_since: Option<std::time::Instant> = None;
             loop {
                 if guard.0.shutdown {
                     LIVE_WORKERS.fetch_sub(1, Ordering::SeqCst);
@@ -438,11 +442,20 @@ fn worker_loop() {
                 // syscalls (counting total here would drop runnable capacity to
                 // zero whenever many workers are parked in I/O). The wait is timed
                 // so an idle extra re-checks and exits even when no work wakes it.
+                // An extra waits out `WORKER_LINGER` before retiring, so the
+                // next blocking call reuses it instead of spawning a thread;
+                // retiring at once made a busy server create and destroy a
+                // thread for nearly every socket or database call.
                 let live = LIVE_WORKERS.load(Ordering::SeqCst);
                 let blocked = BLOCKED_WORKERS.load(Ordering::SeqCst);
                 if live.saturating_sub(blocked) > worker_target() {
-                    LIVE_WORKERS.fetch_sub(1, Ordering::SeqCst);
-                    return;
+                    let since = *idle_since.get_or_insert_with(std::time::Instant::now);
+                    if since.elapsed() >= WORKER_LINGER {
+                        LIVE_WORKERS.fetch_sub(1, Ordering::SeqCst);
+                        return;
+                    }
+                } else {
+                    idle_since = None;
                 }
                 guard = WORK_CV
                     .wait_timeout(guard, Duration::from_millis(500))
