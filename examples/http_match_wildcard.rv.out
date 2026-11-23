@@ -1,0 +1,8 @@
+/products/:id /products/42 -> 42
+/products/:id /products/42/reviews -> no match
+/*file /img/p3.svg -> img/p3.svg
+/*file /index.html -> index.html
+/*file / -> no match
+/assets/*file /assets/css/site/main.css -> css/site/main.css
+/assets/*file /assets -> no match
+/assets/*file /other/x.css -> no match

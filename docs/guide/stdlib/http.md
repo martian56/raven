@@ -561,8 +561,13 @@ from its extension (`html`, `css`, `js`, `json`, `svg`, `txt`; otherwise
 `application/octet-stream`); a missing file is a 404.
 
 `Server.static(prefix, dir)` mounts a directory: it serves
-`GET <prefix>/<file>` from `<dir>/<file>`. The file name is a single path
-segment, so a request cannot escape `dir` with a slash.
+`GET <prefix>/<path>` from `<dir>/<path>`, subdirectories included. Parent
+references (`..`), backslashes, and drive markers are refused, so a request
+cannot escape `dir`.
+
+A route segment written `:name` matches one path segment; `*name` as the last
+segment matches the rest of the path, slashes and all
+(`/assets/*file` matches `/assets/css/main.css` with `file` = `css/main.css`).
 
 ```rust
 from std.http import Server, Request, Response
