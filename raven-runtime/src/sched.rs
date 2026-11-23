@@ -154,6 +154,31 @@ static LIVE_WORKERS: AtomicUsize = AtomicUsize::new(0);
 /// region). `LIVE_WORKERS - BLOCKED_WORKERS` is how many can still run goroutines.
 static BLOCKED_WORKERS: AtomicUsize = AtomicUsize::new(0);
 
+/// Workers asleep on `WORK_CV`, workers spinning for work before they sleep,
+/// and the ready queue length as of its last change. Wakers skip the condvar
+/// (a futex syscall even with no sleeper) when no worker is asleep or one is
+/// already spinning and will find the work itself.
+static IDLE_WORKERS: AtomicUsize = AtomicUsize::new(0);
+static SPINNING_WORKERS: AtomicUsize = AtomicUsize::new(0);
+static READY_LEN: AtomicUsize = AtomicUsize::new(0);
+
+/// How long an idle worker spins before sleeping.
+const SPIN: Duration = Duration::from_micros(50);
+
+/// Queue `id` to run. Call with the scheduler lock held, then `notify_worker`.
+fn push_ready(sched: &mut Scheduler, id: usize) {
+    sched.ready.push_back(id);
+    READY_LEN.store(sched.ready.len(), Ordering::SeqCst);
+}
+
+/// Wake a sleeping worker for newly queued work, unless a spinning worker
+/// will pick it up.
+fn notify_worker() {
+    if SPINNING_WORKERS.load(Ordering::SeqCst) == 0 && IDLE_WORKERS.load(Ordering::SeqCst) > 0 {
+        WORK_CV.notify_one();
+    }
+}
+
 /// Hard ceiling on worker threads, so a flood of simultaneous blocking
 /// connections degrades to queuing rather than spawning threads without bound.
 const MAX_WORKERS: usize = 512;
@@ -369,12 +394,12 @@ pub extern "C" fn raven_go_spawn(closure: *mut Closure) {
                 yielder: std::ptr::null(),
             },
         );
-        sched.ready.push_back(id);
+        push_ready(sched, id);
     });
     // Start the worker pool on the first spawn, then wake a worker to run the
     // new goroutine (parallel with whatever the spawner does next).
     ensure_pool();
-    WORK_CV.notify_one();
+    notify_worker();
 }
 
 /// Number of worker OS threads: one per available core. Workers run goroutines
@@ -417,12 +442,19 @@ fn worker_loop() {
         let id = {
             let mut guard = SCHED.lock().unwrap();
             let mut idle_since: Option<std::time::Instant> = None;
+            let mut spun = false;
             loop {
                 if guard.0.shutdown {
                     LIVE_WORKERS.fetch_sub(1, Ordering::SeqCst);
                     return;
                 }
                 if let Some(id) = guard.0.ready.pop_front() {
+                    READY_LEN.store(guard.0.ready.len(), Ordering::SeqCst);
+                    // More work is waiting: pass the wakeup on, since a waker
+                    // that saw this worker spinning did not notify anyone.
+                    if !guard.0.ready.is_empty() && IDLE_WORKERS.load(Ordering::SeqCst) > 0 {
+                        WORK_CV.notify_one();
+                    }
                     // Claim it into `running` under the same lock as the pop, so
                     // it is never momentarily invisible (in neither `ready` nor
                     // `running`); otherwise a quiescence check or the test reset
@@ -457,10 +489,30 @@ fn worker_loop() {
                 } else {
                     idle_since = None;
                 }
+                // Spin briefly first: under load, work usually arrives within
+                // microseconds, and a spinning worker saves the waker a futex
+                // wake and itself a sleep. Re-check under the lock afterwards.
+                if !spun && SPINNING_WORKERS.load(Ordering::SeqCst) < (worker_target() / 2).max(1) {
+                    spun = true;
+                    SPINNING_WORKERS.fetch_add(1, Ordering::SeqCst);
+                    drop(guard);
+                    let start = std::time::Instant::now();
+                    while READY_LEN.load(Ordering::SeqCst) == 0 && start.elapsed() < SPIN {
+                        for _ in 0..64 {
+                            std::hint::spin_loop();
+                        }
+                    }
+                    SPINNING_WORKERS.fetch_sub(1, Ordering::SeqCst);
+                    guard = SCHED.lock().unwrap();
+                    continue;
+                }
+                IDLE_WORKERS.fetch_add(1, Ordering::SeqCst);
                 guard = WORK_CV
                     .wait_timeout(guard, Duration::from_millis(500))
                     .unwrap()
                     .0;
+                IDLE_WORKERS.fetch_sub(1, Ordering::SeqCst);
+                spun = false;
             }
         };
         run_goroutine(id);
@@ -522,8 +574,8 @@ fn run_goroutine(id: usize) {
         sched.running.remove(&id);
         match result {
             CoroutineResult::Yield(Suspend::Yielded) => {
-                sched.ready.push_back(id);
-                WORK_CV.notify_one();
+                push_ready(sched, id);
+                notify_worker();
             }
             CoroutineResult::Yield(Suspend::Blocked) => {
                 // The goroutine committed to blocking (it is in `blocked` and on
@@ -532,8 +584,8 @@ fn run_goroutine(id: usize) {
                 // re-queued then, because we held its coroutine). If so, re-queue
                 // it now; otherwise leave it genuinely parked.
                 if !sched.blocked.contains(&id) {
-                    sched.ready.push_back(id);
-                    WORK_CV.notify_one();
+                    push_ready(sched, id);
+                    notify_worker();
                 }
             }
             CoroutineResult::Yield(Suspend::Finished) | CoroutineResult::Return(()) => {
@@ -652,9 +704,55 @@ fn wake_locked(sched: &mut Scheduler, id: usize) {
         // Still on a worker; that worker re-queues it when it sees `!blocked`.
     } else {
         if !sched.ready.contains(&id) {
-            sched.ready.push_back(id);
+            push_ready(sched, id);
         }
-        WORK_CV.notify_one();
+        notify_worker();
+    }
+}
+
+/// Whether the caller is a spawned goroutine, which can park for socket
+/// readiness and free its worker. Out of line because callers loop across a
+/// park and may resume on another worker.
+#[inline(never)]
+pub(crate) fn on_goroutine() -> bool {
+    CURRENT_GOROUTINE.with(|c| c.get()) != 0 && !CURRENT_YIELDER.with(|y| y.get()).is_null()
+}
+
+/// Park the current goroutine until `wake_io`. `register` runs under the
+/// scheduler lock with the goroutine's id; it records the waiter and returns
+/// false to skip parking (readiness already moved on). The goroutine counts as
+/// a pending waker meanwhile, so idle I/O is not mistaken for a deadlock.
+#[inline(never)]
+pub(crate) fn park_io(register: impl FnOnce(usize) -> bool) -> bool {
+    let me = CURRENT_GOROUTINE.with(|c| c.get());
+    {
+        let mut guard = SCHED.lock().unwrap();
+        if !register(me) {
+            return false;
+        }
+        guard.0.blocked.insert(me);
+        guard.0.pending_wakers += 1;
+    }
+    park_current(me);
+    true
+}
+
+/// Make a goroutine parked by `park_io` runnable again.
+pub(crate) fn wake_io(id: usize) {
+    wake_io_batch(&[id]);
+}
+
+/// Wake several `park_io` goroutines under one scheduler lock.
+pub(crate) fn wake_io_batch(ids: &[usize]) {
+    if ids.is_empty() {
+        return;
+    }
+    let mut guard = SCHED.lock().unwrap();
+    for &id in ids {
+        if guard.0.blocked.contains(&id) {
+            guard.0.pending_wakers = guard.0.pending_wakers.saturating_sub(1);
+        }
+        wake_locked(&mut guard.0, id);
     }
 }
 

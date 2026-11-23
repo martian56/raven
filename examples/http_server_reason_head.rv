@@ -62,7 +62,7 @@ fun send(addr: str, request: str) -> str {
 }
 
 fun main() {
-    let addr = "127.0.0.1:18642"
+    let addr = "127.0.0.1:18644"
     let app = Server.new()
     app.get("/x", down)
     app.route(Method.Head, "/x", down)

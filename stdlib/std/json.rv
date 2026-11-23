@@ -11,6 +11,8 @@ import std.string
 extern "C" {
     fun raven_int_to_float(x: int) -> float
     fun raven_float_to_int(x: float) -> int
+    fun raven_json_number(x: float) -> str
+    fun raven_json_quote(s: str) -> str
 }
 
 // The JSON value tree. Construct variants with the qualified form
@@ -629,15 +631,7 @@ fun hex_digit(v: int) -> int {
 // value is finite exactly when `n - n` is zero; for an infinity or a NaN that
 // subtraction is NaN.
 fun number_to_json(n: float) -> str {
-    if n - n == 0.0 {
-        let text = n.to_string()
-        // A whole number is written without a fraction: `1`, not `1.0`.
-        if text.ends_with(".0") {
-            return text.substring(0, text.len() - 2)
-        }
-        return text
-    }
-    return "null"
+    return raven_json_number(n)
 }
 
 // Compact (non-pretty) serialization. A whole-number float renders the way
@@ -646,29 +640,51 @@ fun stringify(value: JsonValue) -> str {
     return match value {
         case Null { "null" }
         case Bool(b) { "true" if b else "false" }
-        case Number(n) { number_to_json(n) }
-        case Str(s) {
-            let q = __str_concat("\"", escape_string("", s))
-            __str_concat(q, "\"")
-        }
-        case Array(items) {
+        case Number(n) { raven_json_number(n) }
+        case Str(s) { raven_json_quote(s) }
+        case _ {
             let parts: list[str] = []
-            for item in items {
-                parts.push(stringify(item))
+            write_json(parts, value)
+            "".join(parts)
+        }
+    }
+}
+
+// Append the compact JSON fragments of `value` to `parts`, so a whole tree is
+// joined once instead of building a string per nested value.
+fun write_json(parts: list[str], value: JsonValue) {
+    match value {
+        case Null { parts.push("null") }
+        case Bool(b) { parts.push("true" if b else "false") }
+        case Number(n) { parts.push(raven_json_number(n)) }
+        case Str(s) { parts.push(raven_json_quote(s)) }
+        case Array(items) {
+            parts.push("[")
+            var i = 0
+            while i < items.len() {
+                if i > 0 {
+                    parts.push(",")
+                }
+                write_json(parts, items[i])
+                i += 1
             }
-            __str_concat(__str_concat("[", ",".join(parts)), "]")
+            parts.push("]")
         }
         case Object(map) {
-            let keys = map.keys()
-            let values = map.values()
-            let parts: list[str] = []
+            parts.push("{")
+            let keys = map.keys_
+            let values = map.vals
             var i = 0
             while i < keys.len() {
-                let kq = __str_concat("\"", escape_string("", keys[i]))
-                parts.push(__str_concat(__str_concat(kq, "\":"), stringify(values[i])))
-                i = i + 1
+                if i > 0 {
+                    parts.push(",")
+                }
+                parts.push(raven_json_quote(keys[i]))
+                parts.push(":")
+                write_json(parts, values[i])
+                i += 1
             }
-            __str_concat(__str_concat("{", ",".join(parts)), "}")
+            parts.push("}")
         }
     }
 }

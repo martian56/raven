@@ -15,6 +15,7 @@ name = "raven_runtime"
 mimalloc = { version = "0.1", default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 corosensei = "0.3.4"
+mio = { version = "1", features = ["os-poll", "net"] }
 regex = "1"
 ring = "0.17"
 flate2 = "1"

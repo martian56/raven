@@ -15,7 +15,7 @@ from std.fmt import from_radix
 import std.collections
 from std.json import JsonValue, ToJson, FromJson, stringify, parse, decode
 from std.fs import is_symlink, read
-from std.sync import mutex, wait_group, Mutex
+from std.sync import wait_group, AtomicInt
 from std.encoding import url_decode
 
 class HttpResponse {
@@ -408,15 +408,14 @@ class Route {
 // `listen`. `access_log` is off by default; enable it with `with_access_log`.
 // `read_timeout_ms` and `write_timeout_ms` bound how long a single slow client
 // can hold a connection (0 disables); they default to 30 seconds so an idle or
-// slow client cannot pin a goroutine forever. `lock`/`stopping`/`addr` back
+// slow client cannot pin a goroutine forever. `stopping` and `addr` back
 // graceful shutdown.
 class Server {
     routes: list[Route]
     access_log: bool
     read_timeout_ms: int
     write_timeout_ms: int
-    lock: Mutex
-    stopping: bool
+    stopping: AtomicInt
     addr: str
     middleware: list[fun(Request, fun(Request) -> Response) -> Response]
     max_body: int
@@ -433,8 +432,7 @@ impl Server {
             access_log: false,
             read_timeout_ms: 30000,
             write_timeout_ms: 30000,
-            lock: mutex(),
-            stopping: false,
+            stopping: AtomicInt.new(0),
             addr: "",
             middleware: [],
             max_body: 10485760,
@@ -447,9 +445,7 @@ impl Server {
     // another goroutine or from a handler, since `listen` blocks. Safe to call
     // more than once.
     fun shutdown(self) {
-        self.lock.lock()
-        self.stopping = true
-        self.lock.unlock()
+        self.stopping.store(1)
         // The runtime's `accept` blocks on a cloned listener handle and cannot
         // be cancelled, so nudge it with a throwaway local connection: the
         // accept loop then sees the stopping flag and drops it without serving.
@@ -459,13 +455,10 @@ impl Server {
         }
     }
 
-    // Whether a graceful shutdown has been requested. Read under the lock so the
-    // accept loop and the goroutine calling `shutdown` agree.
+    // Whether a graceful shutdown has been requested. An atomic, since every
+    // request checks it and a lock here serialized the whole server.
     fun is_stopping(self) -> bool {
-        self.lock.lock()
-        let s = self.stopping
-        self.lock.unlock()
-        return s
+        return self.stopping.load() != 0
     }
 
     // Enable a one-line-per-request access log to stdout (method, path, and
