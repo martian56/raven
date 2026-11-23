@@ -83,6 +83,7 @@ pub const STDLIB_MODULES: &[&str] = &[
     "bytes",
     "url",
     "uuid",
+    "signal",
     "random",
     "fmt",
     "string",

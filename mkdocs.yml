@@ -128,6 +128,7 @@ nav:
       - std.json: guide/stdlib/json.md
     - Concurrency, errors, FFI, testing:
       - std.sync: guide/stdlib/sync.md
+      - std.signal: guide/stdlib/signal.md
       - std.error: guide/stdlib/error.md
       - std.option: guide/stdlib/option.md
       - std.ffi: guide/stdlib/ffi.md

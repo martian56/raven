@@ -112,6 +112,10 @@ struct Scheduler {
     /// Set once the first goroutine is spawned. Until then the program is
     /// strictly non-concurrent and the worker pool is never started.
     started: bool,
+    /// Timers and signal subscriptions that may still deliver into a channel.
+    /// While any are pending, goroutines blocked on channels are waiting for
+    /// them, not deadlocked.
+    pending_wakers: usize,
     /// Set to ask the worker pool to exit. Used only by the test harness to
     /// drain workers between isolated scheduler tests; production never sets it
     /// (the process exits when main returns).
@@ -269,6 +273,7 @@ impl Scheduler {
             select_sets: HashMap::new(),
             next_select: 1,
             started: false,
+            pending_wakers: 0,
             shutdown: false,
         }
     }
@@ -397,6 +402,7 @@ fn ensure_pool() {
 fn is_deadlocked(sched: &Scheduler) -> bool {
     sched.ready.is_empty()
         && sched.running.is_empty()
+        && sched.pending_wakers == 0
         && sched.blocked.len() == sched.goroutines.len()
 }
 
@@ -588,11 +594,13 @@ fn park_current(me: usize) {
             // have already cleared the block in the gap since registration, in
             // which case the predicate is false and main does not wait (no lost
             // wakeup).
-            if guard.0.blocked.contains(&0) && is_deadlocked(&guard.0) {
-                drop(guard);
-                deadlock_panic();
-            }
+            // Re-check after every wake: a timer or signal subscription ending
+            // can turn a wait into a deadlock.
             while guard.0.blocked.contains(&0) {
+                if is_deadlocked(&guard.0) {
+                    drop(guard);
+                    deadlock_panic();
+                }
                 guard = MAIN_CV.wait(guard).unwrap();
             }
         }
@@ -879,14 +887,19 @@ pub extern "C" fn raven_waitgroup_wait(id: i64) {
     }
 }
 
-/// Sleep the calling goroutine for `ms` milliseconds (a non-positive duration
-/// returns at once). Leaves the collector's running set for the duration so a
-/// collection does not wait on it. This blocks the OS thread it runs on, so a
-/// sleeping goroutine holds its worker while it sleeps (like a blocking IO
-/// call); releasing the worker via a timer is a possible refinement.
+/// Sleep the caller for `ms` milliseconds (a non-positive duration returns at
+/// once). A goroutine parks on a timer, so its worker runs other goroutines.
+/// Main sleeps its thread outside the collector's running set.
 #[no_mangle]
 pub extern "C" fn raven_sleep_millis(ms: i64) {
     if ms <= 0 {
+        return;
+    }
+    // A goroutine parks on a timer so its worker runs other goroutines.
+    if CURRENT_GOROUTINE.with(|c| c.get()) != 0 {
+        let timer = raven_timer_after(ms);
+        raven_channel_recv(timer);
+        raven_channel_free(timer);
         return;
     }
     let was = crate::gc::block_begin();
@@ -1053,6 +1066,258 @@ pub extern "C" fn raven_waitgroup_free(id: i64) {
     with_sched(|sched| {
         sched.wait_groups.remove(&id);
     });
+}
+
+// ----- timers and signals -----
+
+/// Deposit `value` on channel `id` from outside any goroutine (the timer or
+/// signal thread) and wake one receiver. A full channel drops the value, as a
+/// Go ticker drops ticks nobody read. `release` ends one pending waker.
+fn deliver(id: i64, value: i64, release: bool) {
+    let mut guard = SCHED.lock().unwrap();
+    let sched = &mut guard.0;
+    if release {
+        sched.pending_wakers = sched.pending_wakers.saturating_sub(1);
+    }
+    let waiter = match sched.channels.get_mut(&id) {
+        Some(ch) if ch.queue.len() < ch.cap.max(1) => {
+            ch.queue.push_back(value);
+            ch.recv_waiters.pop_front()
+        }
+        _ => None,
+    };
+    if let Some(w) = waiter {
+        wake_locked(sched, w);
+    } else if release && is_deadlocked(sched) {
+        // The last pending waker is gone and everything is blocked: wake main
+        // and the workers so the deadlock check runs and reports it.
+        MAIN_CV.notify_one();
+        WORK_CV.notify_all();
+    }
+}
+
+struct TimerEntry {
+    due: std::time::Instant,
+    seq: u64,
+    chan: i64,
+    period: Option<Duration>,
+}
+
+impl PartialEq for TimerEntry {
+    fn eq(&self, other: &Self) -> bool {
+        (self.due, self.seq) == (other.due, other.seq)
+    }
+}
+impl Eq for TimerEntry {}
+impl PartialOrd for TimerEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for TimerEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Reversed so the max-heap pops the earliest deadline.
+        (other.due, other.seq).cmp(&(self.due, self.seq))
+    }
+}
+
+struct Timers {
+    heap: std::collections::BinaryHeap<TimerEntry>,
+    seq: u64,
+    started: bool,
+}
+
+static TIMERS: LazyLock<Mutex<Timers>> = LazyLock::new(|| {
+    Mutex::new(Timers {
+        heap: std::collections::BinaryHeap::new(),
+        seq: 0,
+        started: false,
+    })
+});
+static TIMER_CV: Condvar = Condvar::new();
+
+fn timer_loop() {
+    let mut timers = TIMERS.lock().unwrap();
+    loop {
+        let now = std::time::Instant::now();
+        match timers.heap.peek().map(|e| e.due) {
+            None => timers = TIMER_CV.wait(timers).unwrap(),
+            Some(due) if due > now => timers = TIMER_CV.wait_timeout(timers, due - now).unwrap().0,
+            Some(_) => {
+                let entry = timers.heap.pop().unwrap();
+                if let Some(period) = entry.period {
+                    let seq = timers.seq;
+                    timers.seq += 1;
+                    timers.heap.push(TimerEntry {
+                        due: entry.due + period,
+                        seq,
+                        chan: entry.chan,
+                        period: entry.period,
+                    });
+                }
+                drop(timers);
+                deliver(entry.chan, 1, entry.period.is_none());
+                timers = TIMERS.lock().unwrap();
+            }
+        }
+    }
+}
+
+fn add_timer(ms: i64, periodic: bool) -> i64 {
+    let ms = ms.max(i64::from(periodic)) as u64;
+    let chan = make_channel(1);
+    with_sched(|sched| sched.pending_wakers += 1);
+    let mut timers = TIMERS.lock().unwrap();
+    if !timers.started {
+        timers.started = true;
+        std::thread::Builder::new()
+            .name("raven-timers".into())
+            .spawn(timer_loop)
+            .expect("start the timer thread");
+    }
+    let seq = timers.seq;
+    timers.seq += 1;
+    let period = Duration::from_millis(ms);
+    timers.heap.push(TimerEntry {
+        due: std::time::Instant::now() + period,
+        seq,
+        chan,
+        period: periodic.then_some(period),
+    });
+    TIMER_CV.notify_one();
+    chan
+}
+
+/// A channel that receives one value after `ms` milliseconds.
+#[no_mangle]
+pub extern "C" fn raven_timer_after(ms: i64) -> i64 {
+    add_timer(ms, false)
+}
+
+/// A channel that receives a value every `ms` milliseconds (at least 1) until
+/// stopped. Ticks nobody reads are dropped.
+#[no_mangle]
+pub extern "C" fn raven_timer_ticker(ms: i64) -> i64 {
+    add_timer(ms, true)
+}
+
+/// Stop the timer or ticker delivering to `chan`. Returns false if it had
+/// already fired (a one-shot timer) or was stopped before.
+#[no_mangle]
+pub extern "C" fn raven_timer_stop(chan: i64) -> bool {
+    let removed = {
+        let mut timers = TIMERS.lock().unwrap();
+        let before = timers.heap.len();
+        timers.heap.retain(|e| e.chan != chan);
+        before - timers.heap.len()
+    };
+    if removed > 0 {
+        with_sched(|sched| sched.pending_wakers = sched.pending_wakers.saturating_sub(removed));
+    }
+    removed > 0
+}
+
+static SIGNAL_SUBS: Mutex<Vec<i64>> = Mutex::new(Vec::new());
+static SIGNAL_HANDLER: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
+/// A channel that receives a value each time the process is asked to stop
+/// (Ctrl+C, SIGINT, SIGTERM, or a console close on Windows). While any
+/// subscription exists, those requests no longer end the process; the
+/// program decides when to exit. Returns -1 if the handler cannot be set.
+#[no_mangle]
+pub extern "C" fn raven_signal_subscribe() -> i64 {
+    let installed = *SIGNAL_HANDLER.get_or_init(|| {
+        ctrlc::set_handler(|| {
+            let subs = SIGNAL_SUBS.lock().unwrap().clone();
+            if subs.is_empty() {
+                std::process::exit(130);
+            }
+            for chan in subs {
+                deliver(chan, 1, false);
+            }
+        })
+        .is_ok()
+    });
+    if !installed {
+        return -1;
+    }
+    let chan = make_channel(8);
+    with_sched(|sched| sched.pending_wakers += 1);
+    SIGNAL_SUBS.lock().unwrap().push(chan);
+    chan
+}
+
+/// End a subscription from `raven_signal_subscribe`. When none remain, a stop
+/// request ends the process again.
+#[no_mangle]
+pub extern "C" fn raven_signal_unsubscribe(chan: i64) {
+    let removed = {
+        let mut subs = SIGNAL_SUBS.lock().unwrap();
+        let before = subs.len();
+        subs.retain(|&c| c != chan);
+        before - subs.len()
+    };
+    if removed > 0 {
+        with_sched(|sched| sched.pending_wakers = sched.pending_wakers.saturating_sub(removed));
+    }
+}
+
+/// Nanoseconds since the first call, from a clock that never goes backward.
+#[no_mangle]
+pub extern "C" fn raven_time_monotonic_nanos() -> i64 {
+    static START: LazyLock<std::time::Instant> = LazyLock::new(std::time::Instant::now);
+    START.elapsed().as_nanos() as i64
+}
+
+/// A new atomic integer cell holding `value`. Free it with `raven_atomic_free`.
+#[no_mangle]
+pub extern "C" fn raven_atomic_new(value: i64) -> i64 {
+    Box::into_raw(Box::new(std::sync::atomic::AtomicI64::new(value))) as i64
+}
+
+fn atomic(cell: i64) -> &'static std::sync::atomic::AtomicI64 {
+    // SAFETY: `cell` came from raven_atomic_new and has not been freed.
+    unsafe { &*(cell as *const std::sync::atomic::AtomicI64) }
+}
+
+#[no_mangle]
+pub extern "C" fn raven_atomic_load(cell: i64) -> i64 {
+    atomic(cell).load(Ordering::SeqCst)
+}
+
+#[no_mangle]
+pub extern "C" fn raven_atomic_store(cell: i64, value: i64) {
+    atomic(cell).store(value, Ordering::SeqCst)
+}
+
+/// Add `delta` and return the new value.
+#[no_mangle]
+pub extern "C" fn raven_atomic_add(cell: i64, delta: i64) -> i64 {
+    atomic(cell)
+        .fetch_add(delta, Ordering::SeqCst)
+        .wrapping_add(delta)
+}
+
+/// Set to `new` if the value is `expected`; returns whether it was.
+#[no_mangle]
+pub extern "C" fn raven_atomic_cas(cell: i64, expected: i64, new: i64) -> bool {
+    atomic(cell)
+        .compare_exchange(expected, new, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+}
+
+/// Store `value` and return the previous value.
+#[no_mangle]
+pub extern "C" fn raven_atomic_swap(cell: i64, value: i64) -> i64 {
+    atomic(cell).swap(value, Ordering::SeqCst)
+}
+
+#[no_mangle]
+pub extern "C" fn raven_atomic_free(cell: i64) {
+    if cell != 0 {
+        // SAFETY: as for `atomic`; the cell is not used again.
+        drop(unsafe { Box::from_raw(cell as *mut std::sync::atomic::AtomicI64) });
+    }
 }
 
 #[cfg(test)]

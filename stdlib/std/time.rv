@@ -39,6 +39,7 @@ extern "C" {
     fun raven_time_format(ts: int, pattern: str) -> str
     fun raven_time_parse(text: str, pattern: str) -> int
     fun raven_time_sleep_millis(ms: int)
+    fun raven_time_monotonic_nanos() -> int
 }
 
 // Current Unix timestamp in whole seconds (UTC).
@@ -139,4 +140,93 @@ impl ToString for DateTime {
     fun to_string(self) -> str {
         return self.date.to_string().concat(" ").concat(self.time.to_string())
     }
+}
+
+// A span of time with nanosecond resolution.
+class Duration {
+    nanos: int
+}
+
+fun nanoseconds(n: int) -> Duration = Duration(nanos: n)
+fun microseconds(n: int) -> Duration = Duration(nanos: n * 1000)
+fun milliseconds(n: int) -> Duration = Duration(nanos: n * 1000000)
+fun seconds(n: int) -> Duration = Duration(nanos: n * 1000000000)
+fun minutes(n: int) -> Duration = Duration(nanos: n * 60000000000)
+fun hours(n: int) -> Duration = Duration(nanos: n * 3600000000000)
+
+impl Duration {
+    fun as_nanos(self) -> int = self.nanos
+    fun as_micros(self) -> int = self.nanos / 1000
+    fun as_millis(self) -> int = self.nanos / 1000000
+    fun as_seconds(self) -> int = self.nanos / 1000000000
+    fun as_seconds_float(self) -> float = self.nanos.as_float() / 1000000000.0
+    fun plus(self, other: Duration) -> Duration = Duration(nanos: self.nanos + other.nanos)
+    fun minus(self, other: Duration) -> Duration = Duration(nanos: self.nanos - other.nanos)
+    fun times(self, n: int) -> Duration = Duration(nanos: self.nanos * n)
+    fun is_zero(self) -> bool = self.nanos == 0
+}
+
+// The largest whole unit, with up to three decimals: "1.5s", "250ms",
+// "12.003µs", "2m5s", "1h0m0s".
+impl ToString for Duration {
+    fun to_string(self) -> str {
+        let n = self.nanos
+        if n < 0 {
+            return "-" + Duration(nanos: 0 - n).to_string()
+        }
+        if n >= 60000000000 {
+            let total = n / 1000000000
+            let h = total / 3600
+            let m = (total % 3600) / 60
+            let s = total % 60
+            if h > 0 {
+                return "${h}h${m}m${s}s"
+            }
+            return "${m}m${s}s"
+        }
+        if n >= 1000000000 {
+            return _scaled(n, 1000000000, "s")
+        }
+        if n >= 1000000 {
+            return _scaled(n, 1000000, "ms")
+        }
+        if n >= 1000 {
+            return _scaled(n, 1000, "µs")
+        }
+        return "${n}ns"
+    }
+}
+
+fun _scaled(n: int, unit: int, suffix: str) -> str {
+    let whole = n / unit
+    var frac = (n % unit) * 1000 / unit
+    if frac == 0 {
+        return "${whole}${suffix}"
+    }
+    var digits = "${frac}"
+    while digits.length() < 3 {
+        digits = "0" + digits
+    }
+    while digits.ends_with("0") {
+        digits = digits.substring(0, digits.length() - 1)
+    }
+    return "${whole}.${digits}${suffix}"
+}
+
+// A point on a clock that never goes backward, for measuring elapsed time.
+// Unlike `now()`, it is unaffected by changes to the system clock.
+class Instant {
+    nanos: int
+}
+
+impl Instant {
+    fun now() -> Instant = Instant(nanos: raven_time_monotonic_nanos())
+
+    // Time since this instant.
+    fun elapsed(self) -> Duration = Duration(nanos: raven_time_monotonic_nanos() - self.nanos)
+
+    // Time from `earlier` to this instant.
+    fun since(self, earlier: Instant) -> Duration = Duration(nanos: self.nanos - earlier.nanos)
+
+    fun plus(self, d: Duration) -> Instant = Instant(nanos: self.nanos + d.nanos)
 }
