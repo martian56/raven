@@ -527,7 +527,7 @@ fn budget_spent(a: &AllocState, size: usize) -> bool {
         a.pending.set(pending);
         return a.bytes.get() + pending > a.threshold.get();
     }
-    if pending < FLUSH_BYTES {
+    if pending < FLUSH_BYTES.min(collection_floor()) {
         a.pending.set(pending);
         return false;
     }
@@ -679,8 +679,12 @@ impl SmallHeap {
             let size = CLASS_SIZES[class];
             let mut slot = o.bump;
             while slot < o.end {
-                // SAFETY: slots between bump and end lie inside the page.
-                unsafe { *(slot as *mut u32) = TAG_FREE };
+                // SAFETY: slots between bump and end lie inside the page; the
+                // sweep reads both header words, so set the mark word too.
+                unsafe {
+                    std::ptr::write_bytes(slot, 0, 8);
+                    *(slot as *mut u32) = TAG_FREE;
+                }
                 // SAFETY: stepping by whole slots stays at or below `end`.
                 slot = unsafe { slot.add(size) };
             }
@@ -1361,21 +1365,26 @@ fn sweep() -> usize {
     let next = AtomicUsize::new(0);
     let all = &all;
     let next = &next;
+    let claim = move || {
+        let mut live = 0;
+        loop {
+            let i = next.fetch_add(1, Ordering::Relaxed);
+            let Some(h) = all.get(i) else { break live };
+            // SAFETY: as above; each heap is claimed by exactly one thread.
+            live += unsafe { sweep_heap(&*h.0, epoch) };
+        }
+    };
     std::thread::scope(|scope| {
-        let workers: Vec<_> = (0..helpers)
-            .map(|_| {
-                scope.spawn(move || {
-                    let mut live = 0;
-                    loop {
-                        let i = next.fetch_add(1, Ordering::Relaxed);
-                        let Some(h) = all.get(i) else { break live };
-                        // SAFETY: as above; each heap is claimed by one helper.
-                        live += unsafe { sweep_heap(&*h.0, epoch) };
-                    }
-                })
-            })
+        // A helper the OS refuses (at its thread limit) is simply skipped: the
+        // collecting thread claims heaps too, so every heap is still swept.
+        let workers: Vec<_> = (1..helpers)
+            .filter_map(|_| std::thread::Builder::new().spawn_scoped(scope, claim).ok())
             .collect();
-        workers.into_iter().map(|w| w.join().unwrap_or(0)).sum()
+        let own = claim();
+        own + workers
+            .into_iter()
+            .map(|w| w.join().unwrap_or(0))
+            .sum::<usize>()
     })
 }
 
