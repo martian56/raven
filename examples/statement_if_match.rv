@@ -23,7 +23,49 @@ fun pick(o: Option[int], b: Box) {
     }
 }
 
+fun options(n: int) {
+    if n > 0 {
+        Some(1)
+    } else {
+        None
+    }
+    match n {
+        case 0 { Some("a") }
+        case _ { None }
+    }
+    let mixed = match n {
+        case 0 { 1 }
+        case 1 { "one" }
+        case _ {}
+    }
+    print("options ${n}")
+}
+
+fun first_even(xs: list[int]) -> Result[int, str] {
+    let check = (x: int) => {
+        let half = halve(x)?
+        return Ok(half * 2)
+    }
+    for x in xs {
+        match check(x) {
+            case Ok(v) { return Ok(v) }
+            case Err(_) {}
+        }
+    }
+    return Err("none")
+}
+
+fun halve(x: int) -> Result[int, str] {
+    if x % 2 == 0 {
+        return Ok(x / 2)
+    }
+    return Err("odd")
+}
+
 fun main() {
+    options(0)
+    options(2)
+    print(first_even([3, 5, 8, 9]).unwrap(), first_even([1]).is_err())
     let b = Box(n: 0)
     pick(Some(1), b)
     pick(None, b)

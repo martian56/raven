@@ -1246,6 +1246,13 @@ impl<'a, 'b> Checker<'a, 'b> {
                             Ty::Result(_, ret_e) => {
                                 self.unify(&ret_e, &e, &expr.span)?;
                             }
+                            // A lambda whose return type is still being
+                            // inferred: `?` makes it return a Result.
+                            Ty::Var(_) => {
+                                let ok = Ty::Var(self.infer.fresh(expr.span.clone()));
+                                let want = Ty::Result(Box::new(ok), e.clone());
+                                self.unify(&self.return_ty.clone(), &want, &expr.span)?;
+                            }
                             Ty::Error => {}
                             Ty::Unit
                                 if self.in_main
@@ -1275,6 +1282,11 @@ impl<'a, 'b> Checker<'a, 'b> {
                         // must return an Option.
                         match self.infer.resolve(&self.return_ty) {
                             Ty::Option(_) | Ty::Error => {}
+                            Ty::Var(_) => {
+                                let inner = Ty::Var(self.infer.fresh(expr.span.clone()));
+                                let want = Ty::Option(Box::new(inner));
+                                self.unify(&self.return_ty.clone(), &want, &expr.span)?;
+                            }
                             Ty::Unit if self.in_main => {
                                 self.types.record_try_panic(&expr.span);
                             }
@@ -3486,10 +3498,30 @@ impl<'a, 'b> Checker<'a, 'b> {
         let unit_branch = matches!(self.infer.resolve(&t), Ty::Unit)
             || matches!(self.infer.resolve(&e), Ty::Unit);
         if discard || unit_branch {
+            self.link_branches(&[t, e], span);
             return Ok(Ty::Unit);
         }
         self.unify(&t, &e, span)?;
         Ok(self.infer.resolve(&t))
+    }
+
+    /// Connect the types of branches whose value is not used where they are
+    /// compatible, so `Some(1)` in one branch still types a `None` in another,
+    /// while incompatible branches are allowed. Unit branches are skipped.
+    fn link_branches(&mut self, tys: &[Ty], span: &Span) {
+        let mut first: Option<Ty> = None;
+        for t in tys {
+            if matches!(self.infer.resolve(t), Ty::Unit) {
+                continue;
+            }
+            match &first {
+                None => first = Some(t.clone()),
+                Some(f) => {
+                    let f = f.clone();
+                    let _ = self.unify(&f, t, span);
+                }
+            }
+        }
     }
 
     fn check_match(
@@ -3510,7 +3542,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         // arm as a catch-all that shadows the rest.
         let scrut_stripped = self.infer.resolve(scrut_ty.strip_self());
 
-        let mut result_ty: Option<Ty> = None;
+        let mut arm_tys: Vec<(Ty, Span)> = Vec::new();
         let mut pattern_names: Vec<super::match_check::PatternHead> = Vec::new();
         let outer = std::mem::take(&mut self.diverges);
         let mut all_div = !arms.is_empty();
@@ -3531,22 +3563,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             all_div &= self.diverges;
             self.locals = saved_locals;
 
-            result_ty = Some(match result_ty.take() {
-                None => body_ty,
-                // A statement match discards its value, so the arms may differ,
-                // and an arm with no value makes the whole match unit.
-                Some(_) if discard => Ty::Unit,
-                Some(prev)
-                    if matches!(self.infer.resolve(&prev), Ty::Unit)
-                        || matches!(self.infer.resolve(&body_ty), Ty::Unit) =>
-                {
-                    Ty::Unit
-                }
-                Some(prev) => {
-                    self.unify(&prev, &body_ty, &arm.span)?;
-                    self.infer.resolve(&prev)
-                }
-            });
+            arm_tys.push((body_ty, arm.span.clone()));
             // A guarded arm only matches when its guard holds, so it neither
             // covers its pattern for exhaustiveness nor shadows a later arm with
             // the same pattern. Treat it as a non-covering specific head.
@@ -3580,10 +3597,29 @@ impl<'a, 'b> Checker<'a, 'b> {
         } else {
             super::match_check::check(&scrut_stripped, &pattern_names, span, self.env)?;
         }
-        if discard {
+        // A statement match discards its value, and an arm with no value makes
+        // the whole match unit wherever that arm sits; either way the other
+        // arms are still linked where compatible. Otherwise every arm must
+        // agree.
+        let any_unit = arm_tys
+            .iter()
+            .any(|(t, _)| matches!(self.infer.resolve(t), Ty::Unit));
+        if discard || any_unit {
+            let tys: Vec<Ty> = arm_tys.iter().map(|(t, _)| t.clone()).collect();
+            self.link_branches(&tys, span);
             return Ok(Ty::Unit);
         }
-        Ok(result_ty.unwrap_or(Ty::Unit))
+        let mut result: Option<Ty> = None;
+        for (t, at) in &arm_tys {
+            result = Some(match result.take() {
+                None => t.clone(),
+                Some(prev) => {
+                    self.unify(&prev, t, at)?;
+                    self.infer.resolve(&prev)
+                }
+            });
+        }
+        Ok(result.unwrap_or(Ty::Unit))
     }
 
     fn check_lambda(
