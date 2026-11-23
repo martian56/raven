@@ -327,6 +327,9 @@ struct Checker<'a, 'b> {
     loop_kinds: Vec<bool>,
     /// Control cannot reach the current point.
     diverges: bool,
+    /// The `if` or `match` about to be checked is a statement, so its value is
+    /// discarded and its branches need not agree on a type.
+    discard_value: bool,
     /// Per enclosing loop: whether it is broken out of, and the break value type.
     loop_breaks: Vec<(bool, Option<Ty>)>,
     /// Types of diverging expressions; unsolved ones default to `Unit`.
@@ -398,6 +401,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             recorded: Vec::new(),
             loop_kinds: Vec::new(),
             diverges: false,
+            discard_value: false,
             loop_breaks: Vec::new(),
             never_vars: Vec::new(),
             deferred_ops: Vec::new(),
@@ -1112,7 +1116,9 @@ impl<'a, 'b> Checker<'a, 'b> {
                 }
             }
             StmtKind::Expr(e) => {
+                self.discard_value = matches!(e.kind, ExprKind::If { .. } | ExprKind::Match { .. });
                 self.check_expr_recover(e);
+                self.discard_value = false;
             }
         }
     }
@@ -1240,6 +1246,13 @@ impl<'a, 'b> Checker<'a, 'b> {
                             Ty::Result(_, ret_e) => {
                                 self.unify(&ret_e, &e, &expr.span)?;
                             }
+                            // A lambda whose return type is still being
+                            // inferred: `?` makes it return a Result.
+                            Ty::Var(_) => {
+                                let ok = Ty::Var(self.infer.fresh(expr.span.clone()));
+                                let want = Ty::Result(Box::new(ok), e.clone());
+                                self.unify(&self.return_ty.clone(), &want, &expr.span)?;
+                            }
                             Ty::Error => {}
                             Ty::Unit
                                 if self.in_main
@@ -1269,6 +1282,11 @@ impl<'a, 'b> Checker<'a, 'b> {
                         // must return an Option.
                         match self.infer.resolve(&self.return_ty) {
                             Ty::Option(_) | Ty::Error => {}
+                            Ty::Var(_) => {
+                                let inner = Ty::Var(self.infer.fresh(expr.span.clone()));
+                                let want = Ty::Option(Box::new(inner));
+                                self.unify(&self.return_ty.clone(), &want, &expr.span)?;
+                            }
                             Ty::Unit if self.in_main => {
                                 self.types.record_try_panic(&expr.span);
                             }
@@ -3452,6 +3470,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         else_branch: Option<&ElseBranch>,
         span: &Span,
     ) -> Result<Ty, RavenError> {
+        let discard = std::mem::take(&mut self.discard_value);
         let c = self.check_expr(cond)?;
         self.unify(&Ty::Bool, &c, &cond.span)?;
         let outer = std::mem::take(&mut self.diverges);
@@ -3465,13 +3484,44 @@ impl<'a, 'b> Checker<'a, 'b> {
                 self.diverges = outer;
                 return Ok(Ty::Unit);
             }
-            Some(ElseBranch::If(expr)) => self.check_expr(expr)?,
+            Some(ElseBranch::If(expr)) => {
+                // An `else if` chain is a statement all the way down.
+                self.discard_value = discard;
+                self.check_expr(expr)?
+            }
             Some(ElseBranch::Block(b)) => self.check_block(b)?,
         };
         let else_div = self.diverges;
         self.diverges = outer || (then_div && else_div);
+        // A branch with no value (an `else if` chain without a final `else`,
+        // or an empty block) makes the whole `if` a unit expression.
+        let unit_branch = matches!(self.infer.resolve(&t), Ty::Unit)
+            || matches!(self.infer.resolve(&e), Ty::Unit);
+        if discard || unit_branch {
+            self.link_branches(&[t, e], span);
+            return Ok(Ty::Unit);
+        }
         self.unify(&t, &e, span)?;
         Ok(self.infer.resolve(&t))
+    }
+
+    /// Connect the types of branches whose value is not used where they are
+    /// compatible, so `Some(1)` in one branch still types a `None` in another,
+    /// while incompatible branches are allowed. Unit branches are skipped.
+    fn link_branches(&mut self, tys: &[Ty], span: &Span) {
+        let mut first: Option<Ty> = None;
+        for t in tys {
+            if matches!(self.infer.resolve(t), Ty::Unit) {
+                continue;
+            }
+            match &first {
+                None => first = Some(t.clone()),
+                Some(f) => {
+                    let f = f.clone();
+                    let _ = self.unify(&f, t, span);
+                }
+            }
+        }
     }
 
     fn check_match(
@@ -3480,6 +3530,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         arms: &[crate::ast::MatchArm],
         span: &Span,
     ) -> Result<Ty, RavenError> {
+        let discard = std::mem::take(&mut self.discard_value);
         let scrut_ty = self.check_expr(scrutinee)?;
         // Resolve the scrutinee type up front. A nested match binds its
         // scrutinee to an inference variable that is already solved by the time
@@ -3491,7 +3542,7 @@ impl<'a, 'b> Checker<'a, 'b> {
         // arm as a catch-all that shadows the rest.
         let scrut_stripped = self.infer.resolve(scrut_ty.strip_self());
 
-        let mut result_ty: Option<Ty> = None;
+        let mut arm_tys: Vec<(Ty, Span)> = Vec::new();
         let mut pattern_names: Vec<super::match_check::PatternHead> = Vec::new();
         let outer = std::mem::take(&mut self.diverges);
         let mut all_div = !arms.is_empty();
@@ -3512,13 +3563,7 @@ impl<'a, 'b> Checker<'a, 'b> {
             all_div &= self.diverges;
             self.locals = saved_locals;
 
-            result_ty = Some(match result_ty.take() {
-                None => body_ty,
-                Some(prev) => {
-                    self.unify(&prev, &body_ty, &arm.span)?;
-                    self.infer.resolve(&prev)
-                }
-            });
+            arm_tys.push((body_ty, arm.span.clone()));
             // A guarded arm only matches when its guard holds, so it neither
             // covers its pattern for exhaustiveness nor shadows a later arm with
             // the same pattern. Treat it as a non-covering specific head.
@@ -3552,7 +3597,29 @@ impl<'a, 'b> Checker<'a, 'b> {
         } else {
             super::match_check::check(&scrut_stripped, &pattern_names, span, self.env)?;
         }
-        Ok(result_ty.unwrap_or(Ty::Unit))
+        // A statement match discards its value, and an arm with no value makes
+        // the whole match unit wherever that arm sits; either way the other
+        // arms are still linked where compatible. Otherwise every arm must
+        // agree.
+        let any_unit = arm_tys
+            .iter()
+            .any(|(t, _)| matches!(self.infer.resolve(t), Ty::Unit));
+        if discard || any_unit {
+            let tys: Vec<Ty> = arm_tys.iter().map(|(t, _)| t.clone()).collect();
+            self.link_branches(&tys, span);
+            return Ok(Ty::Unit);
+        }
+        let mut result: Option<Ty> = None;
+        for (t, at) in &arm_tys {
+            result = Some(match result.take() {
+                None => t.clone(),
+                Some(prev) => {
+                    self.unify(&prev, t, at)?;
+                    self.infer.resolve(&prev)
+                }
+            });
+        }
+        Ok(result.unwrap_or(Ty::Unit))
     }
 
     fn check_lambda(
