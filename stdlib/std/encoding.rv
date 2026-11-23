@@ -416,3 +416,49 @@ fun base32_decode(s: str) -> Result[str, Error] {
     }
     return Ok("".join(out))
 }
+
+// URL-safe base64 (RFC 4648 section 5) without padding, as JWT and URL
+// tokens use: `-` and `_` instead of `+` and `/`, and no trailing `=`.
+fun base64url_encode(s: str) -> str {
+    let std64 = base64_encode(s)
+    let out: list[str] = []
+    var i = 0
+    let n = __str_len(std64)
+    while i < n {
+        let b = __str_byte_at(std64, i)
+        if b == 43 {
+            out.push("-")
+        } else if b == 47 {
+            out.push("_")
+        } else if b != 61 {
+            out.push(__str_from_byte(b))
+        }
+        i = i + 1
+    }
+    return "".join(out)
+}
+
+// Decode URL-safe base64, with or without `=` padding.
+fun base64url_decode(s: str) -> Result[str, Error] {
+    let out: list[str] = []
+    var i = 0
+    let n = __str_len(s)
+    while i < n {
+        let b = __str_byte_at(s, i)
+        if b == 45 {
+            out.push("+")
+        } else if b == 95 {
+            out.push("/")
+        } else if b == 43 or b == 47 {
+            return Err(encoding_error("base64url input contains `+` or `/`"))
+        } else {
+            out.push(__str_from_byte(b))
+        }
+        i = i + 1
+    }
+    var padded = "".join(out)
+    while __str_len(padded) % 4 != 0 {
+        padded = padded + "="
+    }
+    return base64_decode(padded)
+}
