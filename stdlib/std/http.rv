@@ -677,6 +677,10 @@ fun serve_connection(server: Server, stream: TcpStream) {
                 let too_large = e.message.contains("too large")
                 var resp = Response.with_body(413, "Payload Too Large") if too_large else Response.bad_request("Bad Request")
                 write_response(stream, resp, false, false)
+                // Closing while the client is still sending makes the OS reset
+                // the connection, and the client sees the reset instead of
+                // this response. Read and discard what is left first.
+                drain(stream)
                 if server.access_log {
                     print("- - ${resp.status}")
                 }
@@ -691,6 +695,26 @@ fun serve_connection(server: Server, stream: TcpStream) {
 // comma-separated options, compared after trimming each. The whole value cannot
 // be compared directly: `keep-alive, close` lists two options, and a `close`
 // beside another option must still be honored.
+// Read and discard a client's remaining upload, up to 64 MiB or until it goes
+// quiet for half a second, so a close after an error response is clean.
+fun drain(stream: TcpStream) {
+    stream.set_read_timeout_ms(500)
+    var total = 0
+    while total < 67108864 {
+        match stream.read(65536) {
+            case Ok(chunk) {
+                if chunk.length() == 0 {
+                    return
+                }
+                total += chunk.length()
+            }
+            case Err(_) {
+                return
+            }
+        }
+    }
+}
+
 fun connection_has_token(conn: str, token: str) -> bool {
     let parts = conn.split(",")
     var i = 0
