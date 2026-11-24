@@ -1589,10 +1589,14 @@ mod collector_tests {
             // SAFETY: a freshly allocated list.
             let bytes = unsafe { crate::object::object_buffer_bytes(list as *mut ObjectHeader) };
             assert_eq!(bytes, 8000);
-            let s = raven_string_new(64);
+            let s = raven_string_new(1000);
             // SAFETY: a freshly allocated string.
             let sb = unsafe { crate::object::object_buffer_bytes(s as *mut ObjectHeader) };
-            assert!(sb >= 64);
+            assert!(sb >= 1000);
+            let short = raven_string_new(64);
+            // SAFETY: as above; a short string keeps its bytes inline.
+            let inline = unsafe { crate::object::object_buffer_bytes(short as *mut ObjectHeader) };
+            assert_eq!(inline, 0);
         });
     }
 

@@ -127,7 +127,11 @@ pub(crate) unsafe fn object_body_layout(header: *const ObjectHeader) -> (usize, 
     // SAFETY: caller guarantees `header` is a live object header.
     let tag = unsafe { (*header).tag };
     match tag {
-        TAG_STRING => (string::size_of_string(), string::align_of_string()),
+        // SAFETY: the tag says this is a String.
+        TAG_STRING => (
+            unsafe { string::body_size(header as *const String) },
+            string::align_of_string(),
+        ),
         TAG_LIST => (list::size_of_list(), list::align_of_list()),
         TAG_MAP => (map::size_of_map(), map::align_of_map()),
         TAG_SET => (set::size_of_set(), set::align_of_set()),

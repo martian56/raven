@@ -35,8 +35,36 @@ const _: () = {
     assert!(std::mem::size_of::<String>() == 24);
 };
 
+/// Strings of at most this many bytes keep them inside their own GC slot,
+/// right after the header, so a short string is one allocation and nothing to
+/// free separately. With the 24-byte header the slot stays within the
+/// collector's small size classes.
+const INLINE_MAX: u32 = 232;
+/// Bit of `header.cap` marking inline bytes; the low bits hold their capacity,
+/// so the body size is known.
+const INLINE: u32 = 1 << 30;
+
 #[no_mangle]
 pub extern "C" fn raven_string_new(cap: u32) -> *mut String {
+    if cap > 0 && cap <= INLINE_MAX {
+        let size = size_of_string() + cap as usize;
+        let header_ptr = raven_gc_alloc(size, align_of_string(), TAG_STRING) as *mut String;
+        if header_ptr.is_null() {
+            return ptr::null_mut();
+        }
+        // SAFETY: the slot holds the header and `cap` zeroed bytes after it.
+        unsafe {
+            let bytes = (header_ptr as *mut u8).add(size_of_string());
+            ptr::write(
+                header_ptr,
+                String {
+                    header: ObjectHeader::new(TAG_STRING, 0, INLINE | cap),
+                    bytes,
+                },
+            );
+        }
+        return header_ptr;
+    }
     // Allocate the owned byte buffer first so a body-allocation failure
     // does not leave a half-registered object in the collector.
     let bytes_ptr = if cap == 0 {
@@ -630,12 +658,23 @@ pub(crate) const fn align_of_string() -> usize {
 /// # Safety
 ///
 /// `s` must point to a live `String` produced by `raven_string_new`.
+/// The size of `s`'s GC body: the header, plus inline bytes if it has them.
+pub(crate) unsafe fn body_size(s: *const String) -> usize {
+    // SAFETY: caller guarantees `s` is a live String.
+    let cap = unsafe { (*s).header.cap };
+    if cap & INLINE != 0 {
+        size_of_string() + (cap & !INLINE) as usize
+    } else {
+        size_of_string()
+    }
+}
+
 /// Bytes of the buffer `s` owns; its share of a shared buffer.
 pub(crate) unsafe fn buffer_bytes(s: *mut String) -> usize {
     // SAFETY: caller guarantees `s` is a live String.
     let cap = unsafe { (*s).header.cap };
     let bytes = unsafe { (*s).bytes };
-    if bytes.is_null() || cap == 0 {
+    if bytes.is_null() || cap == 0 || cap & INLINE != 0 {
         return 0;
     }
     if cap & SHARED != 0 {
@@ -651,7 +690,7 @@ pub(crate) unsafe fn free_buffers(s: *mut String) {
     // SAFETY: caller guarantees `s` is a live String.
     let cap = unsafe { (*s).header.cap };
     let bytes = unsafe { (*s).bytes };
-    if bytes.is_null() || cap == 0 {
+    if bytes.is_null() || cap == 0 || cap & INLINE != 0 {
         return;
     }
     if cap & SHARED != 0 {
@@ -706,13 +745,33 @@ mod tests {
     }
 
     #[test]
+    fn long_strings_keep_an_owned_buffer() {
+        let s = raven_string_new(INLINE_MAX + 1);
+        // SAFETY: s came from the constructor.
+        unsafe {
+            assert_eq!((*s).header.cap, INLINE_MAX + 1);
+            assert_eq!(body_size(s), size_of_string());
+            assert_eq!(buffer_bytes(s), (INLINE_MAX + 1) as usize);
+            drop_string_for_test(s);
+        }
+        let t = raven_string_new(40);
+        // SAFETY: as above.
+        unsafe {
+            assert_eq!(body_size(t), size_of_string() + 40);
+            assert_eq!(buffer_bytes(t), 0);
+            drop_string_for_test(t);
+        }
+    }
+
+    #[test]
     fn new_with_capacity_zero_fills_buffer() {
         let cap = 16u32;
         let s = raven_string_new(cap);
         assert!(!s.is_null());
-        // SAFETY: s came from the constructor with `cap` bytes.
+        // SAFETY: s came from the constructor with `cap` bytes, inline.
         unsafe {
-            assert_eq!((*s).header.cap, cap);
+            assert_eq!((*s).header.cap, INLINE | cap);
+            assert_eq!((*s).bytes, (s as *mut u8).add(size_of_string()));
             for i in 0..cap as usize {
                 assert_eq!((*s).bytes.add(i).read(), 0);
             }
@@ -1050,7 +1109,7 @@ mod tests {
         let a = raven_string_from_bytes(b"ab".as_ptr(), 2);
         let ab = raven_string_concat(a, a);
         unsafe {
-            assert_eq!((*ab).header.cap, 4);
+            assert_eq!((*ab).header.cap, INLINE | 4);
             drop_string_for_test(ab);
             drop_string_for_test(a);
         }
