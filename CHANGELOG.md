@@ -2,6 +2,12 @@
 
 All notable changes to Raven are documented in this file.
 
+## [3.7.2] - 2026-11-24
+
+### Performance
+
+- Strings of up to 232 bytes keep their bytes inside their own heap slot instead of a separate buffer, so a short string is one allocation and nothing extra to free after a collection. A loop building and encoding JSON documents runs about 12 percent faster on one thread, and more under load, where those frees no longer cross threads.
+
 ## [3.7.1] - 2026-11-24
 
 ### Performance
