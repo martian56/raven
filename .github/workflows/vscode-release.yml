@@ -1,0 +1,54 @@
+name: VS Code extension release
+
+on:
+  push:
+    tags:
+      - 'vscode-v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: vscode-marketplace
+    defaults:
+      run:
+        working-directory: raven-vscode
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: raven-vscode/package-lock.json
+
+      - name: Check the tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="${GITHUB_REF_NAME#vscode-v}"
+          version="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: Package
+        run: npx @vscode/vsce@4 package -o raven.vsix
+
+      - name: Publish
+        run: npx @vscode/vsce@4 publish --oidc --skip-duplicate -i raven.vsix
+
+      - name: GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" raven.vsix \
+            --title "VS Code extension ${GITHUB_REF_NAME#vscode-v}" \
+            --notes "Raven language support for VS Code, version ${GITHUB_REF_NAME#vscode-v}." \
+            --latest=false
